@@ -244,3 +244,171 @@ failing checks, and that both ids arrive with their own details — because `mod
 
 What the sentence says about the real case is the next scheduled run's business. The round trip's
 *verdict* was never in doubt — that case does fail the contract — only its ability to say why.
+
+## Finding 497 — the count of failing checks went to the log and the sentence went somewhere else
+
+The v3.75 repair made the round trip name the field a case gets wrong instead of crashing. The next
+dispatch ran it, and two cases reached the branch:
+
+```
+ROUNDTRIP PASS   2/270 RE2-OB/checkoutservice_cpu/2   target=rcaeval-re2   oracle=1.00 signals=317010
+ROUNDTRIP FAIL   2/270 RE2-OB/checkoutservice_cpu/2   shape=1
+...
+ROUNDTRIP PASS  14/270 RE2-OB/checkoutservice_mem/2   target=rcaeval-re2   oracle=1.00 signals=457551
+ROUNDTRIP FAIL  14/270 RE2-OB/checkoutservice_mem/2   shape=1
+```
+
+`shape=1` is a **count**. The sentence that says *which* check failed was built on the next line and
+pushed onto `roundTripFailures`, a list printed once, in the epilogue, before the run exits. That run
+never reached the epilogue: it died of the heap at case 181. So the two refusals it found — the first
+two the branch had ever produced on a real corpus — are gone, and all that is left of them in 84 minutes
+of log is `shape=1` twice.
+
+**The defect is not that the branch was reached; it is where the sentence was sent.** A per-case verdict
+belongs on the per-case line, because a per-case line is what a 270-case run prints 270 times and what
+survives a death. The `scored !== 1` branch one screen below had the same shape and one worse property:
+it printed *nothing at all*, so a case whose score was 0.80 produced a `FAIL` mark with no reason beside
+it anywhere in the log.
+
+**The repair is that both branches print their sentence on their own line.** The epilogue still collects
+them, because it is the list a reader diffs; the line is what a run that dies leaves behind.
+
+## Finding 498 — "written before every exit" is not written when the process is aborted
+
+The score report was documented as written before every exit, and it was: `emitScoreReport()` stood
+before each `process.exit`, in the failure paths and in the success path. The 2026-11-09 run died with
+
+```
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+/home/runner/work/_temp/....sh: line 9:  3113 Aborted (core dumped)
+```
+
+`process.exit` was never called. The uploaded artifact for that run holds two files — `pins.json` and
+`rcaeval-cases.json` — and **no score report**, so 180 case records, the oracle score of every one of
+them, and the sentence for every case that had failed were lost with the process. The one run that most
+needs a report is the one that cannot reach the end of the function that writes it.
+
+**This is the third round in a row whose defect is a sentence that exists only on a path the run did not
+take** (findings 496, 497). The pattern is worth naming: an epilogue is a bet that the run reaches the
+epilogue.
+
+**The repair writes the report after every case.** `emitScoreReport` is now called from a `finally` that
+wraps the loop body, so one call site covers all nine ways out of a case; `continue` runs it, which is
+what makes the guarantee structural rather than remembered. The write is already atomic (temp then
+rename), so a reader polling the artifact sees either the previous complete report or this one, never a
+half file. Two hundred and seventy rewrites of a small JSON document cost nothing against twenty-five
+seconds a case, and the test kills a run with `SIGKILL` after the first record lands and asserts the file
+holds what the run had measured.
+
+The report also now carries what the corpus ships per slice and what the run cost, because those are the
+two things an artifact written at case 40 of 270 can still tell you.
+
+## Finding 499 — a heap limit nobody declared, measured, or reported
+
+Node's default cap on a 64-bit runner is 4 GB. Nothing in this repository said so, and the run that
+found out said only what V8 says:
+
+```
+[3113:0x3c024000]  3158378 ms: Mark-Compact 4016.6 (4137.1) -> 4015.9 (4137.1) MB, ... allocation failure
+```
+
+No case name, no stage, no number from this project. Eighty-four minutes of log contained one heap
+reading per case — `signals=` — and `signals` is a count of telemetry rows, not of memory.
+
+**The corpus is not ours, so its largest case is not a quantity to bound by wishing.** Measured locally
+on a synthetic case in the corpus's own shape: a 122 MB case (480 000 log rows, 960 000 spans) costs
+2 105 MB of heap at the ingest boundary, which is 17 MB of heap per MB of CSV. `RE2-TT`'s cases are
+about 2.4× the bytes of `RE2-OB`'s, so the first TrainTicket case needed more than the 4 GB the run had.
+That is arithmetic, not bad luck, and it was never written down.
+
+**Three things follow, and they are the repair.** The run prints the heap it was given and the budget it
+is expected to stay under, before the first case; it samples the heap at five stage boundaries per case,
+records the number on the case's record, and prints a `ROUNDTRIP COST` line whenever a case is heavier or
+slower than every case before it, so the log carries the growth curve rather than 270 repeated readings;
+and it reports at the end
+
+```
+ROUNDTRIP cost 270 case(s) in 201.4 min; largest 3712 MB of the 7168 MB this run was given (52%) at
+RE2-TT/ts-auth-service_cpu/1; slowest 51.3 s at RE2-TT/ts-order-service_cpu/2
+```
+
+A run at 90% or more of its budget **fails**, with the case named, because a run at 95% has not passed —
+it has one case left before it dies, and the death has no sentence in it. The budget defaults to the
+heap limit and is set by `--heap-budget`, which is how the refusal is tested: the branch exists for a
+corpus that nearly exhausts a runner, and a test cannot build one.
+
+The workflow then declares the number instead of inheriting it: `--max-old-space-size=7168`, three and a
+half times the largest measured case, with the measurement in the comment above it.
+
+**And the bound that had gone stale beside it.** `timeout-minutes: 90` was written when the round trip
+was believed to take ten minutes. The run measured 35 s a case on Online Boutique; 270 cases plus a
+40-minute fetch does not fit in 90 minutes, and a job killed by its own timeout reports no reason at all.
+The job now declares 300, the step 240, and both carry the arithmetic that produced them.
+
+## Finding 500 — the plan spoke for a suite, the corpus ships per slice
+
+90 of the 270 cases in `RE2` failed, all with one sentence:
+
+```
+ROUNDTRIP FAIL 91/270 RE2-SS/carts_cpu/1
+  reason=RE2 declares a traces table and traces.csv is not readable under RE2-SS/carts_cpu/1
+```
+
+Cases 91 to 180 inclusive: the whole SockShop slice. `MODALITY_PLANS` keyed on `entry.suite`, and `RE2`
+is four characters covering three corpora. SockShop ships `logs.csv` and no `traces.csv` — every case,
+which is what makes it a property of the slice rather than a partial download — and the plan for the
+suite was applied to a slice that is not it. The failure is not the corpus disagreeing with itself; it
+is a claim written about the wrong subject.
+
+Three separate places had to agree for those 90 cases to pass, and each of them was stating the
+suite-level rule:
+
+1. **The plan.** `SLICE_MODALITY_PLANS` now maps `RE2-SS` to the logs entry, by `filter` on `table`
+   rather than by position, and `planForCase` looks a case up by the first path component of its id and
+   falls back to the suite. The logs plan is inherited rather than restated: it is the same nine-column
+   table, and a second copy is a second thing to drift.
+2. **The absence rule.** A table the plan names and the directory does not carry used to fail the *case*.
+   It is now counted, and refused once per slice and table, because "this slice has no spans" and "this
+   download lost half the spans" are different facts and a per-case verdict cannot tell them apart. The
+   first says the plan needs a slice entry; the second says the extraction is broken. The census line
+   says which:
+
+   ```
+   ROUNDTRIP CENSUS modalities RE2-SS: logs 90/90, traces 0/90
+   ```
+
+3. **The layout contract.** `scoreExport` derives the expected modality set from the target's suite, so
+   a SockShop case that ships logs alone failed `modality-set` even after the plan stopped demanding
+   traces — the plan handing the case to a check that demanded them anyway. `checkRcaEvalStructure` now
+   takes an `ExpectedModalities` with the suite rule as its default, and the round trip states the
+   case's own answer because it has read the directory.
+
+**The parameter is an equality, and that is what makes it safe.** A caller that says `traces: false`
+about a case whose export *does* carry spans fails the check: `hasLogs === expectsLogs`. It can move the
+expectation onto what the case is; it cannot be used to stop looking at a table the export wrote. A test
+holds both halves, and a third holds that a target with no log/trace pair refuses the argument rather
+than ignoring it.
+
+**What this does not claim.** Whether `RE2-TT` ships spans is unmeasured — the run died at its first
+case — so `RE2-TT` inherits `RE2`'s plan and the next dispatch will say so in one sentence with a count
+rather than in 90 lines without one.
+
+## Finding 501 — the index is measured against volumes that can no longer grow
+
+`progress-volumes.mjs` requires `docs/progress.md` to be smaller than **the smallest volume**, on the
+argument that "the file a reader opens first must not be bigger than the things it indexes". The
+argument is right and the set is wrong: the smallest volume is `volume-02.md` at 92,355 bytes, it was
+closed eleven volumes ago, and nothing may append to it. So the headroom on the live list is not a
+budget a round can plan against — it was 955 bytes at the start of this round and 15 bytes at the end —
+and the failure it produces names two repairs, neither of which exists:
+
+> either the section that grew is a record and belongs in a volume, or the index is no longer an index
+
+The section that grew was the `## Open` list, which is the index's own content by design, and no record
+belongs in a volume that has been frozen since v3.55. What this round actually did to get green was
+**shave three paragraphs of its own new entries** until the arithmetic fitted, which is the shape this
+audit keeps finding: a number that is checked, and a repair that is not available.
+
+**What would close it** is a rule that compares the index against something that can still grow — the
+smallest *open* volume, or the median — and a stated way to rebalance closed volumes when the relation
+breaks. Until then the next round starts with fifteen bytes and will spend its first edit making room.

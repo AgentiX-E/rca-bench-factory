@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.75: **24** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.76: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1190,13 +1190,22 @@ is a row about rather than paraphrase one that no `grep` will find.
   a relabel -- puts it at five of thirty-four (0.147), which is the first size where losing one holds.
   `[open: annotate or add a case whose chain is three hops deep, and measure what the denominator should
   be rather than inheriting 0.1 from a corpus three times smaller]`
-- **The weekly official-corpus job's sentence has not been read yet.** v3.75 fixed the reporter that
-  crashed instead of naming the field (finding 496), so the next scheduled run prints which check the
-  one case fails. The two candidates are different repairs and one of them is not a defect at all: if it
-  is `modality-set`, the case is a corpus shape this round trip has no skip for, and the rule it should
-  follow is the one it already applies to a named refusal.
-  `[open: the first green-or-red line the fixed reporter prints, read against the two repairs it can
-  name]`
+- **The weekly job's sentence has still not been read, and v3.75 did not deliver it.** The dispatch it
+  was fixed for printed `shape=1` twice and nothing else: the sentence was built and pushed onto the
+  epilogue's list, which that run never reached (finding 497). v3.76 put it on the case's own line, so
+  the next run prints which check the two cases fail. If it is `modality-set` the case is a corpus shape
+  with no skip for it, and the rule to follow is the one already applied to a named refusal.
+  `[open: the first `ROUNDTRIP FAIL … shape=` line that carries a check id]`
+- **The heap this corpus needs is measured locally, not really.** The job is sized at 7168 MB from
+  17 MB of heap per MB of CSV, taken on a synthetic case in the corpus's own shape, because the real
+  `RE2-TT` case has never been held whole; the peak it prints is sampled at five stage boundaries, so
+  the mark between two of them is higher.
+  `[open: the `ROUNDTRIP cost … largest … MB of the 7168 MB` line from a run that finishes]`
+- **`RE2-TT`'s tables and SockShop's log header are both unmeasured.** TrainTicket starts at case 181
+  and no run has reached one, so it inherits RE2's plan — the claim SockShop falsified for itself.
+  SockShop's `logs.csv` has never been read either (its cases failed on the traces claim first); the
+  plan inherits RE2's nine columns and `logs-header` says so if that inheritance is wrong.
+  `[open: the `ROUNDTRIP CENSUS modalities RE2-TT` line and the first `RE2-SS` `logs-header` check]`
 - **The level a case claims still reaches both exports, and the note that defends it does not.** The
   distribution gate stopped reading claims in v3.74, so a corpus can no longer meet its tenth by
   relabelling; `difficultyFor` still projects `FaultCase.difficulty`, so the case with a one-hop chain
@@ -1267,7 +1276,8 @@ and this table.
 | [volume-09.md](progress/volume-09.md) | 13 | v3.21 | v3.33 |
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
-| [volume-12.md](progress/volume-12.md) | 20 | v3.56 | v3.75 |
+| [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
+| [volume-13.md](progress/volume-13.md) | 13 | v3.64 | v3.76 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -568,6 +568,7 @@ export {
 } from './score/score.js';
 export type {
   ChecksumReport,
+  ExpectedModalities,
   ScoreCheck,
   ScoreReport,
   ScoreTerm,

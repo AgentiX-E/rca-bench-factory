@@ -61,6 +61,7 @@
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getHeapStatistics } from 'node:v8';
 
 import {
   accountRoundTrip,
@@ -73,6 +74,7 @@ import {
   ingestPrimeDataset,
   isVocabularyMember,
   MISSING_VALUE_TOKENS,
+  MODALITY_TABLES,
   parseDelimited,
   runAllOfficialRegressions,
   SCORE_TARGET_IDS,
@@ -702,6 +704,69 @@ const MODALITY_PLANS = {
   ],
 };
 
+/**
+ * The tables a *slice* of a suite ships, when they are not the suite's tables.
+ *
+ * ## What this closes
+ *
+ * `MODALITY_PLANS` keys on `entry.suite`, and `RE2` is four characters that cover
+ * three corpora -- Online Boutique, SockShop and TrainTicket. The plan said every
+ * RE2 case ships both tables, so the 2026-11-09 dispatch failed **90 of 270 cases**
+ * with the same sentence:
+ *
+ *     ROUNDTRIP FAIL 91/270 RE2-SS/carts_cpu/1
+ *       reason=RE2 declares a traces table and traces.csv is not readable under RE2-SS/carts_cpu/1
+ *
+ * The whole SockShop slice, one case at a time. SockShop ships logs and no spans;
+ * the failure was not the corpus disagreeing with itself but a plan written for a
+ * suite applied to a slice that is not it. The count is the evidence: 90 of 90, so
+ * it is a property of the slice and not a partial download -- and a *partial* one
+ * would now be a single sentence naming the count (see the absence block after the
+ * loop) rather than 90 identical lines.
+ *
+ * ## Why the logs plan is inherited rather than restated
+ *
+ * SockShop writes the same nine-column log table (v3.76 reads it for the first
+ * time; before this round no run had ever reached a `RE2-SS` case's comparison).
+ * Restating the columns here would be a second copy of a fact that a change to one
+ * of them would leave behind, and `filter` on `table` says which entry is meant
+ * without depending on its position in the list.
+ *
+ * A slice that is absent from this map uses the suite's plan, which is the right
+ * default: a slice is only here when it differs, and inheriting cannot silently
+ * empty a plan because `MODALITY_PLANS` is still the authority for the suite.
+ */
+const SLICE_MODALITY_PLANS = {
+  'RE2-SS': MODALITY_PLANS.RE2.filter((one) => one.table === 'logs'),
+};
+
+/**
+ * The file each modality table is written to, read off the plans.
+ *
+ * One source for the two names, because the census below asks the *directory* which
+ * tables a case carries and the plans are where `logs` ↔ `logs.csv` is stated. A
+ * literal map here would be a second copy of that correspondence, and the two would
+ * be free to disagree about a table nobody had renamed yet.
+ */
+const MODALITY_FILES = new Map(
+  [...Object.values(MODALITY_PLANS), ...Object.values(SLICE_MODALITY_PLANS)]
+    .flat()
+    .map((one) => [one.table, one.file]),
+);
+
+/**
+ * The tables one case's plan names, by slice first and suite second.
+ *
+ * The slice is the first path component of the case id (`RE2-SS` of
+ * `RE2-SS/carts_cpu/1`) and is derived from the id rather than from a new field:
+ * the id is the label the corpus writes, and a descriptor cannot disagree with it
+ * about which directory the case is.
+ */
+function planForCase(entry) {
+  const slice = String(entry.caseId).split('/')[0];
+  return SLICE_MODALITY_PLANS[slice] ?? MODALITY_PLANS[entry.suite] ?? [];
+}
+
 
 /**
  * The payload names are ordered by how much they say about their own schema.
@@ -797,19 +862,33 @@ function adaptCase(root, entry) {
   const files = { [`${entry.caseId}/metrics.csv`]: metrics.csv };
   const specs = [];
   const plans = [];
-  for (const modality of MODALITY_PLANS[entry.suite] ?? []) {
+  /**
+   * The plan's tables this case does not ship.
+   *
+   * Reported rather than returned as a failure, because "this case is not what its
+   * slice is made of" and "this table is not in this corpus" are different claims
+   * and only the second is a fact the plan can be wrong about. Before this, a table
+   * named by the plan and absent from the directory failed the *case*, which is how
+   * one plan written for a suite produced 90 identical failures on the one slice of
+   * it that ships logs alone -- and how a genuine partial extraction would have been
+   * reported as 90 cases each being individually wrong.
+   *
+   * What replaces the per-case verdict is counted: the caller sums the absences per
+   * slice and table and says one sentence per (slice, table) with the counts. A
+   * table absent from *every* case of a slice that plans it is a finding that names
+   * the slice; a table absent from *some* is a finding that names the cases. Both are
+   * refusals -- what changed is only how many lines they take, and the count that
+   * tells the two apart.
+   */
+  const absent = [];
+  for (const modality of planForCase(entry)) {
     const key = `${entry.caseId}/${modality.file}`;
     let body;
     try {
       body = readFileSync(join(dir, modality.file), 'utf8');
     } catch {
-      // Declared and absent is a finding, not a quietly smaller round trip: the
-      // suite is named a slice by its modalities, and a case without them is a case
-      // that cannot be the evidence the slice exists to produce.
-      return {
-        ok: false,
-        reason: `${entry.suite} declares a ${modality.table} table and ${modality.file} is not readable under ${entry.caseId}`,
-      };
+      absent.push({ table: modality.table, file: modality.file });
+      continue;
     }
     files[key] = body;
     specs.push({ path: key, ...modality.spec });
@@ -821,6 +900,7 @@ function adaptCase(root, entry) {
     files,
     specs,
     plans,
+    absent,
     context: metrics.context,
   };
 }
@@ -1009,6 +1089,24 @@ if (!existsSync(casesPath)) {
   process.exit(1);
 }
 
+/**
+ * The heap this run was given, and the number it is expected to stay under.
+ *
+ * Node's default cap on a 64-bit runner is 4 GB and nothing in this repository ever
+ * said so out loud; the 2026-11-09 dispatch found it at case 91 of 270 with
+ * `Mark-Compact 4016.6 (4137.1) -> 4015.9 MB` and no other number in 84 minutes of
+ * log. The corpus is not ours, so its largest case is not a quantity we can bound by
+ * wishing: the only honest arrangement is to measure what a case costs, declare a
+ * heap that holds the largest one, and refuse when a run gets close enough to the
+ * declaration that the next case of that size would not fit (finding 499).
+ *
+ * `--heap-budget` exists so the refusal can be reached by a test, which is the same
+ * reason `--bundle` exists further up: the branch it drives is otherwise reachable
+ * only by building a corpus that nearly exhausts a real runner.
+ */
+const heapLimitMb = Math.round(getHeapStatistics().heap_size_limit / 1048576);
+const heapBudgetMb = Number(argValue('--heap-budget') ?? '') || heapLimitMb;
+
 const roundTripFailures = [];
 const descriptors = JSON.parse(readFileSync(casesPath, 'utf8'));
 const { files, directories } = walkTree(officialDir);
@@ -1075,6 +1173,12 @@ if (declared.length > 0) {
     `ROUNDTRIP declared ${declared.length} case(s), found ${files.size} file(s), ` +
       `${directories} directory(ies)`,
   );
+  // The two numbers that decide whether the run can hold the corpus, printed before
+  // the first case rather than discovered at case 181 of 270 (finding 499).
+  console.log(
+    `ROUNDTRIP heap ${heapLimitMb} MB available, ${heapBudgetMb} MB budget` +
+      (heapBudgetMb === heapLimitMb ? '' : ' (declared by --heap-budget)'),
+  );
 }
 
 let roundTripped = 0;
@@ -1096,247 +1200,416 @@ const contractSkips = [];
  * a measurement a reader can compare between runs (finding 263).
  */
 const droppedContext = { cases: 0, entities: 0, columns: 0 };
+/**
+ * Per slice and table, how many cases shipped the table and how many did not.
+ *
+ * The measurement behind the absence refusals below, and the number a reader
+ * compares between runs: `RE2-SS logs 90/90, traces 0/90` is the sentence that says
+ * SockShop has no spans, and the same line saying `traces 90/90` one week and
+ * `traces 0/90` the next is what a broken download looks like.
+ */
+const modalityCarriage = new Map();
+const carriageOf = (slice, table) => {
+  const key = `${slice} ${table}`;
+  let entry = modalityCarriage.get(key);
+  if (entry === undefined) {
+    entry = { slice, table, present: 0, absent: 0, firstAbsent: [] };
+    modalityCarriage.set(key, entry);
+  }
+  return entry;
+};
+/**
+ * The largest heap each case was *observed* at, and how long it took.
+ *
+ * Sampled at the stage boundaries rather than watched continuously: a sample is
+ * `process.memoryUsage().heapUsed` at points the run already knows about, so the
+ * number is a floor on the true high-water mark and is reported as "the largest
+ * heap this case was observed at" rather than as a peak. That is enough for the
+ * question it exists to answer -- when a run dies of `Reached heap limit`, the log
+ * says which case and how much it was holding, and the two numbers together say
+ * whether the job's declared heap is still the right one.
+ */
+const caseCost = { peakMb: 0, peakCase: null, slowestMs: 0, slowestCase: null, totalMs: 0 };
 for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   const label = `${String(index + 1).padStart(3)}/${declared.length} ${entry.caseId.padEnd(30)}`;
   if (!files.has(`${entry.caseId}/inject_time.txt`)) continue;
 
-  // One case at a time, over an adapted single-case map.
+  // The case's own cost, and the whole of this iteration's bookkeeping.
   //
-  // Feeding the whole corpus to one call would put every file in front of
-  // `routeFiles`, which then has to decide ownership by prefix -- and a prefix
-  // that is a prefix of another case id would silently claim the wrong files.
-  // One call per case has no ambiguity to resolve.
-  const adapted = adaptCase(officialDir, entry);
-  if (!adapted.ok) {
-    console.log(`ROUNDTRIP FAIL ${label} reason=${adapted.reason}`);
-    roundTripFailures.push(`${entry.caseId}: ${adapted.reason}`);
-    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: adapted.reason });
-    continue;
-  }
+  // In a `try`/`finally` because the report has to be written after every case: a
+  // run that dies at minute 84 of a two-hour corpus took 180 measurements with it,
+  // and `emitScoreReport` was called before every *exit* -- but an abort is not an
+  // exit. `continue` runs a `finally`, so one call site covers all nine of the
+  // loop's ways out (finding 498).
+  const startedMs = performance.now();
+  const heapSamples = [];
+  const sample = () => {
+    heapSamples.push(process.memoryUsage().heapUsed / 1048576);
+  };
+  try {
 
-  if (adapted.context !== undefined) {
-    droppedContext.cases += 1;
-    droppedContext.entities += adapted.context.entities;
-    droppedContext.columns += adapted.context.columns;
-  }
-
-  // What the corpus says this case's fault is, before anything is stamped on it. Computed
-  // for every case, not only for RE3: `socket` is a RE2 fault the general classifier cannot
-  // name either, and the same rule has to hold for both.
-  const corpusFault = describeCorpusFault(entry.faultType);
-
-  const ingested = ingestPrimeDataset(adapted.files, {
-    dataset: 'rcaeval',
-    system: 'rcaeval',
-    cases: [
-      {
-        caseId: entry.caseId,
-        component: entry.component,
-        faultType: entry.faultType,
-        // No `faultCategory` here any more. Some label states carry no category -- `f1`…`f5`
-        // are five distinct code-level faults spelled as indices, `f3_1` spells one of them
-        // with an instance suffix, and `socket` is a resource fault whose word this
-        // repository's keyword table does not carry -- and until v3.36 this call site
-        // restated the rule that resolves them:
-        //
-        //   - the **label** wins when it carries a category. `RE3-TT/ts-order-service_cpu/1`
-        //     says `cpu`, and stamping it `code` round-tripped it `oracle=1.00` inside the one
-        //     slice whose published rule admits code-level faults only (finding 343).
-        //   - the **taxonomy** decides what an otherwise unreadable label means, and a label
-        //     no reading names stays unstamped, so the export refuses it and the refusal
-        //     travels as a skip the ledger can see.
-        //
-        // That rule now lives in `ingest/prime.ts`, because every caller needed it and only
-        // this one had it: the ingest path read the descriptor's category and handed an
-        // unstated one to the classifier, so an RE3 index label ingested through the library
-        // arrived as `unknown`. One home, and this call site is a caller like any other.
-        injectTime: entry.injectTime,
-        pathPrefixes: [entry.pathPrefix],
-        // The declared mapping for every table the case ships. Detection is for
-        // files nobody has described; this corpus has been described.
-        ...(adapted.specs.length > 0 ? { files: adapted.specs } : {}),
-      },
-    ],
-    // The root cause is the service the directory name records, and the ingest
-    // keys services as `service:{system}/{name}`. Declaring it is necessary
-    // rather than redundant: the corpus records the label and the telemetry may
-    // not mention the same name, and a case whose root cause does not resolve is
-    // refused by the ingest -- correctly, but uselessly as round-trip evidence.
+    // One case at a time, over an adapted single-case map.
     //
-    // The id is built the way `serviceEntity` builds it, so this declaration
-    // merges with the entity derived from the signals instead of standing beside
-    // it. Getting that wrong is not silent either: the ingest rejects the case
-    // as ambiguous ("it names rcaeval:ob, service:rcaeval/ob"), which is what the
-    // first attempt at this did.
-    extraEntities: [
-      {
-        entityId: `service:rcaeval/${entry.component}`,
-        kind: 'service',
-        name: entry.component,
-        system: 'rcaeval',
-        aliases: [],
-      },
-    ],
-    leadMs: 10 * 60 * 1000,
-  });
-  if (!ingested.ok) {
-    console.log(`ROUNDTRIP FAIL ${label} reason=ingest refused the case`);
-    roundTripFailures.push(`${entry.caseId}: ingest failed - ${ingested.error}`);
-    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: `ingest failed - ${ingested.error}` });
-    continue;
-  }
+    // Feeding the whole corpus to one call would put every file in front of
+    // `routeFiles`, which then has to decide ownership by prefix -- and a prefix
+    // that is a prefix of another case id would silently claim the wrong files.
+    // One call per case has no ambiguity to resolve.
+    const adapted = adaptCase(officialDir, entry);
+    if (!adapted.ok) {
+      console.log(`ROUNDTRIP FAIL ${label} reason=${adapted.reason}`);
+      roundTripFailures.push(`${entry.caseId}: ${adapted.reason}`);
+      scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: adapted.reason });
+      continue;
+    }
 
-  const signals = ingested.report[0]?.signals ?? 0;
-  const quarantine = ingested.report[0]?.quarantine ?? [];
-  if (signals === 0) {
-    // A case that produced no signal has told us nothing about the exporter, and
-    // counting it as a pass would be the fourth anchor certifying an empty run.
-    const noSignals =
-      `${entry.caseId}: the ingest read no signals from the corpus` +
-      (quarantine.length > 0 ? ` (first reason: ${quarantine[0].reason})` : '');
-    console.log(`ROUNDTRIP FAIL ${label} signals=0`);
-    roundTripFailures.push(noSignals);
-    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: noSignals });
-    continue;
-  }
+    sample();
 
-  const target = `rcaeval-${entry.suite.toLowerCase()}`;
-  const exported = exportForScoreTarget(ingested.bundle, target);
+    /**
+     * What the slice ships, counted for every declared table, whether the plan
+     * reads it or not.
+     *
+     * Counted from the walk's file set rather than from the adapter, so the line
+     * describes the corpus and not this script's opinion of it: `RE2-SS traces
+     * 0/90` is a fact about SockShop, and it is the fact that made 90 cases fail
+     * before the plan knew it (finding 500).
+     */
+    const slice = String(entry.caseId).split('/')[0];
+    for (const table of MODALITY_TABLES) {
+      const modFile = MODALITY_FILES.get(table);
+      if (modFile === undefined) continue;
+      const carrier = carriageOf(slice, table);
+      // From the walk's own file set, not from the adapter: `adapted.absent` only
+      // names the tables this case's *plan* wanted, so a slice whose plan stopped
+      // naming traces would report every case as carrying them. The census is about
+      // the corpus, and the corpus is what was walked.
+      if (files.has(`${entry.caseId}/${modFile}`)) {
+        carrier.present += 1;
+      } else {
+        carrier.absent += 1;
+        if (carrier.firstAbsent.length < 3) carrier.firstAbsent.push(entry.caseId);
+      }
+    }
 
-  // The shape contract, run on real data -- which it never was.
-  //
-  // `runAllOfficialRegressions` below applies the published *metric*, and the
-  // metric reads the case directory name, not the files. So 270 RE2 cases scored
-  // 1.00 while carrying a `traces.csv` with eight invented columns: the check that
-  // would have refused it existed, was green against our own fixtures, and was
-  // never called on a corpus (finding 266).
-  //
-  // It is called here rather than added to the metric on purpose: they answer
-  // different questions, and folding one into the other is how a shape failure
-  // would come to be reported as a wrong answer.
-  const shape = scoreExport(target, exported.files);
-  const report = runAllOfficialRegressions(
-    Object.fromEntries(SCORE_TARGET_IDS.map((t) => [t, t === target ? exported.files : {}])),
-    // No `allowEmptyReason` here, and the absence is the fix (finding 343).
+    if (planForCase(entry).length > 0 && adapted.plans.length === 0) {
+      // A case that ships none of the tables its plan names is not a case the plan
+      // describes, and comparing nothing about it would make the round trip's claim
+      // about this slice wider than what it read. The sentence names both sides,
+      // because "the plan expects two tables" and "the directory holds neither" are
+      // the two halves of the disagreement.
+      const wanted = planForCase(entry).map((one) => one.file).join(' and ');
+      const reason = `${entry.caseId}: its plan names ${wanted}, and the case ships none of them`;
+      console.log(`ROUNDTRIP FAIL ${label} reason=no-tables`);
+      roundTripFailures.push(reason);
+      scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason });
+      continue;
+    }
+
+    if (adapted.context !== undefined) {
+      droppedContext.cases += 1;
+      droppedContext.entities += adapted.context.entities;
+      droppedContext.columns += adapted.context.columns;
+    }
+
+    // What the corpus says this case's fault is, before anything is stamped on it. Computed
+    // for every case, not only for RE3: `socket` is a RE2 fault the general classifier cannot
+    // name either, and the same rule has to hold for both.
+    const corpusFault = describeCorpusFault(entry.faultType);
+
+    const ingested = ingestPrimeDataset(adapted.files, {
+      dataset: 'rcaeval',
+      system: 'rcaeval',
+      cases: [
+        {
+          caseId: entry.caseId,
+          component: entry.component,
+          faultType: entry.faultType,
+          // No `faultCategory` here any more. Some label states carry no category -- `f1`…`f5`
+          // are five distinct code-level faults spelled as indices, `f3_1` spells one of them
+          // with an instance suffix, and `socket` is a resource fault whose word this
+          // repository's keyword table does not carry -- and until v3.36 this call site
+          // restated the rule that resolves them:
+          //
+          //   - the **label** wins when it carries a category. `RE3-TT/ts-order-service_cpu/1`
+          //     says `cpu`, and stamping it `code` round-tripped it `oracle=1.00` inside the one
+          //     slice whose published rule admits code-level faults only (finding 343).
+          //   - the **taxonomy** decides what an otherwise unreadable label means, and a label
+          //     no reading names stays unstamped, so the export refuses it and the refusal
+          //     travels as a skip the ledger can see.
+          //
+          // That rule now lives in `ingest/prime.ts`, because every caller needed it and only
+          // this one had it: the ingest path read the descriptor's category and handed an
+          // unstated one to the classifier, so an RE3 index label ingested through the library
+          // arrived as `unknown`. One home, and this call site is a caller like any other.
+          injectTime: entry.injectTime,
+          pathPrefixes: [entry.pathPrefix],
+          // The declared mapping for every table the case ships. Detection is for
+          // files nobody has described; this corpus has been described.
+          ...(adapted.specs.length > 0 ? { files: adapted.specs } : {}),
+        },
+      ],
+      // The root cause is the service the directory name records, and the ingest
+      // keys services as `service:{system}/{name}`. Declaring it is necessary
+      // rather than redundant: the corpus records the label and the telemetry may
+      // not mention the same name, and a case whose root cause does not resolve is
+      // refused by the ingest -- correctly, but uselessly as round-trip evidence.
+      //
+      // The id is built the way `serviceEntity` builds it, so this declaration
+      // merges with the entity derived from the signals instead of standing beside
+      // it. Getting that wrong is not silent either: the ingest rejects the case
+      // as ambiguous ("it names rcaeval:ob, service:rcaeval/ob"), which is what the
+      // first attempt at this did.
+      extraEntities: [
+        {
+          entityId: `service:rcaeval/${entry.component}`,
+          kind: 'service',
+          name: entry.component,
+          system: 'rcaeval',
+          aliases: [],
+        },
+      ],
+      leadMs: 10 * 60 * 1000,
+    });
+    if (!ingested.ok) {
+      console.log(`ROUNDTRIP FAIL ${label} reason=ingest refused the case`);
+      roundTripFailures.push(`${entry.caseId}: ingest failed - ${ingested.error}`);
+      scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: `ingest failed - ${ingested.error}` });
+      continue;
+    }
+
+    sample();
+    const signals = ingested.report[0]?.signals ?? 0;
+    const quarantine = ingested.report[0]?.quarantine ?? [];
+    if (signals === 0) {
+      // A case that produced no signal has told us nothing about the exporter, and
+      // counting it as a pass would be the fourth anchor certifying an empty run.
+      const noSignals =
+        `${entry.caseId}: the ingest read no signals from the corpus` +
+        (quarantine.length > 0 ? ` (first reason: ${quarantine[0].reason})` : '');
+      console.log(`ROUNDTRIP FAIL ${label} signals=0`);
+      roundTripFailures.push(noSignals);
+      scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: noSignals });
+      continue;
+    }
+
+    const target = `rcaeval-${entry.suite.toLowerCase()}`;
+    const exported = exportForScoreTarget(ingested.bundle, target);
+    sample();
+
+    // The shape contract, run on real data -- which it never was.
     //
-    // The reason this call used to pass -- "the round trip names the single target
-    // under test" -- explains why the *other* seven targets are empty, which is a
-    // fact about the caller and not about this target. It was accepted for every
-    // target alike, so `status` read `skipped` for an exporter that had written
-    // nothing at all, and the caller then made the same inference a second time
-    // from `caseCount`. What makes an empty read legitimate is decided once,
-    // below, against the answer the exporter itself gave.
-  ).find((r) => r.target === target);
+    // `runAllOfficialRegressions` below applies the published *metric*, and the
+    // metric reads the case directory name, not the files. So 270 RE2 cases scored
+    // 1.00 while carrying a `traces.csv` with eight invented columns: the check that
+    // would have refused it existed, was green against our own fixtures, and was
+    // never called on a corpus (finding 266).
+    //
+    // It is called here rather than added to the metric on purpose: they answer
+    // different questions, and folding one into the other is how a shape failure
+    // would come to be reported as a wrong answer.
+    /**
+     * The layout contract, read against **this case's** tables rather than its
+     * suite's.
+     *
+     * `scoreExport` derives the expected modality set from the target's suite --
+     * "RE2 requires logs and traces" -- which is true of 180 of RE2's 270 cases and
+     * false of the 90 SockShop ones that ship logs alone. Applied to those, the
+     * contract reported a violation for the shape the corpus actually has, and the
+     * run's own plan (once it stopped demanding traces) handed the case over to a
+     * check that demanded them anyway. Two claims about one case have to have one
+     * source, and the source is the directory the case sits in.
+     */
+    const ships = { logs: adapted.plans.some((one) => one.table === 'logs'), traces: adapted.plans.some((one) => one.table === 'traces') };
+    const shape = scoreExport(target, exported.files, undefined, ships);
+    sample();
+    const report = runAllOfficialRegressions(
+      Object.fromEntries(SCORE_TARGET_IDS.map((t) => [t, t === target ? exported.files : {}])),
+      // No `allowEmptyReason` here, and the absence is the fix (finding 343).
+      //
+      // The reason this call used to pass -- "the round trip names the single target
+      // under test" -- explains why the *other* seven targets are empty, which is a
+      // fact about the caller and not about this target. It was accepted for every
+      // target alike, so `status` read `skipped` for an exporter that had written
+      // nothing at all, and the caller then made the same inference a second time
+      // from `caseCount`. What makes an empty read legitimate is decided once,
+      // below, against the answer the exporter itself gave.
+    ).find((r) => r.target === target);
 
-  if (report === undefined) {
-    roundTripFailures.push(`${entry.caseId}: target '${target}' produced no report`);
-    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: `target '${target}' produced no report` });
-    continue;
+    if (report === undefined) {
+      roundTripFailures.push(`${entry.caseId}: target '${target}' produced no report`);
+      scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: `target '${target}' produced no report` });
+      continue;
+    }
+
+    const caseReport = report.cases[0];
+    const scored = caseReport === undefined ? 0 : caseReport.oracleScore;
+    // A target can read zero cases for two reasons, and they are not the same
+    // reason: the target's own contract refused the case, or the export did not
+    // reach it. Only the exporter can tell them apart, because only the exporter
+    // writes down which cases it declined and why -- `ExportOutcome.skipped`, the
+    // field its own doc comment warns a caller not to drop.
+    //
+    // A named refusal is the contract: RE3 admits code-level faults only, so a
+    // resource fault in that slice is not a failed export but a case the slice does
+    // not hold. An empty read with no name beside it is a defect, and reporting it
+    // as a skip is how a case leaves a green run without a line anywhere.
+    const refusal = exported.skipped.find((one) => one.caseId === entry.caseId);
+    const skipped = report.caseCount === 0 && refusal !== undefined;
+    const mark = skipped ? 'SKIP' : scored === 1 ? 'PASS' : 'FAIL';
+    console.log(
+      `ROUNDTRIP ${mark} ${label} target=${target.padEnd(16)} oracle=${scored.toFixed(2)} signals=${signals}`,
+    );
+
+    if (skipped) {
+      // The reason is the exporter's sentence, not a paraphrase of it: a skip that
+      // reads "the target refuses this fault class" for a case dropped because its
+      // telemetry carried no metric names the wrong party.
+      console.log(`ROUNDTRIP SKIP ${label} target=${target} reason=${refusal.reason}`);
+      contractSkips.push({ caseId: entry.caseId, target, reason: refusal.reason });
+      scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: refusal.reason });
+      continue;
+    }
+
+    if (report.caseCount === 0) {
+      const reason =
+        `${entry.caseId}: ${target} read no case from the export and the exporter named no reason for it ` +
+        `(it wrote ${String(Object.keys(exported.files).length)} file(s) and declined ` +
+        `${String(exported.skipped.length)} case(s))`;
+      console.log(`ROUNDTRIP FAIL ${label} empty-read`);
+      roundTripFailures.push(reason);
+      scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
+      continue;
+    }
+
+    // A refusal is not a shape: an RE3 case the exporter declines writes no files at
+    // all, and judging that empty directory against the layout would report the
+    // refusal as a malformed export. Both zero-case paths above `continue` before
+    // this, so what reaches here has files to judge.
+    if (!shape.passed) {
+      // `scoreExport` answers with a report whose checks live under `structure`; this read used the
+      // pre-report field name, `shape.checks`, which stopped existing when the report grew its terms.
+      // Nothing noticed for two reasons, and the second is the defect: the branch is only reached by a
+      // case that scores 1.00 and *still* does not match the target's layout, so every green run
+      // stepped over it -- and the first run that reached it, the weekly official-corpus job on
+      // 2026-11-02, ended in `TypeError: Cannot read properties of undefined (reading 'filter')`
+      // instead of naming the field that was wrong (finding 496).
+      const failing = shape.structure.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);
+      const sentence = `the export does not match ${target}'s field contract - ${failing.join('; ')}`;
+      const reason = `${entry.caseId}: ${sentence}`;
+      // The count *and* the sentence, on the case's own line. It used to be the count
+      // alone, with the sentence going into the failure list that the epilogue prints
+      // -- and the 2026-11-09 run printed `shape=1` twice and then died of the heap
+      // before the epilogue, so the only two refusals that run found are now
+      // unreadable, three lines of `id (detail)` that nobody has (finding 497).
+      console.log(`ROUNDTRIP FAIL ${label} shape=${shape.structure.checks.filter((c) => !c.passed).length} ${sentence}`);
+      roundTripFailures.push(reason);
+      scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
+      continue;
+    }
+
+    if (scored !== 1) {
+      const sentence =
+        `our own export does not score 1.0 under ${target}'s published rule (got ${scored}); ` +
+        `the official exporter read ${Object.keys(exported.files).length} file(s)`;
+      const reason = `${entry.caseId}: ${sentence}`;
+      // A line, because this branch had none: it pushed a finding and continued, so
+      // the case's only trace was the `PASS`/`FAIL` mark above -- which says `FAIL`
+      // only when the score is not 1.00 and therefore does say so -- and the reason
+      // was again epilogue-only. Same defect as `shape` above, one branch over.
+      console.log(`ROUNDTRIP FAIL ${label} oracle=${scored.toFixed(2)} ${sentence}`);
+      roundTripFailures.push(reason);
+      scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', score: scored, reason });
+      continue;
+    }
+
+    // The two tables RE3 exists for, compared with the corpus they came from.
+    //
+    // After the score rather than instead of it, because they answer different
+    // questions: the score says the case is loadable by the official rule, and this
+    // says the log and trace tables in the export are the corpus's tables rather than
+    // two headers. Until this existed, both were empty on every RE3 case and the
+    // score was 1.00 anyway (finding 315).
+    //
+    // Placed after the two branches above so a case is recorded exactly once: a
+    // failing modality must not also be filed as `scored`.
+    const modality = compareCaseModalities({ entry, adapted, exported });
+    sample();
+    modalityComparisons.push(...modality.verdicts);
+    for (const verdict of modality.verdicts) {
+      console.log(`ROUNDTRIP MODALITY ${label} ${describeModalityComparison(verdict)}`);
+    }
+    if (modality.failures.length > 0) {
+      console.log(`ROUNDTRIP FAIL ${label} modalities`);
+      for (const failure of modality.failures) roundTripFailures.push(failure);
+      scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason: modality.failures.join('; ') });
+      continue;
+    }
+
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'scored', score: scored });
+    roundTripped += 1;
+  } finally {
+    /**
+     * What this case cost, on its record and -- when it is a new high-water mark --
+     * on its own line.
+     *
+     * The print is conditional because 270 identical "heap=… ms=…" lines are noise
+     * and the useful shape is the *curve*: a case that costs more than any case
+     * before it is the one that moved, and eight such lines across a corpus say
+     * everything the 270 would. The exact number for every case is in the report,
+     * which is written as JSON and read by a program rather than by eye.
+     *
+     * The numbers exist because the run that died did not have them: 84 minutes of
+     * log, one line per case, and nothing anywhere saying how much memory the thing
+     * was holding when the heap ran out at 4016 MB (finding 499).
+     */
+    const elapsedMs = performance.now() - startedMs;
+    const peakMb = heapSamples.length === 0 ? 0 : Math.max(...heapSamples);
+    const record = scoreRecords[scoreRecords.length - 1];
+    if (record !== undefined && record.caseId === entry.caseId) {
+      record.heapMb = Math.round(peakMb);
+      record.ms = Math.round(elapsedMs);
+    }
+    caseCost.totalMs += elapsedMs;
+    const heavier = peakMb > caseCost.peakMb;
+    const slower = elapsedMs > caseCost.slowestMs;
+    if (heavier) {
+      caseCost.peakMb = peakMb;
+      caseCost.peakCase = entry.caseId;
+    }
+    if (slower) {
+      caseCost.slowestMs = elapsedMs;
+      caseCost.slowestCase = entry.caseId;
+    }
+    if (heavier || slower) {
+      console.log(
+        `ROUNDTRIP COST ${label} heap=${Math.round(peakMb)}MB ${(elapsedMs / 1000).toFixed(1)}s ` +
+          `(${heavier ? 'largest' : ''}${heavier && slower ? ' and ' : ''}${slower ? 'slowest' : ''} so far)`,
+      );
+    }
+    emitScoreReport();
   }
-
-  const caseReport = report.cases[0];
-  const scored = caseReport === undefined ? 0 : caseReport.oracleScore;
-  // A target can read zero cases for two reasons, and they are not the same
-  // reason: the target's own contract refused the case, or the export did not
-  // reach it. Only the exporter can tell them apart, because only the exporter
-  // writes down which cases it declined and why -- `ExportOutcome.skipped`, the
-  // field its own doc comment warns a caller not to drop.
-  //
-  // A named refusal is the contract: RE3 admits code-level faults only, so a
-  // resource fault in that slice is not a failed export but a case the slice does
-  // not hold. An empty read with no name beside it is a defect, and reporting it
-  // as a skip is how a case leaves a green run without a line anywhere.
-  const refusal = exported.skipped.find((one) => one.caseId === entry.caseId);
-  const skipped = report.caseCount === 0 && refusal !== undefined;
-  const mark = skipped ? 'SKIP' : scored === 1 ? 'PASS' : 'FAIL';
-  console.log(
-    `ROUNDTRIP ${mark} ${label} target=${target.padEnd(16)} oracle=${scored.toFixed(2)} signals=${signals}`,
-  );
-
-  if (skipped) {
-    // The reason is the exporter's sentence, not a paraphrase of it: a skip that
-    // reads "the target refuses this fault class" for a case dropped because its
-    // telemetry carried no metric names the wrong party.
-    console.log(`ROUNDTRIP SKIP ${label} target=${target} reason=${refusal.reason}`);
-    contractSkips.push({ caseId: entry.caseId, target, reason: refusal.reason });
-    scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: refusal.reason });
-    continue;
-  }
-
-  if (report.caseCount === 0) {
-    const reason =
-      `${entry.caseId}: ${target} read no case from the export and the exporter named no reason for it ` +
-      `(it wrote ${String(Object.keys(exported.files).length)} file(s) and declined ` +
-      `${String(exported.skipped.length)} case(s))`;
-    console.log(`ROUNDTRIP FAIL ${label} empty-read`);
-    roundTripFailures.push(reason);
-    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
-    continue;
-  }
-
-  // A refusal is not a shape: an RE3 case the exporter declines writes no files at
-  // all, and judging that empty directory against the layout would report the
-  // refusal as a malformed export. Both zero-case paths above `continue` before
-  // this, so what reaches here has files to judge.
-  if (!shape.passed) {
-    // `scoreExport` answers with a report whose checks live under `structure`; this read used the
-    // pre-report field name, `shape.checks`, which stopped existing when the report grew its terms.
-    // Nothing noticed for two reasons, and the second is the defect: the branch is only reached by a
-    // case that scores 1.00 and *still* does not match the target's layout, so every green run
-    // stepped over it -- and the first run that reached it, the weekly official-corpus job on
-    // 2026-11-02, ended in `TypeError: Cannot read properties of undefined (reading 'filter')`
-    // instead of naming the field that was wrong (finding 496).
-    const failing = shape.structure.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);
-    const reason = `${entry.caseId}: the export does not match ${target}'s field contract - ${failing.join('; ')}`;
-    console.log(`ROUNDTRIP FAIL ${label} shape=${shape.structure.checks.filter((c) => !c.passed).length}`);
-    roundTripFailures.push(reason);
-    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
-    continue;
-  }
-
-  if (scored !== 1) {
-    const reason =
-      `${entry.caseId}: our own export does not score 1.0 under ${target}'s published rule (got ${scored}); ` +
-      `the official exporter read ${Object.keys(exported.files).length} file(s)`;
-    roundTripFailures.push(reason);
-    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', score: scored, reason });
-    continue;
-  }
-
-  // The two tables RE3 exists for, compared with the corpus they came from.
-  //
-  // After the score rather than instead of it, because they answer different
-  // questions: the score says the case is loadable by the official rule, and this
-  // says the log and trace tables in the export are the corpus's tables rather than
-  // two headers. Until this existed, both were empty on every RE3 case and the
-  // score was 1.00 anyway (finding 315).
-  //
-  // Placed after the two branches above so a case is recorded exactly once: a
-  // failing modality must not also be filed as `scored`.
-  const modality = compareCaseModalities({ entry, adapted, exported });
-  modalityComparisons.push(...modality.verdicts);
-  for (const verdict of modality.verdicts) {
-    console.log(`ROUNDTRIP MODALITY ${label} ${describeModalityComparison(verdict)}`);
-  }
-  if (modality.failures.length > 0) {
-    console.log(`ROUNDTRIP FAIL ${label} modalities`);
-    for (const failure of modality.failures) roundTripFailures.push(failure);
-    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason: modality.failures.join('; ') });
-    continue;
-  }
-
-  scoreRecords.push({ caseId: entry.caseId, target, status: 'scored', score: scored });
-  roundTripped += 1;
 }
 
 /**
  * Write the score report, when one was asked for.
  *
- * Called before every exit rather than once at the end, because a run that
- * scored 300 of 375 cases and then failed has measured something, and a report
- * that only appears on success withholds exactly the measurement a reader needs
- * to see why the run failed. The file is written atomically (temp then rename)
- * so a reader never sees a half-written report.
+ * Called after **every case** as well as before every exit, because the two are not
+ * the same guarantee. The comment here used to say "called before every exit, so a
+ * run that scored 300 of 375 has measured something" -- and then the 2026-11-09
+ * dispatch died at case 181 of 270 with `FATAL ERROR: Reached heap limit` and the
+ * uploaded artifact held `pins.json` and `rcaeval-cases.json` and **no scores at
+ * all**. An abort is not an exit: `process.exit` was never called, so the writer
+ * never ran, and 180 measurements plus the sentence for every case that had failed
+ * went with it. The run that most needs a report is exactly the one that cannot
+ * reach the end of the function (finding 498).
+ *
+ * The file is written atomically (temp then rename) so a reader never sees a
+ * half-written report, which is also what makes it safe to write on every case: a
+ * reader polling the artifact sees either the previous complete report or this one.
+ * Two hundred and seventy rewrites of a small JSON document cost nothing against
+ * twenty-five seconds per case.
+ *
+ * Silent, because it is now called per case: the path and the counts are printed
+ * once by the caller.
  */
 function emitScoreReport() {
   if (scoreReportPath === undefined) return;
@@ -1368,16 +1641,33 @@ function emitScoreReport() {
             mean: scores.reduce((a, b) => a + b, 0) / scores.length,
             distribution,
           },
+      // What the corpus ships, per slice and table, in every report -- including a
+      // report written at case 40 of 270 by a run that then died, which is the only
+      // place that number would otherwise never appear.
+      modalities: [...modalityCarriage.values()].map((one) => ({
+        slice: one.slice,
+        table: one.table,
+        present: one.present,
+        absent: one.absent,
+        firstAbsent: one.firstAbsent,
+      })),
+      cost: {
+        peakMb: Math.round(caseCost.peakMb),
+        peakCase: caseCost.peakCase,
+        slowestMs: Math.round(caseCost.slowestMs),
+        slowestCase: caseCost.slowestCase,
+        totalMs: Math.round(caseCost.totalMs),
+        // Both numbers, because the comparison above is against the budget and a
+        // reader who saw only the limit would compute a different percentage.
+        heapBudgetMb,
+        heapLimitMb,
+      },
     },
     cases: scoreRecords,
   };
   const temp = `${scoreReportPath}.partial`;
   writeFileSync(temp, `${JSON.stringify(report, null, 2)}\n`);
   renameSync(temp, scoreReportPath);
-  console.log(
-    `ROUNDTRIP report ${scoreReportPath}: ${report.summary.scored} scored, ` +
-      `${report.summary.skipped} skipped, ${report.summary.failed} failed`,
-  );
 }
 
 if (droppedContext.cases > 0) {
@@ -1386,6 +1676,65 @@ if (droppedContext.cases > 0) {
       `${droppedContext.columns} column(s) across ${droppedContext.entities} entity reference(s) were ` +
       `not the case's component and were not attributed to it`,
   );
+}
+
+/**
+ * A table a slice plans and the corpus does not carry, said once per slice.
+ *
+ * Two outcomes and they are different sentences. A table absent from **every** case
+ * of the slice is a claim about the slice that is wrong -- SockShop, 90 of 90 -- and
+ * the repair is a slice-level plan, which is what `SLICE_MODALITY_PLANS` is. A table
+ * absent from **some** cases of a slice that otherwise carries it is an anomaly: the
+ * extraction lost part of the corpus, or those cases genuinely were not instrumented,
+ * and either way the run must not pass, because the alternative is a subset silently
+ * standing in for the slice (finding 500).
+ *
+ * Before this, both were 90 identical per-case lines, one per case, each saying the
+ * same thing about a corpus that had not changed.
+ */
+for (const carrier of modalityCarriage.values()) {
+  if (carrier.absent === 0) continue;
+  const planned = (SLICE_MODALITY_PLANS[carrier.slice] ?? MODALITY_PLANS[carrier.slice.split('-')[0]] ?? []).some(
+    (one) => one.table === carrier.table,
+  );
+  if (!planned) continue;
+  const total = carrier.present + carrier.absent;
+  // Which plan made the claim: the slice's own if it has one, and the suite's
+  // otherwise. Named because the two repairs are different -- a slice ships what it
+  // ships and needs a `SLICE_MODALITY_PLANS` entry, while a *partial* absence is about
+  // the download rather than about the plan.
+  const plannedBy = SLICE_MODALITY_PLANS[carrier.slice] !== undefined ? carrier.slice : carrier.slice.split('-')[0];
+  roundTripFailures.push(
+    carrier.present === 0
+      ? `${carrier.slice}: none of its ${total} case(s) carries ${carrier.table}.csv, which the ` +
+        `${plannedBy} plan names; either the slice ships no such table and needs a slice entry, or the ` +
+        `download is incomplete`
+      : `${carrier.slice}: ${carrier.absent} of ${total} case(s) carry no ${carrier.table}.csv, so the ` +
+        `${carrier.table} table its plan names was compared on only ${carrier.present} of them ` +
+        `(first: ${carrier.firstAbsent.join(', ')})`,
+  );
+}
+
+if (modalityCarriage.size > 0) {
+  // What the corpus ships, per slice and table, read from the walk rather than from
+  // the plans: the plan is this script's claim and this line is the corpus's answer,
+  // and a reader comparing two runs sees a slice lose its spans here before any
+  // comparison notices. One line per slice, tables in the order the IR names them.
+  const slices = [...new Set([...modalityCarriage.values()].map((one) => one.slice))]
+    // Only the slices this script reads tables for. A slice with no plan at all (RE1
+    // is metrics-only) gets no line, because a line of zeros about a suite whose
+    // tables are never read is the same confusion the silence rule above exists for:
+    // it would read as "read them, found nothing" rather than "not read".
+    .filter((slice) => SLICE_MODALITY_PLANS[slice] !== undefined || MODALITY_PLANS[slice.split('-')[0]] !== undefined)
+    .sort();
+  for (const slice of slices) {
+    const parts = MODALITY_TABLES.map((table) => {
+      const carrier = modalityCarriage.get(`${slice} ${table}`);
+      const total = carrier === undefined ? 0 : carrier.present + carrier.absent;
+      return carrier === undefined ? '' : `${table} ${carrier.present}/${total}`;
+    }).filter((part) => part !== '');
+    console.log(`ROUNDTRIP CENSUS modalities ${slice}: ${parts.join(', ')}`);
+  }
 }
 
 if (modalityComparisons.length > 0) {
@@ -1413,6 +1762,44 @@ if (modalityComparisons.length > 0) {
       `${exactColumns} of ${totalColumns} column(s) exact, ` +
       `${truncatedCells} cell(s) truncated to the millisecond, ` +
       `${notCarried} value(s) in columns the IR does not carry`,
+  );
+}
+
+/**
+ * What the run cost, and whether it still fits.
+ *
+ * The peak is the largest heap any case was observed at; the comparison is against
+ * the number this run was given, which on a runner is Node's cap and can be set with
+ * `--max-old-space-size`. A run at 90% of its heap has not passed: it has one case
+ * left before it dies, and the death has no sentence in it (`Reached heap limit` is
+ * printed by V8, not by this script, and carries no case name). So the refusal is
+ * made while the run can still say which case and by how much (finding 499).
+ */
+if (caseCost.peakCase !== null) {
+  const share = heapBudgetMb === 0 ? 0 : caseCost.peakMb / heapBudgetMb;
+  console.log(
+    `ROUNDTRIP cost ${declared.length} case(s) in ${(caseCost.totalMs / 60000).toFixed(1)} min; largest ` +
+      `${Math.round(caseCost.peakMb)} MB of the ${heapBudgetMb} MB this run was given ` +
+      `(${Math.round(share * 100)}%) at ${caseCost.peakCase}; slowest ${(caseCost.slowestMs / 1000).toFixed(1)} s at ` +
+      `${caseCost.slowestCase}`,
+  );
+  if (share >= 0.9) {
+    roundTripFailures.push(
+      `the largest case used ${Math.round(caseCost.peakMb)} MB, ${Math.round(share * 100)}% of the ` +
+        `${heapBudgetMb} MB heap this run was given (${caseCost.peakCase}); the next case of that size ` +
+        `would not fit, so the number in the job has to grow deliberately rather than by accident`,
+    );
+  }
+}
+
+if (scoreReportPath !== undefined) {
+  // The path and the counts, printed once now that the file is rewritten after every
+  // case. A reader who gets this line knows the file exists; the run that dies before
+  // this line still leaves the file behind, which is the whole point.
+  console.log(
+    `ROUNDTRIP report ${scoreReportPath}: ${scoreRecords.filter((r) => r.status === 'scored').length} scored, ` +
+      `${scoreRecords.filter((r) => r.status === 'skipped').length} skipped, ` +
+      `${scoreRecords.filter((r) => r.status === 'failed').length} failed`,
   );
 }
 

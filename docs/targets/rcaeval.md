@@ -26,7 +26,36 @@
 
 The layout is identical across suites; only the **modality set** differs, and the
 modality set is itself part of the contract — `checkRcaEvalStructure` fails an RE2 export
-that is missing `traces.csv`.
+whose tables do not match what the case ships.
+
+### What the slices ship, which is not what the suite ships
+
+`RE2` is one suite over three systems, and they are not the same corpus. Measured by the
+2026-11-09 dispatch of `Official data`, which is the only run that has reached them:
+
+| Slice | System | Cases | `logs.csv` | `traces.csv` |
+| --- | --- | --- | --- | --- |
+| `RE2-OB` | Online Boutique | 90 | 90/90 | 90/90 |
+| `RE2-SS` | SockShop | 90 | 90/90 | **0/90** |
+| `RE2-TT` | TrainTicket | 90 | unmeasured | unmeasured |
+
+SockShop has no spans. Every one of its 90 cases failed with
+`RE2 declares a traces table and traces.csv is not readable`, because the plan was written
+for the suite and applied to a slice that is not it (finding 500). So the modality set is
+a property of the **case**, not of the suite:
+
+- `SLICE_MODALITY_PLANS` in `scripts/check-official.mjs` states the slices whose tables
+  differ from their suite's, and the round trip looks a case up by the first component of
+  its id (`RE2-SS`) before falling back to the suite;
+- `checkRcaEvalStructure` takes an `ExpectedModalities`, with the suite's rule as its
+  default, and the round trip passes what the case's directory holds;
+- the parameter is an **equality** — `traces: false` about an export that carries spans
+  fails — so it can move the expectation onto what the case is, and cannot be used to stop
+  looking at a table the export wrote.
+
+A table the plan names and the directory does not carry is counted, not silently skipped,
+and refused once per slice with the count: `RE2-SS: 90/90 case(s) carry no traces.csv` is
+a slice whose plan needs an entry, while `1 of 4` is a partial extraction and a defect.
 
 ## Directory layout
 
@@ -339,7 +368,7 @@ rca-bench score --target rcaeval-re2 --dir ./out
 | --- | --- |
 | `metrics-json` | at least one `metrics.json` exists and parses to a name → `number[]` map |
 | `inject-time-exists` | every case directory carries `inject_time.txt` |
-| `modality-set` | the emitted modalities match the suite (RE1: metrics only; RE2/RE3: + logs + traces) |
+| `modality-set` | the emitted modalities match the case: the suite's rule (RE1: metrics only; RE2/RE3: + logs + traces) unless the caller states the case's own `ExpectedModalities` |
 
 The structural check answers *is this well-formed*. Whether it is **scorable** is a
 different question, and a different command:

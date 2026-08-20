@@ -301,8 +301,8 @@ describe('official-data.yml · the rules can fail', () => {
     ],
     [
       'a runner expression where the context does not exist',
-      '    timeout-minutes: 90',
-      '    timeout-minutes: 90\n    env:\n      OFFICIAL_DIR: ${{ runner.temp }}/official',
+      '    timeout-minutes: 300',
+      '    timeout-minutes: 300\n    env:\n      OFFICIAL_DIR: ${{ runner.temp }}/official',
     ],
     [
       'a script handed a literal path',

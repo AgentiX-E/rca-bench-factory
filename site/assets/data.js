@@ -2351,7 +2351,7 @@ window.RBF_DATA = {
             {
               "id": "modality-set",
               "passed": true,
-              "detail": "RE1 expects logs/traces=false, found logs=false traces=false"
+              "detail": "RE1 expects logs=false traces=false, found logs=false traces=false"
             },
             {
               "id": "logs-header",
@@ -2419,7 +2419,7 @@ window.RBF_DATA = {
             {
               "id": "modality-set",
               "passed": true,
-              "detail": "RE2 expects logs/traces=true, found logs=true traces=true"
+              "detail": "RE2 expects logs=true traces=true, found logs=true traces=true"
             },
             {
               "id": "logs-header",
@@ -2487,7 +2487,7 @@ window.RBF_DATA = {
             {
               "id": "modality-set",
               "passed": false,
-              "detail": "RE3 expects logs/traces=true, found logs=false traces=false"
+              "detail": "RE3 expects logs=true traces=true, found logs=false traces=false"
             },
             {
               "id": "logs-header",

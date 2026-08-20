@@ -159,12 +159,110 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
     expect(result.stderr).toMatch(/1 row\(s\) against the corpus's 2/);
   });
 
-  it('fails when a declared table is absent, rather than scoring the case without it', () => {
+  it('refuses a table its plan names and the whole slice does not ship, once for the slice', () => {
+    // This test used to hold that a table absent from a case failed *that case*, and
+    // the assertion was the sentence `RE3 declares a logs table and logs.csv is not
+    // readable under …`. On a corpus where one table is missing from one case that
+    // reads correctly. On the real one it produced 90 identical lines: RE2 is one
+    // suite over three systems, SockShop ships logs and no spans, and the plan was
+    // written for the suite (finding 500).
+    //
+    // The claim is now split in two. A table missing from **some** cases of a slice is
+    // an anomaly and fails the run; a table missing from **all** of them is a fact
+    // about the slice, and the plan is what is wrong -- so the refusal names the
+    // slice, once, with the count that distinguishes the two.
     const root = freshRoot();
     const { cases } = writeCaseWith(root, { traces: TRACES });
     const result = run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/RE3 declares a logs table and logs\.csv is not readable/);
+    expect(result.stderr).toMatch(/RE3-OB: none of its 1 case\(s\) carries logs\.csv, which the RE3 plan names/);
+    // And the case itself still round-trips its *traces*: the refusal is about the
+    // plan, not about the case having done something wrong with the table it has.
+    expect(result.stdout).toMatch(/ROUNDTRIP MODALITY .*traces: 2\/2 row\(s\)/);
+    expect(result.stdout).toContain('ROUNDTRIP CENSUS modalities RE3-OB: logs 0/1, traces 1/1');
+  });
+
+  it('reads a slice whose plan is its own, and reports what the slice ships', () => {
+    // SockShop, in miniature: two cases with logs and no spans. Before the slice-level
+    // plan, both failed with the sentence above, one line each, on a corpus that had
+    // not changed. The plan now says logs, the cases round-trip their logs, and the
+    // census says the thing a reader needs: this slice carries no spans.
+    const root = freshRoot();
+    const caseId = 'RE2-SS/carts_cpu/1';
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    writeFileSync(join(dir, 'simple_metrics.csv'), 'time,carts_cpu\n1699999999,0.2\n1700000001,0.95\n');
+    writeFileSync(
+      join(dir, 'logs.csv'),
+      `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template\n` +
+        `${at(1_700_000_000)},1700000000123456789,carts,request handled,info,/carts,false,c-1,tpl-1\n`,
+    );
+    const cases = join(scratch, 'ss-slice.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 1, RE3: 0 },
+        cases: [
+          {
+            caseId,
+            component: 'carts',
+            faultType: 'cpu',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${caseId}/`,
+            suite: 'RE2',
+          },
+        ],
+      }),
+    );
+    const result = run(['--official-dir', root, '--cases', cases]);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    // The log table is compared -- the evidence the slice does have -- and the run
+    // says it compared one modality rather than two.
+    expect(result.stdout).toMatch(/ROUNDTRIP MODALITY .*logs: 1\/1 row\(s\)/);
+    expect(result.stdout).toMatch(/ROUNDTRIP modalities 1 table\(s\) over 1 modality\(ies\)/);
+    expect(result.stdout).toContain('ROUNDTRIP CENSUS modalities RE2-SS: logs 1/1, traces 0/1');
+    // And no trace table was silently claimed: the summary's span count is zero of
+    // zero, which reads as "nothing to compare", not as "compared and matched".
+    expect(result.stdout).toMatch(/0 of 0 span\(s\)/);
+  });
+
+  it('refuses a slice that carries one of its two tables on some cases only', () => {
+    // The other half, and the reason the census is a measurement rather than a
+    // permission: a slice that carries traces on one case and not the next is a
+    // partial extraction, not a slice without spans. That must fail, and the sentence
+    // has to name the count and the first case, because "some cases are wrong" is an
+    // operator's problem while "this slice has no spans" is a plan's.
+    const root = freshRoot();
+    const first = writeCaseWith(root, { logs: logsCsv('still here'), traces: TRACES });
+    const secondDir = join(root, 'RE3-OB/emailservice_f1/2');
+    mkdirSync(secondDir, { recursive: true });
+    writeFileSync(join(secondDir, 'inject_time.txt'), '1700000000\n');
+    writeFileSync(join(secondDir, 'data.csv'), 'time,emailservice_cpu\n1699999999,0.2\n1700000001,0.95\n');
+    writeFileSync(join(secondDir, 'logs.csv'), logsCsv('still here'));
+    const cases = join(scratch, 'partial-slice.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 0, RE3: 2 },
+        cases: [first.caseId, 'RE3-OB/emailservice_f1/2'].map((caseId) => ({
+          caseId,
+          component: 'emailservice',
+          faultType: 'f1',
+          injectTime: new Date(1_700_000_000_000).toISOString(),
+          pathPrefix: `${caseId}/`,
+          suite: 'RE3',
+        })),
+      }),
+    );
+    const result = run(['--official-dir', root, '--cases', cases]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(
+      /RE3-OB: 1 of 2 case\(s\) carry no traces\.csv, so the traces table its plan names was compared on only 1 of them \(first: RE3-OB\/emailservice_f1\/2\)/,
+    );
+    expect(result.stdout).toContain('ROUNDTRIP CENSUS modalities RE3-OB: logs 2/2, traces 1/2');
   });
 
   it('says nothing at all about modalities for a suite whose tables it does not read', () => {
@@ -209,5 +307,9 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(result.stdout).not.toContain('ROUNDTRIP MODALITY');
     expect(result.stdout).not.toContain('ROUNDTRIP modalities');
+    // Not even the census line, which v3.76 added: it is built from the files the walk
+    // saw, and a slice whose tables this script never reads would get `logs 0/1` -- a
+    // number about carriage that reads as a comparison nobody made.
+    expect(result.stdout).not.toContain('ROUNDTRIP CENSUS modalities');
   });
 });

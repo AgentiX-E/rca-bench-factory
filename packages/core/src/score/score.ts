@@ -345,12 +345,37 @@ export function checkOpenRcaStructure(files: Record<string, string>): StructureR
 }
 
 /**
+ * Which of the two per-case tables a case carries.
+ *
+ * A *case*, not a benchmark: RE2 is one suite over three systems, and SockShop
+ * ships `logs.csv` and no `traces.csv` in all 90 of its cases. The suite-level rule
+ * below says both, which is right for 180 of RE2's 270 cases and wrong for the
+ * other 90 -- so the expectation is a parameter with the suite's rule as its
+ * default, and the caller that has read the corpus can state the case's own answer.
+ *
+ * It is an equality, not a relaxation: a caller that says `traces: false` about a
+ * case whose export *does* carry spans fails the check. The parameter can therefore
+ * only move the expectation onto what the case actually is, never hide a table the
+ * export wrote (finding 500).
+ */
+export interface ExpectedModalities {
+  readonly logs: boolean;
+  readonly traces: boolean;
+}
+
+/**
  * Verify an RCAEval export against the structural field contract for a suite.
  *
  * RE1 is metrics-only; RE2 and RE3 additionally require logs and traces, so the
  * modality set is itself a contract violation when it does not match the suite.
+ * `expected` replaces that suite-level rule when the caller knows what *this case*
+ * ships -- see `ExpectedModalities`.
  */
-export function checkRcaEvalStructure(files: Record<string, string>, suite: RcaEvalSuite): StructureReport {
+export function checkRcaEvalStructure(
+  files: Record<string, string>,
+  suite: RcaEvalSuite,
+  expected?: ExpectedModalities,
+): StructureReport {
   const checks: ScoreCheck[] = [];
   const dataFiles = pathsEndingWith(files, '/data.csv');
   const injectFiles = pathsEndingWith(files, '/inject_time.txt');
@@ -413,34 +438,42 @@ export function checkRcaEvalStructure(files: Record<string, string>, suite: RcaE
     ),
   );
 
-  const expectModalities = suite === 'RE2' || suite === 'RE3';
+  const suiteExpects = suite === 'RE2' || suite === 'RE3';
+  const expectsLogs = expected?.logs ?? suiteExpects;
+  const expectsTraces = expected?.traces ?? suiteExpects;
   const hasLogs = logFiles.length > 0;
   const hasTraces = traceFiles.length > 0;
-  const modalityOk = expectModalities ? hasLogs && hasTraces : !hasLogs && !hasTraces;
+  const modalityOk = hasLogs === expectsLogs && hasTraces === expectsTraces;
   checks.push(
-    check('modality-set', modalityOk, `${suite} expects logs/traces=${expectModalities}, found logs=${hasLogs} traces=${hasTraces}`),
+    check(
+      'modality-set',
+      modalityOk,
+      `${suite} expects logs=${expectsLogs} traces=${expectsTraces}, found logs=${hasLogs} traces=${hasTraces}`,
+    ),
   );
 
   // The log header is per suite because the corpora disagree about it: RE2-OB
   // ships nine columns and RE3-OB six, sharing only the first four.
-  const expectedLogs = expectModalities
-    ? RCAEVAL_LOGS_COLUMNS[suite as RcaEvalLogsSuite].join(',')
-    : '';
+  const expectedLogs = expectsLogs ? RCAEVAL_LOGS_COLUMNS[suite as RcaEvalLogsSuite].join(',') : '';
   const logHeader = first(files, logFiles);
   checks.push(
     check(
       'logs-header',
-      logHeader === undefined ? !expectModalities : csvHeader(logHeader).join(',') === expectedLogs,
+      expectsLogs
+        ? logHeader !== undefined && csvHeader(logHeader).join(',') === expectedLogs
+        : logHeader === undefined,
       `expected '${expectedLogs}'`,
     ),
   );
 
-  const expectedTraces = expectModalities ? RCAEVAL_TRACES_COLUMNS.join(',') : '';
+  const expectedTraces = expectsTraces ? RCAEVAL_TRACES_COLUMNS.join(',') : '';
   const traceHeader = first(files, traceFiles);
   checks.push(
     check(
       'traces-header',
-      traceHeader === undefined ? !expectModalities : csvHeader(traceHeader).join(',') === expectedTraces,
+      expectsTraces
+        ? traceHeader !== undefined && csvHeader(traceHeader).join(',') === expectedTraces
+        : traceHeader === undefined,
       `expected '${expectedTraces}'`,
     ),
   );
@@ -1076,18 +1109,22 @@ function rateOf(term: ScoreTerm): number {
  * *answers existing*; it says nothing about whether an answer is right, which is
  * why the suite is read rather than written.
  */
-function structureFor(target: ScoreTargetId, files: Record<string, string>): StructureReport {
+function structureFor(
+  target: ScoreTargetId,
+  files: Record<string, string>,
+  expected?: ExpectedModalities,
+): StructureReport {
   switch (target) {
     case 'openrca-1.0':
       return checkOpenRcaStructure(files);
     case 'openrca-2.0':
       return checkOpenRca2Structure(files);
     case 'rcaeval-re1':
-      return checkRcaEvalStructure(files, 'RE1');
+      return checkRcaEvalStructure(files, 'RE1', expected);
     case 'rcaeval-re2':
-      return checkRcaEvalStructure(files, 'RE2');
+      return checkRcaEvalStructure(files, 'RE2', expected);
     case 'rcaeval-re3':
-      return checkRcaEvalStructure(files, 'RE3');
+      return checkRcaEvalStructure(files, 'RE3', expected);
     case 'rca100':
       return checkRca100Structure(files);
     case 'aiops2025':
@@ -1127,8 +1164,16 @@ export function scoreExport(
   target: ScoreTargetId,
   files: Record<string, string>,
   anchors?: Record<string, string>,
+  expected?: ExpectedModalities,
 ): ScoreReport {
-  const structure = structureFor(target, files);
+  // A modality expectation is a statement about an RCAEval case's tables. The other
+  // six targets have no such pair, and silently ignoring the argument here would be
+  // the defect shape this file is full of warnings about: a caller would believe it
+  // had tightened a contract that never read it.
+  if (expected !== undefined && !target.startsWith('rcaeval-')) {
+    throw new Error(`target '${target}' has no log/trace pair to expect`);
+  }
+  const structure = structureFor(target, files, expected);
   const structureCounts = structureTerm(structure);
   if (anchors === undefined) {
     return {

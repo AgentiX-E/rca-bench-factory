@@ -134,10 +134,21 @@ jobs:
   round-trip:
     name: Fetch, ingest, export and score the official corpus
     runs-on: ubuntu-latest
-    # The fetch is the slow part and it is a network operation against a host we
-    # do not control. Bounded so a stalled download fails rather than occupying a
-    # runner for hours.
-    timeout-minutes: 90
+    # The bound is the sum of two measured parts, not a round number.
+    #
+    #  - the fetch: `RE2-TT` is 2 801 345 134 bytes and Zenodo delivers about
+    #    3 MB/s, so the three archives are ~40 minutes;
+    #  - the round trip: the 2026-11-09 dispatch spent 52 minutes on 90 Online
+    #    Boutique cases before reaching SockShop, which is 35 s a case, and
+    #    TrainTicket's cases are about 2.4x the bytes. 270 cases at that rate is
+    #    ~200 minutes.
+    #
+    # 90 was chosen when the round trip was believed to be ~10 minutes and the
+    # fetch ~50, and it silently became the wrong number when the corpus turned out
+    # to be 270 cases of which 180 are large. A job killed by its own timeout
+    # reports no reason at all, which is why the number has to hold the measurement
+    # rather than the estimate.
+    timeout-minutes: 300
     steps:
       # The destination is named once, here, and every later step reads it from
       # the environment. `runner.temp` is on the runner's root filesystem; `/tmp`
@@ -353,6 +364,7 @@ jobs:
           node scripts/gen-rcaeval-cases.mjs --official-dir "$OFFICIAL_DIR" --out "$CASES"
 
       - name: Round-trip the corpus and score it with the official rule
+        timeout-minutes: 240
         run: |
           set -eu
           # `--report` writes the score report: one record per declared case and
@@ -361,8 +373,22 @@ jobs:
           # `oracle=` figure on each ROUNDTRIP line, and this step's artifact
           # carried the descriptors and the pins and no scores -- so the answer to
           # P0-2's "a score report on the real corpus" was a line in a log, which
-          # is what finding 155 is about.
-          node scripts/check-official.mjs --official-dir "$OFFICIAL_DIR" --cases "$CASES" --report "$SCORES"
+          # is what finding 155 is about. The per-case rewrite is finding 498: the
+          # 2026-11-09 dispatch died of the heap at case 181, and the uploaded
+          # artefact held `pins.json` and `rcaeval-cases.json` and no scores at
+          # all, because `process.exit` never ran and an abort is not an exit.
+          #
+          # The heap is declared, not inherited. Node's default cap on this runner
+          # is 4 GB, which is a fact about Node and not about the corpus: a case of
+          # `RE2-TT`'s size needs more than that, and the run that found out did so
+          # with `FATAL ERROR: Reached heap limit` after 84 minutes and no other
+          # number anywhere. 7168 is 3.4x the largest case measured locally (a
+          # 122 MB case costs 2.1 GB of heap) and leaves the runner's remaining
+          # memory to the rest of the process; the step prints
+          # `largest ... MB of the ... MB this run was given` on every run, so the
+          # next time the corpus grows the number moves deliberately (finding 499).
+          NODE_OPTIONS="--max-old-space-size=7168" \
+            node scripts/check-official.mjs --official-dir "$OFFICIAL_DIR" --cases "$CASES" --report "$SCORES"
 
       # The aggregate tables are the one part of a case directory that this
       # repository used to describe without ever opening. It described

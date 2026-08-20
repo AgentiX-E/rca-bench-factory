@@ -295,7 +295,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 924,
+      "line": 1004,
       "condition": "value === undefined || value.startsWith('--')",
       "diagnostic": "error: ${flag} requires a value",
       "status": "proved",
@@ -303,7 +303,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 985,
+      "line": 1065,
       "condition": "failures.length > 0",
       "diagnostic": "- ${f}",
       "status": "proved",
@@ -311,7 +311,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1004,
+      "line": 1084,
       "condition": "!existsSync(officialDir)",
       "diagnostic": "Fetch the corpus first: node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official",
       "status": "proved",
@@ -319,7 +319,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1009,
+      "line": 1089,
       "condition": "!existsSync(casesPath)",
       "diagnostic": "Generate it first: node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official",
       "status": "proved",
@@ -327,7 +327,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1432,
+      "line": 1819,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -335,7 +335,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1466,
+      "line": 1853,
       "condition": "declared.length > 0 && !account.accounted",
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${account.gap}",
       "status": "exempt",

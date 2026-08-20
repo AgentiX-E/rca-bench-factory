@@ -152,7 +152,9 @@ describe('checkRcaEvalStructure states the modality rule per suite', () => {
   it('RE1 demands the absence of logs and traces', () => {
     const report = checkRcaEvalStructure(ownFiles('rcaeval-re1'), 'RE1');
     expect(report.passed).toBe(true);
-    expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain('RE1 expects logs/traces=false');
+    expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain(
+      'RE1 expects logs=false traces=false',
+    );
   });
 
   it.each(['RE2', 'RE3'] as const)('%s demands the presence of both logs and traces', (suite) => {
@@ -161,7 +163,9 @@ describe('checkRcaEvalStructure states the modality rule per suite', () => {
     // acceptable to RE3 -- a fact about the corpora rather than about the modality
     // rule, and one the corpora deny (finding 266).
     const report = checkRcaEvalStructure(ownFiles('rcaeval-re2'), suite);
-    expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain(`${suite} expects logs/traces=true`);
+    expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain(
+      `${suite} expects logs=true traces=true`,
+    );
     expect(report.checks.find((c) => c.id === 'modality-set')?.passed).toBe(true);
   });
 
@@ -173,6 +177,59 @@ describe('checkRcaEvalStructure states the modality rule per suite', () => {
   it('RE2 rejects the RE1 shape when called directly', () => {
     const report = checkRcaEvalStructure(ownFiles('rcaeval-re1'), 'RE2');
     expect(report.passed).toBe(false);
+  });
+});
+
+/**
+ * The suite's rule is a default, and the case is what overrules it.
+ *
+ * RE2 is one suite over three systems. SockShop ships `logs.csv` and no `traces.csv`
+ * in all 90 of its cases, so the suite-level rule "RE2 requires logs and traces" is
+ * false for a third of RE2 -- and it was false in the one place that decides whether
+ * our export matches the layout, which is why 90 cases failed a contract about the
+ * shape the corpus actually has (finding 500).
+ *
+ * The parameter is an **equality**, and these three tests are what make that a fact
+ * rather than an intention: it can move the expectation onto what the case ships, and
+ * it cannot be used to accept an export that carries a table the caller said the case
+ * lacks.
+ */
+describe('the modality rule a case states for itself', () => {
+  /** RE2's own files, with the trace table removed. */
+  const withoutTraces = (): Record<string, string> =>
+    Object.fromEntries(Object.entries(ownFiles('rcaeval-re2')).filter(([path]) => !path.endsWith('/traces.csv')));
+
+  it('accepts an RE2 case that ships logs and no spans, when that is what it says', () => {
+    const files = withoutTraces();
+    expect(checkRcaEvalStructure(files, 'RE2').passed, 'the suite rule is not wrong, it is general').toBe(false);
+    const report = checkRcaEvalStructure(files, 'RE2', { logs: true, traces: false });
+    expect(report.passed).toBe(true);
+    expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain(
+      'RE2 expects logs=true traces=false, found logs=true traces=false',
+    );
+  });
+
+  it('refuses a case whose export carries a table it said it did not have', () => {
+    // The half that makes the parameter safe: it is not a way to stop looking. An
+    // export with spans, described as one without, is a disagreement about the
+    // bytes and the bytes win.
+    const report = checkRcaEvalStructure(ownFiles('rcaeval-re2'), 'RE2', { logs: true, traces: false });
+    expect(report.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain(
+      'RE2 expects logs=true traces=false, found logs=true traces=true',
+    );
+    // And the header check for the absent table passes only because the file is
+    // absent: `traces-header` is asserted as an absence, not skipped.
+    expect(report.checks.find((c) => c.id === 'traces-header')?.passed).toBe(false);
+  });
+
+  it('refuses to take a modality expectation for a target with no such pair', () => {
+    // Six of the nine targets have no logs/traces pair at all. A caller who believes
+    // it has tightened one of their contracts has been told nothing, which is the
+    // shape of half the defects in this file's history.
+    expect(() => scoreExport('itbench', ownFiles('itbench'), undefined, { logs: true, traces: false })).toThrow(
+      /has no log\/trace pair to expect/,
+    );
   });
 });
 

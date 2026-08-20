@@ -393,6 +393,13 @@ describe('scripts/check-official.mjs · what the round trip refuses to pass', { 
     // number with no field in it.
     expect(result.stdout).toContain('ROUNDTRIP FAIL');
     expect(result.stdout).toContain('shape=2');
+    // The sentence is on the case's *own* line, not only in the epilogue. It used to be
+    // epilogue-only, and the run that reached this branch for the first time printed
+    // `shape=1` twice and then died of the heap before printing the epilogue, so the two
+    // refusals it had actually found are unreadable to this day (finding 497).
+    expect(result.stdout).toContain("the export does not match rcaeval-re2's field contract");
+    expect(result.stdout).toContain('modality-set');
+    expect(result.stdout).toContain('logs-header');
     expect(result.stderr).toContain("the export does not match rcaeval-re2's field contract");
     // Each failing check is named by id with its own detail, because the two ids here are two
     // different repairs: one says the case lost a modality table, the other says its header is not
@@ -599,6 +606,142 @@ describe('scripts/check-official.mjs · the branch reads its own inputs', { time
     const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP PASSED');
+  });
+});
+
+/**
+ * What a run of two hours has to leave behind.
+ *
+ * The 2026-11-09 dispatch of `official-data.yml` ran for 84 minutes, printed one line
+ * per case, and died at case 181 of 270 with `FATAL ERROR: Reached heap limit`. The
+ * artifact it uploaded held `pins.json` and `rcaeval-cases.json` and **no scores**: the
+ * report writer was called "before every exit", and an abort is not an exit. Everything
+ * the run had measured -- 180 case records, and the sentence for each of the two cases
+ * that failed the layout contract -- went with it, and the only evidence left was
+ * `shape=1` twice, a count with no subject (findings 497, 498, 499).
+ *
+ * Three properties follow, and they are what this block holds: the report is on disk
+ * after every case, a failure says on its own line what it found, and the run reports
+ * the memory it used against the memory it was given.
+ */
+describe('scripts/check-official.mjs · what a run leaves behind when it dies', { timeout: FILE_TIMEOUT_MS }, () => {
+  /**
+   * A run killed the way the heap kills one: after the first case, with no warning.
+   *
+   * `SIGKILL` and not `SIGTERM`: the point is that no handler runs, which is what
+   * `Reached heap limit` does. The wait is for the *artifact*, not for a tick, so the
+   * test cannot race the writer: it polls the report until it names a case, and only
+   * then kills the process that wrote it.
+   */
+  async function killAfterFirstRecord(args: string[], reportPath: string): Promise<Outcome> {
+    const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: ROOT });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    const closed = new Promise<number>((done) => {
+      child.on('close', (code) => done(code ?? -1));
+    });
+
+    const deadline = Date.now() + 20_000;
+    let records = 0;
+    while (Date.now() < deadline) {
+      try {
+        const parsed: { cases?: unknown[] } = JSON.parse(readFileSync(reportPath, 'utf8'));
+        records = Array.isArray(parsed.cases) ? parsed.cases.length : 0;
+        if (records > 0) break;
+      } catch {
+        // Not written yet, or mid-rename: the writer is atomic, so a half file is not
+        // a state this can observe, only a file that does not exist yet.
+      }
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    child.kill('SIGKILL');
+    const status = await closed;
+    return { status, stdout, stderr };
+  }
+
+  it('writes the score report after every case, so a killed run keeps its measurements', async () => {
+    const root = freshRoot();
+    // Sixty small cases, because the kill has to land while the run is still going:
+    // the property under test is a file that exists *between* two cases, and one case
+    // is not an interval.
+    const { cases } = writeBulkCorpus(root, 60, 40, 0);
+    const casesPath = join(scratch, 'killed.json');
+    writeCases(casesPath, cases);
+    const reportPath = join(scratch, 'killed-report.json');
+
+    const result = await killAfterFirstRecord(
+      ['--official-dir', root, '--cases', casesPath, '--report', reportPath],
+      reportPath,
+    );
+
+    // Killed, not finished -- otherwise the report proves nothing about a death.
+    expect(result.status, 'the run has to be killed for this to be about a death').not.toBe(0);
+    const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+    expect(report.schema).toBe('rca-bench-rcaeval-scores/1');
+    expect(report.cases.length).toBeGreaterThan(0);
+    // Strictly fewer than declared: the run died part-way, and the report says how far
+    // it got. That is the measurement the 2026-11-09 artifact did not have.
+    expect(report.cases.length).toBeLessThan(60);
+    expect(report.summary.declared).toBe(60);
+    expect(report.summary.scored).toBe(report.cases.length);
+  });
+
+  it('reports the heap it was given and the largest case it held', async () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const casesPath = join(scratch, 'cost.json');
+    writeCases(casesPath, ['RE2-ob-cpu_1']);
+    const result = await run(['--official-dir', root, '--cases', casesPath]);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    // Two numbers before the first case, because the run that died had neither.
+    expect(result.stdout).toMatch(/ROUNDTRIP heap \d+ MB available, \d+ MB budget/);
+    // And one after the last, with the largest case named: "how much does this corpus
+    // need" is the question the next dispatch asks, and this line is the answer.
+    expect(result.stdout).toMatch(
+      /ROUNDTRIP cost 1 case\(s\) in [\d.]+ min; largest \d+ MB of the \d+ MB this run was given \(\d+%\) at RE2-ob-cpu_1; slowest [\d.]+ s at RE2-ob-cpu_1/,
+    );
+    // The per-case record carries both numbers, which is what makes the trend readable
+    // from two artifacts rather than from two logs.
+    expect(result.stdout).toContain('ROUNDTRIP COST');
+  });
+
+  it('refuses a run whose largest case would not fit in the heap it was given', async () => {
+    // `--heap-budget` is the branch's own door, for the same reason `--bundle` is: the
+    // refusal exists for a corpus that nearly exhausts a runner, and a test cannot
+    // build one. A budget of 1 MB is passed by every case, so the sentence is reached
+    // deterministically -- and it must be a refusal rather than a warning, because a
+    // run at 95% of its heap has already failed, one case later, with no sentence.
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const casesPath = join(scratch, 'pressure.json');
+    writeCases(casesPath, ['RE2-ob-cpu_1']);
+    const reportPath = join(scratch, 'pressure-report.json');
+    const result = await run([
+      '--official-dir',
+      root,
+      '--cases',
+      casesPath,
+      '--heap-budget',
+      '1',
+      '--report',
+      reportPath,
+    ]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('1 MB budget (declared by --heap-budget)');
+    expect(result.stderr).toMatch(
+      /the largest case used \d+ MB, \d+% of the 1 MB heap this run was given \(RE2-ob-cpu_1\); the next case of that size would not fit/,
+    );
+    // The case itself round-tripped, and the report says so: the refusal is about the
+    // job's number and not about the case.
+    expect(JSON.parse(readFileSync(reportPath, 'utf8')).summary.scored).toBe(1);
   });
 });
 
