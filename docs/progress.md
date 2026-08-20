@@ -532,7 +532,7 @@ Most entries below are **limits** rather than tasks: each names something this r
 does not do, why, and what would close it. The last one is a question this round could not
 settle.
 
-Checked at v3.76: **26** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
+Checked at v3.77: **27** entries open. The number is arithmetic: `check-open-list.mjs` counts the entries
 below it, refuses a number that is not that count, and refuses a round older than the newest round in this
 corpus. It cannot check that a surviving entry is still *true* -- that takes the measurement the entry is
 about -- so what it buys is that a round stood in front of every entry it counts. v3.62 is the round
@@ -1247,6 +1247,13 @@ is a row about rather than paraphrase one that no `grep` will find.
   repository read -- `official-assets.json` already has both states for data assets and neither for a
   paper]`
 
+- **The live list grows whatever the bound is.** A struck entry stays where it is struck, so `## Open` gains
+  bytes every round, and the index would reach the volume budget in roughly fifty rounds at the rate it has
+  been growing. The rule now bounds the index against the volume that is still open rather than against
+  history, and the index can stay under `MAX_BYTES` only because that volume cannot exceed it.
+  `[open: the round that reaches the ceiling will have to move the closed part of the list into a volume,
+  and nothing measures how far away that is]`
+
 
 ## Pass log
 
@@ -1277,7 +1284,7 @@ and this table.
 | [volume-10.md](progress/volume-10.md) | 13 | v3.34 | v3.46 |
 | [volume-11.md](progress/volume-11.md) | 9 | v3.47 | v3.55 |
 | [volume-12.md](progress/volume-12.md) | 8 | v3.56 | v3.63 |
-| [volume-13.md](progress/volume-13.md) | 13 | v3.64 | v3.76 |
+| [volume-13.md](progress/volume-13.md) | 14 | v3.64 | v3.77 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
@@ -1288,6 +1295,6 @@ does not exist.
 The new volume takes a contiguous **run** of the most recent rounds, not one, and the
 run has to be larger than this file. That is not a preference: a volume holding one
 round was 4,250 bytes against an index of 74,443, and the checker refused it, because
-an index bigger than the smallest thing it indexes is no longer an index -- the reader
-who follows it lands in a document larger than its target. `v2.56`--`v2.79` moved
-together for that reason, and the run will be longer next time.
+the volume still being written is the only thing this file is compared with, and a
+reader who follows an index must not land in a document smaller than its target.
+`v2.56`--`v2.79` moved together for that reason, and the run will be longer next time.

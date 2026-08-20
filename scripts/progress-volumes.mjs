@@ -497,7 +497,7 @@ export function check(indexText, dir = VOLUMES) {
   // what made it worth fixing anyway -- a reading that is usually right is the one nobody checks.
   const fullest = volumes.length === 0 ? null : volumes.reduce((left, right) => (right.bytes > left.bytes ? right : left));
 
-  // The index must stay smaller than the smallest volume.
+  // The index must stay smaller than the volume that is **still open**.
   //
   // ## Why a relation rather than a number
   //
@@ -507,28 +507,50 @@ export function check(indexText, dir = VOLUMES) {
   // because the question is not "how big may the index be" but "what is the index for".
   //
   // The relation answers the second question with the document's own structure: the file
-  // a reader opens **first**, to find their way to the others, must not be bigger than
-  // the things it indexes. When it loses that, the split stops being an opinion and
-  // becomes an instruction. The two numbers are printed on every run rather than quoted
-  // here, because a literal in a comment is a number that rots -- and this paragraph used
-  // to quote one ("about twenty kilobytes of headroom -- six rounds"), which v2.47
-  // measured at 5.9 kilobytes and one round.
+  // a reader opens **first**, to find their way to the others, must not be bigger than the
+  // thing it is still being compared with. The two numbers are printed on every run rather
+  // than quoted here, because a literal in a comment is a number that rots -- and this
+  // paragraph used to quote one ("about twenty kilobytes of headroom -- six rounds"),
+  // which v2.47 measured at 5.9 kilobytes and one round.
   //
-  // A **new** volume is smaller than the index by construction, so the relation also says
-  // where the split has to fall: far enough back that the new volume is already bigger
-  // than the file that indexes it. v2.47's split moved twenty-one rounds for that reason
-  // alone, which is the rule working rather than an inconvenience.
+  // ## Why the open volume and not the smallest (finding 501)
   //
-  // Measured before writing this: the index was said in v2.28 to be "the largest single
-  // file in `docs/`", and it is the **smallest** of the five progress files. The claim
-  // was never measured; the relation is.
+  // The set used to be **every** volume, read as "the things it indexes", and the bound is
+  // then the smallest one -- which was closed eleven volumes ago and cannot grow. A bound
+  // that cannot move is a constant wearing a relation's clothes: it was 955 bytes at the
+  // start of v3.76 and 15 at the end, and the refusal it produced named two repairs,
+  // neither of which existed. The section that had grown was `## Open`, which is the
+  // index's own content by design, and no record may be appended to a volume frozen at
+  // v3.55. So the round shaved three paragraphs of its own new entries until the
+  // arithmetic fitted, which is the shape this audit keeps finding: a number that is
+  // checked, and a repair that is not available.
+  //
+  // The volume still being written is the only one a comparison can act on, and it grows
+  // with every round -- so the headroom grows rather than shrinking toward a wall at a
+  // fixed distance. The two repairs the refusal names are now both real: a section that
+  // grew and is a record belongs in a volume, and an index that has stopped being an index
+  // is answered by moving the whole of `## Open` out.
+  //
+  // What this gives up is stated rather than hidden: the index may now be bigger than a
+  // closed volume, and it is -- the smallest closed volume is smaller than the index by the
+  // time a few rounds have been written. That is accepted for the reason the volume budget
+  // is judged only on the last volume (finding 208): a closed volume is a record of a size
+  // it had, and comparing against it constrains the future with a fact about the past.
+  //
+  // The split instruction survives, and it is the reason v2.47's split moved twenty-one
+  // rounds: a new volume must be **born** larger than the index, or the relation is false
+  // the moment the boundary is drawn. The index's own ceiling follows by transitivity --
+  // it can never exceed `MAX_BYTES`, because the open volume it must stay under cannot --
+  // so when the index reaches the volume budget, the live list has become a document.
   const indexBytes = Buffer.byteLength(indexText, 'utf8');
-  const smallest = volumes.length === 0 ? 0 : Math.min(...volumes.map((one) => one.bytes));
-  if (smallest > 0 && indexBytes >= smallest) {
+  const open = volumes.at(-1);
+  const openBytes = open?.bytes ?? 0;
+  if (open !== undefined && indexBytes >= openBytes) {
     errors.push(
-      `docs/progress.md is ${String(indexBytes)} bytes and the smallest volume is ${String(smallest)}: the ` +
-        'index has outgrown something it indexes, so either the section that grew is a record and belongs ' +
-        'in a volume, or the index is no longer an index',
+      `docs/progress.md is ${String(indexBytes)} bytes and \`${open.name}\`, the volume that is still ` +
+        `open, is ${String(openBytes)}: the index outgrew the one file it is still being compared ` +
+        'with, so either the section that grew is a record and belongs in a volume, or the index is ' +
+        'no longer an index (finding 501)',
     );
   }
   return {
@@ -546,7 +568,9 @@ export function check(indexText, dir = VOLUMES) {
       (volumes.length === 0
         ? ''
         : `; sizes ${volumes.map((one) => one.bytes.toLocaleString('en-US')).join(' / ')}`) +
-      (smallest === 0 ? '' : `; index ${indexBytes.toLocaleString('en-US')} of smallest volume ` +
-        `${smallest.toLocaleString('en-US')}`),
+      (open === undefined
+        ? ''
+        : `; index ${indexBytes.toLocaleString('en-US')} of open volume ` +
+          `${openBytes.toLocaleString('en-US')}`),
   };
 }

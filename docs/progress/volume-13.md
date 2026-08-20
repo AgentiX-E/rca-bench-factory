@@ -1278,9 +1278,9 @@ test holds that a target with no log/trace pair refuses the argument rather than
 
 | item | value |
 | --- | --- |
-| `core` test suite | **244 files, 6234 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **248 files, 6421 tests passed** (as of this commit) |
+| `core` test suite | **244 files, 6234 tests passed** (at v3.76) |
+| `cli` test suite | **4 files, 187 tests passed** (at v3.76) |
+| repo test suite | **248 files, 6421 tests passed** (at v3.76) |
 | coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100**; `scripts/check-official.mjs` is outside the instrumented tree and is held by the round trip's own spawns |
 | new tests | **6226 -> 6234, +8**: three for the report that survives a kill, the heap lines and the budget refusal; three for the per-case modality expectation (logs-only accepted, a table the export wrote refused, a non-RCAEval target refusing the argument); two more in the modalities file for a slice whose plan is its own and for a slice that carries a table on some cases only |
 | mutations | **62** injections, **74** witnesses; 61 caught, 0 survived / inert / unattributed, 1 redundant as declared. `REPORT 1` was retargeted onto the line that now carries the sentence |
@@ -1295,3 +1295,100 @@ so the longest-running job in the tree was the one whose findings could vanish e
 two consecutive weeks, in the same place. The repair is not a bigger heap; it is that the record is
 written where the work is done, that a failure carries its sentence on its own line, and that the memory
 a corpus needs is a number somebody wrote down.
+
+## v3.77 — a bound that cannot move is a constant
+
+`check-progress-volumes.mjs` required this index to be smaller than **every** volume, and the smallest one
+is `volume-02.md`: 92,355 bytes, closed eleven volumes ago, with nothing permitted to append to it. So the
+bound was not a budget a round could plan against. v3.76 opened with 955 bytes of headroom and closed with
+15, and what it did to get green was shave three paragraphs of its own new entries until the arithmetic
+fitted. That is the shape this audit keeps finding: a number that is checked, and a repair it names that
+does not exist.
+
+### The relation was right and the set was wrong (finding 501)
+
+"Not bigger than the things it indexes" is a claim about what a reader needs, and the round that wrote it
+was replacing a claim nobody had measured ("the largest single file in `docs/`"). The claim is still
+right. The set is not: a volume that has been closed records a size it *had*, so comparing against it
+constrains the future with a fact about the past, and the moment the smallest volume was closed the
+relation stopped being a relation and became a constant wearing one's clothes.
+
+The number the round would have had to find is now known, because the round found it: the index is
+**92,927** bytes and `volume-02.md` is **92,355**. The first edit that made this round true -- a
+paragraph of prose about splitting, and one new entry in the list -- put the index **572 bytes past the
+volume it was being measured against**. Under the old rule this round is refused before any of its
+subject can be written; that is not a prediction, it is what the arithmetic said when the change was
+half made.
+
+### The comparison is against the volume that is still open
+
+`check` now names the subject: the last volume, the only one anything appends to. It prints it
+(`index 92,927 of open volume 104,534` when the change was made), refuses with two repairs that both
+exist, and the headroom is **11,607 bytes that grow** rather than 15 that do not -- the open volume gains
+about 8,000 bytes a round (`volume-13.md` held thirteen rounds in 104,534) against the index's 1,100, so
+the gap widens by roughly seven kilobytes a round instead of closing.
+
+**Measured while this section was being written**: the open volume went 104,534 -> 110,580 as it was
+drafted, so the gap moved 11,607 -> 17,653 against an index that had not changed at all. That is the
+mechanism working on its first round rather than a projection about it, and it is the half of the old rule
+that was missing -- a bound whose right-hand side grows while the round is writing.
+
+Two things survive the change, and they are the reason it is a repair rather than a deletion:
+
+- **The split instruction.** A new volume must be **born** larger than the index, or the relation is false
+  the moment the boundary is drawn. That is the reason v2.47's split moved twenty-one rounds, and it is
+  now the rule rather than a consequence of one.
+- **A ceiling, by transitivity.** The index can never exceed `MAX_BYTES`, because the open volume it must
+  stay under cannot. An index that reaches the volume budget has become a document, and the number it is
+  measured against is a chosen one with a stated meaning rather than an accident of which volume closed
+  smallest.
+
+### What is given up is stated, and what it costs is an entry
+
+The index may now be bigger than a closed volume, and it is -- by 572 bytes, today. That is accepted for
+the reason the volume budget is judged only on the last volume (finding 208): a closed volume is a record.
+
+What the rule does not do is stop the list from growing. A struck entry stays where it is struck, so
+`## Open` gains bytes every round whatever the bound is, and the ceiling above is reachable. That is a
+limit with no reader, so it is entry **27** in the live list rather than a sentence here: the round that
+reaches the ceiling will have to move the closed part of the list into a volume, and nothing measures how
+far away that is.
+
+Three fixtures carry the change, and the pair matters more than any one of them: a closed volume the index
+has **passed** is not a failure, and an open one it has passed **is** -- asserted together, because a rule
+that only ever sees the second cannot tell the repair from a deletion.
+
+### A record dated "this commit" is a claim about now (finding 502)
+
+The rule above was half finished when `docs:check` refused: v3.76's ledger published `core 244 / 6234`
+with `(as of this commit)`, this round added one test, and the guard read two rows of a **frozen** record
+as a claim about the present -- correctly, because that is what the phrase means to it. The phrase is the
+defect, and both spellings of it are wrong for a record: "this commit" names the tree only while it is the
+tree being written, and the anchored `(as of `sha`)` names a commit the publishing pipeline rewrote, so no
+reader can resolve it. Those three rows say `(at v3.76)` now -- a label that survives a push -- and the
+newest ledger keeps the one claim about the present, which the round after this one will date.
+
+### Readings
+
+> Ledger for `v3.77`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **244 files, 6235 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **248 files, 6422 tests passed** (as of this commit) |
+| coverage | `core` **99.97 / 99.82 / 100 / 99.97** (statements / branches / functions / lines), `cli` **100 / 100 / 100 / 100** |
+| new tests | **6234 -> 6235, net +1**: the two relation cases became three -- a closed volume the index has passed (the defect, red before the change), an open one it has passed with the volume named and `smallest` absent from the sentence, and the printed pair |
+| mutations | **63** injections, **75** witnesses; 62 caught, 0 survived / inert / unattributed, 1 redundant as declared. `VOLUME 1` restores the smallest-volume set and is caught by the fixture whose closed volume the index has passed -- the rule had three fixtures and no injection, which is how a rule is covered without being *proved* |
+| the relation | index **92,927** of `volume-02.md`'s 92,355 -- **572 bytes past a volume it is no longer measured against** -- and of the open `volume-13.md`'s 104,534, which is 11,607 bytes of headroom that grows; drafting this section moved the open volume to 110,580 and the gap to 17,653 |
+| the index's rate | 86,804 at v3.71 to 92,340 at v3.76: **1,107 bytes a round** over five rounds, so the old bound demanded about that much be deleted from every round's own write-up |
+| the open volume's rate | `volume-13.md` holds thirteen rounds in 104,534 bytes, **8,041 a round**, so the gap widens by roughly seven kilobytes a round |
+| the frozen ledger | v3.76's three rows carried `(as of this commit)` -- a claim about now, sitting in a record -- and say `(at v3.76)`; the newest ledger keeps the one present-tense claim (finding 502) |
+| list | **26 -> 27** open: the repair closed a residual that lived only in v3.76's ledger row, and the limit the new rule leaves behind is the entry added |
+
+**The lesson.** A relation is not a bound unless the thing on the right-hand side can move. The rule here
+was written to replace a pinned number, and it became one -- not by being wrong about what an index is,
+but by naming a set whose smallest member had been frozen eleven volumes earlier. The tell was not in the
+rule; it was in the round that had to delete three paragraphs of its own evidence to satisfy it. When a
+gate's refusal names a repair and the repair is not available, the gate is measuring the wrong object,
+and the arithmetic of the next round is what says so.

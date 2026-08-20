@@ -412,3 +412,25 @@ audit keeps finding: a number that is checked, and a repair that is not availabl
 **What would close it** is a rule that compares the index against something that can still grow — the
 smallest *open* volume, or the median — and a stated way to rebalance closed volumes when the relation
 breaks. Until then the next round starts with fifteen bytes and will spend its first edit making room.
+
+## Finding 502 — a record dated "this commit" is a claim about now
+
+`check-doc-counts` reads `(as of this commit)` as the present (`CURRENT_MARKERS`) and refuses a row that
+carries it when the number no longer matches the suite. It was right, and the row was wrong: v3.76's ledger
+published `core 244 / 6234` with that phrase, v3.77 added one test, and the guard refused two rows in a
+record that had been frozen a round earlier.
+
+The phrase is the defect. A ledger is measured against **one tree**, and "this commit" names that tree only
+while it is the commit being written. The corpus already had the anchored form -- `(as of `78cf92046`)` in
+`volume-02.md`, and `progress-volumes.mjs` rule 8 holds every such marker in one ledger to a single commit
+-- so the ledger that said "this commit" was using a current-claim where a date belonged.
+
+**Both spellings are wrong for a record, and for one reason.** The anchored form names a commit that the
+publishing pipeline rewrote: every push here goes through the Git Data API, which creates the commit
+server-side, so a local sha names something no reader can resolve. What survives a push is the **round
+label**. v3.76's three rows say `(at v3.76)` now, the newest ledger keeps `(as of this commit)` because it
+is the one claim about the present, and the round that follows dates it.
+
+**What would have caught it earlier** is nothing: the guard fired the moment the claim stopped being true,
+which is the first moment it could. The cost is three row edits in the next round's write-up, and the
+benefit is that the previous round's counts are read rather than inherited.

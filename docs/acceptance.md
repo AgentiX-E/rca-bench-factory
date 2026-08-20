@@ -1235,7 +1235,11 @@ from an anecdote again.
 - **What the round kept.** The four mutations that test the record arm, and the reading the deleted arm
   produced on its way past: 39 closure citations in the open list, 39 resolving.
 
-### The index is smaller than the smallest volume it indexes (v3.65)
+### The index is smaller than the smallest volume it indexes (v3.65, superseded at v3.77)
+
+> The comparison set this section established was **every** volume. It is now the volume that is still
+> open, for the reason in the section below it, and the reason is finding 501. The measurements here are
+> that round's and are unchanged.
 
 - **The relation is printed every run, and it fired.** `check-progress-volumes.mjs` prints
   `index N of smallest volume M`. At v3.65 the index reached **93,828** against a smallest volume of
@@ -1436,3 +1440,36 @@ from an anecdote again.
   that means the wrong thing. The reading counts that class separately (`misreads`) instead of folding it
   into the rate: the validator being right about its contract and the channel being right about the data
   are two claims.
+
+### A bound that cannot move is a constant (v3.77)
+
+- **The relation fired, and this time the repair it named did not exist.** `check-progress-volumes.mjs`
+  required the index to be smaller than **every** volume, so the bound was the smallest one --
+  `volume-02.md` at 92,355 bytes, closed eleven volumes ago, with nothing permitted to append to it. v3.76
+  began with 955 bytes of room and ended with 15, and what it did to get green was shave three paragraphs
+  of its own new entries until the arithmetic fitted: a number that is checked, and a repair that is not
+  available (finding 501).
+- **The set was the defect, not the statistic.** "Not bigger than the things it indexes" is a claim about
+  what a reader needs, and the only volume a comparison can *act on* is the one still being written. The
+  rule names that volume, prints it -- `index 92,340 of open volume 104,534` -- and its refusal names two
+  repairs that both exist.
+- **Headroom that grows is the property that was missing.** 11,607 bytes now against 15 before, and the
+  volume that is still open gains bytes every round, so the gap widens instead of standing still while
+  the index walks toward it.
+- **What survives is the split instruction.** A new volume must be **born** larger than the index, or the
+  relation is false the moment the boundary is drawn -- the reason v2.47's split moved twenty-one rounds.
+  The index's own ceiling follows by transitivity: it can never exceed `MAX_BYTES`, because the open
+  volume it must stay under cannot, so an index that reaches the volume budget has become a document.
+- **What is given up is stated rather than hidden.** The index may now be bigger than a closed volume,
+  and it is. That is accepted for the reason the volume budget is judged only on the last volume (finding
+  208): a closed volume records a size it had, and comparing against it constrains the future with a fact
+  about the past. The three fixtures that carry the relation assert both halves -- the closed volume it
+  has passed is not a failure, and the open one it has passed is.
+- **The relation has an injection now.** `VOLUME 1` restores the smallest-volume set, and what catches it
+  is the fixture whose closed volume the index has already passed. Until v3.77 the rule had three fixtures
+  and no injection, which is a rule that has been *covered* and not *proved*: nothing showed that a
+  mutation of it is seen by a test.
+- **What is not claimed.** `## Open` still grows: a struck entry stays where it is struck, so the live
+  list gains bytes every round whatever the bound. The rule bounds the index against the volume, not
+  against history, and the round that reaches the ceiling will have to move the closed part of the list
+  into a volume -- named here so it is not discovered under a red build.

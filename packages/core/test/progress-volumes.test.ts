@@ -41,11 +41,12 @@ afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
  *
  * Each body is padded to `FIXTURE_BYTES`, because a volume is tens of kilobytes and a
  * twenty-byte one is not a volume. That mattered the moment the guard gained a relation
- * rather than a constant: `check` now requires the index to be smaller than the smallest
- * volume, and a fixture whose "volume" is one heading would have made every structural
+ * rather than a constant: `check` requires the index to be smaller than the volume that is
+ * still open, and a fixture whose "volume" is one heading would have made every structural
  * test red for a size reason it was not written to exercise. Padding is the honest fix --
  * the alternative, an option that turns the relation off, is a seam that invites exactly
- * the kind of test that measures nothing.
+ * the kind of test that measures nothing. The cases that are *about* the relation override
+ * the padding by hand, because the sizes there are the subject.
  */
 const FIXTURE_BYTES = 4_000;
 
@@ -319,35 +320,69 @@ describe('the command, because a gate nobody has seen fail is not a gate', () =>
 });
 
 /**
- * The index and the things it indexes.
+ * The index and the thing it is still being compared with.
  *
- * v2.28 wrote that the index had become "the largest single file in `docs/`", and it is
+ * v2.28 wrote that the index had become "the largest single file in `docs/`", and it was
  * the **smallest** of the five progress files -- a claim nobody measured, in a round whose
- * subject was that a measurement must be taken rather than assumed. The rule that replaces
- * it is a relation rather than a number: the file a reader opens first, to find their way
- * to the others, must not be bigger than the things it indexes. Twenty kilobytes of
- * headroom today, six rounds at the current rate, and then the split is an instruction
- * rather than an opinion.
+ * subject was that a measurement must be taken rather than assumed. The rule that replaced
+ * it was a relation rather than a number: the file a reader opens first, to find their way
+ * to the others, must not be bigger than the things it indexes.
+ *
+ * The relation was right and **the set was wrong** (finding 501). "The things it indexes"
+ * was read as *every* volume, and a volume that has been closed cannot grow, so the bound
+ * was the smallest closed volume -- a constant wearing a relation's clothes. It was 955
+ * bytes at the start of v3.76 and 15 bytes at the end, and the refusal names two repairs,
+ * neither of which exists: the section that grew was `## Open`, which is the index's own
+ * content, and no record may be added to a volume frozen eleven volumes ago.
+ *
+ * So the comparison is against the volume that is **still open**. That one grows every
+ * round the log is written, which is what a bound has to do to be a bound rather than a
+ * wall, and the split instruction survives: a new volume must be born larger than the
+ * index, which is the reason v2.47's split moved twenty-one rounds.
  */
-describe('the index has not outgrown what it indexes', () => {
-  it('refuses an index bigger than the smallest volume', () => {
-    const dir = volumesOf({ 'volume-01.md': `## Pass 1 -- a small volume\n\n${'x'.repeat(400)}\n` });
-    // 4_000 padded + the 1_200 below is not enough, so the index is padded past the volume
-    // by hand: the point of this case is the comparison, not the constant.
-    const index = `${indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1']])}\n\n${'y'.repeat(6_000)}\n`;
-    const errors = check(index, dir).errors.join('\n');
-    expect(errors).toContain('has outgrown something it indexes');
-    // And it says what to do about it, because "your index is large" is not a repair.
-    expect(errors).toContain('belongs');
+describe('the index has not outgrown the volume it is still being compared with', () => {
+  it('does not refuse an index that a closed volume can no longer match', () => {
+    // The defect, in the smallest form that has it: the oldest volume was closed long ago
+    // and the index has since grown past it, while the volume still being written is
+    // comfortably larger. Before v3.77 this was the refusal that started every round with
+    // an edit that only moved bytes.
+    const dir = volumesOf({
+      'volume-01.md': `## Pass 1 -- closed, and small\n\n${'x'.repeat(400)}\n`,
+      'volume-02.md': `## Pass 2 -- still open, and large\n\n${'x'.repeat(24_000)}\n`,
+    });
+    const index = indexFor([
+      ['volume-01.md', 1, 'Pass 1', 'Pass 1'],
+      ['volume-02.md', 1, 'Pass 2', 'Pass 2'],
+    ]);
+    const result = check(`${index}\n\n${'y'.repeat(6_000)}\n`, dir);
+    expect(result.errors).toEqual([]);
   });
 
-  it('accepts an index smaller than every volume, and prints the two numbers', () => {
+  it('refuses an index bigger than the volume that is still open, and names it', () => {
+    const dir = volumesOf({
+      'volume-01.md': `## Pass 1 -- closed\n\n${'x'.repeat(400)}\n`,
+      'volume-02.md': `## Pass 2 -- still open\n\n${'x'.repeat(400)}\n`,
+    });
+    const index = indexFor([
+      ['volume-01.md', 1, 'Pass 1', 'Pass 1'],
+      ['volume-02.md', 1, 'Pass 2', 'Pass 2'],
+    ]);
+    const errors = check(`${index}\n\n${'y'.repeat(6_000)}\n`, dir).errors.join('\n');
+    expect(errors).toContain('volume-02.md');
+    expect(errors).toContain('still open');
+    // And it says what to do about it, because "your index is large" is not a repair.
+    expect(errors).toContain('belongs');
+    // The smallest volume here is also volume-01, and naming *it* would be the defect.
+    expect(errors).not.toContain('smallest');
+  });
+
+  it('accepts an index smaller than the open volume, and prints the two numbers', () => {
     const dir = volumesOf({ 'volume-01.md': `## Pass 1 -- a larger volume\n\n${'x'.repeat(4000)}\n` });
     const result = check(indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1']]), dir);
     expect(result.errors).toEqual([]);
     // The relation is printed beside the budget, so a reader can see the headroom rather
     // than take it on trust -- and so a run that shrinks a volume shows up here.
-    expect(result.summary).toMatch(/index [\d,]+ of smallest volume [\d,]+/);
+    expect(result.summary).toMatch(/index [\d,]+ of open volume [\d,]+/);
   });
 });
 

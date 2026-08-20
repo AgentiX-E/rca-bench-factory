@@ -1474,6 +1474,21 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         ),
         "the test that names the samples the reading does not answer",
     ),
+    (
+        # The relation's right-hand side used to be **the smallest volume**, which is closed and cannot
+        # grow (finding 501). Restored, the fixture whose oldest volume the index has already passed is
+        # refused -- the defect exactly -- and no other fixture moves: the two that fail either way have
+        # an index larger than every volume in them.
+        "VOLUME 1. the index is measured against the smallest volume again",
+        "scripts/progress-volumes.mjs",
+        "progress-volumes.test.ts",
+        lambda t: rename(
+            t,
+            "  const openBytes = open?.bytes ?? 0;",
+            "  const openBytes = volumes.length === 0 ? 0 : Math.min(...volumes.map((one) => one.bytes));",
+        ),
+        "the fixture whose closed volume the index has already passed",
+    ),
 ]
 
 
@@ -1675,6 +1690,9 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'COVER 1. the coverage sentence counts the samples it does not answer': (
         'names the samples it does not answer',
+    ),
+    'VOLUME 1. the index is measured against the smallest volume again': (
+        'does not refuse an index that a closed volume can no longer match',
     ),
     'LAYOUT 2. a mapping to the wrong column counts as agreement': (
         'counts an answer that points a field at a real but different column as a contradiction',

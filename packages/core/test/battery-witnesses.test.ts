@@ -210,7 +210,12 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     //
     // 73 -> 74 in v3.75: one for the round-trip reporter, whose failing branch is only reached by a
     // case that scores 1.00 and still does not match the target's layout.
-    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 74],
+    //
+    // 74 -> 75 in v3.77: one for the progress index's size relation, which had no injection at all --
+    // the rule was covered by three fixtures and by nothing that proved a *mutation* of it is caught.
+    // The restoration is the set the rule compares against, so the witness is the fixture whose
+    // oldest volume the index has already passed.
+    ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 75],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
     ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],
