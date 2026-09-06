@@ -1,0 +1,45 @@
+{
+  "irVersion": "2.0",
+  "generatedAt": "2026-09-06",
+  "target": "openrca1.0",
+  "files": {
+    "order-prod/2026_09_06/telemetry/log/case-001.csv": {
+      "sha256": "7f851332bc0bf4c5204f0cc7ed96cca6713896fb0c3cfac3b182b96c69c4a88b",
+      "bytes": 93
+    },
+    "order-prod/2026_09_06/telemetry/metric/case-001.csv": {
+      "sha256": "0112dd93f949dfaf180076271b61af7d4d234d0e6823ede798109bb9590342db",
+      "bytes": 708
+    },
+    "order-prod/2026_09_06/telemetry/trace/case-001.csv": {
+      "sha256": "80fb3018bf59276acadee5373f56ff65f98123bb1144545ca1abda5750e25e28",
+      "bytes": 199
+    },
+    "order-prod/query.csv": {
+      "sha256": "aec9318e1a84ece2ec05b1035dcba5a9597bc3d57aacd164d221645016d3513d",
+      "bytes": 137
+    },
+    "order-prod/record.csv": {
+      "sha256": "14b7bbbe84d24995c9b8383565adb770c3845b5f3d20adb206b1ddfef0aed28f",
+      "bytes": 203
+    }
+  },
+  "rcaevalRe2Files": {
+    "RE2-order-cpu_1/metrics.json": {
+      "sha256": "433df4176887b3bcf44daec8b6ac11541b816fa2843300ffaabd620653c76fc7",
+      "bytes": 60
+    },
+    "RE2-order-cpu_1/inject_time.txt": {
+      "sha256": "6e31e0f5b09d8e4e9f92a64d948d883c79a8fc334cca586ec7c16bc3f2429bcc",
+      "bytes": 10
+    },
+    "RE2-order-cpu_1/logs.csv": {
+      "sha256": "c42675abf5554ccbcb5b6ac4da35843d391156f4830c648141b314959b33afaf",
+      "bytes": 98
+    },
+    "RE2-order-cpu_1/traces.csv": {
+      "sha256": "039730eede5f9b3df7b3deb0ab8f07050df2a95664c003ff62f651526fd7c541",
+      "bytes": 209
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "rca-bench-factory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn non-standard enterprise telemetry into authoritative RCA benchmark field contracts.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p packages/core/tsconfig.json",
+    "typecheck": "tsc -p packages/core/tsconfig.json --noEmit",
+    "test": "vitest run --root packages/core",
+    "test:coverage": "vitest run --root packages/core --coverage",
+    "lint": "node scripts/check-no-mock.mjs && node scripts/check-no-secrets.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@vitest/coverage-v8": "3.2.4",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  }
+}

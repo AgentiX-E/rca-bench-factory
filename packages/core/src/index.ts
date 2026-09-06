@@ -1,0 +1,171 @@
+/**
+ * @rca-bench-factory/core
+ *
+ * Public surface of the core package: IR types and schemas, the deterministic
+ * transform engine, entity normalization, quality gates, exporters and the
+ * observability coverage report.
+ */
+
+export { IR_VERSION } from './ir/types.js';
+export type {
+  AlertPayload,
+  CausalStep,
+  Comparator,
+  Entity,
+  EntityEdge,
+  EntityGraph,
+  EntityKind,
+  EntityRelation,
+  EventPayload,
+  EvidenceCheckpoint,
+  FaultCase,
+  FaultCategory,
+  FieldProvenance,
+  GateId,
+  GateResult,
+  GateStatus,
+  GateViolation,
+  GroundTruth,
+  IrBundle,
+  LogPayload,
+  MetricPayload,
+  ProfilePayload,
+  ProvenanceSource,
+  QualityGateReport,
+  RootCauseIndicator,
+  SignalKind,
+  SignalPayload,
+  TelemetrySignal,
+  TracePayload,
+} from './ir/types.js';
+
+export {
+  entitySchema,
+  entityGraphSchema,
+  faultCaseSchema,
+  irBundleSchema,
+  telemetrySignalSchema,
+} from './ir/schema.js';
+
+export {
+  applyExpr,
+  applyLookup,
+  applyMap,
+  applyRegex,
+  applyRule,
+  applyTemplate,
+  applyTime,
+  applyUnit,
+  evalExpr,
+} from './transform/strategies.js';
+export type {
+  ExprRule,
+  LookupRule,
+  MapRule,
+  RegexRule,
+  SourceRecord,
+  StrategyErrorCode,
+  StrategyResult,
+  TemplateRule,
+  TimeRule,
+  TransformRule,
+  UnitRule,
+} from './transform/strategies.js';
+
+export {
+  checkNoSilentLoss,
+  transformBatch,
+  transformTraceBatch,
+} from './transform/engine.js';
+export type {
+  EngineOptions,
+  QuarantineRecord,
+  SpanRecord,
+  TraceTransformResult,
+  TransformResult,
+} from './transform/engine.js';
+
+export {
+  entityId,
+  findAmbiguousAliases,
+  findDanglingEdgeRefs,
+  findInvalidRelations,
+  indexGraph,
+  normalizeAliases,
+  resolveEntityRef,
+} from './entity/graph.js';
+export type { GraphIndex, ReferenceIssue } from './entity/graph.js';
+
+export {
+  DEFAULT_SENSITIVE_PATTERNS,
+  caseFingerprint,
+  checkG1Structural,
+  checkG2Semantic,
+  checkG3Validity,
+  checkG4Solvability,
+  checkG5AntiPollution,
+  mean,
+  runAllGates,
+  stddev,
+  sustainedAnomalySamples,
+  zScore,
+} from './gates/gates.js';
+export type {
+  AllGatesOptions,
+  BaselineOutcome,
+  G1Options,
+  G3Options,
+  G4Options,
+  G5Options,
+} from './gates/gates.js';
+
+export {
+  OPENRCA_CONTRACT_VERSION,
+  OPENRCA_OFFSET_MINUTES,
+  OPENRCA_TARGET_ID,
+  buildLogCsv,
+  buildMetricCsv,
+  buildPredictionJson,
+  buildTraceCsv,
+  exportOpenRca,
+  injectTimeUnixSeconds,
+} from './export/openrca.js';
+export type { ExportedFiles, OpenRcaExportResult } from './export/openrca.js';
+
+export {
+  RCAEVAL_CONTRACT_VERSION,
+  RCAEVAL_TARGET_ID,
+  buildLogsCsv,
+  buildMetricsJson,
+  buildTracesCsv,
+  caseDirName,
+  exportRcaEval,
+} from './export/rcaeval.js';
+export type { RcaEvalExportResult, RcaEvalSuite } from './export/rcaeval.js';
+
+export {
+  MODALITY_LOSS,
+  TARGET_REQUIREMENTS,
+  computeCoverage,
+  formatCoverageReport,
+} from './coverage.js';
+export type { CoverageReport, TargetFeasibility, TargetId } from './coverage.js';
+
+export {
+  ISO_UTC_PATTERN,
+  epochMsToIsoUtc,
+  isWithinWindow,
+  isoUtcToEpochMs,
+  isoUtcToOffsetIso,
+  parseTimestamp,
+} from './util/time.js';
+export type { ParsedTime, TimeLayout } from './util/time.js';
+
+export {
+  convertUnit,
+  dimensionOf,
+  getUnitDef,
+  isConvertible,
+  knownUnits,
+} from './util/unit.js';
+export type { Dimension } from './util/unit.js';
