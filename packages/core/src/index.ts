@@ -169,3 +169,22 @@ export {
   knownUnits,
 } from './util/unit.js';
 export type { Dimension } from './util/unit.js';
+
+export {
+  detectFileLayout,
+  ingestFile,
+  parseDelimited,
+  parseJsonArray,
+  parseJsonl,
+} from './ingest/file.js';
+export type {
+  DelimitedParseResult,
+  FileFormat,
+  FileIngestOptions,
+  FileIngestResult,
+  FileLayout,
+  FileParseError,
+  FileQuarantineRecord,
+  FileSignalKind,
+  JsonlParseResult,
+} from './ingest/file.js';
