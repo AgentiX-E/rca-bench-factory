@@ -188,3 +188,6 @@ export type {
   FileSignalKind,
   JsonlParseResult,
 } from './ingest/file.js';
+
+export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/otlp.js';
+export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';

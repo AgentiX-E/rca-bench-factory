@@ -55,7 +55,7 @@ rca-bench-factory/
 │   └── core/                  # @rca-bench-factory/core — IR, transform, gates, exporters
 │       ├── src/
 │       │   ├── ir/            # Layer model: types, zod schemas, type guards
-│       │   ├── ingest/        # flat-file ingest (CSV/TSV/JSONL/JSON) → IR signals
+│       │   ├── ingest/        # file (CSV/TSV/JSONL/JSON) + OTLP JSON → IR signals
 │       │   ├── transform/     # 7 strategies + batch engine (quarantine, no silent loss)
 │       │   ├── entity/        # entity graph index, alias resolution (union-find)
 │       │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
@@ -131,6 +131,7 @@ if (report.finalStatus === 'admitted') {
 ## Status
 
 Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
-flat-file ingest (CSV/TSV/JSONL/JSON), the four-layer IR, the transform engine, the
-entity graph, the G1–G5 gates and the OpenRCA/RCAEval exporters. LLM-assisted rule
-generation, the CLI surface and the remaining exporters are the next milestones.
+flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
+four-layer IR, the transform engine, the entity graph, the G1–G5 gates and the
+OpenRCA/RCAEval exporters. LLM-assisted rule generation, the CLI surface and the
+remaining exporters are the next milestones.
