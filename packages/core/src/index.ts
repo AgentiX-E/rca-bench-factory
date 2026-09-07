@@ -144,6 +144,23 @@ export {
 export type { RcaEvalExportResult, RcaEvalSuite } from './export/rcaeval.js';
 
 export {
+  RCA100_CONTRACT_VERSION,
+  RCA100_TARGET_ID,
+  buildEntityIndex,
+  buildGroundTruthJson,
+  buildRca100Alerts,
+  buildRca100Events,
+  buildRca100Logs,
+  buildRca100Metrics,
+  buildRca100Traces,
+  buildTaskJson,
+  buildTopologyJson,
+  exportRca100,
+  resolveSignalEntity,
+} from './export/rca100.js';
+export type { EntityIndex, Rca100ExportResult, Rca100ModalityTable } from './export/rca100.js';
+
+export {
   MODALITY_LOSS,
   TARGET_REQUIREMENTS,
   computeCoverage,
