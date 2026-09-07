@@ -191,3 +191,18 @@ export type {
 
 export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/otlp.js';
 export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';
+
+export {
+  checkOpenRcaStructure,
+  checkRcaEvalStructure,
+  scoreExport,
+  sha256,
+  verifyChecksums,
+} from './score/score.js';
+export type {
+  ChecksumReport,
+  ScoreCheck,
+  ScoreReport,
+  ScoreTargetId,
+  StructureReport,
+} from './score/score.js';

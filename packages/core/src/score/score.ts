@@ -1,0 +1,310 @@
+import { createHash } from 'node:crypto';
+import type { RcaEvalSuite } from '../export/rcaeval.js';
+
+/**
+ * Score and verification module.
+ *
+ * Turns "the export looks right" into a quantitative, reproducible verdict:
+ *   1. Structure checks verify the emitted dataset honours the target field
+ *      contract (file layout, column headers, answer-key isolation, modality).
+ *   2. Checksum verification proves the emitted bytes are byte-stable against
+ *      committed Golden Master anchors (external grounding, never self-approved).
+ *   3. `scoreExport` combines both into a 0-100 score.
+ *
+ * All checks are pure functions of the exported file map - no mocks, no IO.
+ */
+
+export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3';
+
+export interface ScoreCheck {
+  id: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface StructureReport {
+  target: ScoreTargetId;
+  passed: boolean;
+  checks: ScoreCheck[];
+}
+
+export interface ChecksumReport {
+  passed: boolean;
+  matched: number;
+  mismatched: string[];
+  missing: string[];
+  extra: string[];
+}
+
+export interface ScoreReport {
+  target: ScoreTargetId;
+  passed: boolean;
+  score: number;
+  structure: StructureReport;
+  checksum?: ChecksumReport;
+}
+
+const OPENRCA_QUERY_HEADER = 'instruction_id,query,occurrence_datetime';
+const OPENRCA_RECORD_HEADER = 'instruction_id,prediction';
+const OPENRCA_METRIC_HEADER = 'timestamp,cmdb_id,kpi_name,value';
+const OPENRCA_LOG_HEADER = 'timestamp,cmdb_id,severity,message';
+const OPENRCA_TRACE_HEADER = 'timestamp,trace_id,span_id,parent_span_id,cmdb_id,span_name,duration_ms,status';
+
+const RCAEVAL_LOGS_HEADER = 'timestamp,service,severity,message';
+const RCAEVAL_TRACES_HEADER = 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status';
+
+function rcaevalTarget(suite: RcaEvalSuite): ScoreTargetId {
+  return `rcaeval-${suite.toLowerCase()}` as ScoreTargetId;
+}
+
+function check(id: string, passed: boolean, detail: string): ScoreCheck {
+  return { id, passed, detail };
+}
+
+function pathsEndingWith(files: Record<string, string>, suffix: string): string[] {
+  return Object.keys(files).filter((p) => p.endsWith(suffix));
+}
+
+function csvHeader(csv: string): string[] {
+  // `split` always returns at least `['']`, so index 0 is never undefined.
+  return csv.split('\n')[0]!.split(',');
+}
+
+function first(files: Record<string, string>, paths: string[]): string | undefined {
+  const path = paths[0];
+  return path === undefined ? undefined : files[path];
+}
+
+/** SHA-256 of a UTF-8 string, hex-encoded. */
+export function sha256(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * Verify an OpenRCA 1.0 export against the structural field contract.
+ *
+ * The answer key is required to stay physically separate: `query.csv` (tasks)
+ * must never contain the root-cause component, which lives in `record.csv`.
+ */
+export function checkOpenRcaStructure(files: Record<string, string>): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const queryFiles = pathsEndingWith(files, '/query.csv');
+  const recordFiles = pathsEndingWith(files, '/record.csv');
+  const metricFiles = Object.keys(files).filter((p) => p.includes('/telemetry/metric/'));
+  const logFiles = Object.keys(files).filter((p) => p.includes('/telemetry/log/'));
+  const traceFiles = Object.keys(files).filter((p) => p.includes('/telemetry/trace/'));
+
+  checks.push(check('query-csv', queryFiles.length > 0, `found ${queryFiles.length} query.csv`));
+  checks.push(check('record-csv', recordFiles.length > 0, `found ${recordFiles.length} record.csv`));
+
+  const queryHeader = first(files, queryFiles);
+  checks.push(
+    check(
+      'query-header',
+      queryHeader !== undefined && csvHeader(queryHeader).join(',') === OPENRCA_QUERY_HEADER,
+      `expected '${OPENRCA_QUERY_HEADER}'`,
+    ),
+  );
+
+  const recordHeader = first(files, recordFiles);
+  checks.push(
+    check(
+      'record-header',
+      recordHeader !== undefined && csvHeader(recordHeader).join(',') === OPENRCA_RECORD_HEADER,
+      `expected '${OPENRCA_RECORD_HEADER}'`,
+    ),
+  );
+
+  const queryContent = queryFiles.map((p) => files[p]!).join('\n');
+  // The answer key lives in record.csv as the `prediction` JSON with the
+  // `root cause component` / `root cause reason` / `root cause occurrence
+  // datetime` keys. A task description may legitimately say "find the root
+  // cause", so only those concrete key names are treated as leakage.
+  const isolated = !/root cause component|root cause reason|root cause occurrence/i.test(queryContent);
+  checks.push(
+    check('answer-key-isolated', isolated, isolated ? 'query.csv carries no answer key' : 'query.csv leaks the answer key'),
+  );
+
+  const hasTelemetry = metricFiles.length > 0 || logFiles.length > 0 || traceFiles.length > 0;
+  checks.push(check('telemetry-present', hasTelemetry, `metric=${metricFiles.length} log=${logFiles.length} trace=${traceFiles.length}`));
+
+  const metricHeader = first(files, metricFiles);
+  checks.push(
+    check(
+      'metric-header',
+      metricHeader !== undefined && csvHeader(metricHeader).join(',') === OPENRCA_METRIC_HEADER,
+      `expected '${OPENRCA_METRIC_HEADER}'`,
+    ),
+  );
+
+  // An empty log directory is legitimate (Telecom ships no logs).
+  const logHeader = first(files, logFiles);
+  checks.push(
+    check(
+      'log-header',
+      logHeader === undefined || csvHeader(logHeader).join(',') === OPENRCA_LOG_HEADER,
+      `expected '${OPENRCA_LOG_HEADER}'`,
+    ),
+  );
+
+  const traceHeader = first(files, traceFiles);
+  checks.push(
+    check(
+      'trace-header',
+      traceHeader === undefined || csvHeader(traceHeader).join(',') === OPENRCA_TRACE_HEADER,
+      `expected '${OPENRCA_TRACE_HEADER}'`,
+    ),
+  );
+
+  return { target: 'openrca-1.0', passed: checks.every((c) => c.passed), checks };
+}
+
+/**
+ * Verify an RCAEval export against the structural field contract for a suite.
+ *
+ * RE1 is metrics-only; RE2 and RE3 additionally require logs and traces, so the
+ * modality set is itself a contract violation when it does not match the suite.
+ */
+export function checkRcaEvalStructure(files: Record<string, string>, suite: RcaEvalSuite): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const metricsFiles = pathsEndingWith(files, '/metrics.json');
+  const injectFiles = pathsEndingWith(files, '/inject_time.txt');
+  const logFiles = pathsEndingWith(files, '/logs.csv');
+  const traceFiles = pathsEndingWith(files, '/traces.csv');
+
+  checks.push(check('metrics-json', metricsFiles.length > 0, `found ${metricsFiles.length} metrics.json`));
+  checks.push(check('inject-time-exists', injectFiles.length > 0, `found ${injectFiles.length} inject_time.txt`));
+
+  const injectTime = first(files, injectFiles)?.trim();
+  checks.push(
+    check(
+      'inject-time-format',
+      injectTime !== undefined && /^\d{10}$/.test(injectTime),
+      `inject_time '${injectTime ?? '(missing)'}' is an integer Unix timestamp`,
+    ),
+  );
+
+  const expectModalities = suite === 'RE2' || suite === 'RE3';
+  const hasLogs = logFiles.length > 0;
+  const hasTraces = traceFiles.length > 0;
+  const modalityOk = expectModalities ? hasLogs && hasTraces : !hasLogs && !hasTraces;
+  checks.push(
+    check('modality-set', modalityOk, `${suite} expects logs/traces=${expectModalities}, found logs=${hasLogs} traces=${hasTraces}`),
+  );
+
+  const logHeader = first(files, logFiles);
+  checks.push(
+    check(
+      'logs-header',
+      logHeader === undefined ? !expectModalities : csvHeader(logHeader).join(',') === RCAEVAL_LOGS_HEADER,
+      `expected '${RCAEVAL_LOGS_HEADER}'`,
+    ),
+  );
+
+  const traceHeader = first(files, traceFiles);
+  checks.push(
+    check(
+      'traces-header',
+      traceHeader === undefined ? !expectModalities : csvHeader(traceHeader).join(',') === RCAEVAL_TRACES_HEADER,
+      `expected '${RCAEVAL_TRACES_HEADER}'`,
+    ),
+  );
+
+  return { target: rcaevalTarget(suite), passed: checks.every((c) => c.passed), checks };
+}
+
+/**
+ * Verify exported files against committed SHA-256 anchors.
+ *
+ * `passed` requires the file sets to agree exactly: nothing mismatched, nothing
+ * missing, nothing extra. Extra files are still reported so a contract drift is
+ * visible even when the anchors themselves are unchanged.
+ */
+export function verifyChecksums(files: Record<string, string>, anchors: Record<string, string>): ChecksumReport {
+  const mismatched: string[] = [];
+  const missing: string[] = [];
+  let matched = 0;
+
+  for (const [path, expected] of Object.entries(anchors)) {
+    const actual = files[path];
+    if (actual === undefined) {
+      missing.push(path);
+    } else if (sha256(actual) === expected) {
+      matched += 1;
+    } else {
+      mismatched.push(path);
+    }
+  }
+
+  const anchorPaths = new Set(Object.keys(anchors));
+  const extra = Object.keys(files).filter((p) => !anchorPaths.has(p));
+
+  return {
+    passed: mismatched.length === 0 && missing.length === 0 && extra.length === 0,
+    matched,
+    mismatched,
+    missing,
+    extra,
+  };
+}
+
+function structureRate(structure: StructureReport): number {
+  // Every structure report carries at least one check, so division is safe.
+  return structure.checks.filter((c) => c.passed).length / structure.checks.length;
+}
+
+function checksumRate(report: ChecksumReport): number {
+  // When checksum verification is requested, the anchor set is non-empty and
+  // every anchor is counted as matched, mismatched or missing, so the total is
+  // positive.
+  const total = report.matched + report.mismatched.length + report.missing.length;
+  return report.matched / total;
+}
+
+function structureFor(target: ScoreTargetId, files: Record<string, string>): StructureReport {
+  switch (target) {
+    case 'openrca-1.0':
+      return checkOpenRcaStructure(files);
+    case 'rcaeval-re1':
+      return checkRcaEvalStructure(files, 'RE1');
+    case 'rcaeval-re2':
+      return checkRcaEvalStructure(files, 'RE2');
+    case 'rcaeval-re3':
+      return checkRcaEvalStructure(files, 'RE3');
+    default: {
+      const never: never = target;
+      throw new Error(`unknown score target '${String(never)}'`);
+    }
+  }
+}
+
+/**
+ * Score an exported dataset against a target contract.
+ *
+ * Without anchors the score is the structural pass rate; with anchors it is the
+ * average of the structural pass rate and the checksum match rate.
+ */
+export function scoreExport(
+  target: ScoreTargetId,
+  files: Record<string, string>,
+  anchors?: Record<string, string>,
+): ScoreReport {
+  const structure = structureFor(target, files);
+  if (anchors === undefined || Object.keys(anchors).length === 0) {
+    return {
+      target,
+      passed: structure.passed,
+      score: Math.round(structureRate(structure) * 100),
+      structure,
+    };
+  }
+  const checksum = verifyChecksums(files, anchors);
+  const score = Math.round(((structureRate(structure) + checksumRate(checksum)) / 2) * 100);
+  return {
+    target,
+    passed: structure.passed && checksum.passed,
+    score,
+    structure,
+    checksum,
+  };
+}
