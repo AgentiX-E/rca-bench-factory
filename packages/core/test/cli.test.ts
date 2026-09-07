@@ -1,0 +1,211 @@
+import { describe, expect, it } from 'vitest';
+import { formatHelp, formatVersion, parseCliArgs } from '../src/cli/args.js';
+
+/**
+ * CLI argument parser tests.
+ *
+ * `parseCliArgs` is a pure function of `argv`: same input, same command object
+ * or the same error. No IO, no mocks. The suite asserts every command, every
+ * option, every enum validation and every error path.
+ */
+
+describe('parseCliArgs - help and version', () => {
+  it('defaults to help for an empty argv', () => {
+    expect(parseCliArgs([])).toEqual({ ok: true, command: { command: 'help' } });
+  });
+
+  it('accepts the --help flag', () => {
+    expect(parseCliArgs(['--help'])).toEqual({ ok: true, command: { command: 'help' } });
+    expect(parseCliArgs(['-h'])).toEqual({ ok: true, command: { command: 'help' } });
+  });
+
+  it('accepts the --version flag', () => {
+    expect(parseCliArgs(['--version'])).toEqual({ ok: true, command: { command: 'version' } });
+    expect(parseCliArgs(['-v'])).toEqual({ ok: true, command: { command: 'version' } });
+  });
+
+  it('accepts the help and version subcommands', () => {
+    expect(parseCliArgs(['help'])).toEqual({ ok: true, command: { command: 'help' } });
+    expect(parseCliArgs(['version'])).toEqual({ ok: true, command: { command: 'version' } });
+  });
+
+  it('rejects an unknown command', () => {
+    const result = parseCliArgs(['frobnicate']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/unknown command/i);
+  });
+});
+
+describe('parseCliArgs - source', () => {
+  it('parses a minimal source command', () => {
+    expect(parseCliArgs(['source', '--path', './telemetry.csv'])).toEqual({
+      ok: true,
+      command: { command: 'source', path: './telemetry.csv' },
+    });
+  });
+
+  it('parses every source option', () => {
+    const result = parseCliArgs([
+      'source',
+      '--path', './x.csv',
+      '--format', 'csv',
+      '--signal-kind', 'metric',
+      '--layout', '{"timestamp":"ts","metricName":"name","metricValue":"value"}',
+      '--service-name', 'order',
+      '--time-layout', 'java_log',
+      '--assume-offset-minutes', '480',
+      '--has-header',
+      '--delimiter', ';',
+    ]);
+    expect(result).toEqual({
+      ok: true,
+      command: {
+        command: 'source',
+        path: './x.csv',
+        format: 'csv',
+        signalKind: 'metric',
+        layout: '{"timestamp":"ts","metricName":"name","metricValue":"value"}',
+        serviceName: 'order',
+        timeLayout: 'java_log',
+        assumeOffsetMinutes: 480,
+        hasHeader: true,
+        delimiter: ';',
+      },
+    });
+  });
+
+  it('requires --path', () => {
+    const result = parseCliArgs(['source']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/path/i);
+  });
+
+  it('rejects an invalid --format', () => {
+    const result = parseCliArgs(['source', '--path', 'x', '--format', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/format/i);
+  });
+
+  it('rejects an invalid --signal-kind', () => {
+    const result = parseCliArgs(['source', '--path', 'x', '--signal-kind', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/signal-kind/i);
+  });
+
+  it('rejects an invalid --time-layout', () => {
+    const result = parseCliArgs(['source', '--path', 'x', '--time-layout', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/time-layout/i);
+  });
+
+  it('rejects a non-numeric --assume-offset-minutes', () => {
+    const result = parseCliArgs(['source', '--path', 'x', '--assume-offset-minutes', 'abc']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/offset/i);
+  });
+
+  it('rejects malformed --layout JSON', () => {
+    const result = parseCliArgs(['source', '--path', 'x', '--layout', 'not-json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/layout/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['source', '--path', 'x', '--bogus', 'y']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
+describe('parseCliArgs - export', () => {
+  it('parses an OpenRCA export command', () => {
+    expect(parseCliArgs(['export', '--target', 'openrca-1.0'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'openrca-1.0' },
+    });
+  });
+
+  it('parses an RCAEval export command with a suite', () => {
+    expect(parseCliArgs(['export', '--target', 'rcaeval', '--suite', 're2'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'rcaeval', suite: 'RE2' },
+    });
+  });
+
+  it('requires --target', () => {
+    const result = parseCliArgs(['export']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects an invalid --target', () => {
+    const result = parseCliArgs(['export', '--target', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects an invalid --suite', () => {
+    const result = parseCliArgs(['export', '--target', 'rcaeval', '--suite', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/suite/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['export', '--target', 'openrca-1.0', '--bogus', 'x']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
+describe('parseCliArgs - score', () => {
+  it('parses a score command', () => {
+    expect(parseCliArgs(['score', '--target', 'openrca-1.0'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'openrca-1.0' },
+    });
+  });
+
+  it('parses a score command with anchors', () => {
+    expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', '{}'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'rcaeval-re2', anchors: '{}' },
+    });
+  });
+
+  it('requires --target', () => {
+    const result = parseCliArgs(['score']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects an invalid --target', () => {
+    const result = parseCliArgs(['score', '--target', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects malformed --anchors JSON', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--anchors', 'not-json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/anchors/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--bogus', 'x']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
+describe('formatHelp and formatVersion', () => {
+  it('lists every command in the help text', () => {
+    const help = formatHelp();
+    for (const cmd of ['source', 'export', 'score', 'help', 'version']) {
+      expect(help).toContain(cmd);
+    }
+  });
+
+  it('returns a semantic-version string', () => {
+    expect(formatVersion()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});

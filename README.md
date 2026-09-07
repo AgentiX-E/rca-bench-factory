@@ -61,6 +61,7 @@ rca-bench-factory/
 │       │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
 │       │   ├── export/        # OpenRCA + RCAEval exporters
 │       │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
+│       │   ├── cli/           # IO-free `rca-bench` argument parser (source/export/score)
 │       │   └── util/          # strict time parsing, UCUM-inspired rational units
 │       └── test/              # vitest + v8 coverage, no mocks, no skips
 ├── docs/                      # external documentation (architecture, user guide, …)
@@ -134,5 +135,6 @@ if (report.finalStatus === 'admitted') {
 Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
 flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
-OpenRCA/RCAEval exporters and the structure/checksum score module. LLM-assisted
-rule generation, the CLI surface and the remaining exporters are the next milestones.
+OpenRCA/RCAEval exporters, the structure/checksum score module and the CLI
+argument parser. LLM-assisted rule generation and the remaining exporters are the
+next milestones.

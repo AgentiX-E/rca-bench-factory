@@ -206,3 +206,6 @@ export type {
   ScoreTargetId,
   StructureReport,
 } from './score/score.js';
+
+export { CLI_VERSION, formatHelp, formatVersion, parseCliArgs } from './cli/args.js';
+export type { CliCommand, CliParseResult, ExportTarget } from './cli/args.js';
