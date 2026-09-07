@@ -222,3 +222,14 @@ export type {
   SampleRecord,
 } from './llm/rulegen.js';
 export type { LlmProvider } from './llm/provider.js';
+
+export {
+  inferFaultCategory,
+  normalizeFaultType,
+  parseFaultSpec,
+} from './fault/collector.js';
+export type {
+  FaultSpec,
+  FaultSpecParseResult,
+  InjectionMethod,
+} from './fault/collector.js';
