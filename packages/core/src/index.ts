@@ -209,3 +209,16 @@ export type {
 
 export { CLI_VERSION, formatHelp, formatVersion, parseCliArgs } from './cli/args.js';
 export type { CliCommand, CliParseResult, ExportTarget } from './cli/args.js';
+
+export {
+  buildRulegenPrompt,
+  parseRulegenResponse,
+  validateGeneratedLayout,
+} from './llm/rulegen.js';
+export type {
+  GeneratedLayout,
+  LayoutValidation,
+  RulegenParseResult,
+  SampleRecord,
+} from './llm/rulegen.js';
+export type { LlmProvider } from './llm/provider.js';
