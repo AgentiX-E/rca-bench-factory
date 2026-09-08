@@ -310,10 +310,38 @@ describe('parseCliArgs - gate', () => {
   });
 });
 
+describe('parseCliArgs - case', () => {
+  it('parses a minimal case command', () => {
+    expect(parseCliArgs(['case', '--input', 'draft.json'])).toEqual({
+      ok: true,
+      command: { command: 'case', input: 'draft.json' },
+    });
+  });
+
+  it('parses an optional --output', () => {
+    expect(parseCliArgs(['case', '--input', 'draft.json', '--output', 'bundle.json'])).toEqual({
+      ok: true,
+      command: { command: 'case', input: 'draft.json', output: 'bundle.json' },
+    });
+  });
+
+  it('requires --input', () => {
+    const result = parseCliArgs(['case']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['case', '--input', 'x', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
 describe('formatHelp and formatVersion', () => {
   it('lists every command in the help text', () => {
     const help = formatHelp();
-    for (const cmd of ['source', 'transform', 'gate', 'export', 'score', 'help', 'version']) {
+    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'help', 'version']) {
       expect(help).toContain(cmd);
     }
   });

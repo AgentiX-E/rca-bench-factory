@@ -13,6 +13,7 @@ and score an exported dataset.
 | `version` | Print the semantic version |
 | `source` | Ingest a flat file (CSV/TSV/JSONL/JSON) into IR signals |
 | `transform` | Apply transform rules (the 7 strategies) to source records |
+| `case` | Assemble an IR bundle from a case draft (normalises the fault) |
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
 | `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 |
 | `score` | Score an exported directory against a target field contract |
@@ -41,6 +42,18 @@ rca-bench transform --input source.json --rules rules.json [--output out.json] [
 - `--input` and `--rules` are JSON arrays of source records and `TransformRule`s.
 - The result (`outputs`, `quarantined`, `counts`) is written to stdout or `--output`.
 - `inputCount === outputCount + quarantineCount` is guaranteed by the engine.
+
+### `rca-bench case`
+
+```text
+rca-bench case --input draft.json [--output bundle.json]
+```
+
+- `draft.json` is a loose authoring draft: `graph` + `case` (fault type as a free
+  string, optional category) + `signals`.
+- The fault type is normalised and its category inferred when absent; the finished
+  bundle is validated against `irBundleSchema`.
+- The assembled `IrBundle` is written to stdout or `--output`.
 
 ### `rca-bench gate`
 
@@ -83,8 +96,7 @@ rca-bench score --target openrca-1.0 --dir ./out [--anchors '{"path":"sha256"}']
 
 ## Not yet implemented
 
-`case` (assembling an IR bundle from signals, graph, fault and ground truth) and
-`init`/`evolve` are planned but not yet wired into the CLI. The underlying core
-functions already exist: the fault collector (`parseFaultSpec`), the entity graph
-and the LLM rule-generation core. See [architecture.md](architecture.md) for
-where they sit.
+`init`/`evolve` (workspace scaffolding and self-evolution) are planned but not yet
+wired into the CLI. The underlying core functions already exist: the LLM
+rule-generation core and the fault collector. See
+[architecture.md](architecture.md) for where they sit.

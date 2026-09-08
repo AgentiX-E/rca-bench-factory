@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { join as posixJoin } from 'node:path/posix';
 import {
+  assembleBundle,
   detectFileLayout,
   exportOpenRca,
   exportRca100,
@@ -202,6 +203,19 @@ async function runGate(cmd: Extract<CliCommand, { command: 'gate' }>, ctx: Ctx):
   return 0;
 }
 
+async function runCase(cmd: Extract<CliCommand, { command: 'case' }>, ctx: Ctx): Promise<number> {
+  const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
+  const result = assembleBundle(JSON.parse(raw));
+  if (!result.ok) throw new Error(result.error);
+  const output = JSON.stringify(result.bundle, null, 2) + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
 /**
  * Run a full `argv` command and return the process exit code.
  *
@@ -240,6 +254,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runTransform(parsed.command, ctx);
       case 'gate':
         return await runGate(parsed.command, ctx);
+      case 'case':
+        return await runCase(parsed.command, ctx);
     }
   } catch (e) {
     // Every throw site reachable from here (fs/promises, JSON.parse, zod,

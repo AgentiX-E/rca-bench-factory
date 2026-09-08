@@ -78,6 +78,38 @@ function minimalBundle(): IrBundle {
 const METRIC_CSV =
   'timestamp,cmdb_id,kpi_name,value\n2026-09-06T00:00:00Z,order-pod-1,cpu_usage,20\n2026-09-06T00:10:00Z,order-pod-1,cpu_usage,95\n';
 
+function minimalDraft(): Record<string, unknown> {
+  return {
+    graph: {
+      entities: [
+        { entityId: 'service:default/order', kind: 'service', name: 'order', namespace: 'default', aliases: [] },
+      ],
+      edges: [],
+    },
+    case: {
+      caseId: 'case-001',
+      system: 'order-prod',
+      injectTime: '2026-09-06T00:10:00.000Z',
+      window: { start: '2026-09-06T00:00:00.000Z', end: '2026-09-06T00:20:00.000Z' },
+      fault: { type: 'cpu' },
+      groundTruth: {
+        rootCauseEntityId: 'service:default/order',
+        rootCauseComponent: 'order',
+        rootCauseReason: 'CPU saturation on the order service',
+      },
+    },
+    signals: [
+      {
+        irVersion: '2.0',
+        resource: { 'service.name': 'order' },
+        timestamp: '2026-09-06T00:10:00.000Z',
+        signal: 'metric',
+        payload: { kind: 'metric', name: 'cpu_usage', value: 95, unit: '%' },
+      },
+    ],
+  };
+}
+
 async function writeExported(dir: string, files: Record<string, string>): Promise<void> {
   for (const [rel, content] of Object.entries(files)) {
     const full = join(dir, rel);
@@ -467,6 +499,45 @@ describe('run - gate', () => {
     await writeFile(join(dir, 'bundle.json'), '{}');
     const err: string[] = [];
     const code = await run(['gate', '--input', 'bundle.json', '--target', 'rca100'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('error');
+  });
+});
+
+describe('run - case', () => {
+  it('assembles a draft into a bundle with a normalised fault', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), JSON.stringify(minimalDraft()));
+    const out: string[] = [];
+    const code = await run(['case', '--input', 'draft.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const bundle = JSON.parse(out.join(''));
+    expect(bundle.cases[0].fault).toMatchObject({ type: 'cpu', category: 'resource' });
+    expect(bundle.signals['case-001']).toHaveLength(1);
+  });
+
+  it('writes the bundle to --output', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), JSON.stringify(minimalDraft()));
+    const code = await run(['case', '--input', 'draft.json', '--output', 'bundle.json'], { cwd: dir });
+    expect(code).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8')).cases[0].caseId).toBe('case-001');
+  });
+
+  it('rejects an invalid draft and returns 1', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), JSON.stringify({ case: { fault: {} }, graph: {}, signals: [] }));
+    const err: string[] = [];
+    const code = await run(['case', '--input', 'draft.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('error');
+  });
+
+  it('reports malformed draft JSON and returns 1', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), 'not json');
+    const err: string[] = [];
+    const code = await run(['case', '--input', 'draft.json'], { cwd: dir, stderr: (s) => err.push(s) });
     expect(code).toBe(1);
     expect(err.join('')).toContain('error');
   });

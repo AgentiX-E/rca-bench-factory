@@ -54,14 +54,14 @@ rca-bench-factory/
 ├── packages/
 │   ├── core/                  # @rca-bench-factory/core — IR, transform, gates, exporters
 │   │   ├── src/
-│   │   │   ├── ir/            # Layer model: types, zod schemas, type guards
+│   │   │   ├── ir/            # Layer model: types, zod schemas, type guards, bundle assembler
 │   │   │   ├── ingest/        # file (CSV/TSV/JSONL/JSON) + OTLP JSON → IR signals
 │   │   │   ├── transform/     # 7 strategies + batch engine (quarantine, no silent loss)
 │   │   │   ├── entity/        # entity graph index, alias resolution (union-find)
 │   │   │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
 │   │   │   ├── export/        # OpenRCA + RCAEval + RCA100 (6-modality) exporters
 │   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
-│   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/export/score)
+│   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
 │   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
 │   │   │   ├── fault/         # fault collector (type normalisation + category inference)
 │   │   │   └── util/          # strict time parsing, UCUM-inspired rational units

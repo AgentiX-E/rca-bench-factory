@@ -47,6 +47,9 @@ export {
   telemetrySignalSchema,
 } from './ir/schema.js';
 
+export { assembleBundle } from './ir/assembler.js';
+export type { BundleAssemblyResult, BundleDraft, CaseDraft } from './ir/assembler.js';
+
 export {
   applyExpr,
   applyLookup,

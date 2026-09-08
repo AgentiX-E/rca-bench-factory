@@ -36,7 +36,8 @@ export type CliCommand =
   | { command: 'export'; target: ExportTarget; suite?: RcaEvalSuite; input: string; outDir: string }
   | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string }
   | { command: 'transform'; input: string; rules: string; output?: string; idField?: string }
-  | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string };
+  | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string }
+  | { command: 'case'; input: string; output?: string };
 
 export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; error: string };
 
@@ -278,6 +279,29 @@ function parseGate(args: string[]): CliParseResult {
   };
 }
 
+function parseCase(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'case requires --input <draft.json>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'case',
+      input,
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+    },
+  };
+}
+
 /** Parse an `argv` array into a typed command object, or an error string. */
 export function parseCliArgs(argv: string[]): CliParseResult {
   if (argv.length === 0) {
@@ -303,8 +327,10 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseTransform(rest);
     case 'gate':
       return parseGate(rest);
+    case 'case':
+      return parseCase(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|export|score|transform|gate|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|help|version)` };
   }
 }
 
@@ -319,6 +345,7 @@ export function formatHelp(): string {
     'Commands:',
     '  source     Ingest a flat file into IR signals',
     '  transform  Apply transform rules to source records',
+    '  case       Assemble an IR bundle from a case draft',
     '  gate       Run the G1-G5 quality gates on an IR bundle',
     '  export     Export an IR bundle to a target benchmark format',
     '  score      Verify an exported dataset against a target contract',
