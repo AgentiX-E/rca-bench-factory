@@ -23,6 +23,7 @@ export type CliCommand =
   | {
       command: 'source';
       path: string;
+      output?: string;
       format?: FileFormat;
       signalKind?: FileSignalKind;
       layout?: string;
@@ -32,8 +33,8 @@ export type CliCommand =
       hasHeader?: boolean;
       delimiter?: string;
     }
-  | { command: 'export'; target: ExportTarget; suite?: RcaEvalSuite }
-  | { command: 'score'; target: ScoreTargetId; anchors?: string };
+  | { command: 'export'; target: ExportTarget; suite?: RcaEvalSuite; input: string; outDir: string }
+  | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string };
 
 export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; error: string };
 
@@ -77,6 +78,7 @@ function parseFlags(args: string[], options: ParseArgsConfig['options']): { valu
 function parseSource(args: string[]): CliParseResult {
   const parsed = parseFlags(args, {
     path: { type: 'string' },
+    output: { type: 'string' },
     format: { type: 'string' },
     'signal-kind': { type: 'string' },
     layout: { type: 'string' },
@@ -121,6 +123,7 @@ function parseSource(args: string[]): CliParseResult {
     command: {
       command: 'source',
       path,
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
       ...(v.format !== undefined ? { format: v.format as FileFormat } : {}),
       ...(v['signal-kind'] !== undefined ? { signalKind: v['signal-kind'] as FileSignalKind } : {}),
       ...(v.layout !== undefined ? { layout: String(v.layout) } : {}),
@@ -137,16 +140,27 @@ function parseExport(args: string[]): CliParseResult {
   const parsed = parseFlags(args, {
     target: { type: 'string' },
     suite: { type: 'string' },
+    input: { type: 'string' },
+    'out-dir': { type: 'string' },
   });
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
   const target = v.target;
   if (typeof target !== 'string' || target === '') {
-    return { ok: false, error: 'export requires --target <openrca-1.0|rcaeval>' };
+    return { ok: false, error: 'export requires --target <openrca-1.0|rcaeval|rca100>' };
   }
   if (!isOneOf(target, EXPORT_TARGETS)) {
     return { ok: false, error: `invalid --target '${target}' (expected ${EXPORT_TARGETS.join('|')})` };
+  }
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'export requires --input <bundle.json>' };
+  }
+  const outDir = v['out-dir'];
+  if (typeof outDir !== 'string' || outDir === '') {
+    return { ok: false, error: 'export requires --out-dir <dir>' };
   }
 
   let suite: RcaEvalSuite | undefined;
@@ -160,7 +174,7 @@ function parseExport(args: string[]): CliParseResult {
 
   return {
     ok: true,
-    command: { command: 'export', target: target as ExportTarget, ...(suite !== undefined ? { suite } : {}) },
+    command: { command: 'export', target: target as ExportTarget, input, outDir, ...(suite !== undefined ? { suite } : {}) },
   };
 }
 
@@ -168,6 +182,7 @@ function parseScore(args: string[]): CliParseResult {
   const parsed = parseFlags(args, {
     target: { type: 'string' },
     anchors: { type: 'string' },
+    dir: { type: 'string' },
   });
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
@@ -179,6 +194,10 @@ function parseScore(args: string[]): CliParseResult {
   if (!isOneOf(target, SCORE_TARGETS)) {
     return { ok: false, error: `invalid --target '${target}' (expected ${SCORE_TARGETS.join('|')})` };
   }
+  const dir = v.dir;
+  if (typeof dir !== 'string' || dir === '') {
+    return { ok: false, error: 'score requires --dir <exported-dir>' };
+  }
   if (v.anchors !== undefined && !isJson(String(v.anchors))) {
     return { ok: false, error: 'invalid --anchors JSON' };
   }
@@ -188,6 +207,7 @@ function parseScore(args: string[]): CliParseResult {
     command: {
       command: 'score',
       target: target as ScoreTargetId,
+      dir,
       ...(v.anchors !== undefined ? { anchors: String(v.anchors) } : {}),
     },
   };

@@ -52,24 +52,28 @@ silently re-licenses or corrupts upstream data.
 ```
 rca-bench-factory/
 ├── packages/
-│   └── core/                  # @rca-bench-factory/core — IR, transform, gates, exporters
-│       ├── src/
-│       │   ├── ir/            # Layer model: types, zod schemas, type guards
-│       │   ├── ingest/        # file (CSV/TSV/JSONL/JSON) + OTLP JSON → IR signals
-│       │   ├── transform/     # 7 strategies + batch engine (quarantine, no silent loss)
-│       │   ├── entity/        # entity graph index, alias resolution (union-find)
-│       │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
-│       │   ├── export/        # OpenRCA + RCAEval + RCA100 (6-modality) exporters
-│       │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
-│       │   ├── cli/           # IO-free `rca-bench` argument parser (source/export/score)
-│       │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
-│       │   ├── fault/         # fault collector (type normalisation + category inference)
-│       │   └── util/          # strict time parsing, UCUM-inspired rational units
-│       └── test/              # vitest + v8 coverage, no mocks, no skips
+│   ├── core/                  # @rca-bench-factory/core — IR, transform, gates, exporters
+│   │   ├── src/
+│   │   │   ├── ir/            # Layer model: types, zod schemas, type guards
+│   │   │   ├── ingest/        # file (CSV/TSV/JSONL/JSON) + OTLP JSON → IR signals
+│   │   │   ├── transform/     # 7 strategies + batch engine (quarantine, no silent loss)
+│   │   │   ├── entity/        # entity graph index, alias resolution (union-find)
+│   │   │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
+│   │   │   ├── export/        # OpenRCA + RCAEval + RCA100 (6-modality) exporters
+│   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
+│   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/export/score)
+│   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
+│   │   │   ├── fault/         # fault collector (type normalisation + category inference)
+│   │   │   └── util/          # strict time parsing, UCUM-inspired rational units
+│   │   └── test/              # vitest + v8 coverage, no mocks, no skips
+│   └── cli/                   # @rca-bench-factory/cli — the runnable `rca-bench` binary
+│       ├── src/run.ts         # command orchestration over real file IO
+│       ├── src/main.ts        # bin entry
+│       └── test/              # real-temp-dir end-to-end tests, no mocks
 ├── docs/                      # external documentation (architecture, user guide, …)
 ├── golden-master/             # verification anchors (expected.json + checksums + script)
 ├── scripts/                   # no-mock / no-secrets lint guards
-└── .github/workflows/ci.yml   # typecheck, lint, test+coverage, mutation, golden-master, build
+└── .github/workflows/ci.yml   # build, typecheck, lint, test+coverage, mutation, golden-master
 ```
 
 ## Quick start
@@ -138,6 +142,6 @@ Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
 flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
 OpenRCA/RCAEval/RCA100 exporters, the structure/checksum score module, the CLI
-argument parser, the provider-agnostic LLM rule-generation core, the DeepSeek
-provider adapter and the fault collector. Concrete provider adapters and the
-remaining exporters are the next milestones.
+argument parser and runnable `rca-bench` binary, the provider-agnostic LLM
+rule-generation core, the DeepSeek provider adapter and the fault collector.
+Concrete provider adapters and the remaining exporters are the next milestones.

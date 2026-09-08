@@ -44,6 +44,13 @@ describe('parseCliArgs - source', () => {
     });
   });
 
+  it('parses an optional --output path', () => {
+    expect(parseCliArgs(['source', '--path', './x.csv', '--output', './out.json'])).toEqual({
+      ok: true,
+      command: { command: 'source', path: './x.csv', output: './out.json' },
+    });
+  });
+
   it('parses every source option', () => {
     const result = parseCliArgs([
       'source',
@@ -119,46 +126,58 @@ describe('parseCliArgs - source', () => {
 
 describe('parseCliArgs - export', () => {
   it('parses an OpenRCA export command', () => {
-    expect(parseCliArgs(['export', '--target', 'openrca-1.0'])).toEqual({
+    expect(parseCliArgs(['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', './out'])).toEqual({
       ok: true,
-      command: { command: 'export', target: 'openrca-1.0' },
+      command: { command: 'export', target: 'openrca-1.0', input: 'bundle.json', outDir: './out' },
     });
   });
 
   it('parses an RCAEval export command with a suite', () => {
-    expect(parseCliArgs(['export', '--target', 'rcaeval', '--suite', 're2'])).toEqual({
+    expect(parseCliArgs(['export', '--target', 'rcaeval', '--suite', 're2', '--input', 'b.json', '--out-dir', './out'])).toEqual({
       ok: true,
-      command: { command: 'export', target: 'rcaeval', suite: 'RE2' },
+      command: { command: 'export', target: 'rcaeval', suite: 'RE2', input: 'b.json', outDir: './out' },
     });
   });
 
   it('parses an RCA100 export command', () => {
-    expect(parseCliArgs(['export', '--target', 'rca100'])).toEqual({
+    expect(parseCliArgs(['export', '--target', 'rca100', '--input', 'b.json', '--out-dir', './out'])).toEqual({
       ok: true,
-      command: { command: 'export', target: 'rca100' },
+      command: { command: 'export', target: 'rca100', input: 'b.json', outDir: './out' },
     });
   });
 
   it('requires --target', () => {
-    const result = parseCliArgs(['export']);
+    const result = parseCliArgs(['export', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/target/i);
   });
 
+  it('requires --input', () => {
+    const result = parseCliArgs(['export', '--target', 'openrca-1.0', '--out-dir', './out']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --out-dir', () => {
+    const result = parseCliArgs(['export', '--target', 'openrca-1.0', '--input', 'b.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/out-dir/i);
+  });
+
   it('rejects an invalid --target', () => {
-    const result = parseCliArgs(['export', '--target', 'bogus']);
+    const result = parseCliArgs(['export', '--target', 'bogus', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/target/i);
   });
 
   it('rejects an invalid --suite', () => {
-    const result = parseCliArgs(['export', '--target', 'rcaeval', '--suite', 'bogus']);
+    const result = parseCliArgs(['export', '--target', 'rcaeval', '--suite', 'bogus', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/suite/i);
   });
 
   it('rejects an unknown flag', () => {
-    const result = parseCliArgs(['export', '--target', 'openrca-1.0', '--bogus', 'x']);
+    const result = parseCliArgs(['export', '--target', 'openrca-1.0', '--input', 'b.json', '--out-dir', './out', '--bogus', 'x']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
   });
@@ -166,46 +185,52 @@ describe('parseCliArgs - export', () => {
 
 describe('parseCliArgs - score', () => {
   it('parses a score command', () => {
-    expect(parseCliArgs(['score', '--target', 'openrca-1.0'])).toEqual({
+    expect(parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', './exported'])).toEqual({
       ok: true,
-      command: { command: 'score', target: 'openrca-1.0' },
+      command: { command: 'score', target: 'openrca-1.0', dir: './exported' },
     });
   });
 
   it('parses a score command with anchors', () => {
-    expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', '{}'])).toEqual({
+    expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', '{}', '--dir', './exported'])).toEqual({
       ok: true,
-      command: { command: 'score', target: 'rcaeval-re2', anchors: '{}' },
+      command: { command: 'score', target: 'rcaeval-re2', anchors: '{}', dir: './exported' },
     });
   });
 
   it('parses an RCA100 score command', () => {
-    expect(parseCliArgs(['score', '--target', 'rca100'])).toEqual({
+    expect(parseCliArgs(['score', '--target', 'rca100', '--dir', './exported'])).toEqual({
       ok: true,
-      command: { command: 'score', target: 'rca100' },
+      command: { command: 'score', target: 'rca100', dir: './exported' },
     });
   });
 
   it('requires --target', () => {
-    const result = parseCliArgs(['score']);
+    const result = parseCliArgs(['score', '--dir', './exported']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/target/i);
   });
 
+  it('requires --dir', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/dir/i);
+  });
+
   it('rejects an invalid --target', () => {
-    const result = parseCliArgs(['score', '--target', 'bogus']);
+    const result = parseCliArgs(['score', '--target', 'bogus', '--dir', './exported']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/target/i);
   });
 
   it('rejects malformed --anchors JSON', () => {
-    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--anchors', 'not-json']);
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--anchors', 'not-json', '--dir', './exported']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/anchors/i);
   });
 
   it('rejects an unknown flag', () => {
-    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--bogus', 'x']);
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', './exported', '--bogus', 'x']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
   });

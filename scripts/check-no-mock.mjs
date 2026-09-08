@@ -9,7 +9,10 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ROOT = new URL('../packages/core/test', import.meta.url).pathname;
+const PACKAGES = new URL('../packages', import.meta.url).pathname;
+const TEST_ROOTS = readdirSync(PACKAGES)
+  .map((name) => join(PACKAGES, name, 'test'))
+  .filter((dir) => statSync(dir, { throwIfNoEntry: false })?.isDirectory());
 const BANNED = [
   /\bvi\.mock\s*\(/,
   /\bjest\.mock\s*\(/,
@@ -30,14 +33,16 @@ function walk(dir) {
 }
 
 const failures = [];
-for (const file of walk(ROOT)) {
-  if (!file.endsWith('.ts')) continue;
-  const lines = readFileSync(file, 'utf8').split('\n');
-  lines.forEach((line, i) => {
-    for (const re of BANNED) {
-      if (re.test(line)) failures.push(`${file}:${i + 1}  ${line.trim()}`);
-    }
-  });
+for (const root of TEST_ROOTS) {
+  for (const file of walk(root)) {
+    if (!file.endsWith('.ts')) continue;
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      for (const re of BANNED) {
+        if (re.test(line)) failures.push(`${file}:${i + 1}  ${line.trim()}`);
+      }
+    });
+  }
 }
 
 if (failures.length > 0) {

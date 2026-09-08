@@ -1,0 +1,28 @@
+{
+  "name": "@rca-bench-factory/cli",
+  "version": "0.1.0",
+  "description": "rca-bench command-line interface for turning enterprise telemetry into RCA benchmark field contracts.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "rca-bench": "./dist/main.js"
+  },
+  "main": "./dist/run.js",
+  "types": "./dist/run.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/run.d.ts",
+      "import": "./dist/run.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@rca-bench-factory/core": "workspace:*"
+  }
+}

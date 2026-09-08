@@ -31,16 +31,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build (core then cli; cli resolves core's dist)
+        run: pnpm build
+
       - name: Type-check
         run: pnpm typecheck
 
       - name: Lint (no mock / no secrets)
         run: pnpm lint
 
-      - name: Build
-        run: pnpm build
-
-      - name: Test with coverage (≥95% per dimension, 100% functions)
+      - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
         run: pnpm test:coverage
 
       - name: Mutation suite (15/15 interception)

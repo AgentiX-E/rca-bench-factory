@@ -8,10 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p packages/core/tsconfig.json",
-    "typecheck": "tsc -p packages/core/tsconfig.json --noEmit",
-    "test": "vitest run --root packages/core",
-    "test:coverage": "vitest run --root packages/core --coverage",
+    "build": "pnpm --filter @rca-bench-factory/core build && pnpm --filter @rca-bench-factory/cli build",
+    "typecheck": "pnpm --filter @rca-bench-factory/core typecheck && pnpm --filter @rca-bench-factory/cli typecheck",
+    "test": "pnpm --filter @rca-bench-factory/core test && pnpm --filter @rca-bench-factory/cli test",
+    "test:coverage": "pnpm --filter @rca-bench-factory/core test:coverage && pnpm --filter @rca-bench-factory/cli test:coverage",
     "lint": "node scripts/check-no-mock.mjs && node scripts/check-no-secrets.mjs"
   },
   "devDependencies": {

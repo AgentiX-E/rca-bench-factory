@@ -1,101 +1,66 @@
-# CLI reference (planned)
+# CLI reference
 
-The `rca-bench` CLI is the planned thin wrapper over `@rca-bench-factory/core`.
-This document is the contract the CLI will implement; the underlying functions
-already exist in the core package.
+`rca-bench` is the runnable command-line entrypoint in `@rca-bench-factory/cli`.
+It orchestrates the core library over real files: ingest a flat source, export an
+IR bundle to a target contract, and score an exported dataset.
 
-> Status: the CLI package is a next-milestone deliverable. The core functions below
-> are implemented and tested today; the CLI merely orchestrates them.
+## Implemented commands
 
-## Global flags
-
-| Flag | Meaning |
+| Command | What it does |
 | --- | --- |
-| `--config <path>` | Load `rca-bench.config.*` (default: auto-discover) |
-| `--verbose` | Emit per-record quarantine and gate detail |
-| `--dry-run` | Execute without writing outputs |
-
-## Commands
-
-### `rca-bench init`
-
-Scaffold a factory workspace.
-
-```text
-rca-bench init --target openrca1.0 --system demo
-```
+| `help` | Print usage |
+| `version` | Print the semantic version |
+| `source` | Ingest a flat file (CSV/TSV/JSONL/JSON) into IR signals |
+| `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 |
+| `score` | Score an exported directory against a target field contract |
 
 ### `rca-bench source`
 
-Register a data source and run tier detection.
-
 ```text
-rca-bench source --path ./telemetry --detect auto
-rca-bench source --path ./metrics.csv --layout '{"kind":"csv","tier":"t3"}'
+rca-bench source --path telemetry.csv [--format csv] [--signal-kind metric]
+                 [--layout '{"timestamp":"ts",...}'] [--output out.json]
+                 [--time-layout iso8601] [--assume-offset-minutes 480]
+                 [--delimiter ,] [--has-header] [--service-name order]
 ```
 
-Backed by the six-tier ingest model (see [user-guide.md](user-guide.md)).
-
-### `rca-bench transform`
-
-Apply rules over the full dataset via the deterministic engine.
-
-```text
-rca-bench transform --rules rules.yaml
-```
-
-Backed by `transformBatch` / `checkNoSilentLoss`. Reports `outputCount`,
-`quarantineCount`, and every quarantine reason.
-
-### `rca-bench case`
-
-Define a fault case and its ground truth.
-
-```text
-rca-bench case --inject 2026-09-06T04:05:06Z --window 10m --category runtime
-```
-
-### `rca-bench gate`
-
-Run the five quality gates.
-
-```text
-rca-bench gate --strict
-```
-
-Backed by `runAllGates`. `--strict` treats `quarantined` as non-admittable.
+- `--layout` is optional: when omitted, the layout is auto-detected from the first
+  record's column names.
+- Without `--output`, the `{ signals, quarantine }` result is written to stdout.
+- Every non-empty source record is either a signal or a quarantine entry — never
+  silently dropped.
 
 ### `rca-bench export`
 
-Emit a target-format dataset.
-
 ```text
-rca-bench export --target rcaeval:re2 --out ./out
-rca-bench export --target openrca1.0 --out ./out
+rca-bench export --target openrca-1.0 --input bundle.json --out-dir ./out
+rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./out
+rca-bench export --target rca100 --input bundle.json --out-dir ./out
 ```
 
-Backed by `exportOpenRca` / `exportRcaEval`.
+- `bundle.json` is validated against `irBundleSchema` before export; a malformed
+  or schema-invalid bundle fails with exit code 1.
 
 ### `rca-bench score`
 
-Verify an exported dataset against the Golden Master anchors.
-
 ```text
-rca-bench score --golden-master ./out
+rca-bench score --target openrca-1.0 --dir ./out [--anchors '{"path":"sha256"}']
 ```
 
-### `rca-bench evolve`
-
-Refine rules/gates from quarantine and rejection feedback (externally anchored).
-
-```text
-rca-bench evolve --feedback quarantine.jsonl --checkpoint h2
-```
+- `--dir` is read recursively into the exported-file map.
+- `--anchors` (optional) adds SHA-256 Golden-Master verification.
+- Exit code is 0 when the report passes, 1 when it fails (so CI can gate on it).
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Success (all gates passed, export verified) |
-| 2 | Data errors (quarantine non-empty, gate rejected) — never an engine crash |
-| 1 | Programmer/invocation error (bad flag, missing file) |
+| 0 | Success |
+| 1 | Invocation or data error (bad flag, missing file, invalid bundle, failing score) |
+
+## Not yet implemented
+
+The full dataset-authoring pipeline (`init`, `transform`, `case`, `gate`,
+`evolve`) is planned but not yet wired into the CLI. The underlying core
+functions already exist: `transformBatch`, `runAllGates`, the fault collector and
+the LLM rule-generation core. See [architecture.md](architecture.md) for where
+they sit.
