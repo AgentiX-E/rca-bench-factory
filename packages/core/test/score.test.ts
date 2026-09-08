@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { exportOpenRca } from '../src/export/openrca.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
+import { exportRca100 } from '../src/export/rca100.js';
 import {
   checkOpenRcaStructure,
+  checkRca100Structure,
   checkRcaEvalStructure,
   scoreExport,
   sha256,
@@ -149,6 +151,122 @@ describe('verifyChecksums', () => {
   });
 });
 
+describe('checkRca100Structure', () => {
+  const rca100Files = (): Record<string, string> => exportRca100(validBundle()).files;
+
+  it('passes a well-formed RCA100 export', () => {
+    const report = checkRca100Structure(rca100Files());
+    expect(report.passed).toBe(true);
+    expect(report.target).toBe('rca100');
+    expect(report.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('fails when there are no case directories', () => {
+    const report = checkRca100Structure({});
+    expect(report.checks.find((c) => c.id === 'case-present')?.passed).toBe(false);
+  });
+
+  it('fails when a case file is missing', () => {
+    const files = rca100Files();
+    delete files['cases/case-001/metrics.json'];
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'case-files-complete')?.passed).toBe(false);
+  });
+
+  it('fails when the answer key is missing', () => {
+    const files = rca100Files();
+    delete files['answer_key/case-001.gt.json'];
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'case-files-complete')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'gt-structure')?.passed).toBe(false);
+  });
+
+  it('fails on a malformed topology.json', () => {
+    const files = rca100Files();
+    files['cases/case-001/topology.json'] = 'not json';
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'topology-shape')?.passed).toBe(false);
+  });
+
+  it('fails when the topology has empty entities', () => {
+    const files = rca100Files();
+    files['cases/case-001/topology.json'] = JSON.stringify({ entities: [], edges: [], stats: { entities_total: 0, edges_total: 0 } });
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'topology-shape')?.passed).toBe(false);
+  });
+
+  it('fails when the topology lacks a stats object', () => {
+    const files = rca100Files();
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    delete topo.stats;
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'topology-shape')?.passed).toBe(false);
+  });
+
+  it('fails when the topology stats do not match the arrays', () => {
+    const files = rca100Files();
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    topo.stats.entities_total = 999;
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'topology-shape')?.passed).toBe(false);
+  });
+
+  it('fails on a dangling entity_id in a modality table', () => {
+    const files = rca100Files();
+    files['cases/case-001/metrics.json'] = JSON.stringify([{ entity_id: 'ghost' }]);
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'entity-refs-resolve')?.passed).toBe(false);
+  });
+
+  it('fails on a malformed modality table', () => {
+    const files = rca100Files();
+    files['cases/case-001/logs.json'] = 'not json';
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'entity-refs-resolve')?.passed).toBe(false);
+  });
+
+  it('ignores a modality row without an entity_id', () => {
+    const files = rca100Files();
+    files['cases/case-001/events.json'] = JSON.stringify([{ reason: 'x' }]);
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'entity-refs-resolve')?.passed).toBe(true);
+  });
+
+  it('fails on a dangling root-cause entity name', () => {
+    const files = rca100Files();
+    const gt = JSON.parse(files['answer_key/case-001.gt.json']!);
+    gt.root_cause_entities = ['ghost'];
+    files['answer_key/case-001.gt.json'] = JSON.stringify(gt);
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'root-cause-resolves')?.passed).toBe(false);
+  });
+
+  it('ignores a non-string root-cause entity entry', () => {
+    const files = rca100Files();
+    const gt = JSON.parse(files['answer_key/case-001.gt.json']!);
+    gt.root_cause_entities = [42];
+    files['answer_key/case-001.gt.json'] = JSON.stringify(gt);
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'root-cause-resolves')?.passed).toBe(true);
+  });
+
+  it('fails on a malformed answer key', () => {
+    const files = rca100Files();
+    files['answer_key/case-001.gt.json'] = 'not json';
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'gt-structure')?.passed).toBe(false);
+  });
+
+  it('fails on an answer key missing the four layers', () => {
+    const files = rca100Files();
+    files['answer_key/case-001.gt.json'] = JSON.stringify({ task_id: 'case-001' });
+    const report = checkRca100Structure(files);
+    expect(report.checks.find((c) => c.id === 'gt-structure')?.passed).toBe(false);
+  });
+});
+
 describe('scoreExport', () => {
   it('scores 100 for a fully valid export with matching anchors', () => {
     const files = openrcaFiles();
@@ -194,6 +312,13 @@ describe('scoreExport', () => {
     bundle.cases[0]!.fault.category = 'code';
     const files = exportRcaEval(bundle, 'RE3').files;
     const report = scoreExport('rcaeval-re3', files);
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(100);
+  });
+
+  it('scores 100 for a valid RCA100 export', () => {
+    const files = exportRca100(validBundle()).files;
+    const report = scoreExport('rca100', files);
     expect(report.passed).toBe(true);
     expect(report.score).toBe(100);
   });

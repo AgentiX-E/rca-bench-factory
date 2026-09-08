@@ -15,7 +15,7 @@ import type { ScoreTargetId } from '../score/score.js';
 
 export const CLI_VERSION = '0.1.0';
 
-export type ExportTarget = 'openrca-1.0' | 'rcaeval';
+export type ExportTarget = 'openrca-1.0' | 'rcaeval' | 'rca100';
 
 export type CliCommand =
   | { command: 'help' }
@@ -40,9 +40,9 @@ export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; er
 const FILE_FORMATS: readonly string[] = ['csv', 'tsv', 'jsonl', 'json'];
 const SIGNAL_KINDS: readonly string[] = ['metric', 'log', 'trace'];
 const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
-const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval'];
+const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval', 'rca100'];
 const SUITES: readonly string[] = ['RE1', 'RE2', 'RE3'];
-const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3'];
+const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100'];
 
 function isOneOf(value: string, allowed: readonly string[]): boolean {
   return allowed.includes(value);

@@ -132,6 +132,13 @@ describe('parseCliArgs - export', () => {
     });
   });
 
+  it('parses an RCA100 export command', () => {
+    expect(parseCliArgs(['export', '--target', 'rca100'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'rca100' },
+    });
+  });
+
   it('requires --target', () => {
     const result = parseCliArgs(['export']);
     expect(result.ok).toBe(false);
@@ -169,6 +176,13 @@ describe('parseCliArgs - score', () => {
     expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', '{}'])).toEqual({
       ok: true,
       command: { command: 'score', target: 'rcaeval-re2', anchors: '{}' },
+    });
+  });
+
+  it('parses an RCA100 score command', () => {
+    expect(parseCliArgs(['score', '--target', 'rca100'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'rca100' },
     });
   });
 

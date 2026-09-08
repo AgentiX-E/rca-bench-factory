@@ -14,7 +14,7 @@ import type { RcaEvalSuite } from '../export/rcaeval.js';
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
 
-export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3';
+export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100';
 
 export interface ScoreCheck {
   id: string;
@@ -213,6 +213,136 @@ export function checkRcaEvalStructure(files: Record<string, string>, suite: RcaE
   return { target: rcaevalTarget(suite), passed: checks.every((c) => c.passed), checks };
 }
 
+const RCA100_MODALITY_FILES = ['metrics.json', 'logs.json', 'traces.json', 'events.json', 'alerts.json'] as const;
+const RCA100_CASE_FILES = [...RCA100_MODALITY_FILES, 'task.json'] as const;
+
+/** Extract a case id from a `cases/{id}/topology.json` path. */
+function rca100CaseId(topoPath: string): string {
+  return topoPath.slice('cases/'.length, topoPath.length - '/topology.json'.length);
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Verify an RCA100 export against its field contract.
+ *
+ * RCA100's hard, verifiable invariant is full reference integrity: every
+ * `entity_id` in the modality tables and every root-cause entity name must
+ * resolve into the task's `topology.json`. This check re-verifies that invariant
+ * (not merely the file layout) so a dangling reference cannot slip through.
+ */
+export function checkRca100Structure(files: Record<string, string>): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const topoPaths = pathsEndingWith(files, '/topology.json');
+  checks.push(check('case-present', topoPaths.length > 0, `found ${topoPaths.length} case topology.json`));
+
+  const caseIds = topoPaths.map(rca100CaseId);
+
+  const missingFiles: string[] = [];
+  for (const id of caseIds) {
+    for (const name of RCA100_CASE_FILES) {
+      if (files[`cases/${id}/${name}`] === undefined) missingFiles.push(`cases/${id}/${name}`);
+    }
+    if (files[`answer_key/${id}.gt.json`] === undefined) missingFiles.push(`answer_key/${id}.gt.json`);
+  }
+  checks.push(
+    check(
+      'case-files-complete',
+      missingFiles.length === 0,
+      missingFiles.length === 0 ? `all ${caseIds.length} case(s) complete` : `missing ${missingFiles.length} file(s)`,
+    ),
+  );
+
+  let topologyOk = true;
+  let refsResolve = true;
+  let rootsResolve = true;
+  let gtOk = true;
+
+  for (const path of topoPaths) {
+    const id = rca100CaseId(path);
+    const topo = safeJson(files[path]!);
+    if (!isRecord(topo)) {
+      topologyOk = false;
+      continue;
+    }
+
+    const entities = topo.entities;
+    const edges = topo.edges;
+    const stats = topo.stats;
+    const entitiesOk = Array.isArray(entities) && entities.length > 0;
+    const edgesOk = Array.isArray(edges);
+    const statsOk = isRecord(stats) && typeof stats.entities_total === 'number' && typeof stats.edges_total === 'number';
+    if (!entitiesOk || !edgesOk || !statsOk) topologyOk = false;
+    else if (Array.isArray(entities) && Array.isArray(edges)) {
+      const statsRec = stats as Record<string, unknown>;
+      if (statsRec.entities_total !== entities.length || statsRec.edges_total !== edges.length) topologyOk = false;
+    }
+
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    if (Array.isArray(entities)) {
+      for (const e of entities) {
+        if (isRecord(e)) {
+          if (typeof e.id === 'string') ids.add(e.id);
+          if (typeof e.name === 'string') names.add(e.name);
+        }
+      }
+    }
+
+    for (const name of RCA100_MODALITY_FILES) {
+      const raw = files[`cases/${id}/${name}`];
+      if (raw === undefined) continue;
+      const rows = safeJson(raw);
+      if (!Array.isArray(rows)) {
+        // A modality table that does not parse cannot have verifiable refs.
+        refsResolve = false;
+        continue;
+      }
+      for (const row of rows) {
+        if (isRecord(row) && typeof row.entity_id === 'string' && !ids.has(row.entity_id)) {
+          refsResolve = false;
+        }
+      }
+    }
+
+    const gtRaw = files[`answer_key/${id}.gt.json`];
+    if (gtRaw === undefined) {
+      gtOk = false;
+    } else {
+      const gt = safeJson(gtRaw);
+      if (!isRecord(gt)) {
+        gtOk = false;
+      } else {
+        if (!Array.isArray(gt.root_cause_entities) || !Array.isArray(gt.root_cause_types) || typeof gt.raw_ground_truth !== 'string') {
+          gtOk = false;
+        }
+        if (Array.isArray(gt.root_cause_entities)) {
+          for (const rc of gt.root_cause_entities) {
+            if (typeof rc === 'string' && !names.has(rc)) rootsResolve = false;
+          }
+        }
+      }
+    }
+  }
+
+  checks.push(check('topology-shape', topologyOk, 'entities (non-empty) and edges arrays with consistent stats'));
+  checks.push(check('entity-refs-resolve', refsResolve, 'every entity_id resolves into the topology'));
+  checks.push(check('root-cause-resolves', rootsResolve, 'every root-cause entity name resolves into the topology'));
+  checks.push(check('gt-structure', gtOk, 'four-layer answer key (root_cause_entities/types + raw_ground_truth)'));
+
+  return { target: 'rca100', passed: checks.every((c) => c.passed), checks };
+}
+
 /**
  * Verify exported files against committed SHA-256 anchors.
  *
@@ -271,6 +401,8 @@ function structureFor(target: ScoreTargetId, files: Record<string, string>): Str
       return checkRcaEvalStructure(files, 'RE2');
     case 'rcaeval-re3':
       return checkRcaEvalStructure(files, 'RE3');
+    case 'rca100':
+      return checkRca100Structure(files);
     default: {
       const never: never = target;
       throw new Error(`unknown score target '${String(never)}'`);

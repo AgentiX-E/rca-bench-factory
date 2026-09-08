@@ -211,6 +211,7 @@ export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from '
 
 export {
   checkOpenRcaStructure,
+  checkRca100Structure,
   checkRcaEvalStructure,
   scoreExport,
   sha256,
