@@ -136,8 +136,10 @@ Each exporter emits the target benchmark's field contract exactly:
   UTC+8 offset (`OPENRCA_OFFSET_MINUTES = 480`), metric/log/trace CSV builders.
 - **RCAEval** (`export/rcaeval.ts`) — `RE1` (metric-only), `RE2` (multi-source),
   `RE3` (code-level) suites with per-case directories.
+- **RCA100** (`export/rca100.ts`) — six-modality contract (M/L/T + events + alerts +
+  UModel topology) with a four-layer answer key and enforced reference integrity.
 
-Additional targets (RCA100, Cloud-OpsBench, …) are declared in `src/coverage.ts`
+Additional targets (Cloud-OpsBench, AIOps2025, …) are declared in `src/coverage.ts`
 and added in subsequent milestones.
 
 ## 8. Self-evolution and human-in-the-loop

@@ -72,6 +72,34 @@ The richest contract: **six modalities** (M/L/T + events + alerts + topology) wi
 alignment. The IR's `EvidenceCheckpoint` (which already carries `comparator`,
 `value`, `unit`, `description`) maps one-to-one onto this contract.
 
+The exporter (`src/export/rca100.ts`) emits the per-task slice and enforces RCA100's
+single hard invariant — **full reference integrity** — before writing any file:
+
+```
+cases/{caseId}/metrics.json    entity-aligned long format (entity_id, entity_set, …)
+cases/{caseId}/logs.json       SLS application-log schema
+cases/{caseId}/traces.json     OpenTelemetry span schema
+cases/{caseId}/events.json     K8s lifecycle signals
+cases/{caseId}/alerts.json     entry-alert lifecycle
+cases/{caseId}/task.json       agent-facing task contract (alert_title, window, entity)
+cases/{caseId}/topology.json   UModel entity-relation snapshot (entities + edges + stats)
+answer_key/{caseId}.gt.json    four-layer ground truth
+```
+
+- **topology.json** maps every IR `EntityKind` to a UModel type (`service`→`apm.service`,
+  `pod`→`k8s.pod`, `node`/`host`→`k8s.node`, `db`→`apm.external.database`, …) and every
+  IR `EntityRelation` (`contains|hosts|calls|same_as`) to a typed edge.
+- **answer key** carries `root_cause_entities[]` (entity names), `root_cause_types[]`
+  (fault types), and `raw_ground_truth` — a JSON-encoded fault chain whose
+  `reasoning.steps[*]` are typed `cause|propagation|impact` (derived from step
+  position) with per-step `⟨comparator, value, unit⟩` observability checkpoints.
+- **Reference integrity is enforced, never repaired**: a case whose root-cause entity
+  or any signal reference fails to resolve into `topology.json` is *skipped* with a
+  reason (matching the official corpus's 100% no-dangling-edge guarantee).
+- The official distribution serializes the five modality tables as **Parquet**; the
+  exporter preserves the identical field contract as JSON so the tables stay diffable
+  and byte-stable for Golden-Master verification.
+
 ## Cloud-OpsBench / AIOps2025 / ITBench
 
 Declared targets (see `TARGET_REQUIREMENTS` in `src/coverage.ts`). Cloud-OpsBench
