@@ -34,7 +34,9 @@ export type CliCommand =
       delimiter?: string;
     }
   | { command: 'export'; target: ExportTarget; suite?: RcaEvalSuite; input: string; outDir: string }
-  | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string };
+  | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string }
+  | { command: 'transform'; input: string; rules: string; output?: string; idField?: string }
+  | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string };
 
 export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; error: string };
 
@@ -213,6 +215,69 @@ function parseScore(args: string[]): CliParseResult {
   };
 }
 
+function parseTransform(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    rules: { type: 'string' },
+    output: { type: 'string' },
+    'id-field': { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'transform requires --input <source.json>' };
+  }
+  const rules = v.rules;
+  if (typeof rules !== 'string' || rules === '') {
+    return { ok: false, error: 'transform requires --rules <rules.json>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'transform',
+      input,
+      rules,
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+      ...(v['id-field'] !== undefined ? { idField: String(v['id-field']) } : {}),
+    },
+  };
+}
+
+function parseGate(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    target: { type: 'string' },
+    'gate-run-id': { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'gate requires --input <bundle.json>' };
+  }
+  const target = v.target;
+  if (typeof target !== 'string' || target === '') {
+    return { ok: false, error: 'gate requires --target <target>' };
+  }
+  if (!isOneOf(target, SCORE_TARGETS)) {
+    return { ok: false, error: `invalid --target '${target}' (expected ${SCORE_TARGETS.join('|')})` };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'gate',
+      input,
+      target: target as ScoreTargetId,
+      ...(v['gate-run-id'] !== undefined ? { gateRunId: String(v['gate-run-id']) } : {}),
+    },
+  };
+}
+
 /** Parse an `argv` array into a typed command object, or an error string. */
 export function parseCliArgs(argv: string[]): CliParseResult {
   if (argv.length === 0) {
@@ -234,8 +299,12 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseExport(rest);
     case 'score':
       return parseScore(rest);
+    case 'transform':
+      return parseTransform(rest);
+    case 'gate':
+      return parseGate(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|export|score|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|export|score|transform|gate|help|version)` };
   }
 }
 
@@ -248,11 +317,13 @@ export function formatHelp(): string {
     '  rca-bench <command> [options]',
     '',
     'Commands:',
-    '  source   Ingest a flat file into IR signals',
-    '  export   Export an IR bundle to a target benchmark format',
-    '  score    Verify an exported dataset against a target contract',
-    '  help     Show this help text',
-    '  version  Print the version',
+    '  source     Ingest a flat file into IR signals',
+    '  transform  Apply transform rules to source records',
+    '  gate       Run the G1-G5 quality gates on an IR bundle',
+    '  export     Export an IR bundle to a target benchmark format',
+    '  score      Verify an exported dataset against a target contract',
+    '  help       Show this help text',
+    '  version    Print the version',
     '',
     'Run `rca-bench <command> --help` for command-specific options.',
   ].join('\n');

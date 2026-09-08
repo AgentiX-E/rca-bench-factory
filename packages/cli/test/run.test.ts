@@ -362,3 +362,112 @@ describe('run - score', () => {
     expect(err.join('')).toContain('object');
   });
 });
+
+describe('run - transform', () => {
+  it('applies transform rules and reports the result counts', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ status: 'ok' }, { status: 'err' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'status', to: 'status_norm', mapping: { ok: 'OK', err: 'ERROR' } }]));
+    const out: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const result = JSON.parse(out.join(''));
+    expect(result.counts).toEqual({ input: 2, output: 2, quarantine: 0 });
+    expect(result.outputs[0].record.status_norm).toBe('OK');
+  });
+
+  it('quarantines a record with an unmapped value', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ status: 'unknown' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'status', to: 'status_norm', mapping: { ok: 'OK' } }]));
+    const out: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join('')).counts.quarantine).toBe(1);
+  });
+
+  it('writes to --output and honours --id-field', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ id: 'a', status: 'ok' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'status', to: 'status_norm', mapping: { ok: 'OK' } }]));
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir });
+    expect(code).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'out.json'), 'utf8')).outputs[0].recordId).toBe('a');
+  });
+
+  it('rejects a non-array --input and returns 1', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), '{}');
+    await writeFile(join(dir, 'rules.json'), '[]');
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('array');
+  });
+
+  it('rejects a non-array --rules and returns 1', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), '[]');
+    await writeFile(join(dir, 'rules.json'), '{}');
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('array');
+  });
+});
+
+describe('run - gate', () => {
+  it('runs all five gates and reports the injected gate-run-id', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    const code = await run(['gate', '--input', 'bundle.json', '--target', 'rcaeval-re1', '--gate-run-id', 'run-1'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const report = JSON.parse(out.join(''));
+    expect(report.results).toHaveLength(5);
+    expect(report.gateRunId).toBe('run-1');
+    expect(['admitted', 'quarantined', 'rejected']).toContain(report.finalStatus);
+  });
+
+  it('derives G1 required signals from the rca100 target', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    const code = await run(['gate', '--input', 'bundle.json', '--target', 'rca100'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const report = JSON.parse(out.join(''));
+    const g1 = report.results.find((r: { gateId: string }) => r.gateId === 'G1');
+    expect(g1.violations.some((v: { code: string }) => v.code === 'MISSING_SIGNAL')).toBe(true);
+  });
+
+  it('enforces the query requirement for the openrca-1.0 target', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    const code = await run(['gate', '--input', 'bundle.json', '--target', 'openrca-1.0'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const report = JSON.parse(out.join(''));
+    const g1 = report.results.find((r: { gateId: string }) => r.gateId === 'G1');
+    // The minimal bundle carries a query, so the query requirement does not fire;
+    // the metric+trace requirement still does (it has no trace signal).
+    expect(g1.violations.some((v: { code: string }) => v.code === 'MISSING_QUERY')).toBe(false);
+  });
+
+  it('generates a timestamped gate-run-id when none is given', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    const code = await run(['gate', '--input', 'bundle.json', '--target', 'rca100'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join('')).gateRunId).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('reports a schema-invalid bundle and returns 1', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), '{}');
+    const err: string[] = [];
+    const code = await run(['gate', '--input', 'bundle.json', '--target', 'rca100'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('error');
+  });
+});

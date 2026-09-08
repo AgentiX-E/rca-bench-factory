@@ -1,8 +1,9 @@
 # CLI reference
 
 `rca-bench` is the runnable command-line entrypoint in `@rca-bench-factory/cli`.
-It orchestrates the core library over real files: ingest a flat source, export an
-IR bundle to a target contract, and score an exported dataset.
+It orchestrates the core library over real files: ingest a flat source, apply
+transform rules, run the quality gates, export an IR bundle to a target contract,
+and score an exported dataset.
 
 ## Implemented commands
 
@@ -11,6 +12,8 @@ IR bundle to a target contract, and score an exported dataset.
 | `help` | Print usage |
 | `version` | Print the semantic version |
 | `source` | Ingest a flat file (CSV/TSV/JSONL/JSON) into IR signals |
+| `transform` | Apply transform rules (the 7 strategies) to source records |
+| `gate` | Run the G1–G5 quality gates on an IR bundle |
 | `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 |
 | `score` | Score an exported directory against a target field contract |
 
@@ -28,6 +31,27 @@ rca-bench source --path telemetry.csv [--format csv] [--signal-kind metric]
 - Without `--output`, the `{ signals, quarantine }` result is written to stdout.
 - Every non-empty source record is either a signal or a quarantine entry — never
   silently dropped.
+
+### `rca-bench transform`
+
+```text
+rca-bench transform --input source.json --rules rules.json [--output out.json] [--id-field id]
+```
+
+- `--input` and `--rules` are JSON arrays of source records and `TransformRule`s.
+- The result (`outputs`, `quarantined`, `counts`) is written to stdout or `--output`.
+- `inputCount === outputCount + quarantineCount` is guaranteed by the engine.
+
+### `rca-bench gate`
+
+```text
+rca-bench gate --input bundle.json --target openrca-1.0 [--gate-run-id id]
+```
+
+- `--target` selects the G1 structural contract (required signal kinds + whether a
+  natural-language query is required). Valid targets: `openrca-1.0`,
+  `rcaeval-re1`/`re2`/`re3`, `rca100`.
+- The five-gate report (`results` + `finalStatus`) is written to stdout.
 
 ### `rca-bench export`
 
@@ -59,8 +83,8 @@ rca-bench score --target openrca-1.0 --dir ./out [--anchors '{"path":"sha256"}']
 
 ## Not yet implemented
 
-The full dataset-authoring pipeline (`init`, `transform`, `case`, `gate`,
-`evolve`) is planned but not yet wired into the CLI. The underlying core
-functions already exist: `transformBatch`, `runAllGates`, the fault collector and
-the LLM rule-generation core. See [architecture.md](architecture.md) for where
-they sit.
+`case` (assembling an IR bundle from signals, graph, fault and ground truth) and
+`init`/`evolve` are planned but not yet wired into the CLI. The underlying core
+functions already exist: the fault collector (`parseFaultSpec`), the entity graph
+and the LLM rule-generation core. See [architecture.md](architecture.md) for
+where they sit.

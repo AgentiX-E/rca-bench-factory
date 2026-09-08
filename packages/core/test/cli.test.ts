@@ -236,10 +236,84 @@ describe('parseCliArgs - score', () => {
   });
 });
 
+describe('parseCliArgs - transform', () => {
+  it('parses a minimal transform command', () => {
+    expect(parseCliArgs(['transform', '--input', 'src.json', '--rules', 'rules.json'])).toEqual({
+      ok: true,
+      command: { command: 'transform', input: 'src.json', rules: 'rules.json' },
+    });
+  });
+
+  it('parses the optional --output and --id-field', () => {
+    expect(parseCliArgs(['transform', '--input', 'src.json', '--rules', 'rules.json', '--output', 'out.json', '--id-field', 'id'])).toEqual({
+      ok: true,
+      command: { command: 'transform', input: 'src.json', rules: 'rules.json', output: 'out.json', idField: 'id' },
+    });
+  });
+
+  it('requires --input', () => {
+    const result = parseCliArgs(['transform', '--rules', 'rules.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --rules', () => {
+    const result = parseCliArgs(['transform', '--input', 'src.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/rules/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['transform', '--input', 'x', '--rules', 'y', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
+describe('parseCliArgs - gate', () => {
+  it('parses a gate command', () => {
+    expect(parseCliArgs(['gate', '--input', 'bundle.json', '--target', 'rca100'])).toEqual({
+      ok: true,
+      command: { command: 'gate', input: 'bundle.json', target: 'rca100' },
+    });
+  });
+
+  it('parses an optional --gate-run-id', () => {
+    expect(parseCliArgs(['gate', '--input', 'bundle.json', '--target', 'openrca-1.0', '--gate-run-id', 'run-1'])).toEqual({
+      ok: true,
+      command: { command: 'gate', input: 'bundle.json', target: 'openrca-1.0', gateRunId: 'run-1' },
+    });
+  });
+
+  it('requires --input', () => {
+    const result = parseCliArgs(['gate', '--target', 'rca100']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --target', () => {
+    const result = parseCliArgs(['gate', '--input', 'bundle.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects an invalid --target', () => {
+    const result = parseCliArgs(['gate', '--input', 'bundle.json', '--target', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['gate', '--input', 'x', '--target', 'rca100', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
 describe('formatHelp and formatVersion', () => {
   it('lists every command in the help text', () => {
     const help = formatHelp();
-    for (const cmd of ['source', 'export', 'score', 'help', 'version']) {
+    for (const cmd of ['source', 'transform', 'gate', 'export', 'score', 'help', 'version']) {
       expect(help).toContain(cmd);
     }
   });

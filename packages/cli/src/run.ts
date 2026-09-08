@@ -14,7 +14,9 @@ import {
   parseDelimited,
   parseJsonArray,
   parseJsonl,
+  runAllGates,
   scoreExport,
+  transformBatch,
 } from '@rca-bench-factory/core';
 import type {
   CliCommand,
@@ -23,7 +25,12 @@ import type {
   FileIngestOptions,
   FileLayout,
   FileSignalKind,
+  G1Options,
   IrBundle,
+  ScoreTargetId,
+  SignalKind,
+  SourceRecord,
+  TransformRule,
 } from '@rca-bench-factory/core';
 
 /**
@@ -55,6 +62,27 @@ function parseJsonObject(raw: string, flag: string): Record<string, unknown> {
     throw new Error(`${flag} must be a JSON object`);
   }
   return parsed as Record<string, unknown>;
+}
+
+/** Parse a JSON-array flag value; throws a clear error on a non-array. */
+function requireArray<T>(raw: string, flag: string): T[] {
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${flag} must be a JSON array`);
+  }
+  return parsed as T[];
+}
+
+/** Map a target id to the G1 structural-gate contract it must satisfy. */
+function g1OptionsForTarget(target: ScoreTargetId): G1Options {
+  const requiredSignals: Record<ScoreTargetId, SignalKind[]> = {
+    'openrca-1.0': ['metric', 'trace'],
+    'rcaeval-re1': ['metric'],
+    'rcaeval-re2': ['metric', 'log'],
+    'rcaeval-re3': ['metric', 'log', 'trace'],
+    rca100: ['metric', 'log', 'trace', 'event', 'alert'],
+  };
+  return { requiredSignals: requiredSignals[target], requiresQuery: target === 'openrca-1.0' };
 }
 
 /**
@@ -152,6 +180,28 @@ async function runScore(cmd: Extract<CliCommand, { command: 'score' }>, ctx: Ctx
   return report.passed ? 0 : 1;
 }
 
+async function runTransform(cmd: Extract<CliCommand, { command: 'transform' }>, ctx: Ctx): Promise<number> {
+  const input = requireArray<SourceRecord>(await readFile(resolve(ctx.cwd, cmd.input), 'utf8'), '--input');
+  const rules = requireArray<TransformRule>(await readFile(resolve(ctx.cwd, cmd.rules), 'utf8'), '--rules');
+  const result = transformBatch(input, rules, { idField: cmd.idField });
+  const output = JSON.stringify(result, null, 2) + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
+async function runGate(cmd: Extract<CliCommand, { command: 'gate' }>, ctx: Ctx): Promise<number> {
+  const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
+  const bundle = irBundleSchema.parse(JSON.parse(raw)) as IrBundle;
+  const runAt = new Date().toISOString();
+  const { report } = runAllGates(bundle, { g1: g1OptionsForTarget(cmd.target) }, { gateRunId: cmd.gateRunId ?? runAt, runAt });
+  ctx.stdout(JSON.stringify(report, null, 2) + '\n');
+  return 0;
+}
+
 /**
  * Run a full `argv` command and return the process exit code.
  *
@@ -186,6 +236,10 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runExport(parsed.command, ctx);
       case 'score':
         return await runScore(parsed.command, ctx);
+      case 'transform':
+        return await runTransform(parsed.command, ctx);
+      case 'gate':
+        return await runGate(parsed.command, ctx);
     }
   } catch (e) {
     // Every throw site reachable from here (fs/promises, JSON.parse, zod,
