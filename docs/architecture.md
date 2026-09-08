@@ -116,6 +116,12 @@ The six LLM tasks are:
 - **G5** template extraction (Drain3-style log templates)
 - **G6** semantic completion (fault category, causal mechanism, query text)
 
+The LLM boundary is the provider-agnostic `LlmProvider` interface (`llm/provider.ts`).
+The first concrete adapter, `llm/deepseek.ts`, implements it over the OpenAI-compatible
+DeepSeek chat-completions API: `buildDeepSeekRequest` and `parseDeepSeekResponse` are
+pure, while `createDeepSeekProvider` performs the HTTP round trip with the API key
+injected by the caller (never read from the environment or committed to git).
+
 ## 6. Quality gates G1–G5
 
 A case is admitted to a benchmark only after every gate passes:

@@ -241,6 +241,16 @@ export type {
 export type { LlmProvider } from './llm/provider.js';
 
 export {
+  DEEPSEEK_DEFAULT_BASE_URL,
+  DEEPSEEK_DEFAULT_MODEL,
+  DEEPSEEK_CHAT_COMPLETIONS_PATH,
+  buildDeepSeekRequest,
+  createDeepSeekProvider,
+  parseDeepSeekResponse,
+} from './llm/deepseek.js';
+export type { DeepSeekOptions, DeepSeekRequest } from './llm/deepseek.js';
+
+export {
   inferFaultCategory,
   normalizeFaultType,
   parseFaultSpec,
