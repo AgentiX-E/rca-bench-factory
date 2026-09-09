@@ -181,6 +181,14 @@ export {
 export type { CloudOpsBenchExportResult } from './export/cloudopsbench.js';
 
 export {
+  OPENRCA2_CONTRACT_VERSION,
+  OPENRCA2_TARGET_ID,
+  buildCausalPathJson,
+  exportOpenRca2,
+} from './export/openrca2.js';
+export type { OpenRca2ExportResult } from './export/openrca2.js';
+
+export {
   MODALITY_LOSS,
   TARGET_REQUIREMENTS,
   computeCoverage,
@@ -233,6 +241,7 @@ export {
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkOpenRcaStructure,
+  checkOpenRca2Structure,
   checkRca100Structure,
   checkRcaEvalStructure,
   scoreExport,

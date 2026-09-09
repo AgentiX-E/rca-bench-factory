@@ -11,6 +11,7 @@ import {
   exportAioPs2025,
   exportCloudOpsBench,
   exportOpenRca,
+  exportOpenRca2,
   exportRca100,
   exportRcaEval,
   formatHelp,
@@ -88,6 +89,7 @@ function requireArray<T>(raw: string, flag: string): T[] {
 function g1OptionsForTarget(target: ScoreTargetId): G1Options {
   const requiredSignals: Record<ScoreTargetId, SignalKind[]> = {
     'openrca-1.0': ['metric', 'trace'],
+    'openrca-2.0': ['metric', 'trace'],
     'rcaeval-re1': ['metric'],
     'rcaeval-re2': ['metric', 'log'],
     'rcaeval-re3': ['metric', 'log', 'trace'],
@@ -174,6 +176,8 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
   let files: ExportedFiles;
   if (cmd.target === 'openrca-1.0') {
     files = exportOpenRca(bundle).files;
+  } else if (cmd.target === 'openrca-2.0') {
+    files = exportOpenRca2(bundle).files;
   } else if (cmd.target === 'rcaeval') {
     files = exportRcaEval(bundle, cmd.suite ?? 'RE2').files;
   } else if (cmd.target === 'rca100') {
@@ -191,6 +195,7 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
 /** Export a bundle for a score target (ScoreTargetId → the matching exporter). */
 function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): ExportedFiles {
   if (target === 'openrca-1.0') return exportOpenRca(bundle).files;
+  if (target === 'openrca-2.0') return exportOpenRca2(bundle).files;
   if (target === 'rcaeval-re1') return exportRcaEval(bundle, 'RE1').files;
   if (target === 'rcaeval-re2') return exportRcaEval(bundle, 'RE2').files;
   if (target === 'rcaeval-re3') return exportRcaEval(bundle, 'RE3').files;

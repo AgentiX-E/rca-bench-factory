@@ -343,6 +343,15 @@ describe('run - export', () => {
     expect(JSON.parse(meta).result.fault_object).toBe('order');
   });
 
+  it('exports a bundle to OpenRCA 2.0', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const code = await run(['export', '--target', 'openrca-2.0', '--input', 'bundle.json', '--out-dir', 'out'], { cwd: dir });
+    expect(code).toBe(0);
+    const path = await readFile(join(dir, 'out', 'cases', 'case-001', 'causal_path.json'), 'utf8');
+    expect(JSON.parse(path).case_id).toBe('case-001');
+  });
+
   it('reports malformed bundle JSON and returns 1', async () => {
     const dir = await makeDir();
     await writeFile(join(dir, 'bundle.json'), 'not json');
@@ -727,7 +736,7 @@ describe('report', () => {
     expect(html).toContain('<h2>Score</h2>');
   });
 
-  it.each(['rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025'] as const)(
+  it.each(['openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025'] as const)(
     'renders a report for target %s',
     async (target) => {
       const dir = await makeDir();

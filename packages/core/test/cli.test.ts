@@ -160,6 +160,13 @@ describe('parseCliArgs - export', () => {
     });
   });
 
+  it('parses an OpenRCA 2.0 export command', () => {
+    expect(parseCliArgs(['export', '--target', 'openrca-2.0', '--input', 'b.json', '--out-dir', './out'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'openrca-2.0', input: 'b.json', outDir: './out' },
+    });
+  });
+
   it('requires --target', () => {
     const result = parseCliArgs(['export', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);
@@ -230,6 +237,13 @@ describe('parseCliArgs - score', () => {
     expect(parseCliArgs(['score', '--target', 'cloud-opsbench', '--dir', './exported'])).toEqual({
       ok: true,
       command: { command: 'score', target: 'cloud-opsbench', dir: './exported' },
+    });
+  });
+
+  it('parses an OpenRCA 2.0 score command', () => {
+    expect(parseCliArgs(['score', '--target', 'openrca-2.0', '--dir', './exported'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'openrca-2.0', dir: './exported' },
     });
   });
 

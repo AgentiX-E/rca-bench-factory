@@ -52,7 +52,26 @@ Exported by `exportOpenRca` → `buildMetricCsv` / `buildLogCsv` / `buildTraceCs
 
 Adds step-wise **causal-path annotations** on top of the 1.0 telemetry layout. The
 IR `GroundTruth.causalChain` (`CausalStep[]`) is the canonical form; the exporter
-linearizes it into PAVE's step annotations.
+(`src/export/openrca2.ts`) emits one `causal_path.json` per case:
+
+```
+cases/<case_id>/causal_path.json
+  { case_id, system, root_cause: { entity_id, component, fault_type },
+    causal_path: [ { step, from_entity, to_entity, mechanism,
+                     verification: { structural, statistical, temporal },
+                     evidence: [ { signal_ref, comparator, value, unit, description } ] } ] }
+```
+
+- Each step's `verification` encodes PAVE's three conjunctive gates:
+  **structural** (both endpoints resolve into the topology), **statistical**
+  (at least one evidence checkpoint) and **temporal** (strictly increasing step
+  order).
+- The evidence checkpoints reuse the IR `⟨comparator, value, unit⟩` contract.
+- **Scoring** (`checkOpenRca2Structure`, `score --target openrca-2.0`) re-verifies
+  the root-cause shape and the three-gate verification verdict per step.
+- The official OpenRCA 2.0 evaluation framework and scorer are **not open-sourced**,
+  so this is a PAVE-semantic annotation contract, not a byte-compatible official
+  file.
 
 ## RCAEval (RE1 / RE2 / RE3)
 

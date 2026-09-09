@@ -14,7 +14,7 @@ import type { RcaEvalSuite } from '../export/rcaeval.js';
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
 
-export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench';
+export type ScoreTargetId = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench';
 
 export interface ScoreCheck {
   id: string;
@@ -485,6 +485,68 @@ export function checkCloudOpsBenchStructure(files: Record<string, string>): Stru
 }
 
 /**
+ * Verify an OpenRCA 2.0 export against its PAVE causal-path contract.
+ *
+ * Every case must carry a `root_cause` and an ordered `causal_path` array, and
+ * each step must carry a three-gate verification verdict (structural /
+ * statistical / temporal) plus an evidence array. This re-verifies the shape, not
+ * merely the file layout, so a malformed step cannot slip through.
+ */
+export function checkOpenRca2Structure(files: Record<string, string>): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const paths = pathsEndingWith(files, '/causal_path.json');
+  checks.push(check('case-present', paths.length > 0, `found ${paths.length} causal_path.json`));
+
+  let shapeOk = true;
+  for (const path of paths) {
+    const obj = safeJson(files[path]!);
+    if (!isRecord(obj)) {
+      shapeOk = false;
+      continue;
+    }
+
+    const rootCause = obj.root_cause;
+    if (
+      !isRecord(rootCause) ||
+      typeof rootCause.entity_id !== 'string' ||
+      typeof rootCause.component !== 'string' ||
+      typeof rootCause.fault_type !== 'string'
+    ) {
+      shapeOk = false;
+    }
+
+    const chain = obj.causal_path;
+    if (!Array.isArray(chain)) {
+      shapeOk = false;
+      continue;
+    }
+    for (const step of chain) {
+      if (!isRecord(step)) {
+        shapeOk = false;
+        continue;
+      }
+      const verification = step.verification;
+      if (
+        typeof step.step !== 'number' ||
+        !isRecord(step.from_entity) ||
+        !isRecord(step.to_entity) ||
+        typeof step.mechanism !== 'string' ||
+        !isRecord(verification) ||
+        typeof verification.structural !== 'boolean' ||
+        typeof verification.statistical !== 'boolean' ||
+        typeof verification.temporal !== 'boolean' ||
+        !Array.isArray(step.evidence)
+      ) {
+        shapeOk = false;
+      }
+    }
+  }
+  checks.push(check('causal-path-shape', shapeOk, 'root_cause + ordered causal path with three-gate verification'));
+
+  return { target: 'openrca-2.0', passed: checks.every((c) => c.passed), checks };
+}
+
+/**
  * Verify exported files against committed SHA-256 anchors.
  *
  * `passed` requires the file sets to agree exactly: nothing mismatched, nothing
@@ -536,6 +598,8 @@ function structureFor(target: ScoreTargetId, files: Record<string, string>): Str
   switch (target) {
     case 'openrca-1.0':
       return checkOpenRcaStructure(files);
+    case 'openrca-2.0':
+      return checkOpenRca2Structure(files);
     case 'rcaeval-re1':
       return checkRcaEvalStructure(files, 'RE1');
     case 'rcaeval-re2':

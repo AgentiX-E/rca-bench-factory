@@ -4,10 +4,12 @@ import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
+import { exportOpenRca2 } from '../src/export/openrca2.js';
 import {
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkOpenRcaStructure,
+  checkOpenRca2Structure,
   checkRca100Structure,
   checkRcaEvalStructure,
   scoreExport,
@@ -466,6 +468,63 @@ describe('checkCloudOpsBenchStructure', () => {
   });
 });
 
+describe('checkOpenRca2Structure', () => {
+  const or2Files = (): Record<string, string> => exportOpenRca2(validBundle()).files;
+
+  it('passes a well-formed OpenRCA 2.0 export', () => {
+    const report = checkOpenRca2Structure(or2Files());
+    expect(report.passed).toBe(true);
+    expect(report.target).toBe('openrca-2.0');
+    expect(report.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('fails when there are no causal_path.json files', () => {
+    const report = checkOpenRca2Structure({});
+    expect(report.checks.find((c) => c.id === 'case-present')?.passed).toBe(false);
+  });
+
+  it('fails on a malformed causal_path.json', () => {
+    const files = or2Files();
+    files['cases/case-001/causal_path.json'] = 'not json';
+    const report = checkOpenRca2Structure(files);
+    expect(report.checks.find((c) => c.id === 'causal-path-shape')?.passed).toBe(false);
+  });
+
+  it('fails when the root_cause is malformed', () => {
+    const files = or2Files();
+    files['cases/case-001/causal_path.json'] = JSON.stringify({ root_cause: {}, causal_path: [] });
+    const report = checkOpenRca2Structure(files);
+    expect(report.checks.find((c) => c.id === 'causal-path-shape')?.passed).toBe(false);
+  });
+
+  it('fails when causal_path is not an array', () => {
+    const files = or2Files();
+    const obj = JSON.parse(files['cases/case-001/causal_path.json']!);
+    obj.causal_path = 'not-an-array';
+    files['cases/case-001/causal_path.json'] = JSON.stringify(obj);
+    const report = checkOpenRca2Structure(files);
+    expect(report.checks.find((c) => c.id === 'causal-path-shape')?.passed).toBe(false);
+  });
+
+  it('fails when a step is missing its three-gate verification', () => {
+    const files = or2Files();
+    const obj = JSON.parse(files['cases/case-001/causal_path.json']!);
+    delete obj.causal_path[0].verification;
+    files['cases/case-001/causal_path.json'] = JSON.stringify(obj);
+    const report = checkOpenRca2Structure(files);
+    expect(report.checks.find((c) => c.id === 'causal-path-shape')?.passed).toBe(false);
+  });
+
+  it('fails when a step is not an object', () => {
+    const files = or2Files();
+    const obj = JSON.parse(files['cases/case-001/causal_path.json']!);
+    obj.causal_path = [42];
+    files['cases/case-001/causal_path.json'] = JSON.stringify(obj);
+    const report = checkOpenRca2Structure(files);
+    expect(report.checks.find((c) => c.id === 'causal-path-shape')?.passed).toBe(false);
+  });
+});
+
 describe('scoreExport', () => {
   it('scores 100 for a fully valid export with matching anchors', () => {
     const files = openrcaFiles();
@@ -532,6 +591,13 @@ describe('scoreExport', () => {
   it('scores 100 for a valid Cloud-OpsBench export', () => {
     const files = exportCloudOpsBench(validBundle()).files;
     const report = scoreExport('cloud-opsbench', files);
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(100);
+  });
+
+  it('scores 100 for a valid OpenRCA 2.0 export', () => {
+    const files = exportOpenRca2(validBundle()).files;
+    const report = scoreExport('openrca-2.0', files);
     expect(report.passed).toBe(true);
     expect(report.score).toBe(100);
   });

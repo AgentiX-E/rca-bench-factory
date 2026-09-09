@@ -15,7 +15,7 @@ and score an exported dataset.
 | `transform` | Apply transform rules (the 7 strategies) to source records |
 | `case` | Assemble an IR bundle from a case draft (normalises the fault) |
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
-| `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 / AIOps2025 / Cloud-OpsBench |
+| `export` | Export an IR bundle (`bundle.json`) to OpenRCA 1.0/2.0 / RCAEval / RCA100 / AIOps2025 / Cloud-OpsBench |
 | `score` | Score an exported directory against a target field contract |
 | `report` | Render coverage, gates and score into a self-contained HTML report |
 | `evolve` | Propose, approve, reject or roll back a self-evolution (HITL + red lines) |
@@ -65,13 +65,15 @@ rca-bench gate --input bundle.json --target openrca-1.0 [--gate-run-id id]
 
 - `--target` selects the G1 structural contract (required signal kinds + whether a
   natural-language query is required). Valid targets: `openrca-1.0`,
-  `rcaeval-re1`/`re2`/`re3`, `rca100`, `aiops2025`, `cloud-opsbench`.
+  `openrca-2.0`, `rcaeval-re1`/`re2`/`re3`, `rca100`, `aiops2025`,
+  `cloud-opsbench`.
 - The five-gate report (`results` + `finalStatus`) is written to stdout.
 
 ### `rca-bench export`
 
 ```text
 rca-bench export --target openrca-1.0 --input bundle.json --out-dir ./out
+rca-bench export --target openrca-2.0 --input bundle.json --out-dir ./out
 rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./out
 rca-bench export --target rca100 --input bundle.json --out-dir ./out
 rca-bench export --target aiops2025 --input bundle.json --out-dir ./out
@@ -85,6 +87,7 @@ rca-bench export --target cloud-opsbench --input bundle.json --out-dir ./out
 
 ```text
 rca-bench score --target openrca-1.0 --dir ./out [--anchors '{"path":"sha256"}']
+rca-bench score --target openrca-2.0 --dir ./out
 rca-bench score --target aiops2025 --dir ./out
 rca-bench score --target cloud-opsbench --dir ./out
 ```
