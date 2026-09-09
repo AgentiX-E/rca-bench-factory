@@ -17,6 +17,7 @@ and score an exported dataset.
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
 | `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 / AIOps2025 |
 | `score` | Score an exported directory against a target field contract |
+| `evolve` | Propose, approve, reject or roll back a self-evolution (HITL + red lines) |
 
 ### `rca-bench source`
 
@@ -89,6 +90,28 @@ rca-bench score --target aiops2025 --dir ./out
 - `--anchors` (optional) adds SHA-256 Golden-Master verification.
 - Exit code is 0 when the report passes, 1 when it fails (so CI can gate on it).
 
+### `rca-bench evolve`
+
+```text
+rca-bench evolve propose --input draft.json [--output proposal.json]
+rca-bench evolve approve --input proposal.json [--note "reason"] [--output approved.json]
+rca-bench evolve reject  --input proposal.json [--note "reason"] [--output rejected.json]
+rca-bench evolve stale   --input proposal.json --cases '["case-001", ...]'
+```
+
+- `propose` assembles a **pending** evolution proposal from a draft
+  (`id`, `layer`, `action`, `trigger`, `changes`, `baselineScore`,
+  `candidateScore`, `baseVersion`); the HITL gate (H1–H6) is derived from the
+  action and the regression verdict from the score delta.
+- `approve` / `reject` move a proposal through the HITL checkpoint; an optional
+  reviewer note is attached.
+- `stale` returns the affected cases to re-run when a proposal failed its
+  regression or was rejected (red line 3: rollback); an approved, passing
+  proposal returns nothing to roll back.
+- The three red lines are enforced as predicates in the core: a change must be
+  diff-able and revertible, an unapproved proposal is never production-ready, and
+  a failed/rejected proposal marks its affected cases stale.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -98,7 +121,5 @@ rca-bench score --target aiops2025 --dir ./out
 
 ## Not yet implemented
 
-`init`/`evolve` (workspace scaffolding and self-evolution) are planned but not yet
-wired into the CLI. The underlying core functions already exist: the LLM
-rule-generation core and the fault collector. See
-[architecture.md](architecture.md) for where they sit.
+`init` (workspace scaffolding) is planned but not yet wired into the CLI. See
+[architecture.md](architecture.md) for where it sits.

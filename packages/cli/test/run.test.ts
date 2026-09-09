@@ -551,3 +551,154 @@ describe('run - case', () => {
     expect(err.join('')).toContain('error');
   });
 });
+
+describe('evolve', () => {
+  const rule = (id: string): Record<string, unknown> => ({
+    id,
+    kind: 'map',
+    from: 'status',
+    to: 'status_norm',
+    mapping: { ok: 'OK' },
+  });
+
+  const draft = (): string =>
+    JSON.stringify({
+      id: 'prop-1',
+      layer: 'L1',
+      action: 'rule-evolution',
+      trigger: { source: 'gate', violationCodes: ['MISSING_SIGNAL'] },
+      changes: [{ ruleId: 'r1', kind: 'update', before: rule('r1'), after: rule('r1') }],
+      baselineScore: 80,
+      candidateScore: 90,
+      baseVersion: 'abc1234',
+    });
+
+  const pendingProposal = (): string =>
+    JSON.stringify({
+      id: 'prop-1',
+      layer: 'L1',
+      hitlGate: 'H4',
+      trigger: { source: 'gate', violationCodes: ['MISSING_SIGNAL'] },
+      changes: [{ ruleId: 'r1', kind: 'update', before: rule('r1'), after: rule('r1') }],
+      regression: { baselineScore: 80, candidateScore: 90, passed: true },
+      baseVersion: 'abc1234',
+      status: 'pending',
+    });
+
+  it('proposes a pending proposal from a draft', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), draft());
+    const out: string[] = [];
+    const code = await run(['evolve', 'propose', '--input', 'draft.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const proposal = JSON.parse(out.join(''));
+    expect(proposal.hitlGate).toBe('H4');
+    expect(proposal.status).toBe('pending');
+    expect(proposal.regression.passed).toBe(true);
+  });
+
+  it('writes the proposed proposal to --output', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), draft());
+    const code = await run(['evolve', 'propose', '--input', 'draft.json', '--output', 'proposal.json'], { cwd: dir });
+    expect(code).toBe(0);
+    const proposal = JSON.parse(await readFile(join(dir, 'proposal.json'), 'utf8'));
+    expect(proposal.status).toBe('pending');
+  });
+
+  it('approves a pending proposal to stdout', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    const out: string[] = [];
+    const code = await run(['evolve', 'approve', '--input', 'proposal.json', '--note', 'ship it'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const approved = JSON.parse(out.join(''));
+    expect(approved.status).toBe('approved');
+    expect(approved.note).toBe('ship it');
+  });
+
+  it('approves a proposal and writes it to --output', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    const code = await run(['evolve', 'approve', '--input', 'proposal.json', '--output', 'approved.json'], { cwd: dir });
+    expect(code).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'approved.json'), 'utf8')).status).toBe('approved');
+  });
+
+  it('rejects a proposal to stdout', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    const out: string[] = [];
+    const code = await run(['evolve', 'reject', '--input', 'proposal.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join('')).status).toBe('rejected');
+  });
+
+  it('rejects a proposal and writes it to --output', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    const code = await run(['evolve', 'reject', '--input', 'proposal.json', '--output', 'rejected.json'], { cwd: dir });
+    expect(code).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'rejected.json'), 'utf8')).status).toBe('rejected');
+  });
+
+  it('computes stale cases for a failed proposal', async () => {
+    const dir = await makeDir();
+    const failed = JSON.stringify({
+      id: 'prop-1',
+      layer: 'L1',
+      hitlGate: 'H4',
+      trigger: { source: 'gate', violationCodes: ['MISSING_SIGNAL'] },
+      changes: [{ ruleId: 'r1', kind: 'update', before: rule('r1'), after: rule('r1') }],
+      regression: { baselineScore: 80, candidateScore: 70, passed: false },
+      baseVersion: 'abc1234',
+      status: 'pending',
+    });
+    await writeFile(join(dir, 'proposal.json'), failed);
+    const out: string[] = [];
+    const code = await run(['evolve', 'stale', '--input', 'proposal.json', '--cases', '["case-001","case-002"]'], {
+      cwd: dir,
+      stdout: (s) => out.push(s),
+    });
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join(''))).toEqual(['case-001', 'case-002']);
+  });
+
+  it('computes no stale cases for an approved passing proposal', async () => {
+    const dir = await makeDir();
+    const ok = JSON.stringify({
+      id: 'prop-1',
+      layer: 'L1',
+      hitlGate: 'H4',
+      trigger: { source: 'gate' },
+      changes: [{ ruleId: 'r1', kind: 'add', after: rule('r1') }],
+      regression: { baselineScore: 80, candidateScore: 90, passed: true },
+      baseVersion: 'abc1234',
+      status: 'approved',
+    });
+    await writeFile(join(dir, 'proposal.json'), ok);
+    const out: string[] = [];
+    const code = await run(['evolve', 'stale', '--input', 'proposal.json', '--cases', '["case-001"]'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join(''))).toEqual([]);
+  });
+
+  it('reports a parse error and returns 1 for a malformed draft', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'draft.json'), 'not json');
+    const err: string[] = [];
+    const code = await run(['evolve', 'propose', '--input', 'draft.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('error');
+  });
+
+  it('returns 1 for a non-array --cases value', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    const err: string[] = [];
+    // '{}' is valid JSON but not an array, so the runner rejects it.
+    const code = await run(['evolve', 'stale', '--input', 'proposal.json', '--cases', '{}'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('array');
+  });
+});

@@ -17,6 +17,8 @@ export const CLI_VERSION = '0.1.0';
 
 export type ExportTarget = 'openrca-1.0' | 'rcaeval' | 'rca100' | 'aiops2025';
 
+export type EvolveAction = 'propose' | 'approve' | 'reject' | 'stale';
+
 export type CliCommand =
   | { command: 'help' }
   | { command: 'version' }
@@ -37,7 +39,11 @@ export type CliCommand =
   | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string }
   | { command: 'transform'; input: string; rules: string; output?: string; idField?: string }
   | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string }
-  | { command: 'case'; input: string; output?: string };
+  | { command: 'case'; input: string; output?: string }
+  | { command: 'evolve'; action: 'propose'; input: string; output?: string }
+  | { command: 'evolve'; action: 'approve'; input: string; note?: string; output?: string }
+  | { command: 'evolve'; action: 'reject'; input: string; note?: string; output?: string }
+  | { command: 'evolve'; action: 'stale'; input: string; cases: string };
 
 export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; error: string };
 
@@ -47,6 +53,7 @@ const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_m
 const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval', 'rca100', 'aiops2025'];
 const SUITES: readonly string[] = ['RE1', 'RE2', 'RE3'];
 const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025'];
+const EVOLVE_ACTIONS: readonly string[] = ['propose', 'approve', 'reject', 'stale'];
 
 function isOneOf(value: string, allowed: readonly string[]): boolean {
   return allowed.includes(value);
@@ -302,6 +309,129 @@ function parseCase(args: string[]): CliParseResult {
   };
 }
 
+function parseEvolvePropose(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'evolve propose requires --input <draft.json>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'evolve',
+      action: 'propose',
+      input,
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+    },
+  };
+}
+
+function parseEvolveApprove(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    note: { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'evolve approve requires --input <proposal.json>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'evolve',
+      action: 'approve',
+      input,
+      ...(v.note !== undefined ? { note: String(v.note) } : {}),
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+    },
+  };
+}
+
+function parseEvolveReject(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    note: { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'evolve reject requires --input <proposal.json>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'evolve',
+      action: 'reject',
+      input,
+      ...(v.note !== undefined ? { note: String(v.note) } : {}),
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+    },
+  };
+}
+
+function parseEvolveStale(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    cases: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'evolve stale requires --input <proposal.json>' };
+  }
+  const cases = v.cases;
+  if (typeof cases !== 'string' || cases === '') {
+    return { ok: false, error: 'evolve stale requires --cases <json-array>' };
+  }
+  if (!isJson(cases)) {
+    return { ok: false, error: 'invalid --cases JSON' };
+  }
+
+  return {
+    ok: true,
+    command: { command: 'evolve', action: 'stale', input, cases },
+  };
+}
+
+/** Parse the `evolve` subcommand family (`propose|approve|reject|stale`). */
+function parseEvolve(args: string[]): CliParseResult {
+  const [action, ...rest] = args;
+  if (action === undefined) {
+    return { ok: false, error: 'evolve requires an action (propose|approve|reject|stale)' };
+  }
+  if (!isOneOf(action, EVOLVE_ACTIONS)) {
+    return { ok: false, error: `unknown evolve action '${action}' (expected ${EVOLVE_ACTIONS.join('|')})` };
+  }
+  switch (action) {
+    case 'propose':
+      return parseEvolvePropose(rest);
+    case 'approve':
+      return parseEvolveApprove(rest);
+    case 'reject':
+      return parseEvolveReject(rest);
+    default:
+      return parseEvolveStale(rest);
+  }
+}
+
 /** Parse an `argv` array into a typed command object, or an error string. */
 export function parseCliArgs(argv: string[]): CliParseResult {
   if (argv.length === 0) {
@@ -329,8 +459,10 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseGate(rest);
     case 'case':
       return parseCase(rest);
+    case 'evolve':
+      return parseEvolve(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|evolve|help|version)` };
   }
 }
 
@@ -349,6 +481,7 @@ export function formatHelp(): string {
     '  gate       Run the G1-G5 quality gates on an IR bundle',
     '  export     Export an IR bundle to a target benchmark format',
     '  score      Verify an exported dataset against a target contract',
+    '  evolve     Propose, approve, reject or roll back an evolution',
     '  help       Show this help text',
     '  version    Print the version',
     '',

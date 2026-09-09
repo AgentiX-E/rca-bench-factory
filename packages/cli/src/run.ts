@@ -2,7 +2,10 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { join as posixJoin } from 'node:path/posix';
 import {
+  approveProposal,
   assembleBundle,
+  buildEvolutionProposal,
+  computeStaleCases,
   detectFileLayout,
   exportAioPs2025,
   exportOpenRca,
@@ -16,12 +19,15 @@ import {
   parseDelimited,
   parseJsonArray,
   parseJsonl,
+  rejectProposal,
   runAllGates,
   scoreExport,
   transformBatch,
 } from '@rca-bench-factory/core';
 import type {
+  BuildProposalInput,
   CliCommand,
+  EvolutionProposal,
   ExportedFiles,
   FileFormat,
   FileIngestOptions,
@@ -220,6 +226,70 @@ async function runCase(cmd: Extract<CliCommand, { command: 'case' }>, ctx: Ctx):
   return 0;
 }
 
+/** Read and parse an evolution proposal JSON file. */
+async function readProposal(cwd: string, path: string): Promise<EvolutionProposal> {
+  const raw = await readFile(resolve(cwd, path), 'utf8');
+  return JSON.parse(raw) as EvolutionProposal;
+}
+
+async function runEvolvePropose(cmd: Extract<CliCommand, { command: 'evolve'; action: 'propose' }>, ctx: Ctx): Promise<number> {
+  const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
+  const draft = JSON.parse(raw) as BuildProposalInput;
+  const proposal = buildEvolutionProposal(draft);
+  const output = JSON.stringify(proposal, null, 2) + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
+async function runEvolveApprove(cmd: Extract<CliCommand, { command: 'evolve'; action: 'approve' }>, ctx: Ctx): Promise<number> {
+  const proposal = await readProposal(ctx.cwd, cmd.input);
+  const approved = approveProposal(proposal, cmd.note);
+  const output = JSON.stringify(approved, null, 2) + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
+async function runEvolveReject(cmd: Extract<CliCommand, { command: 'evolve'; action: 'reject' }>, ctx: Ctx): Promise<number> {
+  const proposal = await readProposal(ctx.cwd, cmd.input);
+  const rejected = rejectProposal(proposal, cmd.note);
+  const output = JSON.stringify(rejected, null, 2) + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
+async function runEvolveStale(cmd: Extract<CliCommand, { command: 'evolve'; action: 'stale' }>, ctx: Ctx): Promise<number> {
+  const proposal = await readProposal(ctx.cwd, cmd.input);
+  const cases = requireArray<string>(cmd.cases, '--cases');
+  const stale = computeStaleCases(cases, proposal);
+  ctx.stdout(JSON.stringify(stale, null, 2) + '\n');
+  return 0;
+}
+
+async function runEvolve(cmd: Extract<CliCommand, { command: 'evolve' }>, ctx: Ctx): Promise<number> {
+  switch (cmd.action) {
+    case 'propose':
+      return await runEvolvePropose(cmd, ctx);
+    case 'approve':
+      return await runEvolveApprove(cmd, ctx);
+    case 'reject':
+      return await runEvolveReject(cmd, ctx);
+    default:
+      return await runEvolveStale(cmd, ctx);
+  }
+}
+
 /**
  * Run a full `argv` command and return the process exit code.
  *
@@ -260,6 +330,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runGate(parsed.command, ctx);
       case 'case':
         return await runCase(parsed.command, ctx);
+      case 'evolve':
+        return await runEvolve(parsed.command, ctx);
     }
   } catch (e) {
     // Every throw site reachable from here (fs/promises, JSON.parse, zod,

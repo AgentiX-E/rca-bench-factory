@@ -352,10 +352,147 @@ describe('parseCliArgs - case', () => {
   });
 });
 
+describe('parseCliArgs - evolve', () => {
+  it('parses a minimal evolve propose command', () => {
+    expect(parseCliArgs(['evolve', 'propose', '--input', 'draft.json'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'propose', input: 'draft.json' },
+    });
+  });
+
+  it('parses an evolve propose command with an output', () => {
+    expect(parseCliArgs(['evolve', 'propose', '--input', 'draft.json', '--output', 'proposal.json'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'propose', input: 'draft.json', output: 'proposal.json' },
+    });
+  });
+
+  it('parses a minimal evolve approve command', () => {
+    expect(parseCliArgs(['evolve', 'approve', '--input', 'proposal.json'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'approve', input: 'proposal.json' },
+    });
+  });
+
+  it('parses an evolve approve command with a note', () => {
+    expect(parseCliArgs(['evolve', 'approve', '--input', 'proposal.json', '--note', 'ship it'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'approve', input: 'proposal.json', note: 'ship it' },
+    });
+  });
+
+  it('parses an evolve approve command with a note and output', () => {
+    expect(parseCliArgs(['evolve', 'approve', '--input', 'proposal.json', '--note', 'ok', '--output', 'approved.json'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'approve', input: 'proposal.json', note: 'ok', output: 'approved.json' },
+    });
+  });
+
+  it('parses a minimal evolve reject command', () => {
+    expect(parseCliArgs(['evolve', 'reject', '--input', 'proposal.json'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'reject', input: 'proposal.json' },
+    });
+  });
+
+  it('parses an evolve reject command with a note', () => {
+    expect(parseCliArgs(['evolve', 'reject', '--input', 'proposal.json', '--note', 'regression gap'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'reject', input: 'proposal.json', note: 'regression gap' },
+    });
+  });
+
+  it('parses an evolve reject command with an output', () => {
+    expect(parseCliArgs(['evolve', 'reject', '--input', 'proposal.json', '--output', 'rejected.json'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'reject', input: 'proposal.json', output: 'rejected.json' },
+    });
+  });
+
+  it('parses an evolve stale command with cases', () => {
+    expect(parseCliArgs(['evolve', 'stale', '--input', 'proposal.json', '--cases', '["case-001"]'])).toEqual({
+      ok: true,
+      command: { command: 'evolve', action: 'stale', input: 'proposal.json', cases: '["case-001"]' },
+    });
+  });
+
+  it('requires an action', () => {
+    const result = parseCliArgs(['evolve']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/action/i);
+  });
+
+  it('rejects an unknown action', () => {
+    const result = parseCliArgs(['evolve', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/action/i);
+  });
+
+  it('requires --input for propose', () => {
+    const result = parseCliArgs(['evolve', 'propose']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --input for approve', () => {
+    const result = parseCliArgs(['evolve', 'approve']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --input for reject', () => {
+    const result = parseCliArgs(['evolve', 'reject']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --input for stale', () => {
+    const result = parseCliArgs(['evolve', 'stale']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('requires --cases for stale', () => {
+    const result = parseCliArgs(['evolve', 'stale', '--input', 'proposal.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/cases/i);
+  });
+
+  it('rejects malformed --cases JSON', () => {
+    const result = parseCliArgs(['evolve', 'stale', '--input', 'proposal.json', '--cases', 'not-json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/cases/i);
+  });
+
+  it('rejects an unknown flag for propose', () => {
+    const result = parseCliArgs(['evolve', 'propose', '--input', 'x', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+
+  it('rejects an unknown flag for approve', () => {
+    const result = parseCliArgs(['evolve', 'approve', '--input', 'x', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+
+  it('rejects an unknown flag for reject', () => {
+    const result = parseCliArgs(['evolve', 'reject', '--input', 'x', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+
+  it('rejects an unknown flag for stale', () => {
+    const result = parseCliArgs(['evolve', 'stale', '--input', 'x', '--cases', '[]', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
 describe('formatHelp and formatVersion', () => {
   it('lists every command in the help text', () => {
     const help = formatHelp();
-    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'help', 'version']) {
+    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'evolve', 'help', 'version']) {
       expect(help).toContain(cmd);
     }
   });
