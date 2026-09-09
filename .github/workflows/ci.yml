@@ -48,3 +48,6 @@ jobs:
 
       - name: Golden Master verification
         run: node golden-master/verify.mjs
+
+      - name: Examples and site data are up to date
+        run: pnpm examples:check

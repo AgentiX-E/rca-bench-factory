@@ -1,0 +1,69 @@
+name: Pages
+
+# Publishes the interactive product / teaching site in `site/` to GitHub Pages.
+# The site is static: no build step, no dependencies, no Jekyll processing.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'site/**'
+      - 'examples/**'
+      - 'scripts/gen-examples.mjs'
+      - 'scripts/format-spec.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core (the example generator imports its dist)
+        run: pnpm --filter @rca-bench-factory/core build
+
+      - name: Regenerate the site data from the real exporters
+        run: pnpm examples:gen
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the site as a Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
