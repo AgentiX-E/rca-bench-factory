@@ -110,6 +110,13 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Rc
       skipped.push({ caseId: fc.caseId, reason: 'no telemetry signals attached' });
       return;
     }
+    // RE3 targets code-level faults: a non-code case is skipped *before* any
+    // file is written, so a skipped case never leaves artefacts behind.
+    if (suite === 'RE3' && fc.fault.category !== 'code') {
+      skipped.push({ caseId: fc.caseId, reason: 'RE3 targets code-level faults only' });
+      return;
+    }
+
     const dir = caseDirName(suite, fc, index + 1);
     files[`${dir}/metrics.json`] = buildMetricsJson(signals);
     files[`${dir}/inject_time.txt`] = `${Math.floor(Date.parse(fc.injectTime) / 1000)}`;
@@ -117,9 +124,6 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Rc
     if (suite === 'RE2' || suite === 'RE3') {
       files[`${dir}/logs.csv`] = buildLogsCsv(signals);
       files[`${dir}/traces.csv`] = buildTracesCsv(signals);
-    }
-    if (suite === 'RE3' && fc.fault.category !== 'code') {
-      skipped.push({ caseId: fc.caseId, reason: 'RE3 targets code-level faults only' });
     }
   });
 

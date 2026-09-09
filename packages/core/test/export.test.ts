@@ -6,9 +6,9 @@ import {
   exportOpenRca,
   injectTimeUnixSeconds,
 } from '../src/export/openrca.js';
-import { buildMetricsJson, caseDirName, exportRcaEval } from '../src/export/rcaeval.js';
-import type { IrBundle } from '../src/ir/types.js';
-import { validBundle, validCase } from './fixtures.js';
+import { buildLogsCsv, buildMetricsJson, caseDirName, exportRcaEval } from '../src/export/rcaeval.js';
+import type { IrBundle, TelemetrySignal } from '../src/ir/types.js';
+import { logAt, validBundle, validCase } from './fixtures.js';
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -176,6 +176,29 @@ describe('RCAEval exporter', () => {
   it('flags non-code faults when exporting RE3', () => {
     const { skipped } = exportRcaEval(validBundle(), 'RE3');
     expect(skipped[0]).toMatchObject({ reason: 'RE3 targets code-level faults only' });
+  });
+
+  it('emits no files for a non-code fault under RE3', () => {
+    // A skipped case must not leave artefacts behind: a benchmark consumer that
+    // reads the output directory would otherwise evaluate a case the exporter
+    // itself declared unusable.
+    const { files, skipped } = exportRcaEval(validBundle(), 'RE3');
+    expect(skipped).toHaveLength(1);
+    expect(Object.keys(files)).toEqual([]);
+  });
+
+  it('escapes CSV special characters in log messages', () => {
+    const csv = buildLogsCsv([logAt(610, 'pool "primary" exhausted, retrying')]);
+    expect(csv).toContain('"pool ""primary"" exhausted, retrying"');
+  });
+
+  it('emits an empty service column when the signal carries no service name', () => {
+    const signal: TelemetrySignal = {
+      ...logAt(610, 'no service name'),
+      resource: {} as unknown as TelemetrySignal['resource'],
+    };
+    const row = parseCsv(buildLogsCsv([signal]))[1] as string[];
+    expect(row[1]).toBe('');
   });
 
   it('accepts code-level faults for RE3', () => {
