@@ -125,10 +125,13 @@ if (report.finalStatus === 'admitted') {
 ## Supported target formats (v0.1)
 
 - **OpenRCA 1.0** — `query.csv` / `record.csv` / `telemetry/{DATE}/{log,metric,trace}` with UTC+8 offset.
-- **OpenRCA 2.0** — PAVE-protocol step-wise causal-path annotations.
 - **RCAEval** — `RE1` (metric-only), `RE2` (multi-source), `RE3` (code-level).
 - **RCA100 / AgenticOpsEval** — six-modality contract (M/L/T + events + alerts + topology).
-- **Cloud-OpsBench / AIOps2025 / ITBench** — declared targets (see `src/coverage.ts`).
+- **AIOps2025** — `input.json` + per-modality `groundtruth.jsonl` reasoning contract.
+- **Cloud-OpsBench** — `metadata.json` outcome ground-truth triple
+  (⟨Stage, Component, Root Cause⟩); the State Snapshot body (`tool_cache`,
+  `k8s_states`, `code`) requires a live Kubernetes snapshot and is out of scope.
+- **OpenRCA 2.0 / ITBench** — declared targets (see `src/coverage.ts`).
 
 ## Licensing
 
@@ -142,9 +145,9 @@ if (report.finalStatus === 'admitted') {
 Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
 flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
-OpenRCA/RCAEval/RCA100/AIOps2025 exporters, the structure/checksum score module,
-the CLI argument parser and runnable `rca-bench` binary, the provider-agnostic LLM
-rule-generation core, the DeepSeek provider adapter, the fault collector and the
-self-evolution governance layer (HITL checkpoints H1–H6 + the three red lines).
-The remaining exporters (Cloud-OpsBench, OpenRCA 2.0) are gated on official
-format release.
+OpenRCA/RCAEval/RCA100/AIOps2025/Cloud-OpsBench exporters, the structure/checksum
+score module, the CLI argument parser and runnable `rca-bench` binary, the
+provider-agnostic LLM rule-generation core, the DeepSeek provider adapter, the
+fault collector and the self-evolution governance layer (HITL checkpoints H1–H6 +
+the three red lines). The remaining exporters (OpenRCA 2.0, ITBench) are gated on
+official format release.

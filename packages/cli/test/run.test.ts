@@ -334,6 +334,15 @@ describe('run - export', () => {
     expect(JSON.parse(gt.trim()).fault_type).toBe('cpu');
   });
 
+  it('exports a bundle to Cloud-OpsBench', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const code = await run(['export', '--target', 'cloud-opsbench', '--input', 'bundle.json', '--out-dir', 'out'], { cwd: dir });
+    expect(code).toBe(0);
+    const meta = await readFile(join(dir, 'out', 'cases', 'case-001', 'metadata.json'), 'utf8');
+    expect(JSON.parse(meta).result.fault_object).toBe('order');
+  });
+
   it('reports malformed bundle JSON and returns 1', async () => {
     const dir = await makeDir();
     await writeFile(join(dir, 'bundle.json'), 'not json');

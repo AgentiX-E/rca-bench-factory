@@ -14,7 +14,7 @@ import type { RcaEvalSuite } from '../export/rcaeval.js';
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
 
-export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025';
+export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench';
 
 export interface ScoreCheck {
   id: string;
@@ -446,6 +446,45 @@ export function checkAioPs2025Structure(files: Record<string, string>): Structur
 }
 
 /**
+ * Verify a Cloud-OpsBench export against its `metadata.json` contract.
+ *
+ * The verifiable invariant is the outcome ground truth shape: every case must
+ * carry a namespace, a natural-language query, an easy/medium/hard difficulty and
+ * the ⟨fault_taxonomy, fault_object, root_cause⟩ result triple, all as strings.
+ * The State Snapshot body (`tool_cache`, `k8s_states`, `code`) is intentionally
+ * out of scope and is not asserted here.
+ */
+export function checkCloudOpsBenchStructure(files: Record<string, string>): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const metadataPaths = pathsEndingWith(files, '/metadata.json');
+  checks.push(check('case-present', metadataPaths.length > 0, `found ${metadataPaths.length} metadata.json`));
+
+  let metadataOk = true;
+  for (const path of metadataPaths) {
+    const meta = safeJson(files[path]!);
+    if (!isRecord(meta)) {
+      metadataOk = false;
+      continue;
+    }
+    const result = meta.result;
+    if (
+      typeof meta.namespace !== 'string' ||
+      typeof meta.query !== 'string' ||
+      typeof meta.difficulty !== 'string' ||
+      !isRecord(result) ||
+      typeof result.fault_taxonomy !== 'string' ||
+      typeof result.fault_object !== 'string' ||
+      typeof result.root_cause !== 'string'
+    ) {
+      metadataOk = false;
+    }
+  }
+  checks.push(check('metadata-shape', metadataOk, 'namespace/query/difficulty + result triple strings'));
+
+  return { target: 'cloud-opsbench', passed: checks.every((c) => c.passed), checks };
+}
+
+/**
  * Verify exported files against committed SHA-256 anchors.
  *
  * `passed` requires the file sets to agree exactly: nothing mismatched, nothing
@@ -507,6 +546,8 @@ function structureFor(target: ScoreTargetId, files: Record<string, string>): Str
       return checkRca100Structure(files);
     case 'aiops2025':
       return checkAioPs2025Structure(files);
+    case 'cloud-opsbench':
+      return checkCloudOpsBenchStructure(files);
     default: {
       const never: never = target;
       throw new Error(`unknown score target '${String(never)}'`);

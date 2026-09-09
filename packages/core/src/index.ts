@@ -173,6 +173,14 @@ export {
 export type { AioPs2025ExportResult } from './export/aiops2025.js';
 
 export {
+  CLOUD_OPSBENCH_CONTRACT_VERSION,
+  CLOUD_OPSBENCH_TARGET_ID,
+  buildCloudOpsBenchMetadata,
+  exportCloudOpsBench,
+} from './export/cloudopsbench.js';
+export type { CloudOpsBenchExportResult } from './export/cloudopsbench.js';
+
+export {
   MODALITY_LOSS,
   TARGET_REQUIREMENTS,
   computeCoverage,
@@ -223,6 +231,7 @@ export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from '
 
 export {
   checkAioPs2025Structure,
+  checkCloudOpsBenchStructure,
   checkOpenRcaStructure,
   checkRca100Structure,
   checkRcaEvalStructure,

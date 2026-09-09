@@ -8,6 +8,7 @@ import {
   computeStaleCases,
   detectFileLayout,
   exportAioPs2025,
+  exportCloudOpsBench,
   exportOpenRca,
   exportRca100,
   exportRcaEval,
@@ -90,6 +91,7 @@ function g1OptionsForTarget(target: ScoreTargetId): G1Options {
     'rcaeval-re3': ['metric', 'log', 'trace'],
     rca100: ['metric', 'log', 'trace', 'event', 'alert'],
     aiops2025: ['metric', 'log', 'trace'],
+    'cloud-opsbench': ['metric'],
   };
   return { requiredSignals: requiredSignals[target], requiresQuery: target === 'openrca-1.0' };
 }
@@ -174,8 +176,10 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
     files = exportRcaEval(bundle, cmd.suite ?? 'RE2').files;
   } else if (cmd.target === 'rca100') {
     files = exportRca100(bundle).files;
-  } else {
+  } else if (cmd.target === 'aiops2025') {
     files = exportAioPs2025(bundle).files;
+  } else {
+    files = exportCloudOpsBench(bundle).files;
   }
 
   await writeFiles(resolve(ctx.cwd, cmd.outDir), files);

@@ -129,11 +129,40 @@ groundtruth.jsonl  { uuid, fault_category, fault_type, instance_type, service,
   complete metadata shape, and `key_observations` must keep its log/metric/trace
   grouping.
 
-## Cloud-OpsBench / ITBench
+## Cloud-OpsBench
 
-Declared targets (see `TARGET_REQUIREMENTS` in `src/coverage.ts`). Cloud-OpsBench
-uses the **state-snapshot** paradigm (requires `Conf`); ITBench is agent-task
-oriented (requires change/deploy events for `CD`).
+The exporter (`src/export/cloudopsbench.ts`) emits the outcome ground-truth
+contract of Cloud-OpsBench (arXiv 2603.00468), a Kubernetes **State Snapshot**
+benchmark. Its per-case `metadata.json` carries the ⟨Stage, Component, Root
+Cause⟩ triple that drives the Component / Fault-Type / Joint-RCA accuracy scores:
+
+```
+cases/<case_id>/metadata.json
+  { namespace, query, difficulty, result: { fault_taxonomy, fault_object, root_cause } }
+```
+
+- **`fault_taxonomy`** (Stage) projects the IR fault *mechanism* category onto the
+  Cloud-OpsBench *lifecycle-stage* taxonomy (8 classes) via a documented
+  best-effort mapping (`resource`→`Performance_Fault`, `runtime`→`Runtime_Fault`,
+  `code`→`Code_Fault`, …). The two vocabularies are orthogonal, so this is a
+  projection, not an equivalence.
+- **`fault_object`** (Component) is the IR `groundTruth.rootCauseComponent`.
+- **`root_cause`** (Root Cause) is the normalised fault type in snake_case.
+- **`difficulty`** maps IR `L1/L2/L3/L4` onto `easy/medium/hard/hard`.
+- **Scoring** (`checkCloudOpsBenchStructure`, `score --target cloud-opsbench`)
+  re-verifies the metadata shape: namespace/query/difficulty + the result triple
+  must all be strings.
+
+The **State Snapshot body** — `tool_cache.json` (pre-rendered tool responses),
+`k8s_states.json` (Kubernetes object snapshots) and `code/` (trimmed source) —
+requires a live Kubernetes snapshot, and `process-label/`/`golden-trajectory/`
+require expert annotation. They are therefore **not produced from a per-case IR**,
+the same boundary as the AIOps2025 Parquet telemetry.
+
+## ITBench
+
+Declared target (see `TARGET_REQUIREMENTS` in `src/coverage.ts`). ITBench is
+agent-task oriented (requires change/deploy events for `CD`).
 
 ## Degradation strategy
 

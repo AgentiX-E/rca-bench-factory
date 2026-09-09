@@ -3,8 +3,10 @@ import { exportOpenRca } from '../src/export/openrca.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
+import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
 import {
   checkAioPs2025Structure,
+  checkCloudOpsBenchStructure,
   checkOpenRcaStructure,
   checkRca100Structure,
   checkRcaEvalStructure,
@@ -415,6 +417,55 @@ describe('checkAioPs2025Structure', () => {
   });
 });
 
+describe('checkCloudOpsBenchStructure', () => {
+  const cobFiles = (): Record<string, string> => exportCloudOpsBench(validBundle()).files;
+
+  it('passes a well-formed Cloud-OpsBench export', () => {
+    const report = checkCloudOpsBenchStructure(cobFiles());
+    expect(report.passed).toBe(true);
+    expect(report.target).toBe('cloud-opsbench');
+    expect(report.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('fails when there are no metadata.json files', () => {
+    const report = checkCloudOpsBenchStructure({});
+    expect(report.checks.find((c) => c.id === 'case-present')?.passed).toBe(false);
+  });
+
+  it('fails on a malformed metadata.json', () => {
+    const files = cobFiles();
+    files['cases/case-001/metadata.json'] = 'not json';
+    const report = checkCloudOpsBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
+
+  it('fails when the result triple is missing', () => {
+    const files = cobFiles();
+    files['cases/case-001/metadata.json'] = JSON.stringify({ namespace: 'order-prod', query: 'q', difficulty: 'medium' });
+    const report = checkCloudOpsBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
+
+  it.each(['namespace', 'query', 'difficulty'] as const)('fails when metadata.%s is not a string', (field) => {
+    const files = cobFiles();
+    const meta = JSON.parse(files['cases/case-001/metadata.json']!) as Record<string, unknown>;
+    delete meta[field];
+    files['cases/case-001/metadata.json'] = JSON.stringify(meta);
+    const report = checkCloudOpsBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
+
+  it.each(['fault_taxonomy', 'fault_object', 'root_cause'] as const)('fails when result.%s is not a string', (field) => {
+    const files = cobFiles();
+    const meta = JSON.parse(files['cases/case-001/metadata.json']!) as Record<string, unknown>;
+    const result = meta.result as Record<string, unknown>;
+    delete result[field];
+    files['cases/case-001/metadata.json'] = JSON.stringify(meta);
+    const report = checkCloudOpsBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
+});
+
 describe('scoreExport', () => {
   it('scores 100 for a fully valid export with matching anchors', () => {
     const files = openrcaFiles();
@@ -474,6 +525,13 @@ describe('scoreExport', () => {
   it('scores 100 for a valid AIOps2025 export', () => {
     const files = exportAioPs2025(validBundle()).files;
     const report = scoreExport('aiops2025', files);
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(100);
+  });
+
+  it('scores 100 for a valid Cloud-OpsBench export', () => {
+    const files = exportCloudOpsBench(validBundle()).files;
+    const report = scoreExport('cloud-opsbench', files);
     expect(report.passed).toBe(true);
     expect(report.score).toBe(100);
   });

@@ -153,6 +153,13 @@ describe('parseCliArgs - export', () => {
     });
   });
 
+  it('parses a Cloud-OpsBench export command', () => {
+    expect(parseCliArgs(['export', '--target', 'cloud-opsbench', '--input', 'b.json', '--out-dir', './out'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'cloud-opsbench', input: 'b.json', outDir: './out' },
+    });
+  });
+
   it('requires --target', () => {
     const result = parseCliArgs(['export', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);
@@ -216,6 +223,13 @@ describe('parseCliArgs - score', () => {
     expect(parseCliArgs(['score', '--target', 'aiops2025', '--dir', './exported'])).toEqual({
       ok: true,
       command: { command: 'score', target: 'aiops2025', dir: './exported' },
+    });
+  });
+
+  it('parses a Cloud-OpsBench score command', () => {
+    expect(parseCliArgs(['score', '--target', 'cloud-opsbench', '--dir', './exported'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'cloud-opsbench', dir: './exported' },
     });
   });
 
