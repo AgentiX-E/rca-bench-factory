@@ -59,7 +59,7 @@ rca-bench-factory/
 │   │   │   ├── transform/     # 7 strategies + batch engine (quarantine, no silent loss)
 │   │   │   ├── entity/        # entity graph index, alias resolution (union-find)
 │   │   │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
-│   │   │   ├── export/        # OpenRCA 1.0/2.0 + RCAEval + RCA100 + AIOps2025 + Cloud-OpsBench exporters
+│   │   │   ├── export/        # OpenRCA 1.0/2.0 + RCAEval + RCA100 + AIOps2025 + Cloud-OpsBench + ITBench exporters
 │   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
 │   │   │   ├── report/        # static HTML renderer (entity graph / coverage / gates / score, escaped)
 │   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
@@ -134,7 +134,10 @@ if (report.finalStatus === 'admitted') {
 - **Cloud-OpsBench** — `metadata.json` outcome ground-truth triple
   (⟨Stage, Component, Root Cause⟩); the State Snapshot body (`tool_cache`,
   `k8s_states`, `code`) requires a live Kubernetes snapshot and is out of scope.
-- **ITBench** — declared target (see `src/coverage.ts`).
+- **ITBench** — `scenario.json` SRE Diagnosis contract (scenario metadata + the
+  chain entities / fault-propagation chain / fault conditions ground truth); the
+  snapshot body (alerts, metrics, k8s_events, k8s_objects, otel_logs, otel_traces)
+  is a frozen Kubernetes snapshot and is out of scope.
 
 ## Licensing
 
@@ -148,11 +151,10 @@ if (report.finalStatus === 'admitted') {
 Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
 flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
-OpenRCA 1.0/2.0 (PAVE), RCAEval, RCA100, AIOps2025 and Cloud-OpsBench exporters,
-the structure/checksum score module, the CLI argument parser and runnable
-`rca-bench` binary, the provider-agnostic LLM rule-generation core, the DeepSeek
-provider adapter, the fault collector and historical fault importer, the
+OpenRCA 1.0/2.0 (PAVE), RCAEval, RCA100, AIOps2025, Cloud-OpsBench and ITBench
+exporters, the structure/checksum score module, the CLI argument parser and
+runnable `rca-bench` binary, the provider-agnostic LLM rule-generation core, the
+DeepSeek provider adapter, the fault collector and historical fault importer, the
 self-evolution governance layer (HITL checkpoints H1–H6 + the three red lines)
 and the static HTML report renderer (entity graph / coverage / gates / score,
-HTML-escaped). The remaining exporter (ITBench) is gated on official format
-release.
+HTML-escaped).

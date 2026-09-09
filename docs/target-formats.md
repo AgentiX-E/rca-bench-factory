@@ -180,8 +180,21 @@ the same boundary as the AIOps2025 Parquet telemetry.
 
 ## ITBench
 
-Declared target (see `TARGET_REQUIREMENTS` in `src/coverage.ts`). ITBench is
-agent-task oriented (requires change/deploy events for `CD`).
+The exporter emits the **SRE Diagnosis reasoning contract** of ITBench
+(arXiv 2502.05352): a `scenario.json` carrying the scenario metadata
+(`scenario_name`, `scenario_description`, `scenario_domain`, `scenario_class`,
+`scenario_complexity`) plus a `scenario_groundtruth.diagnosis` whose three facets —
+chain entities, fault-propagation chain and fault conditions — map one-to-one onto
+the IR `GroundTruth` (`rootCauseEntityId` + `causalChain` + `evidenceCheckpoints`).
+
+The ITBench-Lite **snapshot body** (`alerts/`, `metrics/`, `k8s_events_raw.tsv`,
+`k8s_objects_raw.tsv`, `otel_logs_raw.tsv`, `otel_traces_raw.tsv`) is a frozen
+Kubernetes snapshot, and the full ITBench harness is a live, perturbable cluster;
+neither is producible from a static per-case IR, so they are out of scope — the
+same boundary as the AIOps2025 Parquet telemetry and the Cloud-OpsBench State
+Snapshot. The `scenario_class` is a documented best-effort projection from the IR
+mechanism category onto ITBench's incident grouping; the precise fault type is
+preserved verbatim inside the ground truth.
 
 ## Degradation strategy
 

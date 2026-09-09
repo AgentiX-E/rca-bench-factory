@@ -189,6 +189,15 @@ export {
 export type { OpenRca2ExportResult } from './export/openrca2.js';
 
 export {
+  ITBENCH_CONTRACT_VERSION,
+  ITBENCH_SRE_DOMAIN,
+  ITBENCH_TARGET_ID,
+  buildItBenchScenarioSpec,
+  exportItBench,
+} from './export/itbench.js';
+export type { ItBenchExportResult } from './export/itbench.js';
+
+export {
   MODALITY_LOSS,
   TARGET_REQUIREMENTS,
   computeCoverage,
@@ -240,6 +249,7 @@ export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from '
 export {
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
+  checkItBenchStructure,
   checkOpenRcaStructure,
   checkOpenRca2Structure,
   checkRca100Structure,

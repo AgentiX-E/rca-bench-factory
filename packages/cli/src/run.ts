@@ -10,6 +10,7 @@ import {
   detectFileLayout,
   exportAioPs2025,
   exportCloudOpsBench,
+  exportItBench,
   exportOpenRca,
   exportOpenRca2,
   exportRca100,
@@ -96,6 +97,7 @@ function g1OptionsForTarget(target: ScoreTargetId): G1Options {
     rca100: ['metric', 'log', 'trace', 'event', 'alert'],
     aiops2025: ['metric', 'log', 'trace'],
     'cloud-opsbench': ['metric'],
+    itbench: ['metric', 'log', 'trace'],
   };
   return { requiredSignals: requiredSignals[target], requiresQuery: target === 'openrca-1.0' };
 }
@@ -184,8 +186,10 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
     files = exportRca100(bundle).files;
   } else if (cmd.target === 'aiops2025') {
     files = exportAioPs2025(bundle).files;
-  } else {
+  } else if (cmd.target === 'cloud-opsbench') {
     files = exportCloudOpsBench(bundle).files;
+  } else {
+    files = exportItBench(bundle).files;
   }
 
   await writeFiles(resolve(ctx.cwd, cmd.outDir), files);
@@ -201,7 +205,8 @@ function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): Exported
   if (target === 'rcaeval-re3') return exportRcaEval(bundle, 'RE3').files;
   if (target === 'rca100') return exportRca100(bundle).files;
   if (target === 'aiops2025') return exportAioPs2025(bundle).files;
-  return exportCloudOpsBench(bundle).files;
+  if (target === 'cloud-opsbench') return exportCloudOpsBench(bundle).files;
+  return exportItBench(bundle).files;
 }
 
 async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: Ctx): Promise<number> {

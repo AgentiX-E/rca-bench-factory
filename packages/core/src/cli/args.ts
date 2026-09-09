@@ -15,7 +15,7 @@ import type { ScoreTargetId } from '../score/score.js';
 
 export const CLI_VERSION = '0.1.0';
 
-export type ExportTarget = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval' | 'rca100' | 'aiops2025' | 'cloud-opsbench';
+export type ExportTarget = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval' | 'rca100' | 'aiops2025' | 'cloud-opsbench' | 'itbench';
 
 export type EvolveAction = 'propose' | 'approve' | 'reject' | 'stale';
 
@@ -51,9 +51,9 @@ export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; er
 const FILE_FORMATS: readonly string[] = ['csv', 'tsv', 'jsonl', 'json'];
 const SIGNAL_KINDS: readonly string[] = ['metric', 'log', 'trace'];
 const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
-const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench'];
+const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
 const SUITES: readonly string[] = ['RE1', 'RE2', 'RE3'];
-const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025', 'cloud-opsbench'];
+const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
 const EVOLVE_ACTIONS: readonly string[] = ['propose', 'approve', 'reject', 'stale'];
 
 function isOneOf(value: string, allowed: readonly string[]): boolean {
@@ -159,7 +159,7 @@ function parseExport(args: string[]): CliParseResult {
 
   const target = v.target;
   if (typeof target !== 'string' || target === '') {
-    return { ok: false, error: 'export requires --target <openrca-1.0|openrca-2.0|rcaeval|rca100|aiops2025|cloud-opsbench>' };
+    return { ok: false, error: 'export requires --target <openrca-1.0|openrca-2.0|rcaeval|rca100|aiops2025|cloud-opsbench|itbench>' };
   }
   if (!isOneOf(target, EXPORT_TARGETS)) {
     return { ok: false, error: `invalid --target '${target}' (expected ${EXPORT_TARGETS.join('|')})` };

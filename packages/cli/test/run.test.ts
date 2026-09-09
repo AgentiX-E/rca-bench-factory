@@ -352,6 +352,15 @@ describe('run - export', () => {
     expect(JSON.parse(path).case_id).toBe('case-001');
   });
 
+  it('exports a bundle to ITBench', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const code = await run(['export', '--target', 'itbench', '--input', 'bundle.json', '--out-dir', 'out'], { cwd: dir });
+    expect(code).toBe(0);
+    const scenario = await readFile(join(dir, 'out', 'scenarios', 'case-001', 'scenario.json'), 'utf8');
+    expect(JSON.parse(scenario).scenario_domain).toBe('SRE');
+  });
+
   it('reports malformed bundle JSON and returns 1', async () => {
     const dir = await makeDir();
     await writeFile(join(dir, 'bundle.json'), 'not json');
@@ -736,7 +745,7 @@ describe('report', () => {
     expect(html).toContain('<h2>Score</h2>');
   });
 
-  it.each(['openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025'] as const)(
+  it.each(['openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'] as const)(
     'renders a report for target %s',
     async (target) => {
       const dir = await makeDir();

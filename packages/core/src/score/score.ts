@@ -14,7 +14,7 @@ import type { RcaEvalSuite } from '../export/rcaeval.js';
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
 
-export type ScoreTargetId = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench';
+export type ScoreTargetId = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench' | 'itbench';
 
 export interface ScoreCheck {
   id: string;
@@ -485,6 +485,52 @@ export function checkCloudOpsBenchStructure(files: Record<string, string>): Stru
 }
 
 /**
+ * Verify an ITBench export against its SRE scenario specification contract.
+ *
+ * Every scenario must carry the five metadata strings plus a diagnosis ground
+ * truth whose three facets (chain entities, fault-propagation chain, fault
+ * conditions) are arrays. This re-verifies the shape, not merely the file
+ * layout, so a malformed scenario cannot slip through.
+ */
+export function checkItBenchStructure(files: Record<string, string>): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const paths = pathsEndingWith(files, '/scenario.json');
+  checks.push(check('case-present', paths.length > 0, `found ${paths.length} scenario.json`));
+
+  let shapeOk = true;
+  for (const path of paths) {
+    const obj = safeJson(files[path]!);
+    if (!isRecord(obj)) {
+      shapeOk = false;
+      continue;
+    }
+    if (
+      typeof obj.scenario_name !== 'string' ||
+      typeof obj.scenario_description !== 'string' ||
+      typeof obj.scenario_domain !== 'string' ||
+      typeof obj.scenario_class !== 'string' ||
+      typeof obj.scenario_complexity !== 'string' ||
+      !isRecord(obj.scenario_groundtruth)
+    ) {
+      shapeOk = false;
+      continue;
+    }
+    const diagnosis = (obj.scenario_groundtruth as Record<string, unknown>).diagnosis;
+    if (
+      !isRecord(diagnosis) ||
+      !Array.isArray(diagnosis.entities) ||
+      !Array.isArray(diagnosis.fault_propagation_chain) ||
+      !Array.isArray(diagnosis.fault_conditions)
+    ) {
+      shapeOk = false;
+    }
+  }
+  checks.push(check('scenario-shape', shapeOk, 'scenario metadata + diagnosis ground truth shape'));
+
+  return { target: 'itbench', passed: checks.every((c) => c.passed), checks };
+}
+
+/**
  * Verify an OpenRCA 2.0 export against its PAVE causal-path contract.
  *
  * Every case must carry a `root_cause` and an ordered `causal_path` array, and
@@ -612,6 +658,8 @@ function structureFor(target: ScoreTargetId, files: Record<string, string>): Str
       return checkAioPs2025Structure(files);
     case 'cloud-opsbench':
       return checkCloudOpsBenchStructure(files);
+    case 'itbench':
+      return checkItBenchStructure(files);
     default: {
       const never: never = target;
       throw new Error(`unknown score target '${String(never)}'`);

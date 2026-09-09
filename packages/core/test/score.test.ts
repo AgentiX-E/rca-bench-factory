@@ -5,9 +5,11 @@ import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
 import { exportOpenRca2 } from '../src/export/openrca2.js';
+import { exportItBench } from '../src/export/itbench.js';
 import {
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
+  checkItBenchStructure,
   checkOpenRcaStructure,
   checkOpenRca2Structure,
   checkRca100Structure,
@@ -525,6 +527,64 @@ describe('checkOpenRca2Structure', () => {
   });
 });
 
+describe('checkItBenchStructure', () => {
+  const itbFiles = (): Record<string, string> => exportItBench(validBundle()).files;
+
+  it('passes a well-formed ITBench export', () => {
+    const report = checkItBenchStructure(itbFiles());
+    expect(report.passed).toBe(true);
+    expect(report.target).toBe('itbench');
+    expect(report.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('fails when there are no scenario.json files', () => {
+    const report = checkItBenchStructure({});
+    expect(report.checks.find((c) => c.id === 'case-present')?.passed).toBe(false);
+  });
+
+  it('fails on a malformed scenario.json', () => {
+    const files = itbFiles();
+    files['scenarios/case-001/scenario.json'] = 'not json';
+    const report = checkItBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
+
+  it.each(['scenario_name', 'scenario_description', 'scenario_domain', 'scenario_class', 'scenario_complexity'] as const)(
+    'fails when %s is not a string',
+    (field) => {
+      const files = itbFiles();
+      const obj = JSON.parse(files['scenarios/case-001/scenario.json']!) as Record<string, unknown>;
+      delete obj[field];
+      files['scenarios/case-001/scenario.json'] = JSON.stringify(obj);
+      const report = checkItBenchStructure(files);
+      expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+    },
+  );
+
+  it('fails when scenario_groundtruth is not an object', () => {
+    const files = itbFiles();
+    const obj = JSON.parse(files['scenarios/case-001/scenario.json']!) as Record<string, unknown>;
+    obj.scenario_groundtruth = 'not an object';
+    files['scenarios/case-001/scenario.json'] = JSON.stringify(obj);
+    const report = checkItBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
+
+  it.each(['entities', 'fault_propagation_chain', 'fault_conditions'] as const)(
+    'fails when diagnosis.%s is not an array',
+    (field) => {
+      const files = itbFiles();
+      const obj = JSON.parse(files['scenarios/case-001/scenario.json']!) as Record<string, unknown>;
+      const gt = obj.scenario_groundtruth as Record<string, unknown>;
+      const diagnosis = gt.diagnosis as Record<string, unknown>;
+      delete diagnosis[field];
+      files['scenarios/case-001/scenario.json'] = JSON.stringify(obj);
+      const report = checkItBenchStructure(files);
+      expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+    },
+  );
+});
+
 describe('scoreExport', () => {
   it('scores 100 for a fully valid export with matching anchors', () => {
     const files = openrcaFiles();
@@ -598,6 +658,13 @@ describe('scoreExport', () => {
   it('scores 100 for a valid OpenRCA 2.0 export', () => {
     const files = exportOpenRca2(validBundle()).files;
     const report = scoreExport('openrca-2.0', files);
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(100);
+  });
+
+  it('scores 100 for a valid ITBench export', () => {
+    const files = exportItBench(validBundle()).files;
+    const report = scoreExport('itbench', files);
     expect(report.passed).toBe(true);
     expect(report.score).toBe(100);
   });

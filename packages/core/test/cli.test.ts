@@ -167,6 +167,13 @@ describe('parseCliArgs - export', () => {
     });
   });
 
+  it('parses an ITBench export command', () => {
+    expect(parseCliArgs(['export', '--target', 'itbench', '--input', 'b.json', '--out-dir', './out'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'itbench', input: 'b.json', outDir: './out' },
+    });
+  });
+
   it('requires --target', () => {
     const result = parseCliArgs(['export', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);
@@ -244,6 +251,13 @@ describe('parseCliArgs - score', () => {
     expect(parseCliArgs(['score', '--target', 'openrca-2.0', '--dir', './exported'])).toEqual({
       ok: true,
       command: { command: 'score', target: 'openrca-2.0', dir: './exported' },
+    });
+  });
+
+  it('parses an ITBench score command', () => {
+    expect(parseCliArgs(['score', '--target', 'itbench', '--dir', './exported'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'itbench', dir: './exported' },
     });
   });
 
