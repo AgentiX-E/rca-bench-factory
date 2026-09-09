@@ -1,0 +1,36 @@
+{
+  "id": "prop-001",
+  "layer": "L1",
+  "action": "rule-update",
+  "trigger": {
+    "source": "score",
+    "scoreDelta": -3
+  },
+  "changes": [
+    {
+      "ruleId": "t-normalize",
+      "kind": "update",
+      "before": {
+        "id": "t-normalize",
+        "kind": "time",
+        "from": "ts",
+        "to": "ts_utc",
+        "layout": "iso8601",
+        "assumeOffsetMinutes": 480,
+        "emitOffsetTo": "ts_offset_minutes"
+      },
+      "after": {
+        "id": "t-normalize",
+        "kind": "time",
+        "from": "ts",
+        "to": "ts_utc",
+        "layout": "iso8601",
+        "assumeOffsetMinutes": 540,
+        "emitOffsetTo": "ts_offset_minutes"
+      }
+    }
+  ],
+  "baselineScore": 96,
+  "candidateScore": 93,
+  "baseVersion": "c9d3266"
+}

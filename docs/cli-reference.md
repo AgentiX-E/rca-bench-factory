@@ -135,6 +135,44 @@ rca-bench evolve stale   --input proposal.json --cases '["case-001", ...]'
   diff-able and revertible, an unapproved proposal is never production-ready, and
   a failed/rejected proposal marks its affected cases stale.
 
+## End-to-end example
+
+Every command below runs against [`examples/order-prod/`](../examples/order-prod/) from the
+repository root, after `pnpm install && pnpm build`.
+
+```bash
+# 1. Ingest an offset-less CSV export (auto-detected columns)
+node packages/cli/dist/main.js source \
+  --path examples/order-prod/metrics.csv \
+  --signal-kind metric \
+  --assume-offset-minutes 480
+
+# 2. Normalise timestamps, map CMDB names, convert ratio -> percent
+node packages/cli/dist/main.js transform \
+  --input examples/order-prod/records.json \
+  --rules examples/order-prod/rules.json
+
+# 3. Assemble and validate a bundle (fault category is inferred)
+node packages/cli/dist/main.js case \
+  --input examples/order-prod/draft.json --output ./bundle.json
+
+# 4. Run the quality gates for a target contract
+node packages/cli/dist/main.js gate --input examples/order-prod/bundle.json --target rca100
+
+# 5. Export, score and render
+node packages/cli/dist/main.js export --target rca100 \
+  --input examples/order-prod/bundle.json --out-dir ./out
+node packages/cli/dist/main.js score --target rca100 --dir ./out
+node packages/cli/dist/main.js report --input examples/order-prod/bundle.json \
+  --target rca100 --output report.html
+
+# 6. Self-evolution under human review
+node packages/cli/dist/main.js evolve propose --input examples/order-prod/proposal-draft.json
+```
+
+The same lifecycle is walked through step by step, with real output, in the
+[user guide](user-guide.md).
+
 ## Exit codes
 
 | Code | Meaning |

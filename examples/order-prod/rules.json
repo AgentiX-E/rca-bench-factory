@@ -1,0 +1,26 @@
+[
+  {
+    "id": "t-normalize",
+    "kind": "time",
+    "from": "ts",
+    "to": "ts_utc",
+    "layout": "iso8601",
+    "assumeOffsetMinutes": 480,
+    "emitOffsetTo": "ts_offset_minutes"
+  },
+  {
+    "id": "t-cmdb-alias",
+    "kind": "map",
+    "from": "svc",
+    "to": "service_name",
+    "mapping": { "order-pod-1": "order", "cart-pod-1": "cart" }
+  },
+  {
+    "id": "t-ratio-to-percent",
+    "kind": "unit",
+    "from": "value",
+    "to": "value_pct",
+    "fromUnit": "1",
+    "toUnit": "%"
+  }
+]

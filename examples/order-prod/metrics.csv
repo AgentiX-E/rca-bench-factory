@@ -1,0 +1,6 @@
+ts,svc,kpi_name,value
+2026-09-06T08:00:00,order-pod-1,cpu_usage,0.20
+2026-09-06T08:00:30,order-pod-1,cpu_usage,0.21
+2026-09-06T08:01:00,order-pod-1,cpu_usage,0.19
+2026-09-06T08:10:00,order-pod-1,cpu_usage,0.95
+2026-09-06T08:10:30,order-pod-1,cpu_usage,0.96

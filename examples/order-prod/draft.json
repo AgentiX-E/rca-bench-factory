@@ -1,0 +1,419 @@
+{
+  "graph": {
+    "entities": [
+      {
+        "entityId": "service:default/order",
+        "kind": "service",
+        "name": "order",
+        "namespace": "default",
+        "aliases": [
+          "svc-order-prod-01"
+        ]
+      },
+      {
+        "entityId": "service:default/cart",
+        "kind": "service",
+        "name": "cart",
+        "namespace": "default",
+        "aliases": [
+          "cartservice"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "service:default/order",
+        "to": "service:default/cart",
+        "relation": "calls"
+      }
+    ]
+  },
+  "case": {
+    "caseId": "case-001",
+    "system": "order-prod",
+    "environment": {
+      "system": "order-prod",
+      "version": "v1.2.3"
+    },
+    "injectTime": "2026-09-06T00:10:00.000Z",
+    "window": {
+      "start": "2026-09-06T00:00:00.000Z",
+      "end": "2026-09-06T00:20:00.000Z"
+    },
+    "fault": {
+      "type": "cpu",
+      "injectionMethod": "chaos-mesh",
+      "parameters": {
+        "intensity": 90
+      }
+    },
+    "groundTruth": {
+      "rootCauseEntityId": "service:default/order",
+      "rootCauseComponent": "order",
+      "rootCauseReason": "CPU saturation on the order service",
+      "rootCauseIndicators": [
+        {
+          "type": "metric",
+          "ref": "order|cpu_usage",
+          "description": "cpu_usage above 90%"
+        }
+      ],
+      "causalChain": [
+        {
+          "step": 1,
+          "fromEntityId": "service:default/order",
+          "toEntityId": "service:default/cart",
+          "mechanism": "thread pool exhaustion propagated to the downstream cart service",
+          "evidenceRefs": [
+            "cp-1"
+          ]
+        }
+      ],
+      "evidenceCheckpoints": [
+        {
+          "checkpointId": "cp-1",
+          "entityRef": "service:default/order",
+          "signalRef": "order|cpu_usage",
+          "comparator": ">",
+          "value": 90,
+          "unit": "%",
+          "description": "CPU usage exceeds 90 percent"
+        }
+      ]
+    },
+    "query": "The order service became slow at 08:10 UTC+8. Find the root cause.",
+    "difficulty": "L2",
+    "answerKeyIsolated": true
+  },
+  "signals": [
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:00:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 20,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:00:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 21,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:01:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 19,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:01:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 20,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:02:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 22,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:02:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 18,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:03:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 20,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:03:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 21,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:04:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 19,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:04:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 20,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:10:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 95,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:10:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 96,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:11:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 97,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:11:30.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 98,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order",
+        "k8s.pod.name": "order-pod-1"
+      },
+      "timestamp": "2026-09-06T00:12:00.000Z",
+      "rawOffsetMinutes": 0,
+      "signal": "metric",
+      "payload": {
+        "kind": "metric",
+        "name": "cpu_usage",
+        "value": 99,
+        "unit": "%",
+        "semanticType": "saturation"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order"
+      },
+      "timestamp": "2026-09-06T00:10:10.000Z",
+      "signal": "log",
+      "payload": {
+        "kind": "log",
+        "body": "Connection pool exhausted",
+        "severityText": "ERROR"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order"
+      },
+      "timestamp": "2026-09-06T00:10:15.000Z",
+      "signal": "trace",
+      "payload": {
+        "kind": "trace",
+        "traceId": "tr-1",
+        "spanId": "sp-1",
+        "spanName": "GET /checkout",
+        "durationMs": 120,
+        "status": "OK"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order"
+      },
+      "timestamp": "2026-09-06T00:10:16.000Z",
+      "signal": "trace",
+      "payload": {
+        "kind": "trace",
+        "traceId": "tr-1",
+        "spanId": "sp-2",
+        "parentSpanId": "sp-1",
+        "spanName": "GET /checkout",
+        "durationMs": 120,
+        "status": "OK"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order"
+      },
+      "timestamp": "2026-09-06T00:10:00.000Z",
+      "signal": "event",
+      "payload": {
+        "kind": "event",
+        "reason": "OOMKilled",
+        "message": "OOMKilled observed",
+        "type": "Warning"
+      }
+    },
+    {
+      "irVersion": "2.0",
+      "resource": {
+        "service.name": "order"
+      },
+      "timestamp": "2026-09-06T00:10:05.000Z",
+      "signal": "alert",
+      "payload": {
+        "kind": "alert",
+        "alertName": "HighCpuUsage",
+        "severity": "critical",
+        "state": "firing"
+      }
+    }
+  ]
+}
