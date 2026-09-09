@@ -323,6 +323,7 @@ export type {
 export {
   escapeHtml,
   renderCoverage,
+  renderEntityGraph,
   renderGates,
   renderPage,
   renderScore,

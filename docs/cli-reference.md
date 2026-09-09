@@ -99,13 +99,14 @@ rca-bench score --target cloud-opsbench --dir ./out
 rca-bench report --input bundle.json [--title "Report"] [--target openrca-1.0] [--output report.html]
 ```
 
-- Renders a self-contained HTML page with three sections: observability coverage,
+- Renders a self-contained HTML page with four sections: the entity graph
+  (entities + edges + reference-integrity verdict), observability coverage,
   quality gates (G1–G5) and the score for `--target`.
 - `--target` selects the score/gate contract (default `openrca-1.0`); the bundle
   is exported and scored for that target internally.
 - `--title` defaults to `rca-bench report`; `--output` defaults to stdout.
-- All user-controlled data (title, case ids, violation messages, check details)
-  is HTML-escaped before interpolation.
+- All user-controlled data (title, entity ids, case ids, violation messages,
+  check details) is HTML-escaped before interpolation.
 
 ### `rca-bench evolve`
 

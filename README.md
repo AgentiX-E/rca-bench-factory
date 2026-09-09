@@ -61,7 +61,7 @@ rca-bench-factory/
 │   │   │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
 │   │   │   ├── export/        # OpenRCA + RCAEval + RCA100 + AIOps2025 + Cloud-OpsBench exporters
 │   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
-│   │   │   ├── report/        # static HTML renderer (coverage / gates / score, escaped)
+│   │   │   ├── report/        # static HTML renderer (entity graph / coverage / gates / score, escaped)
 │   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
 │   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
 │   │   │   ├── fault/         # fault collector (type normalisation + category inference)

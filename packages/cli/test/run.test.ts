@@ -722,6 +722,7 @@ describe('report', () => {
     const html = out.join('');
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('Observability coverage');
+    expect(html).toContain('Entity graph');
     expect(html).toContain('Quality gates');
     expect(html).toContain('<h2>Score</h2>');
   });

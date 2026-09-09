@@ -212,6 +212,7 @@ async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: C
   const html = renderPage({
     title: cmd.title ?? 'rca-bench report',
     coverage,
+    entityGraph: bundle.graph,
     gates: [report],
     scores: [score],
   });

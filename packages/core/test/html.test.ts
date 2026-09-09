@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
   renderCoverage,
+  renderEntityGraph,
   renderGates,
   renderPage,
   renderScore,
 } from '../src/report/html.js';
 import type { CoverageReport } from '../src/coverage.js';
-import type { QualityGateReport } from '../src/ir/types.js';
+import type { EntityGraph, QualityGateReport } from '../src/ir/types.js';
 import type { ScoreReport } from '../src/score/score.js';
 
 /**
@@ -152,17 +153,82 @@ describe('renderScore', () => {
   });
 });
 
+describe('renderEntityGraph', () => {
+  const entityGraph = (): EntityGraph => ({
+    entities: [
+      { entityId: 'service:default/order', kind: 'service', name: 'order', namespace: 'default', aliases: ['svc-order', 'order-prod'] },
+      { entityId: 'service:default/cart', kind: 'service', name: 'cart', namespace: 'default', aliases: [] },
+    ],
+    edges: [{ from: 'service:default/order', to: 'service:default/cart', relation: 'calls' }],
+  });
+
+  it('renders the entity and edge tables', () => {
+    const html = renderEntityGraph(entityGraph());
+    expect(html).toContain('service:default/order');
+    expect(html).toContain('svc-order, order-prod');
+    expect(html).toContain('<td>calls</td>');
+    expect(html).toContain('2 entities, 1 edges');
+  });
+
+  it('renders OK when reference integrity holds', () => {
+    const html = renderEntityGraph(entityGraph());
+    expect(html).toContain('Reference integrity: OK');
+  });
+
+  it('renders placeholders for a missing namespace and empty aliases', () => {
+    const graph = entityGraph();
+    graph.entities[1] = { entityId: 'service:default/cart', kind: 'service', name: 'cart', aliases: [] };
+    const html = renderEntityGraph(graph);
+    expect((html.match(/<td>—<\/td>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders a dangling edge reference', () => {
+    const graph = entityGraph();
+    graph.edges.push({ from: 'service:default/order', to: 'service:default/ghost', relation: 'calls' });
+    const html = renderEntityGraph(graph);
+    expect(html).toContain('Reference integrity issues:');
+    expect(html).toContain('dangling');
+  });
+
+  it('renders an ambiguous alias', () => {
+    const graph = entityGraph();
+    graph.entities[1]!.aliases = ['svc-order'];
+    const html = renderEntityGraph(graph);
+    expect(html).toContain("ambiguous alias 'svc-order'");
+  });
+
+  it('renders an invalid relation', () => {
+    const graph = entityGraph();
+    graph.edges[0]!.relation = 'bogus' as never;
+    const html = renderEntityGraph(graph);
+    expect(html).toContain('edge.relation');
+  });
+
+  it('escapes hostile entity data', () => {
+    const graph = entityGraph();
+    graph.entities[0]!.name = '<script>x</script>';
+    const html = renderEntityGraph(graph);
+    expect(html).toContain('&lt;script&gt;x&lt;/script&gt;');
+    expect(html).not.toContain('<script>x</script>');
+  });
+});
+
 describe('renderPage', () => {
   it('combines all sections into a full page', () => {
     const html = renderPage({
       title: 'Benchmark Report',
       coverage: coverageReport(),
+      entityGraph: {
+        entities: [{ entityId: 'service:default/order', kind: 'service', name: 'order', namespace: 'default', aliases: [] }],
+        edges: [],
+      },
       gates: [gateReport()],
       scores: [scoreReport()],
     });
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('<title>Benchmark Report</title>');
     expect(html).toContain('Observability coverage');
+    expect(html).toContain('Entity graph');
     expect(html).toContain('Quality gates');
     expect(html).toContain('Score');
   });

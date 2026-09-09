@@ -1,5 +1,7 @@
+import { findAmbiguousAliases, findDanglingEdgeRefs, findInvalidRelations } from '../entity/graph.js';
+import type { ReferenceIssue } from '../entity/graph.js';
 import type { CoverageReport, TargetFeasibility } from '../coverage.js';
-import type { QualityGateReport, SignalKind } from '../ir/types.js';
+import type { Entity, EntityEdge, EntityGraph, QualityGateReport, SignalKind } from '../ir/types.js';
 import type { ScoreReport, ScoreCheck, StructureReport } from '../score/score.js';
 
 /**
@@ -114,9 +116,55 @@ export function renderScore(report: ScoreReport): string {
   ].join('\n');
 }
 
+function entityRow(e: Entity): string {
+  const ns = e.namespace ?? '—';
+  const aliases = e.aliases.length > 0 ? e.aliases.map(escapeHtml).join(', ') : '—';
+  return `<tr><td>${escapeHtml(e.entityId)}</td><td>${e.kind}</td><td>${escapeHtml(e.name)}</td><td>${escapeHtml(ns)}</td><td>${aliases}</td></tr>`;
+}
+
+function edgeRow(edge: EntityEdge): string {
+  return `<tr><td>${escapeHtml(edge.from)}</td><td>${edge.relation}</td><td>${escapeHtml(edge.to)}</td></tr>`;
+}
+
+function issueItems(issues: ReferenceIssue[]): string {
+  return issues.map((i) => `<li>${escapeHtml(i.where)}: ${escapeHtml(i.ref)} (${i.reason})</li>`).join('');
+}
+
+/**
+ * Render an entity graph as an HTML fragment: the entity table, the edge table
+ * and the reference-integrity verdict (dangling edge refs, ambiguous aliases,
+ * invalid relations) — the single most important IR invariant, surfaced visually.
+ */
+export function renderEntityGraph(graph: EntityGraph): string {
+  const dangling = findDanglingEdgeRefs(graph);
+  const ambiguous = findAmbiguousAliases(graph);
+  const invalid = findInvalidRelations(graph);
+
+  const ambiguousItems = ambiguous
+    .map((a) => `<li>ambiguous alias '${escapeHtml(a.alias)}' owned by ${a.owners.map(escapeHtml).join(', ')}</li>`)
+    .join('');
+  const items = issueItems(dangling) + issueItems(invalid) + ambiguousItems;
+  const integrityBlock =
+    items === ''
+      ? '<p class="ok">Reference integrity: OK</p>'
+      : `<p class="bad">Reference integrity issues:</p><ul>${items}</ul>`;
+
+  return [
+    '<section><h2>Entity graph</h2>',
+    `<p>${graph.entities.length} entities, ${graph.edges.length} edges</p>`,
+    integrityBlock,
+    '<h3>Entities</h3>',
+    table(['Entity id', 'Kind', 'Name', 'Namespace', 'Aliases'], graph.entities.map(entityRow)),
+    '<h3>Edges</h3>',
+    table(['From', 'Relation', 'To'], graph.edges.map(edgeRow)),
+    '</section>',
+  ].join('\n');
+}
+
 export interface HtmlReportInput {
   title: string;
   coverage?: CoverageReport;
+  entityGraph?: EntityGraph;
   gates?: QualityGateReport[];
   scores?: ScoreReport[];
 }
@@ -137,6 +185,7 @@ const STYLE =
 export function renderPage(input: HtmlReportInput): string {
   const sections: string[] = [];
   if (input.coverage !== undefined) sections.push(renderCoverage(input.coverage));
+  if (input.entityGraph !== undefined) sections.push(renderEntityGraph(input.entityGraph));
   if (input.gates !== undefined) for (const g of input.gates) sections.push(renderGates(g));
   if (input.scores !== undefined) for (const s of input.scores) sections.push(renderScore(s));
 
