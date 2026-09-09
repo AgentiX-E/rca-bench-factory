@@ -1,12 +1,18 @@
+import {
+  buildOpenAiCompatibleRequest,
+  createOpenAiCompatibleProvider,
+  parseOpenAiCompatibleResponse,
+} from './openai-compat.js';
+import type { OpenAiCompatibleRequest } from './openai-compat.js';
 import type { LlmProvider } from './provider.js';
 
 /**
  * DeepSeek provider adapter.
  *
  * The first concrete `LlmProvider`: it maps a prompt onto the OpenAI-compatible
- * DeepSeek chat-completions API. Keeping the request builder and response parser
- * pure (and IO-free) means the adapter is fully testable without a live account,
- * while the HTTP round trip itself is exercised against a real local server.
+ * DeepSeek chat-completions API. DeepSeek shares the OpenAI wire format, so the
+ * request builder, response parser and HTTP factory are delegated to the shared
+ * `openai-compat` core; this adapter only pins the DeepSeek defaults.
  *
  * The API key is injected via `options.apiKey` and is never read from the
  * process environment or embedded here - credentials stay out of code and git.
@@ -26,22 +32,11 @@ export interface DeepSeekOptions {
   fetchImpl?: typeof fetch;
 }
 
-export interface DeepSeekRequest {
-  model: string;
-  messages: Array<{ role: 'user'; content: string }>;
-  /** Zero for reproducible, deterministic rule generation. */
-  temperature: number;
-  stream: false;
-}
+export type DeepSeekRequest = OpenAiCompatibleRequest;
 
 /** Build the OpenAI-compatible chat-completions request body. */
 export function buildDeepSeekRequest(prompt: string, model: string): DeepSeekRequest {
-  return {
-    model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0,
-    stream: false,
-  };
+  return buildOpenAiCompatibleRequest(prompt, model);
 }
 
 /**
@@ -51,51 +46,18 @@ export function buildDeepSeekRequest(prompt: string, model: string): DeepSeekReq
  * or empty response surfaces as an explicit error instead of a silent empty string.
  */
 export function parseDeepSeekResponse(jsonText: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    throw new Error('DeepSeek response is not valid JSON');
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('DeepSeek response is not a JSON object');
-  }
-  const choices = (parsed as Record<string, unknown>).choices;
-  if (!Array.isArray(choices) || choices.length === 0) {
-    throw new Error('DeepSeek response has no choices');
-  }
-  const first = choices[0] as Record<string, unknown>;
-  const message = first.message as Record<string, unknown> | undefined;
-  const content = message?.content;
-  if (typeof content !== 'string') {
-    throw new Error('DeepSeek response choice has no string content');
-  }
-  return content;
+  return parseOpenAiCompatibleResponse(jsonText, 'DeepSeek');
 }
 
 /** Create a `LlmProvider` backed by the DeepSeek chat-completions API. */
 export function createDeepSeekProvider(options: DeepSeekOptions): LlmProvider {
-  const apiKey = options.apiKey;
   const model = options.model ?? DEEPSEEK_DEFAULT_MODEL;
   const baseUrl = options.baseUrl ?? DEEPSEEK_DEFAULT_BASE_URL;
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-
-  return {
-    async generate(prompt: string): Promise<string> {
-      const body = buildDeepSeekRequest(prompt, model);
-      const response = await fetchImpl(`${baseUrl}${DEEPSEEK_CHAT_COMPLETIONS_PATH}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(`DeepSeek API error ${response.status}: ${text.slice(0, 200)}`);
-      }
-      return parseDeepSeekResponse(text);
-    },
-  };
+  return createOpenAiCompatibleProvider({
+    apiKey: options.apiKey,
+    model,
+    baseUrl,
+    name: 'DeepSeek',
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+  });
 }

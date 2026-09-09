@@ -293,6 +293,28 @@ export {
 export type { DeepSeekOptions, DeepSeekRequest } from './llm/deepseek.js';
 
 export {
+  OPENAI_DEFAULT_BASE_URL,
+  OPENAI_DEFAULT_MODEL,
+  OPENAI_CHAT_COMPLETIONS_PATH,
+  buildOpenAiRequest,
+  createOpenAiProvider,
+  parseOpenAiResponse,
+} from './llm/openai.js';
+export type { OpenAiOptions, OpenAiRequest } from './llm/openai.js';
+
+export {
+  ANTHROPIC_DEFAULT_BASE_URL,
+  ANTHROPIC_DEFAULT_MAX_TOKENS,
+  ANTHROPIC_DEFAULT_MODEL,
+  ANTHROPIC_MESSAGES_PATH,
+  ANTHROPIC_VERSION,
+  buildAnthropicRequest,
+  createAnthropicProvider,
+  parseAnthropicResponse,
+} from './llm/anthropic.js';
+export type { AnthropicOptions, AnthropicRequest } from './llm/anthropic.js';
+
+export {
   inferFaultCategory,
   normalizeFaultType,
   parseFaultSpec,

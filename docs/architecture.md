@@ -117,10 +117,13 @@ The six LLM tasks are:
 - **G6** semantic completion (fault category, causal mechanism, query text)
 
 The LLM boundary is the provider-agnostic `LlmProvider` interface (`llm/provider.ts`).
-The first concrete adapter, `llm/deepseek.ts`, implements it over the OpenAI-compatible
-DeepSeek chat-completions API: `buildDeepSeekRequest` and `parseDeepSeekResponse` are
-pure, while `createDeepSeekProvider` performs the HTTP round trip with the API key
-injected by the caller (never read from the environment or committed to git).
+Three concrete adapters implement it: `llm/deepseek.ts` and `llm/openai.ts` share
+the OpenAI-compatible chat-completions wire format (the common request builder,
+response parser and HTTP factory live in `llm/openai-compat.ts`), while
+`llm/anthropic.ts` implements the distinct Anthropic Messages API. In every
+adapter the request builder and response parser are pure, and the HTTP round
+trip is performed with the API key injected by the caller (never read from the
+environment or committed to git).
 
 ## 6. Quality gates G1–G5
 

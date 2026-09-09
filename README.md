@@ -63,7 +63,7 @@ rca-bench-factory/
 │   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
 │   │   │   ├── report/        # static HTML renderer (entity graph / coverage / gates / score, escaped)
 │   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
-│   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
+│   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek/OpenAI/Anthropic adapters
 │   │   │   ├── fault/         # fault collector + historical importer (type/category/spec + LLM extraction)
 │   │   │   ├── evolution/     # self-evolution governance: HITL checkpoints + red lines
 │   │   │   └── util/          # strict time parsing, UCUM-inspired rational units
@@ -154,7 +154,7 @@ four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
 OpenRCA 1.0/2.0 (PAVE), RCAEval, RCA100, AIOps2025, Cloud-OpsBench and ITBench
 exporters, the structure/checksum score module, the CLI argument parser and
 runnable `rca-bench` binary, the provider-agnostic LLM rule-generation core, the
-DeepSeek provider adapter, the fault collector and historical fault importer, the
-self-evolution governance layer (HITL checkpoints H1–H6 + the three red lines)
-and the static HTML report renderer (entity graph / coverage / gates / score,
-HTML-escaped).
+DeepSeek, OpenAI and Anthropic provider adapters, the fault collector and
+historical fault importer, the self-evolution governance layer (HITL checkpoints
+H1–H6 + the three red lines) and the static HTML report renderer (entity graph /
+coverage / gates / score, HTML-escaped).
