@@ -123,6 +123,11 @@ groundtruth.jsonl  { uuid, fault_category, fault_type, instance_type, service,
 - The bulk telemetry (18 daily **Parquet** archives, shared across cases) is
   day-based and therefore not produced from a per-case IR; the exporter emits the
   reasoning contract, which is the verifiable, agent-facing part of the benchmark.
+- **Scoring** (`checkAioPs2025Structure`, `score --target aiops2025`) re-verifies
+  the hard invariant: `input.json` and `groundtruth.jsonl` must carry the same
+  uuid set (no case silently dropped from either side), every entry must have a
+  complete metadata shape, and `key_observations` must keep its log/metric/trace
+  grouping.
 
 ## Cloud-OpsBench / ITBench
 

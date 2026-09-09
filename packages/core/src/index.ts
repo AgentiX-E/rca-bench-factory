@@ -222,6 +222,7 @@ export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/ot
 export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';
 
 export {
+  checkAioPs2025Structure,
   checkOpenRcaStructure,
   checkRca100Structure,
   checkRcaEvalStructure,

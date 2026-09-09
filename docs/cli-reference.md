@@ -63,7 +63,7 @@ rca-bench gate --input bundle.json --target openrca-1.0 [--gate-run-id id]
 
 - `--target` selects the G1 structural contract (required signal kinds + whether a
   natural-language query is required). Valid targets: `openrca-1.0`,
-  `rcaeval-re1`/`re2`/`re3`, `rca100`.
+  `rcaeval-re1`/`re2`/`re3`, `rca100`, `aiops2025`.
 - The five-gate report (`results` + `finalStatus`) is written to stdout.
 
 ### `rca-bench export`
@@ -82,6 +82,7 @@ rca-bench export --target aiops2025 --input bundle.json --out-dir ./out
 
 ```text
 rca-bench score --target openrca-1.0 --dir ./out [--anchors '{"path":"sha256"}']
+rca-bench score --target aiops2025 --dir ./out
 ```
 
 - `--dir` is read recursively into the exported-file map.

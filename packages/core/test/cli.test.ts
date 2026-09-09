@@ -212,6 +212,13 @@ describe('parseCliArgs - score', () => {
     });
   });
 
+  it('parses an AIOps2025 score command', () => {
+    expect(parseCliArgs(['score', '--target', 'aiops2025', '--dir', './exported'])).toEqual({
+      ok: true,
+      command: { command: 'score', target: 'aiops2025', dir: './exported' },
+    });
+  });
+
   it('requires --target', () => {
     const result = parseCliArgs(['score', '--dir', './exported']);
     expect(result.ok).toBe(false);

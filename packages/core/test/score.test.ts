@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { exportOpenRca } from '../src/export/openrca.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
+import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import {
+  checkAioPs2025Structure,
   checkOpenRcaStructure,
   checkRca100Structure,
   checkRcaEvalStructure,
@@ -267,6 +269,152 @@ describe('checkRca100Structure', () => {
   });
 });
 
+describe('checkAioPs2025Structure', () => {
+  const aiopsFiles = (): Record<string, string> => exportAioPs2025(validBundle()).files;
+
+  it('passes a well-formed AIOps2025 export', () => {
+    const report = checkAioPs2025Structure(aiopsFiles());
+    expect(report.passed).toBe(true);
+    expect(report.target).toBe('aiops2025');
+    expect(report.checks.every((c) => c.passed)).toBe(true);
+  });
+
+  it('fails when input.json is missing', () => {
+    const files = aiopsFiles();
+    delete files['input.json'];
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'input-present')?.passed).toBe(false);
+  });
+
+  it('fails when groundtruth.jsonl is missing', () => {
+    const files = aiopsFiles();
+    delete files['groundtruth.jsonl'];
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-present')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'key-observations-shape')?.passed).toBe(false);
+  });
+
+  it('fails when input.json is not an array', () => {
+    const files = aiopsFiles();
+    files['input.json'] = '{}';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'entries-present')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'input-shape')?.passed).toBe(false);
+  });
+
+  it('fails when input.json is an empty array', () => {
+    const files = aiopsFiles();
+    files['input.json'] = '[]';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'entries-present')?.passed).toBe(false);
+  });
+
+  it('fails when an input entry is not an object', () => {
+    const files = aiopsFiles();
+    files['input.json'] = JSON.stringify(['not-an-object']);
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'input-shape')?.passed).toBe(false);
+  });
+
+  it.each(['uuid', 'description', 'start_time', 'end_time'] as const)(
+    'fails when an input entry is missing %s',
+    (field) => {
+      const files = aiopsFiles();
+      const entry: Record<string, string> = {
+        uuid: 'case-001',
+        description: 'find the root cause',
+        start_time: '2026-09-06T00:00:00.000Z',
+        end_time: '2026-09-06T00:20:00.000Z',
+      };
+      delete entry[field];
+      files['input.json'] = JSON.stringify([entry]) + '\n';
+      const report = checkAioPs2025Structure(files);
+      expect(report.checks.find((c) => c.id === 'input-shape')?.passed).toBe(false);
+    },
+  );
+
+  it('fails when a groundtruth line is malformed JSON', () => {
+    const files = aiopsFiles();
+    files['groundtruth.jsonl'] = 'not-json\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+  });
+
+  it.each([
+    'uuid',
+    'fault_category',
+    'fault_type',
+    'instance_type',
+    'service',
+    'instance',
+    'start_time',
+    'end_time',
+    'fault_description',
+  ] as const)('fails when a groundtruth entry is missing %s', (field) => {
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    delete gt[field];
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+  });
+
+  it('fails when instance_type is not in the vocabulary', () => {
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.instance_type = 'unknown';
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+  });
+
+  it('fails when key_metrics is not an array', () => {
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.key_metrics = 'not-an-array';
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+  });
+
+  it('fails when key_observations is not an object', () => {
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.key_observations = 'not-an-object';
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'key-observations-shape')?.passed).toBe(false);
+  });
+
+  it.each(['log', 'metric', 'trace'] as const)('fails when key_observations.%s is not an array', (modality) => {
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.key_observations = { log: [], metric: [], trace: [], [modality]: 'not-an-array' };
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'key-observations-shape')?.passed).toBe(false);
+  });
+
+  it('fails when the uuid sets diverge', () => {
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.uuid = 'case-other';
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'uuid-alignment')?.passed).toBe(false);
+  });
+
+  it('fails when the uuid counts diverge', () => {
+    const files = aiopsFiles();
+    const input = JSON.parse(files['input.json']!) as Array<Record<string, unknown>>;
+    input.push({ uuid: 'case-extra', description: 'x', start_time: '2026-09-06T00:00:00.000Z', end_time: '2026-09-06T00:20:00.000Z' });
+    files['input.json'] = JSON.stringify(input, null, 2) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'uuid-alignment')?.passed).toBe(false);
+  });
+});
+
 describe('scoreExport', () => {
   it('scores 100 for a fully valid export with matching anchors', () => {
     const files = openrcaFiles();
@@ -319,6 +467,13 @@ describe('scoreExport', () => {
   it('scores 100 for a valid RCA100 export', () => {
     const files = exportRca100(validBundle()).files;
     const report = scoreExport('rca100', files);
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(100);
+  });
+
+  it('scores 100 for a valid AIOps2025 export', () => {
+    const files = exportAioPs2025(validBundle()).files;
+    const report = scoreExport('aiops2025', files);
     expect(report.passed).toBe(true);
     expect(report.score).toBe(100);
   });

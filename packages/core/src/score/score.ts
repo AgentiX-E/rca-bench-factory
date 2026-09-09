@@ -14,7 +14,7 @@ import type { RcaEvalSuite } from '../export/rcaeval.js';
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
 
-export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100';
+export type ScoreTargetId = 'openrca-1.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025';
 
 export interface ScoreCheck {
   id: string;
@@ -343,6 +343,108 @@ export function checkRca100Structure(files: Record<string, string>): StructureRe
   return { target: 'rca100', passed: checks.every((c) => c.passed), checks };
 }
 
+const AIOPS2025_INSTANCE_TYPES: readonly string[] = ['service', 'pod', 'node'];
+
+/**
+ * Verify an AIOps2025 export against its field contract.
+ *
+ * AIOps2025's hard, verifiable invariant is uuid alignment: every case must
+ * appear in both `input.json` (agent-facing tasks) and `groundtruth.jsonl`
+ * (per-modality key-evidence labels) with a complete metadata shape, so a case
+ * can never be silently dropped from one side. The check also re-verifies the
+ * `key_observations` grouping (log/metric/trace) and the `instance_type`
+ * vocabulary rather than only the file layout.
+ */
+export function checkAioPs2025Structure(files: Record<string, string>): StructureReport {
+  const checks: ScoreCheck[] = [];
+  const inputRaw = files['input.json'];
+  const gtRaw = files['groundtruth.jsonl'];
+
+  checks.push(check('input-present', inputRaw !== undefined, 'input.json present'));
+  checks.push(check('groundtruth-present', gtRaw !== undefined, 'groundtruth.jsonl present'));
+
+  const input = inputRaw === undefined ? undefined : safeJson(inputRaw);
+  const inputEntries = Array.isArray(input) ? input : undefined;
+  const entriesPresent = inputEntries !== undefined && inputEntries.length > 0;
+  checks.push(check('entries-present', entriesPresent, 'at least one case'));
+
+  const inputUuids = new Set<string>();
+  let inputShapeOk = true;
+  if (inputEntries === undefined) {
+    inputShapeOk = false;
+  } else {
+    for (const entry of inputEntries) {
+      if (
+        !isRecord(entry) ||
+        typeof entry.uuid !== 'string' ||
+        typeof entry.description !== 'string' ||
+        typeof entry.start_time !== 'string' ||
+        typeof entry.end_time !== 'string'
+      ) {
+        inputShapeOk = false;
+        continue;
+      }
+      inputUuids.add(entry.uuid);
+    }
+  }
+  checks.push(check('input-shape', inputShapeOk, 'uuid/description/start_time/end_time strings'));
+
+  const gtUuids = new Set<string>();
+  let gtShapeOk = true;
+  let observationsOk = true;
+  if (gtRaw === undefined) {
+    gtShapeOk = false;
+    observationsOk = false;
+  } else {
+    for (const line of gtRaw.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed === '') continue;
+      const obj = safeJson(trimmed);
+      if (!isRecord(obj)) {
+        gtShapeOk = false;
+        continue;
+      }
+      if (
+        typeof obj.uuid !== 'string' ||
+        typeof obj.fault_category !== 'string' ||
+        typeof obj.fault_type !== 'string' ||
+        typeof obj.instance_type !== 'string' ||
+        typeof obj.service !== 'string' ||
+        typeof obj.instance !== 'string' ||
+        typeof obj.start_time !== 'string' ||
+        typeof obj.end_time !== 'string' ||
+        typeof obj.fault_description !== 'string'
+      ) {
+        gtShapeOk = false;
+        continue;
+      }
+      if (!AIOPS2025_INSTANCE_TYPES.includes(obj.instance_type)) {
+        gtShapeOk = false;
+      }
+      if (!Array.isArray(obj.key_metrics)) {
+        gtShapeOk = false;
+      }
+      const observations = obj.key_observations;
+      if (
+        !isRecord(observations) ||
+        !Array.isArray(observations.log) ||
+        !Array.isArray(observations.metric) ||
+        !Array.isArray(observations.trace)
+      ) {
+        observationsOk = false;
+      }
+      gtUuids.add(obj.uuid);
+    }
+  }
+  checks.push(check('groundtruth-shape', gtShapeOk, 'required string fields + instance_type + key_metrics'));
+  checks.push(check('key-observations-shape', observationsOk, 'key_observations.log/metric/trace arrays'));
+
+  const aligned = inputUuids.size === gtUuids.size && [...inputUuids].every((u) => gtUuids.has(u));
+  checks.push(check('uuid-alignment', aligned, 'input and groundtruth uuid sets match'));
+
+  return { target: 'aiops2025', passed: checks.every((c) => c.passed), checks };
+}
+
 /**
  * Verify exported files against committed SHA-256 anchors.
  *
@@ -403,6 +505,8 @@ function structureFor(target: ScoreTargetId, files: Record<string, string>): Str
       return checkRcaEvalStructure(files, 'RE3');
     case 'rca100':
       return checkRca100Structure(files);
+    case 'aiops2025':
+      return checkAioPs2025Structure(files);
     default: {
       const never: never = target;
       throw new Error(`unknown score target '${String(never)}'`);

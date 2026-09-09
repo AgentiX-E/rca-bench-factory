@@ -83,6 +83,7 @@ function g1OptionsForTarget(target: ScoreTargetId): G1Options {
     'rcaeval-re2': ['metric', 'log'],
     'rcaeval-re3': ['metric', 'log', 'trace'],
     rca100: ['metric', 'log', 'trace', 'event', 'alert'],
+    aiops2025: ['metric', 'log', 'trace'],
   };
   return { requiredSignals: requiredSignals[target], requiresQuery: target === 'openrca-1.0' };
 }
