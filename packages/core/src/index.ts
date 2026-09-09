@@ -319,3 +319,12 @@ export type {
   RuleChange,
   RuleChangeKind,
 } from './evolution/proposal.js';
+
+export {
+  escapeHtml,
+  renderCoverage,
+  renderGates,
+  renderPage,
+  renderScore,
+} from './report/html.js';
+export type { HtmlReportInput } from './report/html.js';
