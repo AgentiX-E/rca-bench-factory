@@ -285,6 +285,17 @@ export type {
 } from './fault/collector.js';
 
 export {
+  buildFaultExtractionPrompt,
+  parseFaultExtractionResponse,
+  validateExtractedFault,
+} from './fault/importer.js';
+export type {
+  ExtractedFault,
+  FaultExtractionParseResult,
+  FaultExtractionValidation,
+} from './fault/importer.js';
+
+export {
   approve,
   hitlGateFor,
   isApproved,

@@ -64,7 +64,7 @@ rca-bench-factory/
 │   │   │   ├── report/        # static HTML renderer (entity graph / coverage / gates / score, escaped)
 │   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
 │   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
-│   │   │   ├── fault/         # fault collector (type normalisation + category inference)
+│   │   │   ├── fault/         # fault collector + historical importer (type/category/spec + LLM extraction)
 │   │   │   ├── evolution/     # self-evolution governance: HITL checkpoints + red lines
 │   │   │   └── util/          # strict time parsing, UCUM-inspired rational units
 │   │   └── test/              # vitest + v8 coverage, no mocks, no skips
@@ -149,7 +149,7 @@ four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
 OpenRCA/RCAEval/RCA100/AIOps2025/Cloud-OpsBench exporters, the structure/checksum
 score module, the CLI argument parser and runnable `rca-bench` binary, the
 provider-agnostic LLM rule-generation core, the DeepSeek provider adapter, the
-fault collector, the self-evolution governance layer (HITL checkpoints H1–H6 +
-the three red lines) and the static HTML report renderer (coverage / gates /
-score, HTML-escaped). The remaining exporters (OpenRCA 2.0, ITBench) are gated on
-official format release.
+fault collector and historical fault importer, the self-evolution governance
+layer (HITL checkpoints H1–H6 + the three red lines) and the static HTML report
+renderer (entity graph / coverage / gates / score, HTML-escaped). The remaining
+exporters (OpenRCA 2.0, ITBench) are gated on official format release.
