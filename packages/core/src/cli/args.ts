@@ -40,6 +40,7 @@ export type CliCommand =
   | { command: 'transform'; input: string; rules: string; output?: string; idField?: string }
   | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string }
   | { command: 'case'; input: string; output?: string }
+  | { command: 'report'; input: string; title?: string; target?: ScoreTargetId; output?: string }
   | { command: 'evolve'; action: 'propose'; input: string; output?: string }
   | { command: 'evolve'; action: 'approve'; input: string; note?: string; output?: string }
   | { command: 'evolve'; action: 'reject'; input: string; note?: string; output?: string }
@@ -309,6 +310,36 @@ function parseCase(args: string[]): CliParseResult {
   };
 }
 
+function parseReport(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    title: { type: 'string' },
+    target: { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'report requires --input <bundle.json>' };
+  }
+  if (v.target !== undefined && !isOneOf(String(v.target), SCORE_TARGETS)) {
+    return { ok: false, error: `invalid --target '${v.target}' (expected ${SCORE_TARGETS.join('|')})` };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'report',
+      input,
+      ...(v.title !== undefined ? { title: String(v.title) } : {}),
+      ...(v.target !== undefined ? { target: String(v.target) as ScoreTargetId } : {}),
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+    },
+  };
+}
+
 function parseEvolvePropose(args: string[]): CliParseResult {
   const parsed = parseFlags(args, {
     input: { type: 'string' },
@@ -459,10 +490,12 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseGate(rest);
     case 'case':
       return parseCase(rest);
+    case 'report':
+      return parseReport(rest);
     case 'evolve':
       return parseEvolve(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|evolve|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|report|evolve|help|version)` };
   }
 }
 
@@ -481,6 +514,7 @@ export function formatHelp(): string {
     '  gate       Run the G1-G5 quality gates on an IR bundle',
     '  export     Export an IR bundle to a target benchmark format',
     '  score      Verify an exported dataset against a target contract',
+    '  report     Render coverage, gates and score into an HTML report',
     '  evolve     Propose, approve, reject or roll back an evolution',
     '  help       Show this help text',
     '  version    Print the version',

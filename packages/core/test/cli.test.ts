@@ -366,6 +366,40 @@ describe('parseCliArgs - case', () => {
   });
 });
 
+describe('parseCliArgs - report', () => {
+  it('parses a minimal report command', () => {
+    expect(parseCliArgs(['report', '--input', 'bundle.json'])).toEqual({
+      ok: true,
+      command: { command: 'report', input: 'bundle.json' },
+    });
+  });
+
+  it('parses a report command with a title, target and output', () => {
+    expect(parseCliArgs(['report', '--input', 'bundle.json', '--title', 'Report', '--target', 'rca100', '--output', 'r.html'])).toEqual({
+      ok: true,
+      command: { command: 'report', input: 'bundle.json', title: 'Report', target: 'rca100', output: 'r.html' },
+    });
+  });
+
+  it('requires --input', () => {
+    const result = parseCliArgs(['report']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/input/i);
+  });
+
+  it('rejects an invalid --target', () => {
+    const result = parseCliArgs(['report', '--input', 'bundle.json', '--target', 'bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/target/i);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['report', '--input', 'x', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
 describe('parseCliArgs - evolve', () => {
   it('parses a minimal evolve propose command', () => {
     expect(parseCliArgs(['evolve', 'propose', '--input', 'draft.json'])).toEqual({
@@ -506,7 +540,7 @@ describe('parseCliArgs - evolve', () => {
 describe('formatHelp and formatVersion', () => {
   it('lists every command in the help text', () => {
     const help = formatHelp();
-    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'evolve', 'help', 'version']) {
+    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'report', 'evolve', 'help', 'version']) {
       expect(help).toContain(cmd);
     }
   });

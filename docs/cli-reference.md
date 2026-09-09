@@ -17,6 +17,7 @@ and score an exported dataset.
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
 | `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 / AIOps2025 / Cloud-OpsBench |
 | `score` | Score an exported directory against a target field contract |
+| `report` | Render coverage, gates and score into a self-contained HTML report |
 | `evolve` | Propose, approve, reject or roll back a self-evolution (HITL + red lines) |
 
 ### `rca-bench source`
@@ -91,6 +92,20 @@ rca-bench score --target cloud-opsbench --dir ./out
 - `--dir` is read recursively into the exported-file map.
 - `--anchors` (optional) adds SHA-256 Golden-Master verification.
 - Exit code is 0 when the report passes, 1 when it fails (so CI can gate on it).
+
+### `rca-bench report`
+
+```text
+rca-bench report --input bundle.json [--title "Report"] [--target openrca-1.0] [--output report.html]
+```
+
+- Renders a self-contained HTML page with three sections: observability coverage,
+  quality gates (G1–G5) and the score for `--target`.
+- `--target` selects the score/gate contract (default `openrca-1.0`); the bundle
+  is exported and scored for that target internally.
+- `--title` defaults to `rca-bench report`; `--output` defaults to stdout.
+- All user-controlled data (title, case ids, violation messages, check details)
+  is HTML-escaped before interpolation.
 
 ### `rca-bench evolve`
 

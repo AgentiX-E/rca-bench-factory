@@ -5,6 +5,7 @@ import {
   approveProposal,
   assembleBundle,
   buildEvolutionProposal,
+  computeCoverage,
   computeStaleCases,
   detectFileLayout,
   exportAioPs2025,
@@ -21,6 +22,7 @@ import {
   parseJsonArray,
   parseJsonl,
   rejectProposal,
+  renderPage,
   runAllGates,
   scoreExport,
   transformBatch,
@@ -186,6 +188,43 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
   return 0;
 }
 
+/** Export a bundle for a score target (ScoreTargetId → the matching exporter). */
+function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): ExportedFiles {
+  if (target === 'openrca-1.0') return exportOpenRca(bundle).files;
+  if (target === 'rcaeval-re1') return exportRcaEval(bundle, 'RE1').files;
+  if (target === 'rcaeval-re2') return exportRcaEval(bundle, 'RE2').files;
+  if (target === 'rcaeval-re3') return exportRcaEval(bundle, 'RE3').files;
+  if (target === 'rca100') return exportRca100(bundle).files;
+  if (target === 'aiops2025') return exportAioPs2025(bundle).files;
+  return exportCloudOpsBench(bundle).files;
+}
+
+async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: Ctx): Promise<number> {
+  const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
+  const bundle = irBundleSchema.parse(JSON.parse(raw)) as IrBundle;
+  const target = cmd.target ?? 'openrca-1.0';
+
+  const coverage = computeCoverage(bundle);
+  const runAt = new Date().toISOString();
+  const { report } = runAllGates(bundle, { g1: g1OptionsForTarget(target) }, { gateRunId: runAt, runAt });
+  const score = scoreExport(target, exportForScoreTarget(bundle, target));
+
+  const html = renderPage({
+    title: cmd.title ?? 'rca-bench report',
+    coverage,
+    gates: [report],
+    scores: [score],
+  });
+
+  const output = html + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
 async function runScore(cmd: Extract<CliCommand, { command: 'score' }>, ctx: Ctx): Promise<number> {
   const files = await readFilesRecursive(resolve(ctx.cwd, cmd.dir));
   const anchors =
@@ -334,6 +373,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runGate(parsed.command, ctx);
       case 'case':
         return await runCase(parsed.command, ctx);
+      case 'report':
+        return await runReport(parsed.command, ctx);
       case 'evolve':
         return await runEvolve(parsed.command, ctx);
     }

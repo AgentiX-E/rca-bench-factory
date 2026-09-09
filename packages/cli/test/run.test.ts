@@ -711,3 +711,49 @@ describe('evolve', () => {
     expect(err.join('')).toContain('array');
   });
 });
+
+describe('report', () => {
+  it('renders an HTML report to stdout', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    const code = await run(['report', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const html = out.join('');
+    expect(html).toContain('<!DOCTYPE html>');
+    expect(html).toContain('Observability coverage');
+    expect(html).toContain('Quality gates');
+    expect(html).toContain('<h2>Score</h2>');
+  });
+
+  it.each(['rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025'] as const)(
+    'renders a report for target %s',
+    async (target) => {
+      const dir = await makeDir();
+      await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+      const out: string[] = [];
+      const code = await run(['report', '--input', 'bundle.json', '--target', target], { cwd: dir, stdout: (s) => out.push(s) });
+      expect(code).toBe(0);
+      expect(out.join('')).toContain(`target <b>${target}</b>`);
+    },
+  );
+
+  it('writes the report to --output with a title and target', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const code = await run(['report', '--input', 'bundle.json', '--title', 'My Report', '--target', 'cloud-opsbench', '--output', 'r.html'], { cwd: dir });
+    expect(code).toBe(0);
+    const html = await readFile(join(dir, 'r.html'), 'utf8');
+    expect(html).toContain('<title>My Report</title>');
+    expect(html).toContain('target <b>cloud-opsbench</b>');
+  });
+
+  it('reports a schema-invalid bundle and returns 1', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), '{}');
+    const err: string[] = [];
+    const code = await run(['report', '--input', 'bundle.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain('error');
+  });
+});
