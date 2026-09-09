@@ -156,14 +156,24 @@ It is **externally anchored** — a pure recursive self-training loop collapses 
 external judgment, so every evolution round must be scored against the Golden Master
 and the mutation suite.
 
+The evolution loop is a **governance layer** (`src/evolution/`), not a generator:
+`proposal.ts` assembles a pending proposal (diff-able rule changes + a regression
+verdict) and `hitl.ts` models the checkpoint vocabulary. The three non-negotiable
+red lines are enforced as pure predicates:
+
+1. Every rule/GT change is diff-able and revertible (a non-empty base version).
+2. An unapproved proposal is never production-ready (`isProductionReady`).
+3. A failed or rejected proposal marks its affected cases stale for re-run
+   (`computeStaleCases`).
+
 Human-in-the-loop checkpoints (H1–H6) gate the riskiest transitions:
 
-1. **H1** — approve the ingest adapter / source schema.
-2. **H2** — approve LLM-generated rules (sample diff review).
-3. **H3** — approve ground-truth labels for ambiguous cases.
-4. **H4** — approve quarantined-record disposition.
-5. **H5** — approve gate rejection overrides.
-6. **H6** — approve a release of the benchmark set.
+1. **H1** — approve cold-start rules (after rule generation).
+2. **H2** — approve entity normalization / mapping.
+3. **H3** — approve ground-truth labels (four-layer annotation).
+4. **H4** — approve an evolution proposal (diff + regression).
+5. **H5** — arbitrate quarantined samples.
+6. **H6** — re-inspect an anomalous score.
 
 ## 9. Non-goals (deliberately out of scope)
 

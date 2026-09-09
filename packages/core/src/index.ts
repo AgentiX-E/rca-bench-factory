@@ -274,3 +274,39 @@ export type {
   FaultSpecParseResult,
   InjectionMethod,
 } from './fault/collector.js';
+
+export {
+  approve,
+  hitlGateFor,
+  isApproved,
+  pendingDecision,
+  reject,
+} from './evolution/hitl.js';
+export type {
+  EvolutionActionKind,
+  HitlDecision,
+  HitlGate,
+  HitlStatus,
+} from './evolution/hitl.js';
+
+export {
+  approveProposal,
+  buildEvolutionProposal,
+  computeRegression,
+  computeStaleCases,
+  isProductionReady,
+  isSubmittable,
+  isValidRuleChange,
+  rejectProposal,
+  triggerFromGateReport,
+  triggerFromScoreReport,
+} from './evolution/proposal.js';
+export type {
+  BuildProposalInput,
+  EvolutionLayer,
+  EvolutionProposal,
+  EvolutionTrigger,
+  RegressionResult,
+  RuleChange,
+  RuleChangeKind,
+} from './evolution/proposal.js';

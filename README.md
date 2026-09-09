@@ -64,6 +64,7 @@ rca-bench-factory/
 │   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
 │   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
 │   │   │   ├── fault/         # fault collector (type normalisation + category inference)
+│   │   │   ├── evolution/     # self-evolution governance: HITL checkpoints + red lines
 │   │   │   └── util/          # strict time parsing, UCUM-inspired rational units
 │   │   └── test/              # vitest + v8 coverage, no mocks, no skips
 │   └── cli/                   # @rca-bench-factory/cli — the runnable `rca-bench` binary
@@ -143,5 +144,7 @@ flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), t
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
 OpenRCA/RCAEval/RCA100/AIOps2025 exporters, the structure/checksum score module,
 the CLI argument parser and runnable `rca-bench` binary, the provider-agnostic LLM
-rule-generation core, the DeepSeek provider adapter and the fault collector.
-Concrete provider adapters and the remaining exporters are the next milestones.
+rule-generation core, the DeepSeek provider adapter, the fault collector and the
+self-evolution governance layer (HITL checkpoints H1–H6 + the three red lines).
+The remaining exporters (Cloud-OpsBench, OpenRCA 2.0) are gated on official
+format release.
