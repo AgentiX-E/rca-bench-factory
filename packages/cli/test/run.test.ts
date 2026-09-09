@@ -325,6 +325,15 @@ describe('run - export', () => {
     expect(JSON.parse(topo).entities).toHaveLength(1);
   });
 
+  it('exports a bundle to AIOps2025', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const code = await run(['export', '--target', 'aiops2025', '--input', 'bundle.json', '--out-dir', 'out'], { cwd: dir });
+    expect(code).toBe(0);
+    const gt = await readFile(join(dir, 'out', 'groundtruth.jsonl'), 'utf8');
+    expect(JSON.parse(gt.trim()).fault_type).toBe('cpu');
+  });
+
   it('reports malformed bundle JSON and returns 1', async () => {
     const dir = await makeDir();
     await writeFile(join(dir, 'bundle.json'), 'not json');

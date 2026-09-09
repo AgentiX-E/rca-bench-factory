@@ -59,7 +59,7 @@ rca-bench-factory/
 │   │   │   ├── transform/     # 7 strategies + batch engine (quarantine, no silent loss)
 │   │   │   ├── entity/        # entity graph index, alias resolution (union-find)
 │   │   │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
-│   │   │   ├── export/        # OpenRCA + RCAEval + RCA100 (6-modality) exporters
+│   │   │   ├── export/        # OpenRCA + RCAEval + RCA100 + AIOps2025 exporters
 │   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
 │   │   │   ├── cli/           # IO-free `rca-bench` argument parser (source/transform/case/gate/export/score)
 │   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek adapter (prompt/parse/validate)
@@ -141,7 +141,7 @@ if (report.finalStatus === 'admitted') {
 Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
 flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
-OpenRCA/RCAEval/RCA100 exporters, the structure/checksum score module, the CLI
-argument parser and runnable `rca-bench` binary, the provider-agnostic LLM
+OpenRCA/RCAEval/RCA100/AIOps2025 exporters, the structure/checksum score module,
+the CLI argument parser and runnable `rca-bench` binary, the provider-agnostic LLM
 rule-generation core, the DeepSeek provider adapter and the fault collector.
 Concrete provider adapters and the remaining exporters are the next milestones.

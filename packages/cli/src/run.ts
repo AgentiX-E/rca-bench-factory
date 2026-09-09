@@ -4,6 +4,7 @@ import { join as posixJoin } from 'node:path/posix';
 import {
   assembleBundle,
   detectFileLayout,
+  exportAioPs2025,
   exportOpenRca,
   exportRca100,
   exportRcaEval,
@@ -164,8 +165,10 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
     files = exportOpenRca(bundle).files;
   } else if (cmd.target === 'rcaeval') {
     files = exportRcaEval(bundle, cmd.suite ?? 'RE2').files;
-  } else {
+  } else if (cmd.target === 'rca100') {
     files = exportRca100(bundle).files;
+  } else {
+    files = exportAioPs2025(bundle).files;
   }
 
   await writeFiles(resolve(ctx.cwd, cmd.outDir), files);

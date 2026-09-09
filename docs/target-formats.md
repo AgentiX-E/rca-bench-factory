@@ -100,12 +100,35 @@ answer_key/{caseId}.gt.json    four-layer ground truth
   exporter preserves the identical field contract as JSON so the tables stay diffable
   and byte-stable for Golden-Master verification.
 
-## Cloud-OpsBench / AIOps2025 / ITBench
+## AIOps2025 / CCF AIOps Challenge
+
+The exporter (`src/export/aiops2025.ts`) emits the dataset's two metadata
+artefacts — the agent-facing task list and the per-modality key-evidence answer key:
+
+```
+input.json         [ { uuid, description, start_time, end_time }, … ]
+groundtruth.jsonl  { uuid, fault_category, fault_type, instance_type, service,
+                     instance, source?, destination?, start_time, end_time,
+                     key_observations: { log[], metric[], trace[] },
+                     key_metrics, fault_description } per line
+```
+
+- **`fault_type` → `fault_category`** follows the official 18-type taxonomy
+  (`network-delay`→`network`, `cpu-stress`→`stress`, `node-cpu`→`node`,
+  `jvm-gc`→`jvm`, …), falling back to the IR `fault.category` for unknown types.
+- **`instance_type`** projects the root-cause entity kind (`pod`→`pod`,
+  `node`/`host`→`node`, otherwise `service`).
+- **`key_observations`** groups `groundTruth.rootCauseIndicators` into
+  log/metric/trace; `key_metrics` is the metric indicator refs.
+- The bulk telemetry (18 daily **Parquet** archives, shared across cases) is
+  day-based and therefore not produced from a per-case IR; the exporter emits the
+  reasoning contract, which is the verifiable, agent-facing part of the benchmark.
+
+## Cloud-OpsBench / ITBench
 
 Declared targets (see `TARGET_REQUIREMENTS` in `src/coverage.ts`). Cloud-OpsBench
-uses the **state-snapshot** paradigm (requires `Conf`); AIOps2025 needs multi-modality
-(62.5% of its cases require ≥ 2 modalities); ITBench is agent-task oriented (requires
-change/deploy events for `CD`).
+uses the **state-snapshot** paradigm (requires `Conf`); ITBench is agent-task
+oriented (requires change/deploy events for `CD`).
 
 ## Degradation strategy
 

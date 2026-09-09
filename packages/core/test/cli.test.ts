@@ -146,6 +146,13 @@ describe('parseCliArgs - export', () => {
     });
   });
 
+  it('parses an AIOps2025 export command', () => {
+    expect(parseCliArgs(['export', '--target', 'aiops2025', '--input', 'b.json', '--out-dir', './out'])).toEqual({
+      ok: true,
+      command: { command: 'export', target: 'aiops2025', input: 'b.json', outDir: './out' },
+    });
+  });
+
   it('requires --target', () => {
     const result = parseCliArgs(['export', '--input', 'b.json', '--out-dir', './out']);
     expect(result.ok).toBe(false);

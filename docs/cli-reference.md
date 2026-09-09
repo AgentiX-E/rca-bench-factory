@@ -15,7 +15,7 @@ and score an exported dataset.
 | `transform` | Apply transform rules (the 7 strategies) to source records |
 | `case` | Assemble an IR bundle from a case draft (normalises the fault) |
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
-| `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 |
+| `export` | Export an IR bundle (`bundle.json`) to OpenRCA / RCAEval / RCA100 / AIOps2025 |
 | `score` | Score an exported directory against a target field contract |
 
 ### `rca-bench source`
@@ -72,6 +72,7 @@ rca-bench gate --input bundle.json --target openrca-1.0 [--gate-run-id id]
 rca-bench export --target openrca-1.0 --input bundle.json --out-dir ./out
 rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./out
 rca-bench export --target rca100 --input bundle.json --out-dir ./out
+rca-bench export --target aiops2025 --input bundle.json --out-dir ./out
 ```
 
 - `bundle.json` is validated against `irBundleSchema` before export; a malformed

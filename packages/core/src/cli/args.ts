@@ -15,7 +15,7 @@ import type { ScoreTargetId } from '../score/score.js';
 
 export const CLI_VERSION = '0.1.0';
 
-export type ExportTarget = 'openrca-1.0' | 'rcaeval' | 'rca100';
+export type ExportTarget = 'openrca-1.0' | 'rcaeval' | 'rca100' | 'aiops2025';
 
 export type CliCommand =
   | { command: 'help' }
@@ -44,7 +44,7 @@ export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; er
 const FILE_FORMATS: readonly string[] = ['csv', 'tsv', 'jsonl', 'json'];
 const SIGNAL_KINDS: readonly string[] = ['metric', 'log', 'trace'];
 const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
-const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval', 'rca100'];
+const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval', 'rca100', 'aiops2025'];
 const SUITES: readonly string[] = ['RE1', 'RE2', 'RE3'];
 const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100'];
 
@@ -151,7 +151,7 @@ function parseExport(args: string[]): CliParseResult {
 
   const target = v.target;
   if (typeof target !== 'string' || target === '') {
-    return { ok: false, error: 'export requires --target <openrca-1.0|rcaeval|rca100>' };
+    return { ok: false, error: 'export requires --target <openrca-1.0|rcaeval|rca100|aiops2025>' };
   }
   if (!isOneOf(target, EXPORT_TARGETS)) {
     return { ok: false, error: `invalid --target '${target}' (expected ${EXPORT_TARGETS.join('|')})` };

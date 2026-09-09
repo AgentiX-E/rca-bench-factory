@@ -164,6 +164,15 @@ export {
 export type { EntityIndex, Rca100ExportResult, Rca100ModalityTable } from './export/rca100.js';
 
 export {
+  AIOPS2025_CONTRACT_VERSION,
+  AIOPS2025_TARGET_ID,
+  buildAioPs2025GroundTruth,
+  buildAioPs2025Input,
+  exportAioPs2025,
+} from './export/aiops2025.js';
+export type { AioPs2025ExportResult } from './export/aiops2025.js';
+
+export {
   MODALITY_LOSS,
   TARGET_REQUIREMENTS,
   computeCoverage,
