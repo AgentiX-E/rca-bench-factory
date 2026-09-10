@@ -18,6 +18,7 @@ and score an exported dataset.
 | `export` | Export an IR bundle (`bundle.json`) to OpenRCA 1.0/2.0 / RCAEval / RCA100 / AIOps2025 / Cloud-OpsBench / ITBench |
 | `score` | Score an exported directory against a target field contract |
 | `report` | Render coverage, gates and score into a self-contained HTML report |
+| `pack` | Pack a directory into a byte-reproducible `tar.gz` with a SHA-256 manifest |
 | `evolve` | Propose, approve, reject or roll back a self-evolution (HITL + red lines) |
 
 ### `rca-bench source`
@@ -112,6 +113,37 @@ rca-bench report --input bundle.json [--title "Report"] [--target openrca-1.0] [
 - `--title` defaults to `rca-bench report`; `--output` defaults to stdout.
 - All user-controlled data (title, entity ids, case ids, violation messages,
   check details) is HTML-escaped before interpolation.
+
+### `rca-bench pack`
+
+```text
+rca-bench pack --input <dir> --output <file.tar.gz> [--prefix <name>]
+```
+
+- Writes a **byte-reproducible** ustar archive: entries are sorted by path, and
+  `mtime`, `uid` and `gid` are pinned to zero, so the same inputs always produce
+  the same bytes (and therefore the same digest) on any machine.
+- Adds `MANIFEST.json` at the pack root with the byte length and SHA-256 of every
+  file, so a recipient can verify what they extracted without trusting the
+  transport. `--prefix` nests the files but is stripped from the manifest, so the
+  manifest always describes the pack from its own root.
+- Refuses an input directory that already contains `MANIFEST.json`, rather than
+  silently overwriting it.
+- Prints a summary on stdout and exits `0`:
+
+```json
+{
+  "output": "pack.tar.gz",
+  "fileCount": 2,
+  "totalBytes": 17,
+  "archiveBytes": 204,
+  "sha256": "…"
+}
+```
+
+- `pnpm examples:bundle` uses the same machinery to build the downloadable
+  example pack served by the site (`site/assets/rca-bench-factory-examples.tar.gz`),
+  and `pnpm examples:bundle:check` fails CI when the committed artefact is stale.
 
 ### `rca-bench evolve`
 

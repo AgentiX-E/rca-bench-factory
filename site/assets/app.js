@@ -647,6 +647,95 @@
     },
   ];
 
+  // ── downloadable example pack ──────────────────────────────────────
+  var PACK_META_URL = 'assets/example-pack.json';
+
+  /** Human-readable size for the download card. */
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    return (bytes / 1024).toFixed(1) + ' KB';
+  }
+
+  /**
+   * Build the download card.
+   *
+   * The metadata is fetched rather than inlined so the committed archive stays
+   * the single source of truth: the site can never advertise a digest the
+   * artefact does not have. When the fetch fails (an offline copy, or a
+   * file:// preview) the card degrades to a repository link rather than lying.
+   */
+  function renderPackCard() {
+    var body = el('div', { class: 'small', text: 'Reading pack metadata…' });
+    var card = el('div', { class: 'card', style: 'margin-bottom:16px' }, [
+      el('h4', { style: 'margin:0 0 6px', text: 'Take the example with you' }),
+      body,
+    ]);
+
+    window
+      // `no-store` keeps the card honest after a redeploy: a cached digest for a
+      // replaced archive would be worse than no digest at all.
+      .fetch(PACK_META_URL, { cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then(function (meta) {
+        body.innerHTML = '';
+        body.appendChild(
+          el('p', {
+            text:
+              'One reproducible archive: the telemetry, drafts and rules every command below runs against, plus run.sh and a SHA-256 manifest.',
+          }),
+        );
+        body.appendChild(
+          el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0' }, [
+            el('a', { class: 'btn primary', href: 'assets/' + meta.file, download: meta.file, text: 'Download ' + meta.file }),
+            el('span', { class: 'badge', text: meta.fileCount + ' files' }),
+            el('span', { class: 'badge', text: formatBytes(meta.bytes) + ' gzipped' }),
+            el('span', { class: 'badge ok', text: 'byte-reproducible' }),
+          ]),
+        );
+        body.appendChild(codeBlock('sha256 · ' + meta.file, meta.sha256, 'text'));
+        body.appendChild(
+          codeBlock(
+            'verify after download',
+            'shasum -a 256 ' +
+              meta.file +
+              '\n# expect ' +
+              meta.sha256 +
+              '\n\n# every file inside is listed in MANIFEST.json with its own digest\n' +
+              'tar -xzf ' +
+              meta.file +
+              '\ncd rca-bench-factory-examples && cat MANIFEST.json',
+            'bash',
+          ),
+        );
+        body.appendChild(
+          el('p', {
+            class: 'small',
+            text: 'Rebuilding it from the same inputs produces identical bytes: the tar mtime, uid and gid are pinned to zero.',
+          }),
+        );
+      })
+      .catch(function () {
+        body.innerHTML = '';
+        body.appendChild(
+          el('p', {
+            text: 'Pack metadata could not be loaded here. The example files live in the repository, and the same eight commands are documented in docs/user-guide.md.',
+          }),
+        );
+        body.appendChild(
+          el('a', {
+            class: 'btn',
+            href: 'https://github.com/AgentiX-E/rca-bench-factory/tree/master/examples/order-prod',
+            text: 'Browse examples/order-prod on GitHub',
+          }),
+        );
+      });
+
+    return card;
+  }
+
   var PROGRESS_KEY = 'rbf-tutorial-progress';
 
   function loadProgress() {
@@ -668,6 +757,8 @@
 
     var bar = el('div', { class: 'progress' }, [el('div')]);
     view.appendChild(bar);
+
+    view.appendChild(renderPackCard());
 
     var list = el('div', {});
     TUTORIAL.forEach(function (step, i) {

@@ -51,3 +51,28 @@ jobs:
 
       - name: Examples and site data are up to date
         run: pnpm examples:check
+
+      - name: Example pack is up to date
+        run: pnpm examples:bundle:check
+
+      - name: Example pack is readable by tar and matches the repository
+        run: |
+          set -eu
+          tar -tzf site/assets/rca-bench-factory-examples.tar.gz
+          rm -rf /tmp/example-pack
+          mkdir -p /tmp/example-pack
+          tar -xzf site/assets/rca-bench-factory-examples.tar.gz -C /tmp/example-pack
+          diff -r /tmp/example-pack/rca-bench-factory-examples/examples/order-prod examples/order-prod
+          sh -n /tmp/example-pack/rca-bench-factory-examples/run.sh
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const root = "/tmp/example-pack/rca-bench-factory-examples";
+            const m = JSON.parse(fs.readFileSync(root + "/MANIFEST.json", "utf8"));
+            for (const e of m.entries) {
+              const b = fs.readFileSync(root + "/" + e.path);
+              if (b.length !== e.bytes) throw new Error("size mismatch: " + e.path);
+              const digest = crypto.createHash("sha256").update(b).digest("hex");
+              if (digest !== e.sha256) throw new Error("digest mismatch: " + e.path);
+            }
+            console.log(m.fileCount + " packed files verified against MANIFEST.json");
+          '

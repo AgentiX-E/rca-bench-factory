@@ -10,7 +10,9 @@ on:
       - 'site/**'
       - 'examples/**'
       - 'scripts/gen-examples.mjs'
+      - 'scripts/build-example-bundle.mjs'
       - 'scripts/format-spec.mjs'
+      - 'packages/core/src/pack/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -48,6 +50,9 @@ jobs:
 
       - name: Regenerate the site data from the real exporters
         run: pnpm examples:gen
+
+      - name: Rebuild the downloadable example pack
+        run: pnpm examples:bundle
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

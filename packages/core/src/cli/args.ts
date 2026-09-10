@@ -2,6 +2,7 @@ import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
 import type { FileFormat, FileSignalKind } from '../ingest/file.js';
 import type { TimeLayout } from '../util/time.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
+import { SCORE_TARGET_IDS } from '../score/score.js';
 import type { ScoreTargetId } from '../score/score.js';
 
 /**
@@ -41,6 +42,7 @@ export type CliCommand =
   | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string }
   | { command: 'case'; input: string; output?: string }
   | { command: 'report'; input: string; title?: string; target?: ScoreTargetId; output?: string }
+  | { command: 'pack'; input: string; output: string; prefix?: string }
   | { command: 'evolve'; action: 'propose'; input: string; output?: string }
   | { command: 'evolve'; action: 'approve'; input: string; note?: string; output?: string }
   | { command: 'evolve'; action: 'reject'; input: string; note?: string; output?: string }
@@ -53,7 +55,7 @@ const SIGNAL_KINDS: readonly string[] = ['metric', 'log', 'trace'];
 const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
 const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
 const SUITES: readonly string[] = ['RE1', 'RE2', 'RE3'];
-const SCORE_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
+const SCORE_TARGETS: readonly string[] = SCORE_TARGET_IDS;
 const EVOLVE_ACTIONS: readonly string[] = ['propose', 'approve', 'reject', 'stale'];
 
 function isOneOf(value: string, allowed: readonly string[]): boolean {
@@ -442,6 +444,39 @@ function parseEvolveStale(args: string[]): CliParseResult {
   };
 }
 
+function parsePack(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    output: { type: 'string' },
+    prefix: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const input = v.input;
+  if (typeof input !== 'string' || input === '') {
+    return { ok: false, error: 'pack requires --input <dir>' };
+  }
+  const output = v.output;
+  if (typeof output !== 'string' || output === '') {
+    return { ok: false, error: 'pack requires --output <file.tar.gz>' };
+  }
+  const prefix = v.prefix;
+  if (prefix !== undefined && (typeof prefix !== 'string' || prefix === '')) {
+    return { ok: false, error: 'invalid --prefix <name>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'pack',
+      input,
+      output,
+      ...(prefix !== undefined ? { prefix: String(prefix) } : {}),
+    },
+  };
+}
+
 /** Parse the `evolve` subcommand family (`propose|approve|reject|stale`). */
 function parseEvolve(args: string[]): CliParseResult {
   const [action, ...rest] = args;
@@ -492,10 +527,12 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseCase(rest);
     case 'report':
       return parseReport(rest);
+    case 'pack':
+      return parsePack(rest);
     case 'evolve':
       return parseEvolve(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|report|evolve|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|report|pack|evolve|help|version)` };
   }
 }
 
@@ -515,6 +552,7 @@ export function formatHelp(): string {
     '  export     Export an IR bundle to a target benchmark format',
     '  score      Verify an exported dataset against a target contract',
     '  report     Render coverage, gates and score into an HTML report',
+    '  pack       Pack a directory into a reproducible tar.gz with a manifest',
     '  evolve     Propose, approve, reject or roll back an evolution',
     '  help       Show this help text',
     '  version    Print the version',

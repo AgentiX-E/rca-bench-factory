@@ -1,0 +1,18 @@
+{
+  "generatedBy": "scripts/build-example-bundle.mjs",
+  "file": "rca-bench-factory-examples.tar.gz",
+  "bytes": 5411,
+  "sha256": "7d63cd559c5c0df96fb1ccee2a6b1c9a1991630556e87aa14aa44bee7031b18d",
+  "fileCount": 9,
+  "paths": [
+    "MANIFEST.json",
+    "README.md",
+    "examples/order-prod/bundle.json",
+    "examples/order-prod/draft.json",
+    "examples/order-prod/metrics.csv",
+    "examples/order-prod/proposal-draft.json",
+    "examples/order-prod/records.json",
+    "examples/order-prod/rules.json",
+    "run.sh"
+  ]
+}

@@ -255,7 +255,7 @@ export {
   checkRca100Structure,
   checkRcaEvalStructure,
   scoreExport,
-  sha256,
+  SCORE_TARGET_IDS,
   verifyChecksums,
 } from './score/score.js';
 export type {
@@ -265,6 +265,35 @@ export type {
   ScoreTargetId,
   StructureReport,
 } from './score/score.js';
+
+export { sha256, sha256Bytes } from './util/hash.js';
+
+export {
+  DEFAULT_FILE_MODE,
+  buildPackManifest,
+  createTar,
+  createTarGzip,
+  normalizePackEntries,
+  readTar,
+  renderPackManifest,
+  verifyPackManifest,
+} from './pack/archive.js';
+export type {
+  PackEntry,
+  PackManifest,
+  PackManifestEntry,
+  PackVerifyResult,
+} from './pack/archive.js';
+
+export {
+  EXAMPLE_PACK_PREFIX,
+  EXAMPLE_PACK_STEPS,
+  buildExamplePack,
+  exampleTargetCommands,
+  renderExampleReadme,
+  renderExampleRunScript,
+} from './pack/example.js';
+export type { ExamplePackStep, ExampleTargetCommand } from './pack/example.js';
 
 export { CLI_VERSION, formatHelp, formatVersion, parseCliArgs } from './cli/args.js';
 export type { CliCommand, CliParseResult, EvolveAction, ExportTarget } from './cli/args.js';

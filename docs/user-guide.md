@@ -13,6 +13,12 @@ RCA benchmark set. Every command and every output block below is real — the in
 | `bundle.json` | the assembled IR bundle used by every example in the format docs |
 | `proposal-draft.json` | a self-evolution proposal draft (HITL demo) |
 
+> **Take it with you.** The same inputs ship as a downloadable pack on the
+> [interactive site](https://agentix-e.github.io/rca-bench-factory/#/tutorial) — one
+> byte-reproducible `rca-bench-factory-examples.tar.gz` with a `run.sh` that executes all
+> eight steps and a `MANIFEST.json` of per-file SHA-256 digests. Extract it and run
+> `sh run.sh` (needs `rca-bench` on `PATH`); no clone required.
+
 ## 0. Where this sits in the SDLC
 
 `rca-bench-factory` is used in the **evaluation-engineering** phase — after an observability

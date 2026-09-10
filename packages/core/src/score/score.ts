@@ -1,5 +1,9 @@
-import { createHash } from 'node:crypto';
+import { sha256 } from '../util/hash.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
+
+// Re-exported so the public surface does not move: `sha256` has always been part
+// of the scoring API, it just lives next to the other hashing code now.
+export { sha256 };
 
 /**
  * Score and verification module.
@@ -15,6 +19,24 @@ import type { RcaEvalSuite } from '../export/rcaeval.js';
  */
 
 export type ScoreTargetId = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench' | 'itbench';
+
+/**
+ * Every target the scorer can verify, in canonical order.
+ *
+ * One list for the CLI, the site generator and the example pack, so a new target
+ * cannot be added to one surface and forgotten in another.
+ */
+export const SCORE_TARGET_IDS: readonly ScoreTargetId[] = [
+  'openrca-1.0',
+  'openrca-2.0',
+  'rcaeval-re1',
+  'rcaeval-re2',
+  'rcaeval-re3',
+  'rca100',
+  'aiops2025',
+  'cloud-opsbench',
+  'itbench',
+];
 
 export interface ScoreCheck {
   id: string;
@@ -73,11 +95,6 @@ function csvHeader(csv: string): string[] {
 function first(files: Record<string, string>, paths: string[]): string | undefined {
   const path = paths[0];
   return path === undefined ? undefined : files[path];
-}
-
-/** SHA-256 of a UTF-8 string, hex-encoded. */
-export function sha256(content: string): string {
-  return createHash('sha256').update(content).digest('hex');
 }
 
 /**

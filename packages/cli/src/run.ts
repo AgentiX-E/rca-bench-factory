@@ -15,18 +15,23 @@ import {
   exportOpenRca2,
   exportRca100,
   exportRcaEval,
+  buildPackManifest,
+  createTarGzip,
   formatHelp,
   formatVersion,
   ingestFile,
   irBundleSchema,
+  normalizePackEntries,
   parseCliArgs,
   parseDelimited,
   parseJsonArray,
   parseJsonl,
   rejectProposal,
+  renderPackManifest,
   renderPage,
   runAllGates,
   scoreExport,
+  sha256Bytes,
   transformBatch,
 } from '@rca-bench-factory/core';
 import type {
@@ -245,6 +250,49 @@ async function runScore(cmd: Extract<CliCommand, { command: 'score' }>, ctx: Ctx
   return report.passed ? 0 : 1;
 }
 
+/**
+ * Pack a directory into a reproducible archive.
+ *
+ * The manifest is listed from the pack's own root, so a `--prefix` is stripped
+ * from the manifest paths: whoever unpacks the archive can verify it without
+ * knowing how it was built.
+ */
+async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx): Promise<number> {
+  const files = await readFilesRecursive(resolve(ctx.cwd, cmd.input));
+  if (files['MANIFEST.json'] !== undefined) {
+    throw new Error('the input directory already contains MANIFEST.json, which pack reserves for its own manifest');
+  }
+
+  const prefix = cmd.prefix ?? '';
+  const inPack = (path: string): string => (prefix === '' ? path : `${prefix}/${path}`);
+  const entries = normalizePackEntries(
+    Object.entries(files).map(([path, content]) => ({ path: inPack(path), content })),
+  );
+  const manifest = buildPackManifest(
+    entries.map((entry) => ({ ...entry, path: entry.path.slice(prefix === '' ? 0 : prefix.length + 1) })),
+  );
+
+  const archive = createTarGzip([...entries, { path: inPack('MANIFEST.json'), content: renderPackManifest(manifest) }]);
+  const output = resolve(ctx.cwd, cmd.output);
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, archive);
+
+  ctx.stdout(
+    `${JSON.stringify(
+      {
+        output: cmd.output,
+        fileCount: manifest.fileCount,
+        totalBytes: manifest.totalBytes,
+        archiveBytes: archive.length,
+        sha256: sha256Bytes(archive),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return 0;
+}
+
 async function runTransform(cmd: Extract<CliCommand, { command: 'transform' }>, ctx: Ctx): Promise<number> {
   const input = requireArray<SourceRecord>(await readFile(resolve(ctx.cwd, cmd.input), 'utf8'), '--input');
   const rules = requireArray<TransformRule>(await readFile(resolve(ctx.cwd, cmd.rules), 'utf8'), '--rules');
@@ -386,6 +434,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runCase(parsed.command, ctx);
       case 'report':
         return await runReport(parsed.command, ctx);
+      case 'pack':
+        return await runPack(parsed.command, ctx);
       case 'evolve':
         return await runEvolve(parsed.command, ctx);
     }

@@ -565,10 +565,55 @@ describe('parseCliArgs - evolve', () => {
   });
 });
 
+describe('parseCliArgs - pack', () => {
+  it('parses a minimal pack command', () => {
+    expect(parseCliArgs(['pack', '--input', 'examples/order-prod', '--output', 'pack.tar.gz'])).toEqual({
+      ok: true,
+      command: { command: 'pack', input: 'examples/order-prod', output: 'pack.tar.gz' },
+    });
+  });
+
+  it('keeps an explicit prefix', () => {
+    expect(parseCliArgs(['pack', '--input', 'src', '--output', 'pack.tar.gz', '--prefix', 'bundle'])).toEqual({
+      ok: true,
+      command: { command: 'pack', input: 'src', output: 'pack.tar.gz', prefix: 'bundle' },
+    });
+  });
+
+  it('requires --input', () => {
+    const result = parseCliArgs(['pack', '--output', 'pack.tar.gz']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--input/);
+  });
+
+  it('requires --output', () => {
+    const result = parseCliArgs(['pack', '--input', 'src']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--output/);
+  });
+
+  it('rejects empty --input and --output values', () => {
+    expect(parseCliArgs(['pack', '--input', '', '--output', 'pack.tar.gz']).ok).toBe(false);
+    expect(parseCliArgs(['pack', '--input', 'src', '--output', '']).ok).toBe(false);
+  });
+
+  it('rejects an empty --prefix', () => {
+    const result = parseCliArgs(['pack', '--input', 'src', '--output', 'pack.tar.gz', '--prefix', '']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--prefix/);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['pack', '--input', 'src', '--output', 'pack.tar.gz', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
 describe('formatHelp and formatVersion', () => {
   it('lists every command in the help text', () => {
     const help = formatHelp();
-    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'report', 'evolve', 'help', 'version']) {
+    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'report', 'pack', 'evolve', 'help', 'version']) {
       expect(help).toContain(cmd);
     }
   });
