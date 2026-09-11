@@ -584,6 +584,31 @@
         }),
       ]),
     );
+
+    view.appendChild(
+      el('section', { class: 'block' }, [
+        el('h3', { text: 'And the export is not the only thing we check' }),
+        el('p', {
+          class: 'sub',
+          text:
+            'The anchors above all begin from a bundle we authored, so an exporter and a scorer that ' +
+            'share a misunderstanding would happily agree with each other. The round trip starts from ' +
+            'the dataset the benchmark itself ships: ingest reads official data into the IR, export ' +
+            'writes it back out, and the published scorer grades the result. Case labels come from the ' +
+            'descriptor and are never inferred - a reproduction scored against a guessed answer would ' +
+            'prove nothing.',
+        }),
+        codeBlock(
+          'the round trip',
+          'rca-bench ingest --source ./official-data --target rcaeval \\\n' +
+            '  --cases cases.json --output bundle.json\n' +
+            'rca-bench export --target rcaeval --suite RE2 \\\n' +
+            '  --input bundle.json --out-dir ./roundtrip\n' +
+            'rca-bench official --target rcaeval-re2 --dir ./roundtrip',
+          'bash',
+        ),
+      ]),
+    );
   }
 
   // ── tutorial ────────────────────────────────────────────────────────

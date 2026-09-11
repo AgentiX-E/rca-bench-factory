@@ -56,7 +56,7 @@ If **any** mutation slips through, the gates are broken and must be fixed before
 export is trusted. `QualityGateReport.mutationTestPassed` is `true` only when the
 full suite passed.
 
-## L4 — Official reproduction (Golden Master and official metrics)
+## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
 - `golden-master/fetch-and-verify.sh` downloads official data from its canonical
   source and checks it against shipped anchors (`expected.json` + checksums).
@@ -76,6 +76,23 @@ full suite passed.
   - Metrics are labelled `official` (transcribed from the upstream scorer or the
     paper's protocol) or `derived` (reconstructed because the upstream scorer is
     not public); the label travels with every score.
+- **Round trip** (`rca-bench ingest` → `rca-bench export` → `rca-bench official`):
+  official dataset data is read into the IR, written back out in the target's own
+  layout, and graded by the published metric. The three anchors above all begin
+  from a bundle *we* authored, so they cannot detect a misunderstanding shared by
+  our exporter and our scorer; the round trip begins from the dataset itself and
+  therefore can.
+  - Case labels (root-cause component, fault type, injection time) are supplied in
+    the descriptor and **never inferred**; a reproduction scored against a guessed
+    answer proves nothing.
+  - A component that is neither observed in the telemetry nor declared as an entity
+    fails the ingest, so the emitted bundle is reference-complete by construction.
+  - Zero silent loss: every source record is a signal or a quarantine entry, and a
+    file claimed by no case is reported, not dropped.
+  - A case that was never actually read is reported in `hardErrors`; a reproduction
+    with non-empty `hardErrors` does not count as complete for that case.
+  - Licensed corpora are never vendored: CI fetches them out of band and
+    `golden-master/` keeps checksum anchors only.
 
 ## L5 — End-to-end scenarios and HITL budget
 
@@ -86,7 +103,7 @@ degradation, quarantine, evolution). HITL is budgeted at **12–22.5 person-days
 ## Definition of Done (per change and per release)
 
 - [ ] All layers L0–L3 green locally and in CI.
-- [ ] Golden Master verification and the official-metric regression pass (L4).
+- [ ] Golden Master verification, the official-metric regression and the round trip pass (L4).
 - [ ] No `continue-on-error`, no `|| true`, no skipped/`.only` tests, no mocks.
 - [ ] Coverage ≥ 95% per dimension, 100% functions.
 - [ ] Every LLM-produced field carries `FieldProvenance`.

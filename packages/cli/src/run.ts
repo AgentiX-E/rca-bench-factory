@@ -20,6 +20,7 @@ import {
   formatHelp,
   formatVersion,
   ingestFile,
+  ingestPrimeDataset,
   irBundleSchema,
   normalizePackEntries,
   parseCliArgs,
@@ -50,6 +51,7 @@ import type {
   IrBundle,
   OfficialRegressionOptions,
   OfficialRegressionReport,
+  PrimeCaseSource,
   ScoreTargetId,
   SignalKind,
   SourceRecord,
@@ -238,6 +240,47 @@ async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: C
   });
 
   const output = html + '\n';
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), output);
+  } else {
+    ctx.stdout(output);
+  }
+  return 0;
+}
+
+/**
+ * `ingest` reads a prime dataset off disk, turns it into an IR bundle and writes
+ * the bundle out.
+ *
+ * The descriptor file supplies the case labels, so the command is deliberately
+ * dumb about them: it reads what the operator wrote and refuses to continue when
+ * the data contradicts it. `hardErrors` are reported on stderr without failing
+ * the run, because a bundle that covers the other cases is still useful; a case
+ * that was never read must be visible rather than silently scored as zero.
+ */
+async function runIngest(cmd: Extract<CliCommand, { command: 'ingest' }>, ctx: Ctx): Promise<number> {
+  const files = await readFilesRecursive(resolve(ctx.cwd, cmd.source));
+  const descriptors = requireArray<PrimeCaseSource>(
+    await readFile(resolve(ctx.cwd, cmd.cases), 'utf8'),
+    '--cases',
+  );
+
+  const result = ingestPrimeDataset(files, {
+    dataset: cmd.target,
+    system: cmd.system ?? cmd.target,
+    cases: descriptors,
+  });
+  if (!result.ok) {
+    ctx.stderr(`error: ${result.error}\n`);
+    return 1;
+  }
+
+  for (const hard of result.hardErrors) ctx.stderr(`warning: ${hard}\n`);
+  if (result.unclaimed.length > 0) {
+    ctx.stderr(`warning: ${result.unclaimed.length} file(s) matched no case: ${result.unclaimed.join(', ')}\n`);
+  }
+
+  const output = JSON.stringify(result.bundle, null, 2) + '\n';
   if (cmd.output !== undefined) {
     await writeFile(resolve(ctx.cwd, cmd.output), output);
   } else {
@@ -471,6 +514,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runSource(parsed.command, ctx);
       case 'export':
         return await runExport(parsed.command, ctx);
+      case 'ingest':
+        return await runIngest(parsed.command, ctx);
       case 'score':
         return await runScore(parsed.command, ctx);
       case 'official':

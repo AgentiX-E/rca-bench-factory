@@ -225,7 +225,7 @@ Checkpoints: **H1** source schema · **H2** LLM-generated rules · **H3** ground
 
 ## Verification, not vibes
 
-Three mechanisms turn "looks right" into evidence:
+Four mechanisms turn "looks right" into evidence:
 
 1. **Golden Master** — `golden-master/fetch-and-verify.sh` downloads the official artefacts and
    checks them against shipped checksum anchors. The factory ships **verification anchors**, not
@@ -237,6 +237,19 @@ Three mechanisms turn "looks right" into evidence:
    metric of **every** target and fails the build if a score moves. This is the check that
    separates *well-formed* from *scorable*: an export can satisfy every structural rule and still
    earn 0.00 from the official scorer.
+4. **Round trip** — `ingest` → `export` → `official` replays official dataset data through the IR
+   and scores the result with the published metric. The three anchors above all start from a
+   bundle *we* authored, so a shared misunderstanding between our exporter and our scorer would go
+   unnoticed; this one starts from the dataset the benchmark itself ships.
+   ```bash
+   rca-bench ingest --source ./official-data --target rcaeval --cases cases.json --output bundle.json
+   rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./roundtrip
+   rca-bench official --target rcaeval-re2 --dir ./roundtrip
+   # { "passed": true, "reports": [{ "oraclePerfect": true, "mutationsDegrade": true, … }] }
+   ```
+   See [cli-reference.md](cli-reference.md#rca-bench-ingest) for the case-descriptor format. Labels
+   are supplied, never inferred — a reproduction scored against a guessed answer would prove
+   nothing.
 
 ```bash
 pnpm official:check

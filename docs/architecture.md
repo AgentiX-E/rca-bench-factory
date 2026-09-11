@@ -180,20 +180,34 @@ Human-in-the-loop checkpoints (H1–H6) gate the riskiest transitions:
 
 ## 9. Verification: well-formed is not the same as scorable
 
-Layer 7 grounds the factory against three external anchors. They answer three different
-questions, and passing two of them says nothing about the third:
+Layer 7 grounds the factory against four external anchors. They answer four different
+questions, and passing three of them says nothing about the fourth:
 
 | Anchor | Question | Implementation |
 | --- | --- | --- |
 | Golden Master | Are we reproducing the **published artefacts**? | `golden-master/verify.mjs` against shipped SHA-256 anchors |
 | Mutation suite | Do the **gates** intercept a corrupted case? | `MT-01 … MT-18`, 100% interception required |
 | Official metrics | Does the **published scorer** award 1.0 to our export? | `src/score/official.ts` + `scripts/check-official.mjs` |
+| Round trip | Does **official data** survive ingest → export → scoring? | `src/ingest/prime.ts`, `rca-bench ingest` |
 
 The third anchor exists because an export can satisfy every structural rule and still
 earn 0.00: the official metric reads ground truth back out of the export with its own
 rules — three regular expressions for OpenRCA 1.0, the directory name for RCAEval, the
 answer-key record for AIOps2025. If the exporter writes a field the official reader
 never looks at, the score is zero and no structural check notices.
+
+The fourth anchor exists because the first three all start from a bundle *we* authored.
+If our exporter and our scorer shared a misunderstanding, every one of them would agree
+with the misunderstanding. The round trip starts instead from the dataset the benchmark
+itself ships: `ingest` reads official data into the IR, `export` writes it back out, and
+the official scorer grades the result. It is the only anchor that can contradict us.
+
+`ingest` is deliberately label-blind. The case descriptor supplies the root-cause
+component, the fault type and the injection time, because those are facts about the
+dataset rather than things to reverse-engineer from a file name — an inferred label would
+make the reproduction score against itself. A component that is neither observed in the
+telemetry nor declared as an entity fails the run, so the emitted bundle is
+reference-complete by construction.
 
 `src/score/official.ts` therefore reimplements each **published** metric against the
 export itself and asserts three properties per target:

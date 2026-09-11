@@ -12,6 +12,7 @@ and score an exported dataset.
 | `help` | Print usage |
 | `version` | Print the semantic version |
 | `source` | Ingest a flat file (CSV/TSV/JSONL/JSON) into IR signals |
+| `ingest` | Ingest a prime dataset slice (official benchmark data) into an IR bundle |
 | `transform` | Apply transform rules (the 7 strategies) to source records |
 | `case` | Assemble an IR bundle from a case draft (normalises the fault) |
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
@@ -36,6 +37,53 @@ rca-bench source --path telemetry.csv [--format csv] [--signal-kind metric]
 - Without `--output`, the `{ signals, quarantine }` result is written to stdout.
 - Every non-empty source record is either a signal or a quarantine entry — never
   silently dropped.
+
+### `rca-bench ingest`
+
+```text
+rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
+                 [--system tt] [--output bundle.json]
+```
+
+- The `ingest` half of the round trip: it turns an official dataset slice into an
+  `IrBundle`, which `export` then turns back into the target's own layout and
+  `official` scores with the published metric.
+- Valid `--target` values: `rcaeval`, `openrca-1.0`, `openrca-2.0`, `rca100`,
+  `aiops2025`, `cloud-opsbench`, `itbench`.
+- `--cases` is a JSON array of case descriptors. Each carries `caseId`,
+  `component`, `faultType` and `injectTime`, and may add `window`, `query`,
+  `difficulty`, `pathPrefixes` and per-file `files` overrides:
+  ```json
+  [
+    {
+      "caseId": "RE2-ts-order-service-cpu_1",
+      "component": "ts-order-service",
+      "faultType": "cpu",
+      "injectTime": "2025-03-01T00:10:00.000Z"
+    }
+  ]
+  ```
+- **Labels are never inferred.** The component, the fault type and the injection
+  time are read from the descriptor and validated against the telemetry; a
+  component that is neither observed in the data nor declared as an entity fails
+  the run. This is what keeps the reproduction honest — a guessed label would
+  make the round trip score against itself.
+- Files are routed to cases by `pathPrefixes`. A case without prefixes claims
+  every file left over; a file claimed by no case is reported in `unclaimed`.
+- The window defaults to ten minutes either side of `injectTime` (`leadMs` /
+  `lagMs` in the library API).
+- A case that could not be read at all is reported as a `hardErrors` entry on
+  stderr without failing the run. Non-zero `hardErrors` must be treated as "that
+  case was not reproduced".
+- The bundle is written to `--output` or to stdout.
+
+**Round trip.** The three commands compose into the L4 verification:
+
+```bash
+rca-bench ingest --source ./official-data --target rcaeval --cases cases.json --output bundle.json
+rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./roundtrip
+rca-bench official --target rcaeval-re2 --dir ./roundtrip
+```
 
 ### `rca-bench transform`
 

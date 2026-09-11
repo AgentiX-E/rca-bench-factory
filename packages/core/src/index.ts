@@ -246,6 +246,19 @@ export type {
 export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/otlp.js';
 export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';
 
+export { ingestPrimeDataset, PRIME_DATASET_IDS } from './ingest/prime.js';
+export type {
+  PrimeCaseReport,
+  PrimeCaseSource,
+  PrimeDatasetId,
+  PrimeFileSpec,
+  PrimeIngestDefaults,
+  PrimeIngestOptions,
+  PrimeIngestResult,
+  PrimeIngestSuccess,
+  PrimeQuarantineRecord,
+} from './ingest/prime.js';
+
 export {
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,

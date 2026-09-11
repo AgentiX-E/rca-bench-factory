@@ -1,5 +1,6 @@
 import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
 import type { FileFormat, FileSignalKind } from '../ingest/file.js';
+import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
 import type { TimeLayout } from '../util/time.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
 import { SCORE_TARGET_IDS } from '../score/score.js';
@@ -37,6 +38,14 @@ export type CliCommand =
       delimiter?: string;
     }
   | { command: 'export'; target: ExportTarget; suite?: RcaEvalSuite; input: string; outDir: string }
+  | {
+      command: 'ingest';
+      source: string;
+      target: PrimeDatasetId;
+      cases: string;
+      system?: string;
+      output?: string;
+    }
   | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string }
   | { command: 'official'; mode: 'bundle'; input: string; allowEmptyReason?: string; output?: string }
   | {
@@ -587,6 +596,8 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseSource(rest);
     case 'export':
       return parseExport(rest);
+    case 'ingest':
+      return parseIngest(rest);
     case 'score':
       return parseScore(rest);
     case 'official':
@@ -604,8 +615,60 @@ export function parseCliArgs(argv: string[]): CliParseResult {
     case 'evolve':
       return parseEvolve(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|official|report|pack|evolve|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|ingest|export|score|official|report|pack|evolve|help|version)` };
   }
+}
+
+/**
+ * `ingest` turns a prime-dataset slice into an IR bundle.
+ *
+ * `--cases` is a JSON file holding the case descriptors. The labels they carry
+ * (component, fault type, injection time) come from the official dataset, which
+ * is exactly why they are an input rather than something we infer: a guessed
+ * label would make the round-trip reproduction score against itself.
+ */
+function parseIngest(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    source: { type: 'string' },
+    target: { type: 'string' },
+    cases: { type: 'string' },
+    system: { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const source = v.source;
+  if (typeof source !== 'string' || source === '') {
+    return { ok: false, error: 'ingest requires --source <dir>' };
+  }
+  const target = v.target;
+  if (typeof target !== 'string' || !isOneOf(target, PRIME_DATASET_IDS as readonly string[])) {
+    return {
+      ok: false,
+      error: `ingest requires --target <${PRIME_DATASET_IDS.join('|')}>`,
+    };
+  }
+  const cases = v.cases;
+  if (typeof cases !== 'string' || cases === '') {
+    return { ok: false, error: 'ingest requires --cases <cases.json>' };
+  }
+  const system = v.system;
+  if (system !== undefined && (typeof system !== 'string' || system.trim() === '')) {
+    return { ok: false, error: 'invalid --system <name>' };
+  }
+
+  return {
+    ok: true,
+    command: {
+      command: 'ingest',
+      source,
+      target: target as PrimeDatasetId,
+      cases,
+      ...(system !== undefined ? { system: String(system) } : {}),
+      ...(v.output !== undefined ? { output: String(v.output) } : {}),
+    },
+  };
 }
 
 /** Human-readable usage text. */
@@ -618,6 +681,7 @@ export function formatHelp(): string {
     '',
     'Commands:',
     '  source     Ingest a flat file into IR signals',
+    '  ingest     Ingest a prime dataset slice into an IR bundle',
     '  transform  Apply transform rules to source records',
     '  case       Assemble an IR bundle from a case draft',
     '  gate       Run the G1-G5 quality gates on an IR bundle',

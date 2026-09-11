@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatHelp, formatVersion, parseCliArgs } from '../src/cli/args.js';
+import { PRIME_DATASET_IDS } from '../src/ingest/prime.js';
 
 /**
  * CLI argument parser tests.
@@ -121,6 +122,70 @@ describe('parseCliArgs - source', () => {
     const result = parseCliArgs(['source', '--path', 'x', '--bogus', 'y']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
+describe('parseCliArgs - ingest', () => {
+  it('parses a minimal ingest command', () => {
+    expect(parseCliArgs(['ingest', '--source', './official-data', '--target', 'rcaeval', '--cases', 'cases.json'])).toEqual({
+      ok: true,
+      command: { command: 'ingest', source: './official-data', target: 'rcaeval', cases: 'cases.json' },
+    });
+  });
+
+  it('parses an ingest command with an explicit system and output', () => {
+    expect(
+      parseCliArgs([
+        'ingest',
+        '--source', './official-data',
+        '--target', 'openrca-1.0',
+        '--cases', 'cases.json',
+        '--system', 'order-prod',
+        '--output', 'bundle.json',
+      ]),
+    ).toEqual({
+      ok: true,
+      command: {
+        command: 'ingest',
+        source: './official-data',
+        target: 'openrca-1.0',
+        cases: 'cases.json',
+        system: 'order-prod',
+        output: 'bundle.json',
+      },
+    });
+  });
+
+  it('accepts every prime dataset id', () => {
+    for (const target of PRIME_DATASET_IDS) {
+      const result = parseCliArgs(['ingest', '--source', './d', '--target', target, '--cases', 'c.json']);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.command).toMatchObject({ target });
+    }
+  });
+
+  it('requires a source', () => {
+    const result = parseCliArgs(['ingest', '--target', 'rcaeval', '--cases', 'c.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--source/);
+  });
+
+  it('requires a known target', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'nope', '--cases', 'c.json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--target/);
+  });
+
+  it('requires a cases file', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--cases/);
+  });
+
+  it('rejects a blank system', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--system', '  ']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--system/);
   });
 });
 
