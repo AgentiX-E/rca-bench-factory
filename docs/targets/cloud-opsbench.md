@@ -104,6 +104,18 @@ rca-bench score --target cloud-opsbench --dir ./out
 | `case-present` | at least one `metadata.json` was emitted |
 | `metadata-shape` | `namespace`, `query`, `difficulty` and the `result` triple are present and typed |
 
+The structural check answers *is this well-formed*. Whether it is **scorable** is a
+different question, and a different command:
+
+```bash
+rca-bench official --target cloud-opsbench --dir ./out
+```
+
+It runs the published Cloud-OpsBench outcome metric (arXiv 2603.00468 §4.1.1): Joint
+RCA Accuracy, the share of episodes where the faulty component **and** the fault type
+both match. The exported answer key must score 1.0, and perturbing either half of the
+pair drops the episode.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

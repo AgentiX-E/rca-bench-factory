@@ -24,10 +24,12 @@ before the layer above it is meaningful.
 - **Time consistency** — `injectTime` and `window` are canonical UTC ISO-8601 and
   ordered (`start ≤ injectTime ≤ end`).
 
-## L3 — Gate soundness (mutation testing)
+## L3 — Gate and export soundness (mutation testing)
 
 A 15-mutation suite corrupts a known-good case and asserts the gates intercept
-**100%** of mutations. The current matrix:
+**100%** of mutations, and a further 3-mutation suite corrupts the *exported
+artefacts* and asserts the official-metric regression intercepts them. The
+current matrix:
 
 | Id | Mutation | Caught by |
 | --- | --- | --- |
@@ -46,17 +48,34 @@ A 15-mutation suite corrupts a known-good case and asserts the gates intercept
 | MT-13 | PII in log body | G5 |
 | MT-14 | Duplicate case | G5 (fingerprint) |
 | MT-15 | Inferred field backing ground truth | provenance guard / G5 |
+| MT-16 | Reword the OpenRCA `scoring_points` template | official regression (oracle cannot score 1.0) |
+| MT-17 | Drop the instance index from an RCAEval directory | official regression (no ground truth read) |
+| MT-18 | Corrupt every AIOps2025 ground-truth record | official regression (no ground truth read) |
 
 If **any** mutation slips through, the gates are broken and must be fixed before any
 export is trusted. `QualityGateReport.mutationTestPassed` is `true` only when the
 full suite passed.
 
-## L4 — Official reproduction (Golden Master)
+## L4 — Official reproduction (Golden Master and official metrics)
 
 - `golden-master/fetch-and-verify.sh` downloads official data from its canonical
   source and checks it against shipped anchors (`expected.json` + checksums).
 - Reproduced outputs must match within stated tolerances (byte-exact for CSV layout,
   value-tolerant for floating-point metrics).
+- **Official-metric regression** (`pnpm official:check`, and
+  `rca-bench official` for any dataset): the answer key a target exports is
+  submitted to that target's *published* metric and must score **1.0** under its
+  own rule, on real exporter output. This is a strictly stronger claim than the
+  field contract `score` makes: a dataset can be perfectly well-formed and still
+  unscorable.
+  - Every declared facet must be **sensitive** to perturbation (the metric is not
+    vacuously returning 1) and every undeclared facet **inert** (the facet list is
+    exactly right).
+  - A target that exports zero cases fails unless the caller states why
+    (`--allow-empty-reason`), so no exporter can hide behind a skip.
+  - Metrics are labelled `official` (transcribed from the upstream scorer or the
+    paper's protocol) or `derived` (reconstructed because the upstream scorer is
+    not public); the label travels with every score.
 
 ## L5 — End-to-end scenarios and HITL budget
 
@@ -67,7 +86,7 @@ degradation, quarantine, evolution). HITL is budgeted at **12–22.5 person-days
 ## Definition of Done (per change and per release)
 
 - [ ] All layers L0–L3 green locally and in CI.
-- [ ] Golden Master verification passes (L4).
+- [ ] Golden Master verification and the official-metric regression pass (L4).
 - [ ] No `continue-on-error`, no `|| true`, no skipped/`.only` tests, no mocks.
 - [ ] Coverage ≥ 95% per dimension, 100% functions.
 - [ ] Every LLM-produced field carries `FieldProvenance`.

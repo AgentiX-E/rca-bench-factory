@@ -175,7 +175,7 @@
       ]),
       el('div', { class: 'grid cols-3', style: 'margin-top:14px' }, [
         card('One IR, four layers', 'Signals, entity graph, fault cases and gate reports - every reference must resolve, every inferred field is marked as such.'),
-        card('Gates before export', 'G1–G5 admit, quarantine or reject a case with a violation code. The gates themselves are mutation-tested (MT-01 … MT-15).'),
+        card('Gates before export', 'G1–G5 admit, quarantine or reject a case with a violation code. The gates themselves are mutation-tested (MT-01 … MT-18).'),
         card('Verified, not asserted', 'Score = structural pass rate + Golden-Master checksum match. Exit code 1 on failure, so CI can gate on it.'),
       ]),
     ]);
@@ -523,8 +523,9 @@
         el('p', {
           class: 'sub',
           text:
-            'MT-01 … MT-15 corrupt a known-good case (drop the root cause, invert the timestamp, ' +
-            'rename an entity, leak the answer key, …) and assert the gates intercept 100% of them. ' +
+            'MT-01 … MT-18 corrupt a known-good case (drop the root cause, invert the timestamp, ' +
+            'rename an entity, leak the answer key, reword a scoring template, drop an instance ' +
+            'index, …) and assert the gates - or the official metric - intercept 100% of them. ' +
             'A mutation that slips through is a bug in the gates, not in the data - and it blocks ' +
             'the release until the gate is fixed.',
         }),
@@ -545,6 +546,42 @@
           'json',
         ),
         el('p', { class: 'small', text: 'admitted = all gates pass · quarantined = usable after human review (H5) · rejected = never admitted.' }),
+      ]),
+    );
+
+    view.appendChild(
+      el('section', { class: 'block' }, [
+        el('h3', { text: 'Well-formed is not the same as scorable' }),
+        el('p', {
+          class: 'sub',
+          text:
+            'Every gate can pass and the official scorer can still return 0.00 - because the official ' +
+            'metric reads the ground truth back out of the export with its own rules. The ' +
+            'official-metric regression closes that gap: it scores a known-good export against the ' +
+            'metric of every target, and fails the build if a score moves.',
+        }),
+        codeBlock(
+          'scripts/check-official.mjs',
+          'PASS  openrca-1.0      cases=1  openrca-strict-accuracy\n' +
+            'PASS  openrca-2.0      cases=1  openrca2-pave-verification\n' +
+            'PASS  rcaeval-re1      cases=1  rcaeval-re1-avg5\n' +
+            'PASS  rcaeval-re2      cases=1  rcaeval-re2-avg5\n' +
+            'SKIP  rcaeval-re3      cases=0  rcaeval-re3-avg5\n' +
+            'PASS  rca100           cases=1  rca100-final-b\n' +
+            'PASS  aiops2025        cases=1  aiops2025-final-a\n' +
+            'PASS  cloud-opsbench   cases=1  cloud-opsbench-jra\n' +
+            'PASS  itbench          cases=1  itbench-pass-at-1\n' +
+            '\n' +
+            'Official-metric regression PASSED (8 targets scored, 1 skipped by contract)',
+          'text',
+        ),
+        el('p', {
+          class: 'small',
+          text:
+            'Each report asserts three properties: the oracle scores 1.0, mutations degrade the score, ' +
+            'and facets the official metric ignores cannot move it. An empty export is reported as ' +
+            'skipped - and a skip without an explicit reason fails.',
+        }),
       ]),
     );
   }

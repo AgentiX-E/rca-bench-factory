@@ -132,6 +132,18 @@ rca-bench score --target openrca-2.0 --dir ./out
 | `causal-path-shape` | `case_id`, `system`, `root_cause.{entity_id,component,fault_type}` are present and typed |
 | (step gates) | each step's `verification` triple is re-evaluated by the scorer |
 
+The structural check answers *is this well-formed*. Whether it is **scorable** is a
+different question, and a different command:
+
+```bash
+rca-bench official --target openrca-2.0 --dir ./out
+```
+
+It scores the four facets the PAVE contract carries — root cause, fault type, causal
+chain and evidence — against the exported answer key. The metric is labelled
+**derived**, not `official`, because the OpenRCA 2.0 scorer is not open-sourced; the
+label travels with every score so the distinction can never be lost.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

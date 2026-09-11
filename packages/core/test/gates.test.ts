@@ -27,6 +27,7 @@ const SOLVED: BaselineOutcome[] = [
 
 describe('statistics helpers', () => {
   it('computes mean and sample stddev', () => {
+    expect(mean([])).toBe(0);
     expect(mean([1, 2, 3, 4])).toBe(2.5);
     expect(stddev([2, 2, 2, 2])).toBe(0);
     expect(stddev([])).toBe(0);
@@ -195,6 +196,39 @@ describe('G2 semantic', () => {
     expect(checkG2Semantic(b).violations).toContainEqual(
       expect.objectContaining({ code: 'UNRESOLVED_EVIDENCE_REF' }),
     );
+  });
+
+  it('accepts a case that declares neither a causal chain nor evidence checkpoints', () => {
+    const fc = validCase();
+    delete fc.groundTruth.causalChain;
+    delete fc.groundTruth.evidenceCheckpoints;
+    const b = validBundle({ cases: [fc] });
+    expect(checkG2Semantic(b).status).toBe('passed');
+  });
+
+  it('flags an evidence reference when the case declares no checkpoints at all', () => {
+    const fc = validCase();
+    delete fc.groundTruth.evidenceCheckpoints;
+    const b = validBundle({ cases: [fc] });
+    expect(checkG2Semantic(b).violations).toContainEqual(
+      expect.objectContaining({ code: 'UNRESOLVED_EVIDENCE_REF' }),
+    );
+  });
+
+  it('accepts a causal step that starts and ends at the same entity', () => {
+    const fc = validCase();
+    fc.groundTruth.causalChain = [
+      {
+        step: 1,
+        fromEntityId: 'service:default/order',
+        toEntityId: 'service:default/order',
+        mechanism: 'a saturated thread pool blocks its own retries',
+        evidenceRefs: [],
+      },
+    ];
+    fc.groundTruth.evidenceCheckpoints = [];
+    const b = validBundle({ cases: [fc] });
+    expect(checkG2Semantic(b).status).toBe('passed');
   });
 
   it('flags an injectTime outside the window', () => {
@@ -487,5 +521,15 @@ describe('runAllGates', () => {
       { gateRunId: 'run-3', runAt: '2026-09-06T00:00:00.000Z' },
     );
     expect(report.finalStatus).toBe('quarantined');
+  });
+
+  it('quarantines a bundle submitted without any baseline outcome', () => {
+    const { report } = runAllGates(
+      validBundle(),
+      { g1: G1_OPENRCA },
+      { gateRunId: 'run-4', runAt: '2026-09-06T00:00:00.000Z' },
+    );
+    // With no outcome to rank, G4 cannot prove the case is solvable.
+    expect(report.results).toContainEqual(expect.objectContaining({ gateId: 'G4', status: 'failed' }));
   });
 });

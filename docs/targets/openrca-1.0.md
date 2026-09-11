@@ -30,7 +30,8 @@
 ```text
 {system}/
 ├── query.csv                          # tasks (safe to hand to the agent)
-├── record.csv                         # answer key (withhold from the agent)
+├── record.csv                         # answer key, in the official -p submission shape
+├── groundtruth.csv                    # answer key, in the official -q scorer shape
 └── {YYYY_MM_DD}/telemetry/
     ├── metric/{caseId}.csv
     ├── log/{caseId}.csv               # may be empty (Telecom ships no logs)
@@ -82,6 +83,36 @@ given the task without the label. `prediction` is RFC 4180-escaped JSON.
 ```csv
 instruction_id,prediction
 case-001,"{""1"":{""root cause occurrence datetime"":""2026-09-06 08:10:00"",""root cause component"":""order"",""root cause reason"":""CPU saturation on the order service""}}"
+```
+
+### `{system}/groundtruth.csv`
+
+The answer key in the shape `main/evaluate.py` actually consumes, so the published
+scorer can be pointed at this export without a conversion step:
+
+```bash
+python -m main.evaluate -p order-prod/record.csv -q order-prod/groundtruth.csv -r report.csv
+```
+
+`scoring_points` is natural language, not a data structure: the official evaluator
+recovers the three elements from it with regular expressions, so its wording is part
+of the contract and is transcribed verbatim from `main/task_specification.json`.
+
+<!-- fields: openrca-1.0/{system}/groundtruth.csv -->
+| Field | Type | Required | Source (IR) | Notes |
+| --- | --- | --- | --- | --- |
+| `task_index` | string | yes | `openRcaTaskIndex({datetime, component, reason})` | One of `task_1`…`task_7` from `main/task_specification.json`. Derived, not chosen: a case carrying all three elements is `task_7`, one carrying only the component is `task_3`. |
+| `instruction` | string | yes | `FaultCase.query ?? ""` | The same natural-language task text as `query.csv`; the evaluator only needs it to pair rows. |
+| `scoring_points` | string | yes | `buildScoringPoints(taskIndex, elements)` | Multi-line natural-language block rendered from the official templates. Three regular expressions recover the component, reason and datetime from it, so the wording is part of the contract. |
+<!-- /fields -->
+
+<!-- example: openrca-1.0/order-prod/groundtruth.csv -->
+```csv
+task_index,instruction,scoring_points
+task_7,The order service became slow at 08:10 UTC+8. Find the root cause.,"The only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2026-09-06 08:10:00
+The only predicted root cause component is order
+The only predicted root cause reason is CPU saturation on the order service
+"
 ```
 
 ### `{system}/{YYYY_MM_DD}/telemetry/metric/{caseId}.csv`
@@ -174,6 +205,10 @@ rca-bench score --target openrca-1.0 --dir ./out
 | `record-csv` | at least one `record.csv` exists |
 | `query-header` | header is exactly `instruction_id,query,occurrence_datetime` |
 | `record-header` | header is exactly `instruction_id,prediction` |
+| `groundtruth-csv` | at least one `groundtruth.csv` (the official `-q` artefact) exists |
+| `groundtruth-header` | header is exactly `task_index,instruction,scoring_points` |
+| `scoring-points-present` | every row carries a `scoring_points` block the official regexes can read |
+| `row-alignment` | `query.csv`, `record.csv` and `groundtruth.csv` have the same row count, which is what the official evaluator requires |
 | `answer-key-isolated` | `query.csv` carries no answer-key tokens |
 | `telemetry-present` | at least one metric / log / trace file |
 | `metric-header` | header is exactly `timestamp,cmdb_id,kpi_name,value` |
@@ -183,6 +218,22 @@ rca-bench score --target openrca-1.0 --dir ./out
 Without `--anchors` the score is the structural pass rate; with anchors it is the mean of
 the structural pass rate and the SHA-256 Golden-Master match rate. Exit code is `1` when
 the report fails, so CI can gate on it.
+
+The structural check answers *is this well-formed*. The question that matters is
+*is it scorable*, and that is a different command:
+
+```bash
+rca-bench official --target openrca-1.0 --dir ./out
+```
+
+It runs the official rule (`microsoft/OpenRCA main/evaluate.py`) against the exported
+answer key: a perfect answer must score 1.0, and perturbing the component, the reason
+or the datetime must each lower the score to 2/3. The two artefacts are therefore also
+runnable by the upstream evaluator itself:
+
+```bash
+python -m main.evaluate -p order-prod/record.csv -q order-prod/groundtruth.csv -r report.csv
+```
 
 ## Failure modes
 

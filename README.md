@@ -60,9 +60,9 @@ rca-bench-factory/
 │   │   │   ├── entity/        # entity graph index, alias resolution (union-find)
 │   │   │   ├── gates/         # G1 structural … G5 anti-pollution + runAllGates
 │   │   │   ├── export/        # OpenRCA 1.0/2.0 + RCAEval + RCA100 + AIOps2025 + Cloud-OpsBench + ITBench exporters
-│   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring
+│   │   │   ├── score/         # structure checks + SHA-256 verification + 0-100 scoring + the official-metric scorer
 │   │   │   ├── report/        # static HTML renderer (entity graph / coverage / gates / score, escaped)
-│   │   │   ├── cli/           # IO-free `rca-bench` argument parser (…/export/score/pack/evolve)
+│   │   │   ├── cli/           # IO-free `rca-bench` argument parser (…/export/score/official/pack/evolve)
 │   │   │   ├── pack/          # reproducible tar.gz writer + manifest + the downloadable example pack
 │   │   │   ├── llm/           # provider-agnostic rulegen + DeepSeek/OpenAI/Anthropic adapters
 │   │   │   ├── fault/         # fault collector + historical importer (type/category/spec + LLM extraction)
@@ -78,8 +78,8 @@ rca-bench-factory/
 ├── examples/order-prod/       # the demo input set every documented example is generated from
 ├── site/                      # interactive product + teaching site (static, published to Pages)
 ├── golden-master/             # verification anchors (expected.json + checksums + script)
-├── scripts/                   # no-mock / no-secrets guards, format spec, example generator
-├── .github/workflows/ci.yml   # build, typecheck, lint, test+coverage, mutation, golden-master
+├── scripts/                   # no-mock / no-secrets guards, format spec, example generator, official check
+├── .github/workflows/ci.yml   # build, typecheck, lint, test+coverage, mutation, golden-master, official
 └── .github/workflows/pages.yml # publishes site/ to GitHub Pages
 ```
 
@@ -201,7 +201,9 @@ Early-stage (`v0.1.0`). The deterministic core is implemented and fully tested:
 flat-file ingest (CSV/TSV/JSONL/JSON), OTLP JSON ingest (metrics/logs/traces), the
 four-layer IR, the transform engine, the entity graph, the G1–G5 gates, the
 OpenRCA 1.0/2.0 (PAVE), RCAEval, RCA100, AIOps2025, Cloud-OpsBench and ITBench
-exporters, the structure/checksum score module, the CLI argument parser and
+exporters, the structure/checksum score module, the official-metric scorer (each
+target's published rule run against its own export, with an oracle and a per-facet
+mutation grid), the CLI argument parser and
 runnable `rca-bench` binary, the provider-agnostic LLM rule-generation core, the
 DeepSeek, OpenAI and Anthropic provider adapters, the fault collector and
 historical fault importer, the self-evolution governance layer (HITL checkpoints
@@ -212,3 +214,9 @@ Every one of the seven target contracts now has a full field reference in
 [`docs/targets/`](docs/targets/) whose field tables and examples are generated from
 the real exporters (`pnpm examples:gen`), and the interactive product / teaching
 site in [`site/`](site/) is published to GitHub Pages on every push that touches it.
+
+Well-formed is not the same as *scorable*, so the factory also runs each target's
+**published metric** against its own export: `rca-bench official --input bundle.json`
+scores the exported answer key with the upstream rule and asserts that a perfect
+answer scores 1.0 and that every facet the rule claims to score actually matters.
+`pnpm official:check` pins that result for the shipped example in CI.

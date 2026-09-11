@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { run } from '../src/run.js';
 import { exportOpenRca } from '@rca-bench-factory/core';
@@ -727,6 +728,122 @@ describe('evolve', () => {
     const code = await run(['evolve', 'stale', '--input', 'proposal.json', '--cases', '{}'], { cwd: dir, stderr: (s) => err.push(s) });
     expect(code).toBe(1);
     expect(err.join('')).toContain('array');
+  });
+});
+
+describe('official', () => {
+  /** The repository root, so the shipped example bundle can be read as a real input. */
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+  /**
+   * The shipped example, plus a second case whose fault category is `code`.
+   *
+   * RCAEval's RE3 suite admits code-level faults only, so a bundle carrying
+   * nothing but the example's CPU-saturation case cannot exercise it. Cloning
+   * the case with a different category is the smallest change that makes all
+   * nine targets runnable, and it is how a real benchmark is built.
+   */
+  async function exampleBundleWithCodeCase(): Promise<IrBundle> {
+    const shipped = JSON.parse(await readFile(join(repoRoot, 'examples', 'order-prod', 'bundle.json'), 'utf8')) as IrBundle;
+    const source = shipped.cases[0]!;
+    const codeCase = { ...source, caseId: 'case-002', fault: { ...source.fault, category: 'code' } };
+    return {
+      ...shipped,
+      cases: [source, codeCase],
+      signals: { ...shipped.signals, 'case-002': shipped.signals['case-001'] ?? [] },
+    };
+  }
+
+  it('runs the oracle and mutation grid against an exported directory', async () => {
+    const dir = await makeDir();
+    await writeExported(join(dir, 'exported'), exportOpenRca(minimalBundle()).files);
+    const out: string[] = [];
+    const code = await run(['official', '--target', 'openrca-1.0', '--dir', 'exported'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+
+    const payload = JSON.parse(out.join(''));
+    expect(payload.passed).toBe(true);
+    expect(payload.counts).toEqual({ passed: 1, skipped: 0, failed: 0 });
+    expect(payload.reports).toHaveLength(1);
+    expect(payload.reports[0].target).toBe('openrca-1.0');
+    expect(payload.reports[0].oraclePerfect).toBe(true);
+    expect(payload.reports[0].mutationsDegrade).toBe(true);
+    expect(payload.reports[0].unscoredFacetsInert).toBe(true);
+  });
+
+  it('returns 1 when the exported directory yields no cases', async () => {
+    const dir = await makeDir();
+    const out: string[] = [];
+    const code = await run(['official', '--target', 'rca100', '--dir', '.'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(1);
+    const payload = JSON.parse(out.join(''));
+    expect(payload.passed).toBe(false);
+    expect(payload.reports[0].failures.join(' ')).toMatch(/no cases were exported/);
+  });
+
+  it('skips an empty export only when the reason is stated', async () => {
+    const dir = await makeDir();
+    const out: string[] = [];
+    const code = await run(
+      ['official', '--target', 'rcaeval-re3', '--dir', '.', '--allow-empty-reason', 'RE3 admits code-level faults only'],
+      { cwd: dir, stdout: (s) => out.push(s) },
+    );
+    expect(code).toBe(0);
+    const payload = JSON.parse(out.join(''));
+    expect(payload.reports[0].status).toBe('skipped');
+    expect(payload.reports[0].skipReason).toBe('RE3 admits code-level faults only');
+    expect(payload.counts).toEqual({ passed: 0, skipped: 1, failed: 0 });
+  });
+
+  it('runs all nine targets from a bundle and passes', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(await exampleBundleWithCodeCase()));
+    const out: string[] = [];
+    const code = await run(['official', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+
+    const payload = JSON.parse(out.join(''));
+    expect(payload.counts).toEqual({ passed: 9, skipped: 0, failed: 0 });
+    expect(payload.reports.map((r: { target: string }) => r.target)).toEqual([
+      'openrca-1.0',
+      'openrca-2.0',
+      'rcaeval-re1',
+      'rcaeval-re2',
+      'rcaeval-re3',
+      'rca100',
+      'aiops2025',
+      'cloud-opsbench',
+      'itbench',
+    ]);
+    for (const report of payload.reports) {
+      expect(report.status).toBe('passed');
+      expect(report.oraclePerfect).toBe(true);
+      expect(report.mutationsDegrade).toBe(true);
+    }
+  });
+
+  it('fails the bundle run when RE3 has no code-level case to export', async () => {
+    const dir = await makeDir();
+    const shipped = await readFile(join(repoRoot, 'examples', 'order-prod', 'bundle.json'), 'utf8');
+    await writeFile(join(dir, 'bundle.json'), shipped);
+    const out: string[] = [];
+    const code = await run(['official', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(1);
+
+    const payload = JSON.parse(out.join(''));
+    const re3 = payload.reports.find((r: { target: string }) => r.target === 'rcaeval-re3');
+    expect(re3.status).toBe('failed');
+    expect(re3.caseCount).toBe(0);
+  });
+
+  it('writes the regression report to --output', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(await exampleBundleWithCodeCase()));
+    const code = await run(['official', '--input', 'bundle.json', '--output', 'official.json'], { cwd: dir });
+    expect(code).toBe(0);
+    const payload = JSON.parse(await readFile(join(dir, 'official.json'), 'utf8'));
+    expect(payload.passed).toBe(true);
+    expect(payload.reports).toHaveLength(9);
   });
 });
 

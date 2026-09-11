@@ -38,8 +38,13 @@ rules. They are not guidelines — CI fails on them.
 ## Code style
 
 - TypeScript strict mode (`noUncheckedIndexedAccess`, `noUnusedLocals`, …).
+- `noImplicitReturns` is on, so a `switch` over a union needs no runtime `default`:
+  a missing case is a type error. Prefer that over an unreachable `never` guard,
+  which is dead code a test can never reach.
 - Deterministic code paths only: functions may `throw` for programmer errors but must
   **never throw for data problems** — return a discriminated result instead.
+- No defensive branches that cannot be taken. If a guard is unreachable, delete it
+  and let the type system carry the invariant instead.
 - Comments and identifiers are English.
 
 ## Definition of Done

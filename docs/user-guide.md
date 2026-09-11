@@ -225,14 +225,43 @@ Checkpoints: **H1** source schema · **H2** LLM-generated rules · **H3** ground
 
 ## Verification, not vibes
 
-Two mechanisms turn "looks right" into evidence:
+Three mechanisms turn "looks right" into evidence:
 
 1. **Golden Master** — `golden-master/fetch-and-verify.sh` downloads the official artefacts and
    checks them against shipped checksum anchors. The factory ships **verification anchors**, not
    licensed corpus data.
-2. **Mutation testing** — the `MT-01 … MT-15` suite corrupts a known-good case and asserts the
+2. **Mutation testing** — the `MT-01 … MT-18` suite corrupts a known-good case and asserts the
    gates intercept **100%** of mutations. A mutation that slips through means the *gates* are
    broken and must be fixed before any export is trusted.
+3. **Official-metric regression** — `pnpm official:check` scores the shipped example against the
+   metric of **every** target and fails the build if a score moves. This is the check that
+   separates *well-formed* from *scorable*: an export can satisfy every structural rule and still
+   earn 0.00 from the official scorer.
+
+```bash
+pnpm official:check
+# PASS  openrca-1.0  …  PASS  itbench  ·  SKIP  rcaeval-re3
+# Official-metric regression PASSED (8 targets scored, 1 skipped by contract)
+```
+
+Run it directly with `rca-bench official`:
+
+```bash
+# score a whole bundle against all nine targets at once
+node packages/cli/dist/main.js official --input examples/order-prod/bundle.json
+
+# score one exported directory against its own official metric
+node packages/cli/dist/main.js official --target openrca-1.0 --dir ./out/openrca-1.0
+
+# record a contractual skip instead of silently passing
+node packages/cli/dist/main.js official --target rcaeval-re3 --dir ./out/rcaeval-re3 \
+  --allow-empty-reason 'the example is a resource fault and RE3 admits code-level faults only'
+```
+
+Each report carries three properties: `oraclePerfect` (a known-good export scores 1.0 under the
+official metric), `mutationsDegrade` (the score falls once the export is corrupted) and
+`unscoredFacetsInert` (a facet the official metric ignores cannot change the score). An empty
+export is reported as `skipped` — and a skip without `--allow-empty-reason` fails.
 
 ## Library use
 

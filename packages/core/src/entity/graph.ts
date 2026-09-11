@@ -44,8 +44,9 @@ export function resolveEntityRef(ref: string, index: GraphIndex): string | null 
   const hits = index.byAlias.get(ref.toLowerCase());
   if (!hits || hits.size === 0) return null;
   if (hits.size > 1) return null; // ambiguous alias - report as unresolved, never guess
-  const only = [...hits][0];
-  return only ?? null;
+  // `hits.size === 1` is guaranteed by the two guards above, so the id exists.
+  const [only] = hits;
+  return only!;
 }
 
 export interface ReferenceIssue {

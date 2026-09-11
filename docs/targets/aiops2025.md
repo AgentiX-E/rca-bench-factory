@@ -121,6 +121,18 @@ rca-bench score --target aiops2025 --dir ./out
 | `key-observations-shape` | `key_observations` exposes the `log` / `metric` / `trace` arrays |
 | `uuid-alignment` | the uuid sets of both artefacts are identical — no case is labelled without an input, and vice versa |
 
+The structural check answers *is this well-formed*. Whether it is **scorable** is a
+different question, and a different command:
+
+```bash
+rca-bench official --target aiops2025 --dir ./out
+```
+
+It runs the published AIOps2025 protocol (arXiv 2606.29193 §4.4):
+`Final_A = (0.4·LA + 0.4·TA + 0.1·Exp. + 0.1·Eff.) × 100`. The exported answer key must
+score 100; perturbing the localisation, the reason text, the cited observations or
+inflating the agent trace length each lowers it.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

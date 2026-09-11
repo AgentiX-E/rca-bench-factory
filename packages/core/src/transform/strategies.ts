@@ -1,5 +1,5 @@
 import { TimeParseError, parseTimestamp, type TimeLayout } from '../util/time.js';
-import { UnitError, convertUnit, isConvertible } from '../util/unit.js';
+import { convertUnit, isConvertible } from '../util/unit.js';
 
 /**
  * Transform strategies.
@@ -24,8 +24,7 @@ export type StrategyErrorCode =
   | 'PATTERN_MISMATCH'
   | 'NO_TEMPLATE'
   | 'LOOKUP_MISS'
-  | 'EXPR_FAILED'
-  | 'AMBIGUOUS_LOOKUP';
+  | 'EXPR_FAILED';
 
 export interface TimeRule {
   id: string;
@@ -85,9 +84,12 @@ export interface LookupRule {
   kind: 'lookup';
   from: string;
   to: string;
+  /**
+   * Alias -> target, matched by exact key. Object keys are unique, so a lookup
+   * can never be ambiguous: the only outcomes are a hit, the declared default,
+   * or a miss.
+   */
   table: Record<string, string>;
-  /** When true, a key matching several aliases is an error instead of first-wins. */
-  strictAmbiguity?: boolean;
   default?: string;
 }
 
@@ -131,7 +133,7 @@ function templateToRegExp(template: string): RegExp | null {
   let pattern = '';
   let i = 0;
   while (i < template.length) {
-    const ch = template[i] ?? '';
+    const ch = template[i] as string;
     if (ch === '{') {
       const end = template.indexOf('}', i);
       if (end === -1) return null;
@@ -192,12 +194,10 @@ export function applyUnit(rule: UnitRule, record: SourceRecord): StrategyResult 
       message: `'${rule.fromUnit}' is not convertible to '${rule.toUnit}'`,
     };
   }
-  try {
-    return { ok: true, fields: { [rule.to ?? rule.from]: convertUnit(num, rule.fromUnit, rule.toUnit) } };
-  } catch (err) {
-    const msg = err instanceof UnitError ? err.message : String(err);
-    return { ok: false, code: 'UNIT_CONVERT_FAILED', message: msg };
-  }
+  // `isConvertible` already proved both units exist and share a dimension, which
+  // is exactly the condition `convertUnit` would throw on. The conversion
+  // therefore cannot fail here, and a catch block would only be dead code.
+  return { ok: true, fields: { [rule.to ?? rule.from]: convertUnit(num, rule.fromUnit, rule.toUnit) } };
 }
 
 export function applyMap(rule: MapRule, record: SourceRecord): StrategyResult {
@@ -283,20 +283,6 @@ export function applyLookup(rule: LookupRule, record: SourceRecord): StrategyRes
     return { ok: false, code: 'MISSING_INPUT', message: `field '${rule.from}' is missing` };
   }
   const key = String(raw);
-  if (rule.strictAmbiguity) {
-    // An alias that maps to two different entities is a data bug, not a coin flip.
-    const targets = new Set<string>();
-    for (const [alias, target] of Object.entries(rule.table)) {
-      if (alias === key) targets.add(target);
-    }
-    if (targets.size > 1) {
-      return {
-        ok: false,
-        code: 'AMBIGUOUS_LOOKUP',
-        message: `alias '${key}' resolves to ${targets.size} distinct targets`,
-      };
-    }
-  }
   const hit = Object.prototype.hasOwnProperty.call(rule.table, key) ? rule.table[key] : undefined;
   if (hit !== undefined) return { ok: true, fields: { [rule.to]: hit } };
   if (rule.default !== undefined) return { ok: true, fields: { [rule.to]: rule.default } };

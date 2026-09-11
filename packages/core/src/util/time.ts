@@ -46,15 +46,20 @@ export class TimeParseError extends Error {
   }
 }
 
+const OFFSET_PATTERN = /^([+-])(\d{2}):?(\d{2})$/;
+
 /**
  * Normalize the offset token (`Z`, `+08:00`, `+0800`) into minutes east of UTC.
  * Returns `null` when the token is absent.
+ *
+ * `ISO_LIKE_PATTERN` only ever captures `Z` or `±hh:mm`, so a present token
+ * always parses: a failure here would be a broken regex, not bad input, and is
+ * allowed to surface instead of being masked as an absent offset.
  */
 function parseOffsetToken(token: string | undefined): number | null {
-  if (token === undefined || token === '') return null;
-  if (token === 'Z' || token === 'z') return 0;
-  const m = /^([+-])(\d{2}):?(\d{2})$/.exec(token);
-  if (!m) return null;
+  if (token === undefined) return null;
+  if (token === 'Z') return 0;
+  const m = OFFSET_PATTERN.exec(token)!;
   const sign = m[1] === '-' ? -1 : 1;
   return sign * (Number(m[2]) * 60 + Number(m[3]));
 }
@@ -123,7 +128,8 @@ export function parseTimestamp(
         Number(m[4]),
         Number(m[5]),
         Number(m[6]),
-        Number((m[7] ?? '').padEnd(3, '0')),
+        // `JAVA_LOG_PATTERN` always captures one to three fraction digits.
+        Number(m[7]!.padEnd(3, '0')),
         offset,
       );
       return { isoUtc: epochToIsoUtc(epochMs), offsetMinutes: offset, offsetWasAssumed: assumeOffsetMinutes !== undefined };

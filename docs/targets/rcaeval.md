@@ -139,6 +139,18 @@ rca-bench score --target rcaeval-re2 --dir ./out
 | `inject-time-exists` | every case directory carries `inject_time.txt` |
 | `modality-set` | the emitted modalities match the suite (RE1: metrics only; RE2/RE3: + logs + traces) |
 
+The structural check answers *is this well-formed*. Whether it is **scorable** is a
+different question, and a different command:
+
+```bash
+rca-bench official --target rcaeval-re2 --dir ./out
+```
+
+It runs the official RCAEval metric (`RCAEval/benchmark/evaluation.py`) against the
+export: the ground-truth service must appear in the ranked candidate list, so AC@1
+through AC@5 — and therefore Avg@5 — are all 1, and replacing the ranked list must drop
+every AC@k to 0.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

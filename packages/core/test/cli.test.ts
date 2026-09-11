@@ -610,10 +610,81 @@ describe('parseCliArgs - pack', () => {
   });
 });
 
+describe('parseCliArgs - official', () => {
+  it('parses the bundle mode that exports every target', () => {
+    expect(parseCliArgs(['official', '--input', 'bundle.json'])).toEqual({
+      ok: true,
+      command: { command: 'official', mode: 'bundle', input: 'bundle.json' },
+    });
+  });
+
+  it('parses the directory mode for one exported target', () => {
+    expect(parseCliArgs(['official', '--target', 'openrca-1.0', '--dir', 'exported'])).toEqual({
+      ok: true,
+      command: { command: 'official', mode: 'dir', target: 'openrca-1.0', dir: 'exported' },
+    });
+  });
+
+  it('keeps the optional reason and output file in both modes', () => {
+    expect(
+      parseCliArgs(['official', '--input', 'b.json', '--allow-empty-reason', 'RE3 targets code faults', '--output', 'r.json']),
+    ).toEqual({
+      ok: true,
+      command: {
+        command: 'official',
+        mode: 'bundle',
+        input: 'b.json',
+        allowEmptyReason: 'RE3 targets code faults',
+        output: 'r.json',
+      },
+    });
+    expect(parseCliArgs(['official', '--target', 'rca100', '--dir', 'out', '--output', 'r.json'])).toEqual({
+      ok: true,
+      command: { command: 'official', mode: 'dir', target: 'rca100', dir: 'out', output: 'r.json' },
+    });
+  });
+
+  it('rejects mixing the two modes', () => {
+    const result = parseCliArgs(['official', '--input', 'b.json', '--target', 'rca100', '--dir', 'out']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not both/);
+  });
+
+  it('requires a mode', () => {
+    const result = parseCliArgs(['official']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/requires either --input/);
+  });
+
+  it('requires --dir once --target is given', () => {
+    const result = parseCliArgs(['official', '--target', 'rca100']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--dir/);
+  });
+
+  it('validates --target against the score targets', () => {
+    const result = parseCliArgs(['official', '--target', 'nope', '--dir', 'out']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --target/);
+  });
+
+  it('rejects empty flag values', () => {
+    expect(parseCliArgs(['official', '--input', '']).ok).toBe(false);
+    expect(parseCliArgs(['official', '--target', 'rca100', '--dir', '']).ok).toBe(false);
+    expect(parseCliArgs(['official', '--input', 'b.json', '--allow-empty-reason', '']).ok).toBe(false);
+  });
+
+  it('rejects an unknown flag', () => {
+    const result = parseCliArgs(['official', '--input', 'b.json', '--bogus', 'z']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bogus|unknown/i);
+  });
+});
+
 describe('formatHelp and formatVersion', () => {
   it('lists every command in the help text', () => {
     const help = formatHelp();
-    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'report', 'pack', 'evolve', 'help', 'version']) {
+    for (const cmd of ['source', 'transform', 'case', 'gate', 'export', 'score', 'official', 'report', 'pack', 'evolve', 'help', 'version']) {
       expect(help).toContain(cmd);
     }
   });

@@ -36,9 +36,9 @@ Its job is to close the gap between two things that almost never match:
  ├─────────────────────────────────────────────────────────────────────────┤
  │ 6  EXPORT      OpenRCA 1.0/2.0, RCAEval RE1/RE2/RE3, RCA100, …          │
  ├─────────────────────────────────────────────────────────────────────────┤
- │ 7  VERIFY      Golden Master + mutation testing (external grounding)     │
- ├─────────────────────────────────────────────────────────────────────────┤
- │ 8  EVOLVE      self-evolution loops with human-in-the-loop checkpoints   │
+│ 7  VERIFY      Golden Master + mutations + official metrics (grounding)  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ 8  EVOLVE      self-evolution loops with human-in-the-loop checkpoints   │
  └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -156,8 +156,8 @@ and added in subsequent milestones.
 Self-evolution happens at **dataset-authoring time** (before a case is admitted):
 the system refines its rules and gates based on quarantine and rejection feedback.
 It is **externally anchored** — a pure recursive self-training loop collapses without
-external judgment, so every evolution round must be scored against the Golden Master
-and the mutation suite.
+external judgment, so every evolution round must be scored against the three external
+anchors of section 9: the Golden Master, the mutation suite and the official metrics.
 
 The evolution loop is a **governance layer** (`src/evolution/`), not a generator:
 `proposal.ts` assembles a pending proposal (diff-able rule changes + a regression
@@ -178,7 +178,36 @@ Human-in-the-loop checkpoints (H1–H6) gate the riskiest transitions:
 5. **H5** — arbitrate quarantined samples.
 6. **H6** — re-inspect an anomalous score.
 
-## 9. Non-goals (deliberately out of scope)
+## 9. Verification: well-formed is not the same as scorable
+
+Layer 7 grounds the factory against three external anchors. They answer three different
+questions, and passing two of them says nothing about the third:
+
+| Anchor | Question | Implementation |
+| --- | --- | --- |
+| Golden Master | Are we reproducing the **published artefacts**? | `golden-master/verify.mjs` against shipped SHA-256 anchors |
+| Mutation suite | Do the **gates** intercept a corrupted case? | `MT-01 … MT-18`, 100% interception required |
+| Official metrics | Does the **published scorer** award 1.0 to our export? | `src/score/official.ts` + `scripts/check-official.mjs` |
+
+The third anchor exists because an export can satisfy every structural rule and still
+earn 0.00: the official metric reads ground truth back out of the export with its own
+rules — three regular expressions for OpenRCA 1.0, the directory name for RCAEval, the
+answer-key record for AIOps2025. If the exporter writes a field the official reader
+never looks at, the score is zero and no structural check notices.
+
+`src/score/official.ts` therefore reimplements each **published** metric against the
+export itself and asserts three properties per target:
+
+1. `oraclePerfect` — a known-good export scores 1.0.
+2. `mutationsDegrade` — corrupting the export moves the score down.
+3. `unscoredFacetsInert` — a facet the official metric ignores cannot move the score.
+
+An empty export is reported as `skipped`, never as `passed`; a skip without an explicit
+`--allow-empty-reason` fails. Where no official scorer is published (ITBench NTAM,
+OpenRCA 2.0) the metric is declared `derived` — a faithful reading of the paper, not a
+claim of official parity.
+
+## 10. Non-goals (deliberately out of scope)
 
 - A Prometheus/OTel exporter for production monitoring.
 - An RCA *agent* or root-cause *solver* — we only produce the benchmark a solver runs on.

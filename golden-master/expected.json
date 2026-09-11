@@ -1,6 +1,6 @@
 {
   "irVersion": "2.0",
-  "generatedAt": "2026-09-06",
+  "generatedAt": "2026-09-09",
   "target": "openrca1.0",
   "files": {
     "order-prod/2026_09_06/telemetry/log/case-001.csv": {
@@ -22,6 +22,10 @@
     "order-prod/record.csv": {
       "sha256": "14b7bbbe84d24995c9b8383565adb770c3845b5f3d20adb206b1ddfef0aed28f",
       "bytes": 203
+    },
+    "order-prod/groundtruth.csv": {
+      "sha256": "2d6c33342b7e01d34981e45ab463c8d7df956fa5fbbff1665193b22744dffbe9",
+      "bytes": 334
     }
   },
   "rcaevalRe2Files": {

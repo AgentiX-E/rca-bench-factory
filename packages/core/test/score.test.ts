@@ -69,6 +69,16 @@ describe('checkOpenRcaStructure', () => {
     expect(report.checks.find((c) => c.id === 'answer-key-isolated')?.passed).toBe(false);
   });
 
+  it('fails when a ground-truth row declares no scoring points', () => {
+    const files = openrcaFiles();
+    const path = Object.keys(files).find((p) => p.endsWith('/groundtruth.csv'))!;
+    // A row without the column the official evaluator reads would silently
+    // divide by zero criterion and score the case 0.
+    files[path] = 'task_index,instruction\n1,"find the root cause"\n';
+    const report = checkOpenRcaStructure(files);
+    expect(report.checks.find((c) => c.id === 'scoring-points-present')?.passed).toBe(false);
+  });
+
   it('fails on a wrong metric header', () => {
     const files = openrcaFiles();
     const path = Object.keys(files).find((p) => p.includes('/telemetry/metric/'))!;

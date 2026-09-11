@@ -38,6 +38,15 @@ export type CliCommand =
     }
   | { command: 'export'; target: ExportTarget; suite?: RcaEvalSuite; input: string; outDir: string }
   | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string }
+  | { command: 'official'; mode: 'bundle'; input: string; allowEmptyReason?: string; output?: string }
+  | {
+      command: 'official';
+      mode: 'dir';
+      target: ScoreTargetId;
+      dir: string;
+      allowEmptyReason?: string;
+      output?: string;
+    }
   | { command: 'transform'; input: string; rules: string; output?: string; idField?: string }
   | { command: 'gate'; input: string; target: ScoreTargetId; gateRunId?: string }
   | { command: 'case'; input: string; output?: string }
@@ -224,6 +233,67 @@ function parseScore(args: string[]): CliParseResult {
       ...(v.anchors !== undefined ? { anchors: String(v.anchors) } : {}),
     },
   };
+}
+
+/**
+ * Parse the `official` command.
+ *
+ * Two disjoint modes, because they answer different questions:
+ *
+ *  - `--input <bundle.json>` exports the bundle for every score target and runs
+ *    the whole official-metric regression grid (the end-to-end guarantee).
+ *  - `--target <t> --dir <dir>` runs one target against an already exported
+ *    directory, so a dataset produced elsewhere can still be verified.
+ *
+ * Mixing them is rejected: silently ignoring half the flags would make the
+ * output mean something the user did not ask for.
+ */
+function parseOfficial(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, {
+    input: { type: 'string' },
+    target: { type: 'string' },
+    dir: { type: 'string' },
+    'allow-empty-reason': { type: 'string' },
+    output: { type: 'string' },
+  });
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  if (v.target !== undefined && !isOneOf(String(v.target), SCORE_TARGETS)) {
+    return { ok: false, error: `invalid --target '${v.target}' (expected ${SCORE_TARGETS.join('|')})` };
+  }
+  if (v.input !== undefined && (typeof v.input !== 'string' || v.input === '')) {
+    return { ok: false, error: 'invalid --input <bundle.json>' };
+  }
+  if (v.dir !== undefined && (typeof v.dir !== 'string' || v.dir === '')) {
+    return { ok: false, error: 'invalid --dir <exported-dir>' };
+  }
+  if (v['allow-empty-reason'] !== undefined && (typeof v['allow-empty-reason'] !== 'string' || v['allow-empty-reason'] === '')) {
+    return { ok: false, error: 'invalid --allow-empty-reason <text>' };
+  }
+
+  const input = v.input as string | undefined;
+  const target = v.target as ScoreTargetId | undefined;
+  const dir = v.dir as string | undefined;
+
+  const shared = {
+    ...(v['allow-empty-reason'] !== undefined ? { allowEmptyReason: String(v['allow-empty-reason']) } : {}),
+    ...(v.output !== undefined ? { output: String(v.output) } : {}),
+  };
+
+  if (input !== undefined) {
+    if (target !== undefined || dir !== undefined) {
+      return { ok: false, error: 'official accepts either --input <bundle.json> or --target with --dir, not both' };
+    }
+    return { ok: true, command: { command: 'official', mode: 'bundle', input, ...shared } };
+  }
+  if (target === undefined) {
+    return { ok: false, error: 'official requires either --input <bundle.json> or --target <target> --dir <exported-dir>' };
+  }
+  if (dir === undefined) {
+    return { ok: false, error: 'official requires --dir <exported-dir> when --target is given' };
+  }
+  return { ok: true, command: { command: 'official', mode: 'dir', target, dir, ...shared } };
 }
 
 function parseTransform(args: string[]): CliParseResult {
@@ -519,6 +589,8 @@ export function parseCliArgs(argv: string[]): CliParseResult {
       return parseExport(rest);
     case 'score':
       return parseScore(rest);
+    case 'official':
+      return parseOfficial(rest);
     case 'transform':
       return parseTransform(rest);
     case 'gate':
@@ -532,7 +604,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
     case 'evolve':
       return parseEvolve(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|report|pack|evolve|help|version)` };
+      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|export|score|official|report|pack|evolve|help|version)` };
   }
 }
 
@@ -551,6 +623,7 @@ export function formatHelp(): string {
     '  gate       Run the G1-G5 quality gates on an IR bundle',
     '  export     Export an IR bundle to a target benchmark format',
     '  score      Verify an exported dataset against a target contract',
+    '  official   Run the official-metric oracle and mutation regression',
     '  report     Render coverage, gates and score into an HTML report',
     '  pack       Pack a directory into a reproducible tar.gz with a manifest',
     '  evolve     Propose, approve, reject or roll back an evolution',

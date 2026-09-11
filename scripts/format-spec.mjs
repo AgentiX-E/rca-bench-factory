@@ -118,6 +118,38 @@ const openrca1 = {
       ],
     },
     {
+      path: '{system}/groundtruth.csv',
+      format: 'csv',
+      purpose:
+        'The official `-q` artefact: the answer key in the exact shape `main/evaluate.py` consumes, so the published scorer can be pointed straight at this export.',
+      emitter: 'buildGroundTruthCsv (rows from openRcaTaskIndex + buildScoringPoints)',
+      fields: [
+        {
+          name: 'task_index',
+          type: T.str,
+          required: true,
+          source: 'openRcaTaskIndex({datetime, component, reason})',
+          notes:
+            'One of `task_1`…`task_7` from `main/task_specification.json`. Derived, not chosen: a case carrying all three elements is `task_7`, one carrying only the component is `task_3`.',
+        },
+        {
+          name: 'instruction',
+          type: T.str,
+          required: true,
+          source: 'FaultCase.query ?? ""',
+          notes: 'The same natural-language task text as `query.csv`; the evaluator only needs it to pair rows.',
+        },
+        {
+          name: 'scoring_points',
+          type: T.str,
+          required: true,
+          source: 'buildScoringPoints(taskIndex, elements)',
+          notes:
+            'Multi-line natural-language block rendered from the official templates. Three regular expressions recover the component, reason and datetime from it, so the wording is part of the contract.',
+        },
+      ],
+    },
+    {
       path: '{system}/{YYYY_MM_DD}/telemetry/metric/{caseId}.csv',
       format: 'csv',
       purpose: 'Long-form metric series for one case, sorted by local timestamp.',

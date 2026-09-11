@@ -266,6 +266,53 @@ export type {
   StructureReport,
 } from './score/score.js';
 
+export {
+  OFFICIAL_FACETS,
+  OFFICIAL_METRICS,
+  mutatePrediction,
+  officialMetric,
+  openRcaTimeMatches,
+  oraclePrediction,
+  parseOpenRcaPrediction,
+  parseOpenRcaScoringPoints,
+  parseRcaEvalDirectory,
+  readOfficialGroundTruth,
+  readOfficialSubmission,
+  runAllOfficialRegressions,
+  runOfficialRegression,
+  scoreOfficial,
+} from './score/official.js';
+export type {
+  OfficialCaseScore,
+  OfficialFacet,
+  OfficialFacetVerdict,
+  OfficialGroundTruth,
+  OfficialMetricSpec,
+  OfficialMutationResult,
+  OfficialPrediction,
+  OfficialProvenance,
+  OfficialRegressionCase,
+  OfficialRegressionOptions,
+  OfficialRegressionReport,
+  OfficialRegressionStatus,
+  OfficialScoreReport,
+  OpenRcaScoringPoints,
+} from './score/official.js';
+
+export {
+  buildGroundTruthCsv,
+  buildScoringPoints,
+  hasRootCauseElements,
+  openRcaTaskIndex,
+  OPENRCA_GROUNDTRUTH_HEADER,
+  OPENRCA_SCORING_TEMPLATES,
+  OPENRCA_TASK_INDEXES,
+} from './export/openrca.js';
+export type { OpenRcaTaskIndex } from './export/openrca.js';
+
+export { parseCsvObjects, parseCsvRows, csvColumn } from './util/csv.js';
+export { isRecord, readString, readStringArray, safeJson } from './util/json.js';
+
 export { sha256, sha256Bytes } from './util/hash.js';
 
 export {

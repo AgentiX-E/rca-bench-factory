@@ -147,6 +147,22 @@ describe('normalizeAliases', () => {
     expect(merged.edges).toEqual([{ from: 'a', to: 'c', relation: 'calls' }]);
   });
 
+  it('rewrites an edge whose target is the absorbed entity', () => {
+    const withSameAs: EntityGraph = {
+      entities: [
+        { entityId: 'a', kind: 'service', name: 'a', aliases: [] },
+        { entityId: 'b', kind: 'service', name: 'b', aliases: [] },
+        { entityId: 'c', kind: 'service', name: 'c', aliases: [] },
+      ],
+      edges: [
+        { from: 'a', to: 'b', relation: 'same_as' },
+        { from: 'c', to: 'b', relation: 'calls' },
+      ],
+    };
+    const merged = normalizeAliases(withSameAs);
+    expect(merged.edges).toEqual([{ from: 'c', to: 'a', relation: 'calls' }]);
+  });
+
   it('drops self-referencing edges created by the merge', () => {
     const g: EntityGraph = {
       entities: [
@@ -159,6 +175,25 @@ describe('normalizeAliases', () => {
       ],
     };
     expect(normalizeAliases(g).edges).toEqual([]);
+  });
+
+  it('keeps an endpoint that names an undeclared entity instead of dropping the edge', () => {
+    const g: EntityGraph = {
+      entities: [
+        { entityId: 'a', kind: 'service', name: 'a', aliases: [] },
+        { entityId: 'b', kind: 'service', name: 'b', aliases: [] },
+      ],
+      edges: [
+        { from: 'a', to: 'b', relation: 'same_as' },
+        { from: 'ghost', to: 'b', relation: 'calls' },
+        { from: 'a', to: 'ghost2', relation: 'hosts' },
+      ],
+    };
+    const merged = normalizeAliases(g);
+    expect(merged.edges).toEqual([
+      { from: 'a', to: 'ghost2', relation: 'hosts' },
+      { from: 'ghost', to: 'a', relation: 'calls' },
+    ]);
   });
 
   it('leaves a graph without same_as edges untouched apart from ordering', () => {

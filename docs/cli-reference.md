@@ -17,6 +17,7 @@ and score an exported dataset.
 | `gate` | Run the G1–G5 quality gates on an IR bundle |
 | `export` | Export an IR bundle (`bundle.json`) to OpenRCA 1.0/2.0 / RCAEval / RCA100 / AIOps2025 / Cloud-OpsBench / ITBench |
 | `score` | Score an exported directory against a target field contract |
+| `official` | Run the published metric of a target against an export: oracle + mutation grid |
 | `report` | Render coverage, gates and score into a self-contained HTML report |
 | `pack` | Pack a directory into a byte-reproducible `tar.gz` with a SHA-256 manifest |
 | `evolve` | Propose, approve, reject or roll back a self-evolution (HITL + red lines) |
@@ -98,6 +99,38 @@ rca-bench score --target itbench --dir ./out
 - `--dir` is read recursively into the exported-file map.
 - `--anchors` (optional) adds SHA-256 Golden-Master verification.
 - Exit code is 0 when the report passes, 1 when it fails (so CI can gate on it).
+
+### `rca-bench official`
+
+```text
+rca-bench official --input bundle.json [--output official.json]
+rca-bench official --target openrca-1.0 --dir ./out [--allow-empty-reason 'reason']
+```
+
+Runs the **published metric** of a target - not the field contract - against real
+exporter output, in two disjoint modes:
+
+- `--input <bundle.json>` exports the bundle for **all nine** score targets and
+  runs the whole regression grid on each. This is the end-to-end guarantee.
+- `--target <t> --dir <dir>` runs one target against an already exported
+  directory, so a dataset produced elsewhere can still be verified.
+
+Mixing the two modes is rejected rather than silently ignored.
+
+Every report carries the oracle score, the per-facet mutation grid, the metric
+provenance (`official` for a metric transcribed from the upstream scorer,
+`derived` for one reconstructed from the paper) and any failures. Three
+properties are asserted per case:
+
+| Property | What it proves |
+| --- | --- |
+| `oraclePerfect` | Submitting the exported answer key scores 1.0 - a missing or malformed field breaks it immediately |
+| `mutationsDegrade` | Perturbing a facet the rule scores lowers the score, so the metric is not vacuously returning 1 |
+| `unscoredFacetsInert` | Perturbing a facet the rule ignores does nothing, so the declared facet list is exactly right |
+
+A target that exports zero cases **fails** unless `--allow-empty-reason` states
+why that is legitimate for this dataset, so a broken exporter cannot hide behind
+a skip. Exit code is 0 when no target failed, 1 otherwise.
 
 ### `rca-bench report`
 

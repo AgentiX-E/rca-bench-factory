@@ -43,11 +43,14 @@ jobs:
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
         run: pnpm test:coverage
 
-      - name: Mutation suite (15/15 interception)
+      - name: Mutation suite (gate + export, 100% interception)
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 
       - name: Golden Master verification
         run: node golden-master/verify.mjs
+
+      - name: Official-metric regression on the shipped example
+        run: pnpm official:check
 
       - name: Examples and site data are up to date
         run: pnpm examples:check

@@ -9,6 +9,11 @@ import {
   type BaselineOutcome,
 } from '../src/gates/gates.js';
 import type { IrBundle } from '../src/ir/types.js';
+import { exportAioPs2025 } from '../src/export/aiops2025.js';
+import { exportOpenRca } from '../src/export/openrca.js';
+import { exportRcaEval } from '../src/export/rcaeval.js';
+import { runOfficialRegression } from '../src/score/official.js';
+import type { ScoreTargetId } from '../src/score/score.js';
 import { validBundle, validCase } from './fixtures.js';
 
 /**
@@ -277,4 +282,85 @@ describe('mutation suite', () => {
     expect(escaped, `escaped mutations: ${escaped.join(', ')}`).toEqual([]);
     expect(results.filter((r) => r.intercepted).length).toBe(MUTATIONS.length);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Export-level mutations
+//
+// The gate mutations above prove the gates reject a bad *bundle*. These prove
+// the official-metric regression rejects a bad *export*: every one of them is a
+// corruption a real pipeline could commit (a reworded template, a renamed
+// directory, a truncated artefact) and each has to turn a passing regression
+// into a failing one. A scorer that still reports 1.0 after the answer key has
+// been destroyed is worse than no scorer at all.
+// ---------------------------------------------------------------------------
+
+interface ExportMutation {
+  id: string;
+  description: string;
+  target: ScoreTargetId;
+  apply: (files: Record<string, string>) => Record<string, string>;
+}
+
+const EXPORT_MUTATIONS: ExportMutation[] = [
+  {
+    id: 'MT-16',
+    description: 'reword the OpenRCA scoring_points so the official regexes recover nothing',
+    target: 'openrca-1.0',
+    apply: (files) =>
+      Object.fromEntries(
+        Object.entries(files).map(([path, content]) =>
+          path.endsWith('/groundtruth.csv')
+            ? [
+                path,
+                content
+                  .replace(/root cause occurrence time is within/g, 'the incident started near')
+                  .replace(/predicted root cause component is/g, 'the culprit component is')
+                  .replace(/predicted root cause reason is/g, 'the culprit reason is'),
+              ]
+            : [path, content],
+        ),
+      ),
+  },
+  {
+    id: 'MT-17',
+    description: 'drop the instance index from the RCAEval case directory name',
+    target: 'rcaeval-re2',
+    apply: (files) =>
+      Object.fromEntries(
+        Object.entries(files).map(([path, content]) => [path.replace(/(RE2-[^-]+-[A-Za-z0-9]+)_\d+\//, '$1/'), content]),
+      ),
+  },
+  {
+    id: 'MT-18',
+    description: 'corrupt every AIOps2025 ground truth record so none of them parse',
+    target: 'aiops2025',
+    apply: (files) => ({ ...files, 'groundtruth.jsonl': (files['groundtruth.jsonl'] ?? '').replace(/^\{/gm, '<') }),
+  },
+];
+
+function exportFor(target: ScoreTargetId): Record<string, string> {
+  if (target === 'openrca-1.0') return exportOpenRca(validBundle()).files;
+  if (target === 'rcaeval-re2') return exportRcaEval(validBundle(), 'RE2').files;
+  return exportAioPs2025(validBundle()).files;
+}
+
+describe('export mutation suite', () => {
+  it('passes on the unmutated export of every mutated target', () => {
+    for (const m of EXPORT_MUTATIONS) {
+      expect(runOfficialRegression(m.target, exportFor(m.target)).passed, m.id).toBe(true);
+    }
+  });
+
+  it('contains the full set of declared export mutations', () => {
+    expect(EXPORT_MUTATIONS.map((m) => m.id)).toEqual(['MT-16', 'MT-17', 'MT-18']);
+  });
+
+  for (const m of EXPORT_MUTATIONS) {
+    it(`intercepts ${m.id}: ${m.description}`, () => {
+      const mutated = m.apply(exportFor(m.target));
+      const report = runOfficialRegression(m.target, mutated);
+      expect(report.passed, `${m.id} escaped: ${report.failures.join('; ')}`).toBe(false);
+    });
+  }
 });

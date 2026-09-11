@@ -55,6 +55,12 @@ describe('parseTimestamp', () => {
     expect(r.isoUtc).toBe('2026-09-06T04:05:06.120Z');
   });
 
+  it('shifts a negative offset east, the opposite way to a positive one', () => {
+    const r = parseTimestamp('2026-09-06T04:05:06-05:30', 'iso8601');
+    expect(r.isoUtc).toBe('2026-09-06T09:35:06.000Z');
+    expect(r.offsetMinutes).toBe(-330);
+  });
+
   it('rejects an empty value', () => {
     expect(() => parseTimestamp('   ', 'iso8601')).toThrow(TimeParseError);
   });

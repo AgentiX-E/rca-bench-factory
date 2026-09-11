@@ -17,6 +17,7 @@
     "examples:check": "node scripts/gen-examples.mjs --check",
     "examples:bundle": "node scripts/build-example-bundle.mjs",
     "examples:bundle:check": "node scripts/build-example-bundle.mjs --check",
+    "official:check": "node scripts/check-official.mjs",
     "site:serve": "node scripts/serve-site.mjs"
   },
   "devDependencies": {

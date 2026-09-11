@@ -133,6 +133,18 @@ rca-bench score --target itbench --dir ./out
 | `case-present` | at least one `scenario.json` was emitted |
 | `scenario-shape` | `scenario_name`, `scenario_description`, `scenario_domain`, `scenario_class`, `scenario_complexity` and `scenario_groundtruth.diagnosis` are present |
 
+The structural check answers *is this well-formed*. Whether it is **scorable** is a
+different question, and a different command:
+
+```bash
+rca-bench official --target itbench --dir ./out
+```
+
+It scores the exported answer key with the ITBench diagnosis rule (arXiv 2502.05352
+§4.2): the root-cause entities, the fault-propagation chain and the fault conditions all
+have to match. The metric is labelled **derived**, not `official` — ITBench's NTAM closed
+form is stated in Appendix C.6.3, which is not public, so the pass@1 form is used.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

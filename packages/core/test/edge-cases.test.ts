@@ -195,12 +195,16 @@ describe('additional branch coverage', () => {
     expect(evalExpr('+5', {})).toBe(5);
   });
 
-  it('lets a strict lookup pass through a single unambiguous target', () => {
-    const r = applyRule(
-      { id: 'l', kind: 'lookup', from: 'k', to: 'v', table: { k: 'V' }, strictAmbiguity: true },
-      { k: 'k' },
-    );
-    expect(r).toEqual({ ok: true, fields: { v: 'V' } });
+  it('resolves a lookup by exact key and can never be ambiguous', () => {
+    const rule = { id: 'l', kind: 'lookup', from: 'k', to: 'v', table: { k: 'V', other: 'W' }, default: 'D' };
+    expect(applyRule(rule, { k: 'k' })).toEqual({ ok: true, fields: { v: 'V' } });
+    // Table keys are unique, so one key resolves to exactly one target or falls
+    // through to the default; there is no coin flip to be strict about.
+    expect(applyRule(rule, { k: 'unknown' })).toEqual({ ok: true, fields: { v: 'D' } });
+    expect(applyRule({ id: 'l', kind: 'lookup', from: 'k', to: 'v', table: {} }, { k: 'k' })).toMatchObject({
+      ok: false,
+      code: 'LOOKUP_MISS',
+    });
   });
 
   it('quarantines a record whose template library is malformed', () => {

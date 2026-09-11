@@ -30,6 +30,9 @@ import {
   renderPackManifest,
   renderPage,
   runAllGates,
+  runAllOfficialRegressions,
+  runOfficialRegression,
+  SCORE_TARGET_IDS,
   scoreExport,
   sha256Bytes,
   transformBatch,
@@ -45,6 +48,8 @@ import type {
   FileSignalKind,
   G1Options,
   IrBundle,
+  OfficialRegressionOptions,
+  OfficialRegressionReport,
   ScoreTargetId,
   SignalKind,
   SourceRecord,
@@ -251,6 +256,48 @@ async function runScore(cmd: Extract<CliCommand, { command: 'score' }>, ctx: Ctx
 }
 
 /**
+ * Run the official-metric regression.
+ *
+ * The report is emitted in full: the oracle score, the whole mutation grid and
+ * the metric provenance (`official` for a metric transcribed from the upstream
+ * scorer, `derived` for one reconstructed from the paper). Hiding any of it
+ * would defeat the point of the command, which is to make the claim
+ * "our export scores 1.0 under the upstream rule" falsifiable.
+ */
+async function runOfficial(cmd: Extract<CliCommand, { command: 'official' }>, ctx: Ctx): Promise<number> {
+  const options: OfficialRegressionOptions = {
+    ...(cmd.allowEmptyReason !== undefined ? { allowEmptyReason: cmd.allowEmptyReason } : {}),
+  };
+
+  let reports: OfficialRegressionReport[];
+  if (cmd.mode === 'bundle') {
+    const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
+    const bundle = irBundleSchema.parse(JSON.parse(raw)) as IrBundle;
+    const exports = Object.fromEntries(
+      SCORE_TARGET_IDS.map((target) => [target, exportForScoreTarget(bundle, target)]),
+    ) as Record<ScoreTargetId, Record<string, string>>;
+    reports = runAllOfficialRegressions(exports, options);
+  } else {
+    const files = await readFilesRecursive(resolve(ctx.cwd, cmd.dir));
+    reports = [runOfficialRegression(cmd.target, files, options)];
+  }
+
+  const counts = {
+    passed: reports.filter((r) => r.status === 'passed').length,
+    skipped: reports.filter((r) => r.status === 'skipped').length,
+    failed: reports.filter((r) => r.status === 'failed').length,
+  };
+  const payload = JSON.stringify({ passed: counts.failed === 0, counts, reports }, null, 2) + '\n';
+
+  if (cmd.output !== undefined) {
+    await writeFile(resolve(ctx.cwd, cmd.output), payload);
+  } else {
+    ctx.stdout(payload);
+  }
+  return counts.failed === 0 ? 0 : 1;
+}
+
+/**
  * Pack a directory into a reproducible archive.
  *
  * The manifest is listed from the pack's own root, so a `--prefix` is stripped
@@ -426,6 +473,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
         return await runExport(parsed.command, ctx);
       case 'score':
         return await runScore(parsed.command, ctx);
+      case 'official':
+        return await runOfficial(parsed.command, ctx);
       case 'transform':
         return await runTransform(parsed.command, ctx);
       case 'gate':

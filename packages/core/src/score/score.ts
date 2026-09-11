@@ -1,5 +1,15 @@
 import { sha256 } from '../util/hash.js';
+import { isRecord, safeJson } from '../util/json.js';
+import { parseCsvObjects } from '../util/csv.js';
+import { parseOpenRcaScoringPoints } from './official.js';
+import { OPENRCA_GROUNDTRUTH_HEADER } from '../export/openrca.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
+
+/** Number of scoring criteria an OpenRCA `scoring_points` block declares. */
+function parseOpenRcaScoringCount(text: string): number {
+  const points = parseOpenRcaScoringPoints(text);
+  return points.components.length + points.reasons.length + points.times.length;
+}
 
 // Re-exported so the public surface does not move: `sha256` has always been part
 // of the scoring API, it just lives next to the other hashing code now.
@@ -107,6 +117,7 @@ export function checkOpenRcaStructure(files: Record<string, string>): StructureR
   const checks: ScoreCheck[] = [];
   const queryFiles = pathsEndingWith(files, '/query.csv');
   const recordFiles = pathsEndingWith(files, '/record.csv');
+  const groundTruthFiles = pathsEndingWith(files, '/groundtruth.csv');
   const metricFiles = Object.keys(files).filter((p) => p.includes('/telemetry/metric/'));
   const logFiles = Object.keys(files).filter((p) => p.includes('/telemetry/log/'));
   const traceFiles = Object.keys(files).filter((p) => p.includes('/telemetry/trace/'));
@@ -170,6 +181,53 @@ export function checkOpenRcaStructure(files: Record<string, string>): StructureR
       'trace-header',
       traceHeader === undefined || csvHeader(traceHeader).join(',') === OPENRCA_TRACE_HEADER,
       `expected '${OPENRCA_TRACE_HEADER}'`,
+    ),
+  );
+
+  // The official evaluator (`python -m main.evaluate -p ... -q ...`) reads the
+  // ground truth from the `-q` file, so an export without `groundtruth.csv`
+  // cannot be scored by it at all.
+  checks.push(
+    check('groundtruth-csv', groundTruthFiles.length > 0, `found ${groundTruthFiles.length} groundtruth.csv`),
+  );
+
+  const gtHeader = first(files, groundTruthFiles);
+  checks.push(
+    check(
+      'groundtruth-header',
+      gtHeader !== undefined && csvHeader(gtHeader).join(',') === OPENRCA_GROUNDTRUTH_HEADER,
+      `expected '${OPENRCA_GROUNDTRUTH_HEADER}'`,
+    ),
+  );
+
+  // Every row must declare at least one scoring point, otherwise the official
+  // evaluator divides by zero criterion and silently scores the case 0.
+  const emptyScoring = groundTruthFiles.flatMap((path) =>
+    parseCsvObjects(files[path]!).filter((row) => parseOpenRcaScoringCount(row['scoring_points'] ?? '') === 0),
+  );
+  checks.push(
+    check(
+      'scoring-points-present',
+      groundTruthFiles.length > 0 && emptyScoring.length === 0,
+      `${emptyScoring.length} row(s) declare no scoring point`,
+    ),
+  );
+
+  // The official evaluator raises when the two files disagree in length, so a
+  // misaligned export fails at evaluation time rather than at export time.
+  const gtRowCount = groundTruthFiles.reduce(
+    (sum, path) => sum + Math.max(0, parseCsvObjects(files[path]!).length),
+    0,
+  );
+  const recordRowCount = recordFiles.reduce(
+    (sum, path) => sum + Math.max(0, parseCsvObjects(files[path]!).length),
+    0,
+  );
+  checks.push(
+    check(
+      'row-alignment',
+      gtRowCount === recordRowCount,
+      `groundtruth rows=${gtRowCount} record rows=${recordRowCount}`,
     ),
   );
 
@@ -238,17 +296,6 @@ function rca100CaseId(topoPath: string): string {
   return topoPath.slice('cases/'.length, topoPath.length - '/topology.json'.length);
 }
 
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Verify an RCA100 export against its field contract.

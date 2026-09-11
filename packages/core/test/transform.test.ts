@@ -101,6 +101,11 @@ describe('map strategy', () => {
     });
   });
 
+  it('writes the default back onto the source field when no target is declared', () => {
+    const untargeted = { id: 'm', kind: 'map' as const, from: 'level', mapping: { W: 'WARN' }, default: 'INFO' };
+    expect(applyMap(untargeted, { level: 'TRACE' })).toEqual({ ok: true, fields: { level: 'INFO' } });
+  });
+
   it('quarantines a missing field', () => {
     expect(applyMap(rule, {})).toMatchObject({ ok: false, code: 'MISSING_INPUT' });
   });
@@ -230,6 +235,12 @@ describe('expr strategy', () => {
   it('rejects division by zero instead of returning Infinity', () => {
     const r = applyExpr({ id: 'e', kind: 'expr', to: 'out', expression: 'a / b' }, { a: 1, b: 0 });
     expect(r).toMatchObject({ ok: false, code: 'EXPR_FAILED' });
+  });
+
+  it('rejects a numeric literal with two decimal points', () => {
+    // `Number('1.2.3')` is NaN, and the lexer has to reject it rather than
+    // silently propagating NaN into the derived field.
+    expect(() => evalExpr('1.2.3 + 1', {})).toThrow(/malformed number/);
   });
 
   it('rejects trailing garbage', () => {
