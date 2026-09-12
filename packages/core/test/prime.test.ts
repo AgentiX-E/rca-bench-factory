@@ -212,6 +212,21 @@ describe('ingestPrimeDataset · format and layout resolution', () => {
     expect(result.bundle.signals[BASE_CASE.caseId]).toHaveLength(3);
   });
 
+  it('splits a tab-delimited header when the layout is inferred', () => {
+    // The delimiter follows the format, and inference walks the same code path
+    // as a declared format: a .tsv name with no explicit format must still be
+    // split on tabs, not commas.
+    const tsv = [
+      'timestamp\tservice\tmetric_name\tvalue',
+      '2025-03-01T00:09:00.000Z\tts-order-service\tcpu_usage\t0.41',
+    ].join('\n') + '\n';
+    const result = ingestPrimeDataset({ 'metrics.tsv': tsv }, options());
+    if (!result.ok) throw new Error(result.error);
+    const signal = result.bundle.signals[BASE_CASE.caseId]?.[0];
+    expect(signal?.signal).toBe('metric');
+    expect(signal?.payload).toEqual({ kind: 'metric', name: 'cpu_usage', value: 0.41 });
+  });
+
   it('returns no signal kind for a bare name that names no kind', () => {
     // `extensionOf('series')` is empty, so the stem is the whole name and it
     // matches no kind - the file must be quarantined, not guessed at.
@@ -253,6 +268,52 @@ describe('ingestPrimeDataset · format and layout resolution', () => {
     );
     if (!result.ok) throw new Error(result.error);
     expect(result.report[0]?.quarantine[0]?.reason).toMatch(/no readable header/i);
+  });
+
+  it('quarantines a delimited file that holds no non-blank line at all', () => {
+    // Nothing to split, so no header can be inferred. The file is quarantined
+    // with the same reason a headerless file gets, rather than being treated as
+    // an empty file that silently contributed zero signals.
+    const result = ingestPrimeDataset(
+      { 'metrics.csv': '\n\n   \n' },
+      options({
+        extraEntities: [ORDER_SERVICE_ENTITY],
+        cases: [{ ...BASE_CASE, files: [{ path: 'metrics.csv', format: 'csv', signalKind: 'metric' }] }],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.report[0]?.signals).toBe(0);
+    expect(result.report[0]?.quarantine[0]?.reason).toBe(
+      "'metrics.csv' has no readable header to infer columns from",
+    );
+  });
+
+  it('reports the fields a detected layout is missing, not a generic rejection', () => {
+    // The header carries a timestamp column and a metric-name column but no
+    // value column. Detection succeeds and returns an incomplete layout; the
+    // message must name the missing field so the caller knows which column to
+    // add, rather than just "no readable header".
+    const csv = [
+      'time,indicator,svc',
+      '2025-03-01T00:09:00.000Z,cpu_usage,ts-order-service',
+    ].join('\n') + '\n';
+    const result = ingestPrimeDataset(
+      { 'metrics.csv': csv },
+      options({
+        extraEntities: [ORDER_SERVICE_ENTITY],
+        cases: [
+          {
+            ...BASE_CASE,
+            files: [{ path: 'metrics.csv', format: 'csv', signalKind: 'metric' }],
+          },
+        ],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.report[0]?.signals).toBe(0);
+    expect(result.report[0]?.quarantine[0]?.reason).toBe(
+      "'metrics.csv' is missing required column(s): metricValue",
+    );
   });
 
   it('quarantines a JSON file that does not parse', () => {
@@ -657,7 +718,80 @@ describe('ingestPrimeDataset · case routing', () => {
   });
 });
 
+describe('ingestPrimeDataset · file routing', () => {
+  it('routes to the first catch-all when no case declares prefixes', () => {
+    // Two prefixless cases are both catch-alls. Without a selective match the
+    // fallback is the first one, and the second is then read nothing at all -
+    // which the hard-error channel reports rather than hiding.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        extraEntities: [ORDER_SERVICE_ENTITY],
+        cases: [
+          { ...BASE_CASE, caseId: 'first-catch-all' },
+          { ...BASE_CASE, caseId: 'second-catch-all' },
+        ],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.report.map((r) => [r.caseId, r.files])).toEqual([
+      ['first-catch-all', ['metrics.csv']],
+      ['second-catch-all', []],
+    ]);
+    expect(result.hardErrors).toEqual([expect.stringMatching(/second-catch-all.*no files/)]);
+  });
+
+  it('selects the case whose prefix matches even when a catch-all is listed first', () => {
+    // The catch-all must not swallow a file a selective case claims: ordering
+    // in the descriptor is not routing priority.
+    const files = { 'case-b/metrics.csv': METRIC_CSV };
+    const result = ingestPrimeDataset(
+      files,
+      options({
+        extraEntities: [ORDER_SERVICE_ENTITY],
+        cases: [
+          { ...BASE_CASE, caseId: 'catch-all' },
+          { ...BASE_CASE, caseId: 'selective', pathPrefixes: ['case-b/'] },
+        ],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.report.map((r) => [r.caseId, r.files])).toEqual([
+      ['catch-all', []],
+      ['selective', ['case-b/metrics.csv']],
+    ]);
+  });
+});
+
 describe('ingestPrimeDataset · window derivation', () => {
+  it('falls back to the default lead when none is supplied', () => {
+    // The default is part of the contract, not an implementation detail: a
+    // caller who omits the knob gets a deterministic 10-minute lead.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [ORDER_SERVICE_ENTITY], leadMs: undefined, lagMs: undefined }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.cases[0]?.window).toEqual({
+      start: '2025-03-01T00:00:00.000Z',
+      end: '2025-03-01T00:20:00.000Z',
+    });
+  });
+
+  it('defaults the lag to the lead when only the lead is supplied', () => {
+    // Asymmetric windows are the exception; the common case is symmetric, so
+    // `lagMs` follows `leadMs` rather than falling back independently.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [ORDER_SERVICE_ENTITY], leadMs: 60_000, lagMs: undefined }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.cases[0]?.window).toEqual({
+      start: '2025-03-01T00:09:00.000Z',
+      end: '2025-03-01T00:11:00.000Z',
+    });
+  });
+
   it('derives the window from the lead and lag around the injection time', () => {
     const result = ingestPrimeDataset(METRIC_FILE, options({ leadMs: 60_000, lagMs: 120_000 }));
     if (!result.ok) throw new Error(result.error);
@@ -724,6 +858,80 @@ describe('ingestPrimeDataset · entity graph', () => {
     expect(result.bundle.cases[0]?.groundTruth.rootCauseEntityId).toBe('service:tt/ts-db');
   });
 
+  // The next four cases exist as a set. "Ambiguous" and "unresolvable" are
+  // different diagnoses with opposite remedies -- disambiguate versus declare --
+  // so the ingest must never report one when it means the other. A collision can
+  // arrive through an entity's name OR through one of its aliases, because
+  // resolution consults both; a check that only compares names will silently
+  // fall through to the unresolvable branch and give the operator the wrong fix.
+  it('reports an alias collision as ambiguous, not as unresolvable', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        cases: [{ ...BASE_CASE, component: 'ts-db' }],
+        extraEntities: [
+          { entityId: 'service:tt/ts-db', kind: 'service', name: 'ts-db', namespace: 'tt', aliases: [] },
+          { entityId: 'pod:tt/db-pod-1', kind: 'pod', name: 'db-pod-1', namespace: 'tt', aliases: ['ts-db'] },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/is ambiguous/);
+    expect(result.error).toMatch(/service:tt\/ts-db/);
+    expect(result.error).toMatch(/pod:tt\/db-pod-1/);
+    // The remedy for a collision is disambiguation. Saying "declare it" would
+    // send the operator to add the very label that is already contested.
+    expect(result.error).not.toMatch(/does not resolve/);
+  });
+
+  it('reports a name collision as ambiguous and names every claimant', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        cases: [{ ...BASE_CASE, component: 'ts-db' }],
+        extraEntities: [
+          { entityId: 'service:tt/ts-db', kind: 'service', name: 'ts-db', namespace: 'tt', aliases: [] },
+          { entityId: 'pod:tt/ts-db', kind: 'pod', name: 'ts-db', namespace: 'tt', aliases: [] },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/is ambiguous/);
+    expect(result.error).toMatch(/pod:tt\/ts-db/);
+    expect(result.error).toMatch(/service:tt\/ts-db/);
+    expect(result.error).not.toMatch(/does not resolve/);
+  });
+
+  it('still says a component resolves when exactly one entity claims it', () => {
+    // The positive control for the two cases above: a single claimant is not a
+    // collision, and the ingest must resolve it rather than refusing.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        cases: [{ ...BASE_CASE, component: 'ts-db' }],
+        extraEntities: [
+          { entityId: 'service:tt/ts-db', kind: 'service', name: 'ts-db', namespace: 'tt', aliases: ['ts-db-master'] },
+        ],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.cases[0]?.groundTruth.rootCauseEntityId).toBe('service:tt/ts-db');
+  });
+
+  it('tells the caller to declare an entity only when none claims the name', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ cases: [{ ...BASE_CASE, component: 'ts-nowhere-service' }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/does not resolve/);
+    expect(result.error).toMatch(/declare it via extraEntities/);
+    expect(result.error).not.toMatch(/is ambiguous/);
+  });
+
   it('merges a service seen in two files into one entity', () => {
     const result = ingestPrimeDataset(
       { 'metrics.csv': METRIC_CSV, 'logs/logs.csv': LOG_CSV },
@@ -771,6 +979,54 @@ describe('ingestPrimeDataset · entity graph', () => {
     );
     if (!result.ok) throw new Error(result.error);
     expect(result.bundle.graph.entities.filter((e) => e.name === 'ts-order-service')).toHaveLength(1);
+  });
+
+  it('orders distinct edges deterministically', () => {
+    // The module promises that identical input yields an identical bundle, and
+    // edges are emitted sorted. Two distinct edges are the minimum that makes
+    // the ordering observable: with one edge (or two duplicates, which collapse)
+    // any order would look correct.
+    const edges = [
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-db', relation: 'calls' as const },
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-cache', relation: 'calls' as const },
+    ];
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        extraEntities: [
+          { entityId: 'service:tt/ts-db', kind: 'service', name: 'ts-db', namespace: 'tt', aliases: [] },
+          { entityId: 'service:tt/ts-cache', kind: 'service', name: 'ts-cache', namespace: 'tt', aliases: [] },
+        ],
+        // Declared out of order, so a pass-through implementation would be caught.
+        extraEdges: edges,
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.graph.edges).toEqual([
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-cache', relation: 'calls' },
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-db', relation: 'calls' },
+    ]);
+  });
+
+  it('refuses a malformed edge that the graph schema rejects', () => {
+    // `dedupeEdges` normalises duplicates, not validity: an edge carrying a
+    // relation outside the closed set survives graph construction and is caught
+    // at the schema finish line. That path must reject, never emit.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        extraEdges: [
+          {
+            from: 'service:tt/ts-order-service',
+            to: 'service:tt/ts-db',
+            relation: 'bogus' as never,
+          },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/assembled bundle failed validation:/);
   });
 
   it('refuses an ambiguous component name instead of guessing which entity it means', () => {

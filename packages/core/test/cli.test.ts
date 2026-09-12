@@ -187,6 +187,28 @@ describe('parseCliArgs - ingest', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/--system/);
   });
+
+  it('surfaces the flag parser error for an unknown option', () => {
+    // `parseFlags` throws before any field validation runs, so this path is
+    // distinct from "a required flag is missing". The parser's own wording is
+    // relayed verbatim rather than reworded, so the caller can tell which layer
+    // rejected the invocation.
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--bogus']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--bogus/);
+  });
+
+  it('surfaces the flag parser error when a flag is given no value', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--cases/);
+  });
+
+  it('surfaces the flag parser error for an unexpected positional', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', 'stray']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toBe('');
+  });
 });
 
 describe('parseCliArgs - export', () => {

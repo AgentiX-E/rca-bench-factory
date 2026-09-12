@@ -55,6 +55,9 @@ jobs:
       - name: Examples and site data are up to date
         run: pnpm examples:check
 
+      - name: README usage sample runs against the built package
+        run: node scripts/check-readme-sample.mjs
+
       - name: Example pack is up to date
         run: pnpm examples:bundle:check
 

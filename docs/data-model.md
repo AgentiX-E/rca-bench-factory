@@ -77,7 +77,7 @@ interface QualityGateReport {
   irVersion: string;
   results: GateResult[];                       // G1…G5
   finalStatus: 'admitted' | 'quarantined' | 'rejected';
-  mutationTestPassed?: boolean;                // true only when the mutation suite passed
+  mutationTestPassed?: boolean;                // carried through from the caller-supplied meta; no CLI path sets it
 }
 ```
 

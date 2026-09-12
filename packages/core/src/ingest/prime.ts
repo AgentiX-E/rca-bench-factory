@@ -1,5 +1,10 @@
 import { ISO_UTC_PATTERN } from '../util/time.js';
-import { entityId as buildEntityId, indexGraph, resolveEntityRef } from '../entity/graph.js';
+import {
+  entityId as buildEntityId,
+  findAmbiguousAliases,
+  indexGraph,
+  resolveEntityRef,
+} from '../entity/graph.js';
 import { detectFileLayout, ingestFile, type FileFormat, type FileLayout, type FileSignalKind } from './file.js';
 import { irBundleSchema } from '../ir/schema.js';
 import { parseFaultSpec, type FaultSpec } from '../fault/collector.js';
@@ -229,7 +234,7 @@ function splitHeader(line: string, delimiter: string): string[] {
   let cell = '';
   let inQuotes = false;
   for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
+    const ch = line[i]!;
     if (inQuotes) {
       if (ch === '"') {
         if (line[i + 1] === '"') {
@@ -386,24 +391,31 @@ function routeFiles(
   cases: readonly PrimeCaseSource[],
 ): { routed: Map<string, string[]>; unclaimed: string[] } {
   const routed = new Map<string, string[]>(cases.map((c) => [c.caseId, []]));
-  const selective = cases.filter((c) => (c.pathPrefixes ?? []).length > 0);
+  // A case is selective when it declares at least one prefix, and a catch-all
+  // otherwise; the two filters are exact complements, so every case lands in
+  // exactly one list. Narrowing `pathPrefixes` into a non-optional field here
+  // saves a `??` per lookup in the loop below.
+  const selective = cases
+    .filter((c) => c.pathPrefixes !== undefined && c.pathPrefixes.length > 0)
+    .map((c) => ({ caseId: c.caseId, pathPrefixes: c.pathPrefixes! }));
   // A prefixless case is a catch-all: it claims whatever no selective case did.
   // Every prefixless case is considered, not just the first, so a descriptor
   // that lists a selective case before a catch-all still routes correctly.
-  const catchAlls = cases.filter((c) => (c.pathPrefixes ?? []).length === 0);
+  const catchAlls = cases.filter((c) => c.pathPrefixes === undefined || c.pathPrefixes.length === 0);
   const unclaimed: string[] = [];
 
   for (const path of [...paths].sort((a, b) => a.localeCompare(b))) {
+    // The fallback is load-bearing, not defensive: a descriptor made up entirely
+    // of selective cases has *no* catch-all, and a file none of them claims is
+    // then unclaimed by design. That is why the undefined branch below is real.
     const owner =
-      selective.find((c) => (c.pathPrefixes ?? []).some((p) => path.startsWith(p))) ?? catchAlls[0];
-    // `validateDescriptor` guarantees at least one case, so `catchAlls[0]` is
-    // defined whenever no selective case matched. Only a descriptor made up
-    // entirely of selective cases can leave a file unclaimed.
+      selective.find((c) => c.pathPrefixes.some((p) => path.startsWith(p))) ?? catchAlls[0];
     if (owner === undefined) {
       unclaimed.push(path);
       continue;
     }
-    (routed.get(owner.caseId) as string[]).push(path);
+    // `routed` above seeded a bucket for every case, so this lookup is total.
+    routed.get(owner.caseId)!.push(path);
   }
   unclaimed.sort((a, b) => a.localeCompare(b));
   return { routed, unclaimed };
@@ -517,7 +529,9 @@ export function ingestPrimeDataset(
   for (const [index, spec] of options.cases.entries()) {
     const fault = descriptor.faults[index] as FaultSpec;
 
-    const filesForCase = routed.get(spec.caseId) ?? [];
+    // `routeFiles` inserts a bucket for every case, and `options.cases` is the
+    // same list it was given, so this lookup is total.
+    const filesForCase = routed.get(spec.caseId)!;
     if (filesForCase.length === 0) {
       hardErrors.push(
         `case '${spec.caseId}': no files matched; the case was not read (unclaimed: ${unclaimed.length})`,
@@ -590,29 +604,43 @@ export function ingestPrimeDataset(
     edges: dedupeEdges(options.extraEdges ?? []),
   };
 
-  // Resolve each root cause against the finished graph. A dangling reference is
-  // a descriptor bug and must be loud here, not a G2 violation later.
+  // Resolve each root cause onto the entity the guard above vouched for.
+  //
+  // Ambiguity is the only way this can still fail, and it must be tested over
+  // *aliases*, not just names: `resolveEntityRef` resolves through `byAlias`, so
+  // a collision can arrive via any entity's alias. A names-only check would let
+  // an alias collision through and report it as unresolvable -- telling the
+  // caller to "declare" a label that is already contested, which cannot help.
+  // `findAmbiguousAliases` owns this rule; reuse it rather than restating it.
+  //
+  // Past this check the resolution below is total, which is why there is no
+  // null branch: the guard admitted only components that telemetry or
+  // `extraEntities` vouches for, and registered `serviceEntity(system, name)`
+  // for each, so `byAlias` always has exactly one hit.
   const index = indexGraph(graph);
+  const ownersByAlias = new Map(
+    findAmbiguousAliases(graph).map((a) => [a.alias, a.owners] as const),
+  );
   for (const fc of cases) {
     const component = fc.groundTruth.rootCauseComponent;
-    // A name claimed by more than one entity is ambiguous: resolving it would
-    // need a guess, so the caller is asked to disambiguate instead. Reporting
-    // the two ids is far more useful than the generic dangling-reference error.
-    const owners = graph.entities.filter((e) => e.name.toLowerCase() === component.toLowerCase());
-    if (owners.length > 1) {
+    const owners = ownersByAlias.get(component.toLowerCase());
+    if (owners !== undefined) {
       return {
         ok: false,
-        error: `case '${fc.caseId}': root-cause component '${component}' is ambiguous; it names ${owners.map((o) => o.entityId).join(', ')}`,
+        error: `case '${fc.caseId}': root-cause component '${component}' is ambiguous; it names ${owners.join(', ')}`,
       };
     }
-    const resolved = resolveEntityRef(component, index);
-    if (resolved === null) {
-      return {
-        ok: false,
-        error: `case '${fc.caseId}': root-cause component '${fc.groundTruth.rootCauseComponent}' does not resolve to an entity in the graph`,
-      };
-    }
-    fc.groundTruth.rootCauseEntityId = resolved;
+    // Past the ambiguity check this reference has exactly one claimant, so the
+    // lookup is total. `resolveEntityRef` is fallible by contract -- it returns
+    // null for an unknown reference and for an ambiguous one -- and the check
+    // above has already ruled out both causes. The cast records *why* the
+    // fallible call cannot fail here rather than adding a branch that no input
+    // can reach. If the graph-construction above ever stops registering a
+    // service for every vouched name, this line becomes a type error instead of
+    // silently writing an empty root cause that only the G2 gate would catch.
+    fc.groundTruth.rootCauseEntityId = resolveEntityRef(component, index) as NonNullable<
+      ReturnType<typeof resolveEntityRef>
+    >;
   }
 
   const bundle: IrBundle = { irVersion: IR_VERSION, graph, cases, signals: signalsByCase };

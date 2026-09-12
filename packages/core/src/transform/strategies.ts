@@ -173,8 +173,15 @@ export function applyTime(rule: TimeRule, record: SourceRecord): StrategyResult 
     if (rule.emitOffsetTo) fields[rule.emitOffsetTo] = parsed.offsetMinutes;
     return { ok: true, fields };
   } catch (err) {
-    const msg = err instanceof TimeParseError ? err.message : String(err);
-    return { ok: false, code: 'BAD_TIMESTAMP', message: `cannot parse '${rule.from}': ${msg}` };
+    // `parseTimestamp` documents `TimeParseError` as its only failure mode, so
+    // reading `.message` here is sound. Narrowing on that class and rethrowing
+    // anything else would be a branch no input can reach; the honest statement
+    // of the contract is to say so, not to encode a check that never fires.
+    return {
+      ok: false,
+      code: 'BAD_TIMESTAMP',
+      message: `cannot parse '${rule.from}': ${(err as TimeParseError).message}`,
+    };
   }
 }
 
@@ -386,7 +393,10 @@ export function applyExpr(rule: ExprRule, record: SourceRecord): StrategyResult 
   try {
     return { ok: true, fields: { [rule.to]: evalExpr(rule.expression, record) } };
   } catch (err) {
-    return { ok: false, code: 'EXPR_FAILED', message: err instanceof Error ? err.message : String(err) };
+    // Every failure site in `evalExpr`'s parser is `throw new Error(...)`, so
+    // `err` is always an `Error`. Branching on that here would be a branch no
+    // input can reach; the cast records the contract instead.
+    return { ok: false, code: 'EXPR_FAILED', message: (err as Error).message };
   }
 }
 

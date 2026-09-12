@@ -26,10 +26,10 @@ before the layer above it is meaningful.
 
 ## L3 — Gate and export soundness (mutation testing)
 
-A 15-mutation suite corrupts a known-good case and asserts the gates intercept
-**100%** of mutations, and a further 3-mutation suite corrupts the *exported
-artefacts* and asserts the official-metric regression intercepts them. The
-current matrix:
+An 18-mutation suite of two halves: **MT-01…MT-15** corrupt a known-good case and
+assert the gates intercept **100%** of them, and **MT-16…MT-18** corrupt the
+*exported artefacts* and assert the official-metric regression intercepts them.
+The current matrix:
 
 | Id | Mutation | Caught by |
 | --- | --- | --- |
@@ -53,13 +53,21 @@ current matrix:
 | MT-18 | Corrupt every AIOps2025 ground-truth record | official regression (no ground truth read) |
 
 If **any** mutation slips through, the gates are broken and must be fixed before any
-export is trusted. `QualityGateReport.mutationTestPassed` is `true` only when the
-full suite passed.
+export is trusted. `test/mutation.test.ts` asserts the suite results directly; the
+`mutationTestPassed` field on `QualityGateReport` is carried through from `meta`
+when the caller supplies it, and is **absent** from CLI output otherwise.
 
 ## L4 — Official reproduction (Golden Master, official metrics and round trip)
 
-- `golden-master/fetch-and-verify.sh` downloads official data from its canonical
-  source and checks it against shipped anchors (`expected.json` + checksums).
+- `golden-master/verify.mjs` re-runs every exporter against the self-contained
+  fixture in `fixture.json` and checks the output against the committed anchors in
+  `expected.json`, byte for byte (6 OpenRCA + 4 RCAEval files).
+- `golden-master/fetch-and-verify.sh` runs that self-contained check, then prints
+  the per-dataset instructions for repeating it against official data you have
+  downloaded yourself. It performs **no network access**: fetching is left to the
+  operator, who is responsible for the license terms in `THIRD-PARTY-NOTICES.md`.
+  Treating the self-anchored check as if it validated external data would be a
+  category error — it can only prove our output is stable, not that it is right.
 - Reproduced outputs must match within stated tolerances (byte-exact for CSV layout,
   value-tolerant for floating-point metrics).
 - **Official-metric regression** (`pnpm official:check`, and
@@ -91,8 +99,9 @@ full suite passed.
     file claimed by no case is reported, not dropped.
   - A case that was never actually read is reported in `hardErrors`; a reproduction
     with non-empty `hardErrors` does not count as complete for that case.
-  - Licensed corpora are never vendored: CI fetches them out of band and
-    `golden-master/` keeps checksum anchors only.
+  - Licensed corpora are never vendored: they stay out of the repository and
+    `golden-master/` keeps checksum anchors only. Nothing in the default CI path
+    downloads them, so the round trip is exercised against the operator's own copy.
 
 ## L5 — End-to-end scenarios and HITL budget
 

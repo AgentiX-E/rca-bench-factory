@@ -220,15 +220,27 @@ The candidate regressed, so `regression.passed` is `false` and the proposal stay
 3. a failed or rejected proposal marks its affected cases **stale** for re-run
    (`evolve stale --cases '["case-001"]'`).
 
-Checkpoints: **H1** source schema · **H2** LLM-generated rules · **H3** ground-truth labels ·
-**H4** quarantine disposition · **H5** gate overrides · **H6** final release.
+Checkpoints — the authoritative list is `ACTION_TO_GATE` in
+`packages/core/src/evolution/hitl.ts`:
+
+| Gate | Guards | Actions routed to it |
+| --- | --- | --- |
+| **H1** | Cold-start rule | `cold-start-rule` |
+| **H2** | Entity normalisation | `entity-normalization` |
+| **H3** | Ground truth | `ground-truth` |
+| **H4** | Rule and ground-truth evolution | `rule-evolution`, `gt-evolution` |
+| **H5** | Quarantine arbitration | `quarantine-arbitration` |
+| **H6** | Score anomaly | `score-anomaly` |
 
 ## Verification, not vibes
 
 Four mechanisms turn "looks right" into evidence:
 
-1. **Golden Master** — `golden-master/fetch-and-verify.sh` downloads the official artefacts and
-   checks them against shipped checksum anchors. The factory ships **verification anchors**, not
+1. **Golden Master** — `golden-master/verify.mjs` re-runs the exporters against the
+   self-contained fixture and diffs the result against committed anchors
+   (`expected.json`), byte for byte. `fetch-and-verify.sh` runs that check and then
+   prints how to repeat it against official data you download yourself; the script
+   itself never touches the network. The factory ships **verification anchors**, not
    licensed corpus data.
 2. **Mutation testing** — the `MT-01 … MT-18` suite corrupts a known-good case and asserts the
    gates intercept **100%** of mutations. A mutation that slips through means the *gates* are

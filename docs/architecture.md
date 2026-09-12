@@ -141,15 +141,21 @@ A case is admitted to a benchmark only after every gate passes:
 
 Each exporter emits the target benchmark's field contract exactly:
 
-- **OpenRCA** (`export/openrca.ts`) — `query.csv` vs `record.csv` separation,
+All seven targets ship, one module each under `packages/core/src/export/`:
+
+- **OpenRCA 1.0** (`export/openrca.ts`) — `query.csv` vs `record.csv` separation,
   UTC+8 offset (`OPENRCA_OFFSET_MINUTES = 480`), metric/log/trace CSV builders.
+- **OpenRCA 2.0** (`export/openrca2.ts`) — the next-generation record shape.
 - **RCAEval** (`export/rcaeval.ts`) — `RE1` (metric-only), `RE2` (multi-source),
   `RE3` (code-level) suites with per-case directories.
 - **RCA100** (`export/rca100.ts`) — six-modality contract (M/L/T + events + alerts +
   UModel topology) with a four-layer answer key and enforced reference integrity.
+- **AIOps2025** (`export/aiops2025.ts`), **Cloud-OpsBench**
+  (`export/cloudopsbench.ts`) and **ITBench** (`export/itbench.ts`) — competition
+  formats whose metric protocols are transcribed or derived per `src/coverage.ts`.
 
-Additional targets (Cloud-OpsBench, AIOps2025, …) are declared in `src/coverage.ts`
-and added in subsequent milestones.
+Each is exercised end to end by `pnpm official:check`, which submits the exported
+answer key to that target's own published metric and requires a perfect score.
 
 ## 8. Self-evolution and human-in-the-loop
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   caseFingerprint,
   checkG1Structural,
@@ -24,7 +25,7 @@ import { validBundle, validCase } from './fixtures.js';
  * reports it. If a mutation escapes, the gates are not trustworthy and all
  * self-evolution activity must stop.
  *
- * Acceptance bar: 100% interception (15/15).
+ * Acceptance bar: 100% interception (18/18, across both halves of the suite).
  */
 
 const G1 = { requiredSignals: ['metric', 'log', 'trace', 'event', 'alert'], requiresQuery: true };
@@ -363,4 +364,44 @@ describe('export mutation suite', () => {
       expect(report.passed, `${m.id} escaped: ${report.failures.join('; ')}`).toBe(false);
     });
   }
+});
+
+/**
+ * Keep the documented mutation matrix and the executed one in step.
+ *
+ * `docs/acceptance.md` publishes the matrix that the L4 claim rests on. A table
+ * that lists an id the suite does not run is worse than no table: it advertises a
+ * guarantee that was never exercised. This guard reads the doc and the two
+ * mutation tables and fails on any disagreement in either direction.
+ *
+ * It deliberately does *not* try to check the "Caught by" column. Prose cannot be
+ * validated mechanically, and a check that pretended to would be theatre. The set
+ * of ids is the part that can be made true by construction, so that is the part
+ * asserted here.
+ */
+describe('mutation matrix documentation', () => {
+  const DOC = readFileSync(new URL('../../../docs/acceptance.md', import.meta.url), 'utf8');
+
+  /** Every `| MT-nn |` row in the published matrix, in document order. */
+  function documentedIds(): string[] {
+    const section = DOC.split('## L3')[1]?.split('## L4')[0] ?? '';
+    return [...section.matchAll(/^\|\s*(MT-\d+)\s*\|/gm)].map((m) => m[1] as string);
+  }
+
+  it('documents exactly the mutations that the suite executes', () => {
+    const executed = [...MUTATIONS.map((m) => m.id), ...EXPORT_MUTATIONS.map((m) => m.id)];
+    expect(documentedIds().toSorted()).toEqual(executed.toSorted());
+  });
+
+  it('documents no duplicate mutation id', () => {
+    const ids = documentedIds();
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('finds a non-empty matrix in the document', () => {
+    // Without this, a heading rename would empty the match set and the equality
+    // above would compare [] to a non-empty list -- which fails, but with a
+    // confusing message. This test names the real problem.
+    expect(documentedIds().length).toBeGreaterThan(0);
+  });
 });

@@ -32,7 +32,7 @@ silently re-licenses or corrupts upstream data.
 | **Ingest** | Six-tier access: OTel → vendor adapters → flat files → scrape → snapshot → LLM-assisted custom |
 | **Normalize** | Deterministic 7-strategy transform engine (time / unit / map / regex / template / lookup / expr) |
 | **Structure** | Four-layer IR (`TelemetrySignal` → `EntityGraph` → `FaultCase` → `QualityGateReport`) |
-| **Verify** | Five gates G1–G5 plus a 15-mutation test that proves the gates themselves work |
+| **Verify** | Five gates G1–G5 plus an 18-mutation suite that proves the gates and the official regression both work |
 | **Export** | OpenRCA 1.0/2.0, RCAEval RE1/RE2/RE3, and more — with zero silent loss |
 
 ## Guiding principles
@@ -106,19 +106,58 @@ with **no mocks and no skipped tests** (enforced by `scripts/check-no-mock.mjs`)
 ```ts
 import { assembleBundle, runAllGates, exportOpenRca, scoreExport } from '@rca-bench-factory/core';
 
-// 1. Assemble a validated bundle from a loose draft (fault type normalised,
-//    category inferred, schema checked).
-// 2. Run all five gates and only proceed on `admitted`.
-// 3. Export the compliant OpenRCA dataset and score it.
+// The draft is untrusted input: a loose shape that has not been validated yet.
+const draft = {
+  graph: {
+    entities: [
+      { entityId: 'service:shop/frontend', kind: 'service', name: 'frontend', namespace: 'shop', aliases: [] },
+      { entityId: 'service:shop/checkout', kind: 'service', name: 'checkout', namespace: 'shop', aliases: [] },
+    ],
+    edges: [{ from: 'service:shop/frontend', to: 'service:shop/checkout', relation: 'calls' }],
+  },
+  case: {
+    caseId: 'shop-checkout-cpu-1',
+    system: 'shop',
+    injectTime: '2026-09-06T04:10:00.000Z',
+    window: { start: '2026-09-06T04:00:00.000Z', end: '2026-09-06T04:20:00.000Z' },
+    fault: { type: 'cpu', injectionMethod: 'manual' },
+    groundTruth: {
+      rootCauseEntityId: 'service:shop/checkout',
+      rootCauseComponent: 'checkout',
+      rootCauseReason: 'cpu contention',
+    },
+  },
+  signals: [
+    { irVersion: '1.0.0', resource: { 'service.name': 'checkout' }, timestamp: '2026-09-06T04:10:00.000Z',
+      signal: 'metric', payload: { kind: 'metric', name: 'cpu_usage', value: 0.95 } },
+  ],
+};
+
+// 1. Assemble a validated bundle. The fault spec is normalised and the whole
+//    bundle is schema-checked before you ever see it.
 const assembled = assembleBundle(draft);
 if (!assembled.ok) throw new Error(assembled.error);
 
-const report = runAllGates(assembled.bundle.cases[0], assembled.bundle);
+// 2. Run all five gates. G1 takes the signal kinds the target requires, so a
+//    target that needs traces cannot be scored from metrics alone.
+const { report } = runAllGates(
+  assembled.bundle,
+  { g1: { requiresQuery: false, requiredSignals: ['metric'] } },
+  { gateRunId: 'local-1', runAt: '2026-09-06T05:00:00.000Z' },
+);
+
+// 3. Only an admitted bundle is worth exporting, and the export must survive
+//    the target's own published metric.
 if (report.finalStatus === 'admitted') {
   const { files } = exportOpenRca(assembled.bundle);
   const score = scoreExport('openrca-1.0', files);
+  console.log(score.total);
 }
 ```
+
+The block above is executed in CI by `scripts/check-readme-sample.mjs`, which
+extracts it from this file and runs it against the built package — so it cannot
+drift from the real signatures.
 
 Exporters take the **bundle** — the topology and the case-level signals are both
 required to enforce reference integrity.

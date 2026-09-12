@@ -159,7 +159,7 @@
         stat('7', 'target benchmark contracts'),
         stat('6', 'observability modalities'),
         stat('5', 'quality gates (G1–G5)'),
-        stat('15', 'gate mutation tests'),
+        stat('18', 'gate mutation tests'),
         stat('100%', 'reference integrity enforced'),
       ]),
     ]);

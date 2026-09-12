@@ -10,7 +10,7 @@ into "the output is provably byte-stable and compliant".
 | `fixture.json` | A self-contained IR bundle (one fault case with metrics, logs, traces, an event and an alert). No licensed data. |
 | `expected.json` | Committed SHA-256 anchors for every file the exporters emit from `fixture.json`. |
 | `verify.mjs` | Re-exports `fixture.json` through the current build and diffs against the anchors. |
-| `fetch-and-verify.sh` | Extends verification to official benchmark archives (see [THIRD-PARTY-NOTICES](../THIRD-PARTY-NOTICES.md)). |
+| `fetch-and-verify.sh` | Runs the self-contained check, then prints how to repeat it against official archives you download yourself (see [THIRD-PARTY-NOTICES](../THIRD-PARTY-NOTICES.md)). Performs no network access. |
 
 ## Run
 
@@ -28,6 +28,16 @@ which proves the quality gates themselves still work.
 
 Upstream benchmark datasets (e.g. RCA100 is CC BY-NC-SA, CausalRCA/RUN has no
 license) cannot be redistributed. We therefore ship only the *verification anchors* —
-checksums and expected outputs derived from our own fixture — plus a script that
-fetches official data from its canonical source when you want full external
-verification.
+checksums and expected outputs derived from our own fixture — plus instructions for
+repeating the check against official data you have downloaded yourself.
+
+Two guarantees, and it matters which is which:
+
+| Anchor | Input | What it can prove |
+| --- | --- | --- |
+| Golden Master (`verify.mjs`) | our own fixture | our output is **stable** — nothing changed under it |
+| Round trip (`rca-bench ingest` → `export` → `official`) | official data | our output is **right** — someone else's data reproduces |
+
+The Golden Master is self-anchored: it compares our exporter against our own
+expectations, so a shared misunderstanding would leave it green. Only the round trip
+takes foreign data as input. Neither script in this directory accesses the network.
