@@ -158,6 +158,49 @@ describe('run - help, version and errors', () => {
     expect(code).toBe(1);
     expect(err.join('')).toContain('error');
   });
+
+  it('prints the top-level help with no topic', async () => {
+    const out: string[] = [];
+    const code = await run(['--help'], { stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const text = out.join('');
+    expect(text).toContain('Commands:');
+    expect(text).toContain('Run `rca-bench <command> --help` for command-specific options.');
+  });
+
+  it('prints a single command reference when a topic is given', async () => {
+    // The flag `formatHelp` advertises. Before this iteration every one of the
+    // eleven subcommands rejected it.
+    const out: string[] = [];
+    const code = await run(['ingest', '--help'], { stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const text = out.join('');
+    expect(text).toContain('rca-bench ingest - ');
+    expect(text).toContain('--entities');
+    // A command reference is not the command list.
+    expect(text).not.toContain('version    Print the version');
+  });
+
+  it('accepts -h as the short form for a command reference', async () => {
+    const out: string[] = [];
+    const code = await run(['pack', '-h'], { stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(out.join('')).toContain('rca-bench pack - ');
+  });
+
+  it('accepts the help subcommand with a topic', async () => {
+    const out: string[] = [];
+    const code = await run(['help', 'gate'], { stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(out.join('')).toContain('rca-bench gate - ');
+  });
+
+  it('rejects help for an unknown topic rather than printing the command list', async () => {
+    const err: string[] = [];
+    const code = await run(['help', 'frobnicate'], { stderr: (s) => err.push(s) });
+    expect(code).toBe(1);
+    expect(err.join('')).toContain("unknown command 'frobnicate'");
+  });
 });
 
 describe('run - source', () => {

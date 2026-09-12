@@ -242,4 +242,140 @@ describe('run - ingest', () => {
     await run(['help'], { stdout: (s) => out.push(s) });
     expect(out.join('')).toContain('ingest');
   });
+
+  it('fails when the telemetry never mentions the root-cause service', async () => {
+    // A component that failed before the window opened leaves no trace in
+    // `service.name`, so no entity can be inferred for it. The run must stop
+    // rather than emit a bundle whose root cause points at nothing.
+    const dir = await makeDir();
+    await writeFiles(dir, {
+      'data/metrics/metrics.csv': METRICS_CSV,
+      'cases.json': JSON.stringify([
+        {
+          caseId: 'RE2-absent-cpu_1',
+          component: 'ts-absent-service',
+          faultType: 'cpu',
+          injectTime: '2025-03-01T00:10:00.000Z',
+        },
+      ]),
+    });
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--output', 'b.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    // The remedy has to name an affordance that exists. This is the message
+    // that used to point at `extraEntities` alone, which no flag exposed.
+    expect(err.join('')).toMatch(/--entities/);
+  });
+
+  it('rescues that ingest when --entities declares the missing service', async () => {
+    // The defect this closes: the failure above told the operator to declare
+    // the component, but the CLI offered no way to do it. With `--entities`
+    // the same dataset now produces a bundle, and that bundle must still be a
+    // valid input for the rest of the pipeline -- a rescue that only satisfies
+    // the resolver would be worthless.
+    const dir = await makeDir();
+    await writeFiles(dir, {
+      'data/metrics/metrics.csv': METRICS_CSV,
+      'cases.json': JSON.stringify([
+        {
+          caseId: 'RE2-absent-cpu_1',
+          component: 'ts-absent-service',
+          faultType: 'cpu',
+          injectTime: '2025-03-01T00:10:00.000Z',
+        },
+      ]),
+    });
+    const entities = JSON.stringify([
+      { entityId: 'service:rcaeval/ts-absent-service', kind: 'service', name: 'ts-absent-service', aliases: [] },
+    ]);
+
+    const ingest = await run(
+      [
+        'ingest',
+        '--source',
+        'data',
+        '--target',
+        'rcaeval',
+        '--cases',
+        'cases.json',
+        '--system',
+        'rcaeval',
+        '--entities',
+        entities,
+        '--output',
+        'bundle.json',
+      ],
+      { cwd: dir },
+    );
+    expect(ingest).toBe(0);
+
+    const bundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
+    expect(bundle.cases[0].groundTruth.rootCauseEntityId).toBe('service:rcaeval/ts-absent-service');
+    // The declared entity is present in the graph, not merely referenced.
+    expect(bundle.graph.entities.some((e: { entityId: string }) => e.entityId === 'service:rcaeval/ts-absent-service')).toBe(true);
+  });
+
+  it('forward all four ingest options into the produced bundle', async () => {
+    // `--lead-ms` / `--lag-ms` / `--edges` each have an observable effect on
+    // the bundle, so they are asserted through the output rather than through
+    // the parser, which would only prove the flags were accepted.
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const edges = JSON.stringify([
+      { from: 'service:rcaeval/ts-order-service', to: 'service:rcaeval/ts-pay-service', relation: 'calls' },
+    ]);
+
+    const code = await run(
+      [
+        'ingest',
+        '--source',
+        'data',
+        '--target',
+        'rcaeval',
+        '--cases',
+        'cases.json',
+        '--system',
+        'rcaeval',
+        '--edges',
+        edges,
+        '--lead-ms',
+        '60000',
+        '--lag-ms',
+        '120000',
+        '--output',
+        'bundle.json',
+      ],
+      { cwd: dir },
+    );
+    expect(code).toBe(0);
+
+    const bundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
+    // A 60s lead and 120s lag around a 00:10:00 injection.
+    expect(bundle.cases[0].window.start).toBe('2025-03-01T00:09:00.000Z');
+    expect(bundle.cases[0].window.end).toBe('2025-03-01T00:12:00.000Z');
+    expect(bundle.graph.edges).toContainEqual({
+      from: 'service:rcaeval/ts-order-service',
+      to: 'service:rcaeval/ts-pay-service',
+      relation: 'calls',
+    });
+  });
+
+  it('rejects a malformed --entities JSON before touching the filesystem', async () => {
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--entities', '{'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/invalid --entities/);
+  });
 });

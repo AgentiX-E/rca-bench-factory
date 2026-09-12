@@ -1,6 +1,8 @@
 import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
 import type { FileFormat, FileSignalKind } from '../ingest/file.js';
 import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
+import { entityGraphSchema } from '../ir/schema.js';
+import type { Entity, EntityEdge } from '../ir/types.js';
 import type { TimeLayout } from '../util/time.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
 import { SCORE_TARGET_IDS } from '../score/score.js';
@@ -22,7 +24,7 @@ export type ExportTarget = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval' | 'rca100' 
 export type EvolveAction = 'propose' | 'approve' | 'reject' | 'stale';
 
 export type CliCommand =
-  | { command: 'help' }
+  | { command: 'help'; topic?: string }
   | { command: 'version' }
   | {
       command: 'source';
@@ -45,6 +47,10 @@ export type CliCommand =
       cases: string;
       system?: string;
       output?: string;
+      entities?: Entity[];
+      edges?: EntityEdge[];
+      leadMs?: number;
+      lagMs?: number;
     }
   | { command: 'score'; target: ScoreTargetId; anchors?: string; dir: string }
   | { command: 'official'; mode: 'bundle'; input: string; allowEmptyReason?: string; output?: string }
@@ -91,8 +97,223 @@ function isJson(value: string): boolean {
 
 type ParsedValues = Record<string, string | boolean | undefined>;
 
-function parseFlags(args: string[], options: ParseArgsConfig['options']): { values: ParsedValues } | { error: string } {
-  try {
+/**
+ * One flag, described once.
+ *
+ * `help` and `parse` are read by two different consumers: `formatCommandHelp`
+ * renders the first, `parseFlags` enforces the second. Keeping them in a single
+ * record per flag is what stops the reference from advertising an option the
+ * parser rejects -- the exact defect this table was introduced to close.
+ *
+ * The placeholder is required for a value flag and forbidden for a boolean one,
+ * so "render a placeholder" is a type-level fact rather than a runtime check.
+ * A boolean that advertised `--has-header <value>` would be a lie the compiler
+ * now refuses to let anyone write.
+ */
+type FlagSpec =
+  | { type: 'string'; placeholder: string; required?: boolean; help: string }
+  | { type: 'boolean'; placeholder?: never; required?: boolean; help: string };
+
+/** A command's usage line plus its flag set, in help-text order. */
+interface CommandSpec {
+  /** The invocation shown under `Usage:`. */
+  usage: string;
+  description: string;
+  flags: Record<string, FlagSpec>;
+}
+
+/**
+ * The single source of truth for every command's flags.
+ *
+ * `parse*` functions below read their option maps from here rather than
+ * restating them, and `formatCommandHelp` renders the same records. The
+ * drift guard in the test suite walks both directions -- every advertised flag
+ * must parse, and every parsed flag must be advertised -- so a flag cannot be
+ * added to one side alone.
+ */
+const COMMAND_SPECS = {
+  source: {
+    usage: 'rca-bench source --path <path> [options]',
+    description: 'Ingest a flat file (csv, tsv, jsonl or json) into IR signals.',
+    flags: {
+      path: { placeholder: '<path>', type: 'string', required: true, help: 'File to read' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the signals to a file instead of stdout' },
+      format: { placeholder: `<${FILE_FORMATS.join('|')}>`, type: 'string', help: 'Override the detected file format' },
+      'signal-kind': { placeholder: `<${SIGNAL_KINDS.join('|')}>`, type: 'string', help: 'Override the detected signal kind' },
+      layout: { placeholder: '<json>', type: 'string', help: 'Column mapping as inline JSON' },
+      'service-name': { placeholder: '<name>', type: 'string', help: 'Fallback service.name when the file has no service column' },
+      'time-layout': { placeholder: `<${TIME_LAYOUTS.join('|')}>`, type: 'string', help: 'Override the detected timestamp layout' },
+      'assume-offset-minutes': { placeholder: '<minutes>', type: 'string', help: 'Offset applied when the timestamp carries no zone' },
+      'has-header': { type: 'boolean', help: 'Treat the first line as a header row' },
+      delimiter: { placeholder: '<char>', type: 'string', help: 'Delimiter for delimited files' },
+    },
+  },
+  ingest: {
+    usage: 'rca-bench ingest --source <dir> --target <dataset> --cases <file> [options]',
+    description: 'Ingest a prime-dataset slice into an IR bundle.',
+    flags: {
+      source: { placeholder: '<dir>', type: 'string', required: true, help: 'Directory holding the dataset slice' },
+      target: { placeholder: `<${PRIME_DATASET_IDS.join('|')}>`, type: 'string', required: true, help: 'Prime dataset identifier' },
+      cases: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the case descriptors' },
+      system: { placeholder: '<name>', type: 'string', help: 'Entity namespace; defaults to the target id' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the bundle to a file instead of stdout' },
+      entities: {
+        placeholder: '<json>',
+        type: 'string',
+        help: 'Extra entities as inline JSON, for a root cause the telemetry does not carry',
+      },
+      edges: { placeholder: '<json>', type: 'string', help: 'Extra topology edges as inline JSON' },
+      'lead-ms': { placeholder: '<ms>', type: 'string', help: 'Context before the injection time; defaults to 600000' },
+      'lag-ms': { placeholder: '<ms>', type: 'string', help: 'Context after the injection time; defaults to the lead' },
+    },
+  },
+  transform: {
+    usage: 'rca-bench transform --input <file> --rules <file> [options]',
+    description: 'Apply transform rules to source records.',
+    flags: {
+      input: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the source records' },
+      rules: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the transform rules' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the result to a file instead of stdout' },
+      'id-field': { placeholder: '<field>', type: 'string', help: 'Record field holding the stable id' },
+    },
+  },
+  case: {
+    usage: 'rca-bench case --input <file> [options]',
+    description: 'Assemble an IR bundle from a case draft.',
+    flags: {
+      input: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the case draft' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the bundle to a file instead of stdout' },
+    },
+  },
+  gate: {
+    usage: 'rca-bench gate --input <file> --target <target> [options]',
+    description: 'Run the G1-G5 quality gates on an IR bundle.',
+    flags: {
+      input: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the IR bundle' },
+      target: { placeholder: '<target>', type: 'string', required: true, help: 'Score target the bundle is destined for' },
+      'gate-run-id': { placeholder: '<id>', type: 'string', help: 'Identifier recorded on the gate run' },
+    },
+  },
+  export: {
+    usage: 'rca-bench export --target <target> --input <file> --out-dir <dir> [options]',
+    description: 'Export an IR bundle to a target benchmark format.',
+    flags: {
+      target: { placeholder: `<${EXPORT_TARGETS.join('|')}>`, type: 'string', required: true, help: 'Benchmark format to write' },
+      suite: { placeholder: `<${SUITES.join('|')}>`, type: 'string', help: 'Suite selector for the rcaeval target' },
+      input: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the IR bundle' },
+      'out-dir': { placeholder: '<dir>', type: 'string', required: true, help: 'Directory to write the exported files into' },
+    },
+  },
+  score: {
+    usage: 'rca-bench score --target <target> --dir <dir> [options]',
+    description: 'Verify an exported dataset against a target contract.',
+    flags: {
+      target: { placeholder: `<${SCORE_TARGETS.join('|')}>`, type: 'string', required: true, help: 'Target contract to score against' },
+      anchors: { placeholder: '<json>', type: 'string', help: 'Returned-file SHA-256 anchors as inline JSON' },
+      dir: { placeholder: '<dir>', type: 'string', required: true, help: 'Directory holding the exported files' },
+    },
+  },
+  official: {
+    usage: 'rca-bench official (--input <file> | --target <target> --dir <dir>) [options]',
+    description: 'Run the official-metric oracle and mutation regression.',
+    flags: {
+      input: { placeholder: '<file>', type: 'string', help: 'IR bundle to score directly' },
+      target: { placeholder: `<${SCORE_TARGETS.join('|')}>`, type: 'string', help: 'Target contract when scoring a directory' },
+      dir: { placeholder: '<dir>', type: 'string', help: 'Exported directory paired with --target' },
+      'allow-empty-reason': { placeholder: '<reason>', type: 'string', help: 'Permit an empty result and record why' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the report to a file instead of stdout' },
+    },
+  },
+  report: {
+    usage: 'rca-bench report --input <file> [options]',
+    description: 'Render coverage, gates and score into an HTML report.',
+    flags: {
+      input: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the report input' },
+      title: { placeholder: '<text>', type: 'string', help: 'Report title' },
+      target: { placeholder: `<${SCORE_TARGETS.join('|')}>`, type: 'string', help: 'Target contract to include in the report' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the HTML to a file instead of stdout' },
+    },
+  },
+  pack: {
+    usage: 'rca-bench pack --input <dir> --output <file> [options]',
+    description: 'Pack a directory into a reproducible tar.gz with a manifest.',
+    flags: {
+      input: { placeholder: '<dir>', type: 'string', required: true, help: 'Directory to pack' },
+      output: { placeholder: '<file>', type: 'string', required: true, help: 'Archive path to write' },
+      prefix: { placeholder: '<path>', type: 'string', help: 'Path prefix recorded inside the archive' },
+    },
+  },
+  evolve: {
+    usage: 'rca-bench evolve <propose|approve|reject|stale> [options]',
+    description: 'Propose, approve, reject or roll back an evolution.',
+    flags: {
+      input: { placeholder: '<file>', type: 'string', required: true, help: 'JSON file holding the evolution input' },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the result to a file instead of stdout' },
+      note: { placeholder: '<text>', type: 'string', help: 'Reviewer note recorded on approve or reject' },
+      cases: { placeholder: '<json>', type: 'string', help: 'Case list as inline JSON, used to compute staleness' },
+    },
+  },
+} as const satisfies Record<string, CommandSpec>;
+
+/** Command names that own a `COMMAND_SPECS` entry, in help-text order. */
+export const HELP_TOPICS: readonly string[] = [
+  'source',
+  'ingest',
+  'transform',
+  'case',
+  'gate',
+  'export',
+  'score',
+  'official',
+  'report',
+  'pack',
+  'evolve',
+];
+
+function isHelpTopic(value: string): boolean {
+  return isOneOf(value, HELP_TOPICS);
+}
+
+/**
+ * Turn a spec's flag records into the option map `parseArgs` expects.
+ *
+ * Derived rather than restated so the parser and the reference cannot disagree
+ * about which flags exist; only the per-flag `type` is carried across.
+ */
+function flagOptions(topic: Exclude<keyof typeof COMMAND_SPECS, 'evolve'>): ParseArgsConfig['options'] {
+  const options: NonNullable<ParseArgsConfig['options']> = {};
+  for (const [name, spec] of Object.entries(COMMAND_SPECS[topic].flags)) {
+    options[name] = { type: spec.type };
+  }
+  return options;
+}
+
+/**
+ * Flag sets for the four `evolve` actions.
+ *
+ * The union of the `evolve` spec's flags is deliberately *not* the per-action
+ * set: `--note` is meaningless on `propose`, and `--cases` belongs only to
+ * `stale`. Restating the subsets here keeps each action rejecting an option
+ * that would otherwise be silently ignored -- a silently ignored flag is a
+ * configuration the caller believes took effect but did not.
+ */
+const EVOLVE_ACTION_FLAGS = {
+  propose: ['input', 'output'],
+  approve: ['input', 'note', 'output'],
+  reject: ['input', 'note', 'output'],
+  stale: ['input', 'cases'],
+} as const satisfies Record<EvolveAction, readonly (keyof (typeof COMMAND_SPECS)['evolve']['flags'])[]>;
+
+function evolveFlagOptions(action: EvolveAction): ParseArgsConfig['options'] {
+  const options: NonNullable<ParseArgsConfig['options']> = {};
+  const all = COMMAND_SPECS.evolve.flags;
+  for (const name of EVOLVE_ACTION_FLAGS[action]) {
+    options[name] = { type: all[name].type };
+  }
+  return options;
+}
+
+function parseFlags(args: string[], options: ParseArgsConfig['options']): { values: ParsedValues } | { error: string } {  try {
     const { values } = nodeParseArgs({
       args,
       options,
@@ -107,18 +328,7 @@ function parseFlags(args: string[], options: ParseArgsConfig['options']): { valu
 }
 
 function parseSource(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    path: { type: 'string' },
-    output: { type: 'string' },
-    format: { type: 'string' },
-    'signal-kind': { type: 'string' },
-    layout: { type: 'string' },
-    'service-name': { type: 'string' },
-    'time-layout': { type: 'string' },
-    'assume-offset-minutes': { type: 'string' },
-    'has-header': { type: 'boolean' },
-    delimiter: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('source'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -168,12 +378,7 @@ function parseSource(args: string[]): CliParseResult {
 }
 
 function parseExport(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    target: { type: 'string' },
-    suite: { type: 'string' },
-    input: { type: 'string' },
-    'out-dir': { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('export'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -210,11 +415,7 @@ function parseExport(args: string[]): CliParseResult {
 }
 
 function parseScore(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    target: { type: 'string' },
-    anchors: { type: 'string' },
-    dir: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('score'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -258,13 +459,7 @@ function parseScore(args: string[]): CliParseResult {
  * output mean something the user did not ask for.
  */
 function parseOfficial(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    target: { type: 'string' },
-    dir: { type: 'string' },
-    'allow-empty-reason': { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('official'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -306,12 +501,7 @@ function parseOfficial(args: string[]): CliParseResult {
 }
 
 function parseTransform(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    rules: { type: 'string' },
-    output: { type: 'string' },
-    'id-field': { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('transform'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -337,11 +527,7 @@ function parseTransform(args: string[]): CliParseResult {
 }
 
 function parseGate(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    target: { type: 'string' },
-    'gate-run-id': { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('gate'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -369,10 +555,7 @@ function parseGate(args: string[]): CliParseResult {
 }
 
 function parseCase(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('case'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -392,12 +575,7 @@ function parseCase(args: string[]): CliParseResult {
 }
 
 function parseReport(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    title: { type: 'string' },
-    target: { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('report'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -422,10 +600,7 @@ function parseReport(args: string[]): CliParseResult {
 }
 
 function parseEvolvePropose(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, evolveFlagOptions('propose'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -446,11 +621,7 @@ function parseEvolvePropose(args: string[]): CliParseResult {
 }
 
 function parseEvolveApprove(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    note: { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, evolveFlagOptions('approve'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -472,11 +643,7 @@ function parseEvolveApprove(args: string[]): CliParseResult {
 }
 
 function parseEvolveReject(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    note: { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, evolveFlagOptions('reject'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -498,10 +665,7 @@ function parseEvolveReject(args: string[]): CliParseResult {
 }
 
 function parseEvolveStale(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    cases: { type: 'string' },
-  });
+  const parsed = parseFlags(args, evolveFlagOptions('stale'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -524,11 +688,7 @@ function parseEvolveStale(args: string[]): CliParseResult {
 }
 
 function parsePack(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    input: { type: 'string' },
-    output: { type: 'string' },
-    prefix: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('pack'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -584,14 +744,31 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   const [head, ...rest] = argv;
-  if (head === '--help' || head === '-h' || head === 'help') {
-    return { ok: true, command: { command: 'help' } };
+  // `argv.length === 0` returned above, so `head` is always present; the
+  // assertion records that rather than adding a branch no input can reach.
+  const command = head as string;
+  if (command === '--help' || command === '-h' || command === 'help') {
+    // `help <command>` names a topic too, so both spellings work. An unknown
+    // topic is reported as such rather than silently downgraded to top-level
+    // help, which would answer a question nobody asked.
+    const topic = rest[0];
+    if (topic === undefined) return { ok: true, command: { command: 'help' } };
+    if (!isHelpTopic(topic)) return { ok: false, error: `unknown command '${topic}'` };
+    return { ok: true, command: { command: 'help', topic } };
   }
-  if (head === '--version' || head === '-v' || head === 'version') {
+  if (command === '--version' || command === '-v' || command === 'version') {
     return { ok: true, command: { command: 'version' } };
   }
 
-  switch (head) {
+  // Help for a named command. Placement matters: this runs only after the
+  // command name has been recognised, so `frobnicate --help` still fails as an
+  // unknown command. `formatHelp` has advertised this flag since the first
+  // release; intercepting here is what finally makes the promise true.
+  if ((rest[0] === '--help' || rest[0] === '-h') && isHelpTopic(command)) {
+    return { ok: true, command: { command: 'help', topic: command } };
+  }
+
+  switch (command) {
     case 'source':
       return parseSource(rest);
     case 'export':
@@ -615,7 +792,7 @@ export function parseCliArgs(argv: string[]): CliParseResult {
     case 'evolve':
       return parseEvolve(rest);
     default:
-      return { ok: false, error: `unknown command '${head}' (expected source|transform|gate|case|ingest|export|score|official|report|pack|evolve|help|version)` };
+      return { ok: false, error: `unknown command '${command}' (expected ${HELP_TOPICS.join('|')}|help|version)` };
   }
 }
 
@@ -626,15 +803,16 @@ export function parseCliArgs(argv: string[]): CliParseResult {
  * (component, fault type, injection time) come from the official dataset, which
  * is exactly why they are an input rather than something we infer: a guessed
  * label would make the round-trip reproduction score against itself.
+ *
+ * `--entities` and `--edges` are inline JSON rather than file paths, matching
+ * the convention `--layout` and `--anchors` already set. They exist because a
+ * root cause is not always observable in the telemetry slice: a component that
+ * failed before the window opened never appears in `service.name`, and without
+ * a way to declare it the case is unresolvable. `--lead-ms` / `--lag-ms`
+ * expose the observation window, which was previously fixed at its default.
  */
 function parseIngest(args: string[]): CliParseResult {
-  const parsed = parseFlags(args, {
-    source: { type: 'string' },
-    target: { type: 'string' },
-    cases: { type: 'string' },
-    system: { type: 'string' },
-    output: { type: 'string' },
-  });
+  const parsed = parseFlags(args, flagOptions('ingest'));
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
@@ -658,6 +836,29 @@ function parseIngest(args: string[]): CliParseResult {
     return { ok: false, error: 'invalid --system <name>' };
   }
 
+  // `entityGraphSchema` is the same contract the IR itself is validated
+  // against, so a malformed entry fails here with a clear flag name rather
+  // than deep inside the ingest with a schema path. `entitySchema` is required
+  // to produce a non-empty result: an empty declaration is a configuration
+  // mistake, not a no-op worth honouring.
+  let entities: Entity[] | undefined;
+  if (v.entities !== undefined) {
+    const parsedEntities = parseEntityList(String(v.entities), '--entities');
+    if ('error' in parsedEntities) return { ok: false, error: parsedEntities.error };
+    entities = parsedEntities.value;
+  }
+  let edges: EntityEdge[] | undefined;
+  if (v.edges !== undefined) {
+    const parsedEdges = parseEdgeList(String(v.edges), '--edges');
+    if ('error' in parsedEdges) return { ok: false, error: parsedEdges.error };
+    edges = parsedEdges.value;
+  }
+
+  const leadMs = parseWindow('lead-ms', v['lead-ms']);
+  if (typeof leadMs === 'object') return { ok: false, error: leadMs.error };
+  const lagMs = parseWindow('lag-ms', v['lag-ms']);
+  if (typeof lagMs === 'object') return { ok: false, error: lagMs.error };
+
   return {
     ok: true,
     command: {
@@ -667,11 +868,58 @@ function parseIngest(args: string[]): CliParseResult {
       cases,
       ...(system !== undefined ? { system: String(system) } : {}),
       ...(v.output !== undefined ? { output: String(v.output) } : {}),
+      ...(entities !== undefined ? { entities } : {}),
+      ...(edges !== undefined ? { edges } : {}),
+      ...(leadMs !== undefined ? { leadMs } : {}),
+      ...(lagMs !== undefined ? { lagMs } : {}),
     },
   };
 }
 
-/** Human-readable usage text. */
+/**
+ * Parse one of the inline-JSON entity flags.
+ *
+ * Returning a discriminated result rather than throwing keeps the caller's
+ * error path uniform with the rest of this module, and names the flag in the
+ * message so the operator knows which of several JSON arguments was wrong.
+ */
+function parseEntityList(raw: string, flag: string): { value: Entity[] } | { error: string } {
+  const parsed = parseJsonValue(raw, flag);
+  if ('error' in parsed) return parsed;
+  const result = entityGraphSchema.shape.entities.safeParse(parsed.value);
+  if (!result.success || result.data.length === 0) return { error: `invalid ${flag} JSON` };
+  return { value: result.data };
+}
+
+function parseEdgeList(raw: string, flag: string): { value: EntityEdge[] } | { error: string } {
+  const parsed = parseJsonValue(raw, flag);
+  if ('error' in parsed) return parsed;
+  const result = entityGraphSchema.shape.edges.safeParse(parsed.value);
+  if (!result.success || result.data.length === 0) return { error: `invalid ${flag} JSON` };
+  return { value: result.data };
+}
+
+function parseJsonValue(raw: string, flag: string): { value: unknown } | { error: string } {
+  if (!isJson(raw)) return { error: `invalid ${flag} JSON` };
+  return { value: JSON.parse(raw) as unknown };
+}
+
+/**
+ * Parse a millisecond window flag.
+ *
+ * Non-negative integers only. A negative window has no coherent meaning, and a
+ * fractional one is almost always a unit error -- seconds typed where
+ * milliseconds were expected -- so both are rejected rather than quietly
+ * rounded into something the caller did not ask for.
+ */
+function parseWindow(flag: string, raw: ParsedValues[string]): number | undefined | { error: string } {
+  if (raw === undefined) return undefined;
+  const text = String(raw);
+  if (!/^\d+$/.test(text)) return { error: `invalid --${flag} '${text}'` };
+  return Number(text);
+}
+
+/** Human-readable usage text for the whole CLI. */
 export function formatHelp(): string {
   return [
     'rca-bench - turn enterprise telemetry into RCA benchmark field contracts',
@@ -696,6 +944,39 @@ export function formatHelp(): string {
     '',
     'Run `rca-bench <command> --help` for command-specific options.',
   ].join('\n');
+}
+
+/**
+ * Human-readable reference for one command.
+ *
+ * Rendered from `COMMAND_SPECS`, the same table the parsers read their option
+ * maps from, so the reference cannot advertise a flag the parser rejects. This
+ * is the fix for the defect where `--help` was promised on every subcommand but
+ * accepted by none of them.
+ */
+export function formatCommandHelp(topic: string): string {
+  if (!isHelpTopic(topic)) {
+    return `unknown command '${topic}' (expected ${HELP_TOPICS.join('|')})`;
+  }
+  const spec = COMMAND_SPECS[topic as Exclude<keyof typeof COMMAND_SPECS, 'evolve'>] as CommandSpec;
+  const lines = [
+    `rca-bench ${topic} - ${spec.description}`,
+    '',
+    'Usage:',
+    `  ${spec.usage}`,
+    '',
+    'Options:',
+  ];
+  for (const [name, flag] of Object.entries(spec.flags)) {
+    // Only a value flag carries a placeholder; `FlagSpec` makes that a type
+    // guarantee, so there is no fallback to render when one is absent.
+    const placeholder = flag.type === 'boolean' ? '' : ` ${flag.placeholder}`;
+    const suffix = flag.required === true ? ' (required)' : '';
+    lines.push(`  --${name}${placeholder}${suffix}`);
+    lines.push(`      ${flag.help}`);
+  }
+  lines.push('', 'Run `rca-bench --help` for the list of commands.');
+  return lines.join('\n');
 }
 
 /** Semantic-version string. */

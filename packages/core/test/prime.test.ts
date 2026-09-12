@@ -928,7 +928,10 @@ describe('ingestPrimeDataset · entity graph', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.error).toMatch(/does not resolve/);
-    expect(result.error).toMatch(/declare it via extraEntities/);
+    // The remedy must be reachable from the CLI, not just the API. Naming only
+    // the internal `extraEntities` option sent users after a flag that did not
+    // exist; the message carries both spellings now.
+    expect(result.error).toMatch(/declare it via extraEntities \(CLI: --entities\)/);
     expect(result.error).not.toMatch(/is ambiguous/);
   });
 

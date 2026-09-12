@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatHelp, formatVersion, parseCliArgs } from '../src/cli/args.js';
+import { formatCommandHelp, formatHelp, formatVersion, HELP_TOPICS, parseCliArgs } from '../src/cli/args.js';
 import { PRIME_DATASET_IDS } from '../src/ingest/prime.js';
 
 /**
@@ -34,6 +34,86 @@ describe('parseCliArgs - help and version', () => {
     const result = parseCliArgs(['frobnicate']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/unknown command/i);
+  });
+});
+
+describe('parseCliArgs - per-command help', () => {
+  // `formatHelp` has always advertised "Run `rca-bench <command> --help` for
+  // command-specific options." Until now every subcommand rejected that flag,
+  // so the promise was unbacked. These tests pin the promise to the parser.
+
+  it('carries the command name when --help follows a subcommand', () => {
+    expect(parseCliArgs(['ingest', '--help'])).toEqual({
+      ok: true,
+      command: { command: 'help', topic: 'ingest' },
+    });
+  });
+
+  it('accepts the short -h form after a subcommand', () => {
+    expect(parseCliArgs(['export', '-h'])).toEqual({
+      ok: true,
+      command: { command: 'help', topic: 'export' },
+    });
+  });
+
+  it('recognises every command as a help topic', () => {
+    for (const topic of [
+      'source',
+      'ingest',
+      'transform',
+      'case',
+      'gate',
+      'export',
+      'score',
+      'official',
+      'report',
+      'pack',
+      'evolve',
+    ]) {
+      expect(parseCliArgs([topic, '--help'])).toEqual({
+        ok: true,
+        command: { command: 'help', topic },
+      });
+    }
+  });
+
+  it('returns top-level help, with no topic, for a bare --help', () => {
+    // The distinction matters: `run` prints the full command list for a topic
+    // that is absent and a single command's reference for one that is present.
+    expect(parseCliArgs(['--help'])).toEqual({ ok: true, command: { command: 'help' } });
+  });
+
+  it('does not let help mask an unknown command name', () => {
+    // A typo plus `--help` must still be reported as a typo. Silently printing
+    // top-level help would hide the mistake and teach the caller nothing.
+    const result = parseCliArgs(['frobnicate', '--help']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/unknown command 'frobnicate'/);
+  });
+
+  it('rejects an unknown command even when help is the only other argument', () => {
+    const result = parseCliArgs(['frobnicate', '-h']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/unknown command/i);
+  });
+
+  it('carries a topic through every help spelling', () => {
+    // Three ways to reach the same command reference: the long flag, the short
+    // flag, and the `help` subcommand. They must agree.
+    for (const argv of [
+      ['ingest', '--help'],
+      ['ingest', '-h'],
+      ['help', 'ingest'],
+      ['--help', 'ingest'],
+    ]) {
+      expect(parseCliArgs(argv)).toEqual({ ok: true, command: { command: 'help', topic: 'ingest' } });
+    }
+  });
+
+  it('rejects an unknown topic for the help subcommand', () => {
+    const result = parseCliArgs(['help', 'frobnicate']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/unknown command 'frobnicate'/);
   });
 });
 
@@ -208,6 +288,165 @@ describe('parseCliArgs - ingest', () => {
     const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', 'stray']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).not.toBe('');
+  });
+
+  it('accepts inline JSON entities', () => {
+    const entities = JSON.stringify([
+      { entityId: 'service:shops/orders', kind: 'service', name: 'orders', aliases: [] },
+    ]);
+    expect(
+      parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--entities', entities]),
+    ).toEqual({
+      ok: true,
+      command: {
+        command: 'ingest',
+        source: './d',
+        target: 'rcaeval',
+        cases: 'c.json',
+        entities: [{ entityId: 'service:shops/orders', kind: 'service', name: 'orders', aliases: [] }],
+      },
+    });
+  });
+
+  it('accepts inline JSON edges', () => {
+    const edges = JSON.stringify([{ from: 'service:shops/orders', to: 'service:shops/pay', relation: 'calls' }]);
+    expect(
+      parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--edges', edges]),
+    ).toEqual({
+      ok: true,
+      command: {
+        command: 'ingest',
+        source: './d',
+        target: 'rcaeval',
+        cases: 'c.json',
+        edges: [{ from: 'service:shops/orders', to: 'service:shops/pay', relation: 'calls' }],
+      },
+    });
+  });
+
+  it('accepts explicit lead and lag windows', () => {
+    expect(
+      parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', '60000', '--lag-ms', '120000']),
+    ).toEqual({
+      ok: true,
+      command: {
+        command: 'ingest',
+        source: './d',
+        target: 'rcaeval',
+        cases: 'c.json',
+        leadMs: 60000,
+        lagMs: 120000,
+      },
+    });
+  });
+
+  it('accepts a zero-length lead window', () => {
+    // Zero is meaningful -- it asks for no context before the injection -- so it
+    // must not be lumped in with the malformed values below.
+    expect(
+      parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', '0']),
+    ).toEqual({
+      ok: true,
+      command: { command: 'ingest', source: './d', target: 'rcaeval', cases: 'c.json', leadMs: 0 },
+    });
+  });
+
+  it('rejects malformed entities JSON', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--entities', '{']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --entities/);
+  });
+
+  it('rejects entities that are not an array of entities', () => {
+    // Well-formed JSON is not enough: the value has to satisfy the entity
+    // contract, or the failure would surface much later inside the ingest.
+    const result = parseCliArgs([
+      'ingest',
+      '--source',
+      './d',
+      '--target',
+      'rcaeval',
+      '--cases',
+      'c.json',
+      '--entities',
+      JSON.stringify([{ name: 'orders' }]),
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --entities/);
+  });
+
+  it('rejects malformed edges JSON', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--edges', 'nope']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --edges/);
+  });
+
+  it('rejects an edge with an unknown relation', () => {
+    const result = parseCliArgs([
+      'ingest',
+      '--source',
+      './d',
+      '--target',
+      'rcaeval',
+      '--cases',
+      'c.json',
+      '--edges',
+      JSON.stringify([{ from: 'a', to: 'b', relation: 'adjacent' }]),
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --edges/);
+  });
+
+  it('rejects a negative lead window', () => {
+    // A bare `-1` is read by `parseArgs` as a competing option rather than a
+    // value, so the rejection comes from the flag parser. Verified below via
+    // the `=` form, where the value reaches this module and its own check is
+    // what rejects it -- that is the guard this test is really about.
+    const bare = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', '-1']);
+    expect(bare.ok).toBe(false);
+    if (!bare.ok) expect(bare.error).toMatch(/--lead-ms/);
+
+    const bound = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms=-1']);
+    expect(bound.ok).toBe(false);
+    if (!bound.ok) expect(bound.error).toMatch(/invalid --lead-ms/);
+  });
+
+  it('rejects a negative lag window', () => {
+    const bare = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lag-ms', '-5']);
+    expect(bare.ok).toBe(false);
+    if (!bare.ok) expect(bare.error).toMatch(/--lag-ms/);
+
+    const bound = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lag-ms=-5']);
+    expect(bound.ok).toBe(false);
+    if (!bound.ok) expect(bound.error).toMatch(/invalid --lag-ms/);
+  });
+
+  it('rejects a fractional lead window', () => {
+    // Millisecond windows are integers; a fractional one is a unit mistake
+    // (seconds typed as milliseconds) rather than a value worth truncating.
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', '1.5']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --lead-ms/);
+  });
+
+  it('rejects a non-numeric lead window', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', 'ten']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --lead-ms/);
+  });
+
+  it('rejects an empty entities list', () => {
+    // An empty array is a no-op dressed as a configuration; the caller who
+    // wrote `--entities '[]'` meant to supply something.
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--entities', '[]']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --entities/);
+  });
+
+  it('rejects an empty edges list', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--edges', '[]']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/invalid --edges/);
   });
 });
 
@@ -778,5 +1017,186 @@ describe('formatHelp and formatVersion', () => {
 
   it('returns a semantic-version string', () => {
     expect(formatVersion()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe('formatCommandHelp', () => {
+  it('names the command and its usage line', () => {
+    const help = formatCommandHelp('ingest');
+    expect(help).toContain('rca-bench ingest - ');
+    expect(help).toContain('Usage:');
+    expect(help).toContain('rca-bench ingest --source <dir>');
+  });
+
+  it('lists every flag of the command', () => {
+    const help = formatCommandHelp('ingest');
+    for (const flag of ['--source', '--target', '--cases', '--system', '--output', '--entities', '--edges', '--lead-ms', '--lag-ms']) {
+      expect(help).toContain(flag);
+    }
+  });
+
+  it('marks required flags and renders a placeholder only for value flags', () => {
+    const help = formatCommandHelp('source');
+    expect(help).toContain('--path <path> (required)');
+    // A boolean flag takes no argument, so it must not advertise one.
+    expect(help).toContain('--has-header');
+    expect(help).not.toContain('--has-header <');
+  });
+
+  it('points back at the top-level help', () => {
+    expect(formatCommandHelp('pack')).toContain('Run `rca-bench --help` for the list of commands.');
+  });
+
+  it('reports an unknown topic instead of rendering something misleading', () => {
+    expect(formatCommandHelp('frobnicate')).toContain("unknown command 'frobnicate'");
+  });
+});
+
+describe('help and parser cannot drift', () => {
+  // The defect this closes: `formatHelp` advertised `--help` on every
+  // subcommand while all eleven parsers rejected it. The help text and the
+  // parser were two hand-maintained lists. `COMMAND_SPECS` made them one, and
+  // these walk the seam in both directions so a flag added to either side
+  // alone fails here rather than in a user's terminal.
+
+  /** Flag names the reference advertises for a topic, e.g. ['--source', ...]. */
+  function advertisedFlags(topic: string): string[] {
+    return [...formatCommandHelp(topic).matchAll(/^ {2}(--[\w-]+)/gm)].map((m) => m[1] as string);
+  }
+
+  it('advertises only flags that the parser accepts', () => {
+    for (const topic of HELP_TOPICS) {
+      // `--help` and `-h` are handled by `parseCliArgs` itself, not by the
+      // per-command flag map, so they are excluded here and covered by the
+      // per-command-help tests above.
+      const advertised = advertisedFlags(topic).filter((f) => f !== '--help');
+      expect(advertised.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('accepts every flag it advertises for ingest', () => {
+    // Each advertised flag is supplied with a syntactically valid value; the
+    // assertion is that none is rejected as an unknown option.
+    const argv = [
+      'ingest',
+      '--source',
+      './d',
+      '--target',
+      'rcaeval',
+      '--cases',
+      'c.json',
+      '--system',
+      's',
+      '--output',
+      'o.json',
+      '--entities',
+      JSON.stringify([{ entityId: 'service:s/a', kind: 'service', name: 'a', aliases: [] }]),
+      '--edges',
+      JSON.stringify([{ from: 'service:s/a', to: 'service:s/b', relation: 'calls' }]),
+      '--lead-ms',
+      '1',
+      '--lag-ms',
+      '2',
+    ];
+    const result = parseCliArgs(argv);
+    expect(result.ok).toBe(true);
+    const advertised = advertisedFlags('ingest').filter((f) => f !== '--help');
+    for (const flag of advertised) expect(argv).toContain(flag);
+    expect(advertised.toSorted()).toEqual(
+      ['--source', '--target', '--cases', '--system', '--output', '--entities', '--edges', '--lead-ms', '--lag-ms'].toSorted(),
+    );
+  });
+
+  it('accepts every flag it advertises for source', () => {
+    const argv = [
+      'source',
+      '--path',
+      'p.csv',
+      '--output',
+      'o.json',
+      '--format',
+      'csv',
+      '--signal-kind',
+      'metric',
+      '--layout',
+      '{}',
+      '--service-name',
+      'svc',
+      '--time-layout',
+      'iso8601',
+      '--assume-offset-minutes',
+      '0',
+      '--has-header',
+      '--delimiter',
+      ',',
+    ];
+    expect(parseCliArgs(argv).ok).toBe(true);
+    const advertised = advertisedFlags('source').filter((f) => f !== '--help');
+    for (const flag of advertised) expect(argv).toContain(flag);
+  });
+
+  it('accepts every flag it advertises for transform, case, gate, report and pack', () => {
+    const cases: [string, string[]][] = [
+      ['transform', ['--input', 'i.json', '--rules', 'r.json', '--output', 'o.json', '--id-field', 'id']],
+      ['case', ['--input', 'i.json', '--output', 'o.json']],
+      ['gate', ['--input', 'i.json', '--target', 'rca100', '--gate-run-id', 'g1']],
+      ['report', ['--input', 'i.json', '--title', 't', '--target', 'rca100', '--output', 'o.html']],
+      ['pack', ['--input', 'd', '--output', 'a.tar.gz', '--prefix', 'p']],
+    ];
+    for (const [topic, flags] of cases) {
+      expect(parseCliArgs([topic, ...flags]).ok).toBe(true);
+      const advertised = advertisedFlags(topic).filter((f) => f !== '--help');
+      for (const flag of advertised) expect(flags).toContain(flag);
+    }
+  });
+
+  it('accepts every flag it advertises for export and score', () => {
+    const cases: [string, string[]][] = [
+      ['export', ['--target', 'rca100', '--input', 'i.json', '--out-dir', 'out', '--suite', 're1']],
+      ['score', ['--target', 'rca100', '--dir', 'out', '--anchors', '{}']],
+    ];
+    for (const [topic, flags] of cases) {
+      expect(parseCliArgs([topic, ...flags]).ok).toBe(true);
+      const advertised = advertisedFlags(topic).filter((f) => f !== '--help');
+      for (const flag of advertised) expect(flags).toContain(flag);
+    }
+  });
+
+  it('accepts both disjoint flag sets of official', () => {
+    // `official` has two modes that must not be mixed: `--input` alone, or
+    // `--target` with `--dir`. A single argv cannot exercise both, so each mode
+    // is checked against the subset of advertised flags it owns.
+    expect(advertisedFlags('official').filter((f) => f !== '--help').toSorted()).toEqual(
+      ['--input', '--target', '--dir', '--allow-empty-reason', '--output'].toSorted(),
+    );
+    expect(parseCliArgs(['official', '--target', 'rca100', '--dir', 'out']).ok).toBe(true);
+    expect(parseCliArgs(['official', '--input', 'i.json']).ok).toBe(true);
+    // Mixing them is rejected, which is why one argv cannot cover both modes.
+    expect(parseCliArgs(['official', '--input', 'i.json', '--target', 'rca100', '--dir', 'out']).ok).toBe(false);
+  });
+
+  it('accepts every flag an evolve action advertises', () => {
+    // `evolve` advertises the union of its four actions' flags, but each action
+    // accepts only its own subset; a union-wide argv would be rejected, so the
+    // subsets are exercised individually.
+    const byAction: [string, string[]][] = [
+      ['propose', ['--input', 'i.json', '--output', 'o.json']],
+      ['approve', ['--input', 'i.json', '--note', 'n', '--output', 'o.json']],
+      ['reject', ['--input', 'i.json', '--note', 'n', '--output', 'o.json']],
+      ['stale', ['--input', 'i.json', '--cases', '[]']],
+    ];
+    for (const [action, flags] of byAction) {
+      expect(parseCliArgs(['evolve', action, ...flags]).ok).toBe(true);
+    }
+    const advertised = advertisedFlags('evolve').filter((f) => f !== '--help');
+    const covered = new Set(byAction.flatMap(([, flags]) => flags.filter((f) => f.startsWith('--'))));
+    for (const flag of advertised) expect(covered).toContain(flag);
+  });
+
+  it('advertises --help on every topic', () => {
+    // The specific promise `formatHelp` makes, asserted per command.
+    for (const topic of HELP_TOPICS) {
+      expect(parseCliArgs([topic, '--help'])).toEqual({ ok: true, command: { command: 'help', topic } });
+    }
   });
 });

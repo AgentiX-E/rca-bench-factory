@@ -58,6 +58,9 @@ jobs:
       - name: README usage sample runs against the built package
         run: node scripts/check-readme-sample.mjs
 
+      - name: CLI reference matches the built binary
+        run: node scripts/check-cli-reference.mjs
+
       - name: Example pack is up to date
         run: pnpm examples:bundle:check
 

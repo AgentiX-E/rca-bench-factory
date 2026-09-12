@@ -583,12 +583,18 @@ export function ingestPrimeDataset(
 
   // The root cause is anchored to telemetry we actually read, or to a service
   // the caller declared. Everything else fails here, before the bundle exists.
+  //
+  // The remedy named in the message has to be one the caller can act on. The
+  // API-level name is `extraEntities`, but a CLI user reaches it as
+  // `--entities`; naming only the former told them to supply something no flag
+  // could express. Both are named so the remedy is reachable from either entry
+  // point.
   for (const fc of cases) {
     const component = fc.groundTruth.rootCauseComponent;
     if (!vouchedNames.has(component)) {
       return {
         ok: false,
-        error: `case '${fc.caseId}': root-cause component '${component}' does not resolve to an entity in the graph; declare it via extraEntities when the telemetry does not carry it`,
+        error: `case '${fc.caseId}': root-cause component '${component}' does not resolve to an entity in the graph; declare it via extraEntities (CLI: --entities) when the telemetry does not carry it`,
       };
     }
   }

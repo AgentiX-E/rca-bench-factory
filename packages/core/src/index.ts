@@ -355,7 +355,7 @@ export {
 } from './pack/example.js';
 export type { ExamplePackStep, ExampleTargetCommand } from './pack/example.js';
 
-export { CLI_VERSION, formatHelp, formatVersion, parseCliArgs } from './cli/args.js';
+export { CLI_VERSION, formatCommandHelp, formatHelp, formatVersion, HELP_TOPICS, parseCliArgs } from './cli/args.js';
 export type { CliCommand, CliParseResult, EvolveAction, ExportTarget } from './cli/args.js';
 
 export {

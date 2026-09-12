@@ -17,6 +17,7 @@ import {
   exportRcaEval,
   buildPackManifest,
   createTarGzip,
+  formatCommandHelp,
   formatHelp,
   formatVersion,
   ingestFile,
@@ -269,6 +270,10 @@ async function runIngest(cmd: Extract<CliCommand, { command: 'ingest' }>, ctx: C
     dataset: cmd.target,
     system: cmd.system ?? cmd.target,
     cases: descriptors,
+    ...(cmd.entities !== undefined ? { extraEntities: cmd.entities } : {}),
+    ...(cmd.edges !== undefined ? { extraEdges: cmd.edges } : {}),
+    ...(cmd.leadMs !== undefined ? { leadMs: cmd.leadMs } : {}),
+    ...(cmd.lagMs !== undefined ? { lagMs: cmd.lagMs } : {}),
   });
   if (!result.ok) {
     ctx.stderr(`error: ${result.error}\n`);
@@ -505,7 +510,10 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
   try {
     switch (parsed.command.command) {
       case 'help':
-        ctx.stdout(formatHelp() + '\n');
+        // A topic narrows the output to one command's reference; without one
+        // the full command list is printed. `parseCliArgs` guarantees the topic
+        // is a known command, so no "unknown topic" branch is needed here.
+        ctx.stdout((parsed.command.topic !== undefined ? formatCommandHelp(parsed.command.topic) : formatHelp()) + '\n');
         return 0;
       case 'version':
         ctx.stdout(formatVersion() + '\n');

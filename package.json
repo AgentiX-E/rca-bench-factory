@@ -19,7 +19,7 @@
     "examples:bundle:check": "node scripts/build-example-bundle.mjs --check",
     "official:check": "node scripts/check-official.mjs",
     "site:serve": "node scripts/serve-site.mjs",
-    "docs:check": "node scripts/check-readme-sample.mjs"
+    "docs:check": "node scripts/check-readme-sample.mjs && node scripts/check-cli-reference.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

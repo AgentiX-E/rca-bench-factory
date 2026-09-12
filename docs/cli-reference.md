@@ -23,6 +23,22 @@ and score an exported dataset.
 | `pack` | Pack a directory into a byte-reproducible `tar.gz` with a SHA-256 manifest |
 | `evolve` | Propose, approve, reject or roll back a self-evolution (HITL + red lines) |
 
+## Getting help
+
+Every command accepts `--help` (or `-h`), and `help <command>` is equivalent.
+The per-command reference is generated from the same table the parser reads, so
+it cannot list a flag the command rejects:
+
+```bash
+rca-bench ingest --help
+rca-bench help gate
+rca-bench export -h
+```
+
+Help is not a way past a bad command name: `rca-bench frobnicate --help` still
+fails with `unknown command 'frobnicate'`, because a typo silently answered with
+usage text teaches the caller nothing.
+
 ### `rca-bench source`
 
 ```text
@@ -43,6 +59,8 @@ rca-bench source --path telemetry.csv [--format csv] [--signal-kind metric]
 ```text
 rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
                  [--system tt] [--output bundle.json]
+                 [--entities '[...]'] [--edges '[...]']
+                 [--lead-ms 600000] [--lag-ms 600000]
 ```
 
 - The `ingest` half of the round trip: it turns an official dataset slice into an
@@ -68,10 +86,27 @@ rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
   component that is neither observed in the data nor declared as an entity fails
   the run. This is what keeps the reproduction honest — a guessed label would
   make the round trip score against itself.
+- `--entities` declares an entity the telemetry does not carry. A root-cause
+  component that failed before the observation window opened leaves no trace in
+  `service.name`, so no entity can be inferred for it and the run stops with
+  `does not resolve to an entity in the graph`. Supplying the missing service
+  resolves the case:
+  ```bash
+  rca-bench ingest --source ./official-data --target rcaeval --cases cases.json \
+    --entities '[{"entityId":"service:rcaeval/ts-absent","kind":"service","name":"ts-absent","aliases":[]}]'
+  ```
+  The value is inline JSON, matching `--layout` and `--anchors`, and each entry
+  is validated against the same entity contract the IR uses. An empty array is
+  rejected: a declaration that declares nothing is a mistake, not a no-op.
+- `--edges` adds topology edges the telemetry does not express, as inline JSON in
+  the `{ "from", "to", "relation" }` shape, where `relation` is one of
+  `contains`, `hosts`, `calls`, `same_as`. Endpoints must be entity ids that
+  exist in the graph.
 - Files are routed to cases by `pathPrefixes`. A case without prefixes claims
   every file left over; a file claimed by no case is reported in `unclaimed`.
-- The window defaults to ten minutes either side of `injectTime` (`leadMs` /
-  `lagMs` in the library API).
+- The window defaults to ten minutes either side of `injectTime`; `--lead-ms`
+  and `--lag-ms` override it, and `--lag-ms` defaults to the lead when only the
+  lead is given. Both are non-negative integers.
 - A case that could not be read at all is reported as a `hardErrors` entry on
   stderr without failing the run. Non-zero `hardErrors` must be treated as "that
   case was not reproduced".
