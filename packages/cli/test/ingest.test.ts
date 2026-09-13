@@ -173,6 +173,136 @@ describe('run - ingest', () => {
     expect(err.join('')).toMatch(/never-read.*no files/);
   });
 
+  it('reports each rejected row with its file, line and reason', async () => {
+    // The silent-loss defect. `ingestPrimeDataset` upholds "zero silent loss" by
+    // returning a per-case report of every quarantine entry, but the runner
+    // never read it, so a source that lost half its rows produced a bundle and
+    // an empty stderr. The bundle on disk is then indistinguishable from one
+    // built from a source that only ever had half the rows.
+    const dir = await makeDir();
+    await writeFiles(dir, {
+      'data/metrics/metrics.csv': [
+        'timestamp,service,metric_name,value',
+        '2025-03-01T00:09:00.000Z,ts-order-service,cpu_usage,0.41',
+        '2025-03-01T00:10:00.000Z,ts-order-service,cpu_usage,NOT_A_NUMBER',
+      ].join('\n') + '\n',
+      'cases.json': CASES,
+    });
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--output', 'b.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    // The run still succeeds: the surviving row is usable and the case is
+    // reproducible. But the loss must be visible, not inferred.
+    expect(code).toBe(0);
+    const message = err.join('');
+    expect(message).toMatch(/NOT_A_NUMBER/);
+    expect(message).toMatch(/metrics\.csv/);
+    // The line number is what makes the complaint actionable.
+    expect(message).toMatch(/\bline 3\b/);
+  });
+
+  it('counts the rejected rows so the operator can size the loss', async () => {
+    // A per-row list is not enough to answer "is this dataset usable?": the
+    // operator needs the total at a glance, and needs to know it is a total
+    // rather than the only one that happened to be printed first.
+    const dir = await makeDir();
+    await writeFiles(dir, {
+      'data/metrics/metrics.csv': [
+        'timestamp,service,metric_name,value',
+        '2025-03-01T00:09:00.000Z,ts-order-service,cpu_usage,0.41',
+        '2025-03-01T00:10:00.000Z,ts-order-service,cpu_usage,bad-one',
+        '2025-03-01T00:11:00.000Z,ts-order-service,cpu_usage,bad-two',
+        '2025-03-01T00:12:00.000Z,ts-order-service,cpu_usage,bad-three',
+      ].join('\n') + '\n',
+      'cases.json': CASES,
+    });
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--output', 'b.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(0);
+    expect(err.join('')).toMatch(/3 source row\(s\) rejected/);
+  });
+
+  it('names the file when a whole file is rejected before any row is parsed', async () => {
+    // "every file was rejected before any row could be parsed" does not say
+    // which file, or why. The report knows both, so the warning must carry them.
+    //
+    // A healthy file is included alongside the broken one: when the broken file
+    // is the *only* input, the run correctly fails earlier because the root
+    // cause then resolves to no entity at all, and the report never gets a
+    // chance to speak. The loss quoted here is the interesting case — the run
+    // succeeds, the case is reproducible, and one file still yielded nothing.
+    const dir = await makeDir();
+    await writeFiles(dir, {
+      'data/metrics/metrics.csv': 'garbage\n1,2,3\n',
+      'data/logs/logs.csv': LOGS_CSV,
+      'cases.json': CASES,
+    });
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--output', 'b.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(0);
+    const message = err.join('');
+    expect(message).toMatch(/metrics\.csv/);
+    expect(message).toMatch(/required column|header/i);
+  });
+
+  it('says nothing about losses for a source that parses cleanly', async () => {
+    // The positive control. Without it, "report every rejection" would be
+    // satisfied by reporting a rejection that never happened, and the warning
+    // would become noise the operator learns to ignore.
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--output', 'b.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('caps the per-row detail but still reports the true total', async () => {
+    // A badly mis-specified dataset can quarantine every row. Printing all of
+    // them buries the count that tells the operator how bad it is, so the list
+    // is capped -- but the count must remain the real one, and the cap must be
+    // stated, or the reader would take a truncated list for a short one.
+    const dir = await makeDir();
+    const rows = ['timestamp,service,metric_name,value', '2025-03-01T00:09:00.000Z,ts-order-service,cpu_usage,0.41'];
+    for (let i = 0; i < 14; i += 1) {
+      rows.push(`2025-03-01T00:${10 + i}:00.000Z,ts-order-service,cpu_usage,bad${i}`);
+    }
+    await writeFiles(dir, { 'data/metrics/metrics.csv': rows.join('\n') + '\n', 'cases.json': CASES });
+    const err: string[] = [];
+
+    const code = await run(
+      ['ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json', '--output', 'b.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(0);
+    const message = err.join('');
+    expect(message).toMatch(/14 source row\(s\) rejected/);
+    expect(message).toMatch(/and 4 more/);
+    // Ten rows are listed individually; the eleventh detail line is the tally.
+    const detailLines = message.split('\n').filter((l) => l.startsWith('  '));
+    expect(detailLines).toHaveLength(11);
+  });
+
   it('fails when the root cause is absent from the telemetry', async () => {
     const dir = await makeDir();
     await writeFiles(dir, {

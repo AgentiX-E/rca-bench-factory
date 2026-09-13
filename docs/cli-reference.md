@@ -120,6 +120,22 @@ rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
 - The window defaults to ten minutes either side of `injectTime`; `--lead-ms`
   and `--lag-ms` override it, and `--lag-ms` defaults to the lead when only the
   lead is given. Both are non-negative integers.
+- **Every rejected source row is reported on stderr, with its file, line and
+  reason**, and the per-case total is printed first:
+  ```text
+  warning: case 'RE2-ts-order-service-cpu_1': 1 source row(s) rejected
+    metrics/metrics.csv, line 3: metric value 'NOT_A_NUMBER' is not a finite number
+  ```
+  This is the `ingest` half of the same "zero silent loss" invariant the
+  exporters honour: a source record becomes either a signal or a quarantine
+  entry, and the quarantine entries are the only remaining record of what was
+  dropped. A run that loses rows and says nothing produces a bundle that cannot
+  be told apart from one built from a source that only ever had the rows that
+  survived. **A clean source prints nothing.** A whole-file rejection (an
+  unreadable header, an undeterminable format) is reported as `<file> (whole
+  file)` rather than as a line number, since no line is responsible.
+  At most ten rows are listed individually, with `... and N more` when the list
+  is longer, so the count stays readable when a dataset is badly mis-specified.
 - A case that could not be read at all is reported as a `hardErrors` entry on
   stderr without failing the run. Non-zero `hardErrors` must be treated as "that
   case was not reproduced".

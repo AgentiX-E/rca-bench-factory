@@ -53,6 +53,7 @@ import type {
   IrBundle,
   OfficialRegressionOptions,
   OfficialRegressionReport,
+  PrimeCaseReport,
   PrimeCaseSource,
   ScoreTargetId,
   SignalKind,
@@ -251,6 +252,40 @@ async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: C
 }
 
 /**
+ * Report what `ingestPrimeDataset` rejected, so the loss is visible.
+ *
+ * The ingest contract is "zero silent loss": every source record is either a
+ * validated signal or a quarantine entry. The entries are returned per case, and
+ * until this function existed the runner discarded them — a source that lost
+ * half its rows produced a bundle and an empty stderr, so the bundle on disk was
+ * indistinguishable from one built from a source that only ever had half the
+ * rows. The report is the entire mechanism the invariant depends on, so it is
+ * printed rather than computed and dropped.
+ *
+ * Per-row detail is capped: a badly mis-specified dataset can quarantine every
+ * row, and a thousand-line wall of stderr hides the one line that says how much
+ * was lost. The total is always printed in full, and the cap is stated so the
+ * reader knows the list was truncated rather than short.
+ */
+const MAX_REPORTED_ROWS = 10;
+
+function reportIngestLosses(report: readonly PrimeCaseReport[], ctx: Ctx): void {
+  for (const rep of report) {
+    if (rep.quarantine.length === 0) continue;
+    ctx.stderr(`warning: case '${rep.caseId}': ${rep.quarantine.length} source row(s) rejected\n`);
+    for (const q of rep.quarantine.slice(0, MAX_REPORTED_ROWS)) {
+      // `line` is 1-based, or 0 when the whole file was refused before any row
+      // was parsed. Printing "line 0" would invent a line that does not exist.
+      const where = q.line === 0 ? `${q.file} (whole file)` : `${q.file}, line ${q.line}`;
+      ctx.stderr(`  ${where}: ${q.reason}\n`);
+    }
+    if (rep.quarantine.length > MAX_REPORTED_ROWS) {
+      ctx.stderr(`  ... and ${rep.quarantine.length - MAX_REPORTED_ROWS} more\n`);
+    }
+  }
+}
+
+/**
  * `ingest` reads a prime dataset off disk, turns it into an IR bundle and writes
  * the bundle out.
  *
@@ -281,6 +316,7 @@ async function runIngest(cmd: Extract<CliCommand, { command: 'ingest' }>, ctx: C
     return 1;
   }
 
+  reportIngestLosses(result.report, ctx);
   for (const hard of result.hardErrors) ctx.stderr(`warning: ${hard}\n`);
   if (result.unclaimed.length > 0) {
     ctx.stderr(`warning: ${result.unclaimed.length} file(s) matched no case: ${result.unclaimed.join(', ')}\n`);
