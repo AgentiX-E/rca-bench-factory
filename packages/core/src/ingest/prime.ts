@@ -2,8 +2,10 @@ import { ISO_UTC_PATTERN } from '../util/time.js';
 import {
   entityId as buildEntityId,
   findAmbiguousAliases,
+  findDanglingEdgeRefs,
   indexGraph,
   resolveEntityRef,
+  VALID_RELATIONS,
 } from '../entity/graph.js';
 import { detectFileLayout, ingestFile, type FileFormat, type FileLayout, type FileSignalKind } from './file.js';
 import { irBundleSchema } from '../ir/schema.js';
@@ -462,6 +464,98 @@ function validateDescriptor(
   return { ok: true, faults };
 }
 
+/** Does this string carry any content at all? */
+function isBlank(value: string): boolean {
+  return value.trim() === '';
+}
+
+/**
+ * Validate the caller's hand-written declarations.
+ *
+ * `extraEntities` and `extraEdges` are the only part of the graph the caller
+ * authors directly, so they are the only part that can be internally
+ * inconsistent. Shape problems are rejected here, at the boundary that produced
+ * them:
+ *
+ *  - a blank id, name or endpoint, which the IR schema would eventually reject
+ *    with a message naming no field ("String must contain at least 1
+ *    character(s)") and which, for a blank *name*, is worse than missing: it
+ *    becomes a `byAlias` key, so a pair of them manufactures an alias ambiguity
+ *    that then gets blamed on an unrelated root cause.
+ *
+ * The dangling-endpoint check does *not* live here, because answering it
+ * requires the finished graph: an edge may legitimately point at an entity that
+ * telemetry proves even when it was never declared. `validateEndpointRefs` below
+ * owns that check and runs once the graph exists.
+ */
+function validateDeclarations(
+  options: PrimeIngestOptions,
+): { ok: true } | { ok: false; error: string } {
+  for (const entity of options.extraEntities ?? []) {
+    if (isBlank(entity.entityId)) {
+      return { ok: false, error: 'declared entity has a non-blank entityId requirement: entityId is blank' };
+    }
+    if (isBlank(entity.name)) {
+      return { ok: false, error: `declared entity '${entity.entityId}' needs a non-blank name` };
+    }
+    for (const alias of entity.aliases) {
+      if (isBlank(alias)) {
+        return { ok: false, error: `declared entity '${entity.entityId}' has a blank alias` };
+      }
+    }
+  }
+
+  for (const edge of options.extraEdges ?? []) {
+    // The relation is a closed set and needs no graph context, so it is checked
+    // here rather than at the graph stage. An out-of-contract relation is a
+    // more fundamental defect than a malformed endpoint, and reporting the
+    // endpoint first would bury it.
+    if (!VALID_RELATIONS.includes(edge.relation)) {
+      return { ok: false, error: `unknown relation '${edge.relation}' (expected ${VALID_RELATIONS.join('|')})` };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Reject a blank endpoint once the graph stage has had its say.
+ *
+ * A blank endpoint is a missing reference and a dangling one is a wrong
+ * reference, and both are decidable from the finished graph -- so both are
+ * checked there, in severity order, instead of splitting them across two
+ * stages. Splitting them is what made the diagnosis order-dependent: the blank
+ * check ran first over the raw list and returned immediately, so an edge list
+ * containing a blank endpoint *and* a dangling reference was reported according
+ * to which edge the caller typed first. The dangling reference is also the more
+ * useful of the two, because it names the entity that is actually missing --
+ * and a blank endpoint hides it whenever it appears earlier in the list.
+ *
+ * `findDanglingEdgeRefs` already distinguishes the two reasons, so both
+ * verdicts come from the same detector that G2 uses and cannot drift from it.
+ */
+function validateEndpointRefs(graph: EntityGraph): { ok: true } | { ok: false; error: string } {
+  const issues = findDanglingEdgeRefs(graph);
+
+  const dangling = issues.find((issue) => issue.reason === 'dangling');
+  if (dangling !== undefined) {
+    return {
+      ok: false,
+      error: `edge ${dangling.where} references '${dangling.ref}' which is not an entity in the graph`,
+    };
+  }
+
+  const empty = issues.find((issue) => issue.reason === 'empty');
+  if (empty !== undefined) {
+    // `where` carries the offending side (`edge.from` / `edge.to`), so the
+    // message points at a field rather than at "an edge" the caller then has to
+    // inspect by hand.
+    return { ok: false, error: `edge ${empty.where} has a non-blank requirement: the value is blank` };
+  }
+
+  return { ok: true };
+}
+
 function deriveWindow(
   spec: PrimeCaseSource,
   leadMs: number,
@@ -488,6 +582,9 @@ export function ingestPrimeDataset(
 ): PrimeIngestResult {
   const descriptor = validateDescriptor(options);
   if (!descriptor.ok) return { ok: false, error: descriptor.error };
+
+  const declaration = validateDeclarations(options);
+  if (!declaration.ok) return { ok: false, error: declaration.error };
 
   const paths = Object.keys(files);
   if (paths.length === 0) {
@@ -609,6 +706,12 @@ export function ingestPrimeDataset(
     entities: [...entities.values()].sort((a, b) => a.entityId.localeCompare(b.entityId)),
     edges: dedupeEdges(options.extraEdges ?? []),
   };
+
+  // Checked against the finished graph, not the declared subset: an edge may
+  // legitimately point at an entity that telemetry proves without anyone having
+  // declared it.
+  const refs = validateEndpointRefs(graph);
+  if (!refs.ok) return { ok: false, error: refs.error };
 
   // Resolve each root cause onto the entity the guard above vouched for.
   //

@@ -102,6 +102,19 @@ rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
   the `{ "from", "to", "relation" }` shape, where `relation` is one of
   `contains`, `hosts`, `calls`, `same_as`. Endpoints must be entity ids that
   exist in the graph.
+- Both flags are checked before the bundle is written, so an inconsistent
+  declaration cannot leave an artefact behind. A declaration is inconsistent
+  when it carries a blank `entityId`, `name`, `alias`, `from` or `to`; an
+  out-of-contract `relation`; or an endpoint no entity in the finished graph
+  matches. The last check runs against the **assembled** graph, not against the
+  declarations alone, so an edge may point at an entity that telemetry proves
+  without anyone having to declare it. The offending field is named in the
+  error, and a dangling endpoint is reported in preference to a blank one when
+  both are present, because it names the entity that is actually missing.
+  Avoiding the check does not help: `rca-bench gate` raises the same defect as
+  `G2/DANGLING_EDGE_REF`, but only after a bundle that violates it already
+  exists on disk. Both sites call the same detector, so they cannot disagree
+  about what "dangling" means.
 - Files are routed to cases by `pathPrefixes`. A case without prefixes claims
   every file left over; a file claimed by no case is reported in `unclaimed`.
 - The window defaults to ten minutes either side of `injectTime`; `--lead-ms`

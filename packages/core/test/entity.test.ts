@@ -86,6 +86,32 @@ describe('findDanglingEdgeRefs', () => {
     const broken: EntityGraph = { ...graph, edges: [{ from: '', to: 'service:default/order', relation: 'calls' }] };
     expect(findDanglingEdgeRefs(broken)[0]).toMatchObject({ reason: 'empty' });
   });
+
+  it('flags a whitespace-only endpoint as empty, not dangling', () => {
+    // A blank value is a *missing* reference, not a reference to something
+    // absent. Reporting it as `dangling` implies the caller named a real entity
+    // that the graph lacks, which sends them looking for the wrong mistake.
+    const broken: EntityGraph = { ...graph, edges: [{ from: '   ', to: 'service:default/order', relation: 'calls' }] };
+    const issues = findDanglingEdgeRefs(broken);
+    expect(issues).toHaveLength(1);
+    // `where` names the side, so the two consumers of this function can point at
+    // a field instead of at the whole edge.
+    expect(issues[0]).toMatchObject({ ref: '   ', reason: 'empty', where: 'edge.from' });
+  });
+
+  it('flags a whitespace-only `to` endpoint as empty and names that side', () => {
+    const broken: EntityGraph = { ...graph, edges: [{ from: 'service:default/order', to: '\t', relation: 'calls' }] };
+    expect(findDanglingEdgeRefs(broken)[0]).toMatchObject({ reason: 'empty', where: 'edge.to' });
+  });
+
+  it('reports a blank `from` when both endpoints are blank', () => {
+    // An edge with no source has no direction, so `from` is the side worth
+    // naming. One issue per edge keeps the report aligned with the edge list.
+    const broken: EntityGraph = { ...graph, edges: [{ from: '', to: '   ', relation: 'calls' }] };
+    const issues = findDanglingEdgeRefs(broken);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ reason: 'empty', where: 'edge.from' });
+  });
 });
 
 describe('findInvalidRelations', () => {

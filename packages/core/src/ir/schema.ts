@@ -98,7 +98,15 @@ export const telemetrySignalSchema = z.object({
   irVersion: z.string().min(1),
   resource: resourceSchema,
   timestamp: z.string().min(1),
-  rawOffsetMinutes: z.number().optional(),
+  // Minutes east of UTC on the wire (China Standard Time is 480). The field is
+  // typed, not merely optional: it is the only surviving record of where the
+  // sample sat in local time once `timestamp` has been normalised to UTC, and
+  // nothing downstream recomputes it. An undeclared number here would be the
+  // worst of both worlds -- serialised into the bundle and relied upon by
+  // consumers while being unverifiable at the boundary. Bounding it to real
+  // offsets means a producer that writes seconds or a raw zone id is rejected
+  // where the mistake was made instead of months later in an exporter.
+  rawOffsetMinutes: z.number().int().min(-720).max(840).optional(),
   signal: z.enum(['metric', 'log', 'trace', 'event', 'alert', 'profile']),
   payload: signalPayloadSchema,
   provenance: z.record(fieldProvenanceSchema).optional(),
@@ -114,8 +122,19 @@ export const telemetrySignalSchema = z.object({
   }
 });
 
+/**
+ * A string that must carry content.
+ *
+ * Plain `min(1)` counts whitespace as content, so `'   '` would satisfy a
+ * required name or id and travel into the IR. A blank entity name is worse than
+ * a missing one: it becomes a `byAlias` key, so two of them manufacture an
+ * ambiguity that then gets blamed on a legitimate root cause. `.trim()` makes
+ * "non-blank" the rule; the value is still stored trimmed for these fields.
+ */
+const nonBlank = z.string().trim().min(1);
+
 export const entitySchema = z.object({
-  entityId: z.string().min(1),
+  entityId: nonBlank,
   kind: z.enum([
     'service',
     'pod',
@@ -127,15 +146,15 @@ export const entitySchema = z.object({
     'cluster',
     'external',
   ]),
-  name: z.string().min(1),
+  name: nonBlank,
   namespace: z.string().optional(),
-  aliases: z.array(z.string()),
+  aliases: z.array(nonBlank),
   attributes: z.record(z.string()).optional(),
 });
 
 export const entityEdgeSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
+  from: nonBlank,
+  to: nonBlank,
   relation: z.enum(['contains', 'hosts', 'calls', 'same_as']),
   attributes: z.record(z.string()).optional(),
 });

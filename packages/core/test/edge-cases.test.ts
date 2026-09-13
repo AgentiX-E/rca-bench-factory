@@ -180,9 +180,9 @@ describe('additional branch coverage', () => {
       entities: [{ entityId: 'a', kind: 'service', name: 'a', aliases: [] }],
       edges: [{ from: 'a', to: '', relation: 'calls' }],
     };
-    expect(findDanglingEdgeRefs(g)).toEqual([
-      { ref: '(empty to)', reason: 'empty', where: 'edge' },
-    ]);
+    // The side is named in `where` rather than in the placeholder-shaped `ref`,
+    // so a consumer can point at `edge.to` instead of at a synthetic label.
+    expect(findDanglingEdgeRefs(g)).toEqual([{ ref: '', reason: 'empty', where: 'edge.to' }]);
   });
 
   it('treats a missing java_log offset as UTC rather than guessing', () => {

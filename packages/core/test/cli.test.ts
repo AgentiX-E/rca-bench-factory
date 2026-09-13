@@ -357,9 +357,12 @@ describe('parseCliArgs - ingest', () => {
     if (!result.ok) expect(result.error).toMatch(/invalid --entities/);
   });
 
-  it('rejects entities that are not an array of entities', () => {
-    // Well-formed JSON is not enough: the value has to satisfy the entity
-    // contract, or the failure would surface much later inside the ingest.
+  it('passes a structurally valid entity list through for core to judge', () => {
+    // The parser checks shape, not field rules. An entity missing `entityId` is
+    // still an object in an array, so it arrives here intact -- and
+    // `ingestPrimeDataset` rejects it with a message naming the blank field,
+    // which "invalid --entities JSON" could not. `prime.test.ts` covers that
+    // half; this asserts the parser does not pre-empt it.
     const result = parseCliArgs([
       'ingest',
       '--source',
@@ -371,8 +374,16 @@ describe('parseCliArgs - ingest', () => {
       '--entities',
       JSON.stringify([{ name: 'orders' }]),
     ]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/invalid --entities/);
+    expect(result).toEqual({
+      ok: true,
+      command: {
+        command: 'ingest',
+        source: './d',
+        target: 'rcaeval',
+        cases: 'c.json',
+        entities: [{ name: 'orders' }],
+      },
+    });
   });
 
   it('rejects malformed edges JSON', () => {
@@ -381,7 +392,12 @@ describe('parseCliArgs - ingest', () => {
     if (!result.ok) expect(result.error).toMatch(/invalid --edges/);
   });
 
-  it('rejects an edge with an unknown relation', () => {
+  it('passes a structurally valid edge list through for core to judge', () => {
+    // The parser checks shape, not field rules. An edge whose `relation` is
+    // outside the closed set is an object in an array, so it arrives here
+    // intact -- and `ingestPrimeDataset` rejects it with a message naming the
+    // relation, which "invalid --edges JSON" could not. `prime.test.ts` covers
+    // that half; this asserts the parser does not pre-empt it.
     const result = parseCliArgs([
       'ingest',
       '--source',
@@ -393,6 +409,20 @@ describe('parseCliArgs - ingest', () => {
       '--edges',
       JSON.stringify([{ from: 'a', to: 'b', relation: 'adjacent' }]),
     ]);
+    expect(result).toEqual({
+      ok: true,
+      command: {
+        command: 'ingest',
+        source: './d',
+        target: 'rcaeval',
+        cases: 'c.json',
+        edges: [{ from: 'a', to: 'b', relation: 'adjacent' }],
+      },
+    });
+  });
+
+  it('rejects a non-array --edges value', () => {
+    const result = parseCliArgs(['ingest', '--source', './d', '--target', 'rcaeval', '--cases', 'c.json', '--edges', '{"from":"a"}']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/invalid --edges/);
   });

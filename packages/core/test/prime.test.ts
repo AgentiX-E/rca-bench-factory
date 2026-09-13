@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ingestPrimeDataset, PRIME_DATASET_IDS } from '../src/ingest/prime.js';
 import type { PrimeCaseSource, PrimeIngestOptions } from '../src/ingest/prime.js';
+import type { FaultCase } from '../src/ir/types.js';
 import { checkG2Semantic } from '../src/gates/gates.js';
 
 /**
@@ -1011,10 +1012,11 @@ describe('ingestPrimeDataset · entity graph', () => {
     ]);
   });
 
-  it('refuses a malformed edge that the graph schema rejects', () => {
-    // `dedupeEdges` normalises duplicates, not validity: an edge carrying a
-    // relation outside the closed set survives graph construction and is caught
-    // at the schema finish line. That path must reject, never emit.
+  it('refuses a malformed edge relation, naming the closed set', () => {
+    // The relation is validated at the ingest boundary now, so the caller gets
+    // the closed set back instead of the schema's "assembled bundle failed
+    // validation". The schema finish line still exists as defence in depth for
+    // a bundle built by other means; `schema.test.ts` covers that half.
     const result = ingestPrimeDataset(
       METRIC_FILE,
       options({
@@ -1029,7 +1031,8 @@ describe('ingestPrimeDataset · entity graph', () => {
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(result.error).toMatch(/assembled bundle failed validation:/);
+    expect(result.error).toMatch(/unknown relation 'bogus'/);
+    expect(result.error).toMatch(/contains\|hosts\|calls\|same_as/);
   });
 
   it('refuses an ambiguous component name instead of guessing which entity it means', () => {
@@ -1083,6 +1086,163 @@ describe('ingestPrimeDataset · entity graph', () => {
   });
 });
 
+describe('ingestPrimeDataset · declared entity and edge validation', () => {
+  // The declarations are the one part of the graph the caller writes by hand,
+  // so they are the one part that can be internally inconsistent. Each check
+  // below rejects at the boundary that created the inconsistency and names the
+  // offending field, rather than deferring to the G2 gate or to zod's
+  // generic "String must contain at least 1 character(s)".
+
+  const ORDER = ORDER_SERVICE_ENTITY.entityId;
+
+  it('rejects an edge whose endpoint is not an entity', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [ORDER_SERVICE_ENTITY], extraEdges: [{ from: ORDER, to: 'service:tt/ghost', relation: 'calls' }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/service:tt\/ghost/);
+    expect(result.error).toMatch(/edge/i);
+    expect(result.error).not.toMatch(/assembled bundle failed validation/);
+  });
+
+  it('names which side of the edge is dangling', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [ORDER_SERVICE_ENTITY], extraEdges: [{ from: 'service:tt/ghost', to: ORDER, relation: 'calls' }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/from/);
+    expect(result.error).toMatch(/service:tt\/ghost/);
+  });
+
+  it('rejects an edge with a blank endpoint and says it is blank', () => {
+    // A blank endpoint is a missing reference, not a named-but-absent one, so
+    // the message must not claim the caller referenced something.
+    const result = ingestPrimeDataset(METRIC_FILE, options({ extraEdges: [{ from: '   ', to: ORDER, relation: 'calls' }] }));
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/non-blank/i);
+    expect(result.error).toMatch(/edge/i);
+  });
+
+  it('rejects an empty-string edge endpoint', () => {
+    const result = ingestPrimeDataset(METRIC_FILE, options({ extraEdges: [{ from: '', to: ORDER, relation: 'calls' }] }));
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/non-blank/i);
+    expect(result.error).not.toMatch(/assembled bundle failed validation/);
+  });
+
+  it('rejects a declared entity with a blank name', () => {
+    // A blank name becomes a `byAlias` key; two of them manufacture an alias
+    // ambiguity that is then blamed on an unrelated root cause.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [{ entityId: 'service:tt/a', kind: 'service', name: '   ', aliases: [] }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/name/i);
+    expect(result.error).toMatch(/non-blank/i);
+  });
+
+  it('rejects a declared entity with a blank id', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [{ entityId: ' ', kind: 'service', name: 'a', aliases: [] }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/entityId/i);
+  });
+
+  it('rejects a declared entity carrying a blank alias', () => {
+    // An alias is a lookup key just like a name. A blank one would enter
+    // `byAlias` and collide with every other blank alias, so it is rejected by
+    // the same rule rather than slipping through as "not the name field".
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [{ entityId: 'service:tt/a', kind: 'service', name: 'a', aliases: [''] }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/alias/i);
+    expect(result.error).toMatch(/blank/i);
+    // Names the entity whose alias is at fault, so a multi-entity declaration
+    // does not leave the caller hunting for which one.
+    expect(result.error).toMatch(/service:tt\/a/);
+  });
+
+  it('rejects both an empty-string and a whitespace `to` endpoint, naming that side', () => {
+    // `from` and `to` are checked by the same rule, and the padding forms are
+    // covered here for both sides so neither endpoint can regress alone.
+    for (const blank of ['', '   ', '\t']) {
+      const result = ingestPrimeDataset(
+        METRIC_FILE,
+        options({ extraEntities: [ORDER_SERVICE_ENTITY], extraEdges: [{ from: ORDER, to: blank, relation: 'calls' }] }),
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.error).toMatch(/edge\.to/);
+      expect(result.error).toMatch(/blank/i);
+    }
+  });
+
+  it('reports the dangling reference when a blank and a dangling edge are both declared', () => {
+    // `validateDeclarations` scans the edges in order and returns on the first
+    // blank endpoint, so it cannot see the dangling edge behind it -- but the
+    // graph stage can, and it outranks the blank one because a named-but-absent
+    // reference is a fact about the graph rather than a malformed field. The
+    // order below puts the blank edge FIRST, which is the arrangement that
+    // would expose a regression to source-order reporting.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        extraEntities: [ORDER_SERVICE_ENTITY],
+        extraEdges: [
+          { from: '   ', to: ORDER, relation: 'calls' },
+          { from: ORDER, to: 'service:tt/ghost', relation: 'calls' },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/service:tt\/ghost/);
+    expect(result.error).toMatch(/which is not an entity/);
+    expect(result.error).not.toMatch(/non-blank/);
+  });
+
+  it('still accepts a consistent declaration', () => {
+    // The positive control: an edge between two entities that both exist must
+    // not be caught by the tightening above.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({
+        extraEntities: [
+          ORDER_SERVICE_ENTITY,
+          { entityId: 'service:tt/ts-pay-service', kind: 'service', name: 'ts-pay-service', namespace: 'tt', aliases: [] },
+        ],
+        extraEdges: [{ from: ORDER, to: 'service:tt/ts-pay-service', relation: 'calls' }],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.graph.edges).toHaveLength(1);
+    expect(checkG2Semantic(result.bundle)).toEqual({ gateId: 'G2', status: 'passed', violations: [] });
+  });
+
+  it('still accepts a padded but non-blank entity name', () => {
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ extraEntities: [{ entityId: 'service:tt/pad', kind: 'service', name: ' pad ', aliases: [] }] }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.graph.entities.some((e) => e.entityId === 'service:tt/pad')).toBe(true);
+  });
+});
+
 describe('ingestPrimeDataset · bundle quality', () => {
   it('produces a bundle that passes the G2 semantic gate', () => {
     const result = ingestPrimeDataset(
@@ -1107,6 +1267,35 @@ describe('ingestPrimeDataset · bundle quality', () => {
     );
     if (!result.ok) throw new Error(result.error);
     expect(result.bundle.cases[0]?.fault).toMatchObject({ type: 'memory-stress', category: 'resource' });
+  });
+
+  it('classifies an unmappable fault type as `unknown` rather than guessing', () => {
+    // `unknown` is a declared member of the category contract and every
+    // exporter has a value for it, so an unrecognised fault type is a legitimate
+    // bundle -- not a case to reject and not a category to invent. Guessing
+    // `resource` here would claim the injector perturbed a resource when nothing
+    // in the input says so, and the mistake would survive into the answer key.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ cases: [{ ...BASE_CASE, faultType: 'zzz-novel-injector' }] }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.cases[0]?.fault).toMatchObject({ type: 'zzz-novel-injector', category: 'unknown' });
+  });
+
+  it('rejects a case whose difficulty is outside the declared levels', () => {
+    // The last guard in the function: per-case validation covers the fields it
+    // knows about, and this asserts the assembled bundle is still checked
+    // against the full IR contract afterwards. Without it, a field that only the
+    // case guards miss would travel into a bundle whose schema it violates.
+    const result = ingestPrimeDataset(
+      METRIC_FILE,
+      options({ cases: [{ ...BASE_CASE, difficulty: 'L9' as FaultCase['difficulty'] }] }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toMatch(/assembled bundle failed validation/);
+    expect(result.error).toMatch(/L1/);
   });
 
   it('is deterministic across runs', () => {

@@ -1,7 +1,7 @@
 import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
 import type { FileFormat, FileSignalKind } from '../ingest/file.js';
 import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
-import { entityGraphSchema } from '../ir/schema.js';
+import { z } from 'zod';
 import type { Entity, EntityEdge } from '../ir/types.js';
 import type { TimeLayout } from '../util/time.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
@@ -877,6 +877,18 @@ function parseIngest(args: string[]): CliParseResult {
 }
 
 /**
+ * The shape a hand-written JSON list flag must have before core sees it.
+ *
+ * Deliberately weaker than `entityGraphSchema`: this checks only what a
+ * *parser* can know -- that the value is a non-empty array of objects -- and
+ * leaves field rules to the ingest layer. Running the full entity schema here
+ * would duplicate a check core already owns and, worse, replace its precise
+ * message ("declared entity 'x' needs a non-blank name") with a generic
+ * "invalid --entities JSON" that names neither the field nor the value.
+ */
+const jsonObjectList = z.array(z.record(z.unknown())).min(1);
+
+/**
  * Parse one of the inline-JSON entity flags.
  *
  * Returning a discriminated result rather than throwing keeps the caller's
@@ -886,17 +898,22 @@ function parseIngest(args: string[]): CliParseResult {
 function parseEntityList(raw: string, flag: string): { value: Entity[] } | { error: string } {
   const parsed = parseJsonValue(raw, flag);
   if ('error' in parsed) return parsed;
-  const result = entityGraphSchema.shape.entities.safeParse(parsed.value);
-  if (!result.success || result.data.length === 0) return { error: `invalid ${flag} JSON` };
-  return { value: result.data };
+  const result = jsonObjectList.safeParse(parsed.value);
+  if (!result.success) return { error: `invalid ${flag} JSON` };
+  // The values are objects but not yet *entities*: only shape is checked here.
+  // `ingestPrimeDataset` re-validates them against the entity contract before
+  // use, so this assertion marks a deliberate trust boundary -- the type is
+  // established downstream, and the parse-time check would only duplicate it
+  // with a worse message.
+  return { value: result.data as unknown as Entity[] };
 }
 
 function parseEdgeList(raw: string, flag: string): { value: EntityEdge[] } | { error: string } {
   const parsed = parseJsonValue(raw, flag);
   if ('error' in parsed) return parsed;
-  const result = entityGraphSchema.shape.edges.safeParse(parsed.value);
-  if (!result.success || result.data.length === 0) return { error: `invalid ${flag} JSON` };
-  return { value: result.data };
+  const result = jsonObjectList.safeParse(parsed.value);
+  if (!result.success) return { error: `invalid ${flag} JSON` };
+  return { value: result.data as unknown as EntityEdge[] };
 }
 
 function parseJsonValue(raw: string, flag: string): { value: unknown } | { error: string } {

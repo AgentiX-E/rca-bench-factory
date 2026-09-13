@@ -60,8 +60,22 @@ export function findDanglingEdgeRefs(graph: EntityGraph): ReferenceIssue[] {
   const index = indexGraph(graph);
   const issues: ReferenceIssue[] = [];
   for (const edge of graph.edges) {
-    if (edge.from === '' || edge.to === '') {
-      issues.push({ ref: edge.from === '' ? '(empty from)' : '(empty to)', reason: 'empty', where: 'edge' });
+    // Blank means the reference is *missing*; only a non-blank ref that the
+    // graph lacks is `dangling`. Testing `=== ''` alone classified `'   '` as
+    // dangling, which tells the caller they named an entity the graph does not
+    // have -- when in fact they named nothing at all.
+    const fromBlank = edge.from.trim() === '';
+    const toBlank = edge.to.trim() === '';
+    if (fromBlank || toBlank) {
+      // `where` names the offending side -- `edge.from`, not `edge` -- so the
+      // two callers that consume this can point at a field. Naming both sides
+      // is not possible in one issue, so a blank `from` takes precedence: an
+      // edge with no source has no direction to report.
+      issues.push({
+        ref: fromBlank ? edge.from : edge.to,
+        reason: 'empty',
+        where: fromBlank ? 'edge.from' : 'edge.to',
+      });
       continue;
     }
     if (!index.byId.has(edge.from)) {

@@ -326,6 +326,12 @@ describe('run - ingest', () => {
     // the parser, which would only prove the flags were accepted.
     const dir = await makeDir();
     await seedDataset(dir);
+    // The edge target is declared because ingest now rejects an edge whose
+    // endpoint the bundle would not contain. The source needs no declaration:
+    // telemetry proves it.
+    const entities = JSON.stringify([
+      { entityId: 'service:rcaeval/ts-pay-service', kind: 'service', name: 'ts-pay-service', namespace: 'rcaeval', aliases: [] },
+    ]);
     const edges = JSON.stringify([
       { from: 'service:rcaeval/ts-order-service', to: 'service:rcaeval/ts-pay-service', relation: 'calls' },
     ]);
@@ -341,6 +347,8 @@ describe('run - ingest', () => {
         'cases.json',
         '--system',
         'rcaeval',
+        '--entities',
+        entities,
         '--edges',
         edges,
         '--lead-ms',
@@ -377,5 +385,133 @@ describe('run - ingest', () => {
 
     expect(code).toBe(1);
     expect(err.join('')).toMatch(/invalid --entities/);
+  });
+
+  it('rejects an edge pointing at an entity the graph does not contain', async () => {
+    // The command used to exit 0 and write a bundle whose edge referenced a
+    // non-existent entity; the error only appeared later at `gate`. A user
+    // piping ingest straight into export shipped the inconsistency.
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const err: string[] = [];
+    const edges = JSON.stringify([
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ghost', relation: 'calls' },
+    ]);
+
+    const code = await run(
+      [
+        'ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json',
+        '--system', 'tt', '--edges', edges, '--output', 'b.json',
+      ],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/service:tt\/ghost/);
+    // The bundle must not have been written at all.
+    await expect(readFile(join(dir, 'b.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('rejects a declared entity with a blank name', async () => {
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const err: string[] = [];
+    const entities = JSON.stringify([{ entityId: 'service:tt/blank', kind: 'service', name: '   ', aliases: [] }]);
+
+    const code = await run(
+      [
+        'ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json',
+        '--system', 'tt', '--entities', entities, '--output', 'b.json',
+      ],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/non-blank name/i);
+  });
+
+  it('rejects a blank edge endpoint with a message that says blank', async () => {
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const err: string[] = [];
+    const edges = JSON.stringify([{ from: '   ', to: 'service:tt/ts-order-service', relation: 'calls' }]);
+
+    const code = await run(
+      [
+        'ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json',
+        '--system', 'tt', '--edges', edges, '--output', 'b.json',
+      ],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/non-blank/i);
+    // Not misreported as a reference to something that merely is absent.
+    expect(err.join('')).not.toMatch(/which is not an entity/);
+  });
+
+  it('carries a valid declaration through ingest, gate and export', async () => {
+    // The positive control for the tightening above: a graph the caller
+    // declares consistently must still travel the whole pipeline. Without this,
+    // "reject bad input" would be satisfiable by rejecting everything.
+    const dir = await makeDir();
+    await seedDataset(dir);
+    const entities = JSON.stringify([
+      { entityId: 'service:tt/ts-pay-service', kind: 'service', name: 'ts-pay-service', namespace: 'tt', aliases: [] },
+    ]);
+    const edges = JSON.stringify([
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-pay-service', relation: 'calls' },
+    ]);
+
+    const ingest = await run(
+      [
+        'ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json',
+        '--system', 'tt', '--entities', entities, '--edges', edges, '--output', 'bundle.json',
+      ],
+      { cwd: dir },
+    );
+    expect(ingest).toBe(0);
+
+    const bundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
+    expect(bundle.graph.edges).toEqual([
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-pay-service', relation: 'calls' },
+    ]);
+
+    const gate = await run(['gate', '--input', 'bundle.json', '--target', 'rcaeval-re2'], { cwd: dir });
+    expect(gate).toBe(0);
+
+    const exported = await run(
+      ['export', '--target', 'rcaeval', '--suite', 'RE2', '--input', 'bundle.json', '--out-dir', 'out'],
+      { cwd: dir },
+    );
+    expect(exported).toBe(0);
+    expect((await readdirRecursive(join(dir, 'out'))).some((p) => p.endsWith('inject_time.txt'))).toBe(true);
+  });
+
+  it('accepts an edge whose endpoints only telemetry proves', async () => {
+    // An edge may point at a service that appears in `service.name` without
+    // anyone declaring it. Rejecting that would be over-tightening, so the
+    // check consults the finished graph rather than the declared subset.
+    const dir = await makeDir();
+    await writeFiles(dir, {
+      'data/metrics/metrics.csv': METRICS_CSV,
+      'data/logs/logs.csv': LOGS_CSV.replace(/ts-order-service/g, 'ts-pay-service'),
+      'cases.json': CASES,
+    });
+    const edges = JSON.stringify([
+      { from: 'service:tt/ts-order-service', to: 'service:tt/ts-pay-service', relation: 'calls' },
+    ]);
+
+    const code = await run(
+      [
+        'ingest', '--source', 'data', '--target', 'rcaeval', '--cases', 'cases.json',
+        '--system', 'tt', '--edges', edges, '--output', 'bundle.json',
+      ],
+      { cwd: dir },
+    );
+
+    expect(code).toBe(0);
+    const bundle = JSON.parse(await readFile(join(dir, 'bundle.json'), 'utf8'));
+    expect(bundle.graph.edges).toHaveLength(1);
   });
 });
