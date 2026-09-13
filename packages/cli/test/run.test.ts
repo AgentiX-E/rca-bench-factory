@@ -935,6 +935,51 @@ describe('report', () => {
     expect(code).toBe(1);
     expect(err.join('')).toContain('error');
   });
+
+  it('does not present a passing score as a green verdict when the gates held the dataset back', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    await run(['report', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    const html = out.join('');
+
+    // The example bundle exports a contract-perfect dataset whose single case no
+    // baseline can solve, so the two verdicts genuinely differ. The page must not
+    // paint the score green while the gates report it as held back, and it must
+    // say what each number covers so they cannot read as a contradiction.
+    const gate = /final: <span class="(\w+)">(\w+)<\/span>/.exec(html);
+    const score = /score <span class="(\w+)">(\d+)<\/span>/.exec(html);
+    expect(gate).not.toBeNull();
+    expect(score).not.toBeNull();
+
+    if (gate![2] === 'admitted') {
+      expect(score![1]).toBe('ok');
+    } else {
+      expect(score![1]).not.toBe('ok');
+      expect(html).toContain('Held back');
+      expect(html).toContain(gate![2]);
+    }
+
+    // Both scopes are always stated, on every page, regardless of the verdicts.
+    expect(html).toContain('admissibility');
+    expect(html).toContain('field contract');
+  });
+
+  it('reports the same score and gate verdict the CLI computes for both', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+
+    const html: string[] = [];
+    await run(['report', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => html.push(s) });
+
+    const gates: string[] = [];
+    await run(['gate', '--input', 'bundle.json', '--target', 'openrca-1.0'], { cwd: dir, stdout: (s) => gates.push(s) });
+
+    // The page and `gate` must agree about the verdict; two commands reporting
+    // different statuses for one bundle would be the defect this page just had.
+    const pageStatus = /final: <span class="\w+">(\w+)<\/span>/.exec(html.join(''))![1];
+    expect(JSON.parse(gates.join('')).finalStatus).toBe(pageStatus);
+  });
 });
 
 describe('run - export refuses a self-contradictory bundle', () => {

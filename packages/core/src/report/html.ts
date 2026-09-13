@@ -85,6 +85,12 @@ export function renderGates(report: QualityGateReport): string {
   return [
     '<section><h2>Quality gates</h2>',
     `<p>case <b>${escapeHtml(report.caseId)}</b> — final: <span class="${statusClass(report.finalStatus)}">${report.finalStatus}</span>${mutation}</p>`,
+    // The gates and the score answer different questions, and a page that
+    // shows both without saying so reads as self-contradictory when they
+    // disagree. Stating the scope is what makes the two numbers compatible.
+    '<p class="scope">Decides <b>admissibility</b>: whether this dataset may be '
+      + 'published and evaluated at all — correctness of the labels, solvability by a '
+      + 'baseline solver, answer-key isolation.</p>',
     table(['Gate', 'Status', 'Violations'], rows),
     '</section>',
   ].join('\n');
@@ -98,17 +104,41 @@ function structureRows(s: StructureReport): string[] {
   return s.checks.map(checkRow);
 }
 
-/** Render a score report as an HTML fragment. */
-export function renderScore(report: ScoreReport): string {
+/**
+ * Render a score report as an HTML fragment.
+ *
+ * `gateVerdict` is the gate status this score is reported alongside, when there
+ * is one. A score of 100 over a quarantined dataset is not a contradiction --
+ * the score inspects the exported bytes against the field contract, and the
+ * gates decide whether the dataset may be used at all -- but painting it green
+ * while the gates hold the dataset back asserts a conclusion nobody reached.
+ * When the dataset is not admitted the number is still reported, in the muted
+ * class, with the reason stated.
+ */
+export function renderScore(report: ScoreReport, gateVerdict?: string): string {
   const checksum = report.checksum;
   const checksumBlock =
     checksum === undefined
       ? ''
       : `<p>checksum: <span class="${checksum.passed ? 'ok' : 'bad'}">${checksum.passed ? 'pass' : 'fail'}</span>`
         + ` (matched ${checksum.matched}, mismatched ${checksum.mismatched.length}, missing ${checksum.missing.length}, extra ${checksum.extra.length})</p>`;
+
+  const admitted = gateVerdict === undefined || gateVerdict === 'admitted';
+  const scoreClass = !report.passed ? 'bad' : admitted ? 'ok' : 'warn';
+  const holdback = admitted
+    ? ''
+    : `<p class="warn">Held back: the gates report <b>${escapeHtml(gateVerdict)}</b>, so this dataset is not `
+      + 'admitted for use however well its fields comply.</p>';
+
   return [
     '<section><h2>Score</h2>',
-    `<p>target <b>${escapeHtml(report.target)}</b> — score <span class="${report.passed ? 'ok' : 'bad'}">${report.score}</span></p>`,
+    `<p>target <b>${escapeHtml(report.target)}</b> — score <span class="${scoreClass}">${report.score}</span></p>`,
+    // Without this the number reads as a verdict on the dataset rather than on
+    // the bytes, which is what let "quarantined" and "100" look incompatible.
+    '<p class="scope">Scores the <b>field contract</b> of the exported bytes: file '
+      + 'layout, column headers, answer-key isolation and modality coverage. It does '
+      + 'not judge whether the labels are right — that is the gates\' question.</p>',
+    holdback,
     checksumBlock,
     '<h3>Structure checks</h3>',
     table(['Check', 'Result', 'Detail'], structureRows(report.structure)),
@@ -176,18 +206,40 @@ const STYLE =
   + 'th{background:#f4f4f4}'
   + '.ok{color:#0a7d33}.warn{color:#b36b00}.bad{color:#c0392b}'
   + '.empty{color:#999;font-style:italic}'
+  + '.scope{color:#555;font-size:0.9rem}'
   + 'h1{border-bottom:2px solid #eee;padding-bottom:0.5rem}';
+
+/**
+ * The gate status that governs the whole page.
+ *
+ * Worst-wins, not first-wins: one quarantined bundle is enough to hold the
+ * dataset back, so a page that rendered a passing bundle first must not present
+ * the score as though nothing was wrong.
+ */
+function governingVerdict(gates: readonly QualityGateReport[]): string | undefined {
+  if (gates.length === 0) return undefined;
+  const rank = (status: string): number => (status === 'admitted' ? 0 : status === 'quarantined' ? 1 : 2);
+  return gates
+    .map((g) => g.finalStatus)
+    .reduce((worst, status) => (rank(status) > rank(worst) ? status : worst));
+}
 
 /**
  * Render a full self-contained HTML page from one or more reports. Empty sections
  * are omitted; a page with no sections renders an explicit empty placeholder.
+ *
+ * The score section is told the page's governing gate verdict, so a dataset the
+ * gates held back cannot be presented with a green score. See `renderScore`.
  */
 export function renderPage(input: HtmlReportInput): string {
   const sections: string[] = [];
   if (input.coverage !== undefined) sections.push(renderCoverage(input.coverage));
   if (input.entityGraph !== undefined) sections.push(renderEntityGraph(input.entityGraph));
   if (input.gates !== undefined) for (const g of input.gates) sections.push(renderGates(g));
-  if (input.scores !== undefined) for (const s of input.scores) sections.push(renderScore(s));
+  if (input.scores !== undefined) {
+    const verdict = governingVerdict(input.gates ?? []);
+    for (const s of input.scores) sections.push(renderScore(s, verdict));
+  }
 
   const body = sections.length > 0 ? sections.join('\n') : '<p class="empty">No report sections.</p>';
   return [

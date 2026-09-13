@@ -259,6 +259,22 @@ rca-bench report --input bundle.json [--title "Report"] [--target openrca-1.0] [
 - `--title` defaults to `rca-bench report`; `--output` defaults to stdout.
 - All user-controlled data (title, entity ids, case ids, violation messages,
   check details) is HTML-escaped before interpolation.
+- The gates and the score **measure different things**, and the page states what
+  each covers rather than leaving the reader to reconcile them:
+  - the gates decide **admissibility** — whether the dataset may be published and
+    evaluated at all (label correctness, solvability by a baseline, answer-key
+    isolation);
+  - the score judges the **field contract** of the exported bytes — file layout,
+    column headers, modality coverage. It does not judge whether the labels are
+    right.
+- Because the two can legitimately disagree, a dataset the gates hold back is
+  **never presented with a green score**. The number is still reported, in the
+  muted class, with a line naming the gate verdict that held it back. When the
+  gates report `admitted`, or when no gate section is rendered, the score is
+  painted normally.
+- With several gate sections on one page the **worst verdict governs**, so a
+  page that happens to render a passing bundle first cannot present the score as
+  though nothing were wrong.
 
 ### `rca-bench pack`
 
