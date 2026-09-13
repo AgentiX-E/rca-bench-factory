@@ -1,6 +1,7 @@
 import type { FaultCase, IrBundle, TelemetrySignal } from '../ir/types.js';
 import { isoUtcToOffsetIso, isoUtcToEpochMs } from '../util/time.js';
 import { isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * OpenRCA 1.0 exporter (Microsoft, ICLR'25).
@@ -240,6 +241,7 @@ export interface OpenRcaExportResult {
  * natural-language shape the official evaluator parses (`groundtruth.csv`).
  */
 export function exportOpenRca(bundle: IrBundle): OpenRcaExportResult {
+  assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];
 

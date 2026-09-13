@@ -1,5 +1,6 @@
 import type { FaultCase, FaultCategory, GroundTruth, IrBundle } from '../ir/types.js';
 import type { ExportedFiles } from './openrca.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * ITBench exporter (SRE Diagnosis reasoning contract).
@@ -139,6 +140,7 @@ export interface ItBenchExportResult {
  * dropped (the diagnosis ground truth would be unanswerable without one).
  */
 export function exportItBench(bundle: IrBundle): ItBenchExportResult {
+  assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];
 

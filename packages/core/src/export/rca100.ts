@@ -9,6 +9,7 @@ import type {
 } from '../ir/types.js';
 import { isAlertSignal, isEventSignal, isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import type { ExportedFiles } from './openrca.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * RCA100 exporter (AgenticOpsEval, Alibaba Cloud Tianchi 2025).
@@ -332,6 +333,7 @@ export function buildGroundTruthJson(fc: FaultCase, index: EntityIndex): string 
  * A case violating either is skipped with a reason, never silently repaired.
  */
 export function exportRca100(bundle: IrBundle): Rca100ExportResult {
+  assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];
   const index = buildEntityIndex(bundle.graph);

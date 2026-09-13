@@ -1,6 +1,7 @@
 import type { EvidenceCheckpoint, FaultCase, IrBundle } from '../ir/types.js';
 import type { ExportedFiles } from './openrca.js';
 import { buildEntityIndex, type EntityIndex } from './rca100.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * OpenRCA 2.0 exporter (PAVE step-wise causal-path annotation).
@@ -98,6 +99,7 @@ export function buildCausalPathJson(fc: FaultCase, index: EntityIndex): string {
  * a case with no telemetry is skipped with a reason - never silently dropped.
  */
 export function exportOpenRca2(bundle: IrBundle): OpenRca2ExportResult {
+  assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];
   const index = buildEntityIndex(bundle.graph);

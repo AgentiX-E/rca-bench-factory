@@ -181,6 +181,23 @@ rca-bench export --target itbench --input bundle.json --out-dir ./out
 
 - `bundle.json` is validated against `irBundleSchema` before export; a malformed
   or schema-invalid bundle fails with exit code 1.
+- The bundle must also be **internally consistent**, which the schema cannot
+  express. An edge naming an entity the file never declares, or a relation
+  outside `contains|hosts|calls|same_as`, is rejected before anything is written,
+  with exit code 1 and no output directory left behind:
+  ```text
+  error: bundle is not exportable: DANGLING_EDGE_REF: edge.to references 'service:tt/ghost' which is not an entity. Run `rca-bench gate` to see every violation.
+  ```
+  This matters most for `rca100`, whose `topology.json` types an unknown endpoint
+  as `external`. Without the guard the invented endpoint is *labelled* as an
+  observed external dependency, so a consumer cannot tell it from a real one.
+- Every target runs the same check, including the four that never read `graph`
+  (`openrca-1.0`, `rcaeval`, `cloud-opsbench`, `itbench`). A bundle describes one
+  system, so target selection must not decide whether a contradiction is caught.
+- Only **graph** inconsistency is fatal here. A case-level defect — a root cause
+  that does not resolve, a signal naming a service outside the graph — is
+  skipped per case and the remaining cases still export, matching how
+  `rca-bench gate` *quarantines* rather than rejects such a bundle.
 
 ### `rca-bench score`
 

@@ -1,6 +1,7 @@
 import { normalizeFaultType } from '../fault/collector.js';
 import type { Entity, EntityGraph, EntityKind, FaultCase, IrBundle, RootCauseIndicator } from '../ir/types.js';
 import type { ExportedFiles } from './openrca.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * AIOps2025 exporter (2025 CCF AIOps Challenge).
@@ -119,6 +120,7 @@ export interface AioPs2025ExportResult {
  * Cases with no telemetry are skipped with a reason, never silently dropped.
  */
 export function exportAioPs2025(bundle: IrBundle): AioPs2025ExportResult {
+  assertExportableBundle(bundle);
   const input: Array<Record<string, unknown>> = [];
   const groundTruthLines: string[] = [];
   const skipped: Array<{ caseId: string; reason: string }> = [];

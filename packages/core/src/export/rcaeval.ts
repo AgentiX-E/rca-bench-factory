@@ -1,6 +1,7 @@
 import type { FaultCase, IrBundle, TelemetrySignal } from '../ir/types.js';
 import type { ExportedFiles } from './openrca.js';
 import { isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * RCAEval exporter (RMIT, ASE'24 / WWW'25).
@@ -101,6 +102,7 @@ export interface RcaEvalExportResult {
  * emit logs and traces.
  */
 export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): RcaEvalExportResult {
+  assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];
 

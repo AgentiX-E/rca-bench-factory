@@ -936,3 +936,85 @@ describe('report', () => {
     expect(err.join('')).toContain('error');
   });
 });
+
+describe('run - export refuses a self-contradictory bundle', () => {
+  // `export` used to exit 0 on a bundle whose graph referenced an entity the
+  // file never declared. The user saw a success and a populated output
+  // directory; the defect only existed in the artefact.
+  //
+  // The assertion that matters most is the third one. A guard that runs after
+  // the writer has already created files leaves a half-written dataset behind
+  // on a non-zero exit -- worse than no guard, because the operator now has
+  // output and an error and must work out which to trust.
+
+  function contradictoryBundle(): IrBundle {
+    const b = minimalBundle();
+    return {
+      ...b,
+      graph: {
+        ...b.graph,
+        edges: [{ from: 'service:default/order', to: 'service:default/ghost', relation: 'calls' }],
+      },
+    };
+  }
+
+  it('exits 1 and names the missing entity', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(contradictoryBundle()));
+    const err: string[] = [];
+
+    const code = await run(
+      ['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/service:default\/ghost/);
+    expect(err.join('')).toMatch(/not exportable/);
+  });
+
+  it('writes no artefacts at all', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(contradictoryBundle()));
+
+    const code = await run(
+      ['export', '--target', 'rca100', '--input', 'bundle.json', '--out-dir', 'out'],
+      { cwd: dir, stderr: () => {} },
+    );
+
+    expect(code).toBe(1);
+    // The output directory must not exist, rather than existing in a partial
+    // state. `writeFiles` is only reached once the bundle has been accepted.
+    await expect(readdir(join(dir, 'out'))).rejects.toThrow();
+  });
+
+  it('points the operator at the command that lists every violation', async () => {
+    // One violation is reported inline; a bundle can hold many. The remedy has
+    // to be reachable, which is the same rule the `ingest` error messages follow.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(contradictoryBundle()));
+    const err: string[] = [];
+
+    await run(
+      ['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(err.join('')).toMatch(/rca-bench gate/);
+  });
+
+  it('still exports a consistent bundle', async () => {
+    // The positive control at the CLI boundary: the rejection above must come
+    // from the bundle's content, not from the command being broken.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+
+    const code = await run(
+      ['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'],
+      { cwd: dir, stderr: () => {} },
+    );
+
+    expect(code).toBe(0);
+    expect((await readdirRecursive(join(dir, 'out'))).length).toBeGreaterThan(0);
+  });
+});

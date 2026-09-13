@@ -6,9 +6,33 @@ import {
   exportOpenRca,
   injectTimeUnixSeconds,
 } from '../src/export/openrca.js';
+import { exportOpenRca2 } from '../src/export/openrca2.js';
 import { buildLogsCsv, buildMetricsJson, caseDirName, exportRcaEval } from '../src/export/rcaeval.js';
+import { exportRca100 } from '../src/export/rca100.js';
+import { exportAioPs2025 } from '../src/export/aiops2025.js';
+import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
+import { exportItBench } from '../src/export/itbench.js';
 import type { IrBundle, TelemetrySignal } from '../src/ir/types.js';
 import { logAt, validBundle, validCase } from './fixtures.js';
+
+/**
+ * A bundle that is structurally valid but self-contradictory: the graph carries
+ * an edge to `service:default/ghost`, which no entity in the file declares.
+ *
+ * Kept next to the exporters because it is the input every export-boundary
+ * assertion is built from -- the defect it encodes is that reachability, not
+ * the missing node itself.
+ */
+function contradictory(): IrBundle {
+  const b = validBundle();
+  return {
+    ...b,
+    graph: {
+      ...b.graph,
+      edges: [{ from: 'service:default/order', to: 'service:default/ghost', relation: 'calls' }],
+    },
+  };
+}
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -207,5 +231,54 @@ describe('RCAEval exporter', () => {
     });
     const { skipped } = exportRcaEval(b, 'RE3');
     expect(skipped).toEqual([]);
+  });
+});
+
+describe('exporters reject a bundle whose graph contradicts itself', () => {
+  // `export` used to be the one boundary with no integrity check of its own: it
+  // trusted the JSON it was handed, so a bundle carrying an edge to an entity
+  // the file never declares exported cleanly and exited 0. Only `gate` raised
+  // G2/DANGLING_EDGE_REF -- and a user running export alone never saw it.
+  //
+  // The damage is not confined to a missing node. `buildTopologyJson` types an
+  // unknown endpoint via `UMODEL_TYPE[byId.get(id)?.kind ?? 'external']`, so the
+  // invented router is *labelled* `apm.external`. The exported dataset therefore
+  // asserts an observation nobody made, and a benchmark consumer cannot tell it
+  // apart from a genuinely observed external dependency.
+  //
+  // Every exporter is listed here rather than a representative sample: a guard
+  // wired into some targets and not others turns "which target did you pick?"
+  // into the thing that decides whether inconsistent input is caught.
+  //
+  // The bundle is a *parameter* rather than baked into each closure, so the
+  // positive control below runs the same seven exporters over the consistent
+  // fixture. Baking it in would have made the control assert nothing -- it
+  // would have exercised `contradictory()` and asserted that it exports.
+  const exporters: Array<[string, (bundle: IrBundle) => unknown]> = [
+    ['openrca-1.0', (b) => exportOpenRca(b)],
+    ['openrca-2.0', (b) => exportOpenRca2(b)],
+    ['rcaeval', (b) => exportRcaEval(b, 'RE2')],
+    ['rca100', (b) => exportRca100(b)],
+    ['aiops2025', (b) => exportAioPs2025(b)],
+    ['cloud-opsbench', (b) => exportCloudOpsBench(b)],
+    ['itbench', (b) => exportItBench(b)],
+  ];
+
+  it.each(exporters)('rejects a dangling edge endpoint (%s)', (_name, run) => {
+    expect(() => run(contradictory())).toThrow(/service:default\/ghost/);
+  });
+
+  it.each(exporters)('names the missing entity and the field at fault (%s)', (_name, run) => {
+    // The message must be actionable on its own: the operator has an edge list
+    // and needs to know which side to fix.
+    expect(() => run(contradictory())).toThrow(/edge\.to/);
+    expect(() => run(contradictory())).toThrow(/not an entity/);
+  });
+
+  it.each(exporters)('accepts a consistent bundle (%s)', (_name, run) => {
+    // The positive control. "Reject bad input" is trivially satisfiable by
+    // rejecting everything, so each exporter that rejects a contradiction must
+    // still export the very fixture the rest of this file exports.
+    expect(() => run(validBundle())).not.toThrow();
   });
 });

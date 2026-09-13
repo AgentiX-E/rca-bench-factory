@@ -1,6 +1,7 @@
 import { normalizeFaultType } from '../fault/collector.js';
 import type { FaultCase, FaultCategory, IrBundle } from '../ir/types.js';
 import type { ExportedFiles } from './openrca.js';
+import { assertExportableBundle } from './guard.js';
 
 /**
  * Cloud-OpsBench exporter (outcome ground-truth contract).
@@ -94,6 +95,7 @@ export interface CloudOpsBenchExportResult {
  * dropped (the outcome ground truth would be unanswerable without a component).
  */
 export function exportCloudOpsBench(bundle: IrBundle): CloudOpsBenchExportResult {
+  assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];
 
