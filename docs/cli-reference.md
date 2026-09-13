@@ -210,7 +210,17 @@ rca-bench score --target itbench --dir ./out
 ```
 
 - `--dir` is read recursively into the exported-file map.
-- `--anchors` (optional) adds SHA-256 Golden-Master verification.
+- `--anchors` (optional) adds SHA-256 Golden-Master verification. The value is an
+  inline JSON object mapping a path inside `--dir` to the expected lowercase
+  hex digest, for example
+  `{"order-prod/query.csv":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`.
+  **Supplying the flag is a claim about the bytes**, so the value must name at
+  least one file: an empty object (`{}`) is rejected rather than downgraded to
+  structure-only scoring, because the resulting report would otherwise be
+  indistinguishable from one that never verified a hash. Omit the flag to score
+  the field contract alone; the report then carries no `checksum` section.
+  Checksum verification requires the file sets to agree exactly — a mismatched,
+  missing or unanchored file fails the report.
 - Exit code is 0 when the report passes, 1 when it fails (so CI can gate on it).
 
 ### `rca-bench official`

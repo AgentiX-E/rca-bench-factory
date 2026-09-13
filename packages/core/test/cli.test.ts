@@ -576,9 +576,12 @@ describe('parseCliArgs - score', () => {
   });
 
   it('parses a score command with anchors', () => {
-    expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', '{}', '--dir', './exported'])).toEqual({
+    // The anchor set must be non-empty: an empty one asserts "verify these
+    // bytes" while supplying nothing, so the parser refuses it (see below).
+    const anchors = '{"order-prod/query.csv":"abc123"}';
+    expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', anchors, '--dir', './exported'])).toEqual({
       ok: true,
-      command: { command: 'score', target: 'rcaeval-re2', anchors: '{}', dir: './exported' },
+      command: { command: 'score', target: 'rcaeval-re2', anchors, dir: './exported' },
     });
   });
 
@@ -639,6 +642,36 @@ describe('parseCliArgs - score', () => {
     const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--anchors', 'not-json', '--dir', './exported']);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/anchors/i);
+  });
+
+  it('rejects an empty --anchors object', () => {
+    // `--anchors` claims the bytes were verified against committed hashes. `{}`
+    // makes that claim with nothing to verify, so the run is refused instead of
+    // silently producing the structure-only report that omitting the flag
+    // produces -- a green result this command cannot be distinguished from one
+    // that never checked a hash.
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--anchors', '{}', '--dir', './exported']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/anchors/i);
+      expect(result.error).toMatch(/at least one/i);
+    }
+  });
+
+  it('rejects a non-object --anchors value', () => {
+    // The parser, not only the runner, must reject `[]`: the shape is a
+    // property of the flag, so it is checked where the flag is parsed.
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--anchors', '[]', '--dir', './exported']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/object/i);
+  });
+
+  it('keeps --anchors optional', () => {
+    // Refusing the empty object must not make the flag mandatory: omitting it is
+    // the honest way to ask for structure-only scoring.
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', './exported']);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.command).not.toHaveProperty('anchors');
   });
 
   it('rejects an unknown flag', () => {
@@ -1183,7 +1216,7 @@ describe('help and parser cannot drift', () => {
   it('accepts every flag it advertises for export and score', () => {
     const cases: [string, string[]][] = [
       ['export', ['--target', 'rca100', '--input', 'i.json', '--out-dir', 'out', '--suite', 're1']],
-      ['score', ['--target', 'rca100', '--dir', 'out', '--anchors', '{}']],
+      ['score', ['--target', 'rca100', '--dir', 'out', '--anchors', '{"a":"b"}']],
     ];
     for (const [topic, flags] of cases) {
       expect(parseCliArgs([topic, ...flags]).ok).toBe(true);

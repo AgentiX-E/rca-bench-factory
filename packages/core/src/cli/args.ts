@@ -209,7 +209,7 @@ const COMMAND_SPECS = {
     description: 'Verify an exported dataset against a target contract.',
     flags: {
       target: { placeholder: `<${SCORE_TARGETS.join('|')}>`, type: 'string', required: true, help: 'Target contract to score against' },
-      anchors: { placeholder: '<json>', type: 'string', help: 'Returned-file SHA-256 anchors as inline JSON' },
+      anchors: { placeholder: '<json>', type: 'string', help: 'Returned-file SHA-256 anchors as inline JSON; at least one entry' },
       dir: { placeholder: '<dir>', type: 'string', required: true, help: 'Directory holding the exported files' },
     },
   },
@@ -430,8 +430,24 @@ function parseScore(args: string[]): CliParseResult {
   if (typeof dir !== 'string' || dir === '') {
     return { ok: false, error: 'score requires --dir <exported-dir>' };
   }
-  if (v.anchors !== undefined && !isJson(String(v.anchors))) {
-    return { ok: false, error: 'invalid --anchors JSON' };
+  if (v.anchors !== undefined) {
+    const anchors = String(v.anchors);
+    if (!isJson(anchors)) {
+      return { ok: false, error: 'invalid --anchors JSON' };
+    }
+    // `--anchors` is a claim that the exported bytes were verified against
+    // committed hashes. An empty object asserts that claim and supplies nothing
+    // to verify, and accepting it would make the command's green result
+    // indistinguishable from one that never checked a hash. Omitting the flag is
+    // the honest way to ask for structure-only scoring; supplying an empty set
+    // is a contradiction, so it is refused here rather than quietly downgraded.
+    const parsedAnchors: unknown = JSON.parse(anchors);
+    if (typeof parsedAnchors !== 'object' || parsedAnchors === null || Array.isArray(parsedAnchors)) {
+      return { ok: false, error: '--anchors must be a JSON object' };
+    }
+    if (Object.keys(parsedAnchors).length === 0) {
+      return { ok: false, error: '--anchors must name at least one file; omit the flag to score structure only' };
+    }
   }
 
   return {

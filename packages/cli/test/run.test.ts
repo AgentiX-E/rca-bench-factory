@@ -473,6 +473,42 @@ describe('run - score', () => {
     expect(code).toBe(1);
     expect(err.join('')).toContain('object');
   });
+
+  it('rejects an empty --anchors object rather than scoring structure only', async () => {
+    // `--anchors` is a claim: "verify these bytes against committed hashes". An
+    // empty object asserts the claim and supplies nothing to verify, so the run
+    // must fail loudly instead of degrading to the structure-only report that
+    // omitting the flag produces. Otherwise a green result from this command
+    // cannot be told apart from one that never checked a single hash.
+    const dir = await makeDir();
+    const files = exportOpenRca(minimalBundle()).files;
+    await writeExported(join(dir, 'exported'), files);
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await run(['score', '--target', 'openrca-1.0', '--dir', 'exported', '--anchors', '{}'], {
+      cwd: dir,
+      stdout: (s) => out.push(s),
+      stderr: (s) => err.push(s),
+    });
+    expect(code).toBe(1);
+    expect(out.join('')).toBe('');
+    expect(err.join('')).toContain('--anchors');
+  });
+
+  it('still scores structure only when --anchors is omitted', async () => {
+    // The other half of the contract: rejecting the empty object must not make
+    // the flag mandatory. Omitting it is a legitimate, honest caller - the
+    // report simply makes no claim about bytes.
+    const dir = await makeDir();
+    const files = exportOpenRca(minimalBundle()).files;
+    await writeExported(join(dir, 'exported'), files);
+    const out: string[] = [];
+    const code = await run(['score', '--target', 'openrca-1.0', '--dir', 'exported'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    const report = JSON.parse(out.join(''));
+    expect(report.passed).toBe(true);
+    expect(report.checksum).toBeUndefined();
+  });
 });
 
 describe('run - transform', () => {

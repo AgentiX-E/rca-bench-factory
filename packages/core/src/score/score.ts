@@ -697,11 +697,13 @@ function structureRate(structure: StructureReport): number {
 }
 
 function checksumRate(report: ChecksumReport): number {
-  // When checksum verification is requested, the anchor set is non-empty and
-  // every anchor is counted as matched, mismatched or missing, so the total is
-  // positive.
+  // Every anchor is counted as matched, mismatched or missing, so the total is
+  // the anchor count and `matched / total` is the fraction that verified. An
+  // empty anchor set has no anchors to divide by, which would make the rate
+  // `0 / 0`; it contributes nothing rather than an `NaN`, and the report it
+  // belongs to is already failing (`verifyChecksums` reports every file extra).
   const total = report.matched + report.mismatched.length + report.missing.length;
-  return report.matched / total;
+  return total === 0 ? 0 : report.matched / total;
 }
 
 function structureFor(target: ScoreTargetId, files: Record<string, string>): StructureReport {
@@ -734,8 +736,22 @@ function structureFor(target: ScoreTargetId, files: Record<string, string>): Str
 /**
  * Score an exported dataset against a target contract.
  *
- * Without anchors the score is the structural pass rate; with anchors it is the
- * average of the structural pass rate and the checksum match rate.
+ * Two distinct callers, and the difference is a claim about the bytes:
+ *
+ *  - **No anchors** (`undefined`): score the structural pass rate. The report
+ *    carries no `checksum` section and therefore makes no statement about byte
+ *    stability. This is the honest "I did not check" case.
+ *  - **Anchors supplied**: average the structural pass rate with the checksum
+ *    match rate and record the checksum verdict, so the reader can see which
+ *    part of the score came from the external ground truth.
+ *
+ * An empty object is a *supplied* anchor set, not a missing one. It reaches
+ * `verifyChecksums`, which reports every file as `extra` and fails the report:
+ * claiming "these bytes were verified against committed hashes" and supplying
+ * no hashes is a contradiction, and a contradiction must not be scored as a
+ * pass. Merging the two callers here would make an empty set produce a report
+ * byte-identical to omitting the flag, so a reader could not tell a verified
+ * pass from an unverified one.
  */
 export function scoreExport(
   target: ScoreTargetId,
@@ -743,7 +759,7 @@ export function scoreExport(
   anchors?: Record<string, string>,
 ): ScoreReport {
   const structure = structureFor(target, files);
-  if (anchors === undefined || Object.keys(anchors).length === 0) {
+  if (anchors === undefined) {
     return {
       target,
       passed: structure.passed,
