@@ -330,6 +330,7 @@ export { sha256, sha256Bytes } from './util/hash.js';
 
 export {
   DEFAULT_FILE_MODE,
+  MANIFEST_FILE_NAME,
   buildPackManifest,
   createTar,
   createTarGzip,

@@ -304,6 +304,8 @@ describe('renderPackManifest', () => {
     expect(JSON.parse(json)).toEqual({
       version: 1,
       fileCount: 1,
+      // One content file plus the manifest that carries this line.
+      archiveFileCount: 2,
       totalBytes: 1,
       entries: [{ path: 'a.txt', bytes: 1, sha256: expect.any(String) }],
     });

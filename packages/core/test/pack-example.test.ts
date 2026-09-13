@@ -182,6 +182,9 @@ describe('buildExamplePack', () => {
       sizeMismatch: [],
     });
     expect(manifest.fileCount).toBe(entries.length - 1);
+    // The example pack is extracted as a whole, so its manifest must also state
+    // how many files a recipient ends up with, manifest included.
+    expect(manifest.archiveFileCount).toBe(entries.length);
   });
 
   it('survives a tar round trip with the manifest still verifying', () => {

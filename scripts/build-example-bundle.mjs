@@ -49,6 +49,17 @@ export function buildBundle() {
   const archive = createTarGzip(entries);
   const prefixLength = 'rca-bench-factory-examples/'.length;
 
+  // The page advertises `fileCount` and lists `paths`. Both describe the
+  // download, so both must count the same archive -- including a regression
+  // where one of them starts excluding the manifest.
+  const inArchive = entries.map((entry) => entry.path.slice(prefixLength));
+  if (inArchive.length !== new Set(inArchive).size) {
+    throw new Error('the example pack contains duplicate paths');
+  }
+  if (!inArchive.includes('MANIFEST.json')) {
+    throw new Error('the example pack must ship a MANIFEST.json to be verifiable');
+  }
+
   return {
     archive,
     meta: {
@@ -56,6 +67,10 @@ export function buildBundle() {
       file: ARCHIVE_NAME,
       bytes: archive.length,
       sha256: sha256Bytes(archive),
+      // `fileCount` is every file in the archive, which is what a reader of the
+      // download page wants, and what `paths` below enumerates. It includes the
+      // manifest, so it is the archive total rather than the manifest's own
+      // content count; `pack` reports both under those two names.
       fileCount: entries.length,
       paths: entries.map((entry) => entry.path.slice(prefixLength)).sort(),
     },

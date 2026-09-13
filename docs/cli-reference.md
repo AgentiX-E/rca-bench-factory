@@ -275,17 +275,31 @@ rca-bench pack --input <dir> --output <file.tar.gz> [--prefix <name>]
   manifest always describes the pack from its own root.
 - Refuses an input directory that already contains `MANIFEST.json`, rather than
   silently overwriting it.
+- `verifyPackManifest` excludes `MANIFEST.json` from the comparison. A recipient
+  hands over everything they extracted, and the manifest is the document doing
+  the declaring, so reporting it as undeclared would flag a faithful extraction
+  as corrupt. Callers that pass only the content set keep working unchanged.
 - Prints a summary on stdout and exits `0`:
 
 ```json
 {
   "output": "pack.tar.gz",
   "fileCount": 2,
+  "archiveFileCount": 3,
   "totalBytes": 17,
   "archiveBytes": 204,
   "sha256": "…"
 }
 ```
+
+- The two counts answer two different questions, because an archive and its
+  manifest do not hold the same number of files. `fileCount` counts the content
+  files the manifest lists — the manifest cannot list itself, since it cannot
+  contain its own SHA-256. `archiveFileCount` counts every file a recipient
+  extracts, the manifest included, and therefore equals `fileCount + 1`.
+- The manifest inside the archive carries the same two fields, so whoever
+  unpacks the download can check both numbers against the tree they hold
+  instead of taking either on trust.
 
 - `pnpm examples:bundle` uses the same machinery to build the downloadable
   example pack served by the site (`site/assets/rca-bench-factory-examples.tar.gz`),

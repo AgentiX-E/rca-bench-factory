@@ -39,6 +39,16 @@ export interface NormalizedPackEntry extends PackEntry {
   mode: number;
 }
 
+/**
+ * The manifest's own file name.
+ *
+ * Every part of the packer needs it: the writer places it at the pack root, the
+ * CLI refuses an input directory that already reserves it, the example pack
+ * computes its path, and the verifier excludes it from itself. It is exported
+ * so those five cannot drift into five private copies of the same string.
+ */
+export const MANIFEST_FILE_NAME = 'MANIFEST.json';
+
 /** One row of a pack manifest. */
 export interface PackManifestEntry {
   path: string;
@@ -46,10 +56,28 @@ export interface PackManifestEntry {
   sha256: string;
 }
 
-/** Verifiable description of a pack's contents. */
+/**
+ * Verifiable description of a pack's contents.
+ *
+ * Two counts, deliberately named for what they measure, because an archive and
+ * its manifest do not contain the same number of files:
+ *
+ *   - `fileCount` counts the content files the `entries` rows describe. The
+ *     manifest cannot list itself -- it cannot contain its own hash -- so it is
+ *     never one of these.
+ *   - `archiveFileCount` counts every file a recipient extracts, the manifest
+ *     included.
+ *
+ * A single `fileCount` used for both meanings is how a pack came to report `2`
+ * for a three-file archive, and how the documented verification recipe printed
+ * `8 files verified` in a nine-file tree.
+ */
 export interface PackManifest {
   version: 1;
+  /** Content files described by `entries`. Never includes the manifest. */
   fileCount: number;
+  /** Every file in the archive, the manifest included. */
+  archiveFileCount: number;
   totalBytes: number;
   entries: PackManifestEntry[];
 }
@@ -249,7 +277,15 @@ export function readTar(bytes: Uint8Array): PackEntry[] {
   return entries;
 }
 
-/** Describe a set of entries so a recipient can verify them without the sender. */
+/**
+ * Describe a set of entries so a recipient can verify them without the sender.
+ *
+ * `entries` is the content set, so `fileCount` counts exactly those rows.
+ * `archiveFileCount` counts one more: the manifest that will carry this
+ * description. The caller passes the same set it is about to pack, so the
+ * manifest's claim about the archive it travels inside is derived from that
+ * archive rather than asserted separately.
+ */
 export function buildPackManifest(entries: readonly PackEntry[]): PackManifest {
   const list = normalizePackEntries(entries).map((entry) => ({
     path: entry.path,
@@ -259,6 +295,7 @@ export function buildPackManifest(entries: readonly PackEntry[]): PackManifest {
   return {
     version: 1,
     fileCount: list.length,
+    archiveFileCount: list.length + 1,
     totalBytes: list.reduce((total, entry) => total + entry.bytes, 0),
     entries: list,
   };
@@ -275,9 +312,20 @@ export function renderPackManifest(manifest: PackManifest): string {
  * Size and hash are reported separately: a size mismatch alone means the file
  * was truncated in transit, while a hash mismatch with the same size means it
  * was altered. Both are failures, but they have different causes.
+ *
+ * A recipient naturally hands over everything they extracted, which includes
+ * the manifest. That file is excluded from the comparison rather than reported
+ * as undeclared: it is the document doing the declaring, so it can never be
+ * declared by itself, and reporting it as `extra` told every caller that a
+ * faithful extraction was corrupt. Callers that pass only the content set keep
+ * working unchanged, because the exclusion is symmetric.
  */
 export function verifyPackManifest(entries: readonly PackEntry[], manifest: PackManifest): PackVerifyResult {
-  const actual = new Map(buildPackManifest(entries).entries.map((entry) => [entry.path, entry]));
+  const actual = new Map(
+    buildPackManifest(entries)
+      .entries.filter((entry) => entry.path !== MANIFEST_FILE_NAME)
+      .map((entry) => [entry.path, entry]),
+  );
   const expected = new Map(manifest.entries.map((entry) => [entry.path, entry]));
 
   const missing: string[] = [];

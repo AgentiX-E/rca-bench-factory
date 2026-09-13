@@ -15,6 +15,7 @@ import {
   exportOpenRca2,
   exportRca100,
   exportRcaEval,
+  MANIFEST_FILE_NAME,
   buildPackManifest,
   createTarGzip,
   formatCommandHelp,
@@ -354,8 +355,8 @@ async function runOfficial(cmd: Extract<CliCommand, { command: 'official' }>, ct
  */
 async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx): Promise<number> {
   const files = await readFilesRecursive(resolve(ctx.cwd, cmd.input));
-  if (files['MANIFEST.json'] !== undefined) {
-    throw new Error('the input directory already contains MANIFEST.json, which pack reserves for its own manifest');
+  if (files[MANIFEST_FILE_NAME] !== undefined) {
+    throw new Error(`the input directory already contains ${MANIFEST_FILE_NAME}, which pack reserves for its own manifest`);
   }
 
   const prefix = cmd.prefix ?? '';
@@ -367,7 +368,11 @@ async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx):
     entries.map((entry) => ({ ...entry, path: entry.path.slice(prefix === '' ? 0 : prefix.length + 1) })),
   );
 
-  const archive = createTarGzip([...entries, { path: inPack('MANIFEST.json'), content: renderPackManifest(manifest) }]);
+  const archiveEntries = [
+    ...entries,
+    { path: inPack(MANIFEST_FILE_NAME), content: renderPackManifest(manifest) },
+  ];
+  const archive = createTarGzip(archiveEntries);
   const output = resolve(ctx.cwd, cmd.output);
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, archive);
@@ -376,7 +381,12 @@ async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx):
     `${JSON.stringify(
       {
         output: cmd.output,
+        // `fileCount` counts the content files the manifest lists; `archiveFileCount`
+        // counts the files a recipient extracts, this manifest included. Both are
+        // reported because they answer different questions, and the previous single
+        // field answered the extraction question with the content answer.
         fileCount: manifest.fileCount,
+        archiveFileCount: archiveEntries.length,
         totalBytes: manifest.totalBytes,
         archiveBytes: archive.length,
         sha256: sha256Bytes(archive),

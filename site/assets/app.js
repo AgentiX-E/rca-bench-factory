@@ -752,6 +752,9 @@
         body.appendChild(
           el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0' }, [
             el('a', { class: 'btn primary', href: 'assets/' + meta.file, download: meta.file, text: 'Download ' + meta.file }),
+            // `fileCount` counts every file in the download, the manifest
+            // included, and `paths` lists the same set. The badge and the list
+            // below therefore describe one archive, not two.
             el('span', { class: 'badge', text: meta.fileCount + ' files' }),
             el('span', { class: 'badge', text: formatBytes(meta.bytes) + ' gzipped' }),
             el('span', { class: 'badge ok', text: 'byte-reproducible' }),

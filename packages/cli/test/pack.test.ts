@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { run } from '../src/run.js';
-import { readTar } from '@rca-bench-factory/core';
+import { readTar, verifyPackManifest } from '@rca-bench-factory/core';
 
 /**
  * `rca-bench pack` tests.
@@ -80,6 +80,78 @@ describe('rca-bench pack', () => {
     await run(['pack', '--input', 'src', '--output', 'out/pack.tar.gz'], { cwd: dir, stdout: () => {} });
     const second = await readFile(out);
     expect(second.equals(first)).toBe(true);
+  });
+
+  it('reports a file count that matches the archive it just wrote', async () => {
+    const dir = await makeDir();
+    await writeTree(join(dir, 'src'));
+    const stdout: string[] = [];
+    await run(['pack', '--input', 'src', '--output', 'pack.tar.gz'], { cwd: dir, stdout: (c) => stdout.push(c) });
+
+    const summary = JSON.parse(stdout.join(''));
+    const archive = entriesOf(join(dir, 'pack.tar.gz'));
+
+    // The archive holds two content files plus the manifest. A caller reading
+    // `fileCount` is told how many files the manifest lists; a caller asking
+    // how many files they will extract reads `archiveFileCount`. Measuring both
+    // against the real archive is what stops the two answers collapsing into one.
+    expect(archive.map((e) => e.path)).toEqual(['MANIFEST.json', 'a.txt', 'nested/b.json']);
+    expect(summary.archiveFileCount).toBe(archive.length);
+    expect(summary.fileCount).toBe(archive.filter((e) => e.path !== 'MANIFEST.json').length);
+  });
+
+  it('agrees with the manifest it ships inside the archive', async () => {
+    const dir = await makeDir();
+    await writeTree(join(dir, 'src'));
+    const stdout: string[] = [];
+    await run(['pack', '--input', 'src', '--output', 'pack.tar.gz'], { cwd: dir, stdout: (c) => stdout.push(c) });
+
+    const summary = JSON.parse(stdout.join(''));
+    const archive = entriesOf(join(dir, 'pack.tar.gz'));
+    const manifest = JSON.parse(archive.find((e) => e.path === 'MANIFEST.json')!.content);
+
+    // Two documents describe the same archive -- the CLI summary and the
+    // manifest inside it. They are produced by different code paths, so
+    // comparing them is the only way to catch them drifting apart.
+    expect(manifest.fileCount).toBe(summary.fileCount);
+    expect(manifest.archiveFileCount).toBe(summary.archiveFileCount);
+    expect(manifest.totalBytes).toBe(summary.totalBytes);
+  });
+
+  it('verifies its own archive against the manifest it wrote', async () => {
+    const dir = await makeDir();
+    await writeTree(join(dir, 'src'));
+    await run(['pack', '--input', 'src', '--output', 'pack.tar.gz'], { cwd: dir, stdout: () => {} });
+
+    const archive = entriesOf(join(dir, 'pack.tar.gz'));
+    const manifest = JSON.parse(archive.find((e) => e.path === 'MANIFEST.json')!.content);
+
+    // A recipient hands the verifier everything they extracted. If that reports
+    // the pack's own manifest as undeclared, the documented check is unusable.
+    expect(verifyPackManifest(archive, manifest)).toEqual({
+      ok: true,
+      missing: [],
+      extra: [],
+      checksumMismatch: [],
+      sizeMismatch: [],
+    });
+  });
+
+  it('verifies its own archive when every path is nested under --prefix', async () => {
+    const dir = await makeDir();
+    await writeTree(join(dir, 'src'));
+    await run(['pack', '--input', 'src', '--output', 'pack.tar.gz', '--prefix', 'bundle'], {
+      cwd: dir,
+      stdout: () => {},
+    });
+
+    const archive = entriesOf(join(dir, 'pack.tar.gz'));
+    const manifest = JSON.parse(archive.find((e) => e.path === 'bundle/MANIFEST.json')!.content);
+    const fromRoot = archive
+      .filter((e) => e.path !== 'bundle/MANIFEST.json')
+      .map((e) => ({ ...e, path: e.path.slice('bundle/'.length) }));
+
+    expect(verifyPackManifest(fromRoot, manifest).ok).toBe(true);
   });
 
   it('ships a verified manifest alongside the packed files', async () => {

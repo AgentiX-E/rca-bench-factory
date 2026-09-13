@@ -1,4 +1,4 @@
-import { buildPackManifest, normalizePackEntries, renderPackManifest } from './archive.js';
+import { MANIFEST_FILE_NAME, buildPackManifest, normalizePackEntries, renderPackManifest } from './archive.js';
 import type { PackEntry } from './archive.js';
 import { SCORE_TARGET_IDS } from '../score/score.js';
 import type { ScoreTargetId } from '../score/score.js';
@@ -131,7 +131,7 @@ export function renderExampleReadme(files: readonly string[] = []): string {
     '```',
     'README.md',
     'run.sh',
-    'MANIFEST.json',
+    MANIFEST_FILE_NAME,
     ...files.map((file) => file),
     '```',
     '',
@@ -174,17 +174,27 @@ export function renderExampleReadme(files: readonly string[] = []): string {
     '',
     '## Verifying what you downloaded',
     '',
-    'Every file is listed in `MANIFEST.json` with its byte length and SHA-256. Check the',
-    'extracted tree against it:',
+    `Every content file is listed in \`${MANIFEST_FILE_NAME}\` with its byte length and`,
+    'SHA-256. The manifest does not list itself -- it cannot carry its own hash -- so',
+    'the check below covers the listed files and then confirms that no other file',
+    'slipped in:',
     '',
     '```bash',
-    'node -e \'const fs=require("fs"),c=require("crypto"),m=require("./MANIFEST.json");',
+    `node -e 'const fs=require("fs"),c=require("crypto"),m=require("./${MANIFEST_FILE_NAME}");`,
     '  for (const e of m.entries) {',
     '    const b=fs.readFileSync(e.path);',
     '    if (b.length!==e.bytes||c.createHash("sha256").update(b).digest("hex")!==e.sha256) throw new Error("mismatch: "+e.path);',
     '  }',
-    '  console.log(m.fileCount+" files verified");\'',
+    '  const listed=new Set([...m.entries.map(e=>e.path),"MANIFEST.json"]);',
+    '  const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(x=>x.isDirectory()?walk(d+"/"+x.name):[d+"/"+x.name]);',
+    '  const present=walk(".").map(p=>p.slice(2));',
+    '  const unlisted=present.filter(p=>!listed.has(p));',
+    '  if (unlisted.length) throw new Error("unlisted file: "+unlisted.join(", "));',
+    '  console.log(present.length+" files verified ("+m.fileCount+" listed, plus the manifest)");\'',
     '```',
+    '',
+    'The count it prints is the number of files actually in the tree, so it can be',
+    'checked against what you extracted rather than taken on trust.',
     '',
     'The archive itself is reproducible: rebuilding it from the same inputs produces',
     'byte-identical output, because every tar field that could carry a timestamp or a',
@@ -249,7 +259,7 @@ export function buildExamplePack(
     { path: `${prefix}/run.sh`, content: renderExampleRunScript(), mode: SCRIPT_MODE },
   ]);
 
-  const manifestPath = `${prefix}/MANIFEST.json`;
+  const manifestPath = `${prefix}/${MANIFEST_FILE_NAME}`;
   const manifest = renderPackManifest(
     buildPackManifest(
       packed.map((entry) => ({ ...entry, path: entry.path.slice(prefix.length + 1) })),
