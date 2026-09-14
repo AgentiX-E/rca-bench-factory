@@ -362,6 +362,19 @@ rca-bench evolve stale   --input proposal.json --cases '["case-001", ...]'
   action and the regression verdict from the score delta.
 - `approve` / `reject` move a proposal through the HITL checkpoint; an optional
   reviewer note is attached.
+- **A HITL decision is final.** The proposal document is the only record of the
+  review, so `approve` and `reject` refuse a proposal that already carries a
+  verdict, and exit 1 without writing anything:
+  ```text
+  error: proposal 'prop-001' is already approved; a HITL decision is final - submit a new proposal to supersede it
+  ```
+  Both a reversal (`approve` then `reject`) and a repeat (`approve` twice) are
+  refused. A reversal silently retracts an approval that may already have been
+  acted on, and a repeat replaces the reviewer note that actually decided the
+  change — leaving a document that still reads `approved` but no longer says who
+  allowed it. A proposal whose verdict was wrong is superseded by a **new**
+  proposal, which keeps both decisions in the record. Re-deciding is not a repair
+  path.
 - `stale` returns the affected cases to re-run when a proposal failed its
   regression or was rejected (red line 3: rollback); an approved, passing
   proposal returns nothing to roll back.

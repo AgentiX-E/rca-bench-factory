@@ -808,6 +808,82 @@ describe('evolve', () => {
     expect(code).toBe(1);
     expect(err.join('')).toContain('array');
   });
+
+  it('refuses to reverse an approved proposal', async () => {
+    // The proposal document is the only record of the review, so a second
+    // decision used to replace the first verdict and its note outright: no
+    // trace of the approval survived, and the exit code was 0. An approved
+    // proposal may already have been acted on, so the reversal must fail.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    await run(['evolve', 'approve', '--input', 'proposal.json', '--note', 'looks good', '--output', 'approved.json'], { cwd: dir });
+
+    const err: string[] = [];
+    const code = await run(
+      ['evolve', 'reject', '--input', 'approved.json', '--note', 'changed my mind', '--output', 'rejected.json'],
+      { cwd: dir, stderr: (s) => err.push(s) },
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/already approved/);
+    // The refusal must not leave a document behind carrying the new verdict:
+    // a written artefact would be exactly the silent overwrite it replaces.
+    await expect(readFile(join(dir, 'rejected.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('refuses to approve a rejected proposal', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    await run(['evolve', 'reject', '--input', 'proposal.json', '--note', 'regression gap', '--output', 'rejected.json'], { cwd: dir });
+
+    const err: string[] = [];
+    const code = await run(['evolve', 'approve', '--input', 'rejected.json', '--output', 'approved.json'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/already rejected/);
+    await expect(readFile(join(dir, 'approved.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('refuses a second approval rather than erasing the first note', async () => {
+    // Re-approving looks harmless but is not: the second note replaces the
+    // first, so the reviewer whose judgement actually allowed the change
+    // disappears while the status still reads `approved`.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+    await run(['evolve', 'approve', '--input', 'proposal.json', '--note', 'first reviewer', '--output', 'first.json'], { cwd: dir });
+
+    const err: string[] = [];
+    const code = await run(['evolve', 'approve', '--input', 'first.json', '--note', 'second reviewer', '--output', 'second.json'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+
+    expect(code).toBe(1);
+    expect(err.join('')).toMatch(/already approved/);
+    // The original decision is intact and is still the one on disk.
+    const kept = JSON.parse(await readFile(join(dir, 'first.json'), 'utf8'));
+    expect(kept.status).toBe('approved');
+    expect(kept.note).toBe('first reviewer');
+  });
+
+  it('still decides a pending proposal in both directions', async () => {
+    // The positive control for the three refusals above: the guard must not
+    // make the command unusable. Without this, "refuse the second decision"
+    // would be satisfiable by refusing every decision.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'proposal.json'), pendingProposal());
+
+    const approveCode = await run(['evolve', 'approve', '--input', 'proposal.json', '--output', 'ok.json'], { cwd: dir });
+    expect(approveCode).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'ok.json'), 'utf8')).status).toBe('approved');
+
+    const rejectCode = await run(['evolve', 'reject', '--input', 'proposal.json', '--output', 'no.json'], { cwd: dir });
+    expect(rejectCode).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'no.json'), 'utf8')).status).toBe('rejected');
+  });
 });
 
 describe('official', () => {

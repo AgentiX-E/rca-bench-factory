@@ -144,13 +144,49 @@ export function isProductionReady(proposal: EvolutionProposal): boolean {
   return proposal.status === 'approved' && isSubmittable(proposal);
 }
 
-/** Approve a proposal, optionally with a reviewer note. */
+/**
+ * Refuse to decide a proposal that already carries a verdict.
+ *
+ * A HITL decision is a one-way transition, so it has to be guarded like one. The
+ * proposal document is the *only* record of a review - the CLI reads one file
+ * and writes another, and the reviewer's reasoning exists nowhere else - so a
+ * second command used to replace the first verdict and its note outright:
+ *
+ *     approve --note "looks good"    -> approved, "looks good"
+ *     reject  --note "changed mind"  -> rejected, "changed mind"
+ *
+ * with nothing in the second document saying the proposal had ever been
+ * approved. That is worse than a lost note. An approved proposal may already
+ * have been acted on, so re-deciding it silently *retracts a granted approval*
+ * while leaving behind no evidence that one was ever given - and re-approving
+ * erases the reviewer whose judgement actually allowed the change, while the
+ * status still reads `approved`.
+ *
+ * Rejection is therefore deliberately not a repair path: a proposal whose
+ * verdict was wrong is superseded by a new proposal, which keeps both decisions
+ * in the record. Refusing here is what makes the audit trail trustworthy,
+ * because it guarantees the note in front of you is the note that decided it.
+ *
+ * The thrown message names the verdict that stands rather than the one that was
+ * requested, since "what is the state, then?" is the operator's next question.
+ */
+function assertUndecided(proposal: EvolutionProposal): void {
+  if (proposal.status !== 'pending') {
+    throw new Error(
+      `proposal '${proposal.id}' is already ${proposal.status}; a HITL decision is final - submit a new proposal to supersede it`,
+    );
+  }
+}
+
+/** Approve a proposal, optionally with a reviewer note. Fails if already decided. */
 export function approveProposal(proposal: EvolutionProposal, note?: string): EvolutionProposal {
+  assertUndecided(proposal);
   return { ...proposal, status: 'approved', ...(note !== undefined ? { note } : {}) };
 }
 
-/** Reject a proposal, optionally with a reviewer note. */
+/** Reject a proposal, optionally with a reviewer note. Fails if already decided. */
 export function rejectProposal(proposal: EvolutionProposal, note?: string): EvolutionProposal {
+  assertUndecided(proposal);
   return { ...proposal, status: 'rejected', ...(note !== undefined ? { note } : {}) };
 }
 
