@@ -104,6 +104,33 @@ const PREFIX_LEN = 155;
 /** Longest path ustar can express: 155-byte prefix + '/' + 100-byte name. */
 const MAX_USTAR_PATH = PREFIX_LEN + 1 + NAME_LEN;
 
+/**
+ * Where the manifest sits inside a pack, given every path it contains.
+ *
+ * A pack is either flat (`MANIFEST.json` at the root) or prefixed by exactly one
+ * top-level directory (`<prefix>/MANIFEST.json`), so a candidate has at most one
+ * separator. Deeper files that share the name are not candidates: one is ordinary
+ * content that happens to be called MANIFEST.json, and treating it as the
+ * manifest would let an undeclared file pass as declared.
+ *
+ * The prefix is discovered from the paths rather than assumed, so this cannot
+ * drift from whatever prefix a caller chose.
+ *
+ * Returns `undefined` when no manifest is present, which happens when a caller
+ * passes only the content set: nothing is then excluded, which is the correct
+ * behaviour rather than a special case to branch on.
+ */
+function findManifestPath(paths: readonly string[]): string | undefined {
+  const candidates = paths.filter((path) => {
+    if (path === MANIFEST_FILE_NAME) return true;
+    const slash = path.indexOf('/');
+    return slash !== -1 && path.indexOf('/', slash + 1) === -1 && path.slice(slash + 1) === MANIFEST_FILE_NAME;
+  });
+  // Prefer the shallowest, so a root manifest wins over a prefixed one if a pack
+  // somehow carries both.
+  return [...candidates].sort((a, b) => a.length - b.length)[0];
+}
+
 function normalizePath(raw: string): string {
   if (raw === '') throw new Error('pack entry path must not be empty');
   if (raw.includes('\\')) throw new Error(`pack entry path '${raw}' must not contain a backslash`);
@@ -285,6 +312,12 @@ export function readTar(bytes: Uint8Array): PackEntry[] {
  * description. The caller passes the same set it is about to pack, so the
  * manifest's claim about the archive it travels inside is derived from that
  * archive rather than asserted separately.
+ *
+ * The rows therefore carry the paths as they appear *in the archive*, prefix
+ * included. A caller that wants pack-relative rows strips the prefix before
+ * calling, but a manifest written into an archive must name archive paths or the
+ * recipient cannot resolve a single row: with a prefix, every file would be
+ * reported both missing and undeclared.
  */
 export function buildPackManifest(entries: readonly PackEntry[]): PackManifest {
   const list = normalizePackEntries(entries).map((entry) => ({
@@ -319,12 +352,18 @@ export function renderPackManifest(manifest: PackManifest): string {
  * declared by itself, and reporting it as `extra` told every caller that a
  * faithful extraction was corrupt. Callers that pass only the content set keep
  * working unchanged, because the exclusion is symmetric.
+ *
+ * "The manifest" is identified by the path the recipient would find it at, which
+ * is `MANIFEST.json` at the pack root or one directory deep for a prefixed pack.
+ * A file that merely shares the name somewhere else in the tree -- `sub/` above
+ * the pack root, or a second copy beside the real one -- is still undeclared and
+ * still reported.
  */
 export function verifyPackManifest(entries: readonly PackEntry[], manifest: PackManifest): PackVerifyResult {
+  const declared = buildPackManifest(entries).entries;
+  const manifestPath = findManifestPath(declared.map((entry) => entry.path));
   const actual = new Map(
-    buildPackManifest(entries)
-      .entries.filter((entry) => entry.path !== MANIFEST_FILE_NAME)
-      .map((entry) => [entry.path, entry]),
+    declared.filter((entry) => entry.path !== manifestPath).map((entry) => [entry.path, entry]),
   );
   const expected = new Map(manifest.entries.map((entry) => [entry.path, entry]));
 

@@ -147,11 +147,14 @@ describe('rca-bench pack', () => {
 
     const archive = entriesOf(join(dir, 'pack.tar.gz'));
     const manifest = JSON.parse(archive.find((e) => e.path === 'bundle/MANIFEST.json')!.content);
-    const fromRoot = archive
-      .filter((e) => e.path !== 'bundle/MANIFEST.json')
-      .map((e) => ({ ...e, path: e.path.slice('bundle/'.length) }));
 
-    expect(verifyPackManifest(fromRoot, manifest).ok).toBe(true);
+    // Verify exactly what a recipient extracts, with no path rewriting. An
+    // earlier version of this test stripped `bundle/` from the entries first,
+    // which made the check pass while real extractions failed on every file.
+    const result = verifyPackManifest(archive, manifest);
+    expect(result.ok).toBe(true);
+    expect(result.missing).toEqual([]);
+    expect(result.extra).toEqual([]);
   });
 
   it('ships a verified manifest alongside the packed files', async () => {
@@ -193,7 +196,7 @@ describe('rca-bench pack', () => {
     }
   });
 
-  it('nests every path under --prefix and strips it from the manifest', async () => {
+  it('nests every path under --prefix, manifest rows included', async () => {
     const dir = await makeDir();
     await writeTree(join(dir, 'src'));
     const out = join(dir, 'pack.tar.gz');
@@ -206,8 +209,14 @@ describe('rca-bench pack', () => {
     const entries = entriesOf(out);
     expect(entries.map((e) => e.path)).toEqual(['bundle/MANIFEST.json', 'bundle/a.txt', 'bundle/nested/b.json']);
 
+    // The manifest is written into the archive, so its rows name archive paths.
+    // Prefixed rows are what a recipient can resolve; pack-relative rows named
+    // files that do not exist at those paths once extracted.
     const manifest = JSON.parse(entries.find((e) => e.path === 'bundle/MANIFEST.json')!.content);
-    expect(manifest.entries.map((e: { path: string }) => e.path)).toEqual(['a.txt', 'nested/b.json']);
+    expect(manifest.entries.map((e: { path: string }) => e.path)).toEqual([
+      'bundle/a.txt',
+      'bundle/nested/b.json',
+    ]);
 
     if (await tarAvailable()) {
       expect(await tarList(out)).toEqual(['bundle/MANIFEST.json', 'bundle/a.txt', 'bundle/nested/b.json'].sort());

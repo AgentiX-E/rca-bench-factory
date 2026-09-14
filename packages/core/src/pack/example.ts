@@ -177,17 +177,22 @@ export function renderExampleReadme(files: readonly string[] = []): string {
     `Every content file is listed in \`${MANIFEST_FILE_NAME}\` with its byte length and`,
     'SHA-256. The manifest does not list itself -- it cannot carry its own hash -- so',
     'the check below covers the listed files and then confirms that no other file',
-    'slipped in:',
+    'slipped in.',
+    '',
+    'Run it from the directory **containing** the extracted pack root, not from inside',
+    'it: the manifest\'s paths are relative to where you unpacked the archive, so',
+    '`rca-bench-factory-examples/README.md` resolves from there and from nowhere else.',
     '',
     '```bash',
-    `node -e 'const fs=require("fs"),c=require("crypto"),m=require("./${MANIFEST_FILE_NAME}");`,
+    `node -e 'const fs=require("fs"),c=require("crypto");`,
+    `  const root="${EXAMPLE_PACK_PREFIX}",m=require("./"+root+"/${MANIFEST_FILE_NAME}");`,
     '  for (const e of m.entries) {',
     '    const b=fs.readFileSync(e.path);',
     '    if (b.length!==e.bytes||c.createHash("sha256").update(b).digest("hex")!==e.sha256) throw new Error("mismatch: "+e.path);',
     '  }',
-    '  const listed=new Set([...m.entries.map(e=>e.path),"MANIFEST.json"]);',
+    `  const listed=new Set([...m.entries.map(e=>e.path),root+"/${MANIFEST_FILE_NAME}"]);`,
     '  const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(x=>x.isDirectory()?walk(d+"/"+x.name):[d+"/"+x.name]);',
-    '  const present=walk(".").map(p=>p.slice(2));',
+    '  const present=walk(root).map(p=>p);',
     '  const unlisted=present.filter(p=>!listed.has(p));',
     '  if (unlisted.length) throw new Error("unlisted file: "+unlisted.join(", "));',
     '  console.log(present.length+" files verified ("+m.fileCount+" listed, plus the manifest)");\'',
@@ -245,9 +250,12 @@ export function renderExampleRunScript(): string {
 /**
  * Build the complete entry list for the example pack.
  *
- * `files` is keyed by repository-relative path (`examples/order-prod/...`). The
- * manifest describes the pack from its own root, so the prefix is stripped from
- * manifest paths and the manifest is excluded from itself.
+ * `files` is keyed by repository-relative path (`examples/order-prod/...`).
+ * Content, the generated README/run.sh and the manifest all live under `prefix`,
+ * so the manifest's rows name the prefixed paths -- the manifest is written into
+ * the archive and must therefore describe the archive as a recipient sees it.
+ * A pack-relative row would name a file that does not exist at that path once
+ * extracted, and every row would be reported missing.
  */
 export function buildExamplePack(
   files: Record<string, string>,
@@ -260,11 +268,7 @@ export function buildExamplePack(
   ]);
 
   const manifestPath = `${prefix}/${MANIFEST_FILE_NAME}`;
-  const manifest = renderPackManifest(
-    buildPackManifest(
-      packed.map((entry) => ({ ...entry, path: entry.path.slice(prefix.length + 1) })),
-    ),
-  );
+  const manifest = renderPackManifest(buildPackManifest(packed));
 
   return normalizePackEntries([...packed, { path: manifestPath, content: manifest }]);
 }

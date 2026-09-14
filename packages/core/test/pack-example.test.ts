@@ -170,11 +170,11 @@ describe('buildExamplePack', () => {
   it('ships a manifest that verifies against the pack itself', () => {
     const manifestRaw = entries.find((e) => e.path.endsWith('/MANIFEST.json'))!.content;
     const manifest = JSON.parse(manifestRaw);
-    // The manifest describes the pack from its own root, so the prefix is stripped.
-    const relative = entries
-      .filter((e) => !e.path.endsWith('/MANIFEST.json'))
-      .map((e) => ({ ...e, path: e.path.slice(EXAMPLE_PACK_PREFIX.length + 1) }));
-    expect(verifyPackManifest(relative, manifest)).toEqual({
+    // A recipient hands over the extraction as-is. Previously this test stripped
+    // the prefix from the entries to make the manifest verifiable, which encoded
+    // the mismatch as the expected contract: in reality a recipient keeps the
+    // top-level directory, and the check then failed on every file.
+    expect(verifyPackManifest(entries, manifest)).toEqual({
       ok: true,
       missing: [],
       extra: [],
@@ -187,14 +187,27 @@ describe('buildExamplePack', () => {
     expect(manifest.archiveFileCount).toBe(entries.length);
   });
 
+  it('names archive paths in the manifest, prefix included', () => {
+    const manifest = JSON.parse(entries.find((e) => e.path.endsWith('/MANIFEST.json'))!.content);
+    // Every row must resolve inside the archive the manifest travels in, and the
+    // manifest is never one of its own rows.
+    expect(manifest.entries.map((e: { path: string }) => e.path).sort()).toEqual(
+      entries
+        .map((e) => e.path)
+        .filter((p) => !p.endsWith('/MANIFEST.json'))
+        .sort(),
+    );
+    for (const row of manifest.entries) {
+      expect(row.path.startsWith(`${EXAMPLE_PACK_PREFIX}/`)).toBe(true);
+    }
+  });
+
   it('survives a tar round trip with the manifest still verifying', () => {
     const restored = readTar(gunzipSync(createTarGzip(entries)));
     expect(restored.map((e) => e.path)).toEqual(entries.map((e) => e.path));
     const manifest = JSON.parse(restored.find((e) => e.path.endsWith('/MANIFEST.json'))!.content);
-    const relative = restored
-      .filter((e) => !e.path.endsWith('/MANIFEST.json'))
-      .map((e) => ({ ...e, path: e.path.slice(EXAMPLE_PACK_PREFIX.length + 1) }));
-    expect(verifyPackManifest(relative, manifest).ok).toBe(true);
+    // Verify exactly what was restored, with no path rewriting.
+    expect(verifyPackManifest(restored, manifest).ok).toBe(true);
   });
 
   it('is byte-identical across runs', () => {
@@ -220,5 +233,62 @@ describe('buildExamplePack', () => {
   it('produces entries the archive layer accepts', () => {
     const normalized: PackEntry[] = buildExamplePack(EXAMPLE_FILES);
     expect(buildPackManifest(normalized).fileCount).toBe(normalized.length);
+  });
+});
+
+describe('the verification recipe the pack ships', () => {
+  /**
+   * The README inside the archive tells the reader how to verify the download.
+   * Documentation that is only read, never executed, drifts silently - which is
+   * how the recipe came to run from the pack root while the manifest's paths are
+   * relative to the archive root, failing on its first readFileSync.
+   *
+   * These tests take the commands verbatim from the rendered README and run them
+   * against a real archive on a real filesystem.
+   */
+
+  /**
+   * The verification section's shell block, as one command.
+   *
+   * The recipe is a single `node -e` whose script spans several lines, so the
+   * whole block is joined rather than filtered line by line: taking only the
+   * first line drops the closing quote and produces a command no shell can parse.
+   */
+  function recipeCommands(): string[] {
+    const readme = renderExampleReadme(['examples/order-prod/metrics.csv']);
+    const section = readme.slice(readme.indexOf('## Verifying what you downloaded'));
+    const fence = section.indexOf('```bash');
+    const body = section.slice(fence + 7, section.indexOf('```', fence + 7)).trimEnd();
+    return [body];
+  }
+
+  it('ships exactly one runnable recipe', () => {
+    expect(recipeCommands()).toHaveLength(1);
+  });
+
+  it('runs against a real extraction and reports the true file count', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { dirname, join } = await import('node:path');
+
+    const dir = mkdtempSync(join(tmpdir(), 'pack-recipe-'));
+    try {
+      // Unpack the real archive exactly as a recipient would: paths as they are.
+      const archive = createTarGzip(buildExamplePack(EXAMPLE_FILES));
+      for (const entry of readTar(gunzipSync(archive))) {
+        const target = join(dir, entry.path);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, entry.content);
+      }
+
+      const out = execFileSync('sh', ['-c', recipeCommands()[0]!], { cwd: dir }).toString();
+
+      // `fileCount` excludes the manifest, so the reported total is one more.
+      const listed = Object.keys(EXAMPLE_FILES).length + 2; // + README.md + run.sh
+      expect(out).toContain(`${listed + 1} files verified (${listed} listed, plus the manifest)`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

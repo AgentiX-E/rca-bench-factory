@@ -456,9 +456,10 @@ async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx):
   const entries = normalizePackEntries(
     Object.entries(files).map(([path, content]) => ({ path: inPack(path), content })),
   );
-  const manifest = buildPackManifest(
-    entries.map((entry) => ({ ...entry, path: entry.path.slice(prefix === '' ? 0 : prefix.length + 1) })),
-  );
+  // The manifest is written into the archive, so its rows name archive paths.
+  // Stripping the prefix here produced a manifest that named files the archive
+  // did not contain, which made every prefixed pack fail its own verification.
+  const manifest = buildPackManifest(entries);
 
   const archiveEntries = [
     ...entries,

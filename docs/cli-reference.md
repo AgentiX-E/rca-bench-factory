@@ -326,8 +326,13 @@ rca-bench pack --input <dir> --output <file.tar.gz> [--prefix <name>]
   the same bytes (and therefore the same digest) on any machine.
 - Adds `MANIFEST.json` at the pack root with the byte length and SHA-256 of every
   file, so a recipient can verify what they extracted without trusting the
-  transport. `--prefix` nests the files but is stripped from the manifest, so the
-  manifest always describes the pack from its own root.
+  transport. The manifest's rows name **archive paths, prefix included**: it is
+  written into the archive, so its rows must resolve there. (Stripping the prefix
+  made a prefixed pack fail its own verification, with every file reported both
+  missing and undeclared.)
+- `--prefix` nests every file, manifest included, under one top-level directory.
+  Unpack from the directory *containing* that directory, since the manifest's paths
+  are relative to the archive root.
 - Refuses an input directory that already contains `MANIFEST.json`, rather than
   silently overwriting it.
 - `verifyPackManifest` excludes `MANIFEST.json` from the comparison. A recipient

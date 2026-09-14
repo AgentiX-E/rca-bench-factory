@@ -2,6 +2,7 @@ import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   MANIFEST_FILE_NAME,
+  buildExamplePack,
   buildPackManifest,
   createTarGzip,
   normalizePackEntries,
@@ -9,6 +10,7 @@ import {
   renderPackManifest,
   verifyPackManifest,
   type PackEntry,
+  type PackManifestEntry,
 } from '../src/index.js';
 
 /**
@@ -189,5 +191,63 @@ describe('renderPackManifest', () => {
       totalBytes: 1,
       entries: [{ path: 'a.txt', bytes: 1, sha256: expect.any(String) }],
     });
+  });
+});
+
+describe('a prefixed pack must verify against the manifest it ships', () => {
+  /**
+   * `buildExamplePack` and `rca-bench pack --prefix` both place content under a
+   * top-level directory. The manifest is the document a recipient uses to check
+   * the archive it travelled inside, so its rows must name the paths that are
+   * actually in that archive -- not the paths the content had before the prefix
+   * was applied.
+   *
+   * Every other test in this file packs at the archive root, which is why a
+   * manifest/archive path mismatch could survive: the easy case happens to make
+   * the two agree.
+   */
+  const PREFIX = 'top';
+  const files = { 'examples/a.txt': 'alpha', 'examples/nested/b.txt': 'beta' };
+
+  function prefixedEntries(): PackEntry[] {
+    return buildExamplePack(files, PREFIX);
+  }
+
+  it('lists paths that exist in the archive', () => {
+    const entries = extractedEntries(createTarGzip(prefixedEntries()));
+    const manifestRaw = entries.find((e) => e.path === `${PREFIX}/${MANIFEST_FILE_NAME}`);
+    expect(manifestRaw).toBeDefined();
+    const manifest: { entries: PackManifestEntry[] } = JSON.parse(manifestRaw!.content);
+    const inArchive = new Set(entries.map((e) => e.path));
+
+    // Each row must resolve to a file a recipient actually gets. A row naming a
+    // path that is not in the archive describes something the recipient will
+    // never be able to check.
+    const unresolvable = manifest.entries
+      .map((e) => e.path)
+      .filter((path) => !inArchive.has(path) && !inArchive.has(`${PREFIX}/${path}`));
+    expect(unresolvable).toEqual([]);
+
+    // And the rows must name the archive's paths, not the pre-prefix paths: the
+    // two happen to agree only when the prefix is empty, which is the case every
+    // other test in this file exercises.
+    expect(manifest.entries.map((e) => e.path).sort()).toEqual(
+      entries
+        .map((e) => e.path)
+        .filter((p) => p !== `${PREFIX}/${MANIFEST_FILE_NAME}`)
+        .sort(),
+    );
+  });
+
+  it('verifies a faithful extraction of its own archive', () => {
+    const entries = extractedEntries(createTarGzip(prefixedEntries()));
+    const manifest = JSON.parse(
+      entries.find((e) => e.path === `${PREFIX}/${MANIFEST_FILE_NAME}`)!.content,
+    );
+
+    const result = verifyPackManifest(entries, manifest);
+    expect(result.ok).toBe(true);
+    expect(result.missing).toEqual([]);
+    expect(result.extra).toEqual([]);
   });
 });
