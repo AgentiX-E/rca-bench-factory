@@ -73,27 +73,6 @@ jobs:
           tar -xzf site/assets/rca-bench-factory-examples.tar.gz -C /tmp/example-pack
           diff -r /tmp/example-pack/rca-bench-factory-examples/examples/order-prod examples/order-prod
           sh -n /tmp/example-pack/rca-bench-factory-examples/run.sh
-          node -e '
-            const fs = require("fs"), crypto = require("crypto");
-            const root = "/tmp/example-pack/rca-bench-factory-examples";
-            const m = JSON.parse(fs.readFileSync(root + "/MANIFEST.json", "utf8"));
-            for (const e of m.entries) {
-              const b = fs.readFileSync(root + "/" + e.path);
-              if (b.length !== e.bytes) throw new Error("size mismatch: " + e.path);
-              const digest = crypto.createHash("sha256").update(b).digest("hex");
-              if (digest !== e.sha256) throw new Error("digest mismatch: " + e.path);
-            }
-            // The manifest lists content files and cannot list itself, so the
-            // tree holds one more file than m.fileCount. Compare against the
-            // tree rather than printing a number nobody can check.
-            const walk = (d) => fs.readdirSync(d, { withFileTypes: true })
-              .flatMap((x) => x.isDirectory() ? walk(d + "/" + x.name) : [d + "/" + x.name]);
-            const present = walk(root).map((p) => p.slice(root.length + 1));
-            const listed = new Set([...m.entries.map((e) => e.path), "MANIFEST.json"]);
-            const unlisted = present.filter((p) => !listed.has(p));
-            if (unlisted.length) throw new Error("unlisted file: " + unlisted.join(", "));
-            if (m.archiveFileCount !== present.length) {
-              throw new Error("archiveFileCount says " + m.archiveFileCount + " but the tree holds " + present.length);
-            }
-            console.log(present.length + " packed files verified against MANIFEST.json");
-          '
+
+      - name: Example pack verifies against its own manifest
+        run: node scripts/verify-example-pack.mjs

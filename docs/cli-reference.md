@@ -364,6 +364,19 @@ rca-bench pack --input <dir> --output <file.tar.gz> [--prefix <name>]
 - `pnpm examples:bundle` uses the same machinery to build the downloadable
   example pack served by the site (`site/assets/rca-bench-factory-examples.tar.gz`),
   and `pnpm examples:bundle:check` fails CI when the committed artefact is stale.
+- `pnpm examples:verify` (`scripts/verify-example-pack.mjs`) extracts that archive
+  and hands the result to `verifyPackManifest`, refusing it if any file is
+  missing, undeclared, a different size or a different digest — and if
+  `archiveFileCount` disagrees with the tree. It delegates to the real verifier
+  rather than reimplementing the rules: the check it replaced was an inline
+  `node -e` block in the workflow, and when the manifest was corrected to name
+  archive paths that copy kept resolving rows against the pack root, so CI failed
+  on the commit that fixed the pack. It exits `0` on success and prints the file
+  count it cross-checked against the extraction:
+
+```text
+9 packed files verified against rca-bench-factory-examples/MANIFEST.json
+```
 
 ### `rca-bench evolve`
 
