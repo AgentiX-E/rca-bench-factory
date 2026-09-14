@@ -495,6 +495,148 @@ describe('run - export', () => {
   });
 });
 
+/**
+ * Every exporter returns `skipped` -- the cases it could not express in the
+ * target's contract -- and `runExport` used to take only `.files` and drop it.
+ *
+ * The consequence is that a bundle of N cases exported an artefact covering
+ * fewer than N, with exit code 0 and *no output at all*: zero bytes on stdout
+ * and zero on stderr. The operator's benchmark silently shrank, and `score`
+ * then scored the remainder and reported a plausible number.
+ *
+ * The CLI reference already promises the opposite: a case-level defect is
+ * "skipped per case and the remaining cases still export, matching how
+ * `rca-bench gate` *quarantines* rather than rejects such a bundle". Quarantine
+ * is reported on stderr by `ingest`, `source` and `transform`; export reported
+ * nothing, so the documented contract was not met.
+ */
+describe('run - export names the cases it skipped', () => {
+  /**
+   * Add a case with no telemetry signals, which no exporter can represent.
+   *
+   * `signals` is keyed by case id, so omitting the key is how a case comes to
+   * have none - and it stays inside the IR schema, which `runExport` parses
+   * against before dispatching.
+   */
+  function addCaseWithoutSignals(bundle: IrBundle, caseId: string): void {
+    const extra = structuredClone(bundle.cases[0]!);
+    extra.caseId = caseId;
+    bundle.cases.push(extra);
+  }
+
+  /** A bundle whose second case has no telemetry, so it cannot be exported. */
+  function bundleWithOneUnrepresentableCase(): IrBundle {
+    const b = minimalBundle();
+    addCaseWithoutSignals(b, 'case-002');
+    return b;
+  }
+
+  it('writes an artefact covering only the exportable cases', async () => {
+    // The positive half: exporting must still succeed and still produce the
+    // files it can produce. The defect was never that the file was wrong.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneUnrepresentableCase()));
+    const code = await run(['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'], {
+      cwd: dir,
+    });
+    expect(code).toBe(0);
+    const query = await readFile(join(dir, 'out', 'order-prod', 'query.csv'), 'utf8');
+    expect(query).toContain('instruction_id');
+  });
+
+  it('names the skipped case and its reason on stderr', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneUnrepresentableCase()));
+    const err: string[] = [];
+    const code = await run(['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    expect(code).toBe(0);
+    const message = err.join('');
+    expect(message).toMatch(/1 of 2 case\(s\) skipped/);
+    expect(message).toContain('case-002');
+    expect(message).toContain('no telemetry signals attached');
+  });
+
+  it('stays silent when every case exported', async () => {
+    // The other half of the contract. "Report the skips" would be satisfied by
+    // reporting a skip that never happened, so the clean run must say nothing.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const err: string[] = [];
+    const code = await run(['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('reports the total even past the detail cap', async () => {
+    // A truncated list and a short list must be distinguishable, so the total is
+    // never capped while the per-case detail is.
+    const b = minimalBundle();
+    for (let i = 2; i <= 14; i += 1) {
+      addCaseWithoutSignals(b, `case-${String(i).padStart(3, '0')}`);
+    }
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(b));
+    const err: string[] = [];
+    await run(['export', '--target', 'openrca-1.0', '--input', 'bundle.json', '--out-dir', 'out'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    const message = err.join('');
+    expect(message).toMatch(/13 of 14 case\(s\) skipped/);
+    expect(message).toContain('... and 3 more');
+  });
+
+  it.each([
+    'openrca-1.0',
+    'openrca-2.0',
+    'rcaeval',
+    'rca100',
+    'aiops2025',
+  ] as const)('reports skips for %s, not only for the target the tests favour', async (target) => {
+    // Seven exporters each compute `skipped`, and the runner had seven
+    // near-identical branches. A fix at one of them is a fix at neither, so
+    // every target that can skip is checked against the same bundle.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneUnrepresentableCase()));
+    const err: string[] = [];
+    const code = await run(['export', '--target', target, '--input', 'bundle.json', '--out-dir', 'out'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    expect(code).toBe(0);
+    expect(err.join('')).toContain('case-002');
+  });
+
+  it.each(['cloud-opsbench', 'itbench'] as const)(
+    'is silent for %s, whose only skip condition the IR schema forbids',
+    async (target) => {
+      // Measured, not assumed: these two skip only when
+      // `groundTruth.rootCauseComponent === ''`, and `irBundleSchema` declares it
+      // `z.string().min(1)`. Since `runExport` parses the bundle against that
+      // schema first, the skip branch is unreachable through this command - so a
+      // signal-less case is exported rather than skipped, and reporting nothing
+      // is correct. Asserting the silence is what keeps that asymmetry a known
+      // fact instead of an accident, and it is why the five targets above are
+      // tested for a skip while these two are not.
+      const dir = await makeDir();
+      await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneUnrepresentableCase()));
+      const err: string[] = [];
+      const code = await run(['export', '--target', target, '--input', 'bundle.json', '--out-dir', 'out'], {
+        cwd: dir,
+        stderr: (s) => err.push(s),
+      });
+      expect(code).toBe(0);
+      expect(err.join('')).toBe('');
+    },
+  );
+});
+
 describe('run - score', () => {
   it('scores a valid OpenRCA export as passing and returns 0', async () => {
     const dir = await makeDir();

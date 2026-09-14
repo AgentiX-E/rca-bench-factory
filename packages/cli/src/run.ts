@@ -187,30 +187,77 @@ async function runSource(cmd: Extract<CliCommand, { command: 'source' }>, ctx: C
   return 0;
 }
 
+/**
+ * What every exporter returns: the artefact, plus the cases it could not express.
+ *
+ * `skipped` is the exporter's own account of the cases the target's contract
+ * cannot represent -- a case with no telemetry, or a root cause that does not
+ * resolve into the topology. It is part of the result rather than an aside
+ * because an export that covers fewer cases than the bundle is a different
+ * benchmark, and only the exporter knows which cases went missing.
+ */
+interface ExportOutcome {
+  files: ExportedFiles;
+  skipped: Array<{ caseId: string; reason: string }>;
+}
+
+/**
+ * Dispatch `--target` onto its exporter, keeping the whole result.
+ *
+ * The dispatch is a single expression so `skipped` cannot be dropped at one
+ * branch and kept at another: seven hand-written branches each taking only
+ * `.files` is seven places to be right, and the previous shape was wrong in all
+ * seven at once.
+ */
+function exportForCommandTarget(bundle: IrBundle, cmd: Extract<CliCommand, { command: 'export' }>): ExportOutcome {
+  if (cmd.target === 'openrca-1.0') return exportOpenRca(bundle);
+  if (cmd.target === 'openrca-2.0') return exportOpenRca2(bundle);
+  if (cmd.target === 'rcaeval') return exportRcaEval(bundle, cmd.suite ?? 'RE2');
+  if (cmd.target === 'rca100') return exportRca100(bundle);
+  if (cmd.target === 'aiops2025') return exportAioPs2025(bundle);
+  if (cmd.target === 'cloud-opsbench') return exportCloudOpsBench(bundle);
+  return exportItBench(bundle);
+}
+
+/**
+ * Name the cases an exporter could not express, so a shrinking benchmark is
+ * visible.
+ *
+ * The exporters already compute this and the CLI used to discard it, producing
+ * an artefact covering fewer cases than the bundle with exit code 0 and no
+ * output at all. The operator's benchmark then silently shrank, and `score`
+ * scored the remainder and reported a number that looked complete.
+ *
+ * The CLI reference promises the opposite: a case-level defect is "skipped per
+ * case and the remaining cases still export, matching how `rca-bench gate`
+ * *quarantines* rather than rejects such a bundle". Quarantine is reported on
+ * stderr by `ingest`, `source` and `transform`, so export reports it too --
+ * through the same renderer, for the same reason.
+ */
+function reportExportSkips(
+  skipped: readonly { caseId: string; reason: string }[],
+  inputCases: number,
+  ctx: Ctx,
+): void {
+  if (skipped.length === 0) return;
+  ctx.stderr(`warning: ${skipped.length} of ${inputCases} case(s) skipped\n`);
+  reportRejections(
+    skipped.length,
+    skipped.slice(0, MAX_REPORTED_ROWS),
+    (s) => ({ where: s.caseId, reason: s.reason }),
+    ctx,
+  );
+}
+
 async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: Ctx): Promise<number> {
   const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
   // The schema validates structure at runtime; `quality` is deliberately untyped
   // (`z.unknown()`) in the schema, so it is projected onto the static IR type.
   const bundle = irBundleSchema.parse(JSON.parse(raw)) as IrBundle;
 
-  let files: ExportedFiles;
-  if (cmd.target === 'openrca-1.0') {
-    files = exportOpenRca(bundle).files;
-  } else if (cmd.target === 'openrca-2.0') {
-    files = exportOpenRca2(bundle).files;
-  } else if (cmd.target === 'rcaeval') {
-    files = exportRcaEval(bundle, cmd.suite ?? 'RE2').files;
-  } else if (cmd.target === 'rca100') {
-    files = exportRca100(bundle).files;
-  } else if (cmd.target === 'aiops2025') {
-    files = exportAioPs2025(bundle).files;
-  } else if (cmd.target === 'cloud-opsbench') {
-    files = exportCloudOpsBench(bundle).files;
-  } else {
-    files = exportItBench(bundle).files;
-  }
-
-  await writeFiles(resolve(ctx.cwd, cmd.outDir), files);
+  const outcome = exportForCommandTarget(bundle, cmd);
+  reportExportSkips(outcome.skipped, bundle.cases.length, ctx);
+  await writeFiles(resolve(ctx.cwd, cmd.outDir), outcome.files);
   return 0;
 }
 
@@ -259,14 +306,14 @@ const MAX_REPORTED_ROWS = 10;
 /**
  * Render one rejection report: a total, then up to `MAX_REPORTED_ROWS` details.
  *
- * Three commands (`source`, `transform`, `ingest`) each quarantine records and
- * each has to say so. They differ only in how a rejected record is *located* -
- * a line number, a record id, a file plus line. Callers therefore pass the
+ * Four commands (`source`, `transform`, `ingest`, `export`) each lose records and
+ * each has to say so. They differ only in how a lost record is *located* - a line
+ * number, a record id, a file plus line, a case id. Callers therefore pass the
  * already-truncated rows plus a label and a reason for each, so this function
  * never indexes anything and has no unreachable defensive branches to test.
  *
- * Keeping the shape in a single place is deliberate: three hand-written copies of
- * a renderer are a list that must drift from the thing it describes, which is the
+ * Keeping the shape in a single place is deliberate: hand-written copies of a
+ * renderer are a list that must drift from the thing it describes, which is the
  * defect this project keeps finding.
  *
  * Callers only invoke this when at least one record was rejected, so there is no

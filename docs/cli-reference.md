@@ -227,6 +227,25 @@ rca-bench export --target itbench --input bundle.json --out-dir ./out
   that does not resolve, a signal naming a service outside the graph — is
   skipped per case and the remaining cases still export, matching how
   `rca-bench gate` *quarantines* rather than rejects such a bundle.
+- Because a skip is a quarantine, it is **reported**: `export` names every case
+  it could not express, and why, on stderr — the same treatment `ingest`,
+  `source` and `transform` give the records they lose.
+
+```text
+warning: 1 of 2 case(s) skipped
+  case-002: no telemetry signals attached
+```
+
+  A bundle of N cases that exports N−1 produces a *smaller benchmark*, and
+  `score` then scores the remainder and reports a number that looks complete.
+  The warning is what makes the two distinguishable. It is printed even when
+  `--output` is used, and the total is never capped — only the per-case detail
+  is, at 10 lines, stated as `... and N more`.
+- Which condition triggers a skip depends on the target. `openrca-1.0`,
+  `openrca-2.0`, `rcaeval`, `rca100` and `aiops2025` skip a case with no
+  telemetry; `cloud-opsbench` and `itbench` skip only on an empty root-cause
+  component, which the IR schema (`z.string().min(1)`) forbids, so through this
+  command those two never skip and stay silent.
 
 ### `rca-bench score`
 
