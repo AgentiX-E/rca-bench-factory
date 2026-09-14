@@ -1,5 +1,5 @@
 import type { FaultCase, FaultCategory, GroundTruth, IrBundle } from '../ir/types.js';
-import type { ExportedFiles } from './openrca.js';
+import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
 
 /**
@@ -128,10 +128,6 @@ export function buildItBenchScenarioSpec(fc: FaultCase): Record<string, unknown>
   };
 }
 
-export interface ItBenchExportResult {
-  files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 /**
  * Export a bundle to the ITBench SRE scenario specification contract.
@@ -139,10 +135,10 @@ export interface ItBenchExportResult {
  * Cases with no root-cause component are skipped with a reason, never silently
  * dropped (the diagnosis ground truth would be unanswerable without one).
  */
-export function exportItBench(bundle: IrBundle): ItBenchExportResult {
+export function exportItBench(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
-  const skipped: Array<{ caseId: string; reason: string }> = [];
+  const skipped: SkippedCase[] = [];
 
   for (const fc of bundle.cases) {
     if (fc.groundTruth.rootCauseComponent === '') {

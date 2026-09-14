@@ -303,6 +303,20 @@ A target that exports zero cases **fails** unless `--allow-empty-reason` states
 why that is legitimate for this dataset, so a broken exporter cannot hide behind
 a skip. Exit code is 0 when no target failed, 1 otherwise.
 
+A target is allowed to drop a case it cannot represent, and a *partial* drop is
+not a failure — the oracle over what survived is still perfect. It is reported
+like the `export` skip it is, prefixed with the target that lost it, so "9
+targets passed" cannot mean "nine complete benchmarks" when one of them scored
+half of one:
+
+```text
+warning: rcaeval-re3: 1 of 2 case(s) skipped
+  case-001: RE3 targets code-level faults only
+```
+
+Only the targets that lost a case are named; the eight that exported everything
+stay silent.
+
 ### `rca-bench report`
 
 ```text
@@ -333,6 +347,24 @@ rca-bench report --input bundle.json [--title "Report"] [--target openrca-1.0] [
 - With several gate sections on one page the **worst verdict governs**, so a
   page that happens to render a passing bundle first cannot present the score as
   though nothing were wrong.
+- The score always states **its denominator**. The page exports the bundle
+  internally, and an exporter may legally drop a case it cannot represent —
+  `rcaeval-re3` admits code-level faults only, so a bundle of one code fault and
+  two resource faults is scored over one case. `score 100` over a third of a
+  benchmark and `score 100` over all of it are different claims, and only the
+  denominator separates them:
+
+  ```text
+  target rcaeval-re3 — score 100
+  Scored 1 of 3 case(s) — 2 could not be exported.
+  ```
+
+  The count is stated on every page, not only when cases were lost: showing it
+  "only when something is wrong" is the silence being avoided. When cases were
+  lost they are listed under *Cases not scored* with the reason each gave.
+- The same loss is written to **stderr**, because `--output` makes the page the
+  artefact while the terminal is where the operator is looking, and reporting in
+  one and not the other is a fix at one of two call sites.
 
 ### `rca-bench pack`
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderGates, renderPage, renderScore } from '../src/report/html.js';
 import type { QualityGateReport } from '../src/ir/types.js';
-import type { ScoreReport } from '../src/score/score.js';
+import type { ScoredExport } from '../src/report/html.js';
 
 /**
  * The report page must not contradict itself.
@@ -35,7 +35,7 @@ const quarantined = (): QualityGateReport => ({
   finalStatus: 'quarantined',
 });
 
-const contractPerfect = (): ScoreReport => ({
+const contractPerfect = (): ScoredExport => ({
   target: 'openrca-1.0',
   passed: true,
   score: 100,
@@ -44,6 +44,7 @@ const contractPerfect = (): ScoreReport => ({
     passed: true,
     checks: [{ id: 'row-alignment', passed: true, detail: 'groundtruth rows=1 record rows=1' }],
   },
+  scope: { total: 1, skipped: [] },
 });
 
 describe('the score states what it measures', () => {

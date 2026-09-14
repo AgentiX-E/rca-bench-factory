@@ -8,7 +8,7 @@ import type {
   TelemetrySignal,
 } from '../ir/types.js';
 import { isAlertSignal, isEventSignal, isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
-import type { ExportedFiles } from './openrca.js';
+import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
 
 /**
@@ -75,10 +75,6 @@ export interface Rca100ModalityTable {
   dangling: number;
 }
 
-export interface Rca100ExportResult {
-  files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 function toJson(value: unknown): string {
   return JSON.stringify(value, null, 2) + '\n';
@@ -332,10 +328,10 @@ export function buildGroundTruthJson(fc: FaultCase, index: EntityIndex): string 
  *   2. every signal reference resolves into the topology (no dangling edges).
  * A case violating either is skipped with a reason, never silently repaired.
  */
-export function exportRca100(bundle: IrBundle): Rca100ExportResult {
+export function exportRca100(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
-  const skipped: Array<{ caseId: string; reason: string }> = [];
+  const skipped: SkippedCase[] = [];
   const index = buildEntityIndex(bundle.graph);
 
   for (const fc of bundle.cases) {

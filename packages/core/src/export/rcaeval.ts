@@ -1,5 +1,5 @@
 import type { FaultCase, IrBundle, TelemetrySignal } from '../ir/types.js';
-import type { ExportedFiles } from './openrca.js';
+import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import { assertExportableBundle } from './guard.js';
 
@@ -90,10 +90,6 @@ export function buildTracesCsv(signals: TelemetrySignal[]): string {
   );
 }
 
-export interface RcaEvalExportResult {
-  files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 /**
  * Export a bundle in the RCAEval layout.
@@ -101,10 +97,10 @@ export interface RcaEvalExportResult {
  * `suite` selects the modality set: RE1 emits metrics only, RE2/RE3 additionally
  * emit logs and traces.
  */
-export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): RcaEvalExportResult {
+export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
-  const skipped: Array<{ caseId: string; reason: string }> = [];
+  const skipped: SkippedCase[] = [];
 
   bundle.cases.forEach((fc, index) => {
     const signals = bundle.signals[fc.caseId] ?? [];

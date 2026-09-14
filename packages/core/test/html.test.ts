@@ -9,7 +9,7 @@ import {
 } from '../src/report/html.js';
 import type { CoverageReport } from '../src/coverage.js';
 import type { EntityGraph, QualityGateReport } from '../src/ir/types.js';
-import type { ScoreReport } from '../src/score/score.js';
+import type { ScoredExport } from '../src/report/html.js';
 
 /**
  * HTML report renderer tests.
@@ -40,7 +40,7 @@ const gateReport = (): QualityGateReport => ({
   finalStatus: 'rejected',
 });
 
-const scoreReport = (): ScoreReport => ({
+const scoreReport = (): ScoredExport => ({
   target: 'rca100',
   passed: true,
   score: 100,
@@ -53,6 +53,7 @@ const scoreReport = (): ScoreReport => ({
     ],
   },
   checksum: { passed: true, matched: 2, mismatched: [], missing: [], extra: [] },
+  scope: { total: 1, skipped: [] },
 });
 
 describe('escapeHtml', () => {

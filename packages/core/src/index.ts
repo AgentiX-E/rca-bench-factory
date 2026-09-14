@@ -133,7 +133,7 @@ export {
   exportOpenRca,
   injectTimeUnixSeconds,
 } from './export/openrca.js';
-export type { ExportedFiles, OpenRcaExportResult } from './export/openrca.js';
+export type { ExportOutcome, ExportedFiles, SkippedCase } from './export/openrca.js';
 
 export {
   RCAEVAL_CONTRACT_VERSION,
@@ -144,7 +144,7 @@ export {
   caseDirName,
   exportRcaEval,
 } from './export/rcaeval.js';
-export type { RcaEvalExportResult, RcaEvalSuite } from './export/rcaeval.js';
+export type { RcaEvalSuite } from './export/rcaeval.js';
 
 export {
   RCA100_CONTRACT_VERSION,
@@ -161,7 +161,7 @@ export {
   exportRca100,
   resolveSignalEntity,
 } from './export/rca100.js';
-export type { EntityIndex, Rca100ExportResult, Rca100ModalityTable } from './export/rca100.js';
+export type { EntityIndex, Rca100ModalityTable } from './export/rca100.js';
 
 export {
   AIOPS2025_CONTRACT_VERSION,
@@ -170,7 +170,6 @@ export {
   buildAioPs2025Input,
   exportAioPs2025,
 } from './export/aiops2025.js';
-export type { AioPs2025ExportResult } from './export/aiops2025.js';
 
 export {
   CLOUD_OPSBENCH_CONTRACT_VERSION,
@@ -178,7 +177,6 @@ export {
   buildCloudOpsBenchMetadata,
   exportCloudOpsBench,
 } from './export/cloudopsbench.js';
-export type { CloudOpsBenchExportResult } from './export/cloudopsbench.js';
 
 export {
   OPENRCA2_CONTRACT_VERSION,
@@ -186,7 +184,6 @@ export {
   buildCausalPathJson,
   exportOpenRca2,
 } from './export/openrca2.js';
-export type { OpenRca2ExportResult } from './export/openrca2.js';
 
 export {
   ITBENCH_CONTRACT_VERSION,
@@ -195,7 +192,6 @@ export {
   buildItBenchScenarioSpec,
   exportItBench,
 } from './export/itbench.js';
-export type { ItBenchExportResult } from './export/itbench.js';
 
 export {
   MODALITY_LOSS,

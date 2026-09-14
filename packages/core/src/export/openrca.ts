@@ -134,6 +134,31 @@ export interface ExportedFiles {
   [relativePath: string]: string;
 }
 
+/**
+ * A case an exporter could not represent, and the reason it gave.
+ *
+ * Every exporter answers the same question - which cases are in these bytes,
+ * which are not, and why not - so the answer has one shape. Seven exporters each
+ * writing `{ caseId: string; reason: string }` inline would be seven shapes that
+ * are free to drift apart, and the CLI has to read all seven through one type.
+ */
+export interface SkippedCase {
+  caseId: string;
+  reason: string;
+}
+
+/**
+ * What every exporter returns: the bytes it produced and the cases it dropped.
+ *
+ * The two belong together. A caller that takes only `files` scores a population
+ * it cannot name, which is how a benchmark that had lost two thirds of its cases
+ * still reached a report that said "score 100" - see `ExportScope`.
+ */
+export interface ExportOutcome {
+  files: ExportedFiles;
+  skipped: SkippedCase[];
+}
+
 function csvEscape(value: string | number): string {
   const s = String(value);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -220,11 +245,6 @@ export function buildPredictionJson(fc: FaultCase): string {
   });
 }
 
-export interface OpenRcaExportResult {
-  files: ExportedFiles;
-  /** Cases skipped because the target contract could not be satisfied. */
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 /**
  * Export a bundle to the OpenRCA 1.0 layout.
@@ -240,7 +260,7 @@ export interface OpenRcaExportResult {
  * prediction shape a solver submits (`record.csv`) and once in the
  * natural-language shape the official evaluator parses (`groundtruth.csv`).
  */
-export function exportOpenRca(bundle: IrBundle): OpenRcaExportResult {
+export function exportOpenRca(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
   const skipped: Array<{ caseId: string; reason: string }> = [];

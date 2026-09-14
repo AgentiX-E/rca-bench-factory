@@ -1,6 +1,6 @@
 import { normalizeFaultType } from '../fault/collector.js';
 import type { Entity, EntityGraph, EntityKind, FaultCase, IrBundle, RootCauseIndicator } from '../ir/types.js';
-import type { ExportedFiles } from './openrca.js';
+import type { ExportOutcome, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
 
 /**
@@ -109,21 +109,17 @@ export function buildAioPs2025Input(fc: FaultCase): Record<string, unknown> {
   };
 }
 
-export interface AioPs2025ExportResult {
-  files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 /**
  * Export a bundle to the AIOps2025 field contract (`input.json` + `groundtruth.jsonl`).
  *
  * Cases with no telemetry are skipped with a reason, never silently dropped.
  */
-export function exportAioPs2025(bundle: IrBundle): AioPs2025ExportResult {
+export function exportAioPs2025(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const input: Array<Record<string, unknown>> = [];
   const groundTruthLines: string[] = [];
-  const skipped: Array<{ caseId: string; reason: string }> = [];
+  const skipped: SkippedCase[] = [];
 
   for (const fc of bundle.cases) {
     if ((bundle.signals[fc.caseId] ?? []).length === 0) {

@@ -1,5 +1,5 @@
 import type { EvidenceCheckpoint, FaultCase, IrBundle } from '../ir/types.js';
-import type { ExportedFiles } from './openrca.js';
+import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { buildEntityIndex, type EntityIndex } from './rca100.js';
 import { assertExportableBundle } from './guard.js';
 
@@ -33,10 +33,6 @@ function toJson(value: unknown): string {
   return JSON.stringify(value, null, 2) + '\n';
 }
 
-export interface OpenRca2ExportResult {
-  files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 /**
  * Build the `causal_path.json` object for one case: the root cause and the ordered
@@ -98,10 +94,10 @@ export function buildCausalPathJson(fc: FaultCase, index: EntityIndex): string {
  * case whose root-cause entity does not resolve into the topology is skipped, and
  * a case with no telemetry is skipped with a reason - never silently dropped.
  */
-export function exportOpenRca2(bundle: IrBundle): OpenRca2ExportResult {
+export function exportOpenRca2(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
-  const skipped: Array<{ caseId: string; reason: string }> = [];
+  const skipped: SkippedCase[] = [];
   const index = buildEntityIndex(bundle.graph);
 
   for (const fc of bundle.cases) {

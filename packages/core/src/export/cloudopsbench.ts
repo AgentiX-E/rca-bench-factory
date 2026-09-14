@@ -1,6 +1,6 @@
 import { normalizeFaultType } from '../fault/collector.js';
 import type { FaultCase, FaultCategory, IrBundle } from '../ir/types.js';
-import type { ExportedFiles } from './openrca.js';
+import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
 
 /**
@@ -83,10 +83,6 @@ export function buildCloudOpsBenchMetadata(fc: FaultCase): Record<string, unknow
   };
 }
 
-export interface CloudOpsBenchExportResult {
-  files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
-}
 
 /**
  * Export a bundle to the Cloud-OpsBench `metadata.json` contract.
@@ -94,10 +90,10 @@ export interface CloudOpsBenchExportResult {
  * Cases with no root-cause component are skipped with a reason, never silently
  * dropped (the outcome ground truth would be unanswerable without a component).
  */
-export function exportCloudOpsBench(bundle: IrBundle): CloudOpsBenchExportResult {
+export function exportCloudOpsBench(bundle: IrBundle): ExportOutcome {
   assertExportableBundle(bundle);
   const files: ExportedFiles = {};
-  const skipped: Array<{ caseId: string; reason: string }> = [];
+  const skipped: SkippedCase[] = [];
 
   for (const fc of bundle.cases) {
     if (fc.groundTruth.rootCauseComponent === '') {

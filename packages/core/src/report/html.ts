@@ -2,6 +2,7 @@ import { findAmbiguousAliases, findDanglingEdgeRefs, findInvalidRelations } from
 import type { ReferenceIssue } from '../entity/graph.js';
 import type { CoverageReport, TargetFeasibility } from '../coverage.js';
 import type { Entity, EntityEdge, EntityGraph, QualityGateReport, SignalKind } from '../ir/types.js';
+import type { SkippedCase } from '../export/openrca.js';
 import type { ScoreReport, ScoreCheck, StructureReport } from '../score/score.js';
 
 /**
@@ -105,6 +106,20 @@ function structureRows(s: StructureReport): string[] {
 }
 
 /**
+ * Render the cases the scored bytes do not contain, with the reason each is
+ * absent. Returns nothing when every case was scored: a heading that is always
+ * printed says nothing, and "nothing was skipped" would read like "nothing was
+ * reported".
+ */
+function skippedBlock(skipped: readonly SkippedCase[]): string {
+  if (skipped.length === 0) return '';
+  const items = skipped
+    .map((s) => `<li><b>${escapeHtml(s.caseId)}</b>: ${escapeHtml(s.reason)}</li>`)
+    .join('');
+  return `<h3>Cases not scored</h3><ul>${items}</ul>`;
+}
+
+/**
  * Render a score report as an HTML fragment.
  *
  * `gateVerdict` is the gate status this score is reported alongside, when there
@@ -114,8 +129,13 @@ function structureRows(s: StructureReport): string[] {
  * while the gates hold the dataset back asserts a conclusion nobody reached.
  * When the dataset is not admitted the number is still reported, in the muted
  * class, with the reason stated.
+ *
+ * The scope is stated on every page, not only when cases were dropped. "Scored 3
+ * of 3" costs one line and removes the ambiguity that makes "score 100" read as
+ * a verdict on the whole benchmark; showing the count only when it is alarming
+ * would recreate the silence this fixes.
  */
-export function renderScore(report: ScoreReport, gateVerdict?: string): string {
+export function renderScore(report: ScoredExport, gateVerdict?: string): string {
   const checksum = report.checksum;
   const checksumBlock =
     checksum === undefined
@@ -130,14 +150,21 @@ export function renderScore(report: ScoreReport, gateVerdict?: string): string {
     : `<p class="warn">Held back: the gates report <b>${escapeHtml(gateVerdict)}</b>, so this dataset is not `
       + 'admitted for use however well its fields comply.</p>';
 
+  const scored = report.scope.total - report.scope.skipped.length;
   return [
     '<section><h2>Score</h2>',
     `<p>target <b>${escapeHtml(report.target)}</b> — score <span class="${scoreClass}">${report.score}</span></p>`,
+    // The denominator. Without it a benchmark that lost two thirds of its cases
+    // on the way out still reports "score 100", because the scorer only ever
+    // sees the bytes it was given and every byte it was given is perfect.
+    `<p class="scope">Scored <b>${scored} of ${report.scope.total} case(s)</b>`
+      + `${report.scope.skipped.length > 0 ? ` — ${report.scope.skipped.length} could not be exported` : ''}.</p>`,
     // Without this the number reads as a verdict on the dataset rather than on
     // the bytes, which is what let "quarantined" and "100" look incompatible.
     '<p class="scope">Scores the <b>field contract</b> of the exported bytes: file '
       + 'layout, column headers, answer-key isolation and modality coverage. It does '
       + 'not judge whether the labels are right — that is the gates\' question.</p>',
+    skippedBlock(report.scope.skipped),
     holdback,
     checksumBlock,
     '<h3>Structure checks</h3>',
@@ -191,12 +218,41 @@ export function renderEntityGraph(graph: EntityGraph): string {
   ].join('\n');
 }
 
+/**
+ * How much of the source bundle the scored bytes actually cover.
+ *
+ * `total` is what the bundle had; `skipped` is what the exporter could not
+ * represent and why. The scored count is deliberately *not* a field: it is
+ * `total - skipped.length`. A writable `scored` would be an arithmetic identity
+ * the renderer had to re-check on every call, and an identity nobody checks is
+ * not an invariant.
+ */
+export interface ExportScope {
+  /** Cases in the bundle the export was built from. */
+  total: number;
+  /** Cases the exporter could not represent, with the reason each gave. */
+  skipped: readonly SkippedCase[];
+}
+
+/**
+ * A score together with the population it was computed over.
+ *
+ * The score inspects bytes; only the caller knows how many of the bundle's cases
+ * those bytes contain, because an exporter may legally drop a case it cannot
+ * represent. Carrying the two in one object is what makes it impossible to
+ * render a score with no denominator, and impossible for the denominator to
+ * belong to a different score than the number it qualifies.
+ */
+export interface ScoredExport extends ScoreReport {
+  scope: ExportScope;
+}
+
 export interface HtmlReportInput {
   title: string;
   coverage?: CoverageReport;
   entityGraph?: EntityGraph;
   gates?: QualityGateReport[];
-  scores?: ScoreReport[];
+  scores?: readonly ScoredExport[];
 }
 
 const STYLE =

@@ -637,6 +637,178 @@ describe('run - export names the cases it skipped', () => {
   );
 });
 
+describe('run - report states the population its score describes', () => {
+  /**
+   * The shipped example plus a second case, so the two have different fates.
+   *
+   * RCAEval's RE3 suite admits code-level faults only, and the example's case is
+   * a CPU saturation - a `resource` fault. So RE3 exports one case out of two
+   * and scores 100 over it, which is the whole defect: the report is the
+   * document a human reads, and it used to say "score 100" with nothing at all
+   * about the case that never made it into the bytes.
+   */
+  function bundleWithOneCodeCase(): IrBundle {
+    const b = minimalBundle();
+    const code = structuredClone(b.cases[0]!);
+    code.caseId = 'case-002';
+    code.fault = { ...code.fault, category: 'code' };
+    b.cases.push(code);
+    b.signals['case-002'] = structuredClone(b.signals['case-001']!);
+    return b;
+  }
+
+  async function reportHtml(dir: string, args: string[]): Promise<string> {
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneCodeCase()));
+    const out: string[] = [];
+    const code = await run(['report', '--input', 'bundle.json', ...args], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    return out.join('');
+  }
+
+  it('states how many of the bundle’s cases the score covers', async () => {
+    // The number alone is the fabrication: 100 over one case and 100 over two
+    // are different claims, and only the denominator tells them apart.
+    const dir = await makeDir();
+    const html = await reportHtml(dir, ['--target', 'rcaeval-re3']);
+    expect(html).toContain('1 of 2 case(s)');
+  });
+
+  it('names the case it did not score and the reason', async () => {
+    const dir = await makeDir();
+    const html = await reportHtml(dir, ['--target', 'rcaeval-re3']);
+    expect(html).toContain('case-001');
+    expect(html).toContain('RE3 targets code-level faults only');
+  });
+
+  it('states the denominator even when every case was scored', async () => {
+    // Not only when it is alarming: "2 of 2" is what makes "1 of 2" readable as
+    // a loss rather than as a formatting quirk.
+    const dir = await makeDir();
+    const html = await reportHtml(dir, ['--target', 'rcaeval-re2']);
+    expect(html).toContain('2 of 2 case(s)');
+    expect(html).not.toContain('Cases not scored');
+  });
+
+  it('warns on stderr as well, so --output cannot hide it', async () => {
+    // The page is the deliverable but the terminal is where the operator looks.
+    // Reporting in one and not the other is a fix at one of two call sites.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneCodeCase()));
+    const err: string[] = [];
+    const code = await run(['report', '--input', 'bundle.json', '--target', 'rcaeval-re3'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    expect(code).toBe(0);
+    expect(err.join('')).toMatch(/1 of 2 case\(s\) skipped/);
+    expect(err.join('')).toContain('case-001');
+  });
+
+  it('stays silent when nothing was skipped', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneCodeCase()));
+    const err: string[] = [];
+    const code = await run(['report', '--input', 'bundle.json', '--target', 'rcaeval-re2'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('puts the denominator in the file written by --output', async () => {
+    // The page survives the command; the terminal does not. A warning only on
+    // stderr leaves the artefact still saying "score 100" about a third of a
+    // benchmark, so the written file is checked rather than the stdout copy.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(bundleWithOneCodeCase()));
+    const code = await run(['report', '--input', 'bundle.json', '--target', 'rcaeval-re3', '--output', 'r.html'], {
+      cwd: dir,
+    });
+    expect(code).toBe(0);
+    const html = await readFile(join(dir, 'r.html'), 'utf8');
+    expect(html).toContain('1 of 2 case(s)');
+    expect(html).toContain('case-001');
+  });
+
+  it('reports the total even past the detail cap', async () => {
+    const b = minimalBundle();
+    for (let i = 2; i <= 14; i += 1) {
+      const extra = structuredClone(b.cases[0]!);
+      extra.caseId = `case-${String(i).padStart(3, '0')}`;
+      b.cases.push(extra);
+    }
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(b));
+    const err: string[] = [];
+    await run(['report', '--input', 'bundle.json', '--target', 'rcaeval-re3'], {
+      cwd: dir,
+      stderr: (s) => err.push(s),
+    });
+    // Every case is a resource fault, so RE3 drops all fourteen.
+    const message = err.join('');
+    expect(message).toMatch(/14 of 14 case\(s\) skipped/);
+    expect(message).toContain('... and 4 more');
+  });
+});
+
+describe('run - official names the cases a target could not export', () => {
+  /** The repository root, so the shipped example bundle can be read as a real input. */
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+  /** The shipped example plus a code-level case, so RE3 has something to export. */
+  async function exampleWithCodeCase(): Promise<IrBundle> {
+    const shipped = JSON.parse(await readFile(join(repoRoot, 'examples', 'order-prod', 'bundle.json'), 'utf8')) as IrBundle;
+    const source = shipped.cases[0]!;
+    const codeCase = { ...source, caseId: 'case-002', fault: { ...source.fault, category: 'code' } };
+    return {
+      ...shipped,
+      cases: [source, codeCase],
+      signals: { ...shipped.signals, 'case-002': shipped.signals['case-001'] ?? [] },
+    };
+  }
+
+  it('names the target, the case and the reason on stderr', async () => {
+    // Nine targets are exported from one bundle. Only RE3 drops anything here,
+    // and it drops the example's CPU case - so the run reports 9/9 passed while
+    // one of the nine targets was scored over half a benchmark.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(await exampleWithCodeCase()));
+    const err: string[] = [];
+    const code = await run(['official', '--input', 'bundle.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const message = err.join('');
+    expect(message).toContain('rcaeval-re3');
+    expect(message).toMatch(/1 of 2 case\(s\) skipped/);
+    expect(message).toContain('case-001');
+    expect(message).toContain('RE3 targets code-level faults only');
+  });
+
+  it('names only the targets that lost a case', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(await exampleWithCodeCase()));
+    const err: string[] = [];
+    await run(['official', '--input', 'bundle.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    const message = err.join('');
+    expect(message).toContain('rcaeval-re3');
+    // The other eight exported both cases; naming them would bury the one loss.
+    expect(message).not.toContain('openrca-1.0');
+    expect(message).not.toContain('aiops2025');
+  });
+
+  it('still passes the run, because a stated loss is not a failure', async () => {
+    // The defect was the silence, not the skip. RE3 legitimately cannot
+    // represent a resource fault, and the oracle over what it can represent is
+    // still perfect - so the exit code and the payload must not change.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(await exampleWithCodeCase()));
+    const out: string[] = [];
+    const code = await run(['official', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join('')).counts).toEqual({ passed: 9, skipped: 0, failed: 0 });
+  });
+});
+
 describe('run - score', () => {
   it('scores a valid OpenRCA export as passing and returns 0', async () => {
     const dir = await makeDir();

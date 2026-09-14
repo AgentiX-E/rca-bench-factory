@@ -45,6 +45,7 @@ import type {
   CliCommand,
   EvolutionProposal,
   ExportedFiles,
+  ExportTarget,
   FileFormat,
   FileIngestOptions,
   FileLayout,
@@ -56,8 +57,10 @@ import type {
   OfficialRegressionReport,
   PrimeCaseReport,
   PrimeCaseSource,
+  RcaEvalSuite,
   ScoreTargetId,
   SignalKind,
+  SkippedCase,
   SourceRecord,
   TransformResult,
   TransformRule,
@@ -198,25 +201,53 @@ async function runSource(cmd: Extract<CliCommand, { command: 'source' }>, ctx: C
  */
 interface ExportOutcome {
   files: ExportedFiles;
-  skipped: Array<{ caseId: string; reason: string }>;
+  skipped: readonly SkippedCase[];
 }
 
 /**
- * Dispatch `--target` onto its exporter, keeping the whole result.
+ * Every exporter, keyed by the target id the `export` command spells.
  *
- * The dispatch is a single expression so `skipped` cannot be dropped at one
- * branch and kept at another: seven hand-written branches each taking only
- * `.files` is seven places to be right, and the previous shape was wrong in all
- * seven at once.
+ * This is the *only* place a target id is mapped onto an exporter. `export`,
+ * `report` and `official` all ask the same question - "what does this target do
+ * with this bundle?" - and each used to carry its own hand-written `if` chain
+ * over the same seven exporters. Two chains over one mapping is a list that must
+ * drift from the thing it describes, and it did: the score chain took only
+ * `.files` and threw `skipped` away, so `report` scored a shrunken export and
+ * printed "score 100" with no denominator.
+ *
+ * `rcaeval` is the one exporter a suite parameterises, so the table takes the
+ * suite uniformly and the exporters that have no use for it ignore it.
  */
+const EXPORTERS: Record<ExportTarget, (bundle: IrBundle, suite: RcaEvalSuite) => ExportOutcome> = {
+  'openrca-1.0': (bundle) => exportOpenRca(bundle),
+  'openrca-2.0': (bundle) => exportOpenRca2(bundle),
+  rcaeval: (bundle, suite) => exportRcaEval(bundle, suite),
+  rca100: (bundle) => exportRca100(bundle),
+  aiops2025: (bundle) => exportAioPs2025(bundle),
+  'cloud-opsbench': (bundle) => exportCloudOpsBench(bundle),
+  itbench: (bundle) => exportItBench(bundle),
+};
+
+/** What the `export` command was asked for: its target, and the suite if it gave one. */
 function exportForCommandTarget(bundle: IrBundle, cmd: Extract<CliCommand, { command: 'export' }>): ExportOutcome {
-  if (cmd.target === 'openrca-1.0') return exportOpenRca(bundle);
-  if (cmd.target === 'openrca-2.0') return exportOpenRca2(bundle);
-  if (cmd.target === 'rcaeval') return exportRcaEval(bundle, cmd.suite ?? 'RE2');
-  if (cmd.target === 'rca100') return exportRca100(bundle);
-  if (cmd.target === 'aiops2025') return exportAioPs2025(bundle);
-  if (cmd.target === 'cloud-opsbench') return exportCloudOpsBench(bundle);
-  return exportItBench(bundle);
+  return EXPORTERS[cmd.target](bundle, cmd.suite ?? 'RE2');
+}
+
+/** Which exporter and which suite a score target means. */
+function scoreTargetInvocation(target: ScoreTargetId): { id: ExportTarget; suite: RcaEvalSuite } {
+  // `rcaeval-re1|re2|re3` is one exporter parameterised by a suite; every other
+  // score target names its exporter directly. Only that one fact is written down,
+  // so the nine score targets need no table of their own.
+  if (target === 'rcaeval-re1') return { id: 'rcaeval', suite: 'RE1' };
+  if (target === 'rcaeval-re2') return { id: 'rcaeval', suite: 'RE2' };
+  if (target === 'rcaeval-re3') return { id: 'rcaeval', suite: 'RE3' };
+  return { id: target, suite: 'RE2' };
+}
+
+/** Export a bundle for a score target, keeping the whole result. */
+function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): ExportOutcome {
+  const { id, suite } = scoreTargetInvocation(target);
+  return EXPORTERS[id](bundle, suite);
 }
 
 /**
@@ -235,12 +266,13 @@ function exportForCommandTarget(bundle: IrBundle, cmd: Extract<CliCommand, { com
  * through the same renderer, for the same reason.
  */
 function reportExportSkips(
-  skipped: readonly { caseId: string; reason: string }[],
+  skipped: readonly SkippedCase[],
   inputCases: number,
   ctx: Ctx,
+  label = 'warning',
 ): void {
   if (skipped.length === 0) return;
-  ctx.stderr(`warning: ${skipped.length} of ${inputCases} case(s) skipped\n`);
+  ctx.stderr(`${label}: ${skipped.length} of ${inputCases} case(s) skipped\n`);
   reportRejections(
     skipped.length,
     skipped.slice(0, MAX_REPORTED_ROWS),
@@ -261,19 +293,6 @@ async function runExport(cmd: Extract<CliCommand, { command: 'export' }>, ctx: C
   return 0;
 }
 
-/** Export a bundle for a score target (ScoreTargetId → the matching exporter). */
-function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): ExportedFiles {
-  if (target === 'openrca-1.0') return exportOpenRca(bundle).files;
-  if (target === 'openrca-2.0') return exportOpenRca2(bundle).files;
-  if (target === 'rcaeval-re1') return exportRcaEval(bundle, 'RE1').files;
-  if (target === 'rcaeval-re2') return exportRcaEval(bundle, 'RE2').files;
-  if (target === 'rcaeval-re3') return exportRcaEval(bundle, 'RE3').files;
-  if (target === 'rca100') return exportRca100(bundle).files;
-  if (target === 'aiops2025') return exportAioPs2025(bundle).files;
-  if (target === 'cloud-opsbench') return exportCloudOpsBench(bundle).files;
-  return exportItBench(bundle).files;
-}
-
 async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: Ctx): Promise<number> {
   const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
   const bundle = irBundleSchema.parse(JSON.parse(raw)) as IrBundle;
@@ -282,14 +301,20 @@ async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: C
   const coverage = computeCoverage(bundle);
   const runAt = new Date().toISOString();
   const { report } = runAllGates(bundle, { g1: g1OptionsForTarget(target) }, { gateRunId: runAt, runAt });
-  const score = scoreExport(target, exportForScoreTarget(bundle, target));
+  const outcome = exportForScoreTarget(bundle, target);
+  const score = scoreExport(target, outcome.files);
+
+  // The page is the artefact that outlives the command, so the loss is written
+  // into the page; the terminal gets it too, because an operator who asked for
+  // `--output` still reads stderr and one who asked for stdout reads nothing else.
+  reportExportSkips(outcome.skipped, bundle.cases.length, ctx);
 
   const html = renderPage({
     title: cmd.title ?? 'rca-bench report',
     coverage,
     entityGraph: bundle.graph,
     gates: [report],
-    scores: [score],
+    scores: [{ ...score, scope: { total: bundle.cases.length, skipped: outcome.skipped } }],
   });
 
   const output = html + '\n';
@@ -461,8 +486,18 @@ async function runOfficial(cmd: Extract<CliCommand, { command: 'official' }>, ct
   if (cmd.mode === 'bundle') {
     const raw = await readFile(resolve(ctx.cwd, cmd.input), 'utf8');
     const bundle = irBundleSchema.parse(JSON.parse(raw)) as IrBundle;
+    // Nine targets export one bundle, and a target is allowed to drop a case it
+    // cannot represent. Naming the loss per target is what keeps "9 passed" from
+    // meaning "nine complete benchmarks" when one of them was half a benchmark.
+    const outcomes = SCORE_TARGET_IDS.map((target) => ({ target, outcome: exportForScoreTarget(bundle, target) }));
+    for (const { target, outcome } of outcomes) {
+      // No `skipped.length === 0` guard here: `reportExportSkips` already stays
+      // silent for a clean export, and a second copy of that rule would be a
+      // second rule free to disagree with the first.
+      reportExportSkips(outcome.skipped, bundle.cases.length, ctx, `warning: ${target}`);
+    }
     const exports = Object.fromEntries(
-      SCORE_TARGET_IDS.map((target) => [target, exportForScoreTarget(bundle, target)]),
+      outcomes.map(({ target, outcome }) => [target, outcome.files]),
     ) as Record<ScoreTargetId, Record<string, string>>;
     reports = runAllOfficialRegressions(exports, options);
   } else {
