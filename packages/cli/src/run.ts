@@ -58,6 +58,7 @@ import type {
   ScoreTargetId,
   SignalKind,
   SourceRecord,
+  TransformResult,
   TransformRule,
 } from '@rca-bench-factory/core';
 
@@ -434,10 +435,51 @@ async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx):
   return 0;
 }
 
+/**
+ * Report what `transform` refused to convert, and what it could not identify.
+ *
+ * The written bundle carries `counts`, but a count is a number, not a lead:
+ * "2 of 3 rows survived" does not tell the operator which row to go and look at.
+ * Worse, a bundle built from a three-row source with one rejection is
+ * byte-identical to one built from a two-row source, so the loss is invisible in
+ * the artefact itself. Naming the records on stderr is what makes those two
+ * artefacts distinguishable.
+ *
+ * `idFieldMisses` and `duplicateIds` are reported separately because neither is a
+ * rejected row: the first says the caller's identifier scheme did not apply, the
+ * second says the ids it produced no longer identify. Both leave a well-formed
+ * artefact, which is exactly why they need saying out loud.
+ */
+function reportTransformLosses(result: TransformResult, idField: string | undefined, ctx: Ctx): void {
+  const { input, quarantine } = result.counts;
+  if (quarantine > 0) {
+    ctx.stderr(`warning: ${quarantine} of ${input} record(s) rejected\n`);
+    for (const q of result.quarantined.slice(0, MAX_REPORTED_ROWS)) {
+      ctx.stderr(`  ${q.recordId}: ${q.code} (rule '${q.ruleId}')\n`);
+    }
+    if (quarantine > MAX_REPORTED_ROWS) {
+      ctx.stderr(`  ... and ${quarantine - MAX_REPORTED_ROWS} more\n`);
+    }
+  }
+
+  if (idField !== undefined && result.idFieldMisses > 0) {
+    ctx.stderr(
+      `warning: --id-field '${idField}' identified ${input - result.idFieldMisses} of ${input} record(s); the rest use positional ids\n`,
+    );
+  }
+
+  if (result.duplicateIds.length > 0) {
+    ctx.stderr(
+      `warning: ${result.duplicateIds.length} id value(s) are not unique, so they no longer identify a record: ${result.duplicateIds.join(', ')}\n`,
+    );
+  }
+}
+
 async function runTransform(cmd: Extract<CliCommand, { command: 'transform' }>, ctx: Ctx): Promise<number> {
   const input = requireArray<SourceRecord>(await readFile(resolve(ctx.cwd, cmd.input), 'utf8'), '--input');
   const rules = requireArray<TransformRule>(await readFile(resolve(ctx.cwd, cmd.rules), 'utf8'), '--rules');
   const result = transformBatch(input, rules, { idField: cmd.idField });
+  reportTransformLosses(result, cmd.idField, ctx);
   const output = JSON.stringify(result, null, 2) + '\n';
   if (cmd.output !== undefined) {
     await writeFile(resolve(ctx.cwd, cmd.output), output);

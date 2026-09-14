@@ -562,6 +562,122 @@ describe('run - transform', () => {
     expect(code).toBe(1);
     expect(err.join('')).toContain('array');
   });
+
+  it('names the rejected rows on stderr instead of dropping them silently', async () => {
+    // Three rows enter, one is unmappable. The written bundle is identical to one
+    // produced from a genuinely two-row source, so the lost row must be named on
+    // stderr; otherwise the two artefacts cannot be told apart.
+    const dir = await makeDir();
+    await writeFile(
+      join(dir, 'src.json'),
+      JSON.stringify([{ id: 'a', level: 'W' }, { id: 'b', level: 'BAD' }, { id: 'c', level: 'I' }]),
+    );
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN', I: 'INFO' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const text = err.join('');
+    expect(text).toContain('1 of 3');
+    expect(text).toContain('b');
+    expect(text).toContain('UNMAPPED_VALUE');
+  });
+
+  it('stays silent when no row is rejected', async () => {
+    // Positive control: a report that fires unconditionally is noise, and noise
+    // trains the reader to ignore every warning.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ id: 'a', level: 'W' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('warns when --id-field identifies no record', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ level: 'W' }, { level: 'I' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN', I: 'INFO' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const text = err.join('');
+    expect(text).toContain("--id-field 'id'");
+    expect(text).toContain('identified 0 of 2');
+  });
+
+  it('warns when --id-field identifies only some records', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ id: 'a', level: 'W' }, { level: 'I' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN', I: 'INFO' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    expect(err.join('')).toContain('1 of 2');
+  });
+
+  it('stays silent about ids when --id-field was not requested', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ level: 'W' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('warns when two records share an id', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ id: 'dup', level: 'W' }, { id: 'dup', level: 'I' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN', I: 'INFO' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const text = err.join('');
+    expect(text).toContain('dup');
+    expect(text).toContain('unique');
+  });
+
+  it('names every duplicated id only once', async () => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ id: 'x', level: 'W' }, { id: 'x', level: 'W' }, { id: 'x', level: 'W' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN' } }]));
+    const err: string[] = [];
+    await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(err.join('').match(/x/g)).toHaveLength(1);
+  });
+
+  it('counts quarantined rows in the same run in which it reports them', async () => {
+    // Both reports must be able to fire together; a warning that suppresses
+    // another warning is still silent loss.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'src.json'), JSON.stringify([{ id: 'dup', level: 'BAD' }, { id: 'dup', level: 'W' }]));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const text = err.join('');
+    expect(text).toContain('1 of 2');
+    expect(text).toContain('dup');
+  });
+
+  it('truncates the detail lines but never the total', async () => {
+    // 14 rejections exceed the 10-line detail cap. The total must stay 14 while
+    // the details stop at 10, because a truncated list and a short list look the
+    // same to the reader and only one of them means "your data is mostly gone".
+    const dir = await makeDir();
+    const rows = Array.from({ length: 14 }, (_, i) => ({ id: `r${i}`, level: 'BAD' }));
+    await writeFile(join(dir, 'src.json'), JSON.stringify(rows));
+    await writeFile(join(dir, 'rules.json'), JSON.stringify([{ id: 'r1', kind: 'map', from: 'level', to: 'level_norm', mapping: { W: 'WARN' } }]));
+    const err: string[] = [];
+    const code = await run(['transform', '--input', 'src.json', '--rules', 'rules.json', '--id-field', 'id', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const lines = err.join('').split('\n');
+    expect(lines[0]).toContain('14 of 14');
+    const details = lines.filter((l) => l.startsWith('  r'));
+    expect(details).toHaveLength(10);
+    expect(err.join('')).toContain('... and 4 more');
+  });
 });
 
 describe('run - gate', () => {

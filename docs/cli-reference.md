@@ -156,8 +156,17 @@ rca-bench transform --input source.json --rules rules.json [--output out.json] [
 ```
 
 - `--input` and `--rules` are JSON arrays of source records and `TransformRule`s.
-- The result (`outputs`, `quarantined`, `counts`) is written to stdout or `--output`.
+- The result (`outputs`, `quarantined`, `counts`, `idFieldMisses`, `duplicateIds`)
+  is written to stdout or `--output`.
 - `inputCount === outputCount + quarantineCount` is guaranteed by the engine.
+- Rejected records are named on stderr (`N of M record(s) rejected`, then one line
+  per record with its id and error code). Without this, a bundle built from three
+  rows with one rejection is byte-identical to one built from two rows.
+- `--id-field <field>` names the column holding each record's stable id. If the
+  field is missing from a record, that record falls back to a positional `row-N`
+  id and a warning reports how many did so; a warning also lists any id value
+  carried by more than one record, since a duplicated id no longer identifies a
+  record. A clean run prints nothing.
 
 ### `rca-bench case`
 

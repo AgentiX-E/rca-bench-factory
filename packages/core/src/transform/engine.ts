@@ -28,6 +28,27 @@ export interface TransformResult {
   outputs: Array<{ recordId: string; record: SourceRecord; provenance: Record<string, FieldProvenance> }>;
   quarantined: QuarantineRecord[];
   counts: { input: number; output: number; quarantine: number };
+  /**
+   * How many records the requested `idField` could not identify, so a positional
+   * `row-N` id was used instead.
+   *
+   * `recordId` is what a human uses to find the row that went wrong, and what a
+   * downstream tool keys on. When `idField` names a column no record carries,
+   * every id silently degrades to positional order: the caller's identifier
+   * scheme is inert while the output still looks well-formed. This counter is how
+   * that becomes visible. It is `0` when no `idField` was requested, because
+   * positional ids are then the contract rather than a fallback.
+   */
+  idFieldMisses: number;
+  /**
+   * Id values carried by more than one record in this batch, in first-seen order.
+   *
+   * A duplicated id stops being an identifier: two quarantined rows under the
+   * same id cannot be told apart from one row reported twice. Each value appears
+   * once regardless of how many records carry it. Positional ids are never
+   * listed, being unique by construction.
+   */
+  duplicateIds: string[];
 }
 
 export interface EngineOptions {
@@ -39,12 +60,21 @@ export interface EngineOptions {
   promptVersion?: string;
 }
 
-function recordIdOf(record: SourceRecord, index: number, idField?: string): string {
+/** Outcome of deriving one record's id, keeping the fallback visible to the caller. */
+interface ResolvedId {
+  id: string;
+  /** True when the requested `idField` was asked for but produced no usable value. */
+  missed: boolean;
+}
+
+function recordIdOf(record: SourceRecord, index: number, idField?: string): ResolvedId {
   if (idField) {
     const v = record[idField];
-    if (v !== undefined && v !== null && v !== '') return String(v);
+    // `''` is not an identifier, and neither is `null`/`undefined`; `0` IS one.
+    if (v !== undefined && v !== null && v !== '') return { id: String(v), missed: false };
+    return { id: `row-${index}`, missed: true };
   }
-  return `row-${index}`;
+  return { id: `row-${index}`, missed: false };
 }
 
 function setPath(target: SourceRecord, path: string, value: unknown): void {
@@ -79,9 +109,20 @@ export function transformBatch(
 ): TransformResult {
   const outputs: TransformResult['outputs'] = [];
   const quarantined: QuarantineRecord[] = [];
+  // Every id assigned in this batch, in assignment order, used to spot duplicates
+  // across outputs and quarantine entries alike.
+  const assignedIds: string[] = [];
+  let idFieldMisses = 0;
+
+  const assignId = (record: SourceRecord, index: number): string => {
+    const resolved = recordIdOf(record, index, options.idField);
+    if (resolved.missed) idFieldMisses += 1;
+    assignedIds.push(resolved.id);
+    return resolved.id;
+  };
 
   input.forEach((source, index) => {
-    const recordId = recordIdOf(source, index, options.idField);
+    const recordId = assignId(source, index);
     const working: SourceRecord = { ...source };
     const provenance: Record<string, FieldProvenance> = {};
 
@@ -117,7 +158,32 @@ export function transformBatch(
       output: outputs.length,
       quarantine: quarantined.length,
     },
+    idFieldMisses,
+    duplicateIds: findDuplicates(assignedIds),
   };
+}
+
+/**
+ * Values occurring more than once, in first-seen order.
+ *
+ * Order is the order of first occurrence rather than sorted, so the report reads
+ * in the order a human scanning the source file would encounter them.
+ */
+function findDuplicates(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+  const duplicates: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) {
+      if (!reported.has(value)) {
+        reported.add(value);
+        duplicates.push(value);
+      }
+      continue;
+    }
+    seen.add(value);
+  }
+  return duplicates;
 }
 
 /**
