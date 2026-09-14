@@ -167,7 +167,15 @@ anchors of section 9: the Golden Master, the mutation suite and the official met
 
 The evolution loop is a **governance layer** (`src/evolution/`), not a generator:
 `proposal.ts` assembles a pending proposal (diff-able rule changes + a regression
-verdict) and `hitl.ts` models the checkpoint vocabulary. The three non-negotiable
+verdict) and `hitl.ts` models the checkpoint vocabulary. The division is
+deliberate: `hitl.ts` owns *which* checkpoint an action routes to and the status
+vocabulary, while `proposal.ts` owns the `pending -> approved/rejected` machine
+and its guard. `hitl.ts` once carried a second copy of that machine
+(`approve`/`reject` over `HitlDecision`) with no guard, so only one of the two
+implementations refused a second verdict. It was deleted rather than guarded -
+a second implementation of a guarded rule is free to drift from the first - and
+`test/hitl-single-machine.test.ts` pins the module's runtime surface so the copy
+cannot return. The three non-negotiable
 red lines are enforced as pure predicates:
 
 1. Every rule/GT change is diff-able and revertible (a non-empty base version).

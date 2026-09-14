@@ -426,16 +426,9 @@ export type {
   FaultExtractionValidation,
 } from './fault/importer.js';
 
-export {
-  approve,
-  hitlGateFor,
-  isApproved,
-  pendingDecision,
-  reject,
-} from './evolution/hitl.js';
+export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,
-  HitlDecision,
   HitlGate,
   HitlStatus,
 } from './evolution/hitl.js';

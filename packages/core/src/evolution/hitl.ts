@@ -5,8 +5,25 @@
  * automatically: every evolution action maps onto one of the six HITL checkpoints
  * (H1..H6) and must be explicitly approved there before it can take effect.
  *
- * This module is IO-free: it models the checkpoint vocabulary and the
- * pending → approved/rejected decision state machine as pure functions.
+ * This module owns the checkpoint *vocabulary* - the gates, the actions that
+ * route to them, and the status a decision can hold. It deliberately does not own
+ * the decision *machine*: `approve`/`reject`/`pendingDecision`/`isApproved` used
+ * to live here over `HitlDecision`, duplicating what `proposal.ts` does over
+ * `EvolutionProposal`.
+ *
+ * That duplicate was the same machine twice, and only the proposal copy carried
+ * the guard that makes `pending -> approved/rejected` one-way. The gap survived
+ * because nothing called the copy: its tests decided a `pending` decision, which
+ * both machines do correctly, so they could not tell them apart - the difference
+ * appears only on a *second* decision, which is precisely the case a review
+ * record exists to protect.
+ *
+ * The copy was deleted rather than guarded. A second implementation of a guarded
+ * rule is free to drift from the first, and only one of them can be the rule.
+ * `proposal.ts` is the single `HitlStatus` state machine; this module supplies the
+ * vocabulary it steps through.
+ *
+ * This module is IO-free.
  */
 
 /** One of the six HITL checkpoints from the technical plan (§9.2). */
@@ -44,31 +61,4 @@ const ACTION_TO_GATE: Record<EvolutionActionKind, HitlGate> = {
 /** Map an evolution action onto its mandatory HITL checkpoint. */
 export function hitlGateFor(action: EvolutionActionKind): HitlGate {
   return ACTION_TO_GATE[action];
-}
-
-export interface HitlDecision {
-  gate: HitlGate;
-  status: HitlStatus;
-  /** Optional reviewer note attached on approval or rejection. */
-  note?: string;
-}
-
-/** A fresh decision awaiting review. */
-export function pendingDecision(gate: HitlGate): HitlDecision {
-  return { gate, status: 'pending' };
-}
-
-/** Approve a decision, optionally with a reviewer note. */
-export function approve(decision: HitlDecision, note?: string): HitlDecision {
-  return { gate: decision.gate, status: 'approved', ...(note !== undefined ? { note } : {}) };
-}
-
-/** Reject a decision, optionally with a reviewer note. */
-export function reject(decision: HitlDecision, note?: string): HitlDecision {
-  return { gate: decision.gate, status: 'rejected', ...(note !== undefined ? { note } : {}) };
-}
-
-/** True only for an explicitly approved decision. */
-export function isApproved(decision: HitlDecision): boolean {
-  return decision.status === 'approved';
 }

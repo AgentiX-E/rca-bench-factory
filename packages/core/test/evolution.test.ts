@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  approve,
-  hitlGateFor,
-  isApproved,
-  pendingDecision,
-  reject,
-} from '../src/evolution/hitl.js';
-import type { EvolutionActionKind, HitlDecision } from '../src/evolution/hitl.js';
+import { hitlGateFor } from '../src/evolution/hitl.js';
+import type { EvolutionActionKind } from '../src/evolution/hitl.js';
 import {
   approveProposal,
   buildEvolutionProposal,
@@ -66,38 +60,6 @@ describe('hitlGateFor', () => {
 
   it.each(cases)('maps %s to %s', (action, gate) => {
     expect(hitlGateFor(action)).toBe(gate);
-  });
-});
-
-describe('HITL decision state machine', () => {
-  it('starts a decision in the pending state', () => {
-    expect(pendingDecision('H4')).toEqual({ gate: 'H4', status: 'pending' });
-  });
-
-  it('approves a decision without a note', () => {
-    const d: HitlDecision = { gate: 'H1', status: 'pending' };
-    expect(approve(d)).toEqual({ gate: 'H1', status: 'approved' });
-  });
-
-  it('approves a decision with a note', () => {
-    const d: HitlDecision = { gate: 'H1', status: 'pending' };
-    expect(approve(d, 'looks good')).toEqual({ gate: 'H1', status: 'approved', note: 'looks good' });
-  });
-
-  it('rejects a decision without a note', () => {
-    const d: HitlDecision = { gate: 'H1', status: 'pending' };
-    expect(reject(d)).toEqual({ gate: 'H1', status: 'rejected' });
-  });
-
-  it('rejects a decision with a note', () => {
-    const d: HitlDecision = { gate: 'H1', status: 'pending' };
-    expect(reject(d, 'needs a diff')).toEqual({ gate: 'H1', status: 'rejected', note: 'needs a diff' });
-  });
-
-  it('recognises only approved decisions', () => {
-    expect(isApproved({ gate: 'H4', status: 'approved' })).toBe(true);
-    expect(isApproved({ gate: 'H4', status: 'pending' })).toBe(false);
-    expect(isApproved({ gate: 'H4', status: 'rejected' })).toBe(false);
   });
 });
 
