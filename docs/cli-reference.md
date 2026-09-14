@@ -53,6 +53,10 @@ rca-bench source --path telemetry.csv [--format csv] [--signal-kind metric]
 - Without `--output`, the `{ signals, quarantine }` result is written to stdout.
 - Every non-empty source record is either a signal or a quarantine entry — never
   silently dropped.
+- Rejected records are named on stderr (`N of M record(s) rejected`, then one line
+  per record with its 1-based source line and reason). Without this, a file with
+  three data rows and one bad row produces a JSON document identical to one from a
+  two-row clean file. A clean file prints nothing.
 
 ### `rca-bench ingest`
 

@@ -48,6 +48,7 @@ import type {
   FileFormat,
   FileIngestOptions,
   FileLayout,
+  FileQuarantineRecord,
   FileSignalKind,
   G1Options,
   IrBundle,
@@ -176,6 +177,7 @@ async function runSource(cmd: Extract<CliCommand, { command: 'source' }>, ctx: C
   };
 
   const result = ingestFile(text, options);
+  reportSourceLosses(result.quarantine, result.signals.length + result.quarantine.length, ctx);
   const output = JSON.stringify(result, null, 2) + '\n';
   if (cmd.output !== undefined) {
     await writeFile(resolve(ctx.cwd, cmd.output), output);
@@ -252,6 +254,44 @@ async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: C
   return 0;
 }
 
+const MAX_REPORTED_ROWS = 10;
+
+/**
+ * Render one rejection report: a total, then up to `MAX_REPORTED_ROWS` details.
+ *
+ * Three commands (`source`, `transform`, `ingest`) each quarantine records and
+ * each has to say so. They differ only in how a rejected record is *located* -
+ * a line number, a record id, a file plus line. Callers therefore pass the
+ * already-truncated rows plus a label and a reason for each, so this function
+ * never indexes anything and has no unreachable defensive branches to test.
+ *
+ * Keeping the shape in a single place is deliberate: three hand-written copies of
+ * a renderer are a list that must drift from the thing it describes, which is the
+ * defect this project keeps finding.
+ *
+ * Callers only invoke this when at least one record was rejected, so there is no
+ * zero-total branch here: a guard for a state no caller can produce would be a
+ * branch that can never fail, and this project does not ship those.
+ *
+ * The total is never capped. A truncated list and a short list look the same to
+ * a reader, and only one of them means "your data is mostly gone", so the cap is
+ * stated explicitly whenever it applies.
+ */
+function reportRejections<R>(
+  total: number,
+  shown: readonly R[],
+  describe: (row: R) => { where: string; reason: string },
+  ctx: Ctx,
+): void {
+  for (const row of shown) {
+    const { where, reason } = describe(row);
+    ctx.stderr(`  ${where}: ${reason}\n`);
+  }
+  if (total > shown.length) {
+    ctx.stderr(`  ... and ${total - shown.length} more\n`);
+  }
+}
+
 /**
  * Report what `ingestPrimeDataset` rejected, so the loss is visible.
  *
@@ -262,28 +302,43 @@ async function runReport(cmd: Extract<CliCommand, { command: 'report' }>, ctx: C
  * indistinguishable from one built from a source that only ever had half the
  * rows. The report is the entire mechanism the invariant depends on, so it is
  * printed rather than computed and dropped.
- *
- * Per-row detail is capped: a badly mis-specified dataset can quarantine every
- * row, and a thousand-line wall of stderr hides the one line that says how much
- * was lost. The total is always printed in full, and the cap is stated so the
- * reader knows the list was truncated rather than short.
  */
-const MAX_REPORTED_ROWS = 10;
-
 function reportIngestLosses(report: readonly PrimeCaseReport[], ctx: Ctx): void {
   for (const rep of report) {
     if (rep.quarantine.length === 0) continue;
     ctx.stderr(`warning: case '${rep.caseId}': ${rep.quarantine.length} source row(s) rejected\n`);
-    for (const q of rep.quarantine.slice(0, MAX_REPORTED_ROWS)) {
-      // `line` is 1-based, or 0 when the whole file was refused before any row
-      // was parsed. Printing "line 0" would invent a line that does not exist.
-      const where = q.line === 0 ? `${q.file} (whole file)` : `${q.file}, line ${q.line}`;
-      ctx.stderr(`  ${where}: ${q.reason}\n`);
-    }
-    if (rep.quarantine.length > MAX_REPORTED_ROWS) {
-      ctx.stderr(`  ... and ${rep.quarantine.length - MAX_REPORTED_ROWS} more\n`);
-    }
+    reportRejections(
+      rep.quarantine.length,
+      rep.quarantine.slice(0, MAX_REPORTED_ROWS),
+      (q) => ({
+        // `line` is 1-based, or 0 when the whole file was refused before any row
+        // was parsed. Printing "line 0" would invent a line that does not exist.
+        where: q.line === 0 ? `${q.file} (whole file)` : `${q.file}, line ${q.line}`,
+        reason: q.reason,
+      }),
+      ctx,
+    );
   }
+}
+
+/**
+ * Report what `ingestFile` rejected, so a lossy `source` run is visible.
+ *
+ * `source` is the first command in the pipeline, so its losses propagate: a row
+ * dropped here is a row no gate, score or export will ever see. Its artefact is
+ * a plain list of signals, which carries no hint that anything was left out - a
+ * three-row file with one bad row produces a JSON document identical to one from
+ * a two-row clean file. Naming the rejected lines is what makes them different.
+ */
+function reportSourceLosses(quarantine: readonly FileQuarantineRecord[], inputRows: number, ctx: Ctx): void {
+  if (quarantine.length === 0) return;
+  ctx.stderr(`warning: ${quarantine.length} of ${inputRows} record(s) rejected\n`);
+  reportRejections(
+    quarantine.length,
+    quarantine.slice(0, MAX_REPORTED_ROWS),
+    (q) => ({ where: `line ${q.line}`, reason: q.reason }),
+    ctx,
+  );
 }
 
 /**
@@ -454,12 +509,12 @@ function reportTransformLosses(result: TransformResult, idField: string | undefi
   const { input, quarantine } = result.counts;
   if (quarantine > 0) {
     ctx.stderr(`warning: ${quarantine} of ${input} record(s) rejected\n`);
-    for (const q of result.quarantined.slice(0, MAX_REPORTED_ROWS)) {
-      ctx.stderr(`  ${q.recordId}: ${q.code} (rule '${q.ruleId}')\n`);
-    }
-    if (quarantine > MAX_REPORTED_ROWS) {
-      ctx.stderr(`  ... and ${quarantine - MAX_REPORTED_ROWS} more\n`);
-    }
+    reportRejections(
+      quarantine,
+      result.quarantined.slice(0, MAX_REPORTED_ROWS),
+      (q) => ({ where: q.recordId, reason: `${q.code} (rule '${q.ruleId}')` }),
+      ctx,
+    );
   }
 
   if (idField !== undefined && result.idFieldMisses > 0) {

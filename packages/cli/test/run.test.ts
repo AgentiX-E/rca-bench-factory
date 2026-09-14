@@ -271,6 +271,71 @@ describe('run - source', () => {
     expect(JSON.parse(out.join('')).signals).toHaveLength(2);
   });
 
+  it('names the rejected lines on stderr instead of dropping them silently', async () => {
+    // Three data rows enter, one carries an unparseable timestamp. The artefact
+    // written to --output is identical to one built from a two-row clean source,
+    // so the lost line must be named on stderr.
+    const dir = await makeDir();
+    await writeFile(
+      join(dir, 'in.csv'),
+      'timestamp,cmdb_id,kpi_name,value\n2026-09-06T00:00:00Z,order-pod-1,cpu_usage,20\nnot-a-time,order-pod-1,cpu_usage,80\n2026-09-06T00:10:00Z,order-pod-1,cpu_usage,95\n',
+    );
+    const err: string[] = [];
+    const code = await run(['source', '--path', 'in.csv', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const text = err.join('');
+    expect(text).toContain('1 of 3');
+    expect(text).toContain('line 3');
+    expect(text).toContain('timestamp');
+  });
+
+  it('stays silent when no line is rejected', async () => {
+    // Positive control. A report that fires on a clean file is noise, and noise
+    // teaches the operator to ignore the report that matters.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'in.csv'), METRIC_CSV);
+    const err: string[] = [];
+    const code = await run(['source', '--path', 'in.csv', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('reports a wholly rejected file as a total loss, not as silence', async () => {
+    // A file missing the metric-name column yields zero signals. "This file
+    // produced nothing" and "this file had no rows" must not look the same.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'in.csv'), 'timestamp,cmdb_id,value\n2026-09-06T00:00:00Z,order-pod-1,20\n');
+    const err: string[] = [];
+    const code = await run(['source', '--path', 'in.csv', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    expect(JSON.parse(await readFile(join(dir, 'out.json'), 'utf8')).signals).toEqual([]);
+    expect(err.join('')).toContain('1 of 1');
+  });
+
+  it('stays silent for a genuinely empty file', async () => {
+    // The counterpart to the previous test: zero losses and zero rows is not a
+    // loss at all, and saying so would be a false alarm.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'in.csv'), '');
+    const err: string[] = [];
+    const code = await run(['source', '--path', 'in.csv', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    expect(err.join('')).toBe('');
+  });
+
+  it('caps the detail lines while keeping the total whole', async () => {
+    const dir = await makeDir();
+    const rows = Array.from({ length: 14 }, (_, i) => `not-a-time,order-pod-1,cpu_usage,${i}`);
+    await writeFile(join(dir, 'in.csv'), `timestamp,cmdb_id,kpi_name,value\n${rows.join('\n')}\n`);
+    const err: string[] = [];
+    const code = await run(['source', '--path', 'in.csv', '--output', 'out.json'], { cwd: dir, stderr: (s) => err.push(s) });
+    expect(code).toBe(0);
+    const text = err.join('');
+    expect(text.split('\n')[0]).toContain('14 of 14');
+    expect(text.match(/^ {2}line /gm)).toHaveLength(10);
+    expect(text).toContain('... and 4 more');
+  });
+
   it('auto-detects a JSONL layout', async () => {
     const dir = await makeDir();
     await writeFile(join(dir, 'in.jsonl'), '{"timestamp":"2026-09-06T00:00:00Z","service":"order","metric":"cpu_usage","value":20}\n');
