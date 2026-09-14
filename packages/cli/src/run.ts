@@ -441,9 +441,11 @@ async function runOfficial(cmd: Extract<CliCommand, { command: 'official' }>, ct
 /**
  * Pack a directory into a reproducible archive.
  *
- * The manifest is listed from the pack's own root, so a `--prefix` is stripped
- * from the manifest paths: whoever unpacks the archive can verify it without
- * knowing how it was built.
+ * The manifest is written *into* the archive, so its rows name archive paths,
+ * `--prefix` included: whoever unpacks the archive can resolve every row without
+ * knowing how the pack was built. Stripping the prefix produced a manifest that
+ * described the input directory instead of the archive it travelled inside, so
+ * every file in a prefixed pack was reported both missing and undeclared.
  */
 async function runPack(cmd: Extract<CliCommand, { command: 'pack' }>, ctx: Ctx): Promise<number> {
   const files = await readFilesRecursive(resolve(ctx.cwd, cmd.input));
