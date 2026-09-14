@@ -1,4 +1,6 @@
 import type { IrBundle, SignalKind } from './ir/types.js';
+import { SCORE_TARGET_IDS } from './score/score.js';
+import type { ScoreTargetId } from './score/score.js';
 
 /**
  * Observability coverage report.
@@ -13,14 +15,6 @@ import type { IrBundle, SignalKind } from './ir/types.js';
  * lifecycle evidence is observable only in the Events modality.
  */
 
-export type TargetId =
-  | 'openrca-1.0'
-  | 'rcaeval-re1'
-  | 'rcaeval-re2'
-  | 'rca100'
-  | 'aiops2025'
-  | 'cloud-opsbench';
-
 export const MODALITY_LOSS: Record<SignalKind, number> = {
   metric: 0.928,
   log: 0.562,
@@ -30,18 +24,36 @@ export const MODALITY_LOSS: Record<SignalKind, number> = {
   profile: 0.02,
 };
 
-/** Signals each target format requires. */
-export const TARGET_REQUIREMENTS: Record<TargetId, SignalKind[]> = {
+/**
+ * Signals each target needs before a dataset can be evaluated for it.
+ *
+ * Keyed by `ScoreTargetId` and checked against it, not by a shorter type of its
+ * own. This report used to enumerate six targets while the rest of the product
+ * used nine, so `openrca-2.0`, `rcaeval-re3` and `itbench` could not be reported
+ * on at all - an operator was told a dataset was ready for six products and told
+ * nothing about the other three.
+ *
+ * The requirement is about the *dataset*, not about what an exporter happens to
+ * emit. Cloud-OpsBench's exporter writes `metadata.json` and no telemetry, so
+ * its own bytes cannot express a missing log; but the benchmark's Digital Twin
+ * layout does carry metrics, logs and alerts, and an agent evaluated on it needs
+ * all three. Declaring `['metric']` here would have weakened the report to match
+ * an artefact that was never the subject of the question.
+ */
+export const TARGET_REQUIREMENTS: Record<ScoreTargetId, SignalKind[]> = {
   'openrca-1.0': ['metric', 'trace'],
+  'openrca-2.0': ['metric', 'trace'],
   'rcaeval-re1': ['metric'],
   'rcaeval-re2': ['metric', 'log'],
+  'rcaeval-re3': ['metric', 'log', 'trace'],
   rca100: ['metric', 'log', 'trace', 'event', 'alert'],
   aiops2025: ['metric', 'log', 'trace'],
   'cloud-opsbench': ['metric', 'log', 'trace'],
+  itbench: ['metric', 'log', 'trace'],
 };
 
 export interface TargetFeasibility {
-  target: TargetId;
+  target: ScoreTargetId;
   status: 'ready' | 'degraded' | 'unavailable';
   /** Estimated share of cases lost because of missing modalities. */
   estimatedCaseLoss: number;
@@ -82,16 +94,22 @@ export function computeCoverage(bundle: IrBundle): CoverageReport {
   ) as Record<SignalKind, number>;
 
   const present = new Set(ALL_KINDS.filter((k) => coverage[k] > 0));
-  const feasibility: TargetFeasibility[] = (Object.keys(TARGET_REQUIREMENTS) as TargetId[]).map(
-    (target) => {
-      const required = TARGET_REQUIREMENTS[target];
-      const missing = required.filter((k) => !present.has(k));
-      const loss = missing.reduce((acc, k) => Math.max(acc, MODALITY_LOSS[k]), 0);
-      const status: TargetFeasibility['status'] =
-        missing.length === 0 ? 'ready' : required.every((k) => !present.has(k)) ? 'unavailable' : 'degraded';
-      return { target, status, estimatedCaseLoss: Number(loss.toFixed(3)), missingSignals: missing };
-    },
-  );
+  // Iterated over `SCORE_TARGET_IDS`, not over this module's own keys, so the
+  // report's population is decided by the product rather than by whichever rows
+  // this table happens to contain.
+  const feasibility: TargetFeasibility[] = SCORE_TARGET_IDS.map((target) => {
+    const required = TARGET_REQUIREMENTS[target];
+    // A missing row is a bug, not a target that requires nothing: `undefined`
+    // would throw here, and a target demanding no signal is always "ready",
+    // which is the one answer a coverage report must never invent. Failing
+    // loudly is what makes the omission a caught defect instead of a quieter
+    // report - and it is why this needs no guard of its own to be honest.
+    const missing = required.filter((k) => !present.has(k));
+    const loss = missing.reduce((acc, k) => Math.max(acc, MODALITY_LOSS[k]), 0);
+    const status: TargetFeasibility['status'] =
+      missing.length === 0 ? 'ready' : required.every((k) => !present.has(k)) ? 'unavailable' : 'degraded';
+    return { target, status, estimatedCaseLoss: Number(loss.toFixed(3)), missingSignals: missing };
+  });
 
   return { coverage, feasibility };
 }

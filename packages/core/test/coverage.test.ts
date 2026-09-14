@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MODALITY_LOSS, computeCoverage, formatCoverageReport } from '../src/coverage.js';
+import { SCORE_TARGET_IDS } from '../src/score/score.js';
 import type { IrBundle } from '../src/ir/types.js';
 import { validBundle } from './fixtures.js';
 
@@ -60,7 +61,10 @@ describe('computeCoverage', () => {
   });
 
   it('covers every declared target', () => {
-    expect(computeCoverage(validBundle()).feasibility).toHaveLength(6);
+    // Was 6, which was the count of this module's own short list rather than the
+    // count of targets the product scores. The number now comes from the list
+    // the product uses; `target-requirements.test.ts` holds the rest.
+    expect(computeCoverage(validBundle()).feasibility).toHaveLength(SCORE_TARGET_IDS.length);
   });
 });
 

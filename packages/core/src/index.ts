@@ -199,7 +199,7 @@ export {
   computeCoverage,
   formatCoverageReport,
 } from './coverage.js';
-export type { CoverageReport, TargetFeasibility, TargetId } from './coverage.js';
+export type { CoverageReport, TargetFeasibility } from './coverage.js';
 
 export {
   ISO_UTC_PATTERN,
