@@ -14,6 +14,18 @@
  * other eight regress, if a target is silently skipped, or if RE3 starts
  * exporting cases without the example gaining a code-level fault.
  *
+ * The target-to-exporter mapping is read, not restated. This script used to
+ * carry its own nine-entry catalogue beside the one in `packages/cli`, and the
+ * copy was silent when wrong: pointing `rcaeval-re1` at the RE2 suite left it
+ * printing `PASS rcaeval-re1 cases=1` and exiting 0, because the scorer's own
+ * structural check noticed first and the script inherited that verdict. Only
+ * RE2 against RE3 - same file names, different admitted cases - had nothing left
+ * to catch it. `exportForScoreTarget` is now the single mapping, shared with the
+ * CLI, so a wrong suite fails in `dispatch.test.ts` instead.
+ *
+ * What remains this script's own is the part no unit test can supply: the
+ * verdict on the shipped `examples/order-prod/bundle.json`, target by target.
+ *
  *   node scripts/check-official.mjs
  */
 
@@ -21,17 +33,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  exportAioPs2025,
-  exportCloudOpsBench,
-  exportItBench,
-  exportOpenRca,
-  exportOpenRca2,
-  exportRca100,
-  exportRcaEval,
-  runAllOfficialRegressions,
-  SCORE_TARGET_IDS,
-} from '../packages/core/dist/index.js';
+import { exportForScoreTarget, runAllOfficialRegressions, SCORE_TARGET_IDS } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -41,17 +43,13 @@ const BUNDLE_PATH = resolve(ROOT, 'examples/order-prod/bundle.json');
 const SKIPPED = { 'rcaeval-re3': 'the example is a resource fault and RE3 admits code-level faults only' };
 
 const bundle = JSON.parse(readFileSync(BUNDLE_PATH, 'utf8'));
-const exportsByTarget = {
-  'openrca-1.0': exportOpenRca(bundle).files,
-  'openrca-2.0': exportOpenRca2(bundle).files,
-  'rcaeval-re1': exportRcaEval(bundle, 'RE1').files,
-  'rcaeval-re2': exportRcaEval(bundle, 'RE2').files,
-  'rcaeval-re3': exportRcaEval(bundle, 'RE3').files,
-  rca100: exportRca100(bundle).files,
-  aiops2025: exportAioPs2025(bundle).files,
-  'cloud-opsbench': exportCloudOpsBench(bundle).files,
-  itbench: exportItBench(bundle).files,
-};
+
+// Iterated over `SCORE_TARGET_IDS` and dispatched through the shared mapping, so
+// a new target reaches this check the moment the scorer declares it. A hand-
+// written table here would have to be remembered.
+const exportsByTarget = Object.fromEntries(
+  SCORE_TARGET_IDS.map((target) => [target, exportForScoreTarget(bundle, target).files]),
+);
 
 const reports = runAllOfficialRegressions(exportsByTarget, { allowEmptyReason: 'checked explicitly below' });
 const failures = [];

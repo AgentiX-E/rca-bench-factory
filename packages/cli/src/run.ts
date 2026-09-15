@@ -8,13 +8,8 @@ import {
   computeCoverage,
   computeStaleCases,
   detectFileLayout,
-  exportAioPs2025,
-  exportCloudOpsBench,
-  exportItBench,
-  exportOpenRca,
-  exportOpenRca2,
-  exportRca100,
-  exportRcaEval,
+  exportForScoreTarget,
+  EXPORTERS,
   MANIFEST_FILE_NAME,
   buildPackManifest,
   createTarGzip,
@@ -45,8 +40,8 @@ import type {
   BuildProposalInput,
   CliCommand,
   EvolutionProposal,
+  ExportOutcome,
   ExportedFiles,
-  ExportTarget,
   FileFormat,
   FileIngestOptions,
   FileLayout,
@@ -58,7 +53,6 @@ import type {
   OfficialRegressionReport,
   PrimeCaseReport,
   PrimeCaseSource,
-  RcaEvalSuite,
   ScoreTargetId,
   SkippedCase,
   SourceRecord,
@@ -193,63 +187,16 @@ async function runSource(cmd: Extract<CliCommand, { command: 'source' }>, ctx: C
 }
 
 /**
- * What every exporter returns: the artefact, plus the cases it could not express.
+ * What the `export` command was asked for: its target, and the suite if it gave one.
  *
- * `skipped` is the exporter's own account of the cases the target's contract
- * cannot represent -- a case with no telemetry, or a root cause that does not
- * resolve into the topology. It is part of the result rather than an aside
- * because an export that covers fewer cases than the bundle is a different
- * benchmark, and only the exporter knows which cases went missing.
+ * The mapping from a *score* target onto an exporter lives in core, in
+ * `scoreTargetInvocation`, because both the CLI and the official-metric
+ * regression script need it and neither should own it. This is the other
+ * direction: the `export` command names its target directly, so the only thing
+ * left to decide here is the suite default.
  */
-interface ExportOutcome {
-  files: ExportedFiles;
-  skipped: readonly SkippedCase[];
-}
-
-/**
- * Every exporter, keyed by the target id the `export` command spells.
- *
- * This is the *only* place a target id is mapped onto an exporter. `export`,
- * `report` and `official` all ask the same question - "what does this target do
- * with this bundle?" - and each used to carry its own hand-written `if` chain
- * over the same seven exporters. Two chains over one mapping is a list that must
- * drift from the thing it describes, and it did: the score chain took only
- * `.files` and threw `skipped` away, so `report` scored a shrunken export and
- * printed "score 100" with no denominator.
- *
- * `rcaeval` is the one exporter a suite parameterises, so the table takes the
- * suite uniformly and the exporters that have no use for it ignore it.
- */
-const EXPORTERS: Record<ExportTarget, (bundle: IrBundle, suite: RcaEvalSuite) => ExportOutcome> = {
-  'openrca-1.0': (bundle) => exportOpenRca(bundle),
-  'openrca-2.0': (bundle) => exportOpenRca2(bundle),
-  rcaeval: (bundle, suite) => exportRcaEval(bundle, suite),
-  rca100: (bundle) => exportRca100(bundle),
-  aiops2025: (bundle) => exportAioPs2025(bundle),
-  'cloud-opsbench': (bundle) => exportCloudOpsBench(bundle),
-  itbench: (bundle) => exportItBench(bundle),
-};
-
-/** What the `export` command was asked for: its target, and the suite if it gave one. */
 function exportForCommandTarget(bundle: IrBundle, cmd: Extract<CliCommand, { command: 'export' }>): ExportOutcome {
   return EXPORTERS[cmd.target](bundle, cmd.suite ?? 'RE2');
-}
-
-/** Which exporter and which suite a score target means. */
-function scoreTargetInvocation(target: ScoreTargetId): { id: ExportTarget; suite: RcaEvalSuite } {
-  // `rcaeval-re1|re2|re3` is one exporter parameterised by a suite; every other
-  // score target names its exporter directly. Only that one fact is written down,
-  // so the nine score targets need no table of their own.
-  if (target === 'rcaeval-re1') return { id: 'rcaeval', suite: 'RE1' };
-  if (target === 'rcaeval-re2') return { id: 'rcaeval', suite: 'RE2' };
-  if (target === 'rcaeval-re3') return { id: 'rcaeval', suite: 'RE3' };
-  return { id: target, suite: 'RE2' };
-}
-
-/** Export a bundle for a score target, keeping the whole result. */
-function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): ExportOutcome {
-  const { id, suite } = scoreTargetInvocation(target);
-  return EXPORTERS[id](bundle, suite);
 }
 
 /**

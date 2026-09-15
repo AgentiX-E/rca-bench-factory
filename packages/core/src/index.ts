@@ -274,6 +274,7 @@ export type {
   ScoreTargetId,
   StructureReport,
 } from './score/score.js';
+export { exportForScoreTarget, EXPORTERS, scoreTargetInvocation } from './score/dispatch.js';
 
 export {
   OFFICIAL_FACETS,
