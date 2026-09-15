@@ -9,7 +9,8 @@ import type { ExportOutcome } from '../export/openrca.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
 import type { IrBundle } from '../ir/types.js';
 import type { ExportTarget } from '../cli/args.js';
-import type { ScoreTargetId } from './score.js';
+import { scoreTargetInvocation } from './targets.js';
+import type { ScoreTargetId } from './targets.js';
 
 /**
  * The one place a score target is mapped onto an exporter.
@@ -27,6 +28,10 @@ import type { ScoreTargetId } from './score.js';
  * structural check the scorer performs, so a wrong suite there tripped something
  * else first. Only RE2 against RE3 - same file names, different admitted cases -
  * had nothing left to notice. It now reads this table instead of restating it.
+ *
+ * The target names and the suite each one means live in `./targets.js`, one
+ * level down, because the scorer's structural checks need the same answer and
+ * reaching back up into this file for it would close a cycle.
  */
 
 /**
@@ -59,15 +64,7 @@ export const EXPORTERS: Record<ExportTarget, (bundle: IrBundle, suite: RcaEvalSu
 };
 
 /** Which exporter and which suite a score target means. */
-export function scoreTargetInvocation(target: ScoreTargetId): { id: ExportTarget; suite: RcaEvalSuite } {
-  // `rcaeval-re1|re2|re3` is one exporter parameterised by a suite; every other
-  // score target names its exporter directly. Only that one fact is written down,
-  // so the nine score targets need no table of their own.
-  if (target === 'rcaeval-re1') return { id: 'rcaeval', suite: 'RE1' };
-  if (target === 'rcaeval-re2') return { id: 'rcaeval', suite: 'RE2' };
-  if (target === 'rcaeval-re3') return { id: 'rcaeval', suite: 'RE3' };
-  return { id: target, suite: 'RE2' };
-}
+export { scoreTargetInvocation };
 
 /** Export a bundle for a score target, keeping the whole result. */
 export function exportForScoreTarget(bundle: IrBundle, target: ScoreTargetId): ExportOutcome {

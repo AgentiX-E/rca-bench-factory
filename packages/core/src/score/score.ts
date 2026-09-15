@@ -2,6 +2,7 @@ import { sha256 } from '../util/hash.js';
 import { isRecord, safeJson } from '../util/json.js';
 import { parseCsvObjects } from '../util/csv.js';
 import { parseOpenRcaScoringPoints } from './official.js';
+import type { ScoreTargetId } from './targets.js';
 import { OPENRCA_GROUNDTRUTH_HEADER } from '../export/openrca.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
 
@@ -28,25 +29,8 @@ export { sha256 };
  * All checks are pure functions of the exported file map - no mocks, no IO.
  */
 
-export type ScoreTargetId = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'rca100' | 'aiops2025' | 'cloud-opsbench' | 'itbench';
-
-/**
- * Every target the scorer can verify, in canonical order.
- *
- * One list for the CLI, the site generator and the example pack, so a new target
- * cannot be added to one surface and forgotten in another.
- */
-export const SCORE_TARGET_IDS: readonly ScoreTargetId[] = [
-  'openrca-1.0',
-  'openrca-2.0',
-  'rcaeval-re1',
-  'rcaeval-re2',
-  'rcaeval-re3',
-  'rca100',
-  'aiops2025',
-  'cloud-opsbench',
-  'itbench',
-];
+export type { ScoreTargetId } from './targets.js';
+export { SCORE_TARGET_IDS } from './targets.js';
 
 export interface ScoreCheck {
   id: string;
@@ -706,6 +690,27 @@ function checksumRate(report: ChecksumReport): number {
   return total === 0 ? 0 : report.matched / total;
 }
 
+/**
+ * The structural check a score target is judged by.
+ *
+ * Three RCAEval targets share one checker parameterised by a suite. Which suite
+ * a target means is *not* re-derived here - it is read from
+ * `scoreTargetInvocation`, the same ledger `dispatch.ts` uses to pick the
+ * exporter, because there is one answer to "which suite is this target" and a
+ * second copy of it is a second thing that can be wrong.
+ *
+ * The ledger's suite is passed through as a *suite*, never as a target name.
+ * `checkRcaEvalStructure` turns the suite back into a target id for its report,
+ * so handing a target's wrong-but-plausible suite to it produces a report whose
+ * `target` disagrees with the report it is nested in. That is what the first
+ * attempt at this change did, and `pnpm examples:check` - not a unit test -
+ * caught it: the shared fixture's RE1 export happens to satisfy RE2's modality
+ * rule, so every test passed while the real example did not.
+ *
+ * The `never` below makes a missing arm a compile error. That guarantee is about
+ * *answers existing*; it says nothing about whether an answer is right, which is
+ * why the suite is read rather than written.
+ */
 function structureFor(target: ScoreTargetId, files: Record<string, string>): StructureReport {
   switch (target) {
     case 'openrca-1.0':
