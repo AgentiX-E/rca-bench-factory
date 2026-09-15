@@ -137,6 +137,7 @@ export type { ExportOutcome, ExportedFiles, SkippedCase } from './export/openrca
 
 export {
   RCAEVAL_CONTRACT_VERSION,
+  RCAEVAL_SUITES,
   RCAEVAL_TARGET_ID,
   buildLogsCsv,
   buildMetricsJson,

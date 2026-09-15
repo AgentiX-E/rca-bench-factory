@@ -4,7 +4,7 @@ import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
 import { z } from 'zod';
 import type { Entity, EntityEdge } from '../ir/types.js';
 import type { TimeLayout } from '../util/time.js';
-import type { RcaEvalSuite } from '../export/rcaeval.js';
+import { RCAEVAL_SUITES, type RcaEvalSuite } from '../export/rcaeval.js';
 import { SCORE_TARGET_IDS } from '../score/score.js';
 import type { ScoreTargetId } from '../score/score.js';
 
@@ -78,7 +78,7 @@ const FILE_FORMATS: readonly string[] = ['csv', 'tsv', 'jsonl', 'json'];
 const SIGNAL_KINDS: readonly string[] = ['metric', 'log', 'trace'];
 const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
 const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
-const SUITES: readonly string[] = ['RE1', 'RE2', 'RE3'];
+const SUITES: readonly RcaEvalSuite[] = RCAEVAL_SUITES;
 const SCORE_TARGETS: readonly string[] = SCORE_TARGET_IDS;
 const EVOLVE_ACTIONS: readonly string[] = ['propose', 'approve', 'reject', 'stale'];
 

@@ -20,7 +20,19 @@ import { renderCsv } from '../util/csv.js';
 export const RCAEVAL_TARGET_ID = 'rcaeval';
 export const RCAEVAL_CONTRACT_VERSION = 'www25';
 
-export type RcaEvalSuite = 'RE1' | 'RE2' | 'RE3';
+/**
+ * The suite vocabulary, declared once.
+ *
+ * The type is derived from this tuple rather than written beside it, so the
+ * values and the type cannot disagree: adding a suite here widens
+ * `RcaEvalSuite`, and every exhaustive switch over it fails to compile until
+ * the new member is handled. Consumers that need the list at runtime -- the
+ * CLI's `--suite` comparison set and its help placeholder -- read this instead
+ * of restating it.
+ */
+export const RCAEVAL_SUITES = ['RE1', 'RE2', 'RE3'] as const;
+
+export type RcaEvalSuite = (typeof RCAEVAL_SUITES)[number];
 
 
 /** Directory name convention: `{benchmark}{service}{fault}_{instance}`. */

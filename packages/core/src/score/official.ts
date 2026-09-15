@@ -1,4 +1,5 @@
 import type { ScoreTargetId } from './score.js';
+import type { RcaEvalSuite } from '../export/rcaeval.js';
 import { csvColumn, parseCsvObjects } from '../util/csv.js';
 import { isRecord, readString, readStringArray, safeJson } from '../util/json.js';
 
@@ -152,7 +153,7 @@ const OPENRCA2_METRIC: OfficialMetricSpec = {
   facets: ['component', 'faultType', 'chain', 'evidence'],
 };
 
-function rcaevalMetric(suite: 'RE1' | 'RE2' | 'RE3'): OfficialMetricSpec {
+function rcaevalMetric(suite: RcaEvalSuite): OfficialMetricSpec {
   return {
     id: `rcaeval-${suite.toLowerCase()}-avg5`,
     name: `RCAEval ${suite} AC@k / Avg@5`,
