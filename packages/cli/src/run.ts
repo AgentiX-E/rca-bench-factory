@@ -37,6 +37,7 @@ import {
   runOfficialRegression,
   SCORE_TARGET_IDS,
   scoreExport,
+  TARGET_REQUIREMENTS,
   sha256Bytes,
   transformBatch,
 } from '@rca-bench-factory/core';
@@ -59,7 +60,6 @@ import type {
   PrimeCaseSource,
   RcaEvalSuite,
   ScoreTargetId,
-  SignalKind,
   SkippedCase,
   SourceRecord,
   TransformResult,
@@ -106,20 +106,22 @@ function requireArray<T>(raw: string, flag: string): T[] {
   return parsed as T[];
 }
 
-/** Map a target id to the G1 structural-gate contract it must satisfy. */
+/**
+ * Map a target id to the G1 structural-gate contract it must satisfy.
+ *
+ * The required modalities are read from `TARGET_REQUIREMENTS` rather than
+ * restated here. This function used to carry its own nine-row table, and it had
+ * already drifted from the coverage report's: that one asked `cloud-opsbench`
+ * for metrics, logs and traces, this one for metrics alone, so `gate` admitted a
+ * log-less bundle that `report` quarantined. Two tables over one question have
+ * two answers, and neither is the rule.
+ *
+ * `requiresQuery` stays here because it is a *structural-gate* fact, not a
+ * modality requirement - OpenRCA 1.0's task index is derived from the query, and
+ * no other target's layout depends on it.
+ */
 function g1OptionsForTarget(target: ScoreTargetId): G1Options {
-  const requiredSignals: Record<ScoreTargetId, SignalKind[]> = {
-    'openrca-1.0': ['metric', 'trace'],
-    'openrca-2.0': ['metric', 'trace'],
-    'rcaeval-re1': ['metric'],
-    'rcaeval-re2': ['metric', 'log'],
-    'rcaeval-re3': ['metric', 'log', 'trace'],
-    rca100: ['metric', 'log', 'trace', 'event', 'alert'],
-    aiops2025: ['metric', 'log', 'trace'],
-    'cloud-opsbench': ['metric'],
-    itbench: ['metric', 'log', 'trace'],
-  };
-  return { requiredSignals: requiredSignals[target], requiresQuery: target === 'openrca-1.0' };
+  return { requiredSignals: TARGET_REQUIREMENTS[target], requiresQuery: target === 'openrca-1.0' };
 }
 
 /**

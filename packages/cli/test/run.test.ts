@@ -1113,6 +1113,128 @@ describe('run - gate', () => {
     expect(code).toBe(1);
     expect(err.join('')).toContain('error');
   });
+
+  /**
+   * Two commands, one target, one answer.
+   *
+   * `gate` and `report` both run the G1 structural gate for a target, and each
+   * carried its own hand-written table of "which modalities does this target
+   * need". Eight of the nine rows agreed; `cloud-opsbench` did not - the gate
+   * asked for metrics only, the coverage report embedded in `report` asked for
+   * metrics, logs and traces. So one command quarantined a bundle for a missing
+   * log while the other admitted it, and nothing in the product could tell you
+   * which was right, because both were just lists.
+   */
+  it('gives the same G1 verdict as the report page, for every target', async () => {
+    // A bundle with metrics and no logs: the one modality the two tables
+    // disagreed about. Measured through both real commands rather than by
+    // comparing the tables themselves, so the test fails if either side drifts.
+    const withoutLogs = minimalBundle();
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(withoutLogs));
+
+    for (const target of [
+      'openrca-1.0',
+      'openrca-2.0',
+      'rcaeval-re1',
+      'rcaeval-re2',
+      'rcaeval-re3',
+      'rca100',
+      'aiops2025',
+      'cloud-opsbench',
+      'itbench',
+    ] as const) {
+      const gated: string[] = [];
+      await run(['gate', '--input', 'bundle.json', '--target', target], { cwd: dir, stdout: (s) => gated.push(s) });
+      const reported: string[] = [];
+      await run(['report', '--input', 'bundle.json', '--target', target], { cwd: dir, stdout: (s) => reported.push(s) });
+
+      // `gate` emits the report as JSON; the page renders the same verdict as
+      // markup. Both are read in their own format rather than through one
+      // shared regex, which is what the first draft of this test got wrong.
+      const gateVerdict = JSON.parse(gated.join('')).finalStatus as string;
+      const pageVerdict = /final: <span class="\w+">(\w+)<\/span>/.exec(reported.join(''))?.[1];
+      expect(pageVerdict, `${target}: gate said ${gateVerdict}, report rendered ${pageVerdict}`).toBe(gateVerdict);
+    }
+  });
+
+  it('quarantines a log-less bundle for the target that needs logs', async () => {
+    // The positive half, stated so the test above cannot pass by both sides
+    // agreeing on "admitted": cloud-opsbench needs logs, and this bundle has
+    // none, so G1 must actually fire.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    await run(['gate', '--input', 'bundle.json', '--target', 'cloud-opsbench'], { cwd: dir, stdout: (s) => out.push(s) });
+    const report = JSON.parse(out.join(''));
+    const g1 = report.results.find((r: { gateId: string }) => r.gateId === 'G1');
+    const missing = g1.violations
+      .filter((v: { code: string }) => v.code === 'MISSING_SIGNAL')
+      .map((v: { fieldPath: string }) => v.fieldPath);
+    expect(missing).toContain('case-001.signals.log');
+  });
+
+  /**
+   * The gate asks for exactly the declared modalities, and no more.
+   *
+   * The differential test above proves `gate` and `report` agree, but both read
+   * the same table, so they agree even when the table is wrong - injection I2
+   * (demand every modality for every target) slipped past it unnoticed. This
+   * pins the requirement to the modalities the *bundle* has: the minimal bundle
+   * carries a metric and nothing else, so any extra demand must show up as a
+   * violation naming it, and an absent one must not.
+   */
+  it.each([
+    ['rcaeval-re1', []],
+    ['openrca-1.0', ['case-001.signals.trace']],
+    ['openrca-2.0', ['case-001.signals.trace']],
+    ['rcaeval-re2', ['case-001.signals.log']],
+    ['rcaeval-re3', ['case-001.signals.log', 'case-001.signals.trace']],
+    ['cloud-opsbench', ['case-001.signals.log', 'case-001.signals.trace']],
+    ['itbench', ['case-001.signals.log', 'case-001.signals.trace']],
+    ['aiops2025', ['case-001.signals.log', 'case-001.signals.trace']],
+    ['rca100', ['case-001.signals.log', 'case-001.signals.trace', 'case-001.signals.event', 'case-001.signals.alert']],
+  ] as const)('demands exactly the modalities %s needs', async (target, expected) => {
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(minimalBundle()));
+    const out: string[] = [];
+    await run(['gate', '--input', 'bundle.json', '--target', target], { cwd: dir, stdout: (s) => out.push(s) });
+    const g1 = JSON.parse(out.join('')).results.find((r: { gateId: string }) => r.gateId === 'G1');
+    const missing = g1.violations
+      .filter((v: { code: string }) => v.code === 'MISSING_SIGNAL')
+      .map((v: { fieldPath: string }) => v.fieldPath)
+      .sort();
+    expect(missing).toEqual([...expected].sort());
+  });
+
+  /**
+   * `requiresQuery` is a structural-gate fact of one target, not of the class.
+   *
+   * It had no test at all: injections I4 and I5 - pinning it false forever, and
+   * pinning it true forever - both left the suite green. OpenRCA 1.0's task
+   * index is derived from the query, so a bundle with no query cannot be
+   * indexed; no other target's layout reads it, so demanding it elsewhere would
+   * reject bundles those targets can represent perfectly.
+   */
+  it('requires a query for openrca-1.0 and for nothing else', async () => {
+    const dir = await makeDir();
+    const noQuery = structuredClone(minimalBundle());
+    delete (noQuery.cases[0] as { query?: string }).query;
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(noQuery));
+
+    const violationFor = async (target: string): Promise<boolean> => {
+      const out: string[] = [];
+      await run(['gate', '--input', 'bundle.json', '--target', target], { cwd: dir, stdout: (s) => out.push(s) });
+      const g1 = JSON.parse(out.join('')).results.find((r: { gateId: string }) => r.gateId === 'G1');
+      return g1.violations.some((v: { code: string }) => v.code === 'MISSING_QUERY');
+    };
+
+    expect(await violationFor('openrca-1.0')).toBe(true);
+    // Every other target, so "requires a query" cannot become a blanket rule.
+    for (const target of ['openrca-2.0', 'rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench']) {
+      expect(await violationFor(target), `${target} must not require a query`).toBe(false);
+    }
+  });
 });
 
 describe('run - case', () => {
