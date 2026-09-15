@@ -39,17 +39,26 @@ import type { Entity, EntityEdge, EntityGraph, FaultCase, IrBundle, TelemetrySig
  * enters the repository. All filesystem access stays in the CLI.
  */
 
-/** Datasets the ingest path understands. */
-export type PrimeDatasetId =
-  | 'rcaeval'
-  | 'openrca-1.0'
-  | 'openrca-2.0'
-  | 'rca100'
-  | 'aiops2025'
-  | 'cloud-opsbench'
-  | 'itbench';
-
-export const PRIME_DATASET_IDS: readonly PrimeDatasetId[] = [
+/**
+ * The ingest dataset vocabulary, declared once.
+ *
+ * The type is derived from this tuple rather than written beside it, and the
+ * difference is not cosmetic. Written beside it, the annotation
+ * `readonly PrimeDatasetId[]` enforced only that every member of the array was
+ * a `PrimeDatasetId` -- never that the array carried every one of them. A member
+ * could therefore be dropped from the array, the CLI would refuse
+ * `ingest --target <it>` with a message that read like operator error, the
+ * ingest path would reject it as an `unknown dataset`, and the whole suite
+ * stayed green -- because the only two guards both iterated *this* array, so
+ * removing a member simply shrank the loop they ran.
+ *
+ * Deriving the type closes that: the tuple is the vocabulary, so a member cannot
+ * be removed from the list the runtime reads while the type still admits it.
+ *
+ * `rcaeval` leads because it is the primary dataset; the order is the operator's
+ * reference in `ingest --help`, so it is part of the contract and asserted.
+ */
+export const PRIME_DATASET_IDS = [
   'rcaeval',
   'openrca-1.0',
   'openrca-2.0',
@@ -57,7 +66,10 @@ export const PRIME_DATASET_IDS: readonly PrimeDatasetId[] = [
   'aiops2025',
   'cloud-opsbench',
   'itbench',
-];
+] as const;
+
+/** Datasets the ingest path understands. Derived from `PRIME_DATASET_IDS`. */
+export type PrimeDatasetId = (typeof PRIME_DATASET_IDS)[number];
 
 /** How one file is read. Omitted fields fall back to detection, then defaults. */
 export interface PrimeFileSpec {
