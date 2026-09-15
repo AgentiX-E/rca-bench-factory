@@ -1,5 +1,5 @@
 /**
- * Minimal RFC 4180 CSV reader.
+ * Minimal RFC 4180 CSV reader and writer.
  *
  * The official OpenRCA evaluator consumes `record.csv` and `groundtruth.csv`
  * through `pandas.read_csv`, and the fields it cares about (`prediction`,
@@ -15,6 +15,48 @@
  *  - rows separated by LF or CRLF;
  *  - a trailing newline does not produce an empty trailing row.
  */
+
+/**
+ * A CSV cell value.
+ *
+ * `undefined` and `null` are part of the type because the exporters write
+ * positional rows, and an optional IR field that is absent still occupies its
+ * column. Accepting them here is what makes the absent-value rule below
+ * expressible in one place instead of at every call site.
+ */
+export type CsvCell = string | number | undefined | null;
+
+/**
+ * Quote one cell if it contains a comma, a double quote or a newline.
+ *
+ * An absent value becomes an empty cell. That is the only spelling of "nothing
+ * observed" a CSV can carry: `String(null)` produces the four characters
+ * `null`, which a reader cannot distinguish from a value someone actually
+ * recorded. The distinction matters because the consumers are benchmark
+ * scorers -- a parent span id of `null` is a span that claims a parent.
+ *
+ * The type is the full `CsvCell` union even for callers that never pass an
+ * absent value. A narrower signature would let a caller's `?? ''` be the only
+ * thing standing between a missing field and a fabricated one, and that
+ * default is exactly what two private copies of this helper used to disagree
+ * about.
+ */
+export function csvCell(value: CsvCell): string {
+  if (value == null) return '';
+  const s = String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Render a header and its rows as CSV text with a trailing newline.
+ *
+ * The trailing newline is part of the format rather than a courtesy: a file
+ * without it is read as one unterminated record by some tools, and the
+ * Golden Master anchors hash these bytes.
+ */
+export function renderCsv(header: string[], rows: CsvCell[][]): string {
+  return [header.join(','), ...rows.map((r) => r.map(csvCell).join(','))].join('\n') + '\n';
+}
 
 /** Split one CSV text into rows of raw field values. */
 export function parseCsvRows(text: string): string[][] {

@@ -1,5 +1,7 @@
 import type { FaultCase, IrBundle, TelemetrySignal } from '../ir/types.js';
 import { isoUtcToOffsetIso, isoUtcToEpochMs } from '../util/time.js';
+import { renderCsv } from '../util/csv.js';
+import type { CsvCell } from '../util/csv.js';
 import { isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import { assertExportableBundle } from './guard.js';
 
@@ -126,8 +128,8 @@ export function buildScoringPoints(
 }
 
 /** Build `{system}/groundtruth.csv`, the official `-q` artefact. */
-export function buildGroundTruthCsv(rows: Array<Array<string | number>>): string {
-  return toCsv(['task_index', 'instruction', 'scoring_points'], rows);
+export function buildGroundTruthCsv(rows: CsvCell[][]): string {
+  return renderCsv(['task_index', 'instruction', 'scoring_points'], rows);
 }
 
 export interface ExportedFiles {
@@ -159,14 +161,6 @@ export interface ExportOutcome {
   skipped: SkippedCase[];
 }
 
-function csvEscape(value: string | number): string {
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function toCsv(header: string[], rows: Array<Array<string | number>>): string {
-  return [header.join(','), ...rows.map((r) => r.map(csvEscape).join(','))].join('\n') + '\n';
-}
 
 function dateOf(isoUtc: string): string {
   return isoUtcToOffsetIso(isoUtc, OPENRCA_OFFSET_MINUTES).slice(0, 10).replace(/-/g, '_');
@@ -194,7 +188,7 @@ export function buildMetricCsv(signals: TelemetrySignal[]): string {
       return [localTime(s.timestamp), cmdbId(s), p.name, p.value];
     })
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  return toCsv(['timestamp', 'cmdb_id', 'kpi_name', 'value'], rows);
+  return renderCsv(['timestamp', 'cmdb_id', 'kpi_name', 'value'], rows);
 }
 
 export function buildLogCsv(signals: TelemetrySignal[]): string {
@@ -205,7 +199,7 @@ export function buildLogCsv(signals: TelemetrySignal[]): string {
       return [localTime(s.timestamp), cmdbId(s), p.severityText ?? '', p.body];
     })
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  return toCsv(['timestamp', 'cmdb_id', 'severity', 'message'], rows);
+  return renderCsv(['timestamp', 'cmdb_id', 'severity', 'message'], rows);
 }
 
 export function buildTraceCsv(signals: TelemetrySignal[]): string {
@@ -225,7 +219,7 @@ export function buildTraceCsv(signals: TelemetrySignal[]): string {
       ];
     })
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  return toCsv(
+  return renderCsv(
     ['timestamp', 'trace_id', 'span_id', 'parent_span_id', 'cmdb_id', 'span_name', 'duration_ms', 'status'],
     rows,
   );
@@ -308,11 +302,11 @@ export function exportOpenRca(bundle: IrBundle): ExportOutcome {
   const systems = [...new Set(bundle.cases.map((c) => c.system))];
   for (const system of systems) {
     const ids = new Set(bundle.cases.filter((c) => c.system === system).map((c) => c.caseId));
-    files[`${system}/query.csv`] = toCsv(
+    files[`${system}/query.csv`] = renderCsv(
       ['instruction_id', 'query', 'occurrence_datetime'],
       queryRows.filter((r) => ids.has(String(r[0]))),
     );
-    files[`${system}/record.csv`] = toCsv(
+    files[`${system}/record.csv`] = renderCsv(
       ['instruction_id', 'prediction'],
       recordRows.filter((r) => ids.has(String(r[0]))),
     );

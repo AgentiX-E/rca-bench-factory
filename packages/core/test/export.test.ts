@@ -282,3 +282,104 @@ describe('exporters reject a bundle whose graph contradicts itself', () => {
     expect(() => run(validBundle())).not.toThrow();
   });
 });
+
+/**
+ * The CSV writers used to be two private copies, and they disagreed.
+ *
+ * `openrca.ts` declared `csvEscape(value: string | number)` -- `String(value)`
+ * unbranched -- while `rcaeval.ts` declared `csvEscape(value: string | number |
+ * undefined | null)` and mapped `null`/`undefined` to `''`. Same name, same
+ * output on the inputs either could accept, opposite output on the ones only
+ * one of them accepted. Nothing in the product decided which was right, because
+ * each was private to its own file and neither was asserted directly.
+ *
+ * A reader has to know what a cell holds before it can know which writer
+ * produced it, and that is the definition of a format that is not specified.
+ *
+ * The assertions below are run **against each writer separately**, not one
+ * against the other. A differential alone is not enough: when both writers are
+ * handed a value only one of them can receive, comparing them only exercises
+ * the writer that actually took it, and the other test passes without reading
+ * anything. Each writer is therefore asked the question on its own terms.
+ */
+describe('CSV cells · an absent value is an empty cell, not the word "null"', () => {
+  /**
+   * A span at the root of a trace: no parent, no status.
+   *
+   * Both fields are optional in the IR and both are positional in the CSV, so
+   * an absent one still occupies its column. This is the only fixture in the
+   * suite that reaches the branches where the two copies disagreed.
+   */
+  const rootSpan: TelemetrySignal = {
+    irVersion: '2.0',
+    resource: { 'service.name': 'order' },
+    timestamp: '2026-09-06T00:01:00.000Z',
+    signal: 'trace',
+    payload: { kind: 'trace', traceId: 't1', spanId: 's1', spanName: 'GET /order', durationMs: 5 },
+  };
+
+  /** The RCAEval trace CSV one case produces. */
+  function rcaevalTraceCsv(): string {
+    return Object.entries(exportRcaEval(validBundle({ signals: { 'case-001': [rootSpan] } }), 'RE2').files).find(
+      ([p]) => p.endsWith('/traces.csv'),
+    )?.[1] as string;
+  }
+
+  /** The OpenRCA trace CSV one case produces. */
+  function openrcaTraceCsv(): string {
+    return Object.entries(exportOpenRca(validBundle({ signals: { 'case-001': [rootSpan] } })).files).find(([p]) =>
+      p.endsWith('/telemetry/trace/case-001.csv'),
+    )?.[1] as string;
+  }
+
+  /**
+   * Every CSV a trace signal reaches, named so a failure says which one broke.
+   *
+   * Two writers, and the two columns on which they used to disagree. Listing
+   * the writers rather than picking a representative one is deliberate: the
+   * defect was that the two files could answer differently, so a test that
+   * only measures one of them cannot see it return.
+   */
+  const writers: Array<[string, () => string]> = [
+    ['rcaeval', rcaevalTraceCsv],
+    ['openrca', openrcaTraceCsv],
+  ];
+
+  it.each(writers)('writes an empty parent span id for a root span (%s)', (_name, csvOf) => {
+    const row = parseCsv(csvOf())[1] as string[];
+    expect(row[3]).toBe('');
+  });
+
+  it.each(writers)('writes an empty status cell for a span whose status is absent (%s)', (_name, csvOf) => {
+    const row = parseCsv(csvOf())[1] as string[];
+    expect(row[7]).toBe('');
+  });
+
+  it.each(writers)('never spells an absent value as "null" or "undefined" (%s)', (_name, csvOf) => {
+    // Asserted over the whole file, not one column: the defect was in the
+    // escaping helper, so it could surface in any cell a writer filled from an
+    // optional field, including ones added later.
+    const csv = csvOf();
+    expect(csv).not.toContain('null');
+    expect(csv).not.toContain('undefined');
+  });
+
+  it.each(writers)('keeps the column count fixed when optional fields are absent (%s)', (_name, csvOf) => {
+    // A shorter row would be padded by the reader, so the row length is what
+    // distinguishes "an absent value" from "a column this writer forgot".
+    const rows = parseCsv(csvOf());
+    expect(rows[0]).toHaveLength(8);
+    expect(rows[1]).toHaveLength(8);
+  });
+
+  it('spells an absent value the same way in both writers', () => {
+    // The differential, kept as the statement of the invariant itself: one
+    // format, one answer. It is a weaker test than the four above -- it says
+    // the writers agree, not that they agree on the right thing -- which is
+    // exactly why the value is asserted separately rather than here alone.
+    const rcaevalCell = (parseCsv(rcaevalTraceCsv())[1] as string[])[3];
+    const openrcaCell = (parseCsv(openrcaTraceCsv())[1] as string[])[3];
+    expect(openrcaCell).toBe(rcaevalCell);
+    expect(openrcaCell).toBe('');
+  });
+});

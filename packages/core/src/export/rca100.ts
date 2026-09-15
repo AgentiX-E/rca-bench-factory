@@ -10,6 +10,7 @@ import type {
 import { isAlertSignal, isEventSignal, isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
+import { renderJson } from '../util/json.js';
 
 /**
  * RCA100 exporter (AgenticOpsEval, Alibaba Cloud Tianchi 2025).
@@ -76,10 +77,6 @@ export interface Rca100ModalityTable {
 }
 
 
-function toJson(value: unknown): string {
-  return JSON.stringify(value, null, 2) + '\n';
-}
-
 /** Index graph entities by id and by every name/alias for reference resolution. */
 export function buildEntityIndex(graph: EntityGraph): EntityIndex {
   const byId = new Map<string, Entity>();
@@ -133,7 +130,7 @@ export function buildTopologyJson(graph: EntityGraph): string {
     dst_type: UMODEL_TYPE[byId.get(edge.to)?.kind ?? 'external'],
     relation: edge.relation,
   }));
-  return toJson({
+  return renderJson({
     entities,
     edges,
     stats: { entities_total: entities.length, edges_total: edges.length },
@@ -259,7 +256,7 @@ export function buildRca100Alerts(signals: TelemetrySignal[], index: EntityIndex
 
 export function buildTaskJson(fc: FaultCase, index: EntityIndex): string {
   const entry = index.byId.get(fc.groundTruth.rootCauseEntityId);
-  return toJson({
+  return renderJson({
     task_id: fc.caseId,
     alert_title: fc.query ?? `fault: ${fc.fault.type}`,
     alert_window: { start: fc.window.start, end: fc.window.end },
@@ -311,7 +308,7 @@ export function buildGroundTruthJson(fc: FaultCase, index: EntityIndex): string 
     reasoning: { steps },
   });
 
-  return toJson({
+  return renderJson({
     task_id: fc.caseId,
     case_id: fc.caseId,
     root_cause_entities: rootCauseEntities,
@@ -357,11 +354,11 @@ export function exportRca100(bundle: IrBundle): ExportOutcome {
     }
 
     const base = `cases/${fc.caseId}`;
-    files[`${base}/metrics.json`] = toJson(metrics.rows);
-    files[`${base}/logs.json`] = toJson(logs.rows);
-    files[`${base}/traces.json`] = toJson(traces.rows);
-    files[`${base}/events.json`] = toJson(events.rows);
-    files[`${base}/alerts.json`] = toJson(alerts.rows);
+    files[`${base}/metrics.json`] = renderJson(metrics.rows);
+    files[`${base}/logs.json`] = renderJson(logs.rows);
+    files[`${base}/traces.json`] = renderJson(traces.rows);
+    files[`${base}/events.json`] = renderJson(events.rows);
+    files[`${base}/alerts.json`] = renderJson(alerts.rows);
     files[`${base}/task.json`] = buildTaskJson(fc, index);
     files[`${base}/topology.json`] = buildTopologyJson(bundle.graph);
     files[`answer_key/${fc.caseId}.gt.json`] = buildGroundTruthJson(fc, index);

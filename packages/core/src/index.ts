@@ -319,8 +319,8 @@ export {
 } from './export/openrca.js';
 export type { OpenRcaTaskIndex } from './export/openrca.js';
 
-export { parseCsvObjects, parseCsvRows, csvColumn } from './util/csv.js';
-export { isRecord, readString, readStringArray, safeJson } from './util/json.js';
+export { csvCell, csvColumn, parseCsvObjects, parseCsvRows, renderCsv } from './util/csv.js';
+export { isRecord, readString, readStringArray, renderJson, safeJson } from './util/json.js';
 
 export { sha256, sha256Bytes } from './util/hash.js';
 

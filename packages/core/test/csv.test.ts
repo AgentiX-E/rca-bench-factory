@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvColumn, parseCsvObjects, parseCsvRows } from '../src/util/csv.js';
+import { csvCell, csvColumn, parseCsvObjects, parseCsvRows, renderCsv } from '../src/util/csv.js';
 
 /**
  * CSV reader tests.
@@ -109,5 +109,80 @@ describe('csvColumn', () => {
 
   it('yields an empty string for a column that does not exist', () => {
     expect(csvColumn('a\n1\n2', 'zzz')).toEqual(['', '']);
+  });
+});
+
+/**
+ * The writer's contract, and the round trip that ties it to the reader.
+ *
+ * `csvCell` and `renderCsv` were once private to each exporting module, and the
+ * two copies disagreed about an absent value: one wrote `''`, the other wrote
+ * the four characters `undefined`. Neither was wrong by its own lights, because
+ * neither was specified anywhere -- the only fixed point was that a reader
+ * could not tell which writer had produced a file.
+ *
+ * These tests state the rule once, on the value, so a caller cannot pick the
+ * other answer by accident.
+ */
+describe('csvCell', () => {
+  it('leaves a plain value unquoted', () => {
+    expect(csvCell('order')).toBe('order');
+    expect(csvCell(0)).toBe('0');
+  });
+
+  it('quotes a value containing a comma, a quote or a newline', () => {
+    expect(csvCell('a,b')).toBe('"a,b"');
+    expect(csvCell('say "hi"')).toBe('"say ""hi"""');
+    expect(csvCell('one\ntwo')).toBe('"one\ntwo"');
+  });
+
+  it('writes an absent value as an empty cell', () => {
+    // The whole point of the helper. `String(undefined)` would produce the
+    // eight characters `undefined`, which a benchmark scorer cannot tell apart
+    // from a reading someone actually recorded.
+    expect(csvCell(undefined)).toBe('');
+    expect(csvCell(null)).toBe('');
+  });
+
+  it('does not quote an empty cell', () => {
+    // `""` and `` are the same value to a reader but different bytes to a
+    // checksum, so the writer has to be unambiguous about which it emits.
+    expect(csvCell(undefined)).not.toBe('""');
+  });
+});
+
+describe('renderCsv', () => {
+  it('joins the header and rows with commas and newlines', () => {
+    expect(renderCsv(['a', 'b'], [['1', '2']])).toBe('a,b\n1,2\n');
+  });
+
+  it('ends the file with exactly one newline', () => {
+    const text = renderCsv(['a'], [['1']]);
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text.endsWith('\n\n')).toBe(false);
+  });
+
+  it('emits the header alone when there are no rows', () => {
+    expect(renderCsv(['a', 'b'], [])).toBe('a,b\n');
+  });
+
+  it('keeps every column of a row that holds an absent value', () => {
+    // A dropped cell would shift every later column left, so the row length is
+    // what distinguishes "an absent value" from "a column this writer forgot".
+    const text = renderCsv(['a', 'b', 'c'], [['1', undefined, '3']]);
+    expect(text).toBe('a,b,c\n1,,3\n');
+  });
+
+  it('round-trips through the reader', () => {
+    const rows: Array<Array<string | number | undefined | null>> = [
+      ['plain', 'has,comma', 'has"quote'],
+      ['has\nnewline', 42, undefined],
+    ];
+    const text = renderCsv(['x', 'y', 'z'], rows);
+    expect(parseCsvRows(text)).toEqual([
+      ['x', 'y', 'z'],
+      ['plain', 'has,comma', 'has"quote'],
+      ['has\nnewline', '42', ''],
+    ]);
   });
 });

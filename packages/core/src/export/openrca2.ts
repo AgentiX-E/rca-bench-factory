@@ -2,6 +2,7 @@ import type { EvidenceCheckpoint, FaultCase, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { buildEntityIndex, type EntityIndex } from './rca100.js';
 import { assertExportableBundle } from './guard.js';
+import { renderJson } from '../util/json.js';
 
 /**
  * OpenRCA 2.0 exporter (PAVE step-wise causal-path annotation).
@@ -28,10 +29,6 @@ import { assertExportableBundle } from './guard.js';
 
 export const OPENRCA2_TARGET_ID = 'openrca-2.0';
 export const OPENRCA2_CONTRACT_VERSION = 'pave-v1';
-
-function toJson(value: unknown): string {
-  return JSON.stringify(value, null, 2) + '\n';
-}
 
 
 /**
@@ -75,7 +72,7 @@ export function buildCausalPathJson(fc: FaultCase, index: EntityIndex): string {
     };
   });
 
-  return toJson({
+  return renderJson({
     case_id: fc.caseId,
     system: fc.system,
     root_cause: {

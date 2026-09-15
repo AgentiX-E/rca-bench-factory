@@ -2,6 +2,7 @@ import type { FaultCase, IrBundle, TelemetrySignal } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import { assertExportableBundle } from './guard.js';
+import { renderCsv } from '../util/csv.js';
 
 /**
  * RCAEval exporter (RMIT, ASE'24 / WWW'25).
@@ -21,15 +22,6 @@ export const RCAEVAL_CONTRACT_VERSION = 'www25';
 
 export type RcaEvalSuite = 'RE1' | 'RE2' | 'RE3';
 
-function csvEscape(value: string | number | undefined | null): string {
-  if (value == null) return '';
-  const s = String(value);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function toCsv(header: string[], rows: Array<Array<string | number | undefined | null>>): string {
-  return [header.join(','), ...rows.map((r) => r.map(csvEscape).join(','))].join('\n') + '\n';
-}
 
 /** Directory name convention: `{benchmark}{service}{fault}_{instance}`. */
 export function caseDirName(suite: RcaEvalSuite, fc: FaultCase, instance: number): string {
@@ -65,7 +57,7 @@ export function buildLogsCsv(signals: TelemetrySignal[]): string {
       const p = s.payload;
       return [s.timestamp, s.resource['service.name'], p.severityText ?? '', p.body];
     });
-  return toCsv(['timestamp', 'service', 'severity', 'message'], rows);
+  return renderCsv(['timestamp', 'service', 'severity', 'message'], rows);
 }
 
 export function buildTracesCsv(signals: TelemetrySignal[]): string {
@@ -84,7 +76,7 @@ export function buildTracesCsv(signals: TelemetrySignal[]): string {
         p.status ?? '',
       ];
     });
-  return toCsv(
+  return renderCsv(
     ['timestamp', 'trace_id', 'span_id', 'parent_span_id', 'service', 'span_name', 'duration_ms', 'status'],
     rows,
   );

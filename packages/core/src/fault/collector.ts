@@ -1,4 +1,5 @@
 import type { FaultCategory } from '../ir/types.js';
+import { isRecord } from '../util/json.js';
 
 /**
  * Fault collector.
@@ -67,10 +68,6 @@ export function inferFaultCategory(type: string): FaultCategory {
     }
   }
   return 'unknown';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isFaultCategory(value: string): value is FaultCategory {

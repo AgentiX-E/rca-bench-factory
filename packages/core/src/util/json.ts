@@ -32,3 +32,17 @@ export function readStringArray(source: Record<string, unknown>, key: string): s
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === 'string');
 }
+
+/**
+ * Serialize a value as the contract's JSON text: two-space indent, one filename
+ * newline.
+ *
+ * Every `.json` this product writes goes through here. The trailing newline and
+ * the indent width are not style choices -- they are what the bytes of the
+ * exported artefacts are hashed against, and four modules used to carry their
+ * own copy of this expression, which is four places the format could change
+ * without a test noticing.
+ */
+export function renderJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}

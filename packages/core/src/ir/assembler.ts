@@ -1,6 +1,7 @@
 import { parseFaultSpec, type InjectionMethod } from '../fault/collector.js';
 import { irBundleSchema } from './schema.js';
 import { IR_VERSION, type EntityGraph, type FaultCase, type FaultCategory, type GroundTruth, type IrBundle, type TelemetrySignal } from './types.js';
+import { isRecord } from '../util/json.js';
 
 /**
  * Bundle assembler.
@@ -39,10 +40,6 @@ export interface BundleDraft {
 }
 
 export type BundleAssemblyResult = { ok: true; bundle: IrBundle } | { ok: false; error: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Assemble a bundle from an untrusted draft.
