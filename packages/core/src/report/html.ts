@@ -1,6 +1,7 @@
 import { findAmbiguousAliases, findDanglingEdgeRefs, findInvalidRelations } from '../entity/graph.js';
 import type { ReferenceIssue } from '../entity/graph.js';
 import type { CoverageReport, TargetFeasibility } from '../coverage.js';
+import { SIGNAL_KINDS } from '../ir/types.js';
 import type { Entity, EntityEdge, EntityGraph, QualityGateReport, SignalKind } from '../ir/types.js';
 import type { SkippedCase } from '../export/openrca.js';
 import type { ScoreReport, ScoreCheck, StructureReport } from '../score/score.js';
@@ -18,8 +19,6 @@ import type { ScoreReport, ScoreCheck, StructureReport } from '../score/score.js
  * details, the page title) passes through `escapeHtml` before being interpolated,
  * so a hostile message or title can never inject markup.
  */
-
-const SIGNAL_KINDS: readonly SignalKind[] = ['metric', 'log', 'trace', 'event', 'alert', 'profile'];
 
 /** Escape the five HTML-significant characters. */
 export function escapeHtml(text: string): string {

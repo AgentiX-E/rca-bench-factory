@@ -1,8 +1,9 @@
 import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
 import type { FileFormat, FileSignalKind } from '../ingest/file.js';
 import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
+import { SIGNAL_KINDS as IR_SIGNAL_KINDS } from '../ir/types.js';
 import { z } from 'zod';
-import type { Entity, EntityEdge } from '../ir/types.js';
+import type { Entity, EntityEdge, SignalKind } from '../ir/types.js';
 import type { TimeLayout } from '../util/time.js';
 import { RCAEVAL_SUITES, type RcaEvalSuite } from '../export/rcaeval.js';
 import { SCORE_TARGET_IDS } from '../score/score.js';
@@ -75,7 +76,20 @@ export type CliCommand =
 export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; error: string };
 
 const FILE_FORMATS: readonly string[] = ['csv', 'tsv', 'jsonl', 'json'];
-const SIGNAL_KINDS: readonly string[] = ['metric', 'log', 'trace'];
+/**
+ * The signal kinds `source` can detect, as a deliberate subset of the IR's
+ * vocabulary.
+ *
+ * This is narrower than `SIGNAL_KINDS` because `source` reads one file of one
+ * shape and can only tell a metric from a log from a trace. Writing the subset
+ * by filtering the vocabulary -- rather than as a second literal -- is what
+ * keeps an intentional narrowing distinguishable from a stale copy that has
+ * silently lost a member.
+ */
+const SOURCE_SIGNAL_KINDS: readonly SignalKind[] = IR_SIGNAL_KINDS.filter(
+  (k): k is SignalKind => k === 'metric' || k === 'log' || k === 'trace',
+);
+const SIGNAL_KINDS: readonly string[] = SOURCE_SIGNAL_KINDS;
 const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
 const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
 const SUITES: readonly RcaEvalSuite[] = RCAEVAL_SUITES;

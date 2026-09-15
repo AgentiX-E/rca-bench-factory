@@ -16,8 +16,19 @@
 /** Current IR contract version. Bump on any breaking change. */
 export const IR_VERSION = '2.0';
 
-/** Observability signal kinds supported by the IR. */
-export type SignalKind = 'metric' | 'log' | 'trace' | 'event' | 'alert' | 'profile';
+/**
+ * Observability signal kinds supported by the IR.
+ *
+ * The type is derived from the tuple so the values and the type cannot
+ * disagree, and every consumer that needs the list at runtime -- the coverage
+ * computation, the HTML report's modality rows, and the CLI's `--signal-kind`
+ * set -- reads this rather than restating it. Two consumers previously kept
+ * their own copy under a different name, and dropping a member from the
+ * report's copy silently removed a modality row from the rendered evidence.
+ */
+export const SIGNAL_KINDS = ['metric', 'log', 'trace', 'event', 'alert', 'profile'] as const;
+
+export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
 /** Where a field value came from. */
 export type ProvenanceSource = 'direct' | 'derived' | 'inferred' | 'defaulted';

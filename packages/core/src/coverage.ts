@@ -1,3 +1,4 @@
+import { SIGNAL_KINDS } from './ir/types.js';
 import type { IrBundle, SignalKind } from './ir/types.js';
 import { SCORE_TARGET_IDS } from './score/score.js';
 import type { ScoreTargetId } from './score/score.js';
@@ -65,8 +66,6 @@ export interface CoverageReport {
   feasibility: TargetFeasibility[];
 }
 
-const ALL_KINDS: SignalKind[] = ['metric', 'log', 'trace', 'event', 'alert', 'profile'];
-
 /**
  * Coverage is measured per case: a modality counts as covered for a case when at
  * least one signal of that kind exists in the case window.
@@ -84,16 +83,16 @@ export function computeCoverage(bundle: IrBundle): CoverageReport {
 
   for (const c of bundle.cases) {
     const kinds = new Set((bundle.signals[c.caseId] ?? []).map((s) => s.signal));
-    for (const kind of ALL_KINDS) {
+    for (const kind of SIGNAL_KINDS) {
       if (kinds.has(kind)) hits[kind] += 1;
     }
   }
 
   const coverage = Object.fromEntries(
-    ALL_KINDS.map((k) => [k, total === 0 ? 0 : hits[k] / total]),
+    SIGNAL_KINDS.map((k) => [k, total === 0 ? 0 : hits[k] / total]),
   ) as Record<SignalKind, number>;
 
-  const present = new Set(ALL_KINDS.filter((k) => coverage[k] > 0));
+  const present = new Set(SIGNAL_KINDS.filter((k) => coverage[k] > 0));
   // Iterated over `SCORE_TARGET_IDS`, not over this module's own keys, so the
   // report's population is decided by the product rather than by whichever rows
   // this table happens to contain.
@@ -118,7 +117,7 @@ export function computeCoverage(bundle: IrBundle): CoverageReport {
 export function formatCoverageReport(report: CoverageReport): string {
   const lines: string[] = [];
   lines.push('Observability Coverage Report');
-  for (const k of ALL_KINDS) {
+  for (const k of SIGNAL_KINDS) {
     lines.push(`  ${k.padEnd(8)}: ${(report.coverage[k] * 100).toFixed(1)}%`);
   }
   lines.push('  ' + '-'.repeat(46));
