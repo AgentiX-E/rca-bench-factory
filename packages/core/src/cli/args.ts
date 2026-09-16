@@ -1,10 +1,10 @@
 import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
-import type { FileFormat, FileSignalKind } from '../ingest/file.js';
+import { FILE_FORMATS, type FileFormat, type FileSignalKind } from '../ingest/file.js';
 import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
 import { SIGNAL_KINDS as IR_SIGNAL_KINDS } from '../ir/types.js';
 import { z } from 'zod';
 import type { Entity, EntityEdge, SignalKind } from '../ir/types.js';
-import type { TimeLayout } from '../util/time.js';
+import { TIME_LAYOUTS, type TimeLayout } from '../util/time.js';
 import { RCAEVAL_SUITES, type RcaEvalSuite } from '../export/rcaeval.js';
 import { SCORE_TARGET_IDS } from '../score/score.js';
 import type { ScoreTargetId } from '../score/score.js';
@@ -22,7 +22,20 @@ export const CLI_VERSION = '0.1.0';
 
 export type ExportTarget = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval' | 'rca100' | 'aiops2025' | 'cloud-opsbench' | 'itbench';
 
-export type EvolveAction = 'propose' | 'approve' | 'reject' | 'stale';
+/**
+ * The `evolve` actions, declared once.
+ *
+ * The type is derived from this tuple rather than written beside it. The parser
+ * compared against a separate hand-written `readonly string[]`, and adding a
+ * member to that array was silent: `evolve ghost --input …` would have been
+ * accepted and then dispatched nowhere. `EVOLVE_ACTION_FLAGS` below is a
+ * per-action config and is inherently keyed; `satisfies Record<EvolveAction, …>`
+ * is what keeps it exhaustive over the same vocabulary.
+ */
+export const EVOLVE_ACTIONS = ['propose', 'approve', 'reject', 'stale'] as const;
+
+/** The `evolve` actions. Derived from `EVOLVE_ACTIONS`. */
+export type EvolveAction = (typeof EVOLVE_ACTIONS)[number];
 
 export type CliCommand =
   | { command: 'help'; topic?: string }
@@ -75,7 +88,10 @@ export type CliCommand =
 
 export type CliParseResult = { ok: true; command: CliCommand } | { ok: false; error: string };
 
-const FILE_FORMATS: readonly string[] = ['csv', 'tsv', 'jsonl', 'json'];
+// The comparison sets below are read, not restated. `FILE_FORMATS` and
+// `TIME_LAYOUTS` come from the modules that own them -- which switch
+// exhaustively over their unions -- so the CLI cannot admit a value the core
+// cannot honour, nor refuse one it can.
 /**
  * The signal kinds `source` can detect, as a deliberate subset of the IR's
  * vocabulary.
@@ -90,11 +106,9 @@ const SOURCE_SIGNAL_KINDS: readonly SignalKind[] = IR_SIGNAL_KINDS.filter(
   (k): k is SignalKind => k === 'metric' || k === 'log' || k === 'trace',
 );
 const SIGNAL_KINDS: readonly string[] = SOURCE_SIGNAL_KINDS;
-const TIME_LAYOUTS: readonly string[] = ['iso8601', 'rfc3339', 'unix_s', 'unix_ms', 'unix_us', 'unix_ns', 'java_log'];
 const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
 const SUITES: readonly RcaEvalSuite[] = RCAEVAL_SUITES;
 const SCORE_TARGETS: readonly string[] = SCORE_TARGET_IDS;
-const EVOLVE_ACTIONS: readonly string[] = ['propose', 'approve', 'reject', 'stale'];
 
 function isOneOf(value: string, allowed: readonly string[]): boolean {
   return allowed.includes(value);

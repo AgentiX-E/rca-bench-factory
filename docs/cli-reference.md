@@ -50,6 +50,9 @@ rca-bench source --path telemetry.csv [--format csv] [--signal-kind metric]
 
 - `--layout` is optional: when omitted, the layout is auto-detected from the first
   record's column names.
+- Valid `--format` values: `csv`, `tsv`, `jsonl`, `json`.
+- Valid `--time-layout` values: `iso8601`, `rfc3339`, `unix_s`, `unix_ms`, `unix_us`,
+  `unix_ns`, `java_log`.
 - Without `--output`, the `{ signals, quarantine }` result is written to stdout.
 - Every non-empty source record is either a signal or a quarantine entry — never
   silently dropped.

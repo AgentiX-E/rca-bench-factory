@@ -2,6 +2,7 @@ import { IR_VERSION } from '../ir/types.js';
 import type {
   LogPayload,
   MetricPayload,
+  SignalKind,
   SignalPayload,
   TelemetrySignal,
   TracePayload,
@@ -22,8 +23,29 @@ import { parseTimestamp, TimeParseError, type ParsedTime, type TimeLayout } from
  * an offset-less value without `assumeOffsetMinutes` is quarantined.
  */
 
-export type FileFormat = 'csv' | 'tsv' | 'jsonl' | 'json';
-export type FileSignalKind = 'metric' | 'log' | 'trace';
+/**
+ * The file formats this module can read, declared once.
+ *
+ * `FileFormat` is derived from this tuple rather than written beside it, for the
+ * same reason as `TIME_LAYOUTS` in `util/time.js`: `parseByFormat` below already
+ * switches exhaustively over the union and ends in a `never`, so the union cannot
+ * drift unobserved -- but the CLI kept its own `readonly string[]` of the same
+ * four names, outside that guard, and an addition there was completely silent.
+ * Exporting the tuple lets the CLI read it, so the exhaustiveness covers both.
+ */
+export const FILE_FORMATS = ['csv', 'tsv', 'jsonl', 'json'] as const;
+
+/** File formats this module can read. Derived from `FILE_FORMATS`. */
+export type FileFormat = (typeof FILE_FORMATS)[number];
+
+/**
+ * The signal kinds a flat file can carry: a deliberate subset of the IR's
+ * vocabulary, because a file holds one modality at a time.
+ *
+ * Written as a narrowing of `SignalKind` rather than as three more string
+ * literals, so it cannot keep a member the IR has already dropped.
+ */
+export type FileSignalKind = Extract<SignalKind, 'metric' | 'log' | 'trace'>;
 
 /** Column mapping from source column names to IR fields. */
 export interface FileLayout {

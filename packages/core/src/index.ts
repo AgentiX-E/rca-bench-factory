@@ -209,6 +209,7 @@ export {
   isoUtcToEpochMs,
   isoUtcToOffsetIso,
   parseTimestamp,
+  TIME_LAYOUTS,
 } from './util/time.js';
 export type { ParsedTime, TimeLayout } from './util/time.js';
 
@@ -223,6 +224,7 @@ export type { Dimension } from './util/unit.js';
 
 export {
   detectFileLayout,
+  FILE_FORMATS,
   ingestFile,
   parseDelimited,
   parseJsonArray,
@@ -349,7 +351,15 @@ export {
 } from './pack/example.js';
 export type { ExamplePackStep, ExampleTargetCommand } from './pack/example.js';
 
-export { CLI_VERSION, formatCommandHelp, formatHelp, formatVersion, HELP_TOPICS, parseCliArgs } from './cli/args.js';
+export {
+  CLI_VERSION,
+  EVOLVE_ACTIONS,
+  formatCommandHelp,
+  formatHelp,
+  formatVersion,
+  HELP_TOPICS,
+  parseCliArgs,
+} from './cli/args.js';
 export type { CliCommand, CliParseResult, EvolveAction, ExportTarget } from './cli/args.js';
 
 export {

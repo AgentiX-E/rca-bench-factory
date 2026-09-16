@@ -11,15 +11,34 @@
 /** Canonical output format: `YYYY-MM-DDTHH:mm:ss.sssZ`. */
 export const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
-/** Supported textual input layouts. */
-export type TimeLayout =
-  | 'iso8601'
-  | 'rfc3339'
-  | 'unix_s'
-  | 'unix_ms'
-  | 'unix_us'
-  | 'unix_ns'
-  | 'java_log';
+/**
+ * Supported textual input layouts, declared once.
+ *
+ * The type is derived from this tuple rather than written beside it. It matters
+ * here more than it looks, because this module's `parseTimestamp` already
+ * switches exhaustively over `TimeLayout` and ends in a `never` assignment -- so
+ * the union cannot gain or lose a member without the build failing. What that
+ * guard could not see was the CLI, which kept its own `readonly string[]` of the
+ * same seven names: `parseTimestamp` would happily parse a layout the CLI
+ * refused, and the CLI would admit one `parseTimestamp` rejected. Measured both
+ * ways, with the whole suite green.
+ *
+ * Deriving the type and exporting the tuple moves the CLI inside the
+ * exhaustiveness that already existed, which is stronger than any runtime net:
+ * both drift directions are now compile errors.
+ */
+export const TIME_LAYOUTS = [
+  'iso8601',
+  'rfc3339',
+  'unix_s',
+  'unix_ms',
+  'unix_us',
+  'unix_ns',
+  'java_log',
+] as const;
+
+/** Supported textual input layouts. Derived from `TIME_LAYOUTS`. */
+export type TimeLayout = (typeof TIME_LAYOUTS)[number];
 
 const JAVA_LOG_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})$/;
