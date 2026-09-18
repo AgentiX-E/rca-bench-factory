@@ -882,7 +882,7 @@ function parseIngest(args: string[]): CliParseResult {
     return { ok: false, error: 'ingest requires --source <dir>' };
   }
   const target = v.target;
-  if (typeof target !== 'string' || !isOneOf(target, PRIME_DATASET_IDS as readonly string[])) {
+  if (typeof target !== 'string' || !isOneOf(target, PRIME_DATASET_IDS)) {
     return {
       ok: false,
       error: `ingest requires --target <${PRIME_DATASET_IDS.join('|')}>`,
