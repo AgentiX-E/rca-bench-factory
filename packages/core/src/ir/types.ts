@@ -30,6 +30,47 @@ export const SIGNAL_KINDS = ['metric', 'log', 'trace', 'event', 'alert', 'profil
 
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
 
+/**
+ * Answer the question "does this string belong to that vocabulary?" without
+ * the compiler being told to trust a cast.
+ *
+ * `readonly ['A', 'B'].includes(someString)` does not compile -- a tuple's
+ * `includes` only accepts its own members, which is exactly the guarantee worth
+ * having and exactly the reason the six consumers of these vocabularies used to
+ * restate each tuple as a `readonly string[]` instead. This one helper is what
+ * lets them drop the restatement: the answer is derived from the tuple, and the
+ * narrows to the tuple's member type.
+ */
+export function isVocabularyMember<V extends string>(
+  vocabulary: readonly V[],
+  value: string,
+): value is V {
+  return vocabulary.some((candidate) => candidate === value);
+}
+
+/**
+ * `LogPayload.severityText`, declared once.
+ *
+ * The union used to sit inside the interface while `ingest/file.ts` kept a
+ * hand-written `readonly string[]` beside it. Adding a member to the copy was
+ * silent and removing one was silent, because `string` contains everything and
+ * the copy is what actually decided which severities reach the IR.
+ */
+export const LOG_SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'] as const;
+
+/** A log severity. Derived from `LOG_SEVERITIES`. */
+export type LogSeverity = (typeof LOG_SEVERITIES)[number];
+
+/**
+ * `TracePayload.status`, declared once, for the same reason. `UNSET` is a real
+ * member of the vocabulary -- a span with no status -- not a default applied
+ * when parsing fails.
+ */
+export const SPAN_STATUSES = ['OK', 'ERROR', 'UNSET'] as const;
+
+/** A span status. Derived from `SPAN_STATUSES`. */
+export type SpanStatus = (typeof SPAN_STATUSES)[number];
+
 /** Where a field value came from. */
 export type ProvenanceSource = 'direct' | 'derived' | 'inferred' | 'defaulted';
 
@@ -60,7 +101,7 @@ export interface MetricPayload {
 export interface LogPayload {
   kind: 'log';
   body: string;
-  severityText?: 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
+  severityText?: LogSeverity;
   /** Drain-style template id, e.g. `L007`. */
   templateId?: string;
   /** Parameters extracted by the template, keyed by placeholder name. */
@@ -76,7 +117,7 @@ export interface TracePayload {
   spanName: string;
   /** Span duration in milliseconds. */
   durationMs: number;
-  status?: 'OK' | 'ERROR' | 'UNSET';
+  status?: SpanStatus;
   attributes?: Record<string, string>;
 }
 
@@ -139,16 +180,28 @@ export interface TelemetrySignal {
   provenance?: Record<string, FieldProvenance>;
 }
 
-export type EntityKind =
-  | 'service'
-  | 'pod'
-  | 'node'
-  | 'container'
-  | 'db'
-  | 'mq'
-  | 'host'
-  | 'cluster'
-  | 'external';
+/**
+ * Entity kinds, declared once.
+ *
+ * Several exporters key a `Record<EntityKind, …>` off this union, so the
+ * compiler already refuses to let a member disappear. The vocabulary is now a
+ * tuple rather than a bare union so that the runtime consumers -- AIOps2025's
+ * `instance_type` set among them -- narrow it instead of copying it.
+ */
+export const ENTITY_KINDS = [
+  'service',
+  'pod',
+  'node',
+  'container',
+  'db',
+  'mq',
+  'host',
+  'cluster',
+  'external',
+] as const;
+
+/** An entity kind. Derived from `ENTITY_KINDS`. */
+export type EntityKind = (typeof ENTITY_KINDS)[number];
 
 export interface Entity {
   /** Globally unique id, formatted `${kind}:${namespace}/${name}`. */
@@ -175,15 +228,26 @@ export interface EntityGraph {
   edges: EntityEdge[];
 }
 
-export type FaultCategory =
-  | 'resource'
-  | 'network'
-  | 'runtime'
-  | 'middleware'
-  | 'code'
-  | 'config'
-  | 'dependency'
-  | 'unknown';
+/**
+ * Fault categories, declared once and in the order they are published in
+ * `docs/data-model.md`.
+ *
+ * `unknown` is a member of the contract, not a fallback applied when inference
+ * fails; the inference table returns it explicitly for a type it cannot place.
+ */
+export const FAULT_CATEGORIES = [
+  'resource',
+  'network',
+  'runtime',
+  'middleware',
+  'code',
+  'config',
+  'dependency',
+  'unknown',
+] as const;
+
+/** A fault category. Derived from `FAULT_CATEGORIES`. */
+export type FaultCategory = (typeof FAULT_CATEGORIES)[number];
 
 export type Comparator = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'contains' | 'matches';
 

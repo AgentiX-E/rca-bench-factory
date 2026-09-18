@@ -6,7 +6,15 @@
  * observability coverage report.
  */
 
-export { IR_VERSION } from './ir/types.js';
+export {
+  IR_VERSION,
+  LOG_SEVERITIES,
+  SPAN_STATUSES,
+  ENTITY_KINDS,
+  FAULT_CATEGORIES,
+  SIGNAL_KINDS,
+  isVocabularyMember,
+} from './ir/types.js';
 export type {
   AlertPayload,
   CausalStep,
@@ -28,6 +36,7 @@ export type {
   GroundTruth,
   IrBundle,
   LogPayload,
+  LogSeverity,
   MetricPayload,
   ProfilePayload,
   ProvenanceSource,
@@ -35,6 +44,7 @@ export type {
   RootCauseIndicator,
   SignalKind,
   SignalPayload,
+  SpanStatus,
   TelemetrySignal,
   TracePayload,
 } from './ir/types.js';
@@ -259,6 +269,7 @@ export type {
 } from './ingest/prime.js';
 
 export {
+  AIOPS2025_INSTANCE_TYPES,
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkItBenchStructure,

@@ -1,11 +1,14 @@
-import { IR_VERSION } from '../ir/types.js';
-import type {
-  LogPayload,
-  MetricPayload,
-  SignalKind,
-  SignalPayload,
-  TelemetrySignal,
-  TracePayload,
+import {
+  IR_VERSION,
+  LOG_SEVERITIES,
+  SPAN_STATUSES,
+  isVocabularyMember,
+  type LogSeverity,
+  type SpanStatus,
+  type MetricPayload,
+  type SignalKind,
+  type SignalPayload,
+  type TelemetrySignal,
 } from '../ir/types.js';
 import { telemetrySignalSchema } from '../ir/schema.js';
 import { parseTimestamp, TimeParseError, type ParsedTime, type TimeLayout } from '../util/time.js';
@@ -116,9 +119,6 @@ interface ParsedRecord {
   line: number;
   data: Record<string, unknown>;
 }
-
-const SEVERITY_LEVELS: readonly string[] = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
-const SPAN_STATUSES: readonly string[] = ['OK', 'ERROR', 'UNSET'];
 
 /**
  * Parse CSV/TSV text into rows of cells, honouring quoted fields, escaped quotes
@@ -433,13 +433,13 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
       return { ok: false, reason: `missing required column '${layout.logBody ?? '(none)'}' (log body)` };
     }
     const rawSeverity = asText(get(layout.severity));
-    let severityText: LogPayload['severityText'];
+    let severityText: LogSeverity | undefined;
     if (rawSeverity !== undefined) {
       const upper = rawSeverity.toUpperCase();
-      if (!SEVERITY_LEVELS.includes(upper)) {
+      if (!isVocabularyMember(LOG_SEVERITIES, upper)) {
         return { ok: false, reason: `invalid severity '${rawSeverity}'` };
       }
-      severityText = upper as LogPayload['severityText'];
+      severityText = upper;
     }
     payload = { kind: 'log', body, ...(severityText !== undefined ? { severityText } : {}) };
   } else {
@@ -465,13 +465,13 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     }
     const parentSpanId = asText(get(layout.parentSpanId));
     const rawStatus = asText(get(layout.status));
-    let status: TracePayload['status'];
+    let status: SpanStatus | undefined;
     if (rawStatus !== undefined) {
       const upper = rawStatus.toUpperCase();
-      if (!SPAN_STATUSES.includes(upper)) {
+      if (!isVocabularyMember(SPAN_STATUSES, upper)) {
         return { ok: false, reason: `invalid span status '${rawStatus}'` };
       }
-      status = upper as TracePayload['status'];
+      status = upper;
     }
     payload = {
       kind: 'trace',

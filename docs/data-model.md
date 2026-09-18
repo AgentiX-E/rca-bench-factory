@@ -32,6 +32,18 @@ interface TelemetrySignal {
 `SignalPayload` is a discriminated union over the six signal kinds (`metric`, `log`,
 `trace`, `event`, `alert`, `profile`), each carrying only the fields that kind needs.
 
+### Enumerated payload vocabularies
+
+Two payload fields are closed sets, and both are **declared once** — as a tuple in
+`ir/types.ts`, with the type derived from it. Anything that admits a value (the
+`source` and `ingest` file readers) reads the same tuple, so the union and the
+admission list cannot disagree.
+
+| Field | Values |
+|---|---|
+| `LogPayload.severityText` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
+| `TracePayload.status` | `OK`, `ERROR`, `UNSET` |
+
 ## Layer 2 — `EntityGraph`
 
 The topology. `Entity.id` is globally unique as `${kind}:${namespace}/${name}`.
@@ -42,6 +54,12 @@ interface Entity { entityId: string; kind: EntityKind; name: string; aliases: st
 interface EntityEdge { from: string; to: string; relation: 'contains'|'hosts'|'calls'|'same_as'; }
 interface EntityGraph { entities: Entity[]; edges: EntityEdge[]; }
 ```
+
+`EntityKind` is declared once, as a tuple: `service`, `pod`, `node`, `container`,
+`db`, `mq`, `host`, `cluster`, `external`. Formats that accept only some of them
+(AIOps2025 takes the `service` / `pod` / `node` layers) narrow that tuple by
+filtering it, so dropping a kind from the IR narrows the subset too rather than
+leaving a stale list behind.
 
 ## Layer 3 — `FaultCase`
 
@@ -66,6 +84,11 @@ interface FaultCase {
 `GroundTruth` carries the answer key: `rootCauseEntityId`, `rootCauseComponent`,
 `rootCauseReason`, optional `rootCauseIndicators`, a step-wise `causalChain`
 (`CausalStep[]`), `evidenceCheckpoints` (`EvidenceCheckpoint[]`) and `remediation`.
+
+`FaultCategory` is declared once, as a tuple in this order: `resource`, `network`,
+`runtime`, `middleware`, `code`, `config`, `dependency`, `unknown`. `unknown` is a
+member of the contract, not a fallback: an injector the taxonomy does not know maps
+to it rather than to a guessed category.
 
 ## Layer 4 — `QualityGateReport`
 

@@ -20,7 +20,28 @@ import type { ScoreTargetId } from '../score/score.js';
 
 export const CLI_VERSION = '0.1.0';
 
-export type ExportTarget = 'openrca-1.0' | 'openrca-2.0' | 'rcaeval' | 'rca100' | 'aiops2025' | 'cloud-opsbench' | 'itbench';
+/**
+ * The formats `export` can write, declared once.
+ *
+ * The union used to be written in place -- and the parser compared against a
+ * hand-maintained `readonly string[]` beside it. `readonly string[]` constrains
+ * nothing, so adding a target to the copy was silent: `export --target ghost`
+ * would have parsed and then dispatched nowhere. The tuple is the union's
+ * definition now, so the parser, the `--help` placeholder, the refusal text and
+ * `EXPORTERS`' `Record<ExportTarget, …>` all read the same seven names.
+ */
+export const EXPORT_TARGETS = [
+  'openrca-1.0',
+  'openrca-2.0',
+  'rcaeval',
+  'rca100',
+  'aiops2025',
+  'cloud-opsbench',
+  'itbench',
+] as const;
+
+/** A benchmark format `export` can write. Derived from `EXPORT_TARGETS`. */
+export type ExportTarget = (typeof EXPORT_TARGETS)[number];
 
 /**
  * The `evolve` actions, declared once.
@@ -106,7 +127,6 @@ const SOURCE_SIGNAL_KINDS: readonly SignalKind[] = IR_SIGNAL_KINDS.filter(
   (k): k is SignalKind => k === 'metric' || k === 'log' || k === 'trace',
 );
 const SIGNAL_KINDS: readonly string[] = SOURCE_SIGNAL_KINDS;
-const EXPORT_TARGETS: readonly string[] = ['openrca-1.0', 'openrca-2.0', 'rcaeval', 'rca100', 'aiops2025', 'cloud-opsbench', 'itbench'];
 const SUITES: readonly RcaEvalSuite[] = RCAEVAL_SUITES;
 const SCORE_TARGETS: readonly string[] = SCORE_TARGET_IDS;
 
@@ -283,20 +303,17 @@ const COMMAND_SPECS = {
   },
 } as const satisfies Record<string, CommandSpec>;
 
-/** Command names that own a `COMMAND_SPECS` entry, in help-text order. */
-export const HELP_TOPICS: readonly string[] = [
-  'source',
-  'ingest',
-  'transform',
-  'case',
-  'gate',
-  'export',
-  'score',
-  'official',
-  'report',
-  'pack',
-  'evolve',
-];
+/**
+ * Command names that own a `COMMAND_SPECS` entry, in help-text order.
+ *
+ * Read out of the spec table rather than listed beside it. A topic that existed
+ * in this array but not in `COMMAND_SPECS` would render an empty help page, and
+ * a spec that existed without being listed here would be a command nobody could
+ * get help for; both were reachable while the two lists were maintained by hand,
+ * and neither was observable -- reordering this array changed nothing a test
+ * could see.
+ */
+export const HELP_TOPICS: readonly string[] = Object.keys(COMMAND_SPECS);
 
 function isHelpTopic(value: string): boolean {
   return isOneOf(value, HELP_TOPICS);

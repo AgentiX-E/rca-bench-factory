@@ -1,4 +1,4 @@
-import type { FaultCategory } from '../ir/types.js';
+import { FAULT_CATEGORIES, isVocabularyMember, type FaultCategory } from '../ir/types.js';
 import { isRecord } from '../util/json.js';
 
 /**
@@ -20,17 +20,6 @@ export interface FaultSpec {
 }
 
 export type FaultSpecParseResult = { ok: true; spec: FaultSpec } | { ok: false; error: string };
-
-const FAULT_CATEGORIES: readonly string[] = [
-  'resource',
-  'network',
-  'runtime',
-  'middleware',
-  'code',
-  'config',
-  'dependency',
-  'unknown',
-];
 
 /**
  * Ordered keyword table for category inference. Order matters: earlier rows
@@ -71,7 +60,7 @@ export function inferFaultCategory(type: string): FaultCategory {
 }
 
 function isFaultCategory(value: string): value is FaultCategory {
-  return (FAULT_CATEGORIES as readonly string[]).includes(value);
+  return isVocabularyMember(FAULT_CATEGORIES, value);
 }
 
 /**

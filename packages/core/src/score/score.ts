@@ -1,4 +1,5 @@
 import { sha256 } from '../util/hash.js';
+import { ENTITY_KINDS, isVocabularyMember, type EntityKind } from '../ir/types.js';
 import { isRecord, safeJson } from '../util/json.js';
 import { parseCsvObjects } from '../util/csv.js';
 import { parseOpenRcaScoringPoints } from './official.js';
@@ -391,7 +392,21 @@ export function checkRca100Structure(files: Record<string, string>): StructureRe
   return { target: 'rca100', passed: checks.every((c) => c.passed), checks };
 }
 
-const AIOPS2025_INSTANCE_TYPES: readonly string[] = ['service', 'pod', 'node'];
+/**
+ * The `instance_type` layers AIOps2025 scores, as a narrowing of the IR's
+ * entity kinds rather than a second literal list.
+ *
+ * AIOps2025 scores three of the nine kinds the IR can express, and the three it
+ * scores are a subset by intent. Filtering `ENTITY_KINDS` is what makes that
+ * visible: widen the IR and this list is unchanged, which is correct, but drop
+ * `pod` from `ENTITY_KINDS` and this line stops compiling -- the comparison
+ * `kind === 'pod'` no longer has an overlap -- instead of leaving a list that
+ * quietly claims a kind the IR no longer has.
+ */
+export const AIOPS2025_INSTANCE_TYPES = ENTITY_KINDS.filter(
+  (kind): kind is Extract<EntityKind, 'service' | 'pod' | 'node'> =>
+    kind === 'service' || kind === 'pod' || kind === 'node',
+);
 
 /**
  * Verify an AIOps2025 export against its field contract.
@@ -466,7 +481,7 @@ export function checkAioPs2025Structure(files: Record<string, string>): Structur
         gtShapeOk = false;
         continue;
       }
-      if (!AIOPS2025_INSTANCE_TYPES.includes(obj.instance_type)) {
+      if (!isVocabularyMember(AIOPS2025_INSTANCE_TYPES, obj.instance_type)) {
         gtShapeOk = false;
       }
       if (!Array.isArray(obj.key_metrics)) {
