@@ -90,12 +90,15 @@ const DOCUMENTED_ENTITY_KINDS = [
 const DOCUMENTED_AIOPS2025_INSTANCE_TYPES = ['service', 'pod', 'node'];
 
 /**
- * `docs/cli-reference.md` — the `--target` values, in the order the binary
- * advertises them.
+ * `docs/cli-reference.md` — the `--target` values `rca-bench export` lists, in
+ * the order the binary advertises them.
  *
- * The reference used to list `rcaeval` first while the binary advertised
- * `openrca-1.0` first. The binary is the judge, so the reference was corrected;
- * this constant is what stops them drifting again.
+ * The binary is the judge and the reference already agrees with it, so what is
+ * being asserted here is that they keep agreeing. A doc that lists the same
+ * seven names in a different order is not wrong about any single name, which is
+ * exactly why order needs its own assertion: `ingest --target` legitimately
+ * starts with `rcaeval` (it names prime datasets, not export targets), so a
+ * reader cannot tell an intentional difference from a drift by membership.
  */
 const DOCUMENTED_EXPORT_TARGETS = [
   'openrca-1.0',
