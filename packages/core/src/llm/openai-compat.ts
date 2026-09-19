@@ -43,6 +43,23 @@ export function buildOpenAiCompatibleRequest(prompt: string, model: string): Ope
  * response body. Throws on any shape that cannot yield a single completion
  * string, so a malformed or empty response surfaces as an explicit error
  * instead of a silent empty string.
+ *
+ * The first choice is not the only choice worth reading. An OpenAI-compatible
+ * server may return a leading choice that carries no text -- a refusal, a
+ * content-filtered turn -- with a usable completion behind it, and reading only
+ * `choices[0]` discarded that answer while reporting the response as unusable.
+ * Every choice is inspected in order and the first usable text wins.
+ *
+ * "Usable" excludes the empty string: the declared return type is `string`, so
+ * accepting `''` made an empty answer indistinguishable from a real one at every
+ * call site. A whitespace-only completion is still accepted, because that is a
+ * real answer a model can give.
+ *
+ * The message for a bare first choice keeps the wording this parser has always
+ * used. When there is only one choice, a count would add nothing to the
+ * diagnosis, and the long-standing wording is what an operator already greps
+ * for; the ranked message is worth its extra words only once position is
+ * genuinely ambiguous.
  */
 export function parseOpenAiCompatibleResponse(jsonText: string, name: string): string {
   let parsed: unknown;
@@ -58,13 +75,21 @@ export function parseOpenAiCompatibleResponse(jsonText: string, name: string): s
   if (!Array.isArray(choices) || choices.length === 0) {
     throw new Error(`${name} response has no choices`);
   }
-  const first = choices[0] as Record<string, unknown>;
-  const message = first.message as Record<string, unknown> | undefined;
-  const content = message?.content;
-  if (typeof content !== 'string') {
+  for (const [position, choice] of choices.entries()) {
+    // Checked before property access. Without this a `null` element threw a raw
+    // `TypeError: Cannot read properties of null (reading 'message')`, escaping
+    // as an internal error while every other malformed shape got a named one.
+    if (typeof choice !== 'object' || choice === null || Array.isArray(choice)) {
+      throw new Error(`${name} response choice ${position} is not an object`);
+    }
+    const message = (choice as Record<string, unknown>).message as Record<string, unknown> | undefined;
+    const content = message?.content;
+    if (typeof content === 'string' && content !== '') return content;
+  }
+  if (choices.length === 1) {
     throw new Error(`${name} response choice has no string content`);
   }
-  return content;
+  throw new Error(`${name} response has no usable completion text (${choices.length} choice(s))`);
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { HitlGate } from '../evolution/hitl.js';
+import { FAULT_CATEGORIES, isVocabularyMember, type FaultCategory } from '../ir/types.js';
 import { parseFaultSpec, type FaultSpec } from './collector.js';
 
 /**
@@ -56,10 +57,39 @@ export function buildFaultExtractionPrompt(incidentText: string): string {
     incidentText,
     '',
     'Respond with JSON only, in this shape:',
-    `{ "type": "fault type (short)", "category": "${FAULT_CATEGORY_VOCABULARY}", "component": "faulty component", "description": "root-cause reason", "confidence": 0.0..1.0 }`,
+    `{ "type": "fault type (short)", "category": "one of: ${FAULT_CATEGORY_VOCABULARY}", "component": "faulty component", "description": "root-cause reason", "confidence": 0.0..1.0 }`,
+    '',
+    '`category` is matched case-insensitively against that list; any other value is rejected.',
     '',
     '`category`, `component` and `description` may be omitted when uncertain.',
   ].join('\n');
+}
+
+/**
+ * Normalise the category the model answered with, or `null` when it is not in
+ * the vocabulary.
+ *
+ * The prompt advertises the vocabulary as `"resource | network | ..."` with no
+ * casing statement, and `parseFaultSpec` matches the category by exact value.
+ * Before this, a model answering `"NETWORK"` or `" network "` produced
+ * `ok: true` from the parser and `valid: false` from the validator, so a
+ * correctly-extracted fault was rejected and the reviewer was told the
+ * *category* was wrong when it was the *casing* that was wrong.
+ *
+ * The fix is in two halves on purpose. The prompt now states the rule, so a
+ * model is not left to infer it; and the parser normalises the obvious
+ * deviations, so a model that infers it anyway does not lose a correct answer.
+ * Whitespace is trimmed and the case folded -- nothing else. A synonym like
+ * `net` is still rejected, because deciding that `net` means `network` is a
+ * judgement, not a normalisation, and the H3 reviewer is who should make it.
+ *
+ * Returning `null` rather than the raw string is what makes the deviation
+ * visible: the caller reports which value was rejected instead of quietly
+ * storing something the validator will refuse later.
+ */
+function normalizeCategory(raw: string): FaultCategory | null {
+  const folded = raw.trim().toLowerCase();
+  return isVocabularyMember(FAULT_CATEGORIES, folded) ? folded : null;
 }
 
 /**
@@ -91,9 +121,19 @@ export function parseFaultExtractionResponse(text: string): FaultExtractionParse
     return { ok: false, error: "response is missing a non-blank 'type'" };
   }
 
-  const category = obj['category'];
-  if (category !== undefined && typeof category !== 'string') {
+  const rawCategory = obj['category'];
+  if (rawCategory !== undefined && typeof rawCategory !== 'string') {
     return { ok: false, error: "'category' must be a string" };
+  }
+  let category: FaultCategory | undefined;
+  if (rawCategory !== undefined) {
+    const normalized = normalizeCategory(rawCategory);
+    if (normalized === null) {
+      // Rejected here rather than deferred to `parseFaultSpec`, so the error
+      // names the offending value at the point it was read.
+      return { ok: false, error: `invalid fault category '${rawCategory}'` };
+    }
+    category = normalized;
   }
 
   const component = obj['component'];
