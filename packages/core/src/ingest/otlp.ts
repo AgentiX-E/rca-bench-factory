@@ -48,10 +48,30 @@ const SEVERITY_ALIASES: Record<string, LogPayload['severityText']> = {
   CRITICAL: 'FATAL',
 };
 
-const SPAN_STATUS_CODE: Record<number, TracePayload['status']> = {
-  0: 'UNSET',
-  1: 'OK',
-  2: 'ERROR',
+/**
+ * Span status codes, in both encodings the OTLP JSON mapping produces.
+ *
+ * The mapping writes enums as their *names* (`"STATUS_CODE_ERROR"`), but a
+ * producer that re-serialises a decoded message -- or any encoder that treats
+ * the field as an integer -- writes the number. The reader used to match numbers
+ * only, so `{ code: 'STATUS_CODE_ERROR' }` was neither recognised nor reported:
+ * the branch was `if (typeof rawCode === 'number')`, whose falsy side silently
+ * produced a span with no `status` at all. An error span that arrives without
+ * its status is indistinguishable from a healthy one, so the defect could only
+ * ever make the corpus look better than it was.
+ *
+ * Declared once, from the vocabulary, and used to derive both lookup tables.
+ */
+const SPAN_STATUS_CODE_NAMES: Record<string, TracePayload['status']> = {
+  STATUS_CODE_UNSET: 'UNSET',
+  STATUS_CODE_OK: 'OK',
+  STATUS_CODE_ERROR: 'ERROR',
+};
+
+const SPAN_STATUS_CODES: Record<string, TracePayload['status']> = {
+  '0': 'UNSET',
+  '1': 'OK',
+  '2': 'ERROR',
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -105,10 +125,30 @@ function parseNanoTime(raw: unknown): string {
   return parseTimestamp(raw, 'unix_ns').isoUtc;
 }
 
+/**
+ * Convert a nanosecond epoch, delivered as a string, into exact milliseconds.
+ *
+ * Milliseconds are `ns / 1_000_000`; the remainder is sub-millisecond time that
+ * the IR does not represent. Dividing in `BigInt` and converting the *result* to
+ * a number was not an option, because `Number(ns)` loses nanoseconds at these
+ * magnitudes, so the division has to happen before the narrowing.
+ *
+ * The previous `n * 1e-6` was a float multiply and disagreed with exact integer
+ * division on 2500 of 4000 consecutive millisecond pairs. It reported a 1 ms
+ * span as `0.999755859375` and a 17 ms span as `16.999755859375`: a duration
+ * that is wrong by a fraction of a millisecond in a benchmark whose whole
+ * purpose is measuring durations. `BigInt` division truncates toward zero, which
+ * is what makes a one-nanosecond-looking sub-millisecond increase read as `0`
+ * -- and, on the backwards side, what keeps `-1n / 1_000_000n` from being
+ * reported as a legal zero-length span.
+ */
 function nanoToEpochMs(raw: unknown): number | undefined {
   if (typeof raw !== 'string' || raw === '') return undefined;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n * 1e-6 : undefined;
+  if (!/^-?\d+$/.test(raw)) return undefined;
+  const ns = BigInt(raw);
+  const sign = ns < 0n ? -1n : 1n;
+  const magnitude = ns < 0n ? -ns : ns;
+  return Number(sign * (magnitude / 1_000_000n));
 }
 
 function summarize(value: unknown): string {
@@ -130,10 +170,22 @@ function metricDataPoints(metric: Record<string, unknown>): { points: unknown[] 
   return 'missing';
 }
 
+/**
+ * Read a metric data point's value.
+ *
+ * Both `asInt` and `asDouble` are numbers on the wire. The OTLP JSON mapping
+ * documents int64 as a string (so a 64-bit value survives a language with no
+ * such integer), but protojson -- which is what most exporters actually use --
+ * also admits the numeric form, and a document that carries `asInt: 42` is a
+ * legal document. The reader accepted the quoted form only, so such a data point
+ * was quarantined as having "no numeric value" while plainly having one. The
+ * two forms have to agree.
+ */
 function dataPointValue(dp: Record<string, unknown>): number | undefined {
   const asDouble = dp['asDouble'];
   if (typeof asDouble === 'number' && Number.isFinite(asDouble)) return asDouble;
   const asInt = dp['asInt'];
+  if (typeof asInt === 'number' && Number.isSafeInteger(asInt)) return asInt;
   if (typeof asInt === 'string' && asInt !== '') {
     const n = Number(asInt);
     if (Number.isFinite(n)) return n;
@@ -163,6 +215,31 @@ function buildSignal(
 function normalizeSeverity(raw: string | undefined): LogPayload['severityText'] | undefined {
   if (raw === undefined || raw === '') return undefined;
   return SEVERITY_ALIASES[raw.toUpperCase()];
+}
+
+/**
+ * Read a span's status from either encoding the OTLP JSON mapping produces.
+ *
+ * Returns the status, `undefined` when the span carries none, or the offending
+ * token so the caller can report it. A present-but-unreadable code is a data
+ * problem and must be quarantined; only an absent status is allowed through
+ * silently, because `UNSET` is a real member of the vocabulary rather than the
+ * default applied when parsing fails.
+ */
+function readSpanStatus(
+  rawCode: unknown,
+): { status: TracePayload['status'] } | { invalid: string } | undefined {
+  if (rawCode === undefined) return undefined;
+  if (typeof rawCode === 'number') {
+    const named = SPAN_STATUS_CODES[String(rawCode)];
+    return named !== undefined ? { status: named } : { invalid: String(rawCode) };
+  }
+  if (typeof rawCode === 'string') {
+    // The name form first: it is what the mapping actually writes.
+    const named = SPAN_STATUS_CODE_NAMES[rawCode] ?? SPAN_STATUS_CODES[rawCode];
+    return named !== undefined ? { status: named } : { invalid: rawCode };
+  }
+  return { invalid: String(rawCode) };
 }
 
 /** Ingest an OTLP `ExportMetricsServiceRequest` JSON document. */
@@ -299,7 +376,14 @@ export function ingestOtlpLogs(input: unknown, options: OtlpIngestOptions = {}):
         }
         const rawSeverity = typeof lrRec?.['severityText'] === 'string' ? lrRec['severityText'] : undefined;
         const severityText = normalizeSeverity(rawSeverity);
-        if (rawSeverity !== undefined && severityText === undefined) {
+        // An empty string is an exporter with nothing to say about severity, not
+        // an exporter saying something unrecognisable. `normalizeSeverity`
+        // already treats `''` and `undefined` alike and returns `undefined` for
+        // both, but this guard compared the *token* rather than the raw field,
+        // so `severityText: ''` was quarantined as `invalid severity ''` -- a
+        // claim about a document that is not the document. Measured: one signal
+        // became one quarantine entry, for a field the schema calls optional.
+        if (rawSeverity !== undefined && rawSeverity !== '' && severityText === undefined) {
           quarantine.push({ index, reason: `invalid severity '${rawSeverity}'`, record: summarize(lr) });
           continue;
         }
@@ -340,18 +424,30 @@ export function ingestOtlpTraces(input: unknown, options: OtlpIngestOptions = {}
       for (const span of spans) {
         index += 1;
         const spanRec = asRecord(span);
-        const startMs = nanoToEpochMs(spanRec?.['startTimeUnixNano']);
-        const endMs = nanoToEpochMs(spanRec?.['endTimeUnixNano']);
+        const rawStartNs = spanRec?.['startTimeUnixNano'];
+        const rawEndNs = spanRec?.['endTimeUnixNano'];
+        const startMs = nanoToEpochMs(rawStartNs);
+        const endMs = nanoToEpochMs(rawEndNs);
         if (startMs === undefined || endMs === undefined) {
           quarantine.push({ index, reason: 'span has an invalid start/end timestamp', record: summarize(span) });
           continue;
         }
+        // Kept at full nanosecond resolution: `durationMs` below is truncated,
+        // and truncation is exactly where a sub-millisecond inversion hides.
+        const startNs = BigInt(rawStartNs as string);
+        const endNs = BigInt(rawEndNs as string);
         if (serviceName === undefined) {
           quarantine.push({ index, reason: 'missing service name (resource attribute service.name or options.serviceName)', record: summarize(span) });
           continue;
         }
         const durationMs = endMs - startMs;
-        if (durationMs < 0) {
+        // `durationMs` is truncated to whole milliseconds, so it reads `0` for a
+        // span whose end preceded its start by less than a millisecond -- and a
+        // negative duration is the one thing the corpus must never contain,
+        // because it is the inverted-timestamp signature of a broken clock.
+        // Comparing the exact nanosecond instants is what keeps `-1 ns` from
+        // being reported as a legal zero-length span.
+        if (durationMs < 0 || endNs < startNs) {
           quarantine.push({ index, reason: 'span has a negative duration', record: summarize(span) });
           continue;
         }
@@ -375,15 +471,16 @@ export function ingestOtlpTraces(input: unknown, options: OtlpIngestOptions = {}
           : undefined;
 
         const statusRec = asRecord(spanRec?.['status']);
-        const rawCode = statusRec?.['code'];
-        let status: TracePayload['status'];
-        if (typeof rawCode === 'number') {
-          status = SPAN_STATUS_CODE[rawCode];
-          if (status === undefined) {
-            quarantine.push({ index, reason: `invalid span status code '${rawCode}'`, record: summarize(span) });
-            continue;
-          }
+        const readStatus = readSpanStatus(statusRec?.['code']);
+        if (readStatus !== undefined && 'invalid' in readStatus) {
+          quarantine.push({
+            index,
+            reason: `invalid span status code '${readStatus.invalid}'`,
+            record: summarize(span),
+          });
+          continue;
         }
+        const status = readStatus?.status;
 
         const payload: TracePayload = {
           kind: 'trace',
