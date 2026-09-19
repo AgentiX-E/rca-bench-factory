@@ -143,6 +143,123 @@ function isJson(value: string): boolean {
   }
 }
 
+/**
+ * The widest observation window a prime-dataset slice may declare, in ms.
+ *
+ * A day is ~1000x the default 10-minute lead, so no real slice approaches it,
+ * while the value that does exceed it is a unit error rather than a request:
+ * the same digits typed as seconds. The bound is stated once and enforced by
+ * `parseWindow`, because the alternative -- letting `Number()` take whatever
+ * fits a double -- admits a window 285,000 years wide.
+ */
+const MAX_WINDOW_MS = 86_400_000;
+
+/**
+ * The UTC offsets a real timezone can have, in minutes.
+ *
+ * The range is the IANA one (`-12:00` to `+14:00`). The parser used to accept
+ * any finite number, so `1e21` reached core and `Date.toISOString()` threw
+ * `RangeError: Invalid time value` from inside the time parser -- a crash the
+ * CLI's own validation had effectively promised could not happen. A value the
+ * parser accepts and core cannot honour is a validation gap.
+ */
+const MIN_OFFSET_MINUTES = -12 * 60;
+const MAX_OFFSET_MINUTES = 14 * 60;
+
+/**
+ * Read a value flag as a trimmed, non-blank string.
+ *
+ * Returns `undefined` for absent, which is not the same as `null` for blank:
+ * a caller distinguishes "the flag was not given" from "the flag was given a
+ * value that cannot be used", and only the second is an error. Blankness is
+ * tested after trimming, because `--path "   "` is the empty string typed
+ * differently and an empty string was already refused.
+ *
+ * The `typeof` guard is defence in depth, and it is *known to be unreachable*
+ * from `parseCliArgs`: every flag read through this function is declared
+ * `type: 'string'` in every spec that declares it, and `parseArgs` under
+ * `strict: true` refuses such a flag when no value follows it rather than
+ * handing back a placeholder. The one boolean flag in the table, `has-header`,
+ * is read with `Boolean(v['has-header'])` and never reaches here. The guard
+ * stays because this function is exported behaviour of a module whose input
+ * type is wider than any single call site, and because a future spec that
+ * renamed a flag across two commands would otherwise route a boolean into
+ * `value.trim()` and throw where a diagnostic belongs. It has no unit test
+ * asserting the branch is taken: no argv reaches it, and inventing one would
+ * be testing the test. `the two flag tables cannot route a non-string into the
+ * value reader` pins the invariant that keeps it unreachable.
+ */
+function asNonBlank(value: ParsedValues[string]): string | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * Read a value flag that must be a non-negative integer within `max`.
+ *
+ * The whole point of this function is that it rejects what `Number()` would
+ * silently accept: `0x10` and `1e3` are numbers, `" 7 "` is a number, and a
+ * 21-digit literal is a number that is no longer the one that was typed. A
+ * command line carries decimal integers, so the check is a decimal-integer
+ * pattern followed by an exact round trip -- `String(n) === text` is what makes
+ * the 2^53 boundary observable rather than a rounding nobody sees.
+ */
+function parseInteger(
+  flag: string,
+  raw: ParsedValues[string],
+  min: number,
+  max: number,
+): number | undefined | { error: string } {
+  if (raw === undefined) return undefined;
+  const text = String(raw);
+  if (!/^-?\d+$/.test(text)) return { error: `invalid --${flag} '${text}'` };
+  const n = Number(text);
+  if (!Number.isSafeInteger(n)) return { error: `invalid --${flag} '${text}' (out of range)` };
+  if (n < min || n > max) {
+    return { error: `invalid --${flag} '${text}' (expected ${min}..${max})` };
+  }
+  return n;
+}
+
+/** A 64-character hex string, the only thing a SHA-256 anchor may be. */
+const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * Validate the `--anchors` map.
+ *
+ * `--anchors` is a claim that specific files were verified against committed
+ * hashes, so each entry has to be a file name and a SHA-256 to compare it
+ * against. Checking only that the value is a JSON object let `{"a.txt":123}`
+ * through, and a number can never equal a hex digest -- the comparison then
+ * fails to match, and the failure is indistinguishable from a genuine content
+ * mismatch, which is the one conclusion this flag exists to make trustworthy.
+ */
+function readAnchors(raw: string): { value: Record<string, string> } | { error: string } {
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { error: '--anchors must be a JSON object' };
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length === 0) {
+    return { error: '--anchors must name at least one file; omit the flag to score structure only' };
+  }
+  const anchors: Record<string, string> = {};
+  for (const [file, hash] of entries) {
+    if (file.trim() === '') {
+      return { error: "--anchors has an entry with an empty file name" };
+    }
+    if (typeof hash !== 'string' || !SHA256_HEX.test(hash)) {
+      return {
+        error: `--anchors entry '${file}' must be a 64-character hex SHA-256`,
+      };
+    }
+    anchors[file] = hash;
+  }
+  return { value: anchors };
+}
+
 type ParsedValues = Record<string, string | boolean | undefined>;
 
 /**
@@ -377,8 +494,8 @@ function parseSource(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const path = v.path;
-  if (typeof path !== 'string' || path === '') {
+  const path = asNonBlank(v.path);
+  if (path === undefined || path === null) {
     return { ok: false, error: 'source requires --path <path>' };
   }
 
@@ -395,14 +512,13 @@ function parseSource(args: string[]): CliParseResult {
     return { ok: false, error: 'invalid --layout JSON' };
   }
 
-  let assumeOffsetMinutes: number | undefined;
-  if (v['assume-offset-minutes'] !== undefined) {
-    const n = Number(v['assume-offset-minutes']);
-    if (!Number.isFinite(n)) {
-      return { ok: false, error: `invalid --assume-offset-minutes '${v['assume-offset-minutes']}'` };
-    }
-    assumeOffsetMinutes = n;
-  }
+  const assumeOffsetMinutes = parseInteger(
+    'assume-offset-minutes',
+    v['assume-offset-minutes'],
+    MIN_OFFSET_MINUTES,
+    MAX_OFFSET_MINUTES,
+  );
+  if (typeof assumeOffsetMinutes === 'object') return { ok: false, error: assumeOffsetMinutes.error };
 
   return {
     ok: true,
@@ -435,12 +551,12 @@ function parseExport(args: string[]): CliParseResult {
     return { ok: false, error: `invalid --target '${target}' (expected ${EXPORT_TARGETS.join('|')})` };
   }
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'export requires --input <bundle.json>' };
   }
-  const outDir = v['out-dir'];
-  if (typeof outDir !== 'string' || outDir === '') {
+  const outDir = asNonBlank(v['out-dir']);
+  if (outDir === undefined || outDir === null) {
     return { ok: false, error: 'export requires --out-dir <dir>' };
   }
 
@@ -471,8 +587,8 @@ function parseScore(args: string[]): CliParseResult {
   if (!isOneOf(target, SCORE_TARGETS)) {
     return { ok: false, error: `invalid --target '${target}' (expected ${SCORE_TARGETS.join('|')})` };
   }
-  const dir = v.dir;
-  if (typeof dir !== 'string' || dir === '') {
+  const dir = asNonBlank(v.dir);
+  if (dir === undefined || dir === null) {
     return { ok: false, error: 'score requires --dir <exported-dir>' };
   }
   if (v.anchors !== undefined) {
@@ -486,13 +602,13 @@ function parseScore(args: string[]): CliParseResult {
     // indistinguishable from one that never checked a hash. Omitting the flag is
     // the honest way to ask for structure-only scoring; supplying an empty set
     // is a contradiction, so it is refused here rather than quietly downgraded.
-    const parsedAnchors: unknown = JSON.parse(anchors);
-    if (typeof parsedAnchors !== 'object' || parsedAnchors === null || Array.isArray(parsedAnchors)) {
-      return { ok: false, error: '--anchors must be a JSON object' };
-    }
-    if (Object.keys(parsedAnchors).length === 0) {
-      return { ok: false, error: '--anchors must name at least one file; omit the flag to score structure only' };
-    }
+    //
+    // Each entry must also be a file name paired with a SHA-256. Checking only
+    // the outer object let `{"a.txt":123}` through, and a number can never equal
+    // a hex digest: the comparison fails to match, and that failure is
+    // indistinguishable from a genuine content mismatch.
+    const checked = readAnchors(anchors);
+    if ('error' in checked) return { ok: false, error: checked.error };
   }
 
   return {
@@ -527,19 +643,19 @@ function parseOfficial(args: string[]): CliParseResult {
   if (v.target !== undefined && !isOneOf(String(v.target), SCORE_TARGETS)) {
     return { ok: false, error: `invalid --target '${v.target}' (expected ${SCORE_TARGETS.join('|')})` };
   }
-  if (v.input !== undefined && (typeof v.input !== 'string' || v.input === '')) {
+  if (v.input !== undefined && asNonBlank(v.input) === null) {
     return { ok: false, error: 'invalid --input <bundle.json>' };
   }
-  if (v.dir !== undefined && (typeof v.dir !== 'string' || v.dir === '')) {
+  if (v.dir !== undefined && asNonBlank(v.dir) === null) {
     return { ok: false, error: 'invalid --dir <exported-dir>' };
   }
-  if (v['allow-empty-reason'] !== undefined && (typeof v['allow-empty-reason'] !== 'string' || v['allow-empty-reason'] === '')) {
+  if (v['allow-empty-reason'] !== undefined && asNonBlank(v['allow-empty-reason']) === null) {
     return { ok: false, error: 'invalid --allow-empty-reason <text>' };
   }
 
-  const input = v.input as string | undefined;
+  const input = asNonBlank(v.input) ?? undefined;
   const target = v.target as ScoreTargetId | undefined;
-  const dir = v.dir as string | undefined;
+  const dir = asNonBlank(v.dir) ?? undefined;
 
   const shared = {
     ...(v['allow-empty-reason'] !== undefined ? { allowEmptyReason: String(v['allow-empty-reason']) } : {}),
@@ -566,12 +682,12 @@ function parseTransform(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'transform requires --input <source.json>' };
   }
-  const rules = v.rules;
-  if (typeof rules !== 'string' || rules === '') {
+  const rules = asNonBlank(v.rules);
+  if (rules === undefined || rules === null) {
     return { ok: false, error: 'transform requires --rules <rules.json>' };
   }
 
@@ -592,12 +708,12 @@ function parseGate(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'gate requires --input <bundle.json>' };
   }
-  const target = v.target;
-  if (typeof target !== 'string' || target === '') {
+  const target = asNonBlank(v.target);
+  if (target === undefined || target === null) {
     return { ok: false, error: 'gate requires --target <target>' };
   }
   if (!isOneOf(target, SCORE_TARGETS)) {
@@ -620,8 +736,8 @@ function parseCase(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'case requires --input <draft.json>' };
   }
 
@@ -640,8 +756,8 @@ function parseReport(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'report requires --input <bundle.json>' };
   }
   if (v.target !== undefined && !isOneOf(String(v.target), SCORE_TARGETS)) {
@@ -665,8 +781,8 @@ function parseEvolvePropose(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'evolve propose requires --input <draft.json>' };
   }
 
@@ -686,8 +802,8 @@ function parseEvolveApprove(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'evolve approve requires --input <proposal.json>' };
   }
 
@@ -708,8 +824,8 @@ function parseEvolveReject(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'evolve reject requires --input <proposal.json>' };
   }
 
@@ -730,17 +846,22 @@ function parseEvolveStale(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'evolve stale requires --input <proposal.json>' };
   }
   const cases = v.cases;
   if (typeof cases !== 'string' || cases === '') {
     return { ok: false, error: 'evolve stale requires --cases <json-array>' };
   }
-  if (!isJson(cases)) {
-    return { ok: false, error: 'invalid --cases JSON' };
-  }
+  // The shape is checked here, not in the runner. `runEvolveStale` reads this
+  // value with `requireArray`, so a non-array was accepted by this module and
+  // then threw from inside the command after it had already started -- with a
+  // message that named the flag but not that the *value* was the problem. This
+  // module is where the argument is validated; leaving half the check to the
+  // consumer is how the two came to disagree about what "valid" means.
+  const parsedCases = parseJsonArray(cases, '--cases');
+  if ('error' in parsedCases) return { ok: false, error: parsedCases.error };
 
   return {
     ok: true,
@@ -753,12 +874,12 @@ function parsePack(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const input = v.input;
-  if (typeof input !== 'string' || input === '') {
+  const input = asNonBlank(v.input);
+  if (input === undefined || input === null) {
     return { ok: false, error: 'pack requires --input <dir>' };
   }
-  const output = v.output;
-  if (typeof output !== 'string' || output === '') {
+  const output = asNonBlank(v.output);
+  if (output === undefined || output === null) {
     return { ok: false, error: 'pack requires --output <file.tar.gz>' };
   }
   const prefix = v.prefix;
@@ -877,8 +998,8 @@ function parseIngest(args: string[]): CliParseResult {
   if ('error' in parsed) return { ok: false, error: parsed.error };
   const v = parsed.values;
 
-  const source = v.source;
-  if (typeof source !== 'string' || source === '') {
+  const source = asNonBlank(v.source);
+  if (source === undefined || source === null) {
     return { ok: false, error: 'ingest requires --source <dir>' };
   }
   const target = v.target;
@@ -888,12 +1009,14 @@ function parseIngest(args: string[]): CliParseResult {
       error: `ingest requires --target <${PRIME_DATASET_IDS.join('|')}>`,
     };
   }
-  const cases = v.cases;
-  if (typeof cases !== 'string' || cases === '') {
+  const cases = asNonBlank(v.cases);
+  if (cases === undefined || cases === null) {
     return { ok: false, error: 'ingest requires --cases <cases.json>' };
   }
-  const system = v.system;
-  if (system !== undefined && (typeof system !== 'string' || system.trim() === '')) {
+  // `asNonBlank` returns undefined for an absent flag and null for a blank one,
+  // so the two are distinguishable: only the second is a mistake.
+  const system = asNonBlank(v.system);
+  if (system === null) {
     return { ok: false, error: 'invalid --system <name>' };
   }
 
@@ -983,18 +1106,39 @@ function parseJsonValue(raw: string, flag: string): { value: unknown } | { error
 }
 
 /**
+ * Parse a JSON-array flag, the shape every consumer of one requires.
+ *
+ * Stated here once because the alternative already happened: `--cases` was
+ * checked for JSON-ness only, and the array check lived in the runner. Two
+ * modules enforcing different halves of one contract means the parser says a
+ * value is valid and the consumer says it is not, with the caller learning
+ * which from an error raised mid-command.
+ */
+function parseJsonArray(raw: string, flag: string): { value: unknown[] } | { error: string } {
+  const parsed = parseJsonValue(raw, flag);
+  if ('error' in parsed) return parsed;
+  if (!Array.isArray(parsed.value)) {
+    return { error: `${flag} must be a JSON array` };
+  }
+  return { value: parsed.value };
+}
+
+/**
  * Parse a millisecond window flag.
  *
- * Non-negative integers only. A negative window has no coherent meaning, and a
- * fractional one is almost always a unit error -- seconds typed where
- * milliseconds were expected -- so both are rejected rather than quietly
- * rounded into something the caller did not ask for.
+ * Non-negative integers within a day, by the same rule the offset flag uses.
+ * A negative window has no coherent meaning, and a fractional one is almost
+ * always a unit error -- seconds typed where milliseconds were expected -- so
+ * both are rejected rather than quietly rounded into something the caller did
+ * not ask for.
+ *
+ * The upper bound is what closes the gap this flag used to have: the check was
+ * `/^\d+$/`, which a 21-digit literal passes, and `Number()` then rounded it to
+ * `1e20` without complaint. The window became a Date roughly three million
+ * years wide, which is not the window that was written down.
  */
 function parseWindow(flag: string, raw: ParsedValues[string]): number | undefined | { error: string } {
-  if (raw === undefined) return undefined;
-  const text = String(raw);
-  if (!/^\d+$/.test(text)) return { error: `invalid --${flag} '${text}'` };
-  return Number(text);
+  return parseInteger(flag, raw, 0, MAX_WINDOW_MS);
 }
 
 /** Human-readable usage text for the whole CLI. */

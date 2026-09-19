@@ -233,6 +233,61 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     `golden-master/` keeps checksum anchors only. Nothing in the default CI path
     downloads them, so the round trip is exercised against the operator's own copy.
 
+### 2.39 CLI argument contract (audit pass 5)
+
+The parser is the boundary at which a malformed invocation becomes an internal
+one. Every criterion below is a statement about *where* a failure is reported:
+the caller must learn that a flag value is wrong from a message naming the flag
+and the reason, not from a downstream exception.
+
+- **`--cases` is an array.** A JSON value that parses but is not an array is
+  refused by the parser. `{"not":"array"}` must not reach `readCases`, which
+  would fail on `.map`.
+- **`--anchors` entries are SHA-256.** Each entry is a non-blank file name paired
+  with a 64-character hex string. `{"a.txt":123}`, `{"a.txt":"abc123"}` (wrong
+  length) and `{"":""}` are each refused, and the message names the offending
+  entry. An empty anchor object is refused too: it asserts "verify these bytes"
+  while supplying nothing, and a green result from it is indistinguishable from a
+  run that checked no hash. Omitting the flag is the honest way to score
+  structure only.
+- **An offset is a whole minute within the zones that exist.** `-720..840`
+  minutes (UTC-12:00 to UTC+14:00), an integer, and the value must survive an
+  exact round trip through `Number()` — `0x10` and `1e3` are rejected because
+  they are not the offset that was typed. A negative offset is spelled
+  `--assume-offset-minutes=-300`; a bare `-300` cannot be a separate token, and
+  `node:parseArgs` reports it as ambiguous. That is standard CLI behaviour, and
+  the `=` form is the spelling the parser must accept.
+- **A window is a whole millisecond within a day.** `--lead-ms` and `--lag-ms`
+  are `0..86400000`, integer, exact round trip. The upper bound is not
+  cosmetic: a 21-digit literal used to become `1e20` ms — about three billion
+  years — which parses, is used, and includes every signal in the slice without
+  ever throwing.
+- **A blank path is not a path.** Every path flag on every command rejects a
+  whitespace-only value, and the message names the flag. Surrounding whitespace
+  around a *meaningful* path is stripped rather than rejected, and an internal
+  space is preserved.
+- **Two exemption rules apply here, and both are measured rather than assumed.**
+
+  1. `asNonBlank`'s `typeof value !== 'string'` branch is **not covered and not
+     coverable** by any argv, because every flag read through it is declared
+     `type: 'string'` and `parseArgs` refuses such a flag when no value follows.
+     The branch is defence in depth for a future spec, and it does not count
+     against the per-module branch floor — but the *invariant that keeps it
+     unreachable* is guarded by a test that reads the flag table and fails if a
+     flag read as a string is declared as anything else.
+  2. `parseInteger`'s `Number.isSafeInteger` test is **provably redundant within
+     every range the CLI currently declares**: any unsafe integer is at least
+     nine orders of magnitude outside `0..86400000` or `-720..840` and is
+     rejected by the range test instead. The injection matrix records this as a
+     **green** result on purpose. The check is kept because the redundancy is a
+     property of today's bounds, not of the function, and a future flag with a
+     range near `2^53` would make it load-bearing again.
+
+Both exemptions are recorded in [`audit.md`](./audit.md) with the measurement
+that established them. A module touched by an audit pass is normally required to
+reach 100% on all four dimensions; `args.ts` carries exactly these two
+documented exemptions against its branch dimension, and nothing else.
+
 ## L5 — End-to-end scenarios and HITL budget
 
 Ten scenarios E1–E10 exercise the full pipeline (T1–T6 ingest, each target format,

@@ -10,7 +10,7 @@ appeared in a review, without a failing measurement, is not a finding.
 
 ## Scope
 
-Four passes so far:
+Five passes so far:
 
 - **Pass 1** — `packages/core/src/score/`: the official-metric scoring path. This
   is the code that decides whether an export is scorable and what number it
@@ -27,6 +27,12 @@ Four passes so far:
   second transport adapter. With pass 3 this covers the whole `llm/` directory,
   which is where the provider-agnostic abstraction lives and therefore where a
   vendor-shaped assumption costs the most.
+- **Pass 5** — `packages/core/src/cli/args.ts`: the argument parser in front of
+  every command. It is the boundary at which a malformed invocation becomes an
+  internal one, and the file the whole CLI's error contract is written in. A
+  validation gap here does not mislabel a number the way pass 1 can; it moves a
+  failure from "the parser refused this and said why" to "some later stage
+  threw", and the caller cannot tell the two apart from the exit code.
 
 ## Summary
 
@@ -89,6 +95,108 @@ building it for 21. They are listed separately because each has its own fix: the
 membership check had to become per-kind, the prompt had to name a vocabulary it
 had only ever named as a field, and reading every block is a different change from
 reading more than one.
+
+### Pass 5 — CLI argument parsing
+
+| # | Defect | Reproduced as | Status |
+| --- | --- | --- | --- |
+| 24 | `evolve stale --cases` was checked for JSON-ness, not for the array its consumer needs | `'{"not":"array"}'` → parse `ok: true`, then threw mid-command | fixed |
+| 25 | `--anchors` checked the outer object, not its entries | `{"a.txt":123}` → parse `ok: true` | fixed |
+| 26 | `--assume-offset-minutes` was any finite number | `1e21` → core `RangeError: Invalid time value` | fixed |
+| 27 | The window flags used `/^\d+$/` and `Number()` | 21-digit literal → `1e20`, silently | fixed |
+| 28 | A path flag rejected `''` but not `'   '` | `--path "   "` → parse `ok: true`, then ENOENT | fixed |
+
+All five are the same error at five sites: a check that establishes less than its
+consumer requires, so the parser reports success and a later stage reports
+failure. They divide into two lessons.
+
+**Findings 24 and 25 — "is JSON" is not a contract.** `JSON.parse` succeeding
+says the text is well-formed; it says nothing about what the value is.
+`evolve stale --cases` feeds `runEvolveStale`, which calls `.map` on it, and
+`--anchors` feeds a hash comparison, which can only ever compare strings. Both
+were accepted as any JSON at all. The fix is that each flag names the shape its
+consumer needs, at the boundary, so the caller learns the shape was wrong from a
+message that says so.
+
+Note which flag was *not* changed: `ingest --cases` carries a file **path**, not
+JSON, and a path may be any string at all. Sharing a flag name across two
+commands is not the same as sharing a contract, and finding 24 exists because the
+first draft of this report conflated them. The acceptance criteria are now stated
+per command, and a test pins the `ingest` side so nobody "fixes" it later.
+
+**Findings 26 and 27 — `Number()` is not a parser.** `Number.isFinite` and
+`Number.isSafeInteger` describe a value; they do not describe the text that
+produced it. `Number('0x10')` is 16, `Number('1e3')` is 1000, and a 21-digit
+literal is a double that is no longer the literal. Finding 26's `1e21` reached
+`Date.toISOString()` and threw `RangeError: Invalid time value`, which is a core
+exception surfaced to a CLI caller as though the command were broken; finding
+27's window *did not throw at all*, which is worse — a lead window of `1e20` ms
+is roughly three billion years, it parses, and nothing downstream ever notices.
+The fix is one `parseInteger` used by every integer flag: a decimal-integer
+pattern, an exact round trip through `String(n) === text` to make precision loss
+observable, then a range the flag's own meaning supplies.
+
+**Finding 28 — blankness is a value, not a length.** `''` was rejected and
+`'   '` was not, so the same mistake typed with spaces opened a file named three
+spaces. The fix tests blankness after trimming, on every path flag, and returns a
+distinct `null` for blank versus `undefined` for absent — because "the flag was
+not given" and "the flag was given something unusable" are different errors with
+different messages.
+
+### A guard that is unreachable on purpose
+
+`asNonBlank` narrows `string | boolean | undefined` down to a string and treats
+anything else as blank. That narrowing is sound only if nothing boolean can reach
+it, and the measurement says nothing can: every flag read through it is declared
+`type: 'string'` in every spec that declares it, and `parseArgs` under
+`strict: true` refuses a string flag with no value rather than returning a
+placeholder. The table's one boolean flag, `has-header`, is read with
+`Boolean(v['has-header'])` and never reaches the reader.
+
+This was established by instrumenting `String.prototype.trim` and counting
+non-string receivers across the suite — zero — and by enumerating the declared
+types of every flag name the reader is called with. So the branch has no test
+that takes it, and it never will. That is not a coverage debt to be closed by
+inventing an input; it is the shape of a guarantee. What is guarded instead is
+the invariant that keeps it unreachable: a test reads the flag table and fails if
+any flag read as a string is declared as anything else. Injecting
+`rules: { type: 'boolean' }` turns it red with
+`flag 'rules' is read as a string but declared as boolean`. See
+`docs/acceptance.md` §2.39 for why the branch is exempt from the ≥95% branch
+floor rather than counted against it.
+
+### A check the matrix proved is redundant, kept on purpose
+
+The injection matrix produced one **green** result, and it is worth more than the
+nine red ones. Removing `Number.isSafeInteger` from `parseInteger` — defect 27's
+second half — was caught by nothing.
+
+The check is not weak; it is *redundant within every range currently declared*.
+The rule is a decimal-integer pattern, then `Number()`, then a safe-integer test,
+then a range test. Where the range is `0..86400000` (a window) or `-720..840` (an
+offset), every value that fails the safe-integer test is at least nine orders of
+magnitude outside the range and is rejected by the range test instead. The
+verdict is identical on every input, so no test can distinguish the two
+implementations:
+
+```
+99999999999999999999   => 1e20    not a safe integer,   also > 86400000
+9007199254740993       => 9007199254740992  not safe,   also > 86400000
+9007199254740991       => 9007199254740991  safe,       also > 86400000
+```
+
+It is kept, and the injection is kept in the matrix as the evidence for why. The
+reason is that the redundancy is a property of the current bounds, not of the
+function. `parseInteger` is the shared integer reader for the whole CLI, and a
+future flag with a range near `2^53` — a nanosecond timestamp, a byte count —
+would make the check load-bearing again, at which point the round trip
+`String(n) === text` is what stops a 17-digit literal from becoming a different
+number. Removing it now because a test cannot see it would be optimising for the
+metric rather than for the guarantee.
+
+For the same reason the round trip is *not* the only defence: the decimal pattern
+is what rejects `0x10` and `1e3`, and the range test is what rejects the
+magnitudes. Three checks, one verdict each, and only the union is under test.
 
 ## 1 — The regression graded its own answer key
 
@@ -658,6 +766,155 @@ non-array case from the empty case.
 **Guard**: four cases, one of which asserts explicitly that the thrown error is not
 a `TypeError`. Injecting the unchecked dereference back fails 2 tests; collapsing
 the non-array case back fails 1.
+
+## 24 — `--cases` was checked for JSON-ness, not for the shape it feeds
+
+`--cases` is declared on two commands and means something different on each:
+
+| Command | Placeholder | Contract |
+| --- | --- | --- |
+| `evolve stale` | `<json>` | an inline JSON array of case descriptors |
+| `ingest` | `<file>` | the path to a JSON file holding them |
+
+The defect is on `evolve stale`, where `runEvolveStale` consumes the value by
+calling `.map` and the parser checked only that the text parsed as JSON.
+
+```
+$ rca-bench evolve stale --input p.json --cases '{"not":"array"}'
+ok: true                          # parser's verdict
+--cases must be a JSON array      # runEvolveStale, after the command started
+```
+
+Two modules were enforcing two halves of one contract: the parser said the value
+was valid, the consumer said it was not, and the caller learned which from an
+error raised mid-command. A caller that validates its own input before invoking
+cannot reproduce the parser's verdict either, because that verdict was not about
+the thing it needed.
+
+The first draft of this finding claimed the defect was on `ingest` and cited
+`ingest --cases '{"not":"array"}'`. A probe refuted it: that argv is accepted,
+and it *should* be, because on `ingest` the value is a file name and a file may
+legitimately be called `{"not":"array"}`. **A criterion refuted by measurement is
+more dangerous than no criterion** — it invites someone to "fix" correct
+behaviour. The finding and its acceptance criteria are now stated per command.
+
+**Fix**: `parseJsonArray`, applied to the flag whose placeholder says `<json>`.
+Every JSON flag that feeds an array names that shape at the boundary, and no flag
+whose value is a path is parsed as JSON.
+
+**Guard**: `a JSON flag must be the shape its consumer needs`, which loops
+`evolve stale` over five non-array JSON values, plus a case asserting that
+`ingest --cases` still treats its value as a file name. Injecting the JSON-only
+check back fails 1 test.
+
+## 25 — `--anchors` checked the outer object, not its entries
+
+`--anchors` is a claim that specific files were verified against committed
+SHA-256 hashes. `readAnchors` verified only that the value was a JSON object.
+
+```
+$ rca-bench score --target rcaeval-re2 --dir d --anchors '{"a.txt":123}'
+ok: true                          # a number can never equal a hex digest
+$ rca-bench score --target rcaeval-re2 --dir d --anchors '{"a.txt":"abc123"}'
+ok: true                          # six characters, not a SHA-256
+$ rca-bench score --target rcaeval-re2 --dir d --anchors '{"":""}'
+ok: true                          # an entry naming no file
+```
+
+Each of these is worse than a plain validation gap, because the comparison can
+only ever fail. A number never equals a digest, so the hash check reports a
+mismatch; and a mismatch is exactly what a tampered file produces. The flag
+exists to make "these bytes are verified" trustworthy, and it was accepting input
+for which the answer is always "not verified" — indistinguishable from real
+corruption. An entry with an empty file name is the same error: it asserts a
+verification of nothing.
+
+**Fix**: each entry must be a non-blank file name paired with a 64-character hex
+string; `SHA256_HEX` names that shape once.
+
+**Guard**: three cases, one per rejected shape. Injecting the outer-object-only
+check back fails 2 tests, loosening the digest pattern to `[0-9a-fA-F]+` fails 1,
+and re-accepting the empty object fails 1.
+
+## 26 — `--assume-offset-minutes` was any finite number
+
+The flag overrides the offset applied when a timestamp carries no zone. It was
+validated with `Number.isFinite`.
+
+```
+$ rca-bench source --path f.csv --assume-offset-minutes 1e21
+ok: true                          # parser's verdict
+RangeError: Invalid time value    # core, from inside Date.toISOString()
+```
+
+A number the parser accepts and core cannot honour is a validation gap, not a
+caller error. The caller sees a `RangeError` naming a JavaScript `Date`
+operation, which describes nothing about the flag; the actual mistake — an
+offset no timezone has, or no real number at all — is not in the message. The
+same field also accepted `5.5` minutes and `9007199254740992`, the latter because
+`Number.isFinite` is true for it and it is not the literal that was typed.
+
+**Fix**: `parseInteger('assume-offset-minutes', …, -720, 840)`. UTC-12:00 and
+UTC+14:00 are the real extremes; anything outside them cannot describe a zone,
+and a fractional minute is not one either.
+
+**Guard**: four cases: an unusable magnitude, a fractional value, a value
+outside the representable UTC range, and — the other direction — every real
+offset including both extremes. Injecting the finite-only check back fails 3
+tests; dropping the range while keeping the integer check fails 5.
+
+## 27 — The window flags used `/^\d+$/` and `Number()`
+
+`--lead-ms` and `--lag-ms` size the observation window around an injection. They
+were checked with a digit pattern and converted with `Number()`.
+
+```
+$ rca-bench ingest --source d --target rcaeval --cases c.json \
+    --lead-ms 99999999999999999999
+ok: true, leadMs: 100000000000000000000
+```
+
+This is the worst shape a defect can take in a parser: **it does not throw.**
+`/^\d+$/` accepts any number of digits, `Number()` rounds the 20-digit literal to
+`1e20` without complaint, and `1e20` milliseconds is about three billion years.
+Nothing downstream rejects it either — the window is simply used, and every
+signal in the slice is included. A caller who typed twenty digits meant a
+number the flag cannot hold; silently substituting a different one is the failure
+mode this whole pass exists to eliminate.
+
+**Fix**: the window flags go through the same `parseInteger` as the offset, with
+`MAX_WINDOW_MS` (one day) as the ceiling. The round trip `String(n) === text` is
+what makes the precision loss observable: without it, `Number.isSafeInteger` is
+false for `1e20` and true for `1e15`, and a 16-digit literal that rounds would
+still pass.
+
+**Guard**: five cases, including the acceptance boundary at exactly one day.
+Reverting to the digit pattern fails 3 tests. Dropping the round trip fails
+**0** — and that is a finding, not a gap in the guards: see "A check the matrix
+proved is redundant, kept on purpose" above.
+
+## 28 — A path flag rejected `''` but not `'   '`
+
+```
+$ rca-bench source --path "   "
+ok: true, path: "   "             # then: ENOENT, no such file or directory
+```
+
+An empty string was already refused. Three spaces are the same mistake typed
+differently, and the difference the caller sees is not a message about the flag
+but an `ENOENT` naming a file that looks empty in the terminal. Every path flag
+in the table had the identical gap, because they shared one reader.
+
+**Fix**: `asNonBlank` tests blankness **after** trimming and returns `undefined`
+for absent versus `null` for blank, so a caller distinguishes "not given" from
+"given something unusable" and reports the right one. Applied to every path flag
+— `source`, `export`, `score`, `transform`, `case`, `gate`, `report`, `pack`,
+`ingest` and the four `evolve` actions.
+
+**Guard**: a per-command sweep plus a case asserting that *meaningful*
+surrounding whitespace is stripped rather than rejected, and one asserting an
+internal space is preserved. Injecting the untrimmed comparison back fails 5
+tests; removing the blankness test entirely fails 7.
 
 ## Method
 

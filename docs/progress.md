@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1789 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1818 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
@@ -24,14 +24,27 @@ with a coverage gate.
 | Dimension | Result | Gate |
 | --- | --- | --- |
 | Statements | 99.95% | ≥ 95% |
-| Branches | 99.96% | ≥ 95% |
+| Branches | 99.93% | ≥ 95% |
 | Functions | 100% | ≥ 95% |
 | Lines | 99.95% | ≥ 95% |
 
-The residual is two statements and one branch: the `never` guard at the end of
-`aggregateFor`. Every member of `ScoreTargetId` returns from a branch above it,
-so no input reaches it — it is a compile-time backstop. The comment on the line
-records why it is not deleted to turn the number green.
+The residual is two statements and two branches, and both are documented
+backstops rather than gaps:
+
+1. The `never` guard at the end of `aggregateFor`. Every member of
+   `ScoreTargetId` returns from a branch above it, so no input reaches it — it
+   is a compile-time backstop.
+2. The `typeof value !== 'string'` branch in `asNonBlank`, and the
+   `Number.isSafeInteger` test in `parseInteger`, both added by pass 5. The
+   first is unreachable because every flag read through `asNonBlank` is declared
+   `type: 'string'` and `parseArgs` refuses a string flag with no value; the
+   second is provably redundant within every range the CLI currently declares.
+   The measurements are in `audit.md` and the exemption is argued in
+   `acceptance.md` §2.39.
+
+The comments on those lines record why they are not deleted to turn the numbers
+green. A guard removed because a test cannot see it is not a covered line; it is
+a missing guarantee.
 
 Every module touched by an audit pass is at **100% on all four dimensions**:
 `src/ingest/otlp.ts` after pass 2; `src/llm/openai-compat.ts` and
@@ -40,6 +53,14 @@ Every module touched by an audit pass is at **100% on all four dimensions**:
 aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond conversion
 introduced a negative-timestamp path that nothing exercised, and it was covered
 with a real pre-epoch case rather than an ignore comment.
+
+`src/cli/args.ts` is the one module where a pass left statements and lines at
+100% but branches at 99.72%, because pass 5 added two guards that no input can
+take. Closing that to 100% would require either deleting the guards or writing a
+test for a call that cannot happen; both trade a real guarantee for a number.
+The exemption is bounded to those two branches, is recorded in
+`acceptance.md` §2.39, and is guarded from the other side by a test that pins the
+invariant keeping them unreachable.
 
 Two thresholds sit where they do on purpose. The gate is ≥ 95%, the measured
 figure is ≈ 99.95%, and the one uncovered branch is a deliberate compile-time
@@ -59,6 +80,7 @@ the logic is; the figure is recorded because it is measured on every run.
 | 2 | `src/ingest/otlp.ts` | 5 | 27 tests in 1 new file |
 | 3 | `src/llm/openai-compat.ts`, `src/fault/importer.ts` | 4 | 30 tests in 2 new files |
 | 4 | `src/llm/rulegen.ts`, `src/llm/anthropic.ts` | 8 | 48 tests across 2 files (21 new in `rulegen`, 19 in `anthropic`) |
+| 5 | `src/cli/args.ts` | 5 | 56 tests in `cli.test.ts` (5 new describe blocks + 4 invariant cases) |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
@@ -78,6 +100,16 @@ exists specifically so no single vendor's wire format can leak into the contract
 Pass 4 is also the first pass where the count of defects exceeds the count of
 modules: three of its eight findings (17, 20, 22) surfaced while building the guard
 for an earlier one, which is the same pattern pass 1 saw twice.
+
+Pass 5 took `src/cli/args.ts` (1063 lines, the largest single source file, six
+test files referencing it). It was chosen because it is the boundary where a
+malformed invocation becomes an internal one: every finding in the pass is a
+check that established less than its consumer required, so the parser reported
+success and a later stage reported failure. Unlike pass 1, none of these could
+mislabel a number — they moved a failure from "refused, with a reason" to
+"threw", and the caller cannot tell those apart from an exit code. Pass 5 is
+also the first pass to leave a module below 100% branches, with two documented
+exemptions rather than a closed gap.
 
 All passes are recorded in full in [`audit.md`](./audit.md), with the observed
 number for each finding.
@@ -152,6 +184,42 @@ otherwise report as an unused symbol. It is that the rule from pass 2 was applie
 before the matrix ran, using the `void symbol;` form from the start. Across four
 passes the mis-rejection count is 4 of 36, and all four are in the first three.
 
+### Injection matrix, pass 5
+
+Twelve injections, each reintroducing one defect, plus two negative controls:
+
+| Injection | Tests that fail |
+| --- | --- |
+| `evolve stale --cases` checked for JSON-ness only | 1 |
+| `--anchors` validated as an outer object only | 6 |
+| the digest pattern loosened to `[0-9a-fA-F]+` | 1 |
+| the empty anchor object re-accepted | 2 (1 core + 1 CLI) |
+| the offset accepted as any finite number | 4 |
+| the offset range dropped, integer check kept | 5 |
+| the window flags back on `/^\d+$/` + `Number()` | 3 |
+| the safe-integer check dropped, range kept | **0 — provably a no-op** |
+| `asNonBlank` rejecting `''` but not `'   '` | 4 |
+| the blankness test removed entirely | 6 |
+| NEGATIVE CONTROL — comment edit (after `asNonBlank`) | 0 (stays green) |
+| NEGATIVE CONTROL — comment edit (`SHA256_HEX`) | 0 (stays green) |
+
+32 failing assertions across 10 injections, **2 negative controls green, 0 silent
+defects**, and one deliberately green injection. No injection was rejected by
+`tsc` on the final wording.
+
+That green row is the interesting one. Removing `Number.isSafeInteger` changes
+no verdict on any argv, because every unsafe integer is at least nine orders of
+magnitude outside the declared ranges and the range test rejects it instead. The
+matrix is what established that, and the check is kept anyway — see
+`audit.md`, "A check the matrix proved is redundant, kept on purpose".
+
+Two injections were rejected by `tsc` on their first wording
+(`anchors-outer-object-only` left `SHA256_HEX` unread; `offset-finite-only` left
+three constants unread). Both were rewritten using the `void symbol;` form from
+pass 2 and re-run, and on re-run both were caught — 6 and 4 failures. Across
+five passes the mis-rejection count is 6 of 48, and pass 5 is the first pass
+where **all twelve** reached the test run on the final wording.
+
 ## L4 anchor status
 
 Four anchors, each strictly stronger than the one before:
@@ -175,13 +243,13 @@ that forbid vendoring.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 71 |
+| Commits | 72 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
-| Source lines | ~12,950 |
+| Source lines | ~13,100 |
 | Test files | 67 |
-| Test lines | ~20,300 |
-| Tests | 1789 core + 173 CLI |
+| Test lines | ~20,620 |
+| Tests | 1818 core + 173 CLI |
 
 ## Test strategy
 

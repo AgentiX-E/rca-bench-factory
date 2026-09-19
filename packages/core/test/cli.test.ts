@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { formatCommandHelp, formatHelp, formatVersion, HELP_TOPICS, parseCliArgs } from '../src/cli/args.js';
 import { PRIME_DATASET_IDS } from '../src/ingest/prime.js';
@@ -578,7 +579,14 @@ describe('parseCliArgs - score', () => {
   it('parses a score command with anchors', () => {
     // The anchor set must be non-empty: an empty one asserts "verify these
     // bytes" while supplying nothing, so the parser refuses it (see below).
-    const anchors = '{"order-prod/query.csv":"abc123"}';
+    //
+    // The digest below used to be the six-character `abc123`, which this test
+    // accepted because the parser did not look inside the map. An anchor is a
+    // promise that a named file still hashes to a stated SHA-256, so a value
+    // that cannot be a SHA-256 makes the promise uncheckable rather than
+    // wrong. The parser now refuses it and the fixture had to become a real
+    // digest -- the old expectation was not describing a supported input.
+    const anchors = `{"order-prod/query.csv":"${'a'.repeat(64)}"}`;
     expect(parseCliArgs(['score', '--target', 'rcaeval-re2', '--anchors', anchors, '--dir', './exported'])).toEqual({
       ok: true,
       command: { command: 'score', target: 'rcaeval-re2', anchors, dir: './exported' },
@@ -1216,7 +1224,7 @@ describe('help and parser cannot drift', () => {
   it('accepts every flag it advertises for export and score', () => {
     const cases: [string, string[]][] = [
       ['export', ['--target', 'rca100', '--input', 'i.json', '--out-dir', 'out', '--suite', 're1']],
-      ['score', ['--target', 'rca100', '--dir', 'out', '--anchors', '{"a":"b"}']],
+      ['score', ['--target', 'rca100', '--dir', 'out', '--anchors', `{"a":"${'b'.repeat(64)}"}`]],
     ];
     for (const [topic, flags] of cases) {
       expect(parseCliArgs([topic, ...flags]).ok).toBe(true);
@@ -1260,6 +1268,334 @@ describe('help and parser cannot drift', () => {
     // The specific promise `formatHelp` makes, asserted per command.
     for (const topic of HELP_TOPICS) {
       expect(parseCliArgs([topic, '--help'])).toEqual({ ok: true, command: { command: 'help', topic } });
+    }
+  });
+});
+
+/**
+ * The defects below were each reproduced against the shipped build before the
+ * fix, by running the real `argv` through `parseCliArgs` and reading the value
+ * that came back. The measured value is quoted in each case, because "this
+ * looks wrong" is not evidence and the number is.
+ */
+describe('parseCliArgs - a JSON flag must be the shape its consumer needs', () => {
+  it('rejects a non-array --cases instead of deferring it to run time', () => {
+    // Measured before the fix: `{"ok":true,...cases:"{\"not\":\"array\"}"}`.
+    // The parser accepted it, and `runEvolveStale` then threw
+    // `--cases must be a JSON array` from inside the command runner -- so the
+    // error arrived after the command had started, naming a flag with no hint
+    // that the value was the problem, and this module's own validation had
+    // already claimed the argument was fine.
+    for (const cases of ['{"not":"array"}', '42', '"a string"', 'null', 'true']) {
+      const result = parseCliArgs(['evolve', 'stale', '--input', 'p.json', '--cases', cases]);
+      expect(result.ok, `expected --cases ${cases} to be rejected`).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/--cases/);
+    }
+  });
+
+  it('still accepts a JSON array for --cases, including an empty one', () => {
+    for (const cases of ['[]', '[{"id":"c1"}]', '["c1","c2"]']) {
+      const result = parseCliArgs(['evolve', 'stale', '--input', 'p.json', '--cases', cases]);
+      expect(result.ok, `expected --cases ${cases} to be accepted`).toBe(true);
+    }
+  });
+
+  it('rejects malformed JSON for --cases with the same flag named', () => {
+    const result = parseCliArgs(['evolve', 'stale', '--input', 'p.json', '--cases', 'not json']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--cases/);
+  });
+
+  it('leaves ingest --cases alone, because there it is a file name', () => {
+    // The same flag on two commands is two contracts. `evolve stale` takes
+    // inline JSON (placeholder `<json>`); `ingest` takes the path to a JSON file
+    // (placeholder `<file>`). The first draft of this fix asserted the array
+    // check belonged on both, and a probe refuted it: `ingest --cases
+    // '{"n":1}'` is accepted, correctly, because a file may be called that.
+    //
+    // Pinned from this side because the failure mode is a well-meaning later
+    // "consistency fix" that adds a JSON parse to a flag holding a path. An
+    // acceptance criterion refuted by measurement is worse than none: it invites
+    // someone to break correct behaviour.
+    for (const cases of ['{"n":1}', 'cases.json', '/var/data/cases.json', '{"not":"array"}']) {
+      const result = parseCliArgs(['ingest', '--source', 'd', '--target', 'rcaeval', '--cases', cases]);
+      expect(result.ok, `expected ingest --cases ${cases} to be treated as a path`).toBe(true);
+      if (result.ok && result.command.command === 'ingest') {
+        expect(result.command.cases).toBe(cases);
+      }
+    }
+  });
+});
+
+describe('parseCliArgs - --anchors names files and supplies their hashes', () => {
+  it('rejects a non-string hash', () => {
+    // Measured before the fix: `{"a.txt":123}` parsed as ok, so the anchor set
+    // contained a number where a hash was expected and the contradiction only
+    // appeared when the hash comparison silently failed to match.
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', 'd', '--anchors', '{"a.txt":123}']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--anchors/);
+  });
+
+  it('rejects a hash that is not hex', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', 'd', '--anchors', '{"a.txt":"not-a-hash"}']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--anchors/);
+  });
+
+  it('rejects a hash of the wrong length', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', 'd', '--anchors', '{"a.txt":"abc123"}']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--anchors/);
+  });
+
+  it('rejects a blank hash', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', 'd', '--anchors', '{"a.txt":""}']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--anchors/);
+  });
+
+  it('rejects an empty file name', () => {
+    const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', 'd', '--anchors', `{"":"${'a'.repeat(64)}"}`]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--anchors/);
+  });
+
+  it('accepts a well-formed anchor set, in either hex case', () => {
+    for (const hash of ['a'.repeat(64), 'A'.repeat(64), '0123456789abcdef'.repeat(4)]) {
+      const result = parseCliArgs(['score', '--target', 'openrca-1.0', '--dir', 'd', '--anchors', `{"a.txt":"${hash}"}`]);
+      expect(result.ok, `expected ${hash} to be accepted`).toBe(true);
+    }
+  });
+
+  it('names the offending file when one entry is wrong', () => {
+    const result = parseCliArgs([
+      'score', '--target', 'openrca-1.0', '--dir', 'd',
+      '--anchors', `{"good.txt":"${'a'.repeat(64)}","bad.txt":123}`,
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/bad\.txt/);
+  });
+});
+
+describe('parseCliArgs - --assume-offset-minutes must be a usable offset', () => {
+  it('rejects a value that would produce an Invalid Date downstream', () => {
+    // Measured before the fix: the parser accepted `1e21` (its rule was "any
+    // finite number") and core then threw `RangeError: Invalid time value`
+    // from inside `Date.toISOString()`. A number the parser accepts and core
+    // cannot honour is a validation gap, not a caller error.
+    for (const value of ['1e21', '1e30', '9007199254740992', '1e309']) {
+      const result = parseCliArgs(['source', '--path', 'f.csv', '--assume-offset-minutes', value]);
+      expect(result.ok, `expected offset ${value} to be rejected`).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/assume-offset-minutes/);
+    }
+  });
+
+  it('rejects a fractional offset, which no timezone has', () => {
+    const result = parseCliArgs(['source', '--path', 'f.csv', '--assume-offset-minutes', '5.5']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/assume-offset-minutes/);
+  });
+
+  it('rejects a value outside the representable UTC range', () => {
+    for (const value of ['-1441', '1441', '99999']) {
+      const result = parseCliArgs(['source', '--path', 'f.csv', '--assume-offset-minutes', value]);
+      expect(result.ok, `expected offset ${value} to be rejected`).toBe(false);
+    }
+  });
+
+  it('accepts every real UTC offset, including the extremes', () => {
+    // Offsets are written in the `--flag=value` form because a leading `-`
+    // cannot be a separate token (see the test below); `=` is accepted
+    // everywhere, so every offset is spelled the same way here.
+    for (const value of ['0', '720', '825', '-300', '480', '345']) {
+      const result = parseCliArgs(['source', '--path', 'f.csv', `--assume-offset-minutes=${value}`]);
+      expect(result.ok, `expected offset ${value} to be accepted`).toBe(true);
+      if (result.ok && result.command.command === 'source') {
+        expect(result.command.assumeOffsetMinutes).toBe(Number(value));
+      }
+    }
+  });
+
+  it('accepts a negative offset written in the --flag=value form', () => {
+    // A negative offset cannot be passed as a separate token: `node:parseArgs`
+    // reads the leading `-` as the start of another flag and reports
+    // "argument is ambiguous". That is standard CLI behaviour, not a defect --
+    // the `=` form is how a value that looks like a flag is spelled, and the
+    // parser must accept it. UTC-12:00 is a real zone.
+    const result = parseCliArgs([
+      'source', '--path', 'f.csv', '--assume-offset-minutes=-720',
+    ]);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.command.command === 'source') {
+      expect(result.command.assumeOffsetMinutes).toBe(-720);
+    }
+  });
+
+  it('accepts a zero-padded offset, which still round-trips exactly', () => {
+    // `07` is a spelling of 7, and the decimal-integer check is about
+    // rejecting values that are not the one written down -- `07` is not one of
+    // those, so it is accepted. `0x10` and `1e3` are, because `Number` turns
+    // them into 16 and 1000, which is not what was typed.
+    const result = parseCliArgs(['source', '--path', 'f.csv', '--assume-offset-minutes', '07']);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.command.command === 'source') {
+      expect(result.command.assumeOffsetMinutes).toBe(7);
+    }
+  });
+
+  it('rejects a value that is not a plain decimal integer', () => {
+    for (const value of ['0x10', '1e3', ' 7 ', '+5', '1_000', '7.0', '.5']) {
+      const result = parseCliArgs(['source', '--path', 'f.csv', '--assume-offset-minutes', value]);
+      expect(result.ok, `expected ${value} to be rejected`).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/assume-offset-minutes/);
+    }
+  });
+});
+
+describe('parseCliArgs - window flags cannot reach core as a non-integer', () => {
+  it('rejects a window that overflows the safe integer range', () => {
+    // Measured before the fix: `--lead-ms 99999999999999999999` parsed as
+    // `100000000000000000000`, because the check was `/^\d+$/` and `Number()`
+    // rounds past 2^53 without complaint. The window then becomes a Date that
+    // is not the one the caller wrote.
+    for (const value of ['99999999999999999999', '9007199254740993', '1' + '0'.repeat(20)]) {
+      const result = parseCliArgs(['ingest', '--source', 'd', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', value]);
+      expect(result.ok, `expected --lead-ms ${value} to be rejected`).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/lead-ms/);
+    }
+  });
+
+  it('rejects an out-of-range window even when it fits a double', () => {
+    // `Number.MAX_SAFE_INTEGER` is representable but a window of that many
+    // milliseconds is ~285,000 years, so it is a unit error, not a request.
+    for (const value of ['9007199254740991']) {
+      const result = parseCliArgs(['ingest', '--source', 'd', '--target', 'rcaeval', '--cases', 'c.json', '--lag-ms', value]);
+      expect(result.ok, `expected --lag-ms ${value} to be rejected`).toBe(false);
+    }
+  });
+
+  it('accepts a window up to a day, in whole milliseconds', () => {
+    for (const value of ['0', '1', '600000', '3600000', '86400000']) {
+      const result = parseCliArgs(['ingest', '--source', 'd', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', value]);
+      expect(result.ok, `expected --lead-ms ${value} to be accepted`).toBe(true);
+      if (result.ok && result.command.command === 'ingest') {
+        expect(result.command.leadMs).toBe(Number(value));
+      }
+    }
+  });
+
+  it('rejects a window above the day the ingest window may span', () => {
+    const result = parseCliArgs(['ingest', '--source', 'd', '--target', 'rcaeval', '--cases', 'c.json', '--lead-ms', '86400001']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/lead-ms/);
+  });
+});
+
+describe('parseCliArgs - a blank path is not a path', () => {
+  it('rejects a whitespace-only --path', () => {
+    // Measured before the fix: `--path "   "` parsed as ok with `path: "   "`,
+    // so the command proceeded to open a file named three spaces and failed
+    // with ENOENT. An empty string was already rejected; three spaces are the
+    // same mistake typed differently.
+    const result = parseCliArgs(['source', '--path', '   ']);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/--path/);
+  });
+
+  it('rejects a whitespace-only path on every command that takes one', () => {
+    const blank = '   ';
+    const cases: Array<[string, string[]]> = [
+      ['source', ['source', '--path', blank]],
+      ['export', ['export', '--target', 'rcaeval', '--input', 'b.json', '--out-dir', blank]],
+      ['transform', ['transform', '--input', 'a.json', '--rules', blank]],
+      ['case', ['case', '--input', blank]],
+      ['gate', ['gate', '--input', blank, '--target', 'openrca-1.0']],
+      ['report', ['report', '--input', blank]],
+      ['pack', ['pack', '--input', 'd', '--output', blank]],
+      ['ingest', ['ingest', '--source', blank, '--target', 'rcaeval', '--cases', 'c.json']],
+    ];
+    for (const [name, argv] of cases) {
+      const result = parseCliArgs(argv);
+      expect(result.ok, `expected ${name} to reject a blank path`).toBe(false);
+    }
+  });
+
+  it('accepts a path with meaningful surrounding whitespace stripped', () => {
+    const result = parseCliArgs(['source', '--path', '  f.csv  ']);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.command.command === 'source') expect(result.command.path).toBe('f.csv');
+  });
+
+  it('accepts a path containing an internal space', () => {
+    const result = parseCliArgs(['source', '--path', 'my dir/f.csv']);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.command.command === 'source') expect(result.command.path).toBe('my dir/f.csv');
+  });
+});
+
+describe('parseCliArgs - the two flag tables cannot route a non-string into the value reader', () => {
+  it('declares every flag the value reader accepts as a string flag', () => {
+    // The value reader narrows a `boolean | string | undefined` down to a
+    // string and treats anything else as a blank value. That narrowing is only
+    // sound if no flag it is handed can be a boolean, and `parseArgs` hands
+    // back exactly the declared type. `has-header` is the one boolean flag in
+    // the table; if a future spec ever copies that declaration onto a name the
+    // value reader also reads, `value.trim()` would be called on `true`.
+    //
+    // Asserted as a source invariant rather than through an argv, because no
+    // argv reaches the branch: `strict: true` refuses `--input` with no value
+    // instead of returning a placeholder. Pinning the declaration is what keeps
+    // the branch unreachable, so that is the thing the test states.
+    const spec = readFileSync(new URL('../src/cli/args.ts', import.meta.url), 'utf8');
+    const declaredTypes = new Map<string, Set<string>>();
+    for (const match of spec.matchAll(/'?([a-z][a-z-]*)'?: \{ (?:placeholder: [^,]*?, )?type: '([a-z]+)'/g)) {
+      const [, name, type] = match;
+      const types = declaredTypes.get(name) ?? new Set<string>();
+      types.add(type);
+      declaredTypes.set(name, types);
+    }
+
+    // Every flag name the value reader is called with.
+    const readNames = new Set(
+      [...spec.matchAll(/asNonBlank\(v\.([a-zA-Z][a-zA-Z-]*)\)/g)].map((m) => m[1]),
+    );
+    for (const match of spec.matchAll(/asNonBlank\(v\['([a-zA-Z][a-zA-Z-]*)'\]\)/g)) {
+      readNames.add(match[1]);
+    }
+    expect(readNames.size).toBeGreaterThan(0);
+
+    for (const name of readNames) {
+      const types = declaredTypes.get(name);
+      expect(types, `expected '${name}' to be declared somewhere in the flag table`).toBeDefined();
+      expect(
+        [...(types ?? [])].sort(),
+        `flag '${name}' is read as a string but declared as ${[...(types ?? [])].join(', ')}`,
+      ).toEqual(['string']);
+    }
+  });
+
+  it('has exactly one boolean flag, and it is not read as a string', () => {
+    const spec = readFileSync(new URL('../src/cli/args.ts', import.meta.url), 'utf8');
+    const booleans = [...spec.matchAll(/'([a-z][a-z-]*)': \{ type: 'boolean'/g)].map((m) => m[1]);
+    expect(booleans).toEqual(['has-header']);
+    // And it is read as a boolean, not through the value reader.
+    expect(spec).toContain("Boolean(v['has-header'])");
+    expect(spec).not.toContain("asNonBlank(v['has-header'])");
+  });
+
+  it('refuses a string flag given no value instead of letting a placeholder through', () => {
+    // This is why the value reader's type guard is unreachable: `parseArgs`
+    // rejects the argv outright. If this ever started returning `ok: true`, the
+    // value reader would receive a non-string and the guard would matter.
+    for (const argv of [
+      ['gate', '--input', '--target', 'rca100'],
+      ['official', '--dir'],
+      ['transform', '--input', 'a.json', '--rules'],
+      ['ingest', '--source', 'd', '--target', 'rcaeval', '--cases'],
+    ]) {
+      const result = parseCliArgs(argv);
+      expect(result.ok, `expected ${JSON.stringify(argv)} to be refused`).toBe(false);
     }
   });
 });
