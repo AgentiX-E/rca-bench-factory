@@ -19,6 +19,9 @@ Two passes so far:
   largest under-verified surface in the package (403 source lines, one test file)
   and the main real-world entry point for exporter output, so a defect here
   distorts every downstream number.
+- **Pass 3** — `packages/core/src/llm/openai-compat.ts` and
+  `packages/core/src/fault/importer.ts`: the shared LLM transport and the
+  historical-fault importer. Both were at the top of the under-verified list.
 
 ## Summary
 
@@ -49,6 +52,19 @@ finding 2 and is recorded because it is the same error one level up.
 Finding 11 surfaced while building the guard for finding 8: once durations were
 exact, the negativity check was revealed to be reading the truncated value. It is
 recorded separately because the fix is a different one.
+
+### Pass 3 — LLM transport and fault importer
+
+| # | Defect | Reproduced as | Status |
+| --- | --- | --- | --- |
+| 12 | Only `choices[0]` was read, discarding a usable answer | 2 choices, 2nd usable → threw | fixed |
+| 13 | A null choice leaked a raw `TypeError` | `choices: [null]` → `Cannot read properties of null` | fixed |
+| 14 | `''` accepted as a completion | empty answer indistinguishable from a real one | fixed |
+| 15 | Category read verbatim against a case-sensitive vocabulary | `NETWORK` → parsed `ok`, then `valid: false` | fixed |
+
+Finding 15 is the only one in this report where the defect spans **two functions**
+rather than sitting inside one: the prompt never stated the rule the parser
+enforced. Reading either file alone shows nothing wrong.
 
 ## 1 — The regression graded its own answer key
 
@@ -317,6 +333,118 @@ and the millisecond comparison documents the invariant at the unit the IR uses.
 **Guard**: a case asserting a `-1 ns` span is quarantined. Injecting the
 truncated comparison back fails 1 test.
 
+## 12 — Only the first choice was ever read
+
+`openai-compat.ts` had **no test file at all** — 0 test references for 98 source
+lines — while being the shared transport under both the DeepSeek and OpenAI
+adapters, so every LLM-dependent path in the factory ran through it.
+
+```ts
+const first = choices[0] as Record<string, unknown>;
+const message = first.message as Record<string, unknown> | undefined;
+const content = message?.content;
+if (typeof content !== 'string') {
+  throw new Error(`${name} response choice has no string content`);
+}
+return content;
+```
+
+An OpenAI-compatible server returns a leading choice that carries no text for a
+refusal or a content-filtered turn, with a usable completion behind it. Reading
+only `choices[0]` discarded that answer and reported the whole response as
+unusable.
+
+Measured: two choices, the first with `content: null`, the second with
+`"second"`:
+
+```
+THREW: Error: X response choice has no string content
+```
+
+**Fix**: inspect every choice in order; the first usable text wins.
+
+**Guard**: `test/openai-compat.test.ts` (18 tests). Injecting the first-choice-only
+read back fails 3 tests.
+
+## 13 — A null choice leaked a raw `TypeError`
+
+The same two lines dereferenced `choices[0]` without checking it is an object.
+Every other malformed shape in this parser produces a named message —
+`is not valid JSON`, `is not a JSON object`, `has no choices` — but a `null`
+element escaped as an internal error:
+
+```
+THREW: TypeError: Cannot read properties of null (reading 'message')
+```
+
+Measured for `{"choices":[null]}`. The failure is not that it threw; it is *what*
+it threw. A `TypeError` names a JavaScript operation, not a response shape, so an
+operator reading it learns nothing about what the server sent.
+
+**Fix**: check the element is an object before touching it, at every position, and
+report the position.
+
+**Guard**: two cases asserting the named message and, explicitly, that a
+`TypeError` is **not** what comes out. Injecting the unchecked dereference back
+fails 2 tests.
+
+## 14 — `''` was accepted as a completion
+
+The declared return type is `string`, and a choice whose content is the empty
+string satisfied `typeof content === 'string'`. Measured: `content: ''` returned
+`''` as a successful completion, so no caller could tell an empty answer from a
+real one — and the surrounding comment claims the function throws "so a malformed
+or empty response surfaces as an explicit error", which it did not.
+
+**Fix**: the empty string is not usable text; a whitespace-only completion still
+is, because that is a real answer a model can give.
+
+**Guard**: two cases, including the whitespace case that must **keep** working.
+Injecting `typeof content === 'string'` back fails 1 test.
+
+## 15 — The prompt never stated the rule the parser enforced
+
+This one is not inside a function. It lives between two of them.
+
+`buildFaultExtractionPrompt` advertised the category vocabulary as a bare field
+placeholder:
+
+```
+"category": "resource | network | runtime | middleware | code | config | dependency"
+```
+
+Nothing in the prompt says the value must be **one of** that list, and nothing
+anywhere says the match is case- or space-sensitive. `parseFaultExtractionResponse`
+then stored whatever string came back, and `parseFaultSpec` matches the category
+by exact value.
+
+Measured end to end, for an incident the prompt itself was built from:
+
+```
+parse    -> { ok: true,  extracted: { category: "NETWORK" } }
+validate -> { valid: false, reasons: ["invalid fault category 'NETWORK'"] }
+```
+
+So a correctly-extracted fault was rejected, and the H3 reviewer was told the
+**category** was wrong when it was the **casing** that was wrong — a diagnosis
+pointing at the model's judgement instead of at the contract.
+
+**Fix**, in both halves, because either alone would be a half-measure:
+
+- the prompt now says `"one of: …"` and states that the match is
+  case-insensitive and that any other value is rejected;
+- the parser trims and case-folds before the vocabulary check, and rejects an
+  out-of-vocabulary value **at the point it was read**, naming the offending
+  string, instead of deferring to a validator that reports it as a category error.
+
+A synonym such as `net` is still rejected. Deciding that `net` means `network` is
+a judgement, not a normalisation, and H3 is where that judgement belongs.
+
+**Guard**: `test/importer-contract.test.ts` (12 tests), including the full
+ticket-text → prompt → parse → validate pipeline as one assertion. Injecting the
+verbatim read back fails 3 tests; dropping the prompt's rule sentence fails 1;
+removing the early rejection fails 2.
+
 ## Method
 
 Each finding was reproduced before being fixed, by running the affected path
@@ -352,3 +480,27 @@ The injection harness needed the same treatment in this pass: two injections wer
 first rejected by `tsc` for an unused symbol rather than by a test, which would
 have been logged as "caught" while proving nothing about the tests. Both were
 rewritten to compile, and re-run so that the **tests** were what failed.
+
+Pass 3 hit this a third time — the "drop the choice-shape guard" injection was
+again rejected by `tsc` — and it was caught only because the rule from pass 2 was
+already written down. **This is why the rule is a rule and not a note:** an
+injection that never reaches the test run has not been tested, and a matrix that
+counts it as caught is measuring the compiler. Across the three passes, 4 of 26
+injections were mis-rejected this way; all four were rewritten and re-run, and on
+re-run every one was caught by the tests instead.
+
+### What fixed the long-standing test wording
+
+Pass 3 changed a function that two legacy tests in `deepseek.test.ts` already
+covered:
+
+```ts
+expect(() => parseDeepSeekResponse('{"choices":[{"message":{"role":"assistant"}}]}')).toThrow(/content/i);
+```
+
+The rewording to `no usable completion text` broke both. Rather than edit
+assertions to chase the implementation, the parser keeps its existing wording for
+the single-choice case: with one choice a count adds nothing to the diagnosis, and
+the long-standing wording is what operators already grep for. The ranked message
+appears only when position is genuinely ambiguous. **Two assertions that were
+there first and pass on their own merits are not the thing to change.**

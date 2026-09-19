@@ -138,6 +138,35 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     and passed as a legal zero-length span. An inverted timestamp is the broken
     clock signature this corpus must never contain, and truncation hid every
     inversion smaller than a unit.
+- **LLM transport reads every completion the server sent**, and a credential never
+  appears in code or git. This module had no test file at all while being the
+  shared transport under both the DeepSeek and OpenAI adapters.
+  - **A leading unusable choice does not discard the answer behind it.** An
+    OpenAI-compatible server returns a first choice with no text for a refusal or
+    a content-filtered turn; reading only `choices[0]` threw while a usable
+    completion sat at index 1. Choices are inspected in order.
+  - **Every malformed shape produces this module's own named diagnostic.** A
+    `null` choice leaked `TypeError: Cannot read properties of null (reading
+    'message')`, which names a JavaScript operation rather than a response shape.
+    A `TypeError` is not an acceptable error for a bad response.
+  - **An empty completion is not a completion.** The declared return type is
+    `string`, so accepting `''` made an empty answer indistinguishable from a real
+    one. Whitespace is still accepted, because that is a real answer.
+- **A prompt and the parser fed by it must agree on the contract.** This is the
+  first requirement in this document that spans two functions, because the defect
+  did: reading either file alone showed nothing wrong.
+  - The prompt must state a vocabulary as a vocabulary — `one of: …`, with the
+    match rule — not as a bare field placeholder that a model has to infer from.
+  - A value whose only deviation is casing or surrounding whitespace must survive
+    the pipeline. Measured before this requirement: a reply of `NETWORK` parsed as
+    `ok: true` and then failed validation with `invalid fault category 'NETWORK'`,
+    so a correctly-extracted fault was rejected and the H3 reviewer was told the
+    **category** was wrong when it was the **casing**.
+  - An out-of-vocabulary value is rejected where it is read, naming the offending
+    string, rather than deferred to a validator that reports it as a category
+    error.
+  - A synonym (`net` for `network`) is still rejected: that is a judgement, not a
+    normalisation, and H3 is where it belongs.
 - **Round trip** (`rca-bench ingest` → `rca-bench export` → `rca-bench official`):
   official dataset data is read into the IR, written back out in the target's own
   layout, and graded by the published metric. The three anchors above all begin

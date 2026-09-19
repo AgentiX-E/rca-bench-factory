@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1724 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1754 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
 | L3 | Gate and export soundness | **met** | 18-mutation suite, 100% intercepted |
@@ -33,10 +33,11 @@ The residual is two statements and one branch: the `never` guard at the end of
 so no input reaches it — it is a compile-time backstop. The comment on the line
 records why it is not deleted to turn the number green.
 
-`src/ingest/otlp.ts` is at **100% on all four dimensions** after pass 2. Pass 2
-raised the aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond
-conversion introduced a negative-timestamp path that nothing exercised, and it
-was covered with a real pre-epoch case rather than an ignore comment.
+`src/ingest/otlp.ts` is at **100% on all four dimensions** after pass 2, as are
+`src/llm/openai-compat.ts` and `src/fault/importer.ts` after pass 3. Pass 2 raised
+the aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond conversion
+introduced a negative-timestamp path that nothing exercised, and it was covered
+with a real pre-epoch case rather than an ignore comment.
 
 Two thresholds sit where they do on purpose. The gate is ≥ 95%, the measured
 figure is ≈ 99.95%, and the one uncovered branch is a deliberate compile-time
@@ -50,12 +51,20 @@ the thing it exists to prove.
 | --- | --- | --- | --- |
 | 1 | `src/score/` | 6 | 37 tests across 5 new files |
 | 2 | `src/ingest/otlp.ts` | 5 | 27 tests in 1 new file |
+| 3 | `src/llm/openai-compat.ts`, `src/fault/importer.ts` | 4 | 30 tests in 2 new files |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
-(403 lines, one test file) while also being the main real-world ingest path. Both
-passes are recorded in full in [`audit.md`](./audit.md), with the observed number
-for each finding.
+(403 lines, one test file) while also being the main real-world ingest path.
+
+Pass 3 took the next two on that same ranking — `llm/openai-compat.ts` (0 test
+references for 98 lines, the shared transport under both LLM adapters) and
+`fault/importer.ts` (1 for 157). Pass 3's finding 15 is the first in this report
+where the defect spans **two functions**: the prompt never stated the rule the
+parser enforced, so reading either file alone shows nothing wrong.
+
+All passes are recorded in full in [`audit.md`](./audit.md), with the observed
+number for each finding.
 
 ### Injection matrix, pass 2
 
@@ -75,6 +84,29 @@ Every injection was caught by a **test**, not by the compiler. Two were rewritte
 during this pass for exactly that reason: as first written, `tsc` rejected them
 for an unused symbol, which would have been recorded as "caught" while proving
 nothing about the assertions.
+
+### Injection matrix, pass 3
+
+Six injections, each reintroducing one defect, plus two negative controls:
+
+| Injection | Tests that fail |
+| --- | --- |
+| read `choices[0]` only | 3 |
+| accept `''` as a completion | 1 |
+| drop the choice-shape guard | 2 |
+| store the category verbatim | 3 |
+| skip the early category rejection | 2 |
+| drop the prompt's casing rule | 1 |
+| NEGATIVE CONTROL — comment edit (HITL threshold) | 0 (stays green) |
+| NEGATIVE CONTROL — comment edit (openai parser) | 0 (stays green) |
+
+12 test failures across 6 injections, **0 silent**.
+
+The "drop the choice-shape guard" injection was again rejected by `tsc` on its
+first wording, exactly as two injections were in pass 2. It was caught because
+that rule was already written down — which is the argument for writing it down.
+Across three passes, 4 of 26 injections were mis-rejected this way; all four were
+rewritten and re-run, and on re-run every one was caught by the tests.
 
 ## L4 anchor status
 
@@ -99,13 +131,13 @@ that forbid vendoring.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 66 |
+| Commits | 69 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
-| Source lines | ~12,700 |
-| Test files | 67 |
-| Test lines | ~19,600 |
-| Tests | 1724 core + 173 CLI |
+| Source lines | ~12,800 |
+| Test files | 69 |
+| Test lines | ~20,000 |
+| Tests | 1754 core + 173 CLI |
 
 ## Test strategy
 
