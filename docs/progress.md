@@ -320,13 +320,18 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 73 |
+| Commits | 74 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
-| Source files | 48 (`src/`, excluding tests and build output) |
-| Source lines | ~13,300 |
-| Test files | 74 |
-| Test lines | ~22,000 |
-| Tests | 1891 core + 173 CLI |
+| Source files | 46 (`src/`, excluding tests and build output) |
+| Source lines | 13,127 |
+| Test files | 76 |
+| Test lines | 23,043 |
+| Tests | 1935 core + 173 CLI |
+
+Counted from `git ls-files` on `c57fd7eb`, not carried forward from the previous
+revision. The previous version of this table said 1891 and 73, which were two
+revisions stale — a number in a status table is a measurement and decays like one.
+
 
 ## Test strategy
 
@@ -387,17 +392,34 @@ document that described it as downloading the data was describing an intention.
     recoverable too, and the "unreadable log" claim in the previous version of this
     section was a limitation of the shell, not of the API.
 
-- **The dispatch was fired four times.** `POST .../actions/workflows/{id}/dispatches`
-  returns **204 No Content** on success, and the ad-hoc API helper this session
-  uses retries until it gets a non-empty body. An empty 204 from a *successful*
-  dispatch is indistinguishable from an empty response from a *failed* request, so
-  the retry loop fired the workflow once per attempt. Three of the four runs were
-  cancelled; the fourth is the failure above. Four concurrent jobs each pulling
-  several gigabytes from Zenodo is itself a plausible cause of a rate-limited
-  fetch, which makes this a bug that may have manufactured the failure it was then
-  used to diagnose. The helper needs to treat a non-idempotent POST as
-  fire-once-and-verify-by-reading, which is a change to the session tooling rather
-  than to this repository.
+  **The re-run, with the fix, is [#35483403527](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35483403527)
+  at `c57fd7eb`.** It is in progress at the time of writing and its outcome is not
+  yet recorded. CI and Anchor round trip are both green on the same revision
+  (`35483391864`, `35483391869`).
+
+  The dispatch is worth noting on its own: it returned **204 with a zero-byte body**
+  and was deliberately not retried, and exactly one run was created
+  (`total_count` 6, one entry after the dispatch). In the earlier session the same
+  call was retried until it returned a non-empty body, which fired it four times —
+  an empty 204 from a successful dispatch being indistinguishable, to a retry loop,
+  from an empty response from a failed request. The helper now treats a
+  non-idempotent POST as fire-once-and-verify-by-reading.
+
+- **The dispatch was fired four times, and the cause is now fixed in the tooling.**
+  `POST .../actions/workflows/{id}/dispatches` returns **204 No Content** on
+  success, and the ad-hoc API helper this session used retried until it got a
+  non-empty body. An empty 204 from a *successful* dispatch is indistinguishable
+  from an empty response from a *failed* request, so the retry loop fired the
+  workflow once per attempt. Three of the four runs were cancelled; the fourth was
+  the first failure. Four concurrent jobs each pulling several gigabytes from Zenodo
+  is itself a plausible cause of a rate-limited fetch, which makes this a bug that
+  may have manufactured the failure it was then used to diagnose.
+
+  Resolved rather than diagnosed-and-left. The dispatch is now issued exactly once
+  and its effect is confirmed by reading the runs list, which is what a
+  non-idempotent POST requires — the confirmation is a separate read, never a
+  repeat of the write. The re-run above produced one run and returned 204 with an
+  empty body, which is the correct behaviour for both the call and the caller.
 
 - **Anchor 4 is closed for the three RCAEval anchors only, and only once a
   real-corpus run has been recorded.** The 11 fetchable assets cover
