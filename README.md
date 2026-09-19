@@ -208,6 +208,8 @@ digest printed on the site is worth verifying against your download.
 | [Cloud-OpsBench](docs/targets/cloud-opsbench.md) | `metadata.json` outcome ground-truth triple |
 | [ITBench](docs/targets/itbench.md) | `scenario.json` SRE Diagnosis contract |
 | [Acceptance](docs/acceptance.md) | L0–L5 acceptance layers, mutation matrix, Golden Master, Definition of Done |
+| [Progress](docs/progress.md) | Per-layer status with the evidence for each line, and the one anchor that needs official data |
+| [Audit](docs/audit.md) | Scoring-path findings, each with the measurement that reproduced it |
 | [CLI reference](docs/cli-reference.md) | `rca-bench` command surface (`source` / `transform` / `case` / `gate` / `export` / `score` / `report` / `evolve`) |
 | [Contributing](CONTRIBUTING.md) | Workflow, TDD, coverage rules, commit conventions |
 
