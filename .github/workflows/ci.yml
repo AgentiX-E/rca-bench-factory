@@ -76,3 +76,11 @@ jobs:
 
       - name: Example pack verifies against its own manifest
         run: node scripts/verify-example-pack.mjs
+
+      # The analysis record under docs/analysis/ is a snapshot of a working
+      # directory that is not a git repository. Its shape is enforced here so
+      # the published record cannot rot unnoticed: the guard fails if an
+      # archived document is non-English, carries a credential-looking literal,
+      # or is not accompanied by the verdict/plan material it points at.
+      - name: Published analysis record is intact and self-consistent
+        run: ./scripts/check-analysis-record.sh
