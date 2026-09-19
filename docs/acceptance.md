@@ -79,8 +79,34 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   - Every declared facet must be **sensitive** to perturbation (the metric is not
     vacuously returning 1) and every undeclared facet **inert** (the facet list is
     exactly right).
+  - The regression must grade **the submission it publishes**, read back from the
+    export through `readOfficialSubmission`. It may not build a prediction from
+    the answer key: doing so makes the check self-referential, and a `record.csv`
+    that has been corrupted or deleted then still reports `passed` because the
+    only thing compared was the key against itself. Four corrupted-submission
+    injections were silent before this was required.
   - A target that exports zero cases fails unless the caller states why
     (`--allow-empty-reason`), so no exporter can hide behind a skip.
+  - **A term with no denominator has no credit to give.** Every rate in the
+    scoring path answers `undefined` when the answer key declares nothing to
+    match against, rather than `1`; the aggregate then averages only the terms
+    that do have a denominator. An empty denominator is not a full score, and it
+    is not a missing measurement either — it is the absence of the quantity
+    being measured.
+  - **A verdict of zero must produce a score of zero.** The structure rate is
+    credited only when the structure report passes, because four of its checks
+    are vacuously true on an export that does not exist ("query.csv carries no
+    answer key" holds when there is no query.csv; both telemetry header checks
+    explicitly accept an absent directory; zero rows align with zero rows). An
+    empty export reported `score: 15` before this was required.
+  - **The checksum rate divides by the export, not by the anchor set.** A file
+    the anchors never mention is an unverified file, and the rate has to say so;
+    otherwise one anchor out of twenty-two reads as `score: 100`.
+  - **Every named target has an explicit aggregation branch, and an unnamed one
+    stops the build.** The chain and the ground-truth reader both end in a
+    `never` guard. A target that no branch names used to inherit the generic
+    strict formula in silence, which is how `openrca-2.0` came to report strict
+    accuracy while its own spec advertises `matched facets / scored facets`.
   - Metrics are labelled `official` (transcribed from the upstream scorer or the
     paper's protocol) or `derived` (reconstructed because the upstream scorer is
     not public); the label travels with every score.
