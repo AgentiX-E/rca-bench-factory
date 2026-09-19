@@ -54,10 +54,23 @@ export function buildAnthropicRequest(prompt: string, model: string, maxTokens: 
 /**
  * Extract the completion text from an Anthropic Messages API response body.
  *
- * Anthropic returns `content` as an array of typed blocks; the text is the
- * `text` field of the first `text` block. Throws on any shape that cannot yield
- * a single completion string, so a malformed or empty response surfaces as an
- * explicit error instead of a silent empty string.
+ * Anthropic returns `content` as an array of typed blocks, and the completion is
+ * the concatenation of every `text` block in the array. Reading only
+ * `content[0]` was wrong in two ways, both measured:
+ *
+ *   - a leading non-text block (`tool_use`, `thinking`) threw while a perfectly
+ *     usable text block sat behind it, discarding the answer;
+ *   - a completion split across several text blocks returned only the first, so
+ *     the caller received a truncated answer -- which for a JSON-producing
+ *     prompt surfaces later as "malformed JSON", blaming the model's formatting
+ *     for a parser that dropped half its output.
+ *
+ * Blocks that are not text, and text blocks with no usable string, are skipped
+ * rather than rejected: an empty text block is a real shape (a suppressed
+ * segment), not a corruption. Only a response with no usable text at all is an
+ * error, and every malformed shape produces this module's own named diagnostic
+ * -- never a `TypeError`, which names a JavaScript operation rather than a
+ * response shape.
  */
 export function parseAnthropicResponse(jsonText: string): string {
   let parsed: unknown;
@@ -70,15 +83,36 @@ export function parseAnthropicResponse(jsonText: string): string {
     throw new Error('Anthropic response is not a JSON object');
   }
   const content = (parsed as Record<string, unknown>).content;
-  if (!Array.isArray(content) || content.length === 0) {
+  if (!Array.isArray(content)) {
+    throw new Error('Anthropic response content is not an array');
+  }
+  if (content.length === 0) {
     throw new Error('Anthropic response has no content');
   }
-  const first = content[0] as Record<string, unknown>;
-  const text = first.type === 'text' ? first.text : undefined;
-  if (typeof text !== 'string') {
-    throw new Error('Anthropic response content has no string text');
+
+  const parts: string[] = [];
+  for (const [position, block] of content.entries()) {
+    if (typeof block !== 'object' || block === null || Array.isArray(block)) {
+      throw new Error(`Anthropic response content block ${position} is not an object`);
+    }
+    const record = block as Record<string, unknown>;
+    if (record.type !== 'text') {
+      // A non-text block is a legitimate part of a response (a tool call, a
+      // reasoning segment); it simply carries no completion.
+      continue;
+    }
+    const text = record.text;
+    if (typeof text === 'string' && text !== '') parts.push(text);
   }
-  return text;
+
+  if (parts.length === 0) {
+    throw new Error('Anthropic response has no usable completion text');
+  }
+  const completion = parts.join('');
+  if (completion.trim() === '') {
+    throw new Error('Anthropic response has no usable completion text (it is blank)');
+  }
+  return completion;
 }
 
 /** Create a `LlmProvider` backed by the Anthropic Messages API. */

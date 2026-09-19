@@ -9,10 +9,10 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1754 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1789 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
-| L3 | Gate and export soundness | **met** | 18-mutation suite, 100% intercepted |
+| L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
 | L4 | Official reproduction | **3 of 4 anchors met** | see below |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
 
@@ -33,9 +33,11 @@ The residual is two statements and one branch: the `never` guard at the end of
 so no input reaches it — it is a compile-time backstop. The comment on the line
 records why it is not deleted to turn the number green.
 
-`src/ingest/otlp.ts` is at **100% on all four dimensions** after pass 2, as are
-`src/llm/openai-compat.ts` and `src/fault/importer.ts` after pass 3. Pass 2 raised
-the aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond conversion
+Every module touched by an audit pass is at **100% on all four dimensions**:
+`src/ingest/otlp.ts` after pass 2; `src/llm/openai-compat.ts` and
+`src/fault/importer.ts` after pass 3; `src/llm/rulegen.ts`,
+`src/llm/anthropic.ts` and `src/ir/types.ts` after pass 4. Pass 2 raised the
+aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond conversion
 introduced a negative-timestamp path that nothing exercised, and it was covered
 with a real pre-epoch case rather than an ignore comment.
 
@@ -45,6 +47,10 @@ backstop. An uncovered backstop is not coverage debt — it is the shape of the
 guarantee, and deleting it to move the number is the one edit that would remove
 the thing it exists to prove.
 
+`packages/cli` is at 100% on all four dimensions. It carries no gate of its own,
+because it is a thin argument-parsing shell over core and the gate belongs where
+the logic is; the figure is recorded because it is measured on every run.
+
 ## Audit passes
 
 | Pass | Scope | Defects | Guards added |
@@ -52,6 +58,7 @@ the thing it exists to prove.
 | 1 | `src/score/` | 6 | 37 tests across 5 new files |
 | 2 | `src/ingest/otlp.ts` | 5 | 27 tests in 1 new file |
 | 3 | `src/llm/openai-compat.ts`, `src/fault/importer.ts` | 4 | 30 tests in 2 new files |
+| 4 | `src/llm/rulegen.ts`, `src/llm/anthropic.ts` | 8 | 48 tests across 2 files (21 new in `rulegen`, 19 in `anthropic`) |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
@@ -62,6 +69,15 @@ references for 98 lines, the shared transport under both LLM adapters) and
 `fault/importer.ts` (1 for 157). Pass 3's finding 15 is the first in this report
 where the defect spans **two functions**: the prompt never stated the rule the
 parser enforced, so reading either file alone shows nothing wrong.
+
+Pass 4 took the remaining two modules in `llm/`, which by then was the last
+directory in the package with no 100% module: `rulegen.ts` (158 lines, one test
+file) and `anthropic.ts` (111 lines, one test file). Together with pass 3 this
+covers the whole provider-agnostic layer, which is the part of the package that
+exists specifically so no single vendor's wire format can leak into the contract.
+Pass 4 is also the first pass where the count of defects exceeds the count of
+modules: three of its eight findings (17, 20, 22) surfaced while building the guard
+for an earlier one, which is the same pattern pass 1 saw twice.
 
 All passes are recorded in full in [`audit.md`](./audit.md), with the observed
 number for each finding.
@@ -108,6 +124,34 @@ that rule was already written down — which is the argument for writing it down
 Across three passes, 4 of 26 injections were mis-rejected this way; all four were
 rewritten and re-run, and on re-run every one was caught by the tests.
 
+### Injection matrix, pass 4
+
+Ten injections, each reintroducing one defect, plus two negative controls:
+
+| Injection | Tests that fail |
+| --- | --- |
+| drop the field-membership check | 6 |
+| check membership against every kind's fields | 3 |
+| accept any `semanticType` string | 2 |
+| let an empty sample set validate | 3 |
+| drop the prompt's closed-list sentence | 1 |
+| drop the prompt's semantic-type vocabulary | 1 |
+| read `content[0]` only | 6 |
+| drop the content-block shape guard | 2 |
+| accept a blank completion | 1 |
+| stop separating a non-array `content` | 1 |
+| NEGATIVE CONTROL — comment edit (`SampleRecord`) | 0 (stays green) |
+| NEGATIVE CONTROL — comment edit (anthropic parser) | 0 (stays green) |
+
+26 test failures across 10 injections, **0 silent**.
+
+This is the first pass in which **no injection was rejected by `tsc`**: all ten
+compiled and reached the test run on their first wording. The reason is not that
+pass 4 wrote easier injections — two of them remove a guard that the compiler would
+otherwise report as an unused symbol. It is that the rule from pass 2 was applied
+before the matrix ran, using the `void symbol;` form from the start. Across four
+passes the mis-rejection count is 4 of 36, and all four are in the first three.
+
 ## L4 anchor status
 
 Four anchors, each strictly stronger than the one before:
@@ -131,13 +175,13 @@ that forbid vendoring.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 69 |
+| Commits | 71 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
-| Source lines | ~12,800 |
-| Test files | 69 |
-| Test lines | ~20,000 |
-| Tests | 1754 core + 173 CLI |
+| Source lines | ~12,950 |
+| Test files | 67 |
+| Test lines | ~20,300 |
+| Tests | 1789 core + 173 CLI |
 
 ## Test strategy
 

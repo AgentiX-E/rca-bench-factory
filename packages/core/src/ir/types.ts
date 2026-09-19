@@ -86,6 +86,22 @@ export interface FieldProvenance {
   confidence?: number;
 }
 
+/**
+ * `MetricPayload.semanticType`, declared once, for the same reason.
+ *
+ * This was an inline union in the interface, which meant no consumer could read
+ * the vocabulary at runtime, and the one consumer that actually needed to --
+ * the LLM rule generator, which has to tell a model which values are legal --
+ * could only advertise the field name and reject the model's answer later,
+ * downstream, as a schema failure on the whole record.
+ */
+export const METRIC_SEMANTIC_TYPES = [
+  'latency', 'error_rate', 'throughput', 'saturation', 'availability', 'other',
+] as const;
+
+/** A metric semantic class. Derived from `METRIC_SEMANTIC_TYPES`. */
+export type MetricSemanticType = (typeof METRIC_SEMANTIC_TYPES)[number];
+
 export interface MetricPayload {
   kind: 'metric';
   /** Metric name, e.g. `container_cpu_usage_seconds_total`. */
@@ -94,7 +110,7 @@ export interface MetricPayload {
   /** UCUM-style unit, e.g. `s`, `By`, `%`. */
   unit?: string;
   /** Semantic class used by downstream exporters and gates. */
-  semanticType?: 'latency' | 'error_rate' | 'throughput' | 'saturation' | 'availability' | 'other';
+  semanticType?: MetricSemanticType;
   tags?: Record<string, string>;
 }
 

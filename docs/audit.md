@@ -1,16 +1,16 @@
 # Audit report
 
-Findings from the scoring-path and OTLP-ingest audits, with the measurement that
-established each one. Every entry follows the same shape: the defect, the command
-that demonstrated it, the observed number, the fix, and the guard that now fails
-without the fix.
+Findings from the scoring-path, OTLP-ingest and LLM-layer audits, with the
+measurement that established each one. Every entry follows the same shape: the
+defect, the command that demonstrated it, the observed number, the fix, and the
+guard that now fails without the fix.
 
 A finding is only listed here after being reproduced locally. A finding that only
 appeared in a review, without a failing measurement, is not a finding.
 
 ## Scope
 
-Two passes so far:
+Four passes so far:
 
 - **Pass 1** — `packages/core/src/score/`: the official-metric scoring path. This
   is the code that decides whether an export is scorable and what number it
@@ -22,6 +22,11 @@ Two passes so far:
 - **Pass 3** — `packages/core/src/llm/openai-compat.ts` and
   `packages/core/src/fault/importer.ts`: the shared LLM transport and the
   historical-fault importer. Both were at the top of the under-verified list.
+- **Pass 4** — `packages/core/src/llm/rulegen.ts` and
+  `packages/core/src/llm/anthropic.ts`: the LLM rule-generation core and the
+  second transport adapter. With pass 3 this covers the whole `llm/` directory,
+  which is where the provider-agnostic abstraction lives and therefore where a
+  vendor-shaped assumption costs the most.
 
 ## Summary
 
@@ -65,6 +70,25 @@ recorded separately because the fix is a different one.
 Finding 15 is the only one in this report where the defect spans **two functions**
 rather than sitting inside one: the prompt never stated the rule the parser
 enforced. Reading either file alone shows nothing wrong.
+
+### Pass 4 — LLM rule generation and the Anthropic adapter
+
+| # | Defect | Reproduced as | Status |
+| --- | --- | --- | --- |
+| 16 | A layout field outside the contract was dropped, not rejected | `{"timstamp": "time"}` → parsed `ok: true` | fixed |
+| 17 | A cross-kind field name passed the membership check | `spanName` in a metric layout → accepted | fixed |
+| 18 | `semanticType` was cast, not checked against its enum | `"not-a-real-semantic-type"` → reached the IR | fixed |
+| 19 | An empty sample set validated as a pass | `validate(layout, 'metric', [])` → `valid: true` | fixed |
+| 20 | The prompt never named the semantic-type vocabulary | prompt printed the field, not its values | fixed |
+| 21 | Only `content[0]` was read | leading `tool_use` block → threw, answer discarded | fixed |
+| 22 | A completion split across text blocks was truncated | 2 text blocks → returned the first only | fixed |
+| 23 | A null content block leaked a raw `TypeError` | `{"content":[null]}` → `Cannot read properties of null` | fixed |
+
+Findings 17 and 20 surfaced while building the guard for finding 16, and 22 while
+building it for 21. They are listed separately because each has its own fix: the
+membership check had to become per-kind, the prompt had to name a vocabulary it
+had only ever named as a field, and reading every block is a different change from
+reading more than one.
 
 ## 1 — The regression graded its own answer key
 
@@ -445,6 +469,196 @@ ticket-text → prompt → parse → validate pipeline as one assertion. Injecti
 verbatim read back fails 3 tests; dropping the prompt's rule sentence fails 1;
 removing the early rejection fails 2.
 
+## 16 — A layout field outside the contract was dropped, not rejected
+
+```ts
+if (typeof value !== 'string') { ... }
+if (key === 'semanticType') { ... } else { (layoutFields as ...)[key] = value; }
+// no check that `key` is an IR field at all
+```
+
+`parseRulegenResponse` copied every string-valued key into the layout and never
+asked whether the name was one the IR declares. A model that answered `timstamp`
+— `timestamp` with the `e` lost — therefore produced a layout that was silently
+missing `timestamp` while the parser reported success:
+
+```json
+{"ok":true,"generated":{"layout":{"timstamp":"time","metricName":"kpi","metricValue":"val"},"confidence":0.9,"rationale":"typo"}}
+```
+
+The failure then appears one stage later, as `missing required field 'timestamp'`.
+The parser accepted the layout, and the validator blamed the answer for a missing
+field when the actual event was a rejected name — the same shape as finding 15,
+where the diagnosis pointed at the model's judgement instead of at the contract.
+
+**Fix**: reject any key that is not in this signal kind's field list, naming it and
+listing what was expected. A per-kind check, not a global one (finding 17).
+
+**Guard**: `test/rulegen.test.ts`. Injecting the `continue` back fails 6 tests.
+
+## 17 — A cross-kind field name passed the membership check
+
+Found while building the guard for finding 16. The obvious guard — "is this key a
+field somewhere in the IR?" — accepts `spanName` in a *metric* layout, because
+`spanName` is a real trace field. It would have left the same typo-blindness in
+place for every name a model can borrow across kinds, and the metric rules are
+where a borrowed trace field is most likely to appear, since a model mapping
+metrics has just been shown the whole contract family.
+
+**Fix**: check against `IR_FIELDS[signalKind]`, the same list the prompt prints for
+that kind, so the advertised contract and the enforced one are one object.
+
+**Guard**: two cases, a trace field in a metric layout and a metric field in a log
+layout. Injecting the union-of-all-kinds check back fails 3 tests.
+
+## 18 — `semanticType` was cast, not checked
+
+```ts
+layoutFields.semanticType = value as MetricPayload['semanticType'];   // before
+```
+
+`semanticType` is an enum, not a source column name, and the only validation was a
+TypeScript cast — which is erased at runtime and, in a function whose input arrived
+as JSON from a model, guarantees nothing. Measured:
+`"semanticType":"not-a-real-semantic-type"` parsed as `ok: true` and travelled into
+the IR, where the schema rejected the **whole signal**. One hallucinated enum
+member therefore discarded an otherwise valid record, and the reason named the
+payload rather than the field.
+
+The enum was an inline union inside `MetricPayload`, which is why no consumer could
+read it at runtime. That is what made the cast the only option available.
+
+**Fix**: `METRIC_SEMANTIC_TYPES` moves into `ir/types.ts` as an `as const` tuple
+with the type derived from it, matching `LOG_SEVERITIES`, `SPAN_STATUSES`,
+`SIGNAL_KINDS` and `FAULT_CATEGORIES`; the parser checks membership by name and
+rejects at the point it was read. An empty string is rejected too — it is not a
+member, and defaulting it would hide a missing field behind a plausible one.
+
+**Guard**: five cases covering the invalid value, the empty value, all six legal
+values, and the cross-kind case. Injecting the cast back fails 2 tests.
+
+## 19 — An empty sample set validated as a pass
+
+```ts
+return { valid: reasons.length === 0, reasons };   // before
+```
+
+The replay over the source samples is the entire check
+`validateGeneratedLayout` performs. With `samples` empty the loop body never runs,
+no reason is pushed, and the function returns `{"valid":true}` — success reported
+for having had no input, which is the one result a guard must never produce.
+
+This is reachable in practice: the caller samples a source before mapping it, and a
+source whose sample window contains only blank rows yields no samples. The
+signature then reads as "this layout was verified", and the layout has been
+verified against nothing.
+
+**Fix**: report the missing evidence as a reason. It is pushed **after** the
+structural reasons, so a caller iterating on a layout is told what is wrong with
+the layout first and only then told that the evidence was absent.
+
+**Guard**: three cases, including one asserting the structural reasons survive
+alongside the new one. Injecting the unconditional return back fails 3 tests.
+
+## 20 — The prompt never named the semantic-type vocabulary
+
+Found while building the guard for finding 18. The prompt printed the field list,
+and `semanticType` was in it, but the prompt never said the field's value had to
+come from a fixed set. So the one field the parser cannot accept by name was also
+the one field the prompt described only as a name:
+
+```
+IR fields for signal kind 'metric': timestamp, service, …, metricUnit, semanticType
+```
+
+A model asked to fill `semanticType` from that line has to guess whether it wants a
+column or a class, and if it guesses class, which classes exist. The prompt is the
+only place that can answer either question, and it answered neither.
+
+**Fix**: print the vocabulary beside the field, and only for signal kinds that
+have the field — asking a log layout for a semantic type would be a second defect
+in the same sentence.
+
+**Guard**: four cases, including one asserting the vocabulary does **not** appear
+for `log`. Injecting the sentence's removal fails 1 test; dropping the closed-list
+sentence fails 1 more.
+
+## 21 — Only `content[0]` was read
+
+```ts
+const first = content[0] as Record<string, unknown>;
+const text = first.type === 'text' ? first.text : undefined;
+if (typeof text !== 'string') { throw ... }                    // before
+```
+
+Anthropic returns `content` as an array of typed blocks, and the completion is the
+concatenation of the `text` blocks. Reading only the first threw on any response
+that led with something else. Measured, for a leading `tool_use` block with a
+usable text block behind it:
+
+```
+THREW: Error: Anthropic response content has no string text
+```
+
+A leading `tool_use` or `thinking` block is not an edge case: it is what a server
+returns for a turn that used a tool or produced reasoning, and the answer was
+present in both.
+
+**Fix**: concatenate every text block. A non-text block is **skipped**, not
+rejected — it is a legitimate part of a response that simply carries no completion —
+and a text block with no usable string is skipped for the same reason.
+
+**Guard**: six cases across `test/anthropic.test.ts` (27 tests in the file).
+Injecting the first-block-only read back fails 6 tests.
+
+## 22 — A completion split across blocks was truncated
+
+Found while building the guard for finding 21, and a separate defect with a
+separate fix: reading every block only helps if every block's text is used.
+
+Measured: `[{type:'text',text:'first'},{type:'text',text:'second'}]` returned
+`'first'`.
+
+For this module the consequence is worse than a short string. Every prompt it
+serves asks for JSON, so a truncated completion is not obviously truncated — it is
+a body that fails to parse, and the caller reports **"malformed JSON"**, blaming
+the model's formatting for a parser that discarded half its output. A diagnosis
+naming the wrong component is what makes this worth its own entry.
+
+**Fix**: join the parts. A whitespace-only result is not a completion, because a
+caller cannot act on it; surrounding whitespace on a non-blank completion is
+preserved, because trimming it would edit the model's answer.
+
+**Guard**: three cases (the join, the blank rejection, the preserved whitespace).
+Injecting the first-block-only read fails 6 tests; injecting the removal of the
+blank check fails 1.
+
+## 23 — A null content block leaked a raw `TypeError`
+
+`content[0]` was dereferenced without a shape check. Every other malformed shape in
+this parser gets a named message — `is not valid JSON`, `is not a JSON object`,
+`has no content`, `content has no string text` — but a `null` element escaped as an
+internal error:
+
+```
+THREW: TypeError: Cannot read properties of null (reading 'type')
+```
+
+Measured for `{"content":[null]}`. The defect is not that it threw; it is *what* it
+threw. A `TypeError` names a JavaScript operation rather than a response shape, so
+an operator reading it learns nothing about which server sent what.
+
+A non-array `content` field was also collapsed into the empty-array case, so
+`{"content":"a plain string"}` and `{"content":[]}` produced the same message. They
+are different claims about different responses.
+
+**Fix**: check each block is an object and report its **position**; separate the
+non-array case from the empty case.
+
+**Guard**: four cases, one of which asserts explicitly that the thrown error is not
+a `TypeError`. Injecting the unchecked dereference back fails 2 tests; collapsing
+the non-array case back fails 1.
+
 ## Method
 
 Each finding was reproduced before being fixed, by running the affected path
@@ -485,9 +699,16 @@ Pass 3 hit this a third time — the "drop the choice-shape guard" injection was
 again rejected by `tsc` — and it was caught only because the rule from pass 2 was
 already written down. **This is why the rule is a rule and not a note:** an
 injection that never reaches the test run has not been tested, and a matrix that
-counts it as caught is measuring the compiler. Across the three passes, 4 of 26
-injections were mis-rejected this way; all four were rewritten and re-run, and on
-re-run every one was caught by the tests instead.
+counts it as caught is measuring the compiler. Across the first three passes, 4 of
+26 injections were mis-rejected this way; all four were rewritten and re-run, and
+on re-run every one was caught by the tests instead.
+
+Pass 4 is the first pass with **no** mis-rejection: all 10 real injections compiled
+and reached the test run, and all 10 were caught by tests. The reason is not that
+this pass wrote better injections — it is that the rule was written down in pass 2
+and applied before the matrix ran, so the `void symbol;` form was used from the
+start wherever a guard was being removed rather than replaced. A rule that gets
+applied is worth more than one that gets rediscovered.
 
 ### What fixed the long-standing test wording
 
@@ -504,3 +725,29 @@ the single-choice case: with one choice a count adds nothing to the diagnosis, a
 the long-standing wording is what operators already grep for. The ranked message
 appears only when position is genuinely ambiguous. **Two assertions that were
 there first and pass on their own merits are not the thing to change.**
+
+### The assertion that pinned the defect
+
+Pass 4 met the mirror image of that case, and it is worth recording separately
+because the right answer is the opposite one:
+
+```ts
+it('accepts an empty sample set for a structurally complete layout', () => {
+  const result = validateGeneratedLayout(metricLayout, 'metric', []);
+  expect(result.valid).toBe(true);   // this is finding 19
+});
+```
+
+That assertion was not there first and passing on its own merits; it was there
+first and **passing because it encoded the bug**. It is the exact behaviour finding
+19 describes, written down as the expected result. It was corrected rather than
+deleted — the case stays covered, and the corrected expectation is the one the new
+suite states in full — with both the change and the reason recorded in the test
+file, because a future reader diffing that line deserves to know which of the two
+rules applied.
+
+The distinction between pass 3's case and pass 4's is not "old assertion versus new
+one". It is whether the assertion is *right*: pass 3's two tests were asserting
+something true that the implementation had stopped honouring, and pass 4's test was
+asserting something false that the implementation happened to do. Only the second
+should be changed, and only the first is evidence of a regression.

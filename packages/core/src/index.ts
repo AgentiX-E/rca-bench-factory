@@ -9,6 +9,7 @@
 export {
   IR_VERSION,
   LOG_SEVERITIES,
+  METRIC_SEMANTIC_TYPES,
   SPAN_STATUSES,
   ENTITY_KINDS,
   FAULT_CATEGORIES,
@@ -38,6 +39,7 @@ export type {
   LogPayload,
   LogSeverity,
   MetricPayload,
+  MetricSemanticType,
   ProfilePayload,
   ProvenanceSource,
   QualityGateReport,
@@ -376,6 +378,8 @@ export type { CliCommand, CliParseResult, EvolveAction, ExportTarget } from './c
 export {
   buildRulegenPrompt,
   parseRulegenResponse,
+  parseRulegenResponseChecked,
+  rulegenLayoutFields,
   validateGeneratedLayout,
 } from './llm/rulegen.js';
 export type {

@@ -167,6 +167,53 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     error.
   - A synonym (`net` for `network`) is still rejected: that is a judgement, not a
     normalisation, and H3 is where it belongs.
+- **A generated layout is a claim about a contract, and the contract is closed.**
+  The rule generator's whole output is a mapping whose keys name IR fields, so the
+  field set is a closed vocabulary and a name outside it is an error, not a stray
+  key.
+  - **An unknown field name is rejected, not dropped.** Measured before this
+    requirement: a layout keyed `timstamp` parsed as `ok: true`, producing a layout
+    that declared nothing while the parser reported success, and the *next* stage
+    then reported the field as missing. A name is either accepted or rejected; it
+    is never silently discarded.
+  - **The check is per signal kind.** `spanName` is a real IR field and is still
+    not a metric field. A membership test against the union of all kinds would
+    accept every name a model can borrow across kinds, which is exactly the class
+    of name a model shown the whole contract family is most likely to produce.
+  - **An enum-valued field is checked against its enum, where it is read.** The
+    declared type is erased at runtime, so for input that arrives as JSON from a
+    model a cast is not a check. Measured before this requirement:
+    `"semanticType": "not-a-real-semantic-type"` reached the IR and the schema then
+    rejected the whole signal, discarding an otherwise valid record and naming the
+    payload rather than the field.
+  - **The prompt names every vocabulary the parser enforces**, not just the field
+    that carries it — and only for the signal kinds that have the field.
+- **A validation that replays nothing reports nothing.** Where a check consists of
+  replaying a claim against evidence, an empty evidence set is a **failure**, never
+  a pass. Measured before this requirement: `validateGeneratedLayout(layout,
+  'metric', [])` returned `{"valid": true}`. Reachable in practice, because a
+  source whose sample window contains only blank rows yields no samples, and the
+  signature then reads as a verified layout. The missing-evidence reason is
+  reported after the structural reasons, so a caller iterating on the layout is
+  told about the layout first.
+- **A completion is every text the server sent, and a transport error names the
+  response.** The Anthropic adapter reads an array of typed blocks, so both halves
+  of this need stating.
+  - **A leading block of another type does not discard the answer.** Measured
+    before this requirement: a leading `tool_use` block threw while a usable text
+    block sat behind it. A non-text block is skipped, because it is a legitimate
+    part of a response that carries no completion.
+  - **A completion split across blocks is joined, not truncated.** Measured before
+    this requirement: two text blocks returned only the first, and because every
+    prompt this module serves asks for JSON, the consequence surfaced downstream as
+    "malformed JSON" — a diagnosis naming the model's formatting for a parser that
+    dropped half its output.
+  - **A blank completion is not a completion**, and surrounding whitespace on a
+    non-blank one is preserved rather than trimmed.
+  - **Every malformed shape produces this module's own named diagnostic**, and
+    never a `TypeError`, which names a JavaScript operation rather than a response
+    shape. The offending block's **position** is named, and a non-array `content`
+    field is distinguished from an empty one.
 - **Round trip** (`rca-bench ingest` → `rca-bench export` → `rca-bench official`):
   official dataset data is read into the IR, written back out in the target's own
   layout, and graded by the published metric. The three anchors above all begin

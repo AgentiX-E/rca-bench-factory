@@ -104,6 +104,94 @@ describe('parseAnthropicResponse', () => {
   });
 });
 
+/**
+ * Measured against the shipped build before the fix; each case quotes the value
+ * that came back, so the defect is a number and not an opinion.
+ */
+describe('parseAnthropicResponse - the completion is not always the first block', () => {
+  it('reads the text block when a tool_use block precedes it', () => {
+    // Measured before the fix: threw 'Anthropic response content has no string
+    // text' while a usable text block sat at index 1.
+    const body = JSON.stringify({
+      content: [{ type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} }, { type: 'text', text: 'answer' }],
+    });
+    expect(parseAnthropicResponse(body)).toBe('answer');
+  });
+
+  it('reads the text block when a thinking block precedes it', () => {
+    // Measured before the fix: threw, same message, with the answer behind a
+    // reasoning block -- a shape the current API returns by default.
+    const body = JSON.stringify({
+      content: [{ type: 'thinking', thinking: 'working through it' }, { type: 'text', text: 'answer' }],
+    });
+    expect(parseAnthropicResponse(body)).toBe('answer');
+  });
+
+  it('joins multiple text blocks instead of returning only the first', () => {
+    // Measured before the fix: returned 'first', silently dropping ' second'.
+    // A response split across blocks is one completion, and returning half of it
+    // gives a truncated JSON body that the caller then reports as malformed.
+    const body = JSON.stringify({
+      content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }],
+    });
+    expect(parseAnthropicResponse(body)).toBe('firstsecond');
+  });
+
+  it('skips blocks that carry no usable text and keeps the rest', () => {
+    const body = JSON.stringify({
+      content: [{ type: 'thinking' }, { type: 'text' }, { type: 'text', text: 'kept' }, { type: 'text', text: ' too' }],
+    });
+    expect(parseAnthropicResponse(body)).toBe('kept too');
+  });
+
+  it('rejects a whitespace-only completion', () => {
+    const body = JSON.stringify({ content: [{ type: 'text', text: '   \n  ' }] });
+    expect(() => parseAnthropicResponse(body)).toThrow(/no usable/i);
+  });
+
+  it('accepts a completion with meaningful surrounding whitespace preserved', () => {
+    const body = JSON.stringify({ content: [{ type: 'text', text: '  { "a": 1 }  ' }] });
+    expect(parseAnthropicResponse(body)).toBe('  { "a": 1 }  ');
+  });
+});
+
+describe('parseAnthropicResponse - malformed shapes get this module\'s diagnostics', () => {
+  it('names the response shape for a null content block instead of leaking a TypeError', () => {
+    // Measured before the fix: 'TypeError: Cannot read properties of null
+    // (reading \'type\')' -- a JavaScript operation, not a response shape.
+    let thrown: unknown;
+    try {
+      parseAnthropicResponse('{"content":[null]}');
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).name).not.toBe('TypeError');
+    expect((thrown as Error).message).toMatch(/block 0/);
+  });
+
+  it('names the position of the offending block', () => {
+    const body = JSON.stringify({ content: [{ type: 'text', text: 'ok' }, null] });
+    expect(() => parseAnthropicResponse(body)).toThrow(/block 1/);
+  });
+
+  it('names the shape for a non-object, non-array content field', () => {
+    expect(() => parseAnthropicResponse('{"content":"a plain string"}')).toThrow(/not an array/i);
+  });
+
+  it('accepts an empty text block alongside a usable one', () => {
+    // The empty block is a real shape (a suppressed segment), not a corruption,
+    // so it must not be reported as one while text is available elsewhere.
+    const body = JSON.stringify({ content: [{ type: 'text', text: '' }, { type: 'text', text: 'answer' }] });
+    expect(parseAnthropicResponse(body)).toBe('answer');
+  });
+
+  it('reports a response whose every text block is empty as having no usable text', () => {
+    const body = JSON.stringify({ content: [{ type: 'text', text: '' }, { type: 'text' }] });
+    expect(() => parseAnthropicResponse(body)).toThrow(/no usable/i);
+  });
+});
+
 describe('createAnthropicProvider', () => {
   it('defaults to the Anthropic model and base URL', () => {
     const provider = createAnthropicProvider({ apiKey: 'k' });
