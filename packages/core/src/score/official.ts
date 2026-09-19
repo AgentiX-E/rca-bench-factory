@@ -639,6 +639,13 @@ export function readOfficialGroundTruth(target: ScoreTargetId, files: Record<str
     case 'itbench':
       return readItBenchGroundTruth(files);
   }
+  // Same guard as `aggregateFor`, and for the same reason: without it a tenth
+  // target added to `SCORE_TARGET_IDS` and forgotten here made this function
+  // fall off the end and return `undefined`, typed `OfficialGroundTruth[]`. The
+  // caller then crashed on `.map` with "Cannot read properties of undefined" --
+  // a message that names neither the target nor the omission. Better to say so.
+  const unhandled: never = target;
+  throw new Error(`no ground-truth reader for score target '${String(unhandled)}'`);
 }
 
 // ---------------------------------------------------------------------------
@@ -706,8 +713,33 @@ export function openRcaTimeMatches(predicted: string, expected: string): boolean
   return Math.abs(wallClockToMs(p) - wallClockToMs(e)) <= 60_000;
 }
 
-function rateOf(predicted: readonly string[], expected: readonly string[]): number {
-  return expected.length === 0 ? 1 : intersectCount(predicted, expected) / expected.length;
+/**
+ * The fraction of an expected list a prediction reproduced, or `undefined` when
+ * the answer key declares no such list.
+ *
+ * `undefined` is not a detail of style. This used to answer `1` for an empty
+ * `expected`, which made "the key asked nothing" and "the prediction answered
+ * everything" the same number: an RCA100 key with no chain and no checkpoint
+ * collected the full 0.3 process weight, identically to a key that declared
+ * both and had them matched. A term with no denominator is not complete, it is
+ * absent, and the aggregate has to be able to tell the difference.
+ */
+function rateOf(predicted: readonly string[], expected: readonly string[]): number | undefined {
+  if (expected.length === 0) return undefined;
+  return intersectCount(predicted, expected) / expected.length;
+}
+
+/**
+ * The mean of the terms that have a denominator.
+ *
+ * When none of them do the answer is 0, not 1: the case defined no process to
+ * reproduce, so no process credit was earned. Returning 1 here would put the
+ * free denominator back one level up.
+ */
+function meanOfPresent(terms: ReadonlyArray<number | undefined>): number {
+  const present = terms.filter((term): term is number => term !== undefined);
+  if (present.length === 0) return 0;
+  return present.reduce((sum, term) => sum + term, 0) / present.length;
 }
 
 function scoreFacetSubset(
@@ -746,9 +778,7 @@ function gtHasFacet(gt: OfficialGroundTruth, facet: OfficialFacet): boolean {
 function scoreRca100Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
   const entity = pred.component === gt.component ? 1 : gt.adjacent.includes(pred.component) ? 0.5 : 0;
   const fault = pred.faultType === gt.faultType ? 1 : 0;
-  const chainRate = rateOf(pred.chain, gt.chain);
-  const checkpointRate = rateOf(pred.evidence, gt.evidence);
-  const process = (chainRate + checkpointRate) / 2;
+  const process = meanOfPresent([rateOf(pred.chain, gt.chain), rateOf(pred.evidence, gt.evidence)]);
   const score = 0.4 * entity + 0.3 * fault + 0.3 * process;
 
   return {
@@ -779,6 +809,9 @@ function facetMatched(facet: OfficialFacet, pred: OfficialPrediction, gt: Offici
       // entries; the component must appear inside that window.
       return gt.component !== '' && pred.ranks.slice(0, 5).includes(gt.component);
     case 'chain':
+      // `undefined` means the key declares no chain, so there is nothing to
+      // match and the facet is not answered either way. `gtHasFacet` is what
+      // decides whether this facet is scored at all.
       return rateOf(pred.chain, gt.chain) === 1;
     case 'evidence':
       return rateOf(pred.evidence, gt.evidence) === 1;
@@ -863,6 +896,20 @@ function aggregateFor(
     };
   }
 
+  if (target === 'openrca-2.0') {
+    // Its spec is `matched facets / scored facets`, which is the mean facet
+    // score -- `accuracy` by another name. This branch was missing, so the
+    // target fell through to the generic strict fallback below and its headline
+    // became "every facet of every case was reproduced". The two formulas agree
+    // on a perfect export and on an empty one, which is why the regression
+    // never noticed; they part company in between, where the fallback reported
+    // `final: 0` beside `accuracy: 0.75` for a prediction that reproduced three
+    // of the four declared facets.
+    const partial = round2(mean(cases.map((c) => c.score)));
+    const strict = round2(strictRate);
+    return { breakdown: { partial, strict }, headline: partial * 100 };
+  }
+
   if (target === 'rcaeval-re1' || target === 'rcaeval-re2' || target === 'rcaeval-re3') {
     const ac: Record<string, number> = {};
     for (let k = 1; k <= 5; k += 1) {
@@ -885,9 +932,9 @@ function aggregateFor(
       }),
     );
     const fault = mean(groundTruth.map((gt, i) => ((predictions[i]?.faultType ?? '') === gt.faultType ? 1 : 0)));
-    const chain = mean(groundTruth.map((gt, i) => rateOf(predictions[i]?.chain ?? [], gt.chain)));
-    const checkpoints = mean(groundTruth.map((gt, i) => rateOf(predictions[i]?.evidence ?? [], gt.evidence)));
-    const process = (chain + checkpoints) / 2;
+    const chain = meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.chain ?? [], gt.chain)));
+    const checkpoints = meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.evidence ?? [], gt.evidence)));
+    const process = meanOfPresent([chain, checkpoints]);
     return {
       breakdown: {
         entity: round2(entity),
@@ -914,7 +961,13 @@ function aggregateFor(
       .map(({ pred }) => pred!.traceWords);
     const apl = mean(correctTraces);
     const eff = correctTraces.length === 0 ? 0 : Math.min(1, Math.exp(-(apl - 5) / 5));
-    const explainability = et === 0 ? 1 : em / et;
+    // Same rule as `rateOf`: a term with no denominator is absent, and every
+    // other term here already follows it (`la`, `ta` and `eff` all answer 0 when
+    // they have nothing to average). Explainability answered 1, which handed an
+    // export that declared no evidence at all a free tenth of the score -- a
+    // zero-case AIOps2025 export scored 10 while the other eight targets
+    // scored 0.
+    const explainability = et === 0 ? 0 : em / et;
     return {
       breakdown: {
         la: round2(la),
@@ -939,15 +992,34 @@ function aggregateFor(
     return {
       breakdown: {
         passAt1: round2(strictRate),
-        chainMatch: round2(mean(groundTruth.map((gt, i) => rateOf(predictions[i]?.chain ?? [], gt.chain)))),
-        conditionMatch: round2(mean(groundTruth.map((gt, i) => rateOf(predictions[i]?.evidence ?? [], gt.evidence)))),
+        chainMatch: round2(meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.chain ?? [], gt.chain)))),
+        conditionMatch: round2(
+          meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.evidence ?? [], gt.evidence))),
+        ),
       },
       headline: round2(strictRate) * 100,
     };
   }
 
-  const strict = round2(strictRate);
-  return { breakdown: { strict }, headline: strict * 100 };
+  // Nothing above matched. Every target is named, so this is `never` -- and the
+  // line below is what keeps it that way: adding a tenth target to
+  // `SCORE_TARGET_IDS` makes `target` non-`never` here and stops the build.
+  //
+  // Before this, the chain simply ended and the assignment `const unhandled:
+  // never = target` did not exist, so an unnamed target inherited the generic
+  // strict formula in silence. That is how `openrca-2.0` came to report strict
+  // accuracy while its own spec advertises `matched facets / scored facets`.
+  //
+  // Two statements stay uncovered on purpose. Every member of the closed union
+  // returns from a branch above, so no input reaches this line: the reader
+  // rejects an unnamed target first, which the suite pins from both directions
+  // (the rejection names the reader, and every named target passes through this
+  // chain and returns). That makes this a compile-time backstop, not a runtime
+  // branch, and an uncovered backstop is not a coverage debt -- it is the shape
+  // of the guarantee. Deleting it to turn the number green would restore exactly
+  // what it was added to stop.
+  const unhandled: never = target;
+  throw new Error(`no aggregation branch for score target '${String(unhandled)}'`);
 }
 
 /**
@@ -1127,6 +1199,7 @@ export function runOfficialRegression(
 ): OfficialRegressionReport {
   const metric = OFFICIAL_METRICS[target];
   const groundTruth = readOfficialGroundTruth(target, files);
+  const submission = readOfficialSubmission(target, files);
   const failures: string[] = [];
 
   // An empty export is a skip only when the caller states why it is legitimate;
@@ -1164,8 +1237,15 @@ export function runOfficialRegression(
     };
   }
 
-  const cases: OfficialRegressionCase[] = groundTruth.map((gt) => {
-    const oracle = oraclePrediction(gt);
+  const cases: OfficialRegressionCase[] = groundTruth.map((gt, index) => {
+    // Score what the export actually ships, not a prediction rebuilt from the
+    // answer key. For the eight targets with no published submission format the
+    // two are the same by construction, and `readOfficialSubmission` says so.
+    // For OpenRCA 1.0 they are not: the shipped `record.csv` is the submission,
+    // and reading the answer key instead made the anchor vacuously true -- it
+    // answered `oraclePerfect: true` for an export whose prediction named the
+    // wrong component, and for one with no `record.csv` at all.
+    const oracle = submission[index] ?? emptyPrediction();
     const oracleScore = scoreOneCase(target, oracle, gt).score;
 
     const mutations: OfficialMutationResult[] = OFFICIAL_FACETS.map((facet) => {

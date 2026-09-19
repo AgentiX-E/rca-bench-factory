@@ -695,13 +695,36 @@ function structureRate(structure: StructureReport): number {
   return structure.checks.filter((c) => c.passed).length / structure.checks.length;
 }
 
+/**
+ * Whether a verdict is worth crediting at all.
+ *
+ * A score has to fail when the thing it scores is not there. `scoreExport`
+ * averages the structure rate and the checksum rate, so a report whose checks
+ * are vacuously true still buys half the number: an empty export passed
+ * `answer-key-isolated` ("query.csv carries no answer key" -- there is no
+ * query.csv), `log-header` and `trace-header` (both explicitly accept an absent
+ * telemetry directory) and `row-alignment` (0 rows equals 0 rows), which is 4 of
+ * 13 checks, a structure rate of 0.31, and a reported `score` of 15 for an export
+ * that does not exist.
+ *
+ * The rule is the same one every other denominator in this file already
+ * follows: a term with nothing under it has no credit to give. The structure
+ * report's own `passed` flag already answers this correctly -- it is
+ * `checks.every(c => c.passed)` -- so the rate is only meaningful once the
+ * verdict is.
+ */
+function creditFor(structure: StructureReport): number {
+  return structure.passed ? structureRate(structure) : 0;
+}
+
 function checksumRate(report: ChecksumReport): number {
-  // Every anchor is counted as matched, mismatched or missing, so the total is
-  // the anchor count and `matched / total` is the fraction that verified. An
-  // empty anchor set has no anchors to divide by, which would make the rate
-  // `0 / 0`; it contributes nothing rather than an `NaN`, and the report it
-  // belongs to is already failing (`verifyChecksums` reports every file extra).
-  const total = report.matched + report.mismatched.length + report.missing.length;
+  // The denominator is the export, not the anchor set. Counting only the
+  // anchors the caller supplied let a file the anchors never mention be neither
+  // verified nor held against the rate: one anchor out of twenty-two produced
+  // `score: 100` next to `passed: false`, and the number is the half people
+  // read. A comparison set is a claim about the whole export, so a file it does
+  // not cover is an unverified file, which is exactly what `extra` names.
+  const total = report.matched + report.mismatched.length + report.missing.length + report.extra.length;
   return total === 0 ? 0 : report.matched / total;
 }
 
@@ -783,12 +806,12 @@ export function scoreExport(
     return {
       target,
       passed: structure.passed,
-      score: Math.round(structureRate(structure) * 100),
+      score: Math.round(creditFor(structure) * 100),
       structure,
     };
   }
   const checksum = verifyChecksums(files, anchors);
-  const score = Math.round(((structureRate(structure) + checksumRate(checksum)) / 2) * 100);
+  const score = Math.round(((creditFor(structure) + checksumRate(checksum)) / 2) * 100);
   return {
     target,
     passed: structure.passed && checksum.passed,

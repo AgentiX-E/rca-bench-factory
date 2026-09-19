@@ -864,12 +864,18 @@ describe('official - degraded exports', () => {
       expect([gt.component, gt.faultType]).toEqual(['', '']);
     });
 
-    it('scores a case with no chain and no checkpoints as fully covered by an empty prediction', () => {
+    it('does not award the process term to a case whose key declares no process', () => {
       const gt = readOfficialGroundTruth('rca100', files({}, { root_cause_entities: ['order'] }))[0]!;
       expect(gt.chain).toEqual([]);
       expect(gt.evidence).toEqual([]);
-      // `rateOf` treats an empty denominator as complete, so an oracle scores 1.
-      expect(scoreOfficial('rca100', files({}, { root_cause_entities: ['order'] })).cases[0]!.score).toBe(1);
+      // An empty denominator used to count as complete, so this case collected
+      // the full 0.3 process weight -- the same third of the score an identical
+      // prediction earned on a key that declared a chain and matched it. The
+      // localisation terms are still perfect here; only the term the key never
+      // defined is withheld.
+      const report = scoreOfficial('rca100', files({}, { root_cause_entities: ['order'] }));
+      expect(report.cases[0]!.score).toBe(0.7);
+      expect(report.breakdown.process).toBe(0);
     });
   });
 
@@ -917,7 +923,7 @@ describe('official - degraded exports', () => {
       expect(gt.evidence).toEqual([]);
     });
 
-    it('treats a corpus with no evidence points at all as fully explained', () => {
+    it('scores a corpus with no evidence points at all as having none to explain', () => {
       const files2 = files({
         uuid: 'c4',
         service: 'order',
@@ -927,10 +933,24 @@ describe('official - degraded exports', () => {
         key_observations: {},
       });
       const report = scoreWith('aiops2025', files2, oracleFor('aiops2025', files2));
-      // Exp. has no denominator, so the protocol awards the full 0.1 weight
-      // rather than dividing by zero.
+      // This assertion used to read `explainability === 1`, on the reading that
+      // an empty `Exp.` has no denominator so the protocol awards the full 0.1
+      // weight instead of dividing by zero. That reads a zero denominator as a
+      // perfect score, which is exactly the defect `rateOf` had: a key that
+      // declares no evidence to look for is not a key whose evidence was all
+      // found. Every other term here already answers 0 with nothing to average
+      // (`la`, `ta`, `eff`), and the eight other targets score an empty export
+      // 0, so explainability now does too.
       expect(report.breakdown.evidencePoints).toBe(0);
-      expect(report.breakdown.explainability).toBe(1);
+      expect(report.breakdown.explainability).toBe(0);
+      // The two remaining terms still carry the case: the entity and the fault
+      // description are both right, so the headline is 0.4 + 0.4, plus the
+      // 0.1 efficiency term that answers 1 over a one-case trace corpus and
+      // the 0 explainability term that used to be a free 0.1.
+      expect(report.breakdown.la).toBe(1);
+      expect(report.breakdown.ta).toBe(1);
+      expect(report.breakdown.efficiency).toBe(1);
+      expect(report.final).toBe(90);
     });
   });
 
