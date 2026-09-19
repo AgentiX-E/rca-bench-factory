@@ -34,9 +34,16 @@ that is missing `traces.csv`.
 └── traces.csv          # RE2 / RE3 only
 ```
 
-The directory name is produced by `caseDirName`: non-alphanumeric characters are stripped
-from the root-cause component and the fault type, and `{instance}` is the 1-based index of
-the case in the bundle.
+The directory name is produced by `caseDirName`: hyphens are **kept**, and every other
+non-alphanumeric character is stripped from the root-cause component and the fault type. Leading and
+trailing hyphens are trimmed, and a field that sanitises away entirely becomes `unnamed`, so no
+directory name ever carries an empty segment. `{instance}` is the 1-based index of the case in the
+bundle.
+
+Keeping hyphens is not a preference — it is what makes the name readable at all.
+`parseRcaEvalDirectory` recovers the root-cause service from this name, and the upstream harness
+writes names like `RE2-ts-order-service-cpu_1`. Stripping hyphens would emit
+`RE2-tsorderservice-cpu_1` and name a service that does not exist.
 
 ## Files
 

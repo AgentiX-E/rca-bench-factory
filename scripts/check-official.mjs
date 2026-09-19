@@ -26,14 +26,36 @@
  * What remains this script's own is the part no unit test can supply: the
  * verdict on the shipped `examples/order-prod/bundle.json`, target by target.
  *
+ * ## The official-data round trip
+ *
+ * With `--official-dir` the script scores a *real* upstream corpus instead of
+ * the example. That is the fourth anchor: the three above prove our export is
+ * scorable, and this one proves it is scorable against data we did not write.
+ *
+ * The round trip is deliberately a separate mode rather than a replacement. The
+ * default mode reads a committed bundle and its verdict is a contract - eight
+ * targets scored, one refused by its own rule - that CI pins line by line. The
+ * round trip reads whatever the operator fetched, so its case count is a fact
+ * about that corpus and not something to pin.
+ *
+ * Every line the round trip adds is prefixed `ROUNDTRIP`, so the nine verdict
+ * lines above it stay parseable by the same readers and the two modes cannot be
+ * confused in a log.
+ *
  *   node scripts/check-official.mjs
+ *   node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/cases.json
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { exportForScoreTarget, runAllOfficialRegressions, SCORE_TARGET_IDS } from '../packages/core/dist/index.js';
+import {
+  exportForScoreTarget,
+  ingestPrimeDataset,
+  runAllOfficialRegressions,
+  SCORE_TARGET_IDS,
+} from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -41,6 +63,153 @@ const BUNDLE_PATH = resolve(ROOT, 'examples/order-prod/bundle.json');
 
 /** The one target the shipped example cannot exercise, and why. */
 const SKIPPED = { 'rcaeval-re3': 'the example is a resource fault and RE3 admits code-level faults only' };
+
+/**
+ * The column names the RCAEval corpus adapter emits.
+ *
+ * They are spelled the way `detectFileLayout`'s aliases spell them, so the
+ * adapter's output is read by the same detection every other dataset goes
+ * through -- there is no second layout contract to keep in step.
+ */
+const ADAPTED_COLUMNS = ['timestamp', 'service', 'metric', 'value'];
+
+/**
+ * The sampling interval RCAEval uses, in seconds.
+ *
+ * Recorded rather than assumed: the series it publishes is a bare array with no
+ * time axis, so the instants have to come from somewhere. A wrong interval
+ * shifts every point and the window then selects the wrong slice -- which
+ * `assertRcaevalMetrics` refuses to let us do silently.
+ */
+const RCAEVAL_SAMPLE_SECONDS = 60;
+
+/**
+ * Convert the RCAEval `metrics.json` shape into records the ingest reads.
+ *
+ * RCAEval publishes `{ "metric_name": [v0, v1, ...] }` -- a value per sampling
+ * tick, with the metric name as a *key* and no time column at all. The ingest
+ * reads records with a timestamp and a metric column, so the two shapes do not
+ * meet, and this is where they are joined.
+ *
+ * The conversion is deliberately loud. Anything the shape does not pin down --
+ * a series of uneven length, no series at all, a value that is not a number --
+ * makes the case fail by name instead of contributing the points that happened
+ * to parse. A metrics.json we can only partly read is one whose fault the round
+ * trip cannot claim to have reproduced.
+ */
+function assertRcaevalMetrics(raw, entry) {
+  let doc;
+  try {
+    doc = JSON.parse(raw);
+  } catch (error) {
+    return { ok: false, reason: `metrics.json is not valid JSON: ${error.message}` };
+  }
+  if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+    return { ok: false, reason: 'metrics.json is not a JSON object of metric -> values' };
+  }
+  const names = Object.keys(doc);
+  if (names.length === 0) {
+    return { ok: false, reason: 'metrics.json declares no metrics' };
+  }
+  let length = -1;
+  for (const name of names) {
+    if (!Array.isArray(doc[name])) {
+      return { ok: false, reason: `metric '${name}' is not an array of values` };
+    }
+    if (length === -1) {
+      length = doc[name].length;
+      continue;
+    }
+    if (doc[name].length !== length) {
+      // Uneven series have no common time axis. Padding the short one would
+      // invent samples; truncating the long one would drop real ones.
+      return {
+        ok: false,
+        reason: `metric '${name}' has ${doc[name].length} sample(s) but the first metric has ${length}`,
+      };
+    }
+  }
+  if (length === 0) {
+    return { ok: false, reason: 'metrics.json holds zero samples' };
+  }
+
+  const injectSeconds = Date.parse(entry.injectTime) / 1000;
+  const rows = [ADAPTED_COLUMNS.join(',')];
+  for (let index = 0; index < length; index += 1) {
+    // The series is centred on the injection instant, which is the only anchor
+    // the corpus gives: RCAEval publishes the fault's timestamp and the samples
+    // around it, not the sample's own clock.
+    const at = new Date((injectSeconds + (index - Math.floor(length / 2)) * RCAEVAL_SAMPLE_SECONDS) * 1000);
+    const ts = at.toISOString();
+    for (const name of names) {
+      const value = doc[name][index];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return { ok: false, reason: `metric '${name}' sample ${index} is not a finite number` };
+      }
+      rows.push(`${ts},${entry.component},${name},${value}`);
+    }
+  }
+  return { ok: true, csv: rows.join('\n') + '\n' };
+}
+
+/**
+ * Read an extracted corpus into the `path -> text` map every scorer takes.
+ *
+ * Binary files are skipped rather than decoded: the corpus is telemetry, the
+ * scorers read text, and a `Buffer.toString()` on a PNG would hand a scorer a
+ * megabyte of replacement characters to search.
+ */
+function readTree(root) {
+  const files = {};
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(path);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const relative = path.slice(root.length + 1);
+      const bytes = readFileSync(path);
+      if (bytes.includes(0)) continue;
+      files[relative] = bytes.toString('utf8');
+    }
+  };
+  walk(root);
+  return files;
+}
+
+/**
+ * Adapt one corpus subtree to what the ingest reads, or say why it cannot.
+ *
+ * `metrics.json` is rewritten into the record shape and everything else is
+ * dropped: `inject_time.txt` is the case's own label and is already in the
+ * descriptor, so feeding it to the ingest only produces a quarantine entry for
+ * a file that was never telemetry.
+ */
+function adaptCase(root, entry) {
+  const dir = join(root, entry.caseId);
+  const raw = readFileSync(join(dir, 'metrics.json'), 'utf8');
+  const metrics = assertRcaevalMetrics(raw, entry);
+  if (!metrics.ok) return metrics;
+  return {
+    ok: true,
+    files: {
+      [`${entry.caseId}/metrics.csv`]: metrics.csv,
+    },
+  };
+}
+
+function argValue(flag) {
+  const index = process.argv.indexOf(flag);
+  if (index === -1) return undefined;
+  const value = process.argv[index + 1];
+  if (value === undefined || value.startsWith('--')) {
+    console.error(`error: ${flag} requires a value`);
+    process.exit(1);
+  }
+  return value;
+}
 
 const bundle = JSON.parse(readFileSync(BUNDLE_PATH, 'utf8'));
 
@@ -86,3 +255,167 @@ if (failures.length > 0) {
 
 const passed = reports.filter((r) => r.status === 'passed').length;
 console.log(`\nOfficial-metric regression PASSED (${passed} targets scored, ${reports.length - passed} skipped by contract)`);
+
+// ---------------------------------------------------------------------------
+// The official-data round trip, only when asked for.
+// ---------------------------------------------------------------------------
+const officialDirArg = argValue('--official-dir');
+if (officialDirArg === undefined) process.exit(0);
+
+const officialDir = resolve(officialDirArg);
+const casesPath = resolve(argValue('--cases') ?? resolve(ROOT, 'golden-master', 'rcaeval-cases.json'));
+
+if (!existsSync(officialDir)) {
+  console.error(`error: --official-dir '${officialDir}' does not exist.`);
+  console.error('  Fetch the corpus first: node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official');
+  process.exit(1);
+}
+if (!existsSync(casesPath)) {
+  console.error(`error: --cases '${casesPath}' does not exist.`);
+  console.error('  Generate it first: node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official');
+  process.exit(1);
+}
+
+const roundTripFailures = [];
+const descriptors = JSON.parse(readFileSync(casesPath, 'utf8'));
+const files = readTree(officialDir);
+const caseCount = Array.isArray(descriptors.cases) ? descriptors.cases.length : 0;
+
+if (caseCount === 0) {
+  // Scoring zero cases would report success while exercising nothing, which is
+  // the one outcome the fourth anchor exists to prevent.
+  roundTripFailures.push('the descriptor file lists no cases, so the round trip would score nothing');
+}
+
+/**
+ * Every declared case must be present in the corpus.
+ *
+ * A descriptor that names a directory the corpus does not hold is a mismatch
+ * between two artefacts a human generated at different times; the round trip
+ * would otherwise score the subset that happens to still exist and report on it
+ * as if it were the whole corpus.
+ */
+const declared = [];
+for (const entry of descriptors.cases ?? []) {
+  declared.push(entry.caseId);
+  if (files[`${entry.caseId}/inject_time.txt`] === undefined) {
+    roundTripFailures.push(`${entry.caseId}: declared in ${casesPath} but absent from ${officialDir}`);
+  }
+}
+if (declared.length > 0) {
+  console.log(`\nROUNDTRIP corpus ${officialDir}`);
+  console.log(`ROUNDTRIP declared ${declared.length} case(s), found ${Object.keys(files).length} file(s)`);
+}
+
+let roundTripped = 0;
+for (const [index, entry] of (descriptors.cases ?? []).entries()) {
+  const label = `${String(index + 1).padStart(3)}/${declared.length} ${entry.caseId.padEnd(30)}`;
+  if (files[`${entry.caseId}/inject_time.txt`] === undefined) continue;
+
+  // One case at a time, over an adapted single-case map.
+  //
+  // Feeding the whole corpus to one call would put every file in front of
+  // `routeFiles`, which then has to decide ownership by prefix -- and a prefix
+  // that is a prefix of another case id would silently claim the wrong files.
+  // One call per case has no ambiguity to resolve.
+  const adapted = adaptCase(officialDir, entry);
+  if (!adapted.ok) {
+    console.log(`ROUNDTRIP FAIL ${label} reason=${adapted.reason}`);
+    roundTripFailures.push(`${entry.caseId}: ${adapted.reason}`);
+    continue;
+  }
+
+  const ingested = ingestPrimeDataset(adapted.files, {
+    dataset: 'rcaeval',
+    system: 'rcaeval',
+    cases: [
+      {
+        caseId: entry.caseId,
+        component: entry.component,
+        faultType: entry.faultType,
+        injectTime: entry.injectTime,
+        pathPrefixes: [entry.pathPrefix],
+      },
+    ],
+    // The root cause is the service the directory name records, and the ingest
+    // keys services as `service:{system}/{name}`. Declaring it is necessary
+    // rather than redundant: the corpus records the label and the telemetry may
+    // not mention the same name, and a case whose root cause does not resolve is
+    // refused by the ingest -- correctly, but uselessly as round-trip evidence.
+    //
+    // The id is built the way `serviceEntity` builds it, so this declaration
+    // merges with the entity derived from the signals instead of standing beside
+    // it. Getting that wrong is not silent either: the ingest rejects the case
+    // as ambiguous ("it names rcaeval:ob, service:rcaeval/ob"), which is what the
+    // first attempt at this did.
+    extraEntities: [
+      {
+        entityId: `service:rcaeval/${entry.component}`,
+        kind: 'service',
+        name: entry.component,
+        system: 'rcaeval',
+        aliases: [],
+      },
+    ],
+    leadMs: 10 * 60 * 1000,
+  });
+  if (!ingested.ok) {
+    console.log(`ROUNDTRIP FAIL ${label} reason=ingest refused the case`);
+    roundTripFailures.push(`${entry.caseId}: ingest failed - ${ingested.error}`);
+    continue;
+  }
+
+  const signals = ingested.report[0]?.signals ?? 0;
+  const quarantine = ingested.report[0]?.quarantine ?? [];
+  if (signals === 0) {
+    // A case that produced no signal has told us nothing about the exporter, and
+    // counting it as a pass would be the fourth anchor certifying an empty run.
+    console.log(`ROUNDTRIP FAIL ${label} signals=0`);
+    roundTripFailures.push(
+      `${entry.caseId}: the ingest read no signals from the corpus` +
+        (quarantine.length > 0 ? ` (first reason: ${quarantine[0].reason})` : ''),
+    );
+    continue;
+  }
+
+  const target = `rcaeval-${entry.suite.toLowerCase()}`;
+  const exported = exportForScoreTarget(ingested.bundle, target);
+  const report = runAllOfficialRegressions(
+    Object.fromEntries(SCORE_TARGET_IDS.map((t) => [t, t === target ? exported.files : {}])),
+    { allowEmptyReason: 'the round trip names the single target under test' },
+  ).find((r) => r.target === target);
+
+  if (report === undefined) {
+    roundTripFailures.push(`${entry.caseId}: target '${target}' produced no report`);
+    continue;
+  }
+
+  const caseReport = report.cases[0];
+  const scored = caseReport === undefined ? 0 : caseReport.oracleScore;
+  // RE3 refuses non-code faults, and RCAEval's RE3 slice is exactly the
+  // code-level one. A skip here is the target's own contract, not a pass and not
+  // a failure -- it is reported and not counted.
+  const skipped = report.caseCount === 0;
+  const mark = skipped ? 'SKIP' : scored === 1 ? 'PASS' : 'FAIL';
+  console.log(
+    `ROUNDTRIP ${mark} ${label} target=${target.padEnd(16)} oracle=${scored.toFixed(2)} signals=${signals}`,
+  );
+
+  if (skipped) continue;
+  if (scored !== 1) {
+    roundTripFailures.push(
+      `${entry.caseId}: our own export does not score 1.0 under ${target}'s published rule (got ${scored}); ` +
+        `the official exporter read ${Object.keys(exported.files).length} file(s)`,
+    );
+    continue;
+  }
+  roundTripped += 1;
+}
+
+if (roundTripFailures.length > 0) {
+  console.error('\nROUNDTRIP FAILED');
+  for (const f of roundTripFailures) console.error(`ROUNDTRIP   - ${f}`);
+  process.exit(1);
+}
+
+console.log(`\nROUNDTRIP PASSED (${roundTripped} case(s) round-tripped through the official layout)`);

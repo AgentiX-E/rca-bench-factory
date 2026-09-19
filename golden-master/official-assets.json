@@ -1,0 +1,178 @@
+{
+  "schema": "rca-bench-official-assets/1",
+  "note": "Metadata only. This file records where each upstream corpus lives and what may be fetched automatically. It contains no upstream data and must never contain any: the whole point of shipping an anchor registry instead of a dataset is that the licences travel with the data, not with us. URLs are transcribed verbatim from the upstream download helpers (RCAEval/utility/__init__.py) rather than composed, so a typo here cannot invent a source that does not exist.",
+  "assets": [
+    {
+      "id": "rcaeval-re1-ob",
+      "anchor": "rcaeval-re1",
+      "url": "https://zenodo.org/records/14590730/files/RE1-OB.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE1-OB"
+    },
+    {
+      "id": "rcaeval-re1-ss",
+      "anchor": "rcaeval-re1",
+      "url": "https://zenodo.org/records/14590730/files/RE1-SS.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE1-SS"
+    },
+    {
+      "id": "rcaeval-re1-tt",
+      "anchor": "rcaeval-re1",
+      "url": "https://zenodo.org/records/14590730/files/RE1-TT.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE1-TT"
+    },
+    {
+      "id": "rcaeval-re2-ob",
+      "anchor": "rcaeval-re2",
+      "url": "https://zenodo.org/records/14590730/files/RE2-OB.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE2-OB"
+    },
+    {
+      "id": "rcaeval-re2-ss",
+      "anchor": "rcaeval-re2",
+      "url": "https://zenodo.org/records/14590730/files/RE2-SS.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE2-SS"
+    },
+    {
+      "id": "rcaeval-re2-tt",
+      "anchor": "rcaeval-re2",
+      "url": "https://zenodo.org/records/14590730/files/RE2-TT.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE2-TT"
+    },
+    {
+      "id": "rcaeval-re3-ob",
+      "anchor": "rcaeval-re3",
+      "url": "https://zenodo.org/records/14590730/files/RE3-OB.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE3-OB"
+    },
+    {
+      "id": "rcaeval-re3-ss",
+      "anchor": "rcaeval-re3",
+      "url": "https://zenodo.org/records/14590730/files/RE3-SS.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE3-SS"
+    },
+    {
+      "id": "rcaeval-re3-tt",
+      "anchor": "rcaeval-re3",
+      "url": "https://zenodo.org/records/14590730/files/RE3-TT.zip?download=1",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "RE3-TT"
+    },
+    {
+      "id": "rcaeval-baro-simple",
+      "anchor": "rcaeval-re3",
+      "url": "https://github.com/phamquiluan/baro/releases/download/0.0.4/simple_data.csv",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/baro/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": 570409,
+      "extractsTo": null
+    },
+    {
+      "id": "rcaeval-multi-source",
+      "anchor": "rcaeval-re3",
+      "url": "https://github.com/phamquiluan/RCAEval/releases/download/0.2.0/multi-source-data.zip",
+      "license": "MIT",
+      "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
+      "fetchable": true,
+      "sha256": null,
+      "bytes": null,
+      "extractsTo": "multi-source-data"
+    }
+  ],
+  "notFetchable": [
+    {
+      "id": "openrca-1.0",
+      "anchor": "openrca-1.0",
+      "license": "MIT (code) / data terms per upstream",
+      "reason": "The telemetry is published on Google Drive, not on an HTTPS endpoint with a stable contract. Drive adds interactive confirmation, per-account quotas and rate limiting, which makes it unfit for a deterministic CI gate. Reach it through the AgentiX-E/openrca-* shard repositories instead, which already cache it on a runner.",
+      "alternative": "AgentiX-E/openrca-{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2} actions/cache"
+    },
+    {
+      "id": "openrca-2.0",
+      "anchor": "openrca-2.0",
+      "license": "MIT (code)",
+      "reason": "PAVE-style step-wise causal-path annotations are not published as a bulk downloadable archive.",
+      "alternative": null
+    },
+    {
+      "id": "rca100",
+      "anchor": "rca100",
+      "license": "CC BY-NC-SA 4.0",
+      "reason": "Not a licence problem for this project: NonCommercial means 'not primarily intended for or directed towards commercial advantage or monetary compensation', and this repository is internal research that neither charges nor redistributes. It is listed here because the corpus has no HTTPS bulk endpoint we have verified, so no automated fetch is wired up yet.",
+      "alternative": null
+    },
+    {
+      "id": "aiops2025",
+      "anchor": "aiops2025",
+      "license": "Research terms",
+      "reason": "No verified bulk HTTPS endpoint. We target the field contract only, which is defined by this repository.",
+      "alternative": null
+    },
+    {
+      "id": "cloud-opsbench",
+      "anchor": "cloud-opsbench",
+      "license": "Research terms",
+      "reason": "No verified bulk HTTPS endpoint. We target the state-snapshot paradigm, which is defined by this repository.",
+      "alternative": null
+    },
+    {
+      "id": "itbench",
+      "anchor": "itbench",
+      "license": "Apache-2.0 / MIT",
+      "reason": "No verified bulk HTTPS endpoint for the scenario corpus.",
+      "alternative": null
+    },
+    {
+      "id": "causalrca-run",
+      "anchor": null,
+      "license": "No License",
+      "reason": "CausalRCA and RUN ship no licence, which means all rights are reserved. We do not fetch them and we do not vendor them, and we do not need to: they are baselines, not targets. Our repository defines their schema shape itself, so nothing of theirs is copied.",
+      "alternative": null
+    }
+  ]
+}

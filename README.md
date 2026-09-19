@@ -44,8 +44,11 @@ silently re-licenses or corrupts upstream data.
    LLM is called `O(data sources)`, never `O(records)`.
 3. **Zero silent loss.** Every transform either succeeds or is quarantined with a
    reason. `inputCount === outputCount + quarantineCount` is enforced, not hoped for.
-4. **External grounding.** Self-certification is a closed loop. Verification anchors
-   are distributed (checksums + expected outputs), never licensed data.
+4. **External grounding.** Self-certification is a closed loop. We distribute
+   verification anchors — case descriptors, expected outputs, digests — and never
+   upstream data. The fourth acceptance anchor therefore fetches the real corpora on
+   a runner, outside the working tree, and scores the resulting export with upstream's
+   own published rule.
 
 ## Repository layout
 
@@ -77,10 +80,13 @@ rca-bench-factory/
 │   └── targets/               # one full field contract per target format, with verified examples
 ├── examples/order-prod/       # the demo input set every documented example is generated from
 ├── site/                      # interactive product + teaching site (static, published to Pages)
-├── golden-master/             # verification anchors (expected.json + checksums + script)
-├── scripts/                   # no-mock / no-secrets guards, format spec, example generator, official check
-├── .github/workflows/ci.yml   # build, typecheck, lint, test+coverage, mutation, golden-master, official
-└── .github/workflows/pages.yml # publishes site/ to GitHub Pages
+├── golden-master/             # verification anchors (expected.json, asset registry, fetch script)
+├── scripts/                   # guards (no-mock / no-secrets / no-vendored-data), format spec,
+│                              # example generator, official fetch + case generation + round trip
+├── .github/workflows/ci.yml               # build, typecheck, lint, test+coverage, mutation, golden-master, official
+├── .github/workflows/anchor-roundtrip.yml # anchor 4 on a synthetic corpus (runs on every push)
+├── .github/workflows/official-data.yml    # anchor 4 on the real corpora (dispatch + weekly)
+└── .github/workflows/pages.yml            # publishes site/ to GitHub Pages
 ```
 
 ## Quick start
@@ -208,8 +214,8 @@ digest printed on the site is worth verifying against your download.
 | [Cloud-OpsBench](docs/targets/cloud-opsbench.md) | `metadata.json` outcome ground-truth triple |
 | [ITBench](docs/targets/itbench.md) | `scenario.json` SRE Diagnosis contract |
 | [Acceptance](docs/acceptance.md) | L0–L5 acceptance layers, mutation matrix, Golden Master, Definition of Done |
-| [Progress](docs/progress.md) | Per-layer status with the evidence for each line, and the one anchor that needs official data |
-| [Audit](docs/audit.md) | Scoring-path findings, each with the measurement that reproduced it |
+| [Progress](docs/progress.md) | Per-layer status with the evidence for each line, including the state of the fourth acceptance anchor |
+| [Audit](docs/audit.md) | Per-pass findings, each with the measurement that reproduced it, plus the claims this project retracted |
 | [CLI reference](docs/cli-reference.md) | `rca-bench` command surface (`source` / `transform` / `case` / `gate` / `export` / `score` / `report` / `evolve`) |
 | [Contributing](CONTRIBUTING.md) | Workflow, TDD, coverage rules, commit conventions |
 
@@ -233,8 +239,11 @@ digest printed on the site is worth verifying against your download.
 
 - Code: [Apache-2.0](LICENSE).
 - IR schema and field contracts: **CC BY 4.0** (deliberately no `NC`/`SA`).
-- Upstream benchmark *data* (OpenRCA, RCA100, …) is **never redistributed** — see
-  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for the full license matrix.
+- Upstream benchmark *data* (OpenRCA, RCAEval, RCA100, …) is **never redistributed**.
+  It is fetched at check time to a path outside the working tree, from the canonical
+  URL recorded in `golden-master/official-assets.json`; telemetry-shaped data in the
+  tracked tree fails the build. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+  for the full matrix and which licence terms actually bind this repository.
 
 ## Status
 

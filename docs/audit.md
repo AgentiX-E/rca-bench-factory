@@ -10,7 +10,7 @@ appeared in a review, without a failing measurement, is not a finding.
 
 ## Scope
 
-Five passes so far:
+Six passes so far:
 
 - **Pass 1** — `packages/core/src/score/`: the official-metric scoring path. This
   is the code that decides whether an export is scorable and what number it
@@ -33,6 +33,15 @@ Five passes so far:
   validation gap here does not mislabel a number the way pass 1 can; it moves a
   failure from "the parser refused this and said why" to "some later stage
   threw", and the caller cannot tell the two apart from the exit code.
+- **Pass 6** — the official-data round trip: `scripts/fetch-official.mjs`,
+  `packages/core/src/export/rcaeval.ts`, the `--official-dir` branch of
+  `scripts/check-official.mjs`, and the two guard scripts
+  (`check-no-vendored-data.mjs`, `gen-rcaeval-cases.mjs`). Every other pass audited
+  a path whose correctness the suite could decide on its own. This one audits the
+  path that takes the repository *outside* its own fixtures, which makes the test
+  harness itself part of the subject: a fixture that cannot express the upstream
+  layout produces a green suite that establishes nothing, and three of this pass's
+  four findings are exactly that.
 
 ## Summary
 
@@ -142,6 +151,37 @@ spaces. The fix tests blankness after trimming, on every path flag, and returns 
 distinct `null` for blank versus `undefined` for absent — because "the flag was
 not given" and "the flag was given something unusable" are different errors with
 different messages.
+
+### Pass 6 — the official-data round trip
+
+| # | Defect | Reproduced as | Status |
+| --- | --- | --- | --- |
+| 29 | `caseDirName` deleted hyphens from the component, so the round trip read a path that does not exist | `ts-order-service` → `dataset/tsorderservice/…` | fixed |
+| 30 | `unzip` was invoked unconditionally, including on assets that are not archives | a `.csv` asset → `unzip: cannot find zipfile` naming no asset | fixed |
+| 31 | The case-descriptor generator dropped its warnings when every case was skipped | empty result, empty stderr, exit 0 | fixed |
+| 32 | The archive fixture in the fetch test was malformed in the way the *script* was suspected of being | `unzip`: `End-of-central-directory signature not found` | fixed |
+
+Findings 31 and 32 are not defects in shipped code. They are defects in the
+*instruments* — the generator's diagnostics and the test fixture — and they are
+listed because each one produced a green result that would have been read as
+evidence. A warning that is swallowed and a fixture that cannot be parsed both make
+a test pass for a reason that is not the reason the test exists.
+
+Two further instrument defects were found and fixed in the same pass, and are
+recorded here rather than in the table because neither is reachable from the
+shipped code:
+
+- **`execFileSync` cannot see a successful run's stderr.** Its return value is
+  stdout alone; stderr arrives only on the exception object, which a zero exit never
+  produces. Every assertion about diagnostic output was therefore asserting against
+  `''` and passing whenever the message was absent — the exact failure the
+  assertions existed to catch. `spawnSync` returns both streams unconditionally.
+- **A test fixture that never ran `git add`.** The "catches a vendored corpus"
+  cases in `check-no-vendored-data.test.ts` built a repository with `git init`, wrote
+  files, and checked that the guard rejected them. Without `git add` the guard's
+  `git ls-files` is empty, so it found nothing to reject — and the guard reporting
+  nothing to reject is indistinguishable from the guard being broken. Four tests
+  passed against a fixture that could not fail.
 
 ### A guard that is unreachable on purpose
 
@@ -916,6 +956,128 @@ surrounding whitespace is stripped rather than rejected, and one asserting an
 internal space is preserved. Injecting the untrimmed comparison back fails 5
 tests; removing the blankness test entirely fails 7.
 
+## 29 — `caseDirName` deleted the hyphens, so the round trip read a path that cannot exist
+
+```
+$ node -e "console.log(caseDirName('ts-order-service','cpu'))"
+tsorderservice-cpu          # RCAEval publishes dataset/ts-order-service-cpu_1/
+```
+
+`caseDirName` exists to build the directory name RCAEval uses, and it stripped every
+character outside `[A-Za-z0-9_]` — which is what a slugifier does. Component names in
+all three systems are hyphenated: `ts-order-service`, `adservice`, `checkoutservice`,
+`ts-travel-service`. The function therefore produced a name for a directory that
+upstream does not publish.
+
+Nothing detected it for as long as the only consumers were our own exporter and our
+own verifier, because both call `caseDirName` and both compare the results to each
+other. The defect lived in the shape of the **agreement**, not in either side of it:
+two functions that share one naming rule cannot disagree about it. It became
+observable the moment a real path entered the picture — `check-official.mjs
+--official-dir` reads a directory the operator did not name, and the round trip
+failed on a missing path rather than on a wrong number.
+
+**Fix**: preserve the hyphen; the pattern is a pass-through for the characters
+upstream uses rather than a replacement set for the ones it does not.
+
+**Guard**: a case per system asserting the exact upstream directory name for a
+hyphenated component, plus a case asserting a genuinely illegal character is still
+removed — so the fix is not "delete the check". Reverting to the stripping pattern
+fails 4 tests.
+
+This finding is why the fourth anchor is not redundant with the first three. An
+anchor-1..3 failure is a bug in one function; an anchor-4 failure can be a bug in
+the *contract between* functions, which no amount of internal consistency can
+reveal.
+
+## 30 — An unconditional `unzip` blamed the archive format for a CSV
+
+The fetch path extracted every asset as an archive, because the corpora are
+archives. Two registry entries are not: `rcaeval-baro-simple` is a bare
+`simple_data.csv`, and its `extractsTo` is `null` — a field that already said so and
+was read by nothing.
+
+Measured on that asset, the failure was `unzip: cannot find zipfile directory in …
+simple_data.csv`, and the message named neither the asset id nor the reason. The
+operator's next move is to suspect a corrupt download and re-fetch a file that was
+never an archive.
+
+An `extractsTo: null` that nothing consults is the same class of defect as findings
+24 and 25: a field that records a fact and does not enforce it.
+
+**Fix**: the archive step runs only when the registry says the asset extracts, and a
+non-archive asset is moved into place under the name the registry gives it. The
+error for a genuinely corrupt archive now names the asset id.
+
+**Guard**: one case per registry shape, driving the real script against a local
+server; and a registry-wide case asserting that every entry with `extractsTo: null`
+is treated as a file while every entry with a value is treated as an archive.
+Ignoring `extractsTo` again fails 2 tests.
+
+## 31 — The generator swallowed its own warnings when it found nothing
+
+```
+$ node scripts/gen-rcaeval-cases.mjs --official-dir corpus --out cases.json
+# exit 0, empty cases.json, and no output at all
+```
+
+The generator warned per skipped case — a directory with no `inject_time.txt`, an
+unparseable directory name — and printed the collected warnings only on the branch
+that had also found cases. A corpus where *every* case was skipped therefore
+produced an empty descriptor file, no diagnostics, and a zero exit, which is
+indistinguishable from a corpus that legitimately contains nothing to report.
+
+That is the worst possible shape for this particular tool: its output feeds the round
+trip, so an empty descriptor set silently turns the check into a no-op. A check that
+has nothing to check must not report success by saying nothing.
+
+**Fix**: warnings are emitted before the empty-result decision, and finding zero
+cases is itself an error naming the path and the reason. `--check` mode reports a
+descriptor file that disagrees with the corpus as a failure rather than a diff to
+eyeball.
+
+**Guard**: cases for the all-skipped corpus, the partly-skipped corpus, and the
+`--check` agreement path. Moving the warning print back below the early return fails
+2 tests.
+
+The instrument-defect rule from pass 2 applies directly here: this defect was found
+*because* a test asserted on stderr, and that test could only see stderr once it
+stopped using `execFileSync`. The instrument was fixed and the defect it was pointing
+at became visible in the same change.
+
+## 32 — The test fixture was malformed exactly where the script was suspected
+
+The fetch test built a synthetic archive in-process to avoid a network dependency.
+`unzip` rejected it four times, and each rejection was initially read as a defect in
+`fetch-official.mjs`:
+
+```
+End-of-central-directory signature not found
+invalid zip file with overlapped components (possible zip bomb)
+The value of "value" is out of range. Received -2119958528
+```
+
+The last three were all the fixture, and the second is worth recording by name: the
+central directory's field offsets are **not** the local header's. The local header
+runs `[signature, version-needed, flags, method]`; the central directory runs
+`[signature, version-made-by, version-needed, flags, method]`, one field later. The
+fixture wrote the local layout into both, so `unzip` read `version = 0` from the
+central directory and, among other things, dropped the directory prefix from the
+entry name — producing a fixture that could not represent the layout the script under
+test was written to handle.
+
+The third rejection was a separate mistake of the same kind: a Unix mode written as
+`0o100644 << 16` overflows into the sign bit and must be coerced with `>>> 0`.
+
+**Fix**: the fixture writes a single entry with the full path `dataset/case/metrics.json`
+and the correct layout in each header, and `execFileSync` was replaced with
+`spawnSync` (see finding 31) so a *successful* extraction can be read back.
+
+**Guard**: the fixture now has its own tests, which run the system `unzip` against it
+and assert the extracted path and contents. This is the point — a fixture with no
+test of its own can be wrong in a way that presents as a bug in the code it feeds,
+and the debugging cost lands on the wrong file.
+
 ## Method
 
 Each finding was reproduced before being fixed, by running the affected path
@@ -1008,3 +1170,72 @@ one". It is whether the assertion is *right*: pass 3's two tests were asserting
 something true that the implementation had stopped honouring, and pass 4's test was
 asserting something false that the implementation happened to do. Only the second
 should be changed, and only the first is evidence of a regression.
+
+## Retractions
+
+This report's rule is that a finding needs a measurement. The corollary is that a
+*claim* needs one too, and three claims in this repository did not have one. They are
+recorded here rather than quietly deleted, because a wrong constraint is not harmless:
+it gets obeyed, and it gets re-derived by the next reader.
+
+**Retracted: "Anchor 4 needs official data mounted by the operator."** Written when
+the round trip was a manual procedure, and it framed a hand-off as a requirement. The
+RCAEval corpora are on Zenodo — a plain HTTPS host with a stable URL and no
+interactive confirmation. A GitHub runner has general internet access. There was never
+anything an operator had to mount; there was only a fetch step that had not been
+written. `scripts/fetch-official.mjs` is that step.
+
+**Retracted: "The licences prevent us from using the data."** This was the reason
+given for anchor 4 being out of reach, and it was wrong in both directions.
+
+- *RCAEval is not restrictively licensed.* Its README states that the code the
+  authors implemented **and their datasets** are distributed under MIT.
+  `THIRD-PARTY-NOTICES.md` recorded it as Apache-2.0 code-only, which understated the
+  grant, and `golden-master/official-assets.json` carries `"license": "MIT"` per asset
+  with the licence source recorded beside it.
+- *CC BY-NC-SA 4.0 does not block this use.* NonCommercial is defined in §1(11) as
+  use "not primarily intended for or directed towards commercial advantage or monetary
+  compensation". This is internal, unreleased research; nothing is sold and nothing is
+  charged for. ShareAlike is defined in §1(12) as providing material "to the public",
+  and we provide none — we redistribute nothing and we host nothing.
+
+The constraint that does exist is not legal but hygienic, and conflating the two is
+what made the wrong claim look plausible: upstream corpora must not be committed to
+git. That is a repository-hygiene rule with a technical reason (a 19 GB tree in
+history is unremovable and makes every clone pay for it) and it is enforced by
+`scripts/check-no-vendored-data.mjs` and by `fetch-official.mjs` refusing an output
+path inside the working tree. A licence was never the reason, and dressing a hygiene
+rule as a licence rule made the rule harder to satisfy than it is.
+
+The one licence claim that survives is the narrowest one: CausalRCA and RUN ship no
+licence, which reserves all rights. We do not fetch them, we do not vendor them, and
+we do not need to — they are baselines rather than targets, and the schema shape this
+repository defines is its own.
+
+**Retracted: "`fetch-and-verify.sh` downloads and verifies the official data."** The
+script prints instructions; the comment at its top always said it "does not fetch
+official data for you". `THIRD-PARTY-NOTICES.md` described it as downloading, and the
+prose around it followed that description. The script was right and the documents were
+wrong. It is retained unchanged — the Golden Master verifies it byte-for-byte, and
+rewriting a correct script to match an incorrect description is the wrong repair.
+
+### What this pass did not establish
+
+The four anchors now have a path for the fourth one, and the path is exercised on
+every push against a synthetic corpus in the official layout, scoring 1.00. That is
+what `anchor-roundtrip.yml` proves: the wiring works and the label never enters the
+computation.
+
+It is **not** a run against real telemetry. The corpora total roughly 19 GB and this
+session's sandbox has no route to Zenodo (`zenodo.org` fails at the TLS handshake
+while `api.github.com` resolves, which is an egress allowlist rather than a property
+of either host). The digest and byte-count fields in `golden-master/official-assets.json`
+are therefore all `null`: they are filled in by a fetch that has actually run, and a
+digest that was never computed is not evidence. `official-data.yml` is the
+`workflow_dispatch` job that produces them on a runner.
+
+So the honest statement of anchor 4's state is *executable, not reproduced*. Those are
+different claims and this report keeps them apart on purpose — the whole difficulty of
+passes 1 through 5 was code that reported success without establishing anything, and
+"the CI job is green" would be the same mistake one level up if it were allowed to
+stand in for "the number agrees with upstream".

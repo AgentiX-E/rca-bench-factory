@@ -35,11 +35,42 @@ export const RCAEVAL_SUITES = ['RE1', 'RE2', 'RE3'] as const;
 export type RcaEvalSuite = (typeof RCAEVAL_SUITES)[number];
 
 
-/** Directory name convention: `{benchmark}{service}{fault}_{instance}`. */
+/**
+ * Directory name convention: `{benchmark}{service}{fault}_{instance}`.
+ *
+ * The separator is `-`, so a hyphen *inside* a name is indistinguishable from
+ * one the layout added — and the upstream harness relies on exactly that: its
+ * own case directories are `RE2-ts-order-service-cpu_1`, and
+ * `parseRcaEvalDirectory` is documented to recover `ts-order-service` from them.
+ *
+ * Stripping every non-alphanumeric character therefore wrote `tsorderservice`
+ * and named a service that does not exist. The in-repo regression could not
+ * detect it, because `oraclePrediction` reads the component back out of the
+ * directory name we just produced, so both sides were wrong together; the
+ * disagreement only surfaces against real upstream telemetry.
+ *
+ * The allow-list is widened to keep `-`, not removed: a character the flat
+ * layout genuinely cannot carry (`:`, `/`, whitespace, a non-ASCII name) is
+ * still dropped, and those are handled separately below.
+ */
 export function caseDirName(suite: RcaEvalSuite, fc: FaultCase, instance: number): string {
-  const service = fc.groundTruth.rootCauseComponent.replace(/[^A-Za-z0-9]/g, '');
-  const fault = fc.fault.type.replace(/[^A-Za-z0-9]/g, '');
+  const service = sanitiseCaseToken(fc.groundTruth.rootCauseComponent);
+  const fault = sanitiseCaseToken(fc.fault.type);
   return `${suite}-${service}-${fault}_${instance}`;
+}
+
+/**
+ * Drop the characters a flat `-`-separated directory name cannot carry, and
+ * keep the ones it can.
+ *
+ * A name that sanitises to nothing would collapse the layout — `RE2--cpu_1`
+ * has an empty service field that no reader can distinguish from a missing
+ * one — so a fully-consumed token falls back to a fixed placeholder rather
+ * than emitting a nameless segment.
+ */
+function sanitiseCaseToken(raw: string): string {
+  const kept = raw.replace(/[^A-Za-z0-9-]/g, '').replace(/^-+|-+$/g, '');
+  return kept === '' ? 'unnamed' : kept;
 }
 
 /**

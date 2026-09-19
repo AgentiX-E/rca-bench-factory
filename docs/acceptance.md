@@ -229,9 +229,13 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     file claimed by no case is reported, not dropped.
   - A case that was never actually read is reported in `hardErrors`; a reproduction
     with non-empty `hardErrors` does not count as complete for that case.
-  - Licensed corpora are never vendored: they stay out of the repository and
-    `golden-master/` keeps checksum anchors only. Nothing in the default CI path
-    downloads them, so the round trip is exercised against the operator's own copy.
+  - Licensed corpora are never vendored: they stay out of the repository, and
+    `golden-master/` holds case descriptors and a fetch registry rather than checksum
+    anchors for data we do not have. Two workflows run this anchor:
+    `anchor-roundtrip.yml` on every push against a synthetic corpus in the official
+    layout (no network, no upstream data), and `official-data.yml` on a runner against
+    the real corpora, fetched to `/tmp`. §2.40 states what each one does and does not
+    establish.
 
 ### 2.39 CLI argument contract (audit pass 5)
 
@@ -288,6 +292,59 @@ that established them. A module touched by an audit pass is normally required to
 reach 100% on all four dimensions; `args.ts` carries exactly these two
 documented exemptions against its branch dimension, and nothing else.
 
+### 2.40 Official-data round trip (audit pass 6)
+
+The fourth L4 anchor is the only check in this document whose subject is a path this
+repository does not author. Everything below is therefore stated as a criterion about
+**what a green result means**, because the failure mode of this anchor is not a wrong
+number — it is a green run that established nothing.
+
+- **The corpus is fetched, not stored.** `scripts/fetch-official.mjs` writes to a path
+  outside the working tree and refuses a destination under the repository root. Only
+  the anchor-4 workflow may call it, and it fetches to `/tmp`. `check-no-vendored-data.mjs`
+  fails the build if telemetry-shaped data (`.json`, `.csv`, `.tsv`, `.jsonl`,
+  `.ndjson`, `.parquet`, `.zip`, `.gz`, `.tar` over 1 MiB, inside a corpus directory
+  segment) appears in the tracked tree. Both directions are tested: a committed corpus
+  file is rejected, and `docs/RE2-OB-notes.md` is allowed because the match is on
+  path *segments*, not substrings.
+- **No label is transcribed, by a human or by a script.** The case descriptors the
+  round trip consumes are derived from the extracted corpus itself —
+  `component`, `faultType` and `injectTime` come from the directory name and
+  `inject_time.txt`. `scripts/gen-rcaeval-cases.mjs` is the only producer, and its
+  default output path does not exist until it has run, so a hand-written descriptor
+  file cannot be substituted for a derivation. A test asserts that the default path
+  being absent is an error which names the generator.
+- **The oracle is upstream's rule, not ours.** `check-official.mjs --official-dir`
+  ingests the corpus, exports it, and scores the export with RCAEval's published
+  metric. The ingest path must resolve the root-cause component to a graph entity, and
+  the entity id must be the graph-qualified form
+  (`service:rcaeval/ts-order-service`): the bare id is ambiguous, and an ambiguous id
+  that happens to resolve is not a pass.
+- **The case directory name preserves the hyphen.** Upstream publishes
+  `dataset/ts-order-service-cpu_1/`; a component slugified to `tsorderservice` names a
+  directory that does not exist. One case per system pins the exact name, and a
+  further case pins that a genuinely illegal character is still removed — so the fix
+  cannot be satisfied by deleting the check.
+- **The registry decides how an asset is unpacked.** An entry with `extractsTo: null`
+  is a file and is not passed to `unzip`; an entry with a value is an archive. A case
+  drives both shapes against a real local server, and a registry-wide case asserts the
+  rule holds for every entry. `sha256: null` means *not yet computed* and is never
+  treated as "verified"; a recorded digest that does not match fails the fetch.
+- **A check with nothing to check does not report success.** An empty corpus is an
+  error naming the path, and the generator's per-case warnings are printed before the
+  empty-result decision, so a corpus in which every case was skipped cannot produce a
+  silent zero exit. Both are asserted, and both were audit finding 31.
+- **The default verdict contract is unchanged.** Adding `--official-dir` does not
+  alter the nine verdict lines `check-official` prints without it. A test compares the
+  two runs line for line, so the new mode cannot be shipped by loosening the old one.
+- **What a green `anchor-roundtrip.yml` proves, and what it does not.** It runs on
+  every push against a synthetic corpus in the official layout — enough to prove the
+  wiring works, that the label never enters the computation, and that the score is
+  1.00 when it should be. It does **not** prove agreement with upstream on real
+  telemetry; that requires `official-data.yml`, which downloads the corpora on a
+  runner. The two claims are kept apart in [`progress.md`](./progress.md) and this
+  anchor is recorded as *executable, not reproduced* until the second has run.
+
 ## L5 — End-to-end scenarios and HITL budget
 
 Ten scenarios E1–E10 exercise the full pipeline (T1–T6 ingest, each target format,
@@ -297,10 +354,13 @@ degradation, quarantine, evolution). HITL is budgeted at **12–22.5 person-days
 ## Definition of Done (per change and per release)
 
 - [ ] All layers L0–L3 green locally and in CI.
-- [ ] Golden Master verification, the official-metric regression and the round trip pass (L4).
+- [ ] Golden Master verification and the official-metric regression pass, and the
+      round trip passes on the synthetic corpus (L4). A real-corpus pass requires a
+      run of `official-data.yml`, and its result is recorded rather than assumed.
 - [ ] No `continue-on-error`, no `|| true`, no skipped/`.only` tests, no mocks.
 - [ ] Coverage ≥ 95% per dimension, 100% functions.
 - [ ] Every LLM-produced field carries `FieldProvenance`.
+- [ ] No upstream corpus data in the tracked tree (`pnpm lint`).
 
 ## Honesty boundary
 

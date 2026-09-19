@@ -353,6 +353,16 @@ describe('run - ingest', () => {
     expect(files.some((p) => p.endsWith('inject_time.txt'))).toBe(true);
     expect(files.some((p) => p.endsWith('metrics.json'))).toBe(true);
 
+    // The component the descriptor declared reaches the directory name intact.
+    // This is the assertion the previous version of this test was missing: it
+    // checked only that *some* file was written, so an exporter that rewrote
+    // `ts-order-service` as `tsorderservice` passed. The directory name is the
+    // only place RCAEval records the root-cause service, and the official
+    // reader recovers it from there -- so a corrupted name is a corrupted
+    // label, and the round trip below would have confirmed it against itself.
+    const caseDir = files.find((p) => p.endsWith('inject_time.txt'))!.split('/out/')[1]!.split('/')[0];
+    expect(caseDir).toBe('RE2-ts-order-service-cpu_1');
+
     // The official evaluator is pointed straight at our export: the round trip
     // is only real if the exported answer key is scorable by the official rule.
     const out: string[] = [];

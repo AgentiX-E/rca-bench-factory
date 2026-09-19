@@ -8,6 +8,7 @@ import {
 } from '../src/export/openrca.js';
 import { exportOpenRca2 } from '../src/export/openrca2.js';
 import { buildLogsCsv, buildMetricsJson, caseDirName, exportRcaEval } from '../src/export/rcaeval.js';
+import { parseRcaEvalDirectory } from '../src/score/official.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
@@ -190,6 +191,64 @@ describe('RCAEval exporter', () => {
 
   it('builds a directory name from benchmark, service and fault', () => {
     expect(caseDirName('RE2', validCase(), 1)).toBe('RE2-order-cpu_1');
+  });
+
+  // The reader and the writer disagree about what a service name may contain.
+  // `parseRcaEvalDirectory` is documented to keep hyphens ("Train Ticket ships
+  // `ts-order-service`"), but `caseDirName` stripped every non-alphanumeric
+  // character, so `ts-order-service` was written out as `tsorderservice`. The
+  // in-repo regression could not see it: `oraclePrediction` copies the
+  // component straight out of the directory name we just wrote, so the two
+  // sides were wrong together. Against the real harness the exported layout
+  // names a service that does not exist.
+  it('keeps hyphens in the service name, as the reader promises to', () => {
+    const fc = validCase({
+      groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'ts-order-service' },
+    });
+    expect(caseDirName('RE2', fc, 1)).toBe('RE2-ts-order-service-cpu_1');
+  });
+
+  // The fix must widen the allow-list, not remove it: a character the layout
+  // genuinely cannot carry still has to go, or the directory name stops being
+  // the flat token the upstream harness expects.
+  it('still strips a character the layout cannot carry', () => {
+    const fc = validCase({
+      groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'order:svc' },
+      fault: { ...validCase().fault, type: 'cpu/sat' },
+    });
+    expect(caseDirName('RE2', fc, 1)).toBe('RE2-ordersvc-cpusat_1');
+  });
+
+  // Both halves of the round trip now agree, which is the only version of this
+  // assertion that means anything: the name the exporter writes is read back as
+  // the component the IR declared.
+  it('round-trips a hyphenated service name through the official reader', () => {
+    const fc = validCase({
+      groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'ts-order-service' },
+    });
+    const parsed = parseRcaEvalDirectory(caseDirName('RE2', fc, 1));
+    expect(parsed?.service).toBe('ts-order-service');
+  });
+
+  // A token that sanitises away entirely would collapse the layout to
+  // `RE2--cpu_1`: an empty field no reader can tell from a missing one. The
+  // placeholder keeps every directory name parseable.
+  it('never emits an empty segment when a name sanitises away entirely', () => {
+    const fc = validCase({
+      groundTruth: { ...validCase().groundTruth, rootCauseComponent: '服务/一' },
+    });
+    expect(caseDirName('RE2', fc, 1)).toBe('RE2-unnamed-cpu_1');
+    expect(parseRcaEvalDirectory('RE2-unnamed-cpu_1')?.service).toBe('unnamed');
+  });
+
+  // Leading and trailing separators are the layout's, not the name's. Keeping
+  // them shifts the fields: `RE2--order-cpu_1` parses as a service of `-order`.
+  it('trims separator characters the name does not own', () => {
+    const fc = validCase({
+      groundTruth: { ...validCase().groundTruth, rootCauseComponent: '--order--' },
+    });
+    expect(caseDirName('RE2', fc, 1)).toBe('RE2-order-cpu_1');
+    expect(parseRcaEvalDirectory('RE2-order-cpu_1')?.service).toBe('order');
   });
 
   it('skips cases without telemetry', () => {

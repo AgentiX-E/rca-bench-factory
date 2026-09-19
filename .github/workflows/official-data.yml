@@ -1,0 +1,134 @@
+name: Official data
+
+# The fourth anchor: score our export against real upstream data.
+#
+# The other three anchors -- the Golden Master, the mutation suite, and the
+# official-metric regression on the shipped example -- all run in CI on every
+# push and prove our export is *scorable*. They cannot prove it is scorable
+# against data we did not write, because the example is ours end to end.
+#
+# This workflow closes that. It fetches the RCAEval corpora, derives the case
+# descriptors from what was actually downloaded, replays the telemetry through
+# our IR, and scores the result with RCAEval's own published rule.
+#
+# ## Why it is separate from CI
+#
+# It downloads ~19 GB from Zenodo and takes long enough that putting it on every
+# push would make the ordinary gate unusable. It runs on a schedule and on
+# demand.
+#
+# ## Why it is on a runner at all
+#
+# Because the runner has general internet access. The corpora are on Zenodo,
+# which is a plain HTTPS host; nothing about this needs a licensed download or an
+# interactive step. (The OpenRCA corpora are a different matter and are handled
+# by the `official-openrca.yml` workflow through the cached shard repositories.)
+#
+# ## What is fetched, and what is kept
+#
+# The data goes to `/tmp` on the runner, outside the working tree, and is
+# discarded with the runner. `scripts/fetch-official.mjs` refuses a destination
+# inside the repository, and `scripts/check-no-vendored-data.mjs` fails the build
+# if any of it ever reaches git. Nothing here is committed except the reported
+# outcome.
+
+on:
+  workflow_dispatch:
+    inputs:
+      anchor:
+        description: Which anchor to fetch and round-trip
+        required: true
+        default: rcaeval-re2
+        type: choice
+        options:
+          - rcaeval-re1
+          - rcaeval-re2
+          - rcaeval-re3
+  schedule:
+    # Mondays at 04:17 UTC. Off the hour so it does not queue behind the
+    # top-of-hour jobs every other repository also schedules.
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  round-trip:
+    name: Fetch, ingest, export and score the official corpus
+    runs-on: ubuntu-latest
+    # The fetch is the slow part and it is a network operation against a host we
+    # do not control. Bounded so a stalled download fails rather than occupying a
+    # runner for hours.
+    timeout-minutes: 90
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (the round trip reads core's dist)
+        run: pnpm build
+
+      - name: Report free disk before the fetch
+        run: df -h /tmp
+
+      - name: Fetch the corpus outside the working tree
+        id: fetch
+        env:
+          ANCHOR: ${{ github.event.inputs.anchor || 'rcaeval-re2' }}
+        run: |
+          set -eu
+          echo "anchor=${ANCHOR}" >> "$GITHUB_OUTPUT"
+          node scripts/fetch-official.mjs --anchor "$ANCHOR" --out /tmp/official
+
+      # The asset registry starts with no digest recorded, so the first run
+      # prints the measured values rather than verifying them. This step surfaces
+      # the difference: once a digest is pinned, a substituted or truncated
+      # download fails here instead of flowing into the round trip.
+      - name: Report which assets are still unpinned
+        run: |
+          set -eu
+          node scripts/fetch-official.mjs --list
+
+      # The descriptors are derived from the download, never committed.
+      #
+      # A committed list would be a transcription of a corpus nobody can verify
+      # from the repository -- which is the failure mode this whole path exists
+      # to avoid. Deriving them here means the labels and the injection instants
+      # come from the same bytes the round trip scores.
+      - name: Derive the case descriptors from what was downloaded
+        run: |
+          set -eu
+          node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official --out /tmp/rcaeval-cases.json
+
+      - name: Round-trip the corpus and score it with the official rule
+        run: |
+          set -eu
+          node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/rcaeval-cases.json
+
+      - name: Report free disk after the fetch
+        if: always()
+        run: df -h /tmp
+
+      # The archive is 19 GB and dies with the runner; the descriptor file is the
+      # one artefact worth keeping, because it is what a future run is compared
+      # against when a corpus changes under us.
+      - name: Upload the derived descriptors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-cases-${{ steps.fetch.outputs.anchor || 'rcaeval-re2' }}
+          path: /tmp/rcaeval-cases.json
+          if-no-files-found: warn
+          retention-days: 30

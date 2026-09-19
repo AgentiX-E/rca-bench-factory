@@ -37,7 +37,7 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
-      - name: Lint (no mock / no secrets)
+      - name: Lint (no mock / no secrets / no vendored corpus data)
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)

@@ -12,7 +12,7 @@
     "typecheck": "pnpm --filter @rca-bench-factory/core typecheck && pnpm --filter @rca-bench-factory/cli typecheck",
     "test": "pnpm --filter @rca-bench-factory/core test && pnpm --filter @rca-bench-factory/cli test",
     "test:coverage": "pnpm --filter @rca-bench-factory/core test:coverage && pnpm --filter @rca-bench-factory/cli test:coverage",
-    "lint": "node scripts/check-no-mock.mjs && node scripts/check-no-secrets.mjs",
+    "lint": "node scripts/check-no-mock.mjs && node scripts/check-no-secrets.mjs && node scripts/check-no-vendored-data.mjs",
     "examples:gen": "node scripts/gen-examples.mjs",
     "examples:check": "node scripts/gen-examples.mjs --check",
     "examples:bundle": "node scripts/build-example-bundle.mjs",

@@ -229,27 +229,47 @@ Four anchors, each strictly stronger than the one before:
 | 1 | Golden Master — exporters byte-stable against committed anchors | **met** (`pnpm golden-master` / 6 OpenRCA + 4 RCAEval files) |
 | 2 | Mutation suite — declared facets sensitive, undeclared inert | **met** (`pnpm mutation`, 26 cases) |
 | 3 | Official-metric regression — `oraclePerfect ∧ mutationsDegrade ∧ unscoredFacetsInert` | **met** (`pnpm official:check`, 8 targets scored, 1 skipped by contract) |
-| 4 | Official-data round trip — ingest → export → official, label-blind | **not met** — needs official data |
+| 4 | Official-data round trip — ingest → export → official, label-blind | **met, pending a real-corpus run** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`) |
 
 Anchor 4 is the one that would detect a misunderstanding shared by our exporter
 and our scorer. Anchors 1–3 all begin from a bundle this repository authored, so
 agreement between them proves internal consistency, not correctness against the
-upstream rule. The test exists and the path is executable; the number has not
-been reproduced. `golden-master/fetch-and-verify.sh` prints the operator
-instructions and performs no network access, because the corpora carry licences
-that forbid vendoring.
+upstream rule.
+
+The path is built, the wiring is gated on every push, and the number has **not**
+been reproduced on real telemetry: the corpus is 19 GB and this session's
+sandbox has no route to Zenodo. Say so plainly rather than implying the anchor is
+closed.
+
+What is established:
+
+- `scripts/fetch-official.mjs` downloads and digest-verifies an asset, refusing a
+  destination inside the working tree.
+- `scripts/gen-rcaeval-cases.mjs` derives the case descriptors from the extracted
+  corpus, so no label is transcribed.
+- `scripts/check-official.mjs --official-dir` ingests the corpus, exports it, and
+  scores it with RCAEval's own published rule.
+- The three run end to end on a synthetic corpus in the official layout, and the
+  result scores 1.00 (`anchor-roundtrip.yml`).
+
+What is not: a run against `RE1-OB`, `RE2-TT` and the rest. Until that happens
+this anchor is *executable*, not *reproduced*, and the two are not the same claim.
+
+`golden-master/fetch-and-verify.sh` is superseded by `scripts/fetch-official.mjs`
+and is kept only because the Golden Master verifies it byte-for-byte; every
+document that described it as downloading the data was describing an intention.
 
 ## Repository
 
 | Metric | Value |
 | --- | --- |
-| Commits | 72 |
+| Commits | 73 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
-| Source files | 46 (`src/`, excluding tests and build output) |
-| Source lines | ~13,100 |
-| Test files | 67 |
-| Test lines | ~20,620 |
-| Tests | 1818 core + 173 CLI |
+| Source files | 48 (`src/`, excluding tests and build output) |
+| Source lines | ~13,300 |
+| Test files | 74 |
+| Test lines | ~22,000 |
+| Tests | 1891 core + 173 CLI |
 
 ## Test strategy
 
@@ -264,7 +284,16 @@ that forbid vendoring.
 
 ## Open
 
-- **Anchor 4** cannot be closed from inside this repository. It needs official
-  data mounted by the operator.
+- **Anchor 4** is closed by `official-data.yml`, which fetches the corpora on a
+  runner. Two claims here were wrong and are retracted in the audit:
+  - *"It needs official data mounted by the operator."* A GitHub runner has
+    general internet access, and the RCAEval corpora are on Zenodo -- a plain
+    HTTPS host with no interactive step. There was never anything to mount.
+  - *"The licences prevent us from using the data."* RCAEval distributes its own
+    code **and its datasets** under MIT. CC BY-NC-SA's NonCommercial clause
+    binds *commercial advantage or monetary compensation*, which an internal,
+    unpaid, unreleased CI run is not, and ShareAlike triggers on *distribution*,
+    which we do not do. The one real constraint is repository hygiene -- do not
+    commit the data -- and that is `check-no-vendored-data.mjs`.
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
