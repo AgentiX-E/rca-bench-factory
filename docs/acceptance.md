@@ -110,6 +110,34 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
   - Metrics are labelled `official` (transcribed from the upstream scorer or the
     paper's protocol) or `derived` (reconstructed because the upstream scorer is
     not public); the label travels with every score.
+- **OTLP ingest reads the encodings exporters actually write**, not only the one
+  form the spec documents first. Five defects were reproduced here; the
+  requirements below each exist because a legal document produced a wrong number
+  with no error.
+  - **A field is accepted in every form its encoding admits.** `asInt` arrives as
+    a quoted string and as a JSON number; the OTLP JSON mapping documents the
+    first and protojson emits the second. A numeric `asInt` used to be quarantined
+    as "no numeric value" while its own quarantine record plainly contained one.
+  - **Time conversions are exact before they are narrowed.** Nanoseconds become
+    milliseconds by integer division in `BigInt`; `n * 1e-6` reported a 1 ms span
+    as `0.999755859375` and disagreed with exact division on 2500 of 4000
+    consecutive millisecond pairs. A duration wrong by a fraction of a
+    millisecond is undetectable downstream: it is finite, positive and plausible.
+  - **A value that is present is never silently dropped, and never silently
+    defaulted.** Span status arrives as an enum name (`"STATUS_CODE_ERROR"`) and
+    as a number. The reader matched numbers only, so an error span ingested with
+    no `status` at all and **no quarantine entry** — the defect could only ever
+    make a corpus look better than it was. Both encodings are read, and a code
+    that is present but unreadable is quarantined.
+  - **"Absent" and "unreadable" are different claims.** `severityText: ''` is an
+    exporter with nothing to say, not an exporter saying something
+    unrecognisable; it was quarantined as `invalid severity ''`, adding an entry
+    that blames a record which was never at fault.
+  - **Negativity is judged on exact instants, not on truncated units.** A span
+    whose end precedes its start by one nanosecond truncated to `durationMs: 0`
+    and passed as a legal zero-length span. An inverted timestamp is the broken
+    clock signature this corpus must never contain, and truncation hid every
+    inversion smaller than a unit.
 - **Round trip** (`rca-bench ingest` → `rca-bench export` → `rca-bench official`):
   official dataset data is read into the IR, written back out in the target's own
   layout, and graded by the published metric. The three anchors above all begin
