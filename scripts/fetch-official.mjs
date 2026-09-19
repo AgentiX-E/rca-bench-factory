@@ -36,7 +36,7 @@
 
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +64,17 @@ const MAX_ATTEMPTS = 3;
  * the override only changes how long we wait -- never what counts as a failure.
  */
 const BACKOFF = Number(process.env.RCA_BENCH_FETCH_BACKOFF ?? '1');
+
+/**
+ * The chunk `sha256Of` reads at a time: 8 MiB.
+ *
+ * Sized by what it is for. The digest is I/O bound, so the chunk only has to be
+ * large enough that the per-read overhead disappears -- 8 MiB turns a 2.8 GB
+ * file into ~340 reads instead of the ~44 000 that a 64 KiB default would cost,
+ * and it stays a fixed, negligible amount of memory rather than anything
+ * proportional to the file.
+ */
+const DIGEST_CHUNK_BYTES = 8 * 1024 * 1024;
 
 function fail(message) {
   console.error(`error: ${message}`);
@@ -273,8 +284,34 @@ async function download(url, destination) {
   return { ...result, elapsedMs: Date.now() - startedAt };
 }
 
-function sha256Of(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+/**
+ * The sha256 of a file, taken off the stream.
+ *
+ * ## Why this is not `readFileSync`
+ *
+ * It was, and the fourth anchor's first *successful* fetch died on it. Both
+ * smaller RCAEval archives measured clean, then `RE2-TT.zip` -- 2 801 345 134
+ * bytes -- ended the run with `RangeError [ERR_FS_FILE_TOO_LARGE]: File size
+ * (2801345134) is greater than 2 GiB`, thrown from `readFileSync` deep inside
+ * this function. The download was fine. The verification of it was the thing
+ * that could not handle the size, and the two are easy to confuse because the
+ * stack trace names neither the asset nor the byte count that was fine.
+ *
+ * Reading in fixed-size chunks makes the ceiling structural rather than
+ * raised: there is no buffer the size of the file, so there is no limit on it.
+ * Memory is bounded by the chunk, and a 40 GiB corpus would digest the same way
+ * this one does.
+ */
+async function sha256Of(path) {
+  const hash = createHash('sha256');
+  const stream = createReadStream(path, { highWaterMark: DIGEST_CHUNK_BYTES });
+  // `for await` over the stream, so a read error rejects here instead of
+  // arriving as an 'error' event on an object nobody is listening to -- which
+  // is how a permissions problem becomes a hang rather than a message.
+  for await (const chunk of stream) {
+    hash.update(chunk);
+  }
+  return hash.digest('hex');
 }
 
 /**
@@ -335,7 +372,7 @@ async function fetchAsset(asset, outDir) {
   }
 
   const bytes = statSync(destination).size;
-  const digest = sha256Of(destination);
+  const digest = await sha256Of(destination);
 
   if (asset.bytes !== null && bytes !== asset.bytes) {
     fail(`${asset.id}: expected ${asset.bytes} bytes, got ${bytes}`);

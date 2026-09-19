@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean (4 guards); 1930 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean (4 guards); 1932 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
@@ -267,7 +267,7 @@ Four anchors, each strictly stronger than the one before:
 | 1 | Golden Master — exporters byte-stable against committed anchors | **met** (`pnpm golden-master` / 6 OpenRCA + 4 RCAEval files) |
 | 2 | Mutation suite — declared facets sensitive, undeclared inert | **met** (`pnpm mutation`, 26 cases) |
 | 3 | Official-metric regression — `oraclePerfect ∧ mutationsDegrade ∧ unscoredFacetsInert` | **met** (`pnpm official:check`, 8 targets scored, 1 skipped by contract) |
-| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the first real run failed and its reason is not yet measured** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`) |
+| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the real run failed on a 2 GiB digest ceiling, now fixed, and the re-run has not been recorded** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`) |
 
 Anchor 4 is the one that would detect a misunderstanding shared by our exporter
 and our scorer. Anchors 1–3 all begin from a bundle this repository authored, so
@@ -341,35 +341,51 @@ document that described it as downloading the data was describing an intention.
 
 ## Open
 
-- **The first real-corpus run failed at the fetch, and the run itself is why the
-  diagnostics exist.** `official-data.yml` run
-  [#35480663989](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35480663989)
-  (`98fdf601`, the revision *before* this pass) completed as `failure` with
-  `Fetch the corpus outside the working tree` failing after **12.35 minutes**. The
-  three steps after it were skipped, so no descriptor file and no pin report were
-  produced, and the artifact upload that reported `success` uploaded nothing —
-  `if-no-files-found: warn` makes "nothing to upload" a passing state, which is
-  another place where a green step establishes less than it appears to.
+- **The first two real-corpus runs failed, and the cause is now measured.** Both
+  died at the fetch and neither produced a pin report.
 
-  The failure reason is **not known**, and that is recorded rather than guessed.
-  `GET /repos/.../actions/jobs/{id}/logs` answers 302 to
-  `productionresultssa7.blob.core.windows.net`, which this session's sandbox cannot
-  reach (`curl exit 35`, TLS handshake, same as `zenodo.org`), so the job log was
-  never read. What the run *did* establish is the timing, and the timing is
-  diagnostic: 12.35 minutes is not what an absent URL looks like. A 404 fails in
-  seconds, so the transfer started and something stopped it. Three candidates are
-  consistent with that and none is confirmed — Zenodo rate-limiting under four
-  concurrent downloads (this pass's own dispatch bug, see below), disk exhaustion
-  before the job's `df -h` check ran, or the `--max-time 900` ceiling being reached
-  per attempt. Note that the run used `98fdf601`, so it exercised none of the
-  fixes below.
+  | run | revision | fetch step | what it reported |
+  | --- | --- | --- | --- |
+  | [#35480663989](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35480663989) | `98fdf601` | failed after **12.35 min** | nothing — the diagnostics did not exist yet |
+  | [#35482150957](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35482150957) | `07a0001f` | failed after **12.26 min** | `ERR_FS_FILE_TOO_LARGE` |
 
-  What this pass did about it is not a fix to the cause, because the cause is
-  unmeasured. It is the removal of the reason the cause was unmeasurable: the
-  fetch now names each attempt, its duration and a classified reason, and the
-  workflow writes the outcome to the step summary, so a re-run reports what
-  happened instead of requiring another round trip to find out. The re-run is the
-  next step and it has not been done.
+  The second run answered it, and the answer was in neither of the two places this
+  document had been looking. Both assets that come first measured clean:
+
+  ```
+  UNPINNED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36cdcad8a6ae0107f2357c9c91ecee2c4ab5d72579bffea0372d9747513
+  UNPINNED  rcaeval-re2-ss: bytes=245629018  sha256=7aff9a3a0df7e2febbce4f75f0b7ba332da943aacadbffe6d5113a588ef6e295
+  ```
+
+  `RE2-TT.zip` is 2 801 345 134 bytes. `sha256Of` was `readFileSync`, and
+  `readFileSync` throws above 2 GiB:
+
+  ```
+  RangeError [ERR_FS_FILE_TOO_LARGE]: File size (2801345134) is greater than 2 GiB
+      at readFileSync (node:fs:455:14)
+      at sha256Of (.../scripts/fetch-official.mjs:277:38)
+  ```
+
+  So the *download* worked and the *verification* of it did not, and the 12.35
+  minutes of the first run was never evidence of unreachability — it was a large
+  file transferring successfully and then being refused by its own verifier. The
+  three candidates this document previously listed (Zenodo rate-limiting, disk
+  exhaustion, `--max-time`) were all wrong, and none of them is retracted casually:
+  the first run's 12.35 minutes was consistent with all three, which is why the
+  fix was to make the next run report a reason rather than to guess one.
+
+  **Fixed** in finding 39: the digest is taken off the stream in 8 MiB chunks, so
+  the ceiling is structural rather than raised.
+
+  Two things this run also settled:
+  - The `Compare the measured pins` step ran with `if: always()` and printed
+    exactly `no pin report was written; the fetch did not complete`. Findings 40
+    and 41 came out of checking whether that meant what it appeared to mean.
+  - The job log was readable this time. `GET /actions/jobs/{id}/logs` still answers
+    302 to a host this session cannot reach, but the *token in the redirect URL* is
+    a plain HTTPS host that `WebFetch` can read. The first run's log is therefore
+    recoverable too, and the "unreadable log" claim in the previous version of this
+    section was a limitation of the shell, not of the API.
 
 - **The dispatch was fired four times.** `POST .../actions/workflows/{id}/dispatches`
   returns **204 No Content** on success, and the ad-hoc API helper this session

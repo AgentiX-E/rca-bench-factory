@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -146,6 +146,41 @@ let serveZip: Buffer | undefined;
 let deadPort = 0;
 
 /**
+ * The size of the `/huge` fixture: one byte over Node's 2 GiB file ceiling.
+ *
+ * `readFileSync` throws above 2 GiB, and 2 GiB exactly is the largest file it
+ * will read, so the boundary is pinned to the byte. One over is not a stress
+ * test -- it is the smallest input that still reproduces the production failure.
+ */
+const HUGE_BYTES = 2 * 1024 ** 3 + 1;
+
+/**
+ * The `/chunked` fixture's size: one byte over three 8 MiB digest chunks.
+ *
+ * Chosen against the chunk size rather than by feel. A defect that stops at the
+ * first chunk, or that stops one chunk early, has to disagree with the real
+ * digest -- so the length must not be a whole multiple of the chunk, and it must
+ * exceed one chunk by enough that "the first chunk" is unambiguously wrong.
+ */
+const CHUNK_PROBE_BYTES = 3 * 8 * 1024 * 1024 + 1;
+
+/**
+ * The exact bytes `/chunked` serves, so a test can hash the same input.
+ *
+ * Built once here rather than inside the handler: the test needs the bytes to
+ * compute the expected digest, and building it per request would let the served
+ * body and the expected body drift apart -- which is the one thing this fixture
+ * must not do.
+ */
+const CHUNKED_BODY = (() => {
+  const body = Buffer.allocUnsafe(CHUNK_PROBE_BYTES);
+  for (let i = 0; i < CHUNK_PROBE_BYTES; i += 1) {
+    body[i] = i & 0xff;
+  }
+  return body;
+})();
+
+/**
  * Build a real zip archive in memory.
  *
  * A stored (method 0) entry with a correct CRC-32, so `unzip` accepts it for the
@@ -254,6 +289,58 @@ beforeAll(async () => {
         return;
       }
       res.writeHead(200, { 'content-type': 'application/zip' }).end(serveZip);
+      return;
+    }
+    // A body larger than 2 GiB, streamed without ever materialising it.
+    //
+    // This route exists because the first *successful* production fetch died
+    // here: `RE2-TT.zip` is 2 801 345 134 bytes, and `readFileSync` throws
+    // `ERR_FS_FILE_TOO_LARGE` above 2 GiB. A fixture of that size cannot be
+    // allocated, so the body is written in chunks and the connection closed when
+    // the byte count is reached -- which is what the download sees. The first
+    // bytes are the real PAYLOAD so the test can also prove the file on disk is
+    // the file that was served, not a truncated stand-in.
+    // A body of known, non-uniform content, larger than one digest chunk.
+    //
+    // The digest is read in 8 MiB chunks, and every other fixture in this file is
+    // a few dozen bytes -- so none of them can tell a digest of the whole file
+    // from a digest of its first chunk. Measured: injecting `break` after the
+    // first `hash.update` left the entire suite green while the reported sha256
+    // changed from `b0e8b99f...` to `042e9953...`. A corpus asset is hundreds of
+    // megabytes, so a digest that silently covers 8 MiB of it would pin a number
+    // that verifies nothing, and the pin is the only thing this registry records.
+    //
+    // The content is a counter rather than a repeated byte, because a uniform
+    // buffer makes "the first chunk" and "the whole file" differ only in length,
+    // and a defect that hashed a fixed-size prefix of the right length would
+    // agree with it. Here every byte position matters.
+    if (req.url === '/chunked') {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      res.end(CHUNKED_BODY);
+      return;
+    }
+    if (req.url === '/huge') {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      let written = 0;
+      const chunk = Buffer.alloc(1 << 22, 0x61);
+      // Resume on `drain`, because `res.write` returning false means "stop for
+      // now", not "stop forever". Returning from the pump instead of
+      // re-entering it on `drain` wrote 4 MB of a 2 GiB body and then ended the
+      // response -- so the download succeeded, was short, and the digests
+      // matched each other while both were wrong. That is the failure mode this
+      // route exists to rule out, and the fixture reproduced it.
+      const pump = (): void => {
+        while (written < HUGE_BYTES) {
+          const size = Math.min(chunk.length, HUGE_BYTES - written);
+          written += size;
+          if (!res.write(size === chunk.length ? chunk : chunk.subarray(0, size))) {
+            return;
+          }
+        }
+        res.end();
+      };
+      res.on('drain', pump);
+      pump();
       return;
     }
     res.writeHead(200, { 'content-type': 'text/csv' }).end(PAYLOAD);
@@ -434,6 +521,65 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     expect(result.stderr).toMatch(/expected \d+ bytes/);
   });
 
+  /**
+   * A download larger than 2 GiB is digestible.
+   *
+   * `readFileSync` throws `ERR_FS_FILE_TOO_LARGE` above 2 GiB, and that is
+   * exactly how the fourth anchor's first *successful* fetch died: RE2-TT.zip is
+   * 2 801 345 134 bytes, both smaller archives had already measured clean, and
+   * the run ended on a `RangeError` from inside `sha256Of` -- a stack trace
+   * naming neither the asset nor the fact that the download itself was fine.
+   *
+   * The digest is taken off the stream instead, so the ceiling is gone rather
+   * than raised. This test streams one byte past 2 GiB over loopback and
+   * requires the digest and the byte count to both come back.
+   */
+  it('digests a download larger than 2 GiB instead of failing on the file size', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/huge`, id: 'fixture-huge' });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const report = join(scratch, 'huge-pins.json');
+    const result = await runScriptAsync(
+      ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
+    );
+    expect(result.stderr).not.toMatch(/ERR_FS_FILE_TOO_LARGE/);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('UNPINNED  fixture-huge');
+    expect(result.stdout).toContain(`bytes=${HUGE_BYTES}`);
+
+    // The digest has to be the digest of the bytes on disk. It is recomputed
+    // here from the tail of the file the script wrote, because a stream that
+    // silently stopped early would still produce *a* hash -- and the assertion
+    // above would pass on a truncated download.
+    const written = statSync(join(out, 'fixture-huge')).size;
+    expect(written).toBe(HUGE_BYTES);
+
+    const pinned = JSON.parse(readFileSync(report, 'utf8'));
+    expect(pinned.assets[0].bytes).toBe(HUGE_BYTES);
+    expect(pinned.assets[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+  }, 300_000);
+
+  /**
+   * The digest reported for a large file is the digest of the whole file.
+   *
+   * `createHash().update(stream)` and `readFileSync` agree byte-for-byte, so a
+   * test that only checks the *shape* of the hash would pass against an
+   * implementation that hashed the first chunk. This pins the value: a small
+   * asset is digested through the same path, and the result must equal the
+   * digest computed here from the same bytes.
+   */
+  it('reports the same digest for a small asset as an in-process hash of the same bytes', async () => {
+    const registry = writeFixtureRegistry(scratch);
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const report = join(scratch, 'small-pins.json');
+    const result = await runScriptAsync(
+      ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
+    );
+    expect(result.status).toBe(0);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.assets[0].sha256).toBe(PAYLOAD_SHA);
+    expect(written.assets[0].bytes).toBe(Buffer.byteLength(PAYLOAD));
+  });
+
   // An unreachable upstream has told us nothing about our exporter, so it must
   // be reported as a legible state naming the anchor -- not as a stack trace,
   // and not as a silent pass.
@@ -444,9 +590,106 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('SKIPPED');
     expect(result.stdout).toContain('fixture-asset');
-    expect(result.stderr).toMatch(/could not be reached/);
+    expect(result.stderr).toMatch(/1 of 1 asset\(s\) could not be reached/);
     expect(result.stderr).not.toMatch(/at Object\./);
   }, 60_000);
+
+  /**
+   * A partial run reports the assets it did measure, and only those.
+   *
+   * The run this pass diagnosed had two assets measure clean and one die, and
+   * the question that mattered afterwards was whether the two were recoverable.
+   * They were not -- but not for the reason first assumed. The write happens
+   * before the exit code is decided, so an ordinary partial failure does produce
+   * the file; this test pins that, because it is the property that makes a
+   * long fetch worth repeating, and because a future refactor that moved the
+   * write after the failure check would break it silently.
+   *
+   * The file's shape is asserted as carefully as its content:
+   *
+   *  - the measured asset is present with its real digest and byte count;
+   *  - the unmeasured one is *absent*. A `null` here would be read by a future
+   *    merge as "pin this to nothing", and the honest representation of bytes we
+   *    never saw is absence.
+   */
+  it('reports what it measured and omits what it could not reach', async () => {
+    const registry = writeFixtureRegistry(scratch, { id: 'fixture-first' });
+    const two = JSON.parse(readFileSync(registry, 'utf8'));
+    two.assets.push({ ...two.assets[0], id: 'fixture-second', url: `${origin}/broken` });
+    writeFileSync(registry, JSON.stringify(two));
+
+    const report = join(scratch, 'partial-pins.json');
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(
+      ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
+    );
+
+    // One asset was unreachable, so the run fails -- that part is not negotiable.
+    expect(result.status).toBe(1);
+
+    // And the measurement of the other one survives it.
+    expect(existsSync(report)).toBe(true);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.assets).toHaveLength(1);
+    expect(written.assets[0].id).toBe('fixture-first');
+    expect(written.assets[0].sha256).toBe(PAYLOAD_SHA);
+    expect(written.assets[0].bytes).toBe(Buffer.byteLength(PAYLOAD));
+    expect(written.anchor).toBe('rcaeval-re2');
+  }, 60_000);
+
+  /**
+   * The digest covers the whole file, not the first chunk of it.
+   *
+   * Found by injection, and only by injection: `hash.update(chunk); break;`
+   * inside `sha256Of` left all 30 tests green while changing the reported digest
+   * of a 40 MiB body from `b0e8b99f...` to `042e9953...`. Every other fixture
+   * here is smaller than one 8 MiB chunk, so "the whole file" and "the first
+   * chunk" were the same bytes and the suite could not see the difference.
+   *
+   * This matters more for `sha256Of` than for most functions, because the digest
+   * is the *only* thing the registry records. A pin that covers a prefix would
+   * not be a slightly wrong number -- it would be a number that verifies nothing,
+   * recorded as though it verified something, which is the exact failure this
+   * repository's acceptance design exists to prevent.
+   *
+   * The expected value is computed here from the same buffer the server served,
+   * rather than hardcoded, so the test states the property (the digest is of the
+   * whole body) instead of one frozen hex string.
+   */
+  it('digests the whole body, not the first chunk of it', async () => {
+    const expected = createHash('sha256').update(CHUNKED_BODY).digest('hex');
+
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/chunked`, id: 'fixture-chunked' });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const report = join(scratch, 'chunked-pins.json');
+    const result = await runScriptAsync(
+      ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
+    );
+
+    expect(result.status).toBe(0);
+    expect(statSync(join(out, 'fixture-chunked')).size).toBe(CHUNK_PROBE_BYTES);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.assets[0].sha256).toBe(expected);
+    expect(written.assets[0].bytes).toBe(CHUNK_PROBE_BYTES);
+  }, 120_000);
+
+  it('reports the digest of a small asset alongside a large one in the same run', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/huge`, id: 'fixture-huge' });
+    const healthy = JSON.parse(readFileSync(registry, 'utf8'));
+    healthy.assets.push({ ...healthy.assets[0], id: 'fixture-small', url: `${origin}/served` });
+    writeFileSync(registry, JSON.stringify(healthy));
+    const report = join(scratch, 'mixed-pins.json');
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(
+      ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
+    );
+    expect(result.status).toBe(0);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    const byId = new Map(written.assets.map((a: { id: string }) => [a.id, a]));
+    expect(byId.size).toBe(2);
+    expect((byId.get('fixture-small') as { sha256: string }).sha256).toBe(PAYLOAD_SHA);
+    expect((byId.get('fixture-huge') as { bytes: number }).bytes).toBe(HUGE_BYTES);
+  }, 300_000);
 
   /**
    * A failed fetch has to say enough to act on.

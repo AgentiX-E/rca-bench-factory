@@ -166,6 +166,9 @@ different messages.
 | 36 | `--retry-connrefused` and the attempt loop both retried; the elapsed time measured curl's retries | refused connection in 0 ms reported as `after 3.0s`; removal: 9.075s → 0.067s | fixed |
 | 37 | `--fail` collapses 4xx and 5xx onto exit 22, so the classifier could not tell a 404 from a 500 | 404, 500, 503 all exit 22; only the message differs | fixed |
 | 38 | The corpus summary counted directories under the word "file" | `found N file(s)` where N included directories | fixed |
+| 39 | A 2.8 GB download was verified with `readFileSync`, which cannot read above 2 GiB | `ERR_FS_FILE_TOO_LARGE` on `RE2-TT.zip` after two assets had measured clean | fixed |
+| 40 | *(withdrawn)* The partial run was said to discard its measurements on a non-zero exit | the report **is** written before the exit code: exit 1, report present, 1 pin | no defect |
+| 41 | Every fixture was under one digest chunk, so a prefix-only digest passed the suite | `break` after the first `hash.update`: 30/30 green, digest changed | fixed |
 
 Findings 31 and 32 are not defects in shipped code. They are defects in the
 *instruments* — the generator's diagnostics and the test fixture — and they are
@@ -198,6 +201,24 @@ that separates measurement from attribution costs one command — remove the sus
 cause and see whether the number returns — and it was skipped once, in a pass whose
 whole argument is that it should not be. Findings 36 and 37 were then confirmed by
 that check, and 36's fix is justified by a removal table rather than by a claim.
+
+Findings 39 through 41 close the pass on the first run of the path this whole
+document is about, and they divide cleanly into the three kinds of thing an audit
+finds. Finding 39 is a real defect, in code written for this pass, on the first
+input large enough to expose it — the two assets that came first were both under
+2 GiB, so the ceiling could not have been visible earlier in the same run. Finding
+40 is a *withdrawal*: the mechanism was inferred from two log lines rather than
+measured, and the measurement contradicts it. Finding 41 is a gap in the tests
+that only an injection could reveal, and it is the one to read if you read only
+one: the suite was green, the codepath was wrong, and the reason was that no
+fixture was ever large enough to tell the two implementations apart.
+
+The common thread with 35 is that all three were found by *running* something and
+reading a number, and the one that went wrong (40) went wrong at exactly the step
+where a number was replaced by an inference. The method note is the same one, and
+it has now been earned twice: measure, then check the attribution by removing the
+suspected cause, and do not spend the probe's authority on a mechanism that was
+never probed.
 
 Findings 36 and 37 were both in code this pass had just added and both were
 documented as working. That is the fourth time in six passes that the defect was in
@@ -1357,6 +1378,193 @@ passed rather than something the download produced.
 
 **Guard**: the new test asserts the exact values — `/found 2 file\(s\)/` and
 `/, 1 directory\(ies\)/` for a one-case corpus — rather than the presence of a number.
+
+## 39 — A 2.8 GB download was verified with a function that cannot read above 2 GiB
+
+The fourth anchor's first *successful* fetch, run `35482150957` on `07a0001f`, died
+here:
+
+```
+RangeError [ERR_FS_FILE_TOO_LARGE]: File size (2801345134) is greater than 2 GiB
+    at tryCreateBuffer (node:fs:402:13)
+    at readFileSync (node:fs:455:14)
+    at sha256Of (.../scripts/fetch-official.mjs:277:38)
+    at fetchAsset (.../scripts/fetch-official.mjs:338:18)
+```
+
+Two assets had already been measured clean:
+
+```
+UNPINNED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36c...7513
+UNPINNED  rcaeval-re2-ss: bytes=245629018  sha256=7aff9a3a...e295
+```
+
+Both are under 2 GiB. `RE2-TT.zip` is 2 801 345 134 bytes and is not, so the
+third asset reached a limit that the first two could never have revealed. The
+download itself had worked — the file on disk was the right file — and the
+*verification* of it was what could not handle the size. That distinction is the
+whole finding: `sha256Of` was `readFileSync`, which materialises the file, and a
+function whose input is "a file we just downloaded from a corpus host" cannot
+assume the file fits in a `Buffer`.
+
+This also explains the *first* failure, run `35480663989` on `98fdf601`, which
+took 12.35 minutes and reported nothing: the two smaller archives download in
+about 3 minutes between them and the third spends the rest. The 12.35 minutes was
+never evidence of unreachability — it was a large file being transferred
+successfully and then refused by its own verifier.
+
+**Fix:** digest off the stream, in 8 MiB chunks (`createReadStream` +
+`for await`), so the ceiling is structural rather than raised. There is no buffer
+the size of the file, so there is no size the file can be. The `for await` form is
+deliberate: an 'error' event on a stream nobody is listening to is a hang, and the
+form that rejects is the form that reports.
+
+**Test:** `digests a download larger than 2 GiB instead of failing on the file
+size`. It streams 2 GiB + 1 byte over loopback — the smallest input that still
+reproduces the production failure, not a stress test — and asserts the digest and
+byte count both come back, plus that the file on disk is exactly that many bytes.
+The fixture never allocates the body: it writes fixed 4 MiB chunks and re-enters
+the pump on `drain`.
+
+The fixture had this defect itself first, and it is worth recording because it is
+the same defect one level down. The first version returned from the pump when
+`res.write` signalled backpressure instead of resuming on `drain`, so the server
+sent 4 MB of a 2 GiB body and then ended the response. The download succeeded, was
+short, and *both digests agreed* — with each other and with a wrong number. The
+test's byte-count assertion is what would have caught it, and only because it
+pins the exact value rather than the shape.
+
+**Injection:** restoring `readFileSync` turns the test red with the original
+`ERR_FS_FILE_TOO_LARGE` and the original 2147483649.
+
+**Verified at the failing size.** The unit test uses 2 GiB + 1 because that is the
+smallest input that reproduces the failure; the asset that actually failed is
+2 801 345 134 bytes. The same streamed digest was run against a file of exactly that
+size under a 192 MiB heap cap:
+
+```
+file bytes   : 2801345134
+shipped      : 282d6ed7b0a03b3ba95893d22e0abc9ee9773838aa85022a3eb4ddcd8486a2c7
+independent  : 282d6ed7b0a03b3ba95893d22e0abc9ee9773838aa85022a3eb4ddcd8486a2c7
+MATCH        : true
+peak rss     : 126 MiB
+```
+
+The independent value comes from a separate process with a different chunk size
+(1 MiB against the shipped 8 MiB), so the agreement is about the file rather than
+about a shared constant. The heap cap is the load-bearing part: the old
+implementation could not have produced any number here at all, and the new one
+produces the right one while using 126 MiB. That is the difference between raising
+a ceiling and removing it.
+
+## 40 — A retraction: the partial run did write its report, and the discarding happened elsewhere
+
+I claimed, from the same run's log tail, that `RE2-OB` and `RE2-SS` — both measured
+clean — were printed and then thrown away because the process exited non-zero. I
+wrote that from the fetch step's failure and the `Compare the measured pins` step's
+`no pin report was written; the fetch did not complete` line, both of which are
+real. The inference between them is not, and this is the second time in two passes
+that I have attributed a number to the nearest suspicious code instead of measuring.
+
+Measured, with a registry holding one reachable and one 500-answering asset:
+
+```
+EXIT: 1
+REPORT EXISTS: true
+REPORT ASSETS: [{"id":"b-live","url":"...","bytes":19,"sha256":"7bce5166..."}]
+STDERR: 1 of 2 asset(s) could not be reached. ...
+```
+
+The report is written. `--report-pins` runs *before* the exit code is decided, which
+the caller's own comment says, and the code does what the comment says. A partial
+run has always produced a complete file for every asset it measured.
+
+The real cause is narrower and I had the mechanism wrong in both directions. Node's
+stack overflow did `process.exit(1)` **immediately from inside `fetchAsset`**, before
+the loop reached `RE2-OB`'s report write... except `RE2-OB` and `RE2-SS` were written
+in order, and `RE2-TT` was third — so the report for the first two was never reached
+because the process died in the middle of building `results`, not after it. The
+report is written once, after the loop over all assets, and a hard death inside that
+loop loses everything before it.
+
+So the *defect* I described — "a run that cannot finish discards the part it did
+finish" — is real, and the location is different from where I put it. The report is
+not written and then suppressed by an exit code. It is not written at all, because
+writing it is a single act after all the fetching, and a crash inside the fetching
+means there is no after.
+
+That is worth fixing for the reason I gave, and the fix is at the layer I named second:
+measure incrementally. But the finding as first written describes a code path that
+does not exist, and a report that keeps a wrong mechanism next to a right conclusion
+is worse than one that is merely terse — the next reader would go looking for an
+exit-code problem in a script that does not have one.
+
+**What is established:** the digest ceiling (finding 39) is the whole of the observed
+failure. Everything else in the run's log follows from it.
+
+**What is not established:** that the pins were recoverable from this run. They were
+not, and the reason is process death mid-loop rather than a wrong exit code.
+
+**Retained from the original finding, now separated from the false claim:** a long
+fetch should write what it has measured as it goes, because the crash that motivated
+this pass is exactly the class of failure that a single write-at-the-end cannot
+survive. That is a design change and is listed as such in `docs/progress.md`, not
+presented here as a repair of a defect that was observed.
+
+## 41 — Every fixture was smaller than one digest chunk, so the digest could have covered a prefix
+
+Found by injection, not by reading. Replacing the chunked digest with
+`hash.update(chunk); break;` — a digest of the first 8 MiB of the file — left all
+30 tests green.
+
+Measured, on a 40 MiB body:
+
+```
+injected:  UNPINNED  big: bytes=41943040 sha256=042e995365a46153f8d3a1327d986e2fec93554ed9d6b8126cecc7965ecf3be6
+restored:  UNPINNED  big: bytes=41943040 sha256=b0e8b99ffb4175ecd69a767e8e4e4c35df2b6d09246fcb67bc4f3a8d9abb2dc3
+```
+
+Two different numbers, an identical `bytes=` on both lines, and a green suite.
+
+The cause is the fixture population, and it is worth stating as a general rule
+because it is not specific to this function: **every fixture in the file was a few
+dozen bytes, so "the whole file" and "the first chunk" were the same bytes.** The
+suite could not distinguish the two implementations because it never presented an
+input where they differ. The 2 GiB test added in finding 39 does go past one chunk
+— but it only asserts that the digest is 64 hex characters and that the byte count
+is right, and a truncated digest is still 64 hex characters. `bytes=` comes from
+`statSync`, not from the hash, so it cannot see this either.
+
+This is the failure mode the pin exists to prevent, arriving from the inside. The
+digest is the *only* thing `golden-master/official-assets.json` records. A pin
+covering a prefix is not a slightly wrong number; it is a number that verifies
+nothing while being recorded as though it verified something, and a subsequent run
+would download a substituted file and report `VERIFIED`.
+
+**Fix:** a `/chunked` fixture of 3 × 8 MiB + 1 bytes of *non-uniform* content, and a
+test that asserts the reported digest equals an in-process hash of the same buffer.
+The size is chosen against the chunk boundary: over one chunk so "first chunk" is
+unambiguously wrong, and not a whole multiple of it so a one-chunk-short read also
+disagrees. The content is a byte counter rather than a repeated byte, because a
+uniform buffer makes "first chunk" and "whole file" differ only in length and a
+defect hashing a fixed-size prefix of the right length would still agree.
+
+**Injections, both now caught:** `break` after the first `hash.update` (digest of
+the first chunk), and an `end:` bound of two chunks (digest of a prefix). Before
+this finding, the first of those was caught by nothing.
+
+### A note on which fixture sizes this file now needs
+
+Three sizes, each earning its place:
+
+| fixture | size | the only thing it can catch |
+| --- | --- | --- |
+| `PAYLOAD` | 27 B | everything about parsing and pinning |
+| `/chunked` | 24 MiB + 1 | a digest that stops before the end of the file |
+| `/huge` | 2 GiB + 1 | a digest that cannot read past Node's 2 GiB ceiling |
+
+The middle one is new and exists because the two outside it are silent about it.
+That is the shape of the gap: not a missing assertion, but a missing *input*.
 
 ## Method
 
