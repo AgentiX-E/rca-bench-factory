@@ -1566,6 +1566,166 @@ Three sizes, each earning its place:
 The middle one is new and exists because the two outside it are silent about it.
 That is the shape of the gap: not a missing assertion, but a missing *input*.
 
+---
+
+## 42 — The corpus layout was assumed rather than read, and the assumption came from our own exporter
+
+Found by the third real run, at the step after the fetch. The fetch itself passed
+— finding 39's fix held, all three assets downloaded and digested — and the job
+then failed on:
+
+```
+error: no RCAEval case directories found under '/tmp/official'. Expected names of
+the form {RE1|RE2|RE3}-{service}-{fault}_{instance} each holding inject_time.txt.
+```
+
+over a tree that plainly held the corpus.
+
+### What was wrong
+
+`parseRcaEvalDirectory` parsed `^(RE[123])-(.*)-([A-Za-z0-9]+)_(\d+)$`, and
+`gen-rcaeval-cases.mjs` walked the tree testing each *directory name* against it.
+The corpus contains no such name at any level. Its real layout is nested:
+
+```text
+{suite}-{system}/{service}_{fault}/{run}/inject_time.txt
+  e.g. RE2-OB/checkoutservice_cpu/1/
+```
+
+so a case is three path components and no single component carries it. Every layer
+was tested against the regex and none matched:
+
+```
+RE2-OB                    -> no  (fused suite+system, not a flat case)
+checkoutservice_cpu       -> no  (service_fault, no suite prefix, no instance)
+1                         -> no  (bare run index)
+```
+
+### Why every in-repo check missed it
+
+**The pattern came from our own exporter.** `caseDirName` writes
+`RE2-{service}-{fault}_{instance}`, and `parseRcaEvalDirectory` read it back. The
+reader and the writer agreed with each other, and the unit tests exercised exactly
+that pair — so the suite was measuring self-consistency and calling it correctness.
+This is the same failure shape as finding 29 (where `caseDirName` stripped hyphens
+and `oraclePrediction` read the stripped name back), one level up: then the two
+sides shared a wrong alphabet, here they share a wrong *layout*.
+
+The documentation reinforced it rather than catching it. `docs/targets/rcaeval.md`
+described the layout in terms of what we emit, and the upstream README's
+`{benchmark}_{service}_{fault}_{instance}` line — which describes the HuggingFace
+Parquet copy's case **identifier**, not a path on disk — read as confirmation.
+
+### The evidence that settled it
+
+Two independent statements in upstream *code*, not prose. `main.py` finds the cases
+by globbing `**/data.csv` and reads the labels back out of the path:
+
+```python
+data_dir = dirname(data_path)                                       # …/{service}_{fault}/{run}
+service, metric = basename(dirname(dirname(data_path))).split("_")   # service, fault
+case = basename(dirname(data_path))                                  # {run}
+```
+
+and `docs/TORAI.md` prints the tree for the RE2 conversion, which is the same
+corpus re-exported:
+
+```text
+data/torai-OB/{service}_{fault_type}/{run}/inject_time.txt
+```
+
+Both agree, and both disagree with the assumption. The second is what makes the
+`{suite}-{system}` top level certain rather than inferred.
+
+### What was changed
+
+1. **`parseRcaEvalPath`** — a new parser for the nested layout, anchored on the
+   three components a case has. `parseRcaEvalDirectory` is kept unchanged and
+   separate: the flat name is still what we emit, and a single function that
+   guessed between two incompatible layouts would hide the next mismatch instead
+   of reporting it.
+2. **`readRcaEvalGroundTruth`** now tries both, because one file map can hold the
+   corpus *and* our own export. Reading only one layout makes the other silently
+   score zero cases, and zero cases is not an empty answer — it is a run
+   reporting success over data it never looked at.
+3. **`gen-rcaeval-cases.mjs`** now finds cases by the file only a case has
+   (`inject_time.txt`) and parses the path that file sits on, instead of testing
+   directory names. This also bounds the walk: the previous recursive descent was
+   unbounded, and since `{service}_{fault}` matched nothing it descended into real
+   cases looking for cases below them.
+4. **The suite counts** are rendered from what was found rather than from a
+   hard-coded `['RE1','RE2','RE3']`, which would have printed `RE1=0 RE2=0 RE3=0`
+   for an RE3 corpus while counting every case in it.
+
+### The service/fault split, and which side is allowed to be ambiguous
+
+The split is at the **last** underscore. This is a decision with a right answer, not
+a style choice: RE2's fault vocabulary is six single tokens (`cpu`, `mem`, `disk`,
+`delay`, `loss`, `socket`), while service names routinely contain underscores and
+hyphens. Splitting at the first underscore reads `ts-order-service_cpu` as service
+`ts-order` — not a service that exists — which is the same class of error as
+finding 29.
+
+The cost is stated rather than hidden: an underscore *inside* the fault would be
+read as part of the service. The corpus never produces one, and the test that
+covers this says so explicitly instead of implying the split is lossless.
+
+### The injection that found a second, larger gap
+
+Restoring the pre-fix reader —
+
+```ts
+const parsed = parseRcaEvalDirectory(dir);   // no parseRcaEvalPath attempt
+```
+
+— left **107 of 107 tests green**. The new parser had tests; the *reader that uses
+it* had none that presented it a corpus-shaped path. Every existing RCAEval
+ground-truth assertion fed the flat name our exporter writes, so the reader was
+only ever measured against its own writer's output — the same defect as the one
+being fixed, still present in the test population.
+
+Three tests were added:
+
+| test | what it pins |
+| --- | --- |
+| reads the corpus nested layout, not only the flat name it writes | the reader finds `RE2-OB/checkoutservice_cpu/1` at all |
+| keeps a hyphenated service intact when reading the nested layout | and reads `ts-order-service`, not `ts-order` |
+| reads both layouts from one file map | a map holding the corpus and our export scores both |
+
+All three go red under that injection; nothing else in the suite does.
+
+### Verification
+
+Fixtures rebuilt in the corpus's real layout, and the full chain run end to end
+against a corpus shaped like the download:
+
+```
+Wrote /tmp/realistic.json
+  108 case(s): RE1=0 RE2=108 RE3=0          # 90 RE2-OB + 18 RE2-TT, decoy __MACOSX ignored
+
+ROUNDTRIP declared 2 case(s), found 4 file(s), 4 directory(ies)
+ROUNDTRIP PASS   1/2 RE2-OB/checkoutservice_cpu/1  target=rcaeval-re2  oracle=1.00 signals=3600
+ROUNDTRIP PASS   2/2 RE2-OB/checkoutservice_cpu/2  target=rcaeval-re2  oracle=1.00 signals=3600
+ROUNDTRIP PASSED (2 case(s) round-tripped through the official layout)
+```
+
+Three injections, each confirmed to fail:
+
+| injection | caught by |
+| --- | --- |
+| walk accepts only run `1` | 4 case-derivation tests |
+| service/fault split at the first underscore | 1 parser test |
+| reader drops the nested parse | 3 reader tests (added for this) |
+
+### A note on what this cost
+
+Two runs were spent before this one on a fetch that was reported as a failure and
+was not; this run was spent on a step that failed for a reason the log stated
+plainly. The step message was correct, complete, and printed the expected pattern —
+which is why the useful response was to ask whether *the expectation* was right,
+not to widen the search. The answer was in upstream code, one `grep` away, and had
+been the whole time.
+
 ## Method
 
 Each finding was reproduced before being fixed, by running the affected path

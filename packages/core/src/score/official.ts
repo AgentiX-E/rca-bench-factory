@@ -397,11 +397,84 @@ function readOpenRca2GroundTruth(files: Record<string, string>): OfficialGroundT
 }
 
 /**
+ * Split an RCAEval *case path* into its labelled parts, in the corpus's own
+ * nested layout.
+ *
+ * ## Why this is not `parseRcaEvalDirectory`
+ *
+ * That function parses `RE2-order-cpu_1`, which is the name *our exporter*
+ * writes, and the round trip used to read the corpus with it. The name is real
+ * but it is not the corpus's, and validating a reader against the writer's
+ * output is how the mismatch survived every in-repo check: both sides agreed,
+ * and both were wrong about the data. The first real download made it visible --
+ * `derive the case descriptors` found no case directories under a tree plainly
+ * full of them.
+ *
+ * The real layout is stated twice by the upstream harness. `main.py` finds the
+ * cases by globbing `**\/data.csv` and reads the labels back out of the path:
+ *
+ *     data_dir = dirname(data_path)                                      # …/{service}_{fault}/{run}
+ *     service, metric = basename(dirname(dirname(data_path))).split("_")  # service, fault
+ *     case = basename(dirname(data_path))                                 # {run}
+ *
+ * and `docs/TORAI.md` prints the tree for the RE2 conversion:
+ *
+ *     data/torai-OB/{service}_{fault_type}/{run}/inject_time.txt
+ *
+ * So a case is three path components -- `{suite}-{system}/{service}_{fault}/{run}`
+ * -- and the *suite* is fused to the *system* in the first one. `RE2-OB` on its
+ * own is neither a suite nor a case, and `checkoutservice_cpu` on its own carries
+ * no run, which is why a per-component parse cannot see this layout at all.
+ *
+ * ## What each split is anchored on
+ *
+ * The service/fault split is taken at the **last** underscore, not the first.
+ * Neither field is allowed to be ambiguous: `ts-order-service_cpu` must give
+ * `ts-order-service` and `cpu`, and `frontend_net_cpu_node` must give the fault
+ * `net_cpu_node` rather than a bare `cpu`. Taking the first underscore fails
+ * both, one in each direction.
+ *
+ * The leading `{suite}-{system}` is split at the **first** hyphen, so `RE2-TT`
+ * yields the suite `RE2` and the system `TT`. The suite is the part that matters
+ * for routing: it is what says whether the corpus is RE1, RE2 or RE3, and three
+ * datasets share one extraction directory.
+ */
+export function parseRcaEvalPath(path: string): {
+  suite: string;
+  system: string;
+  service: string;
+  fault: string;
+  instance: string;
+} | undefined {
+  const parts = path.split('/').filter((p) => p !== '');
+  if (parts.length !== 3) return undefined;
+  const [head, labelled, instance] = parts as [string, string, string];
+
+  const headMatch = /^(RE[123])-([A-Za-z0-9]+)$/.exec(head);
+  if (headMatch === null) return undefined;
+  const underscore = labelled.lastIndexOf('_');
+  if (underscore <= 0 || underscore === labelled.length - 1) return undefined;
+  if (!/^\d+$/.test(instance)) return undefined;
+
+  return {
+    suite: headMatch[1]!,
+    system: headMatch[2]!,
+    service: labelled.slice(0, underscore),
+    fault: labelled.slice(underscore + 1),
+    instance,
+  };
+}
+
+/**
  * Split an RCAEval case directory name into its labelled parts.
  *
- * The official layout is `{suite}-{service}-{fault}_{instance}` and the
- * directory name is the only place the root-cause service is recorded, so the
- * parse is anchored at both ends: the leading suite token and the trailing
+ * The layout here is `{suite}-{service}-{fault}_{instance}` -- a *flat* name,
+ * and this is the one our exporter writes, not the one the corpus contains. See
+ * `parseRcaEvalPath` above for the corpus's nested layout and for why the two
+ * have to be separate functions rather than one that guesses.
+ *
+ * The directory name is the only place the root-cause service is recorded, so
+ * the parse is anchored at both ends: the leading suite token and the trailing
  * `_{instance}` index. The service is whatever remains, which keeps services
  * whose names contain hyphens (Train Ticket ships `ts-order-service`) intact.
  */
@@ -420,7 +493,11 @@ function readRcaEvalGroundTruth(files: Record<string, string>): OfficialGroundTr
   const out: OfficialGroundTruth[] = [];
   for (const path of pathsEndingWith(files, '/inject_time.txt')) {
     const dir = path.slice(0, path.length - '/inject_time.txt'.length);
-    const parsed = parseRcaEvalDirectory(dir);
+    // Both layouts, because both are read from one file map: the corpus's nested
+    // paths and the bundle our own exporter produced. Reading only one of them
+    // silently scored zero cases for the other, and "zero cases" is not an empty
+    // answer -- it is a run that reported success over data it never looked at.
+    const parsed = parseRcaEvalPath(dir) ?? parseRcaEvalDirectory(dir);
     if (parsed === undefined) continue;
     out.push({
       caseId: dir,

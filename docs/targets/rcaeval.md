@@ -26,6 +26,8 @@ that is missing `traces.csv`.
 
 ## Directory layout
 
+### What we emit
+
 ```text
 {suite}-{service}-{fault}_{instance}/
 ├── metrics.json        # { metricName: number[] }  (all suites)
@@ -41,9 +43,61 @@ directory name ever carries an empty segment. `{instance}` is the 1-based index 
 bundle.
 
 Keeping hyphens is not a preference — it is what makes the name readable at all.
-`parseRcaEvalDirectory` recovers the root-cause service from this name, and the upstream harness
-writes names like `RE2-ts-order-service-cpu_1`. Stripping hyphens would emit
+`parseRcaEvalDirectory` recovers the root-cause service from this name. Stripping hyphens would emit
 `RE2-tsorderservice-cpu_1` and name a service that does not exist.
+
+### What the corpus ships — and why it is a different shape
+
+> **This is not the layout above, and the difference is a real mismatch that the round trip
+> found.** Until the first successful download, this document described only our own output and
+> implied the corpus matched it. It does not.
+
+The upstream corpus is **nested**, and the suite is fused to the *system* rather than to a case:
+
+```text
+{suite}-{system}/{service}_{fault}/{run}/
+├── metrics.json        # { metricName: number[] }
+├── inject_time.txt     # Unix seconds
+├── logs.csv            # RE2 / RE3 only
+├── traces.csv          # RE2 / RE3 only
+├── logts.csv           # RE2 / RE3, pre-aggregated event counts at 15s
+├── tracets_err.csv     # RE2 / RE3 (OB and TT)
+└── tracets_lat.csv     # RE2 / RE3 (OB and TT)
+```
+
+So a corpus case reads `RE2-OB/checkoutservice_cpu/1/`, not `RE2-checkoutservice-cpu_1/`. Two
+components carry labels that a single flat token cannot:
+
+- **`{suite}-{system}`** is where the benchmark suite lives — `RE2-OB`, `RE2-SS`, `RE2-TT`. The
+  suite is not attached to the case, so a per-directory-name parse cannot recover it from the leaf.
+- **`{service}_{fault}`** splits the two fields at an underscore, and the **service keeps its
+  hyphens**: Train Ticket ships `ts-order-service_cpu`.
+
+`parseRcaEvalPath` reads this layout; `parseRcaEvalDirectory` reads ours. Both are presented to
+`readOfficialGroundTruth`, which tries the nested parse first, so a file map holding the corpus and
+our own export scores both.
+
+#### Where the layout is stated upstream
+
+Two independent statements, both in code rather than prose:
+
+`main.py` locates the cases by globbing `**/data.csv` and then reads the labels back out of the path:
+
+```python
+data_dir = dirname(data_path)                                       # …/{service}_{fault}/{run}
+service, metric = basename(dirname(dirname(data_path))).split("_")   # service, fault
+case = basename(dirname(data_path))                                  # {run}
+```
+
+and `docs/TORAI.md` prints the tree for the RE2 conversion, which is the same corpus re-exported:
+
+```text
+data/torai-OB/{service}_{fault_type}/{run}/inject_time.txt
+```
+
+The upstream README's `{benchmark}_{service}_{fault}_{instance}` line describes the *Parquet/HF*
+copy's case **identifier**, not a path on disk. Reading it as the on-disk layout is what produced
+the flat assumption above.
 
 ## Files
 

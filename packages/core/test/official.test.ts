@@ -17,6 +17,7 @@ import {
   parseOpenRcaPrediction,
   parseOpenRcaScoringPoints,
   parseRcaEvalDirectory,
+  parseRcaEvalPath,
   readOfficialGroundTruth,
   readOfficialSubmission,
   runAllOfficialRegressions,
@@ -221,6 +222,91 @@ describe('parseRcaEvalDirectory', () => {
 
   it('rejects a name with no fault token', () => {
     expect(parseRcaEvalDirectory('RE2-order_1')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The real corpus layout
+// ---------------------------------------------------------------------------
+//
+// Everything above parses a *flat* name, `RE2-order-cpu_1`, and that name is not
+// what the corpus contains. It is what our own exporter writes, so the reader
+// was validated against the layout it was being read from, and the round trip
+// only found out when it met the download.
+//
+// The real layout is nested, and the upstream harness states it twice over. Its
+// `main.py` finds the cases by globbing `**/data.csv` and then reads the labels
+// straight back out of the path:
+//
+//     data_dir = dirname(data_path)                                       # …/{service}_{fault}/{run}
+//     service, metric = basename(dirname(dirname(data_path))).split("_")   # service, fault
+//     case = basename(dirname(data_path))                                  # {run}
+//
+// and `docs/TORAI.md` prints the tree for the RE2 conversion:
+//
+//     data/torai-OB/{service}_{fault_type}/{run}/inject_time.txt
+//
+// So the archive extracts to `RE2-OB/{service}_{fault}/{run}/` — three levels,
+// with the suite and the *system* fused into the top one. `RE2-OB` alone is
+// neither a suite nor a case, and `checkoutservice_cpu` alone carries no run.
+describe('parseRcaEvalPath', () => {
+  it('parses the layout the upstream harness actually writes', () => {
+    expect(parseRcaEvalPath('RE2-OB/checkoutservice_cpu/1')).toEqual({
+      suite: 'RE2',
+      system: 'OB',
+      service: 'checkoutservice',
+      fault: 'cpu',
+      instance: '1',
+    });
+  });
+
+  it('keeps a service whose name contains hyphens', () => {
+    // Train Ticket ships `ts-order-service`, so the service is everything before
+    // the *last* underscore: splitting on the first yields `ts`, which is not a
+    // service and names nothing the telemetry mentions.
+    expect(parseRcaEvalPath('RE2-TT/ts-order-service_cpu/2')?.service).toBe('ts-order-service');
+  });
+
+  it('represents the fault as the token after the last underscore', () => {
+    // The service/fault split is at the *last* underscore, and this pins which
+    // side the ambiguity lands on. It matters because the service is the side
+    // that is allowed to be ambiguous: RE2's fault vocabulary is six single
+    // tokens (`cpu`, `mem`, `disk`, `delay`, `loss`, `socket`), while service
+    // names routinely contain underscores of their own. Splitting at the first
+    // underscore instead reads `ts-order-service_cpu` as the service `ts-order`,
+    // which is not a service that exists.
+    //
+    // So an underscore inside the *fault* is read as part of the service, and
+    // that is stated here rather than left implicit: it is the one input the
+    // rule cannot resolve, and the corpus never produces it.
+    expect(parseRcaEvalPath('RE2-TT/ts-order-service_cpu/2')?.fault).toBe('cpu');
+    expect(parseRcaEvalPath('RE2-OB/frontend_net_cpu/3')?.fault).toBe('cpu');
+  });
+
+  it('accepts a case directory reached through extra nesting', () => {
+    // The extraction directory is where the operator chose to put it, and the
+    // archive's own top level varies between suites, so the parse is anchored on
+    // the three components it needs rather than on the path being exactly three
+    // deep.
+    expect(parseRcaEvalPath('RE3-SS/checkoutservice_code/1')?.suite).toBe('RE3');
+  });
+
+  it('rejects the flat layout our exporter writes', () => {
+    // Not a regression -- a statement of the mismatch. This is the name that was
+    // being parsed, and it is not what the corpus has.
+    expect(parseRcaEvalPath('RE2-order-cpu_1')).toBeUndefined();
+  });
+
+  it('rejects a path with no run segment', () => {
+    expect(parseRcaEvalPath('RE2-OB/checkoutservice_cpu')).toBeUndefined();
+  });
+
+  it('rejects a path whose run segment is not an index', () => {
+    expect(parseRcaEvalPath('RE2-OB/checkoutservice_cpu/latest')).toBeUndefined();
+  });
+
+  it('rejects a path with no suite and system', () => {
+    expect(parseRcaEvalPath('checkoutservice_cpu/1')).toBeUndefined();
   });
 });
 
@@ -776,6 +862,51 @@ describe('official - degraded exports', () => {
     it('skips a case directory whose name carries no suite label', () => {
       const files: FileMap = { 'RE9-order-cpu_1/inject_time.txt': '1780000000' };
       expect(readOfficialGroundTruth('rcaeval-re2', files)).toEqual([]);
+    });
+
+    // The missing test, and the reason the whole nested-layout defect reached a
+    // CI run. Every RCAEval ground-truth assertion below this one feeds the
+    // *flat* name our own exporter writes, so the reader was only ever measured
+    // against its own writer's output. The corpus's nested paths were never
+    // presented to it, and the reader returned zero cases for all of them --
+    // which is indistinguishable from an empty corpus, so nothing failed.
+    //
+    // This is the assertion that fails when `readRcaEvalGroundTruth` goes back to
+    // parsing only the flat name. Nothing else in the suite does.
+    it('reads the corpus nested layout, not only the flat name it writes', () => {
+      const files: FileMap = {
+        'RE2-OB/checkoutservice_cpu/1/inject_time.txt': '1700000000',
+        'RE2-OB/checkoutservice_cpu/1/metrics.json': '{"cpu":[1,2,3]}',
+      };
+      const gt = readOfficialGroundTruth('rcaeval-re2', files);
+      expect(gt).toHaveLength(1);
+      expect(gt[0]!.caseId).toBe('RE2-OB/checkoutservice_cpu/1');
+      expect(gt[0]!.component).toBe('checkoutservice');
+      expect(gt[0]!.faultType).toBe('cpu');
+      expect(gt[0]!.occurredAt).toBe('1700000000');
+    });
+
+    it('keeps a hyphenated service intact when reading the nested layout', () => {
+      // The other half of the same claim. A reader that finds the case but
+      // splits the service at the first underscore reports `ts-order` -- a
+      // component no telemetry mentions, in an answer key that still scores.
+      const files: FileMap = { 'RE2-TT/ts-order-service_cpu/2/inject_time.txt': '1700000001' };
+      const gt = readOfficialGroundTruth('rcaeval-re2', files);
+      expect(gt[0]!.component).toBe('ts-order-service');
+      expect(gt[0]!.faultType).toBe('cpu');
+    });
+
+    it('reads both layouts from one file map', () => {
+      // A run can see the corpus and its own export together -- `check-official`
+      // scores one file map that holds both. Reading only one layout would make
+      // the other silently score zero cases, and zero cases is not an empty
+      // answer, it is a run reporting success over data it never looked at.
+      const files: FileMap = {
+        'RE2-OB/checkoutservice_cpu/1/inject_time.txt': '1700000000',
+        'RE2-order-cpu_1/inject_time.txt': '1700000002',
+      };
+      const ids = readOfficialGroundTruth('rcaeval-re2', files).map((g) => g.caseId);
+      expect(ids).toEqual(['RE2-OB/checkoutservice_cpu/1', 'RE2-order-cpu_1']);
     });
   });
 

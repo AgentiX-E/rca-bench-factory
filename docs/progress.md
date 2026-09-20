@@ -393,9 +393,59 @@ revisions stale — a number in a status table is a measurement and decays like 
     section was a limitation of the shell, not of the API.
 
   **The re-run, with the fix, is [#35483403527](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35483403527)
-  at `c57fd7eb`.** It is in progress at the time of writing and its outcome is not
-  yet recorded. CI and Anchor round trip are both green on the same revision
+  at `c57fd7eb`.** CI and Anchor round trip are both green on the same revision
   (`35483391864`, `35483391869`).
+
+  **Outcome: the fetch passed and the failure moved one step downstream.** This is
+  the first run in which the fourth anchor's download worked end to end:
+
+  ```
+  UNPINNED   rcaeval-re2-ob: ... bytes=1191025569
+  UNPINNED   rcaeval-re2-ss: ... bytes=245629018
+  UNPINNED   rcaeval-re2-tt: ... bytes=2801345134      <- the file that killed run 2
+  EXTRACTED  rcaeval-re2-ob / -ss / -tt
+  REPORT /tmp/pins.json: 3 pin(s) measured
+  Fetched 3 asset(s)
+  ```
+
+  Finding 39's fix held: 2 801 345 134 bytes digested off the stream, all three
+  assets extracted, and a report with three real pins written. Those pins are now
+  in `golden-master/official-assets.json`, which is the first time the registry
+  has held a measured digest rather than `null`.
+
+  The job then failed at the **next** step, `derive the case descriptors`:
+
+  ```
+  error: no RCAEval case directories found under '/tmp/official'. Expected names of
+  the form {RE1|RE2|RE3}-{service}-{fault}_{instance} each holding inject_time.txt.
+  ```
+
+  **Fixed** in finding 42, and it was not a small thing. The corpus's layout is
+  nested — `{suite}-{system}/{service}_{fault}/{run}/` — so a case is three path
+  components and the parser's flat pattern matched nothing at any level. The
+  pattern had come from our own exporter, which is why reader, writer and unit
+  tests all agreed while none of them described the corpus. `parseRcaEvalPath`
+  now reads the real layout, `readRcaEvalGroundTruth` accepts both, and
+  `gen-rcaeval-cases.mjs` locates cases by `inject_time.txt` rather than by
+  directory name.
+
+  The injection that matters: restoring the pre-fix reader left **107 of 107 tests
+  green**, because every existing assertion fed the reader the flat name we write.
+  Three reader tests were added; all three go red under that injection and nothing
+  else does.
+
+  Verified end to end on a corpus shaped like the download:
+
+  ```
+  108 case(s): RE1=0 RE2=108 RE3=0
+  ROUNDTRIP PASS   1/2 RE2-OB/checkoutservice_cpu/1  target=rcaeval-re2  oracle=1.00 signals=3600
+  ROUNDTRIP PASS   2/2 RE2-OB/checkoutservice_cpu/2  target=rcaeval-re2  oracle=1.00 signals=3600
+  ROUNDTRIP PASSED (2 case(s) round-tripped through the official layout)
+  ```
+
+  A further run is required to record the real corpus's numbers; the local chain
+  is what says the next run will reach the round trip rather than stopping on the
+  layout.
 
   The dispatch is worth noting on its own: it returned **204 with a zero-byte body**
   and was deliberately not retried, and exactly one run was created

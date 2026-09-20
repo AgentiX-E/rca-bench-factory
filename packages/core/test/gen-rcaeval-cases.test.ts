@@ -51,9 +51,19 @@ const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-cases-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 let counter = 0;
-/** A case directory holding only what the derivation reads: `inject_time.txt`. */
-function caseDir(root: string, name: string, seconds = 1_700_000_000): void {
-  const dir = join(root, name);
+
+/**
+ * A case written in the corpus's own layout, `{suite}-{system}/{service}_{fault}/{run}`.
+ *
+ * The nesting is not decoration. It is the whole reason this script failed
+ * against the real download: the previous helper wrote `RE2-ob-cpu_1` as a
+ * single flat directory, which is the name our *exporter* emits, so the
+ * derivation was tested only against the layout it would never be given. The
+ * corpus looks like this, and a fixture that does not look like this cannot
+ * fail the way the corpus did.
+ */
+function caseDir(root: string, suiteSystem: string, serviceFault: string, run: string, seconds = 1_700_000_000): void {
+  const dir = join(root, suiteSystem, serviceFault, run);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'inject_time.txt'), `${seconds}\n`);
 }
@@ -72,7 +82,7 @@ describe('scripts/gen-rcaeval-cases.mjs · the derivation', () => {
     // `ts-order-service` is Train Ticket's spelling and splitting on the first
     // `-` after the suite yields `ts`, which is not a service.
     const root = corpus();
-    caseDir(root, 'RE2-ts-order-service-cpu_1');
+    caseDir(root, 'RE2-TT', 'ts-order-service_cpu', '1');
     const out = join(scratch, `hyphen-${counter}.json`);
     const result = run(['--official-dir', root, '--out', out]);
     expect(result.status).toBe(0);
@@ -86,7 +96,7 @@ describe('scripts/gen-rcaeval-cases.mjs · the derivation', () => {
     // A locale-dependent rendering would shift the observation window by hours
     // and every signal would fall outside it -- while still looking like a time.
     const root = corpus();
-    caseDir(root, 'RE1-ob-cpu_1', 1_700_000_000);
+    caseDir(root, 'RE1-OB', 'carts_cpu', '1', 1_700_000_000);
     const out = join(scratch, `time-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
     const parsed = JSON.parse(readFileSync(out, 'utf8'));
@@ -96,21 +106,21 @@ describe('scripts/gen-rcaeval-cases.mjs · the derivation', () => {
 
   it('routes each case by its own directory prefix, so cases cannot share files', () => {
     const root = corpus();
-    caseDir(root, 'RE2-ob-cpu_1');
-    caseDir(root, 'RE2-ob-cpu_2');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '2');
     const out = join(scratch, `prefix-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
     const parsed = JSON.parse(readFileSync(out, 'utf8'));
     const prefixes = parsed.cases.map((c: { pathPrefix: string }) => c.pathPrefix);
-    expect(prefixes).toEqual(['RE2-ob-cpu_1/', 'RE2-ob-cpu_2/']);
+    expect(prefixes).toEqual(['RE2-OB/checkoutservice_cpu/1/', 'RE2-OB/checkoutservice_cpu/2/']);
   });
 
   it('classifies each case into its suite and counts them per suite', () => {
     const root = corpus();
-    caseDir(root, 'RE1-ob-cpu_1');
-    caseDir(root, 'RE2-ob-cpu_1');
-    caseDir(root, 'RE2-ob-cpu_2');
-    caseDir(root, 'RE3-ts-code_1');
+    caseDir(root, 'RE1-OB', 'carts_cpu', '1');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '2');
+    caseDir(root, 'RE3-TT', 'ts-order-service_f1', '1');
     const out = join(scratch, `suites-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
     const parsed = JSON.parse(readFileSync(out, 'utf8'));
@@ -122,32 +132,73 @@ describe('scripts/gen-rcaeval-cases.mjs · the derivation', () => {
     // The output is committed and compared, so a directory-order dependency
     // would make the check fail on a machine that enumerated in another order.
     const root = corpus();
-    caseDir(root, 'RE2-zzz-cpu_1');
-    caseDir(root, 'RE2-aaa-cpu_1');
-    caseDir(root, 'RE1-mmm-cpu_1');
+    caseDir(root, 'RE2-TT', 'zzz_cpu', '1');
+    caseDir(root, 'RE2-OB', 'aaa_cpu', '1');
+    caseDir(root, 'RE1-SS', 'mmm_cpu', '1');
     const out = join(scratch, `order-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
     const ids = JSON.parse(readFileSync(out, 'utf8')).cases.map((c: { caseId: string }) => c.caseId);
     expect(ids).toEqual([...ids].sort());
   });
+
+  it('labels a case by the corpus path, not by a re-rendering of it', () => {
+    // The ingest keys the bundle on this id and the round trip matches it back
+    // against the directory it read. A re-rendered id would be well-formed and
+    // point at the wrong case, which is the failure mode with no symptom.
+    const root = corpus();
+    caseDir(root, 'RE2-TT', 'ts-order-service_cpu', '2');
+    const out = join(scratch, `id-${counter}.json`);
+    expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
+    const parsed = JSON.parse(readFileSync(out, 'utf8'));
+    expect(parsed.cases[0].caseId).toBe('RE2-TT/ts-order-service_cpu/2');
+    expect(parsed.cases[0].pathPrefix).toBe('RE2-TT/ts-order-service_cpu/2/');
+    expect(parsed.cases[0].component).toBe('ts-order-service');
+    expect(parsed.cases[0].faultType).toBe('cpu');
+  });
+
+  it('walks to the depth a case occurs at and no further', () => {
+    // The walk used to descend without a bound, testing each directory *name*
+    // against the flat pattern. That could match a directory which is not a
+    // case, and it could descend into a real case looking for one below it.
+    // A case is now a leaf holding `inject_time.txt` three levels down, so
+    // anything deeper is not a case and must not be reported as one.
+    const root = corpus();
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    // One level too deep: the same shape as a case, under a run directory
+    // rather than under a `{service}_{fault}` one. The bounded walk never looks
+    // here, which is what keeps a stray `inject_time.txt` inside a case from
+    // being reported as a second case.
+    const tooDeep = join(root, 'RE2-OB', 'checkoutservice_cpu', '1', 'nested', '2');
+    mkdirSync(tooDeep, { recursive: true });
+    writeFileSync(join(tooDeep, 'inject_time.txt'), '1700000000\n');
+    const out = join(scratch, `depth-${counter}.json`);
+    expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
+    const parsed = JSON.parse(readFileSync(out, 'utf8'));
+    expect(parsed.cases).toHaveLength(1);
+    expect(parsed.cases[0].caseId).toBe('RE2-OB/checkoutservice_cpu/1');
+  });
 });
 
 describe('scripts/gen-rcaeval-cases.mjs · what it refuses to guess', () => {
-  it('skips a directory with no inject_time.txt and says which one', () => {
+  it('does not treat a directory holding no inject_time.txt as a case', () => {
+    // `inject_time.txt` is now what identifies a case, not the directory name,
+    // so a run directory that lacks one is simply not a case rather than a
+    // malformed one. That is the correct reading for this corpus: the archives
+    // ship directories that look like runs and are not, and the previous
+    // name-based walk reported each of them as a skipped case.
     const root = corpus();
-    caseDir(root, 'RE2-ob-cpu_1');
-    mkdirSync(join(root, 'RE2-ob-cpu_2'), { recursive: true });
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    mkdirSync(join(root, 'RE2-OB', 'checkoutservice_cpu', '2'), { recursive: true });
     const out = join(scratch, `noinject-${counter}.json`);
     const result = run(['--official-dir', root, '--out', out]);
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain('RE2-ob-cpu_2');
-    expect(result.stderr).toContain('no inject_time.txt');
     expect(JSON.parse(readFileSync(out, 'utf8')).cases).toHaveLength(1);
+    expect(result.stderr).not.toContain('RE2-OB/checkoutservice_cpu/2');
   });
 
   it('skips a non-numeric inject_time.txt rather than emitting NaN', () => {
     const root = corpus();
-    const dir = join(root, 'RE2-ob-cpu_1');
+    const dir = join(root, 'RE2-OB', 'checkoutservice_cpu', '1');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'inject_time.txt'), 'not a timestamp\n');
     const out = join(scratch, `nan-${counter}.json`);
@@ -157,14 +208,19 @@ describe('scripts/gen-rcaeval-cases.mjs · what it refuses to guess', () => {
     expect(result.stderr).toContain('not a number');
   });
 
-  it('skips a directory whose name does not carry the layout', () => {
+  it('skips a path whose head does not carry the suite and system', () => {
+    // The head component is where the suite lives, and a head that does not
+    // carry it cannot be assigned to a suite. Reporting it as unclassified would
+    // be worse than skipping it: the round trip would score it under a suite it
+    // was never measured against.
     const root = corpus();
-    caseDir(root, 'RE2-ob-cpu_1');
-    caseDir(root, 'notes');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    caseDir(root, 'unlabelled', 'checkoutservice_cpu', '1');
     const out = join(scratch, `layout-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
     const parsed = JSON.parse(readFileSync(out, 'utf8'));
     expect(parsed.cases).toHaveLength(1);
+    expect(parsed.cases[0].caseId).toBe('RE2-OB/checkoutservice_cpu/1');
   });
 
   it('fails when the corpus holds no case directories at all', () => {
@@ -200,7 +256,7 @@ describe('scripts/gen-rcaeval-cases.mjs · what it refuses to guess', () => {
 describe('scripts/gen-rcaeval-cases.mjs · --check', () => {
   it('accepts a file that matches the corpus', () => {
     const root = corpus();
-    caseDir(root, 'RE2-ob-cpu_1');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
     const out = join(scratch, `check-ok-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
     const result = run(['--official-dir', root, '--out', out, '--check']);
@@ -213,10 +269,10 @@ describe('scripts/gen-rcaeval-cases.mjs · --check', () => {
     // a corpus that gains a case without the committed list gaining one is a
     // round trip that silently scores a subset.
     const root = corpus();
-    caseDir(root, 'RE2-ob-cpu_1');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
     const out = join(scratch, `check-drift-${counter}.json`);
     expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
-    caseDir(root, 'RE2-ob-cpu_2');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '2');
     const result = run(['--official-dir', root, '--out', out, '--check']);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/out of date/);
@@ -224,7 +280,7 @@ describe('scripts/gen-rcaeval-cases.mjs · --check', () => {
 
   it('refuses to check a file that does not exist', () => {
     const root = corpus();
-    caseDir(root, 'RE2-ob-cpu_1');
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
     const result = run(['--official-dir', root, '--out', join(scratch, 'absent.json'), '--check']);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/does not exist/);

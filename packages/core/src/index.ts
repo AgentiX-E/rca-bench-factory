@@ -297,6 +297,7 @@ export {
   parseOpenRcaPrediction,
   parseOpenRcaScoringPoints,
   parseRcaEvalDirectory,
+  parseRcaEvalPath,
   readOfficialGroundTruth,
   readOfficialSubmission,
   runAllOfficialRegressions,
