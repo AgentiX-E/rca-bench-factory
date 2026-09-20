@@ -52,6 +52,30 @@ on:
 permissions:
   contents: read
 
+# One fetch at a time, keyed on the anchor rather than on the branch.
+#
+# This job pulls several gigabytes from Zenodo over as much as fifteen minutes,
+# and two of them running at once is not merely wasteful: a host that rate-limits
+# concurrent large transfers would produce a fetch failure that looks like an
+# upstream outage and is actually self-inflicted. That is the specific mistake
+# this guard prevents -- earlier in this repository's history four concurrent
+# runs were fired by a retry loop, and the failure they were then used to
+# diagnose was quite possibly their own doing.
+#
+# `cancel-in-progress: false` and not `true`: the job's whole product is a
+# measurement, and cancelling a run three minutes into a twelve-minute download
+# discards it to start an identical one. A queued second dispatch is the correct
+# outcome -- it will run, and it will run after the first has finished rather
+# than instead of it. That is also what makes the two `cancelled` runs of
+# 2026-09-20 unrepeatable: they were cancelled by each other, and neither
+# produced anything.
+#
+# Keyed on the anchor so a run of `rcaeval-re1` does not block `rcaeval-re3`;
+# they fetch different assets and do not contend.
+concurrency:
+  group: official-data-${{ github.event.inputs.anchor || 'rcaeval-re2' }}
+  cancel-in-progress: false
+
 jobs:
   round-trip:
     name: Fetch, ingest, export and score the official corpus

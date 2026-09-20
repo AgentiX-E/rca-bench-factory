@@ -171,6 +171,7 @@ different messages.
 | 41 | Every fixture was under one digest chunk, so a prefix-only digest passed the suite | `break` after the first `hash.update`: 30/30 green, digest changed | fixed |
 | 42 | The corpus reader assumed our exporter's flat layout; the corpus is nested three deep | `derive the case descriptors` found no cases under a tree full of them | fixed |
 | 43 | The CI fixture that exercised finding 42 was itself written in the old flat layout | the fix passed locally and `anchor-roundtrip.yml` still failed on `RE2-ts-order-service-cpu_1` | fixed |
+| 44 | `official-data.yml` had no concurrency group, so a second dispatch cancelled the first | two runs of 2026-09-20 both `cancelled`, neither producing a measurement | fixed |
 
 Findings 31 and 32 are not defects in shipped code. They are defects in the
 *instruments* — the generator's diagnostics and the test fixture — and they are
@@ -310,6 +311,30 @@ distinguish two layouts. Both were green. Neither was evidence. The check that
 finds them is not reading the test but asking what the test would do if the code
 were wrong, and in 43's case the answer was *pass*, because the fixture had been
 written from the code.
+
+**Finding 44** is in this pass because this pass caused it. Two dispatches of
+`official-data.yml` were issued while the first was still fetching, and both were
+recorded `cancelled`:
+
+| run | revision | status | what it produced |
+| --- | --- | --- | --- |
+| [#35485506741](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485506741) | `307fb460` | `cancelled` during `Fetch the corpus` | nothing |
+| [#35485547947](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485547947) | `307fb460` | `cancelled` during `Fetch the corpus` | nothing |
+
+The workflow had no `concurrency` key, so what cancelled them is the *action*, not
+the configuration — and the point is not which mechanism did it but that nothing
+in the repository stood in the way. The guard added here is the ordinary one:
+group by anchor, `cancel-in-progress: false`. The `false` is the load-bearing part.
+A job whose only product is a measurement should not discard a twelve-minute
+download to start an identical one; a queued second dispatch is the correct
+outcome, and it is also what makes these two cancellations unrepeatable.
+
+This is the same class of self-inflicted diagnosis as the four-concurrent-runs
+episode recorded earlier in this section, and it is recorded again rather than
+folded into it because the mechanism differs: that one was a retry loop inventing
+requests, this one is a human sequencing them wrong against a job that takes
+fifteen minutes. Both produce a run history that misrepresents upstream, and both
+are fixed on the caller's side.
 
 The common thread with 35 is that all three were found by *running* something and
 reading a number, and the one that went wrong (40) went wrong at exactly the step
