@@ -305,8 +305,47 @@ describe('parseRcaEvalPath', () => {
     expect(parseRcaEvalPath('RE2-OB/checkoutservice_cpu/latest')).toBeUndefined();
   });
 
+  it('rejects a labelled segment with no underscore to split on', () => {
+    // The middle segment is `service_fault`, and the split is what produces two
+    // non-empty names. A segment with no underscore has no split to make, and
+    // reading it as a whole would put the service name in the fault slot.
+    expect(parseRcaEvalPath('RE2-OB/checkoutservice/1')).toBeUndefined();
+  });
+
+  it('rejects a labelled segment that starts with the split underscore', () => {
+    // `_cpu` splits at index 0, which would leave the service empty. An empty
+    // service is not a name the telemetry can be resolved against, and the
+    // reference-integrity pass would reject it later with a message about a
+    // missing entity rather than about the path it came from.
+    expect(parseRcaEvalPath('RE2-OB/_cpu/1')).toBeUndefined();
+  });
+
+  it('rejects a labelled segment that ends with the split underscore', () => {
+    // `cpu_` is the mirror image: the fault would be empty. Both directions are
+    // asserted because the guard is one `||` and a test for either side alone
+    // leaves the other free to be deleted without a failure.
+    expect(parseRcaEvalPath('RE2-OB/cpu_/1')).toBeUndefined();
+  });
+
   it('rejects a path with no suite and system', () => {
     expect(parseRcaEvalPath('checkoutservice_cpu/1')).toBeUndefined();
+  });
+
+  it('rejects a suite the vocabulary does not name', () => {
+    // RCAEval ships exactly three suites, RE1, RE2 and RE3, and the pattern
+    // states that as a closed list rather than accepting any prefix. A fourth
+    // corpus arriving as RE4 is a coupling decision, not a parse: it would need
+    // a fault vocabulary and a scoring rule before the path meant anything, and
+    // reading it here would hand the rest of the pipeline a suite it cannot
+    // score. Rejecting it names the path instead.
+    expect(parseRcaEvalPath('RE4-OB/checkoutservice_cpu/1')).toBeUndefined();
+  });
+
+  it('rejects a head segment with no system at all', () => {
+    // The head is `suite-system` and both halves are required. A bare `RE2`
+    // matches neither the hyphen nor the system group, so it reaches the same
+    // rejection as an unknown suite rather than being read as a systemless case.
+    expect(parseRcaEvalPath('RE2/checkoutservice_cpu/1')).toBeUndefined();
   });
 });
 

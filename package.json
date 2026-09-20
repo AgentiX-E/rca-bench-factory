@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm --filter @rca-bench-factory/core build && pnpm --filter @rca-bench-factory/cli build",
+    "pretypecheck": "pnpm --filter @rca-bench-factory/core build",
     "typecheck": "pnpm --filter @rca-bench-factory/core typecheck && pnpm --filter @rca-bench-factory/cli typecheck",
     "test": "pnpm --filter @rca-bench-factory/core test && pnpm --filter @rca-bench-factory/cli test",
     "test:coverage": "pnpm --filter @rca-bench-factory/core test:coverage && pnpm --filter @rca-bench-factory/cli test:coverage",

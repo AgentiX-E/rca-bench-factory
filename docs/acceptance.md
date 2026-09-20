@@ -6,9 +6,17 @@ before the layer above it is meaningful.
 
 ## L0 — Deterministic core correctness
 
-- `pnpm typecheck` clean under strict TypeScript.
-- `pnpm lint` clean (no mocks, no secrets).
+- `pnpm typecheck` clean under strict TypeScript, **from a cold check-out**.
+  `packages/cli` reads `@rca-bench-factory/core` through core's published entry
+  points, so the root script carries a `pretypecheck` hook that builds core
+  first. Without it the script passed only on a tree where a build had already
+  run, and failed on a fresh clone with errors in a file the operator had not
+  touched. `test/typecheck-entrypoint.test.ts` runs the real script in a
+  detached worktree with every `dist` removed.
+- `pnpm lint` clean (no mocks, no secrets, no vendored corpus data, registry consistent).
 - Unit tests pass with **≥ 95%** statements/lines/branches and **100%** functions.
+  Measured at 99.95 / 99.93 / 100 / 99.95 on this revision; the residual is the
+  documented backstops enumerated in [progress.md](progress.md), not gaps.
 
 ## L1 — Transform invariants
 
@@ -30,6 +38,14 @@ An 18-mutation suite of two halves: **MT-01…MT-15** corrupt a known-good case 
 assert the gates intercept **100%** of them, and **MT-16…MT-18** corrupt the
 *exported artefacts* and assert the official-metric regression intercepts them.
 The current matrix:
+
+> **18 is the count of mutations, not of assertions.** `pnpm mutation` reports 26
+> passing tests, because each mutation is asserted from both directions — the
+> mutated input must be intercepted, and the unmutated input must still pass, so
+> that a suite that is red on everything is distinguishable from one that is
+> sensitive. The two numbers describe the same suite at different resolutions and
+> neither is a drift; a status line that quotes one while the other is expected
+> is reading the runner's line count as the matrix's size.
 
 | Id | Mutation | Caught by |
 | --- | --- | --- |

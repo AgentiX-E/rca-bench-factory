@@ -9,12 +9,26 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean (4 guards); 1951 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 1959 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
 | L4 | Official reproduction | **3 of 4 anchors met** | see below |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
+
+The L0 row used to read `pnpm typecheck` clean with no qualifier, and on a cold
+check-out that was false. `packages/cli` resolves `@rca-bench-factory/core`
+through core's published entry points (`dist/index.js`, `dist/index.d.ts`), which
+exist only after a build; running the script on a fresh clone failed with fifteen
+type errors in `cli/src/run.ts` that named a symptom and not the cause. CI never
+saw it because `.github/workflows/ci.yml` runs `Build` before `Type-check`, so the
+step that would have failed was satisfied by the step before it. The script now
+carries a `pretypecheck` hook that builds core, and
+`test/typecheck-entrypoint.test.ts` runs the real script in a detached worktree
+with every `dist` removed and requires exit 0. That test is red on the previous
+revision and green on this one, which is how the qualifier above is meant to be
+read: the claim is about the cold tree, not the warm one this document was
+previously measuring.
 
 ## Coverage
 
@@ -28,19 +42,31 @@ with a coverage gate.
 | Functions | 100% | ≥ 95% |
 | Lines | 99.95% | ≥ 95% |
 
-The residual is two statements and two branches, and both are documented
-backstops rather than gaps:
+The residual is two statements and four branches, all of them documented
+backstops rather than gaps, across four sites:
 
-1. The `never` guard at the end of `aggregateFor`. Every member of
-   `ScoreTargetId` returns from a branch above it, so no input reaches it — it
-   is a compile-time backstop.
-2. The `typeof value !== 'string'` branch in `asNonBlank`, and the
+1. The `never` guard at the end of `aggregateFor` (`src/score/official.ts`).
+   Every member of `ScoreTargetId` returns from a branch above it, so no input
+   reaches it — it is a compile-time backstop.
+2. The `never` guard at the end of `readGroundTruth` in the same file, added for
+   the same reason and stated as such in the comment above it.
+3. The `typeof value !== 'string'` branch in `asNonBlank`, and the
    `Number.isSafeInteger` test in `parseInteger`, both added by pass 5. The
    first is unreachable because every flag read through `asNonBlank` is declared
    `type: 'string'` and `parseArgs` refuses a string flag with no value; the
    second is provably redundant within every range the CLI currently declares.
    The measurements are in `audit.md` and the exemption is argued in
    `acceptance.md` §2.39.
+
+The count of *sites* and the count of *branch positions* are not the same
+number, and the two were conflated in an earlier revision of this table. v8
+counts a branch **position** — one record per outcome of a conditional — so the
+two `never` guards account for three positions between them, not two, and a
+`||` whose left side is true on every input still leaves its right side
+unmeasured. The table reports the aggregate the tool prints; the enumeration
+above is the reviewable decomposition of it. Listing four sites against a
+figure the tool derives from positions is how the earlier revision came to claim
+two branches where the tool measured four.
 
 The comments on those lines record why they are not deleted to turn the numbers
 green. A guard removed because a test cannot see it is not a covered line; it is
@@ -53,6 +79,32 @@ Every module touched by an audit pass is at **100% on all four dimensions**:
 aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond conversion
 introduced a negative-timestamp path that nothing exercised, and it was covered
 with a real pre-epoch case rather than an ignore comment.
+
+### Pass 7: three branch positions that were reachable and unmeasured
+
+The aggregate branch figure was measured at **99.86%** before this pass, against
+the 99.93% this table had been reporting. The gap was not drift in the tool or a
+stale decimal: three branch positions in `parseRcaEvalPath` (`src/score/official.ts`)
+were reachable by ordinary input and no test took them.
+
+| Position | Condition | Why it was unmeasured |
+| --- | --- | --- |
+| `headMatch === null` | the head segment is not `RE{1,2,3}-{system}` | every fixture used a suite the vocabulary names |
+| `underscore === labelled.length - 1` | the label ends with the split underscore | no fixture had an empty fault half |
+| `underscore <= 0` | the label starts with the split underscore | the `\|\|` short-circuited on the left for every fixture, so the right side was never evaluated |
+
+The third row is the one worth naming. It is not a missing test for a missing
+input — `RE2-OB/cpu_/1` was constructible from the first day the function
+existed. It is that **the left side of a disjunction being true on every input
+hides the right side from the instrument**, so a guard can be half-measured
+while the line reads as covered. Three tests were added, one per row, and the
+aggregate moved to 99.93%.
+
+The injection that matters: deleting `if (headMatch === null) return undefined;`
+leaves the parser reading an unknown suite as a parsed case, and exactly the two
+tests written for it go red. The other two rows are asserted through the same
+`||`: removing either half now fails a named test rather than silently reducing
+the measured figure.
 
 `src/cli/args.ts` is the one module where a pass left statements and lines at
 100% but branches at 99.72%, because pass 5 added two guards that no input can
@@ -81,6 +133,8 @@ the logic is; the figure is recorded because it is measured on every run.
 | 3 | `src/llm/openai-compat.ts`, `src/fault/importer.ts` | 4 | 30 tests in 2 new files |
 | 4 | `src/llm/rulegen.ts`, `src/llm/anthropic.ts` | 8 | 48 tests across 2 files (21 new in `rulegen`, 19 in `anthropic`) |
 | 5 | `src/cli/args.ts` | 5 | 56 tests in `cli.test.ts` (5 new describe blocks + 4 invariant cases) |
+| 6 | `scripts/fetch-official.mjs` | 3 (1 withdrawn) | 5 injections; the withdrawn row is the finding |
+| 7 | root `typecheck` entry point, `parseRcaEvalPath` | 2 | 6 tests across 2 files (3 cold-tree, 3 parser) |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
@@ -259,6 +313,28 @@ exists. The fixture now binds a port, releases it, and uses the dead port. A gua
 whose fixture cannot reach the defect is not a guard, and green from it is the exact
 failure mode this whole document is about.
 
+### Injection matrix, pass 7
+
+Four injections, each reintroducing one defect, plus two negative controls:
+
+| Injection | Tests that fail |
+| --- | --- |
+| the `pretypecheck` hook removed from `package.json` | 2 (cold check-out) |
+| `if (headMatch === null) return undefined;` deleted | 2 (unknown suite, systemless head) |
+| the `underscore <= 0` half of the disjunction deleted | 1 (`RE2-OB/_cpu/1`) |
+| the `underscore === labelled.length - 1` half deleted | 1 (`RE2-OB/cpu_/1`) |
+| NEGATIVE CONTROL — comment edit above `parseRcaEvalPath` | 0 (stays green) |
+| NEGATIVE CONTROL — comment edit in `typecheck-entrypoint.test.ts` | 0 (stays green) |
+
+6 test failures across 4 injections, **2 negative controls green, 0 silent**.
+
+The first row is the one that closes the L0 claim from the other side. Without the
+hook the cold tree fails, and the failure is the fifteen original messages rather
+than anything the test wrote. The remaining three rows are one per branch position
+from the coverage section, and they are separated here on purpose: the `||` in the
+middle had been half-measured for the whole life of the function, and an injection
+matrix that treated it as one row would have reported it as one row.
+
 ## L4 anchor status
 Four anchors, each strictly stronger than the one before:
 
@@ -356,20 +432,32 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 79 |
+| Commits | 85 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
 | Source lines | 13,205 |
-| Test files | 76 |
-| Test lines | 23,401 |
-| Tests | 1951 core + 173 CLI |
+| Test files | 76 → 77 counting the file this pass adds |
+| Test lines | 23,440 |
+| Tests | 1959 core + 173 CLI |
 
-Counted from `git ls-files` at `e406689`, not carried forward from the previous
-revision. The previous version of this table said 1891 and 73, and the one before
-that said 1891 and 73 across two revisions. Both were stale — a number in a status
-table is a measurement and decays like one, so it is re-taken rather than edited.
-The test count is the one figure that moves for a reason worth naming: this pass
-added six tests, all of them for finding 45.
+Re-taken from `git ls-files` and `git rev-list --count HEAD` at the revision this
+document ships with, not carried forward. Every figure in the table moved on this
+pass and each moved for a nameable reason:
+
+- **Commits** was `79` and is `85`. This one was not a decay, it was arithmetic:
+  the previous revision recorded six commits and then added six more without
+  re-running the count.
+- **Test lines** was `23,401` and is `23,440`; **Tests** was `1951 core` and is
+  `1959`. Nine core tests were added by pass 7 — three for the reachable branch
+  positions it found in `parseRcaEvalPath`, three for the cold check-out in
+  `typecheck-entrypoint.test.ts`, and the file-level split between them is the
+  reason the test-file row shows two numbers rather than one.
+
+The sentence this table replaces said the test count was "the one figure that
+moves for a reason worth naming". It moved on the next pass too, and so did four
+others, which is the argument against singling one out: a status table is a
+column of measurements and they decay together. Re-take all of them or the table
+is a list of the ones somebody happened to check.
 
 
 ## Test strategy

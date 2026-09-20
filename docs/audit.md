@@ -10,7 +10,7 @@ appeared in a review, without a failing measurement, is not a finding.
 
 ## Scope
 
-Six passes so far:
+Seven passes so far:
 
 - **Pass 1** — `packages/core/src/score/`: the official-metric scoring path. This
   is the code that decides whether an export is scorable and what number it
@@ -42,6 +42,14 @@ Six passes so far:
   harness itself part of the subject: a fixture that cannot express the upstream
   layout produces a green suite that establishes nothing, and three of this pass's
   four findings are exactly that.
+- **Pass 7** — two measurement surfaces rather than two modules: the root
+  `typecheck` entry point, and the branch positions the coverage figure was not
+  counting. Both are the same class of defect as each other and as pass 6's — the
+  instrument agreed with the thing it was measuring. `pnpm typecheck` was green
+  because a previous step had built the tree, and the branch figure was stable
+  because the positions it missed were missed in the same way on every run. Neither
+  could be found by reading the code under test; both were found by asking what the
+  measurement would look like if it were wrong.
 
 ## Summary
 
@@ -1909,6 +1917,157 @@ plainly. The step message was correct, complete, and printed the expected patter
 which is why the useful response was to ask whether *the expectation* was right,
 not to widen the search. The answer was in upstream code, one `grep` away, and had
 been the whole time.
+
+## 43 — The typecheck entry point required a build it did not perform
+
+**Defect.** The root `typecheck` script ran two `tsc --noEmit` invocations in
+sequence, core then cli. `packages/cli` imports `@rca-bench-factory/core`, which
+pnpm links to the core *package root*; resolution therefore goes through core's
+`exports` map to `dist/index.d.ts`. Core's `tsconfig` writes to `dist`, so on a
+check-out where no build had run that file does not exist.
+
+**Command that demonstrated it.**
+
+```
+$ rm -rf packages/core/dist packages/cli/dist
+$ pnpm typecheck
+src/run.ts(38,8): error TS2307: Cannot find module '@rca-bench-factory/core' ...
+src/run.ts(337,16): error TS18046: 'q' is of type 'unknown'.
+src/run.ts(441,44): error TS7006: Parameter 'target' implicitly has an 'any' type.
+src/run.ts(449,23): error TS7031: Binding element 'target' implicitly has an 'any' type.
+src/run.ts(673,70): error TS2366: Function lacks ending return statement ...
+Exit status 2
+```
+
+**Observed number.** 15 errors, all reported in `cli/src/run.ts`, none of which
+named core's missing `dist`.
+
+**Why CI never saw it.** `.github/workflows/ci.yml` orders the steps
+`Install → Build → Type-check`. By the time `Type-check` ran, `dist` existed, so
+the step was satisfied by the step before it. Every measurement the project had
+taken of this script was taken warm.
+
+**The failure mode, stated at the right level.** The messages point at a file the
+operator has not modified and describe types that are `unknown` only because the
+module they come from failed to resolve. The cause is one step earlier in a
+different package. A check whose verdict depends on what a previous command left
+on disk is not a check.
+
+**Fix.** A `pretypecheck` hook on the root package that builds core.
+
+```json
+"pretypecheck": "pnpm --filter @rca-bench-factory/core build",
+```
+
+`pnpm` runs `pre<script>` automatically, so every entry point — the script, a bare
+`pnpm run typecheck`, and CI's step — gets the precondition without any caller
+having to remember it. The alternative considered and rejected was a `paths`
+mapping in `cli/tsconfig.json` pointing at core's `src`: it would type-check cli
+against core's source while the build links against core's declarations, which is
+two answers to "what is core's public type" and the one that differs is the one
+that ships.
+
+**Guard.** `test/typecheck-entrypoint.test.ts` creates a detached git worktree,
+applies the working tree's diff into it, installs, removes both `dist` directories,
+and runs the real root script, requiring exit 0 and no `error TS` in the output.
+The worktree is deliberate: `rm -rf dist` in the developer's own tree would make
+the test destructive.
+
+**Injections.**
+
+| Injection | Tests that fail |
+| --- | --- |
+| `pretypecheck` hook removed from `package.json` | 2 |
+| NEGATIVE CONTROL — comment edit in the test file | 0 (stays green) |
+
+**Two corrections inside this finding, both worth recording.**
+
+The first version of the fixture ran the script in a worktree taken from `HEAD`,
+which executed the *previous commit's* `package.json`. It reported the injected
+precondition missing from a tree that had it. The fix is `git diff HEAD \| git
+apply`, and the lesson is that a test which reads history instead of the working
+tree inverts its own verdict.
+
+The first full run then reported the suite as failing while the file passed in
+isolation: vitest's five-second default timeout is shorter than one `pnpm install`
+plus one `pnpm typecheck`. Both assertions now carry an explicit 180-second budget.
+A green test that only passes when run alone is a statement about scheduling.
+
+## 44 — Three reachable branch positions the coverage number did not include
+
+**Defect.** `progress.md` reported branches at 99.93%. The measurement was 99.86%.
+The gap was not a stale decimal: three branch positions in `parseRcaEvalPath`
+(`packages/core/src/score/official.ts`) were reachable by ordinary path strings and
+no test took them.
+
+**Command that demonstrated it.**
+
+```
+$ pnpm --filter @rca-bench-factory/core test:coverage
+All files  |  99.95 |  99.86 |  100 |  99.95 |
+ src/cli    |  100   |  99.72 |  100 |  100   | 194
+ src/score  |  99.79 |  99.55 |  100 |  99.79 | 1098-1100
+```
+
+Reading the raw coverage JSON rather than the summary line named the positions:
+
+```
+$ python3 -c "...coverage-final.json..."
+== packages/core/src/score/official.ts
+  line 454 type=branch counts=[0]   loc 454:26-454:43
+  line 456 type=branch counts=[0]   loc 456:61-456:78
+  line 1079 type=branch counts=[0]  loc 1079:2-1100:1
+```
+
+**Observed number.** 2977 of 2981 branch positions, 99.8656%.
+
+**Two measurement errors made on the way to this, both mine.**
+
+The first was reading `line 454` from the *summary's* uncovered-line column and
+concluding the position was inside `if (headMatch === null)`. It is — but I then
+concluded the two positions on line 456 were `underscore <= 0` and `underscore ===
+labelled.length - 1`, and wrote a test for each, and the coverage did not move to
+cover the first. The reason is that `if (A || B)` is compiled to positions per
+sub-expression, and `RE2-OB/_cpu/1` satisfies `A`, so `B` is never evaluated and
+the row stays at zero *while a test that looks like it covers it passes*. A
+disjunction whose left side is true on every input hides its right side from the
+instrument.
+
+The second was transcription: the summary column prints the line of the *statement*
+the branch belongs to, so `454` and `456` are not the lines I assumed. The
+authoritative view is `branchMap` in `coverage-final.json`, which carries
+`loc.start.column` and `loc.end.column` per position. Every conclusion in this
+finding comes from that view.
+
+**Fix.** Three tests in `test/official.test.ts`, one per position:
+
+| Position | Input | Test |
+| --- | --- | --- |
+| `headMatch === null` | `RE4-OB/checkoutservice_cpu/1` | rejects a suite the vocabulary does not name |
+| `headMatch === null`, no system | `RE2/checkoutservice_cpu/1` | rejects a head segment with no system at all |
+| `underscore === labelled.length - 1` | `RE2-OB/cpu_/1` | rejects a labelled segment that ends with the split underscore |
+| `underscore <= 0` | `RE2-OB/_cpu/1` | rejects a labelled segment that starts with the split underscore |
+
+**Guard.** The aggregate moved 99.86% → **99.93%**, which is the figure
+`progress.md` had been reporting all along. The document was not wrong about the
+target; it was wrong about the measurement having been taken.
+
+**Injections.**
+
+| Injection | Tests that fail |
+| --- | --- |
+| `if (headMatch === null) return undefined;` deleted | 2 |
+| the `underscore <= 0` half of the disjunction deleted | 1 |
+| the `underscore === labelled.length - 1` half deleted | 1 |
+| NEGATIVE CONTROL — comment edit above `parseRcaEvalPath` | 0 (stays green) |
+
+**Retraction of a count, not of a conclusion.** `progress.md` said the residual was
+"two statements and two branches". v8 counts a branch *position* — one record per
+outcome of a conditional — and the two `never` guards alone account for three, so
+the enumeration was a list of *sites* quoted against a figure the tool derives from
+*positions*. The revised text gives both and states which is which. No guard was
+changed: both remain compile-time backstops, and the argument for keeping them is
+the one already recorded in `acceptance.md` §2.39.
 
 ## Method
 
