@@ -109,7 +109,7 @@
       "licenseSource": "https://github.com/phamquiluan/baro/blob/main/LICENSE",
       "fetchable": true,
       "sha256": null,
-      "bytes": 570409,
+      "bytes": null,
       "extractsTo": null
     },
     {
@@ -129,8 +129,8 @@
       "id": "openrca-1.0",
       "anchor": "openrca-1.0",
       "license": "MIT (code) / data terms per upstream",
-      "reason": "The telemetry is published on Google Drive, not on an HTTPS endpoint with a stable contract. Drive adds interactive confirmation, per-account quotas and rate limiting, which makes it unfit for a deterministic CI gate. Reach it through the AgentiX-E/openrca-* shard repositories instead, which already cache it on a runner.",
-      "alternative": "AgentiX-E/openrca-{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2} actions/cache"
+      "reason": "The telemetry is published on Google Drive, not on an HTTPS endpoint with a stable contract. Drive adds interactive confirmation, per-account quotas and rate limiting, which makes it unfit for a deterministic CI gate. Reaching it through the AgentiX-E/openrca-* shard repositories was the plan, and that plan does not work: their caches were populated on 2026-08-02 and had expired by the time this was checked, and a GitHub Actions cache is scoped to the repository that wrote it, so a shard's cache would not be readable from here even while it existed. The shards remain the right place to do the download; they are not a source this repository can read.",
+      "alternative": "Re-run AgentiX-E/openrca-{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2} .github/workflows/cache-dataset.yml, then have that repository publish the derived artifact rather than caching it"
     },
     {
       "id": "openrca-2.0",

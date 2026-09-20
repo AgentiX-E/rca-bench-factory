@@ -269,7 +269,7 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
     expect(result.stdout).toContain('found');
   });
 
-  it('reports the declared and found counts, so a shrunk corpus is visible', () => {
+  it('reports the declared count accurately, so a shrunk corpus is visible', () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     writeCase(root, 'RE2-ob-cpu_2');
@@ -278,6 +278,29 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
     const result = run(['--official-dir', root, '--cases', cases]);
     expect(result.stdout).toMatch(/declared 2 case/);
     expect(result.stdout).toMatch(/found \d+ file/);
+  });
+
+  it('counts the corpus in files, and counts the directory tree too', () => {
+    // The line is the operator's only quantitative view of the download, and
+    // `found N file(s)` under a *file* label has to mean files. Counting
+    // directories there would report a number that moves when the layout
+    // changes -- a corpus whose zip gained a directory would look larger
+    // without a byte arriving -- and the count is what an operator compares
+    // against the previous run, so it has to be a number that means one thing.
+    //
+    // The directory count is reported separately rather than merged in, and it
+    // is what distinguishes "the archive extracted to the wrong depth" (no
+    // files, plenty of directories) from "the archive never arrived" (neither).
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const cases = join(scratch, 'counted.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const result = run(['--official-dir', root, '--cases', cases]);
+    // Two files per case: inject_time.txt and metrics.json.
+    expect(result.stdout).toMatch(/found 2 file\(s\)/);
+    // One directory: the case itself. The corpus root is not counted, because
+    // it is the argument the caller passed rather than something downloaded.
+    expect(result.stdout).toMatch(/, 1 directory\(ies\)/);
   });
 });
 

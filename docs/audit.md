@@ -160,12 +160,50 @@ different messages.
 | 30 | `unzip` was invoked unconditionally, including on assets that are not archives | a `.csv` asset → `unzip: cannot find zipfile` naming no asset | fixed |
 | 31 | The case-descriptor generator dropped its warnings when every case was skipped | empty result, empty stderr, exit 0 | fixed |
 | 32 | The archive fixture in the fetch test was malformed in the way the *script* was suspected of being | `unzip`: `End-of-central-directory signature not found` | fixed |
+| 33 | A byte count was pinned with no digest beside it, and the fetch enforces the byte count | `rcaeval-baro-simple`: `bytes: 570409`, `sha256: null` | fixed |
+| 34 | The registry named a cross-repository cache read that cannot work | six shards, `total_count: 0`; scope is per-repository | fixed |
+| 35 | *(withdrawn)* The backoff guard was blamed for a 9-second delay it did not cause | restoring the guard left the time unchanged: 9.074s → 9.075s | no defect |
+| 36 | `--retry-connrefused` and the attempt loop both retried; the elapsed time measured curl's retries | refused connection in 0 ms reported as `after 3.0s`; removal: 9.075s → 0.067s | fixed |
+| 37 | `--fail` collapses 4xx and 5xx onto exit 22, so the classifier could not tell a 404 from a 500 | 404, 500, 503 all exit 22; only the message differs | fixed |
+| 38 | The corpus summary counted directories under the word "file" | `found N file(s)` where N included directories | fixed |
 
 Findings 31 and 32 are not defects in shipped code. They are defects in the
 *instruments* — the generator's diagnostics and the test fixture — and they are
 listed because each one produced a green result that would have been read as
 evidence. A warning that is swallowed and a fixture that cannot be parsed both make
 a test pass for a reason that is not the reason the test exists.
+
+Findings 33 and 34 came from building the guard and then running it against the
+shipped registry, which is worth recording as a method note: both were *in the file
+this pass was writing about*, and neither was visible from reading it. 33 is a
+number that looks like a measurement and is not; 34 is a mechanism that sounds like
+a mechanism and is not. Reading the registry would have found neither, and the
+second one had been repeated in the workflow comment and in the progress document
+before it was measured.
+
+Findings 35 through 37 came from *timing* the failing path instead of reading it, and
+that is the method note for this pass — together with its counterexample. The fetch
+had already failed once on a real runner, and the only thing that failure report
+established was that it took twelve minutes, which is not what a missing URL looks
+like. Reproducing it locally against a loopback server that refuses in microseconds
+turned "it failed" into three separate observations, of which **two were real defects
+in code this pass had just written** — a second retry mechanism that corrupted the one
+measurement on the line, and a classifier keyed on a number that `--fail` overwrites —
+and one was a defect in the *audit* itself.
+
+Finding 35 is the counterexample and it is the more useful half. The number was
+measured honestly and the cause was then attributed to the nearest suspicious-looking
+code, which is a reading of the source that borrows the probe's authority. The check
+that separates measurement from attribution costs one command — remove the suspected
+cause and see whether the number returns — and it was skipped once, in a pass whose
+whole argument is that it should not be. Findings 36 and 37 were then confirmed by
+that check, and 36's fix is justified by a removal table rather than by a claim.
+
+Findings 36 and 37 were both in code this pass had just added and both were
+documented as working. That is the fourth time in six passes that the defect was in
+the newest code rather than the oldest, which is worth stating plainly: an audit that
+only reads what has been there a while would have missed the majority of what this
+document records.
 
 Two further instrument defects were found and fixed in the same pass, and are
 recorded here rather than in the table because neither is reachable from the
@@ -1077,6 +1115,248 @@ and the correct layout in each header, and `execFileSync` was replaced with
 and assert the extracted path and contents. This is the point — a fixture with no
 test of its own can be wrong in a way that presents as a bug in the code it feeds,
 and the debugging cost lands on the wrong file.
+
+## 33 — A byte count was recorded without a digest, and the fetch would have enforced it
+
+```
+$ node scripts/check-official-registry.mjs
+check-official-registry: FAILED
+  asset 'rcaeval-baro-simple' records bytes without sha256.
+```
+
+`rcaeval-baro-simple` carried `bytes: 570409` beside `sha256: null`. The number was
+a placeholder written when the registry was first authored, and it is the most
+dangerous shape a pin can take, for two reasons that compound:
+
+- `bytes` is *enforced* by `fetch-official.mjs` — `if (asset.bytes !== null && bytes !== asset.bytes) fail(...)`.
+  A digit typed wrong here does not sit quietly, it fails every fetch of that asset
+  with a message saying the download is the wrong size.
+- `sha256` is the field that would have caught the mistake, and it was `null`, so
+  nothing cross-checked the number.
+
+The registry guard was built in the same pass and found this on its first run
+against the shipped file. That is the intended relationship between a guard and the
+thing it guards: a check that has never failed is a check nobody has verified.
+
+**Fix**: both fields go to `null` together. The measured values arrive from a fetch
+that actually ran, which is what `--report-pins` and `apply-pins.mjs` now carry.
+
+**Guard**: `scripts/check-official-registry.mjs` fails when exactly one of the pair
+is recorded, and it runs in `pnpm lint` on every push.
+
+## 34 — The registry named a cross-repository cache read that cannot work
+
+The `notFetchable` entry for OpenRCA 1.0 offered, as its alternative to fetching,
+"reach it through the AgentiX-E/openrca-* shard repositories instead, which already
+cache it on a runner". Both halves of that sentence are false, and they were
+measured:
+
+```
+$ for r in openrca-{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2}; do
+    gh api /repos/AgentiX-E/$r/actions/caches --jq .total_count
+  done
+0 0 0 0 0 0
+```
+
+- **The caches do not exist.** All six shards report `total_count: 0`. Their last
+  successful `cache-dataset.yml` run was 2026-08-02, and Actions caches expire after
+  30 days of no access.
+- **And they would not have been readable anyway.** A GitHub Actions cache is scoped
+  to the repository that wrote it. `actions/cache` resolves a key against the calling
+  repository's cache scope, so a cache written by `openrca-telecom-dates-early` is
+  invisible to `rca-bench-factory` even while it exists and is fresh.
+
+The second fact is the one that matters, because it is not a matter of waiting for
+the cache to be repopulated: the mechanism was wrong, not merely empty. A round trip
+built on it would have reported "no data" — a state this project has repeatedly
+treated as meaning *the corpus is not there* rather than *we looked in the wrong
+place*.
+
+What is true is that the shards are the right place to *perform* the download: they
+already read the Google Drive folder with `gdown` and filter it by date, which is
+what makes the OpenRCA telemetry obtainable at all. What is not true is that they are
+a source this repository can read. Making them one means having them publish an
+artifact instead of populating a cache, which is a change in those repositories.
+
+**Fix**: the entry now says what was measured — that the route does not work, why it
+does not work, and what the shards are actually good for.
+
+**Guard**: there is none, and that is stated rather than implied. Cross-repository
+cache liveness is not decidable from this repository's working tree, so no local
+check can assert it; the `--check` mode in `official-data.yml` covers only the assets
+this repository fetches itself. The entry is prose that a reader has to evaluate, and
+the honest thing is to say so instead of leaving a fabricated alternative in a
+machine-readable field.
+
+## 35 — A retraction: the backoff guard was accused of a defect it did not have
+
+This finding was **withdrawn after measurement**, and it is recorded rather than
+deleted because the first version of it was written with confidence, was wrong, and
+the way it was wrong is the failure mode this document exists to catch.
+
+The observation was real. The failure path of `fetch-official.mjs` was timed rather
+than read, and it did this:
+
+```
+$ time RCA_BENCH_FETCH_BACKOFF=0 node scripts/fetch-official.mjs --anchor rcaeval-re2 \
+      --out /tmp/bo --registry /tmp/registry-probe.json
+RETRYING  probe: attempt 1/3 after 3.0s: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms
+RETRYING  probe: attempt 2/3 after 3.0s: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms
+SKIPPED   probe: attempt 3/3 after 3.0s: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms
+
+0.05s user 0.03s system 0% cpu 9.074 total
+```
+
+The connection was refused in **zero milliseconds** and the command took **9.074
+seconds**. The backoff override was set, and 6 of those seconds were spent waiting.
+
+The inference was wrong. `2 ** attempt * 1000 * BACKOFF` and
+`BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF` are **equivalent** — `0` times
+any factor is already `0`, so the ternary changed nothing and the blame was misplaced:
+
+```
+$ node -e "const B=0; const a=2; console.log(2**a*1000*B, B===0?0:2**a*1000*B)"
+0 0
+```
+
+Injecting the guard back — the check that would have caught this before the finding
+was written — turns no test red, because there is nothing to catch. The 9 seconds came
+entirely from `--retry-connrefused`, which **this pass had added to the curl
+invocation minutes earlier** (see finding 36).
+
+The method failure is worth naming precisely, because it is new to this audit. Every
+previous finding was found by running a probe and reading the number, and the rule
+that worked was "do not trust the reading of the code". This finding was produced by
+running the same kind of probe and then *attributing* the number to the nearest
+suspicious-looking code, which is the reading of the code wearing the probe's
+authority. The number was measured; the cause was assumed. The check that separates
+them is cheap and was skipped: **remove the suspected cause and see whether the number
+returns.** Restoring the ternary moved 9.074s to 9.075s, and removing
+`--retry-connrefused` moved it to 0.067s.
+
+**Fix**: the ternary is gone, as dead weight rather than as a defect, and the comment
+at that line says so and points at the real cause. The test written for this finding
+is kept, with its comment rewritten to say what it does and does not establish, since
+the property it asserts — that the override is honoured — was genuinely asserted
+nowhere before.
+
+## 36 — Two retry mechanisms multiplied, and the elapsed time measured the wrong one
+
+The same probe that produced finding 35 reported `after 3.0s` for a connection
+refused in 0 ms, and this is where the three seconds and the six seconds of waiting
+actually came from. `--retry 2` was in the original argument list, and this pass had
+added `--retry-connrefused` alongside it on the reasoning that the outer loop should
+own the retries and curl should repeat only the transport-level ones. That is exactly
+backwards. `--retry-connrefused` implies its own retry count, so a refused connection
+was attempted by curl three times and by the loop three times — nine requests for
+three reported attempts — and the elapsed time recorded curl's internal backoff as
+though it were the duration of the transfer.
+
+Measured by removal, which is the check that would have saved finding 35:
+
+| curl arguments | `BACKOFF=0`, connection refused in 0 ms |
+| --- | --- |
+| `--retry 2 --retry-connrefused` | **9.075s**, each attempt `after 3.0s` |
+| `--retry 2` | **0.063s**, each attempt `after 0.0s` |
+| neither | **0.067s**, each attempt `after 0.0s` |
+
+The middle row is the one that identifies the cause: `--retry 2` on its own does not
+retry a refused connection — curl only repeats that class when asked to — so it is
+`--retry-connrefused`, and only that flag, that produced the delay and the invented
+duration.
+
+This matters beyond the six seconds, because the elapsed time is the *entire*
+diagnostic on that line. It is the one fact that separates "the URL is not answered"
+from "the transfer started and died", and those two have opposite fixes. A number that
+measures something else is worse than no number, because it is still read as a
+measurement.
+
+**Fix**: `--retry` is dropped rather than narrowed. One curl invocation is one
+attempt, so the number on the line is the time that attempt really took. The loop
+retries and only the loop does; each attempt is now named with its number, its
+duration and curl's message, so a three-attempt failure shows whether all three burned
+the same time — which is what distinguishes a transfer dying partway from a host that
+never answered.
+
+**Guard**: two tests, and their fixture had to change for them to be worth anything.
+The first version pointed both at the fixture's socket-destroying route and passed
+with the defect injected — because that route produces curl's exit code **52**, and
+`--retry-connrefused` repeats only code **7**. A server cannot produce code 7, since
+the failure is that no server exists, so the fixture now binds a port, releases it,
+and uses the dead port as the URL. With the flag injected the two tests fail at
+9.08s each — the defect's own signature — and against the fix they pass at 1.1s
+combined. Without that fixture change the regression would have been unreachable and
+the tests would have been theatre.
+
+## 37 — `--fail` collapses every HTTP error into one exit code, so the classifier could not tell a 404 from a 500
+
+The first version of `classifyFailure` keyed on curl's exit status. Measured against
+a local server that returns each status in turn:
+
+```
+status 404 -> exit 22 | stderr: "curl: (22) The requested URL returned error: 404"
+status 500 -> exit 22 | stderr: "curl: (22) The requested URL returned error: 500"
+status 503 -> exit 22 | stderr: "curl: (22) The requested URL returned error: 503"
+```
+
+Identical exit codes. `--fail` maps the whole 4xx and 5xx range onto 22, so a
+classifier reading the code cannot separate the two failure classes an operator is
+choosing between: *the asset moved, edit the registry* and *the server is unwell,
+retry*. The only place the HTTP status appears is curl's message text.
+
+A test caught this rather than the reading, and only because the fixture serves both
+statuses. The test asserting that a 5xx is not classified as a stale URL failed with
+`curl: (22) The requested URL returned error: 500` classified as "the asset is not at
+this URL any more" — a confident instruction to edit a URL that is correct.
+
+Two further corrections came from the same round of measuring:
+
+- **`curl: (7)` is not what a mid-request reset looks like.** The fixture destroys
+  the socket, which curl reports as code **52**, "Empty reply from server". Code 7 is
+  a connection refused outright. Both mean no bytes moved and they are named
+  separately, because one means nothing is listening and the other means something is
+  listening and refusing to serve.
+- **The exit status is not spelled `exited 7`.** curl prints `curl: (7)`, so a rule
+  matching only the shell's phrasing matched nothing the real tool emits. Both
+  spellings are accepted now.
+
+**Fix**: the HTTP status is parsed out of the message and checked before the transport
+codes. `--fail` is still in place — it is what makes a 4xx an error at all — but
+nothing downstream reads its exit code as though it identified the response.
+
+**Guard**: the 404 case and the 500 case assert opposite classifications against one
+fixture, so collapsing the two fails one of them. The 500 case is the one that fails
+loudest, since it is the direction that tells an operator to edit a URL that is
+correct.
+
+## 38 — The corpus summary counted directories under the word "file"
+
+`check-official.mjs` printed one number for the corpus it read:
+
+```
+ROUNDTRIP declared 1 case(s), found 2 file(s)
+```
+
+`readTree` returned a flat `path -> text` map of files, and the line counted
+`Object.keys(files).length`. That was correct — and it was only correct because
+nothing had ever asked it to count a directory. This pass needed a directory count so
+that a corpus which extracted to the wrong depth can be told from one that never
+arrived, and adding the count to the same number is what the line's own label already
+invited: the reader is told `file(s)` and the value would have been files plus
+directories, moving whenever the archive layout changed.
+
+The two numbers answer different questions and one is not derivable from the other. A
+download that unpacked a level too deep has both, under a different root. One that
+unpacked a level too shallow has directories and no files. The existing test asserted
+`/found \d+ file/`, which matches any number and cannot distinguish the two
+implementations — so it would have passed either way.
+
+**Fix**: `readTree` returns `{ files, directories }`, and the summary names both.
+`--official-dir`'s own root is not counted, because it is the argument the caller
+passed rather than something the download produced.
+
+**Guard**: the new test asserts the exact values — `/found 2 file\(s\)/` and
+`/, 1 directory\(ies\)/` for a one-case corpus — rather than the presence of a number.
 
 ## Method
 

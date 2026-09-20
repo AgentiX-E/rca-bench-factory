@@ -158,13 +158,27 @@ function assertRcaevalMetrics(raw, entry) {
  * Binary files are skipped rather than decoded: the corpus is telemetry, the
  * scorers read text, and a `Buffer.toString()` on a PNG would hand a scorer a
  * megabyte of replacement characters to search.
+ *
+ * Directories are counted as they are walked rather than folded into the file
+ * count. The two numbers are not interchangeable and the summary reports them
+ * separately, because they answer different questions: the file count is how
+ * much telemetry arrived, and the directory count is whether the archive
+ * extracted to the depth the layout expects. A download that unpacked one level
+ * too deep has plenty of both under a different root, and one that unpacked a
+ * level too shallow has directories and no files -- so a single combined number
+ * would describe neither.
+ *
+ * `root` itself is not counted: it is the argument the caller passed, not
+ * something the download produced.
  */
 function readTree(root) {
   const files = {};
+  let directories = 0;
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) {
+        directories += 1;
         walk(path);
         continue;
       }
@@ -176,7 +190,7 @@ function readTree(root) {
     }
   };
   walk(root);
-  return files;
+  return { files, directories };
 }
 
 /**
@@ -278,7 +292,7 @@ if (!existsSync(casesPath)) {
 
 const roundTripFailures = [];
 const descriptors = JSON.parse(readFileSync(casesPath, 'utf8'));
-const files = readTree(officialDir);
+const { files, directories } = readTree(officialDir);
 const caseCount = Array.isArray(descriptors.cases) ? descriptors.cases.length : 0;
 
 if (caseCount === 0) {
@@ -304,7 +318,16 @@ for (const entry of descriptors.cases ?? []) {
 }
 if (declared.length > 0) {
   console.log(`\nROUNDTRIP corpus ${officialDir}`);
-  console.log(`ROUNDTRIP declared ${declared.length} case(s), found ${Object.keys(files).length} file(s)`);
+  // Files and directories are reported as two numbers under two labels. An
+  // earlier version printed one directory count under the word "file", so the
+  // line an operator compares between runs was describing two different things
+  // depending on the corpus's shape. Counting a directory as a file is the kind
+  // of wrong that never fails a test -- it made a shrunk corpus look bigger --
+  // so the two are now named for what they are.
+  console.log(
+    `ROUNDTRIP declared ${declared.length} case(s), found ${Object.keys(files).length} file(s), ` +
+      `${directories} directory(ies)`,
+  );
 }
 
 let roundTripped = 0;

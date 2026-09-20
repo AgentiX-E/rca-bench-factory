@@ -83,6 +83,12 @@ jobs:
       - name: Report free disk before the fetch
         run: df -h /tmp
 
+      # The measurement is written to a file rather than left in the log.
+      #
+      # A digest that only exists in a log has to be read out by a human and
+      # retyped into the registry, and a mistyped hex digit there does not fail
+      # loudly -- it makes every later run report a mismatch against a good
+      # download. This makes the measurement data.
       - name: Fetch the corpus outside the working tree
         id: fetch
         env:
@@ -90,16 +96,62 @@ jobs:
         run: |
           set -eu
           echo "anchor=${ANCHOR}" >> "$GITHUB_OUTPUT"
-          node scripts/fetch-official.mjs --anchor "$ANCHOR" --out /tmp/official
+          # A per-asset timeout, because the script's own bound is per attempt
+          # and an anchor has several assets: three assets x three attempts x
+          # 900s is 2h15m of curl, which fits inside the job's 90 minutes only
+          # because the job kills it -- and a job killed by its own timeout
+          # reports no measurement and no reason.
+          #
+          # The exit status is captured rather than propagated, so the failure is
+          # summarised into the step summary and the log *stays readable*: the
+          # reason a 12-minute fetch failed was the one thing the first real run
+          # did not record, and it took a re-run to find out.
+          status=0
+          timeout 3000 node scripts/fetch-official.mjs \
+            --anchor "$ANCHOR" --out /tmp/official --report-pins /tmp/pins.json || status=$?
+          {
+            echo "### Fetch outcome"
+            echo
+            if [ "$status" -eq 124 ]; then
+              echo "**Timed out** after 50 minutes (the workflow's own per-asset bound). No measurements."
+            elif [ "$status" -eq 0 ]; then
+              echo "All assets for \`${ANCHOR}\` fetched."
+            else
+              echo "**Failed** with exit status ${status}. The per-asset reason is in the log above, one \`SKIPPED\` line per asset."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
-      # The asset registry starts with no digest recorded, so the first run
-      # prints the measured values rather than verifying them. This step surfaces
-      # the difference: once a digest is pinned, a substituted or truncated
-      # download fails here instead of flowing into the round trip.
-      - name: Report which assets are still unpinned
+      # Whether the registry's pins agree with what was just downloaded, and
+      # whether it has any at all.
+      #
+      # `--check` writes nothing on purpose. A runner that could edit the
+      # registry would let an unreviewed change reach `master`, and the whole
+      # point of pinning is that a human looks at the number once. So this job
+      # *reports* the drift and the pinning itself is a reviewed commit.
+      #
+      # `continue-on-error` is deliberately not used here. This step does not
+      # fail the job because it *reports* rather than asserts, and the difference
+      # is the `if`: a mismatch is a finding about the registry's state on the
+      # first run, so it is surfaced as a warning and the round trip continues to
+      # the assertion that actually matters. Nothing is being swallowed -- the
+      # pin disagreement is printed in full and repeated in the summary.
+      - name: Compare the measured pins against the registry
+        if: always()
         run: |
-          set -eu
+          set -u
           node scripts/fetch-official.mjs --list
+          echo
+          if [ ! -f /tmp/pins.json ]; then
+            echo "no pin report was written; the fetch did not complete"
+            exit 0
+          fi
+          if node scripts/apply-pins.mjs --report /tmp/pins.json --check; then
+            echo "registry pins agree with this download"
+          else
+            echo
+            echo "::warning title=Unpinned or drifted assets::The registry does not record these measured digests. Merge /tmp/pins.json into golden-master/official-assets.json in a reviewed commit; the values are in the run summary."
+          fi
 
       # The descriptors are derived from the download, never committed.
       #
@@ -121,14 +173,49 @@ jobs:
         if: always()
         run: df -h /tmp
 
-      # The archive is 19 GB and dies with the runner; the descriptor file is the
-      # one artefact worth keeping, because it is what a future run is compared
-      # against when a corpus changes under us.
-      - name: Upload the derived descriptors
+      # Two artefacts, and they are different kinds of thing:
+      #
+      #  - the descriptor file is what a future run is compared against when a
+      #    corpus changes under us;
+      #  - the pins file is the measurement that gets merged into the registry.
+      #
+      # Neither is corpus data. The 19 GB archive dies with the runner.
+      - name: Upload the derived descriptors and the measured pins
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rcaeval-cases-${{ steps.fetch.outputs.anchor || 'rcaeval-re2' }}
-          path: /tmp/rcaeval-cases.json
+          name: rcaeval-${{ steps.fetch.outputs.anchor || 'rcaeval-re2' }}-round-trip
+          path: |
+            /tmp/rcaeval-cases.json
+            /tmp/pins.json
           if-no-files-found: warn
           retention-days: 30
+
+      # The measured digests go in the run summary, so closing the loop does not
+      # require downloading an artefact and reading JSON by eye.
+      - name: Summarise the measured pins
+        if: always()
+        run: |
+          set -eu
+          if [ ! -f /tmp/pins.json ]; then
+            echo "### No pin report" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "The fetch produced no measurements, so there is nothing to pin. The job log above says why." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Measured pins"
+            echo
+            echo "Merge these into \`golden-master/official-assets.json\` in a reviewed commit;"
+            echo "\`scripts/apply-pins.mjs --report /tmp/pins.json\` writes exactly these two fields."
+            echo
+            echo "| asset | bytes | sha256 |"
+            echo "| --- | --- | --- |"
+            node -e '
+              const r = require("/tmp/pins.json");
+              for (const a of r.assets) {
+                console.log(`| ${a.id} | ${a.bytes} | \`${a.sha256}\` |`);
+              }
+              if (r.assets.length === 0) console.log("| _(none measured)_ | | |");
+            '
+          } >> "$GITHUB_STEP_SUMMARY"

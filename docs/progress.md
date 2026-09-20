@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean; 1818 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean (4 guards); 1930 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
@@ -220,8 +220,46 @@ pass 2 and re-run, and on re-run both were caught — 6 and 4 failures. Across
 five passes the mis-rejection count is 6 of 48, and pass 5 is the first pass
 where **all twelve** reached the test run on the final wording.
 
-## L4 anchor status
+### Injection matrix, pass 6
 
+Five injections — three defects, one withdrawn finding, one negative control:
+
+| Injection | Tests that fail |
+| --- | --- |
+| `--retry-connrefused` re-added to the curl argv | 2 (both at 9.08s, the defect's signature) |
+| the HTTP status read collapsed (`const http = null`) | 2 (the 404 case and the 500 case) |
+| directories folded into the file count in the summary | 1 |
+| the `BACKOFF === 0 ? 0 : …` ternary restored | **0 — provably a no-op, see below** |
+| NEGATIVE CONTROL — comment edit in `fetch-official.mjs` | 0 (stays green) |
+
+5 failing assertions across 3 injections, **1 negative control green, 0 silent
+defects**, and one injection that is green because there is no defect to catch.
+
+The withdrawn row is the pass. `BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF`
+was recorded in the audit as a defect that silently restored the full backoff when
+the override was set to zero. It does not: `0` times any factor is already `0`, so
+the ternary and the plain product are equivalent, and restoring it left the measured
+time unchanged at 9.074s → 9.075s. The nine seconds came from `--retry-connrefused`
+in the curl argv, which this pass had added itself minutes earlier.
+
+What made the difference is the check that was skipped once and used for everything
+else: **remove the suspected cause and see whether the number returns.** Removing the
+flag moved 9.075s to 0.067s; restoring the ternary moved nothing. The first version of
+the finding was produced by measuring the number honestly and then attributing it to
+the nearest suspicious-looking code, which is a reading of the source borrowing a
+probe's authority. Both that finding and the test written for it were corrected rather
+than deleted, because a test whose comment claims it fails without a fix that does not
+exist is worse than the missing guard it replaced.
+
+Both failing-injection tests initially passed *with the flag injected*, and the reason
+is worth carrying forward: they pointed at the fixture's socket-destroying route,
+which produces curl's exit code **52**, while `--retry-connrefused` repeats only code
+**7** — and a server cannot produce code 7, because the failure is that no server
+exists. The fixture now binds a port, releases it, and uses the dead port. A guard
+whose fixture cannot reach the defect is not a guard, and green from it is the exact
+failure mode this whole document is about.
+
+## L4 anchor status
 Four anchors, each strictly stronger than the one before:
 
 | # | Anchor | Status |
@@ -229,7 +267,7 @@ Four anchors, each strictly stronger than the one before:
 | 1 | Golden Master — exporters byte-stable against committed anchors | **met** (`pnpm golden-master` / 6 OpenRCA + 4 RCAEval files) |
 | 2 | Mutation suite — declared facets sensitive, undeclared inert | **met** (`pnpm mutation`, 26 cases) |
 | 3 | Official-metric regression — `oraclePerfect ∧ mutationsDegrade ∧ unscoredFacetsInert` | **met** (`pnpm official:check`, 8 targets scored, 1 skipped by contract) |
-| 4 | Official-data round trip — ingest → export → official, label-blind | **met, pending a real-corpus run** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`) |
+| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the first real run failed and its reason is not yet measured** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`) |
 
 Anchor 4 is the one that would detect a misunderstanding shared by our exporter
 and our scorer. Anchors 1–3 all begin from a bundle this repository authored, so
@@ -240,6 +278,23 @@ The path is built, the wiring is gated on every push, and the number has **not**
 been reproduced on real telemetry: the corpus is 19 GB and this session's
 sandbox has no route to Zenodo. Say so plainly rather than implying the anchor is
 closed.
+
+The first attempt on a real runner is recorded and it failed. `official-data.yml`
+run #35480663989 completed as `failure`, with the fetch step dying after 12.35
+minutes and the three steps that would have produced the descriptors, the pins
+and the score all skipped. That is one step further than "not attempted" and it
+is still not "reproduced": no number was produced, no digest was measured, and
+the reason for the failure was not readable from this session (the job log
+redirects to a host outside the egress allowlist). The timing is the only
+evidence it yielded, and it rules out the one explanation that would have been
+cheap — a URL that does not exist fails in seconds, and this took twelve minutes.
+
+What that run did change is the diagnostics, because a failure whose reason takes
+a second run to discover is a failure that will not get diagnosed. The fetch now
+prints each attempt with its number, its measured duration and a classified
+reason; it no longer lets two retry mechanisms both fire and report curl's
+internal backoff as the transfer's duration; and the workflow writes the outcome
+to the step summary. Re-running it is the next step and it has not been done.
 
 What is established:
 
@@ -252,8 +307,10 @@ What is established:
 - The three run end to end on a synthetic corpus in the official layout, and the
   result scores 1.00 (`anchor-roundtrip.yml`).
 
-What is not: a run against `RE1-OB`, `RE2-TT` and the rest. Until that happens
-this anchor is *executable*, not *reproduced*, and the two are not the same claim.
+What is not: a *successful* run against `RE1-OB`, `RE2-TT` and the rest. Until
+that happens this anchor is *executable*, not *reproduced*, and the two are not
+the same claim. One failed attempt does not narrow the gap between them — it
+documents where the attempt stopped.
 
 `golden-master/fetch-and-verify.sh` is superseded by `scripts/fetch-official.mjs`
 and is kept only because the Golden Master verifies it byte-for-byte; every
@@ -284,6 +341,76 @@ document that described it as downloading the data was describing an intention.
 
 ## Open
 
+- **The first real-corpus run failed at the fetch, and the run itself is why the
+  diagnostics exist.** `official-data.yml` run
+  [#35480663989](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35480663989)
+  (`98fdf601`, the revision *before* this pass) completed as `failure` with
+  `Fetch the corpus outside the working tree` failing after **12.35 minutes**. The
+  three steps after it were skipped, so no descriptor file and no pin report were
+  produced, and the artifact upload that reported `success` uploaded nothing —
+  `if-no-files-found: warn` makes "nothing to upload" a passing state, which is
+  another place where a green step establishes less than it appears to.
+
+  The failure reason is **not known**, and that is recorded rather than guessed.
+  `GET /repos/.../actions/jobs/{id}/logs` answers 302 to
+  `productionresultssa7.blob.core.windows.net`, which this session's sandbox cannot
+  reach (`curl exit 35`, TLS handshake, same as `zenodo.org`), so the job log was
+  never read. What the run *did* establish is the timing, and the timing is
+  diagnostic: 12.35 minutes is not what an absent URL looks like. A 404 fails in
+  seconds, so the transfer started and something stopped it. Three candidates are
+  consistent with that and none is confirmed — Zenodo rate-limiting under four
+  concurrent downloads (this pass's own dispatch bug, see below), disk exhaustion
+  before the job's `df -h` check ran, or the `--max-time 900` ceiling being reached
+  per attempt. Note that the run used `98fdf601`, so it exercised none of the
+  fixes below.
+
+  What this pass did about it is not a fix to the cause, because the cause is
+  unmeasured. It is the removal of the reason the cause was unmeasurable: the
+  fetch now names each attempt, its duration and a classified reason, and the
+  workflow writes the outcome to the step summary, so a re-run reports what
+  happened instead of requiring another round trip to find out. The re-run is the
+  next step and it has not been done.
+
+- **The dispatch was fired four times.** `POST .../actions/workflows/{id}/dispatches`
+  returns **204 No Content** on success, and the ad-hoc API helper this session
+  uses retries until it gets a non-empty body. An empty 204 from a *successful*
+  dispatch is indistinguishable from an empty response from a *failed* request, so
+  the retry loop fired the workflow once per attempt. Three of the four runs were
+  cancelled; the fourth is the failure above. Four concurrent jobs each pulling
+  several gigabytes from Zenodo is itself a plausible cause of a rate-limited
+  fetch, which makes this a bug that may have manufactured the failure it was then
+  used to diagnose. The helper needs to treat a non-idempotent POST as
+  fire-once-and-verify-by-reading, which is a change to the session tooling rather
+  than to this repository.
+
+- **Anchor 4 is closed for the three RCAEval anchors only, and only once a
+  real-corpus run has been recorded.** The 11 fetchable assets cover
+  `rcaeval-re1`, `rcaeval-re2` and `rcaeval-re3`. The other six score targets —
+  both OpenRCA targets, RCA100, AIOps2025, Cloud-OpsBench and ITBench — have no
+  automated fetch, so for those targets the fourth anchor still rests on the
+  synthetic path in `anchor-roundtrip.yml` and nothing more. That is a smaller
+  claim than "the fourth anchor is closed" and it is the accurate one.
+- **The OpenRCA shard-cache route does not work, and the registry said it did.**
+  `golden-master/official-assets.json` used to give, as the alternative for
+  OpenRCA 1.0, "reach it through the AgentiX-E/openrca-* shard repositories...
+  which already cache it on a runner". Measured on 2026-09-20:
+  - all six shard repositories (`{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2}`)
+    report `total_count: 0` from `/actions/caches`. Their last successful
+    `cache-dataset.yml` run was 2026-08-02, and Actions caches expire after 30
+    days by default.
+  - independently of the expiry, a GitHub Actions cache is **scoped to the
+    repository that wrote it**. `actions/cache` in this repository looks up keys
+    in *this* repository's cache scope, so a shard's cache would not be readable
+    from here even while it existed.
+
+  The correction matters because the false version was actionable in the wrong
+  direction: it named a read that would silently find nothing, and a round trip
+  built on it would have reported "no data" rather than "wrong mechanism". The
+  registry now states what the shards are actually good for — they are the right
+  place to perform the download — and what they are not, which is a source this
+  repository can read. Making them a source means having them publish an artifact
+  instead of populating a cache, which is a change in those repositories and is
+  not done.
 - **Anchor 4** is closed by `official-data.yml`, which fetches the corpora on a
   runner. Two claims here were wrong and are retracted in the audit:
   - *"It needs official data mounted by the operator."* A GitHub runner has

@@ -133,6 +133,17 @@ let origin = '';
 let hits = 0;
 /** Set by the archive tests; `undefined` makes `/corpus.zip` 404. */
 let serveZip: Buffer | undefined;
+/**
+ * A port on loopback with nothing listening.
+ *
+ * Needed because curl's exit code 7 — "Failed to connect", the code
+ * `--retry-connrefused` exists to repeat — cannot be produced by a server. The
+ * failure *is* that no server is there, so the only fixture that reaches it is a
+ * port that was bound and then released. Without this the tests only ever see
+ * code 52 (a socket that closed mid-request), which `--retry-connrefused` does
+ * not repeat — so a regression that re-added the flag would pass every test.
+ */
+let deadPort = 0;
 
 /**
  * Build a real zip archive in memory.
@@ -220,6 +231,23 @@ beforeAll(async () => {
       res.writeHead(500).end('no');
       return;
     }
+    // A path that answers 404, so the "the URL is stale" classification is
+    // reachable. It is a different failure class from the 500 above: a 500 may
+    // be transient and is worth retrying, and a 404 will not become a 200 no
+    // matter how many times it is asked. The two call for different responses,
+    // so the route has to exist for the difference to be observable.
+    if (req.url === '/stale') {
+      res.writeHead(404).end('no');
+      return;
+    }
+    // A path that is refused rather than answered. Closing the socket without a
+    // response is what a host with nothing listening looks like from curl's
+    // side, and it is the only way to reach the "nothing was transferred"
+    // classification over loopback.
+    if (req.url === '/refused') {
+      req.socket.destroy();
+      return;
+    }
     if (req.url === '/corpus.zip') {
       if (serveZip === undefined) {
         res.writeHead(404).end('no');
@@ -232,6 +260,17 @@ beforeAll(async () => {
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  // Bind a port and release it, so `deadPort` is a real ephemeral port with a
+  // real absence behind it. Asking the kernel for a fresh one is what makes this
+  // reliable: a hardcoded port could be answered by something else on the host,
+  // and then the test would assert about a connection that succeeded.
+  deadPort = await new Promise<number>((done) => {
+    const probe = createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const port = (probe.address() as AddressInfo).port;
+      probe.close(() => done(port));
+    });
+  });
 });
 
 afterAll(() => {
@@ -409,6 +448,157 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     expect(result.stderr).not.toMatch(/at Object\./);
   }, 60_000);
 
+  /**
+   * A failed fetch has to say enough to act on.
+   *
+   * The first real run of this path failed twelve minutes in and printed one
+   * line. Twelve minutes is the diagnostic that mattered and it was not in the
+   * output: a URL that does not exist fails in seconds, so a failure that took
+   * minutes is a transfer that started. Without the elapsed time, "the host
+   * refused the connection" and "the transfer died partway" produce the same
+   * message -- and they call for opposite responses, since one means the URL is
+   * wrong and the other means the URL is right and something else is not.
+   */
+  it('names the attempt number on each retry, so a three-attempt failure is legible', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(1);
+    // Three attempts, and the two that were followed by a retry say so.
+    const retrying = result.stdout.split('\n').filter((l) => l.startsWith('RETRYING'));
+    expect(retrying).toHaveLength(2);
+    expect(retrying[0]).toMatch(/attempt 1\/3/);
+    expect(retrying[1]).toMatch(/attempt 2\/3/);
+    expect(result.stdout).toMatch(/SKIPPED .*attempt 3\/3/);
+  }, 60_000);
+
+  it('reports how long each failed attempt took', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    // A duration, not a bare "failed". The unit is asserted because a raw
+    // millisecond count is a number an operator has to divide by 60000 in their
+    // head, which is the transcription problem in miniature.
+    expect(result.stdout).toMatch(/after \d+(\.\d+)?s|after \d+m \d+s/);
+  }, 60_000);
+
+  it('classifies the failure, so the log says what to change and not only what happened', async () => {
+    // A connection that ends without a response is its own class: nothing was
+    // transferred, so the question is reachability and not size or duration. A
+    // 404 is a different one: the URL is stale and the registry needs the new
+    // one. Both are "the download failed" and they are not the same message.
+    //
+    // The fixture destroys the socket, which curl reports as code 52 "Empty
+    // reply from server" -- not code 7, which is what "connection refused"
+    // looks like when nothing is listening at all. Both mean no bytes moved;
+    // they are named separately because the fixes differ.
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/refused` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toMatch(/Nothing was\s+transferred|connection was refused/);
+    expect(result.stdout).toMatch(/nothing was transferred|Nothing was\s+transferred|nothing before closing/i);
+  }, 60_000);
+
+  it('classifies a 404 as a stale URL rather than a transport failure', async () => {
+    // The distinction matters because a 404 will not become a 200 on a retry, so
+    // the fix is a registry edit and not a re-run -- and a log that reports both
+    // as "the download failed" sends the operator to the wrong one.
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/stale` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toMatch(/answered 404|not at this URL/);
+    expect(result.stdout).not.toMatch(/nothing was transferred/);
+    expect(result.stdout).not.toMatch(/upstream is/);
+  }, 60_000);
+
+  it('classifies a 500 as the upstream being unwell, and not as a stale URL', async () => {
+    // The counterexample to the test above, and the reason both routes exist.
+    // A retry can legitimately fix a 5xx, so it must not be classified as "the
+    // registry needs a new URL" -- that would send an operator to edit a URL
+    // that is correct.
+    //
+    // This is also the case that rules out keying the entire classification on
+    // curl's exit status: `--fail` exits 22 for a 404 and a 500 alike, so the
+    // only thing that separates them is the status number in curl's message.
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toMatch(/answered 500/);
+    expect(result.stdout).toMatch(/a retry can\s+legitimately fix|upstream is/);
+    expect(result.stdout).not.toMatch(/not at this URL/);
+  }, 60_000);
+
+  /**
+   * The timeout override has to actually override.
+   *
+   * This test was written to catch a defect that turned out not to exist. The
+   * reasoning was that `BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF`
+   * silently restored the default because the branch "overrode" the zero case --
+   * and `0` times any factor is already `0`, so the branch and the plain product
+   * are equivalent. Injecting the guard back turns nothing red, which is the
+   * measurement that settled it.
+   *
+   * The six seconds the suite was actually losing came from `--retry-connrefused`
+   * on the curl invocation, which made one reported attempt three requests and
+   * one reported duration curl's internal backoff. That is what the neighbouring
+   * test pins.
+   *
+   * The test is kept because the property it asserts is real and was previously
+   * asserted nowhere: the override is honoured, so a failing fetch finishes in
+   * the time it takes to start three processes. It is a weaker guard than it was
+   * believed to be, and saying so here is better than leaving a comment that
+   * claims it fails without a fix that does not exist.
+   */
+  it('honours a zero backoff instead of falling back to the default delay', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `http://127.0.0.1:${deadPort}/nothing.csv` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const startedAt = Date.now();
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    const elapsed = Date.now() - startedAt;
+    expect(result.status).toBe(1);
+    // Three attempts with no waiting. The default would be 2s + 4s of sleeping
+    // on top of the process spawns, so anything above a second means the
+    // override was ignored.
+    expect(elapsed).toBeLessThan(2000);
+  }, 30_000);
+
+  /**
+   * One curl invocation is one attempt, and the elapsed time is a measurement.
+   *
+   * `--retry-connrefused` alongside `--retry 2` made curl retry inside the
+   * attempt, so a refused connection was reported as "after 3.0s" -- three
+   * requests, one line, and a duration that described curl's internal backoff
+   * rather than the transfer. The elapsed time is the entire diagnostic on this
+   * line: it is what separates "the URL is not answered" from "the transfer
+   * started and died". A number that measures something else is worse than no
+   * number, because it is read as one.
+   *
+   * `deadPort` rather than `/refused`, and that distinction is the whole test.
+   * The defect lives on curl's exit code **7**, which is the only code
+   * `--retry-connrefused` repeats -- and a server cannot produce code 7, because
+   * the failure is that no server exists. The first version of this test used
+   * the socket-destroying route, which yields code **52**, so it passed with the
+   * defect injected. Closing a real port is what makes the regression reachable.
+   */
+  it('reports an attempt duration that is the attempt, not curl retrying inside it', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `http://127.0.0.1:${deadPort}/nothing.csv` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(1);
+    // The identity of the failure is asserted first: without this the duration
+    // assertion below could pass against a completely different error.
+    expect(result.stdout).toMatch(/curl: \(7\)|connection was refused/);
+    const durations = [...result.stdout.matchAll(/after (\d+(?:\.\d+)?)s/g)].map((m) => Number(m[1]));
+    expect(durations).toHaveLength(3);
+    // The port is closed, so each attempt fails in milliseconds. Three seconds is
+    // what curl's own retry produced, so anything near it means the inner retry
+    // is back.
+    for (const seconds of durations) expect(seconds).toBeLessThan(2);
+  }, 30_000);
+
   // Extraction is decided by the URL, not by the download succeeding. Running
   // `unzip` over a verified `.csv` failed with "End-of-central-directory
   // signature not found" -- a message about zip internals for an asset that had
@@ -424,6 +614,70 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
 
   // The archive path itself. A `.zip` URL is unpacked and the archive removed,
   // so the ingest sees the extracted tree and the job does not hold both copies.
+  // The pin has to get *into* the registry, and until now it did not: the script
+  // printed the measured digest and a human read it out of the CI log and edited
+  // the JSON. That is a transcription step, and a transcription step is exactly
+  // what this whole path exists to remove -- the digest is the one number that
+  // decides whether a future download is the same bytes, and it would have been
+  // the one number nobody machine-checked.
+  it('writes the measured digests to a report file when asked, and pins nothing by itself', async () => {
+    const registry = writeFixtureRegistry(scratch);
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const report = join(mkdtempSync(join(tmpdir(), 'rca-bench-report-')), 'pins.json');
+    const result = await runScriptAsync([
+      '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
+    ]);
+    expect(result.status).toBe(0);
+
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.schema).toBe('rca-bench-official-pins/1');
+    expect(written.assets).toHaveLength(1);
+    expect(written.assets[0]).toMatchObject({
+      id: 'fixture-asset',
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+
+    // Writing a report is not pinning. The registry on disk is untouched, so a
+    // report cannot silently become the thing future runs verify against.
+    const reread = JSON.parse(readFileSync(registry, 'utf8'));
+    expect(reread.assets[0].sha256).toBeNull();
+  });
+
+  // A digest measured from a download that then failed to extract, or from an
+  // asset that was never reached, is not a digest of anything usable. Reporting
+  // it would put a number in the registry that the next run would "verify".
+  it('omits an unreachable asset from the report rather than reporting a partial one', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const report = join(mkdtempSync(join(tmpdir(), 'rca-bench-report-')), 'pins.json');
+    const result = await runScriptAsync([
+      '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
+    ]);
+    expect(result.status).toBe(1);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.assets).toHaveLength(0);
+  }, 60_000);
+
+  // An archive's digest is of the archive. Once extracted, the archive is
+  // removed -- so the report has to be written from the measurement taken
+  // before extraction, or the value would describe a file that no longer exists
+  // and could not be re-verified.
+  it('reports the digest of an archive, taken before it is unpacked and deleted', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/corpus.zip`, id: 'fixture-zip' });
+    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const report = join(mkdtempSync(join(tmpdir(), 'rca-bench-report-')), 'pins.json');
+    const result = await runScriptAsync([
+      '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
+    ]);
+    expect(result.status).toBe(0);
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.assets[0].id).toBe('fixture-zip');
+    expect(written.assets[0].bytes).toBe(ZIP.length);
+    expect(written.assets[0].sha256).toBe(createHash('sha256').update(ZIP).digest('hex'));
+    expect(existsSync(join(out, 'fixture-zip.zip'))).toBe(false);
+  });
+
   it('unpacks an archive and removes it, leaving the extracted tree', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/corpus.zip`, id: 'fixture-zip' });
     const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));

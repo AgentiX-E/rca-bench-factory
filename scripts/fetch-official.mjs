@@ -22,8 +22,15 @@
  *   3. **A missing corpus is not a crash.** The round trip is opt-in; an
  *      unreachable upstream is reported as a legible state with the reason, not
  *      as a stack trace.
+ *   4. **The measurement is machine-readable.** `--report-pins` writes the
+ *      measured digests to a file. Without it the digest was printed and a human
+ *      read it out of a CI log and typed it into the registry -- a transcription
+ *      step, in the one place where the whole design is about not transcribing.
+ *      Writing a report is *not* pinning: the registry is never modified here,
+ *      so a report cannot silently become the thing future runs verify against.
  *
  *   node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official
+ *   node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official --report-pins /tmp/pins.json
  *   node scripts/fetch-official.mjs --list
  */
 
@@ -125,21 +132,145 @@ function sleep(ms) {
   });
 }
 
-/** `curl` over `fetch`: it streams to disk and honours redirects without buffering. */
+/** A duration a human reads in a log line: `12m 21s`, `0.4s`, `900s`. */
+function formatDuration(ms) {
+  const seconds = ms / 1000;
+  if (seconds < 1) return `${seconds.toFixed(1)}s`;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+/**
+ * Turn a failed attempt into the one sentence that says what to change.
+ *
+ * Deliberately a classification and not a guess at the cause. It reads two
+ * things that were measured -- how long the attempt took and what curl said --
+ * and names the failure class, because the alternative in the first real run was
+ * a log that was accurate and useless.
+ *
+ * ## Why this reads curl's message and not curl's exit code
+ *
+ * curl's exit status is read out of its own message, because `--fail` collapses
+ * every HTTP error into one number: a 404, a 500 and a 503 all exit 22. Measured
+ * against a local server, the three produce the identical exit code and differ
+ * only in the status text -- `curl: (22) The requested URL returned error: 404`.
+ * So a rule keyed on the exit code cannot tell "the URL is stale, edit the
+ * registry" from "the server is unwell, retry", and those are the two responses
+ * an operator is choosing between. The HTTP status is the discriminator, and the
+ * only place it appears is the message.
+ *
+ * The transport codes (`6`, `7`, `28`, `35`) are genuine exit codes and are read
+ * the same way, accepting both spellings -- `curl: (7)` as curl prints it and
+ * `exited 7` as a shell would report it.
+ */
+function classifyFailure(message, elapsedMs) {
+  const transport = /exited (\d+)|curl: \((\d+)\)/.exec(message);
+  const code = transport === null ? undefined : Number(transport[1] ?? transport[2]);
+  const http = /returned error:\s*(\d{3})/.exec(message);
+  const status = http === null ? undefined : Number(http[1]);
+
+  // The HTTP status first, since `--fail` overwrites the transport code for
+  // every response the server actually produced.
+  if (status !== undefined && status >= 400 && status < 500) {
+    return (
+      `the server answered ${status}. The asset is not at this URL any more, and no amount of ` +
+      `retrying will change that -- the registry needs the current URL.`
+    );
+  }
+  if (status !== undefined && status >= 500) {
+    return (
+      `the server answered ${status}, which is a server-side failure and the one class a retry can ` +
+      `legitimately fix. The URL is not the problem; the upstream is.`
+    );
+  }
+
+  if (code === 28) {
+    return (
+      `the --max-time ceiling was reached, so this is a transfer that stalled rather than a host ` +
+      `that is unreachable. Raise --max-time only if the link is known to be merely slow.`
+    );
+  }
+  if (code === 6 || /Could not resolve|Name or service not known/i.test(message)) {
+    return `DNS did not resolve. The runner reached the internet and the name did not resolve to it.`;
+  }
+  if (code === 7 || /Could not connect|Connection refused/i.test(message)) {
+    return (
+      `the connection was refused, so nothing was transferred. This is a reachability failure: the ` +
+      `URL is not being answered, not a transfer that was cut short.`
+    );
+  }
+  if (code === 52 || /Empty reply from server/i.test(message)) {
+    return (
+      `the server accepted the connection and sent nothing before closing it. Nothing was ` +
+      `transferred, so this is the far end refusing to serve rather than a transfer cut short -- ` +
+      `with curl's own retries gone, code 52 is what a host that resets mid-request looks like.`
+    );
+  }
+  if (code === 35 || /SSL|TLS/i.test(message)) {
+    return `the TLS handshake failed, so no bytes moved. This is a policy or interception failure, not a data one.`;
+  }
+  if (elapsedMs > 60_000) {
+    return (
+      `the attempt ran ${formatDuration(elapsedMs)} before failing. Bytes were moving, so this is a ` +
+        `transfer that was cut short -- a size or duration limit, or a host that throttles -- not a dead URL.`
+    );
+  }
+  return `the attempt failed early and curl's message names a transport error; see the line above.`;
+}
+
+/**
+ * `curl` over `fetch`: it streams to disk and honours redirects without buffering.
+ *
+ * ## Why every attempt is timed, and why the timing is printed
+ *
+ * The first real run of this path failed twelve minutes into the fetch and said
+ * only `SKIPPED <asset>: <one line>`. Twelve minutes is the diagnostic that
+ * mattered and it was not in the output: a URL that does not exist fails in
+ * seconds, so anything that takes minutes is a transfer that *started*. Without
+ * the elapsed time the failure reads the same whether the host refused the
+ * connection (nothing was ever there) or the transfer died partway (the URL was
+ * fine and the network or the size limit was not) -- two different problems with
+ * two different fixes, one indistinguishable message.
+ *
+ * So each attempt is timed and the time is printed on failure. This costs one
+ * `Date.now()` and it is the difference between a report an operator can act on
+ * and one that only says "it did not work".
+ *
+ * ## Why `--retry` is not doing the retrying
+ *
+ * `--retry 2` was here first, and it retries *inside* curl where nothing is
+ * recorded: a failure that curl absorbed and then succeeded on is invisible, and
+ * one that exhausted the retries reports a single line. The attempt loop below
+ * is the retry that counts, because it can name the attempt, the elapsed time
+ * and the exit status.
+ *
+ * So `--retry` is dropped entirely rather than narrowed. It was narrowed to
+ * `--retry-connrefused` first, on the reasoning that the outer loop should own
+ * the retries and curl should only repeat the transport-level ones -- and that
+ * made both bugs below. `--retry-connrefused` *also* implies a retry count, so
+ * an attempt that could not connect was tried three times by curl and once by
+ * the loop: nine requests for three reported attempts, and every attempt
+ * measured three seconds for a connection that was refused in zero milliseconds.
+ * The elapsed time is the whole diagnostic, and it was reporting curl's retries
+ * as though they were the transfer's duration.
+ *
+ * One curl invocation is now one attempt, so the number on the line is the time
+ * that attempt really took. The loop retries, and only the loop does.
+ */
 async function download(url, destination) {
-  return run('curl', [
+  const startedAt = Date.now();
+  const result = await run('curl', [
     '--fail',
     '--location',
     '--silent',
     '--show-error',
-    '--retry',
-    '2',
     '--max-time',
     '900',
     '-o',
     destination,
     url,
   ]);
+  return { ...result, elapsedMs: Date.now() - startedAt };
 }
 
 function sha256Of(path) {
@@ -157,23 +288,49 @@ function sha256Of(path) {
 async function fetchAsset(asset, outDir) {
   const destination = resolve(outDir, `${asset.id}${isArchive(asset.url) ? '.zip' : ''}`);
   let lastError = '';
+  let lastElapsedMs = 0;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    const { code, stderr } = await download(asset.url, destination);
+    const { code, stderr, elapsedMs } = await download(asset.url, destination);
+    lastElapsedMs = elapsedMs;
     if (code === 0) {
       lastError = '';
       break;
     }
-    lastError = stderr.split('\n').find((line) => line.trim() !== '') ?? `curl exited ${code}`;
+    const detail = stderr.split('\n').find((line) => line.trim() !== '') ?? `curl exited ${code}`;
+    // The attempt number and its duration, on every attempt rather than only
+    // the last. An operator reading a three-attempt failure needs to see that
+    // all three burned the same twelve minutes -- that is what says the transfer
+    // is dying partway each time rather than the host refusing -- and a summary
+    // printed once at the end cannot express it.
+    lastError = `attempt ${attempt}/${MAX_ATTEMPTS} after ${formatDuration(elapsedMs)}: ${detail}`;
     if (attempt < MAX_ATTEMPTS) {
+      console.log(`RETRYING  ${asset.id}: ${lastError}`);
       // 2s, 4s by default. Long enough to clear a rate-limit window, short
       // enough that a genuinely dead host does not stall the job.
-      await sleep(BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF);
+      //
+      // This was `BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF` and is now
+      // the plain product. The two are equivalent -- `0` times any factor is
+      // already `0` -- so the guard was dead weight rather than a defect, and it
+      // was removed after being wrongly accused of one. The measured 9-second
+      // delay against a connection refused in zero milliseconds came from
+      // `--retry-connrefused` inside curl, not from here; see the note on
+      // `download` above. Recording the correction because the first version of
+      // the audit blamed this line, and a guard that is blamed for a bug it did
+      // not cause is a guard the next reader will not trust for the right reason.
+      await sleep(2 ** attempt * 1000 * BACKOFF);
     }
   }
 
   if (lastError !== '') {
     console.log(`SKIPPED   ${asset.id}: ${lastError}`);
+    // The failure class is the one fact the per-attempt lines do not carry, and
+    // it is the one that decides what to do next. Twelve minutes spent failing
+    // to *connect* means the host is unreachable from the runner; twelve minutes
+    // spent mid-transfer means the bytes were available and something stopped
+    // them. Both are reported here so the log answers "what should I change?"
+    // rather than only "what happened?".
+    console.log(`          ${asset.id}: ${classifyFailure(lastError, lastElapsedMs)}`);
     return { status: 'skipped', asset, reason: lastError };
   }
 
@@ -270,6 +427,43 @@ for (const asset of selected) {
 }
 
 const skipped = results.filter((r) => r.status === 'skipped');
+
+/**
+ * Write the measured digests, if asked.
+ *
+ * Runs before the exit code is decided, so a partial run still reports what it
+ * did measure -- and reports *only* that. `results` excludes a skipped asset
+ * entirely rather than including it with a null digest, because a null in this
+ * file would be read as "pin this to nothing" by a future merge, and the honest
+ * representation of "we never saw these bytes" is absence.
+ *
+ * Only `bytes` and `sha256` are taken from the run. The url, licence and
+ * extractsTo fields belong to the registry, which is reviewed by hand; a fetch
+ * that could rewrite them would let a redirect or a substituted host change
+ * where the next run looks without anyone reading a diff.
+ *
+ * The digest is measured in `fetchAsset`, before `extract` removes the archive,
+ * so an archive's pin describes the archive -- the thing a future run downloads
+ * and verifies -- rather than a tree that no longer exists in that form.
+ */
+const reportPath = argValue('--report-pins');
+if (reportPath !== undefined) {
+  const report = {
+    schema: 'rca-bench-official-pins/1',
+    anchor,
+    note:
+      'Measured by scripts/fetch-official.mjs. Merge these into ' +
+      'golden-master/official-assets.json to pin the download. This file is not ' +
+      'read by anything: it is a hand-off, and the registry remains the only ' +
+      'thing a fetch verifies against.',
+    assets: results
+      .filter((r) => r.bytes !== undefined)
+      .map((r) => ({ id: r.asset.id, url: r.asset.url, bytes: r.bytes, sha256: r.digest })),
+  };
+  writeFileSync(resolve(reportPath), `${JSON.stringify(report, null, 2)}\n`);
+  console.log(`\nREPORT    ${reportPath}: ${report.assets.length} pin(s) measured`);
+}
+
 if (skipped.length > 0) {
   console.error(
     `\n${skipped.length} of ${results.length} asset(s) could not be reached. ` +
