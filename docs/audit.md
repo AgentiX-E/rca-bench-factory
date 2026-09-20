@@ -312,22 +312,45 @@ finds them is not reading the test but asking what the test would do if the code
 were wrong, and in 43's case the answer was *pass*, because the fixture had been
 written from the code.
 
-**Finding 44** is in this pass because this pass caused it. Two dispatches of
-`official-data.yml` were issued while the first was still fetching, and both were
-recorded `cancelled`:
+**Finding 44** is in this pass because this pass caused it. Three dispatches of
+`official-data.yml` were issued at `307fb460` inside two minutes, and two of them
+were cancelled by hand to stop them competing:
 
 | run | revision | status | what it produced |
 | --- | --- | --- | --- |
+| [#35485498167](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485498167) | `307fb460` | left running | the measurement |
 | [#35485506741](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485506741) | `307fb460` | `cancelled` during `Fetch the corpus` | nothing |
 | [#35485547947](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485547947) | `307fb460` | `cancelled` during `Fetch the corpus` | nothing |
 
-The workflow had no `concurrency` key, so what cancelled them is the *action*, not
-the configuration — and the point is not which mechanism did it but that nothing
-in the repository stood in the way. The guard added here is the ordinary one:
-group by anchor, `cancel-in-progress: false`. The `false` is the load-bearing part.
-A job whose only product is a measurement should not discard a twelve-minute
-download to start an identical one; a queued second dispatch is the correct
-outcome, and it is also what makes these two cancellations unrepeatable.
+The cancellations were deliberate and the reason for them was correct — three
+concurrent jobs each pulling several gigabytes from a host we do not control is a
+self-inflicted rate-limit. What the workflow lacked was any way to reach that state
+without a human noticing, so the guard added here is the ordinary one: group by
+anchor, `cancel-in-progress: false`. The `false` is the load-bearing part. A job
+whose only product is a measurement should not discard a twelve-minute download to
+start an identical one; a queued second dispatch is the correct outcome, and it is
+also what makes a third concurrent fetch unreachable.
+
+**The first version of this entry stated the cause wrongly, and the correction is
+the more useful record.** It said the two runs "were cancelled by each other" and
+that the dispatches had been "issued while the first was still fetching". The run
+timestamps say otherwise. `35485506741` was created at 03:01:41 and recorded
+`cancelled` at 03:02:40 — the same second `35485547947` was created, because that
+is when the cancel request was issued. `35485547947` was cancelled at 03:03:34,
+also by request. GitHub reports a manual cancellation and a concurrency
+displacement identically, so the count of `cancelled` runs was consistent with both
+stories, and the story that got written first was the one that did not require
+checking the timestamps.
+
+This is finding 40's lesson arriving again, in the same session: a measured
+observation (two runs, both `cancelled`) with a mechanism attached to it that was
+never probed. What distinguishes the two here is only that this time the
+correction was cheap — `created_at` and `updated_at` on the two runs settle it in
+one call — which is an argument for making that call before writing the sentence,
+not after someone reads it.
+
+The guard is worth having on its merits, and that is the claim this entry now
+makes. It is not a claim about what happened on 2026-09-20.
 
 This is the same class of self-inflicted diagnosis as the four-concurrent-runs
 episode recorded earlier in this section, and it is recorded again rather than
