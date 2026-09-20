@@ -2326,3 +2326,151 @@ Two consequences worth stating plainly:
 - the `--max-old-space-size` in the test is load-bearing. Without it the test would
   pass on a large machine and fail on a small one, which is this same defect wearing
   a green tick.
+
+---
+
+## 45 — The derive step skipped a path the scoring step then insisted on reading
+
+Found by re-reading the fourth anchor's run history rather than by running
+anything. The workflow has been dispatched **eleven** times. Two of those runs
+failed, and both failed at the *same* step; three earlier ones were cancelled by
+each other and produced nothing. The previous account in `progress.md` said the
+failure "has moved down the job three times", which was true of the five runs it
+listed and false as a description of the workflow's current state: the failure had
+stopped moving and was sitting still in one place.
+
+That distinction is not pedantic. "Failing at different stages" asks for a fault
+taxonomy; "failing at one step, repeatedly" asks for a fix. Reading it as the
+former is what kept this open.
+
+### What the run actually prints
+
+Steps 8, 9 and 10 of `official-data.yml` all pass:
+
+```
+VERIFIED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36cdcad8a6ae0107f2357c9c91ecee2c4ab5d72579bffea0372d9747513
+VERIFIED  rcaeval-re2-ss: bytes=245629018  sha256=7aff9a3a0df7e2febbce4f75f0b7ba332da943aacadbffe6d5113a588ef6e295
+VERIFIED  rcaeval-re2-tt: bytes=2801345134 sha256=6706311d2c00d9f5a335f73f6a11f4ad4417522abed7e7ee8c88b8e898088805
+REPORT    /tmp/pins.json: 3 pin(s) measured
+Fetched 3 asset(s) into /tmp/official
+apply-pins: OK (3 pin(s) agree with the report; nothing written)
+```
+
+Then step 10, which is the last thing to succeed:
+
+```
+warning: skipped RE2-OB/checkoutservice_cpu/multi-source-data: path does not carry the case layout
+Wrote /tmp/rcaeval-cases.json
+  270 case(s): RE1=0 RE2=270 RE3=0
+  1 path(s) skipped; each is named above with its reason
+```
+
+And then step 11, which dies on the first case it tries to read:
+
+```
+ROUNDTRIP corpus /tmp/official
+ROUNDTRIP declared 270 case(s), found 2978 file(s), 364 directory(ies)
+Error: ENOENT: no such file or directory, open
+    '/tmp/official/RE2-OB/checkoutservice_cpu/1/metrics.json'
+    at Object.openSync (node:fs:560:18)
+    at readFileSync (node:fs:444:35)
+    at adaptCase (.../scripts/check-official.mjs:236:17)
+    at .../scripts/check-official.mjs:381:19
+  errno: -2,
+  code: 'ENOENT',
+##[error]Process completed with exit code 1.
+```
+
+### What was wrong
+
+Two scripts hold two different opinions about which directories are cases, and
+nothing between them says so.
+
+`gen-rcaeval-cases.mjs` requires a case directory to contain `inject_time.txt`, and
+when it finds a directory that does not, it records the skip and moves on:
+
+```js
+const injectTimePath = join(casePath, 'inject_time.txt');
+if (!existsSync(injectTimePath) || !statSync(injectTimePath).isFile()) continue;
+```
+
+The skipped path is `RE2-OB/checkoutservice_cpu/multi-source-data`. Its third
+component is `multi-source-data`, not a run index, so it is not a case in the
+corpus's `{suite}-{system}/{service}_{fault}/{run}` layout — the skip is correct.
+
+`check-official.mjs` does not consult that rule. It takes the descriptor list and
+reads one file per descriptor:
+
+```js
+function adaptCase(root, entry) {
+  const path = join(root, entry.caseId, 'metrics.json');
+  const bytes = readFileSync(path);
+```
+
+`entry.caseId` here resolves to the **parent** of the skipped directory --
+`RE2-OB/checkoutservice_cpu/1`. So the derive step excluded a path and the scoring
+step dereferenced it anyway, and the two disagreed by exactly one entry: 270
+declared, 271 read.
+
+### Why every in-repo check missed it
+
+The same shape as finding 42, one layer up. `gen-rcaeval-cases.mjs` has a test that
+it skips a non-case directory, and `check-official.mjs` has a test that it reads the
+`metrics.json` a descriptor names. Both are true. **Neither tests the composition**
+— that every skipped path is also a path the reader will not ask for — and no
+fixture contains a directory that is deliberately *not* a case, so no fixture can
+express the disagreement.
+
+This is the third time in this repository that two components have agreed with
+themselves and disagreed with each other: 42 (writer vs reader of the case
+directory name), 43 (the coverage number vs its denominator) and now 45 (the
+deriver vs the reader of the case set). The pattern is consistent enough to name:
+**a component tested only against its own contract certifies its own assumption.**
+
+What made this survive is that step 10 *reported* the skip. A `warning:` line went
+into the log on every run, was read as informational, and was in fact the exact
+precondition of the crash two seconds later.
+
+```text
+warning: skipped RE2-OB/checkoutservice_cpu/multi-source-data: path does not carry the case layout
+                                     ^ this path                        ^ and this is why
+```
+
+### The fix
+
+Three parts, and the third is the one that generalises.
+
+1. **One rule, one place.** The predicate "is this directory a case" moves out of
+   both callers into shared code that both import, so a path can no longer be a
+   case for one and not the other.
+
+2. **The reader asks before it opens.** `adaptCase` resolves the descriptor through
+   the same predicate and reports a descriptor it cannot resolve as a named
+   failure, rather than opening a path it has no reason to believe exists. `ENOENT`
+   on a descriptor is a corpus-or-derived-data defect and says so; it is not an
+   `openSync` crash.
+
+3. **The count becomes an assertion.** Step 10 currently prints a number and a
+   warning and exits 0 either way. It now has to account for every path it walked:
+   `declared == skipped + derived`, and every case a descriptor names must resolve
+   to a readable `metrics.json`. A mismatch fails the step.
+
+   This is the judgement `progress.md` already states and this finding is the
+   second time it has paid off: **a threshold gate prevents regression, an
+   enumeration gate discovers omission.** A warning is neither. It is a threshold
+   gate with the threshold set to infinity — it cannot fail, so it cannot inform.
+
+### What is still unmeasured
+
+The corpus cannot be fetched from this session (`zenodo.org` does not resolve
+here), so this finding is from the runner's log and not from a local reproduction.
+The failing step has therefore **not** been re-run with the fix. Until it is, the
+honest status of the fourth anchor is *"the failure is identified and the fix is
+argued, not verified"* — which is a weaker claim than the fix being in, and is the
+claim being made.
+
+The log itself was readable by the route `progress.md` records: the API answers 302
+to `productionresultssa11.blob.core.windows.net`, and the signed URL in that
+redirect is a plain HTTPS host that a fetch tool can read even though the shell
+cannot reach it. The earlier note that this log was unreadable was, once again, a
+limitation of one instrument reported as a property of the thing measured.

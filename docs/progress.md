@@ -343,7 +343,7 @@ Four anchors, each strictly stronger than the one before:
 | 1 | Golden Master — exporters byte-stable against committed anchors | **met** (`pnpm golden-master` / 6 OpenRCA + 4 RCAEval files) |
 | 2 | Mutation suite — declared facets sensitive, undeclared inert | **met** (`pnpm mutation`, 26 cases) |
 | 3 | Official-metric regression — `oraclePerfect ∧ mutationsDegrade ∧ unscoredFacetsInert` | **met** (`pnpm official:check`, 8 targets scored, 1 skipped by contract) |
-| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the real run failed on a 2 GiB digest ceiling, now fixed, and the re-run has not been recorded** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`) |
+| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the real run reaches the round trip and fails there, for a reason now identified and not yet verified** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`; see finding 45) |
 
 Anchor 4 is the one that would detect a misunderstanding shared by our exporter
 and our scorer. Anchors 1–3 all begin from a bundle this repository authored, so
@@ -355,6 +355,16 @@ been reproduced on real telemetry: the corpus is 19 GB and this session's
 sandbox has no route to Zenodo. Say so plainly rather than implying the anchor is
 closed.
 
+**Where the fourth anchor actually stands.** The fetch, the pin comparison and the
+descriptor derivation all succeed on a real runner; the round trip then dies on its
+first case with `ENOENT` for a `metrics.json` the derive step had already excluded.
+Finding 45 records the whole chain, the byte-exact log lines, and why every
+in-repo fixture was unable to express the disagreement. The fix is argued and not
+applied, so the accurate status is *"the failure is identified; the fix is not
+verified"* — weaker than "fixed", and stronger than the previous entry, which said
+the failure "has moved down the job three times". It had stopped moving: eleven
+dispatches, the two most recent both failing at **the same step**.
+
 The first attempt on a real runner is recorded and it failed. `official-data.yml`
 run #35480663989 completed as `failure`, with the fetch step dying after 12.35
 minutes and the three steps that would have produced the descriptors, the pins
@@ -364,6 +374,13 @@ the reason for the failure was not readable from this session (the job log
 redirects to a host outside the egress allowlist). The timing is the only
 evidence it yielded, and it rules out the one explanation that would have been
 cheap — a URL that does not exist fails in seconds, and this took twelve minutes.
+
+> The parenthetical above has since been retracted: the redirect's *signed URL* is a
+> plain HTTPS host that a fetch tool can read, which is how finding 45 was
+> diagnosed from this session after all. The unreadable-log claim was a limitation
+> of the shell being reported as a property of the API — the third time in this
+> document that an instrument's limit has been mistaken for a fact about the thing
+> measured.
 
 What that run did change is the diagnostics, because a failure whose reason takes
 a second run to discover is a failure that will not get diagnosed. The fetch now
