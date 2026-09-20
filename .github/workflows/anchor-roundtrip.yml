@@ -63,11 +63,20 @@ jobs:
       # The values plateau then step, and both metrics carry the same sample
       # count: the adapter refuses uneven series, so a fixture that tripped that
       # would fail for a reason unrelated to what is under test.
+      #
+      # The *layout* is the corpus's own, `{suite}-{system}/{service}_{fault}/{run}`,
+      # and it is nested for the same reason `metrics.json` is the real shape:
+      # this fixture used to be a single flat directory named
+      # `RE2-ts-order-service-cpu_1`, which is what our exporter emits and not
+      # what the corpus contains. The derivation was then correct while the
+      # thing it was tested against was the only layout it would never see, and
+      # this workflow passed on a corpus the real one does not resemble.
       - name: Build a synthetic corpus in the official layout
         run: |
           set -eu
-          mkdir -p /tmp/synthetic/RE2-ts-order-service-cpu_1
-          printf '1700000000\n' > /tmp/synthetic/RE2-ts-order-service-cpu_1/inject_time.txt
+          CASE=/tmp/synthetic/RE2-TT/ts-order-service_cpu/1
+          mkdir -p "$CASE"
+          printf '1700000000\n' > "$CASE/inject_time.txt"
           node -e '
             const { writeFileSync } = require("node:fs");
             const samples = 40;
@@ -77,7 +86,7 @@ jobs:
               metrics.cpu_usage.push(i < half ? 0.2 : 0.95);
               metrics.mem_usage.push(0.5);
             }
-            writeFileSync("/tmp/synthetic/RE2-ts-order-service-cpu_1/metrics.json", JSON.stringify(metrics));
+            writeFileSync("/tmp/synthetic/RE2-TT/ts-order-service_cpu/1/metrics.json", JSON.stringify(metrics));
           '
 
       - name: Derive the descriptors from the corpus
@@ -87,11 +96,15 @@ jobs:
           cat /tmp/synthetic-cases.json
 
       # The service name is the one place the exporter and the corpus reader have
-      # to agree, and it is the one the layout makes easy to get wrong: the
-      # directory is `RE2-ts-order-service-cpu_1`, and reading the service by
-      # splitting on the first hyphen yields `ts`. The assertion is on the
-      # derived descriptor rather than on the output, so a wrong parse fails here
-      # naming the field instead of surfacing as a zero score.
+      # to agree, and it is the one the layout makes easy to get wrong. The case
+      # is `RE2-TT/ts-order-service_cpu/1`: the service carries hyphens *and* the
+      # service/fault pair is underscore-separated, so the split has to be taken
+      # at the last underscore. Splitting at the first yields `ts-order`, which
+      # names nothing the telemetry mentions; splitting at the last yields
+      # `ts-order-service` and the fault `cpu`, which is what the corpus means.
+      # The assertion is on the derived descriptor rather than on the output, so
+      # a wrong parse fails here naming the field instead of surfacing as a zero
+      # score.
       - name: The derived service keeps its hyphens
         run: |
           set -eu
@@ -100,6 +113,12 @@ jobs:
             if (cases.length !== 1) throw new Error(`expected 1 case, got ${cases.length}`);
             if (cases[0].component !== "ts-order-service") {
               throw new Error(`expected component ts-order-service, got ${cases[0].component}`);
+            }
+            if (cases[0].faultType !== "cpu") {
+              throw new Error(`expected fault cpu, got ${cases[0].faultType}`);
+            }
+            if (cases[0].caseId !== "RE2-TT/ts-order-service_cpu/1") {
+              throw new Error(`expected the corpus path as the id, got ${cases[0].caseId}`);
             }
           '
 

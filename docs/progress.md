@@ -346,13 +346,16 @@ revisions stale — a number in a status table is a measurement and decays like 
 
 ## Open
 
-- **The first two real-corpus runs failed, and the cause is now measured.** Both
-  died at the fetch and neither produced a pin report.
+- **The real-corpus runs are diagnosed, and the failure has moved down the job
+  twice.** Four runs of the fourth anchor's path, each failing one step later than
+  the last.
 
-  | run | revision | fetch step | what it reported |
+  | run | revision | outcome | what it established |
   | --- | --- | --- | --- |
-  | [#35480663989](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35480663989) | `98fdf601` | failed after **12.35 min** | nothing — the diagnostics did not exist yet |
-  | [#35482150957](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35482150957) | `07a0001f` | failed after **12.26 min** | `ERR_FS_FILE_TOO_LARGE` |
+  | [#35480663989](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35480663989) | `98fdf601` | fetch failed after **12.35 min** | nothing — the diagnostics did not exist yet |
+  | [#35482150957](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35482150957) | `07a0001f` | fetch failed after **12.26 min** | `ERR_FS_FILE_TOO_LARGE`, i.e. the *verifier* could not read 2.8 GB |
+  | [#35483403527](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35483403527) | `c57fd7eb` | fetch **passed**, derive failed | 3 assets extracted, 3 pins measured; the reader did not know the corpus layout |
+  | [#35485506741](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485506741) | `307fb460` | in progress | the layout fix, and finding 43's fixture fix, are both in this revision |
 
   The second run answered it, and the answer was in neither of the two places this
   document had been looking. Both assets that come first measured clean:
@@ -442,10 +445,38 @@ revisions stale — a number in a status table is a measurement and decays like 
   ROUNDTRIP PASS   2/2 RE2-OB/checkoutservice_cpu/2  target=rcaeval-re2  oracle=1.00 signals=3600
   ROUNDTRIP PASSED (2 case(s) round-tripped through the official layout)
   ```
-
   A further run is required to record the real corpus's numbers; the local chain
   is what says the next run will reach the round trip rather than stopping on the
   layout.
+
+  **Finding 43: the fix for 42 was correct and `anchor-roundtrip.yml` still failed
+  on it.** The push carrying 42 went up as `307fb460`, and the fast workflow — the
+  one that builds a synthetic corpus on every push — failed at the same step:
+
+  ```
+  error: no RCAEval case directories found under '/tmp/synthetic'.
+  Expected names of the form {RE1|RE2|RE3}-{system}/{service}_{fault}/{run} ...
+  ```
+
+  The message now carried the *new* pattern, so the script had taken the fix. The
+  corpus it was given had not. That workflow's fixture was a single flat directory
+  named, verbatim:
+
+  ```
+  mkdir -p /tmp/synthetic/RE2-ts-order-service-cpu_1
+  ```
+
+  which is the layout the reader had assumed. The fixture had been confirming the
+  assumption instead of testing it, so fixing the code left the certification
+  intact — the same error one level up, in the instrument. The fixture is now the
+  corpus's own shape (`/tmp/synthetic/RE2-TT/ts-order-service_cpu/1`) and the
+  workflow also asserts the derived `caseId`, so a future drift fails naming the
+  field rather than surfacing as a zero score. Verified locally on that fixture:
+
+  ```
+  ROUNDTRIP PASS   1/1 RE2-TT/ts-order-service_cpu/1  target=rcaeval-re2  oracle=1.00 signals=80
+  ROUNDTRIP PASSED (1 case(s) round-tripped through the official layout)
+  ```
 
   The dispatch is worth noting on its own: it returned **204 with a zero-byte body**
   and was deliberately not retried, and exactly one run was created

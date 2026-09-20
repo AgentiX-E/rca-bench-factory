@@ -169,6 +169,8 @@ different messages.
 | 39 | A 2.8 GB download was verified with `readFileSync`, which cannot read above 2 GiB | `ERR_FS_FILE_TOO_LARGE` on `RE2-TT.zip` after two assets had measured clean | fixed |
 | 40 | *(withdrawn)* The partial run was said to discard its measurements on a non-zero exit | the report **is** written before the exit code: exit 1, report present, 1 pin | no defect |
 | 41 | Every fixture was under one digest chunk, so a prefix-only digest passed the suite | `break` after the first `hash.update`: 30/30 green, digest changed | fixed |
+| 42 | The corpus reader assumed our exporter's flat layout; the corpus is nested three deep | `derive the case descriptors` found no cases under a tree full of them | fixed |
+| 43 | The CI fixture that exercised finding 42 was itself written in the old flat layout | the fix passed locally and `anchor-roundtrip.yml` still failed on `RE2-ts-order-service-cpu_1` | fixed |
 
 Findings 31 and 32 are not defects in shipped code. They are defects in the
 *instruments* — the generator's diagnostics and the test fixture — and they are
@@ -212,6 +214,102 @@ measured, and the measurement contradicts it. Finding 41 is a gap in the tests
 that only an injection could reveal, and it is the one to read if you read only
 one: the suite was green, the codepath was wrong, and the reason was that no
 fixture was ever large enough to tell the two implementations apart.
+
+### Pass 7 — the corpus's layout, twice
+
+Findings 42 and 43 are one defect found twice, and the second time is the more
+instructive of the two.
+
+**Finding 42.** The third real run fetched all three assets and then failed at
+`derive the case descriptors`:
+
+```
+error: no RCAEval case directories found under '/tmp/official'.
+Expected names of the form {RE1|RE2|RE3}-{service}-{fault}_{instance} each holding inject_time.txt.
+```
+
+The pattern in that message is the defect stated plainly. `RE2-order-cpu_1` is
+the name *our exporter* writes. The corpus does not contain it, at any level,
+because the corpus is nested:
+
+```
+RE2-OB/checkoutservice_cpu/1/inject_time.txt
+```
+
+The upstream harness says so twice. `main.py` finds the cases by globbing
+`**/data.csv` and reads the labels back out of the path —
+
+```python
+data_dir = dirname(data_path)                                      # …/{service}_{fault}/{run}
+service, metric = basename(dirname(dirname(data_path))).split("_")  # service, fault
+case = basename(dirname(data_path))                                 # {run}
+```
+
+— and `docs/TORAI.md` prints the tree for the RE2 conversion:
+
+```
+data/torai-OB/{service}_{fault_type}/{run}/inject_time.txt
+```
+
+So a case is three components with the suite fused to the *system* in the first
+one. `RE2-OB` alone is neither a suite nor a case; `checkoutservice_cpu` alone
+carries no run. No single directory name can carry the case, which is why a
+per-component parse reported nothing over a tree full of cases.
+
+The reason this survived every in-repo check is worth stating separately, because
+it is a general failure mode rather than a slip. The reader, the writer and the
+unit tests all agreed — the tests asserted `RE2-order-cpu_1` because that is what
+`caseDirName` produces, and the reader was validated against what the writer
+emitted. **A reader tested only against the writer describes neither the corpus
+nor the writer's correctness; it describes their agreement.** Finding 29 had the
+same shape and was fixed by widening the character allow-list, which made the
+agreement more exact without making either side right.
+
+The fix keeps the two layouts in separate functions rather than teaching one
+function to guess between them. `parseRcaEvalPath` reads the corpus;
+`parseRcaEvalDirectory` reads what we emit; `readRcaEvalGroundTruth` accepts
+either. A single function that tried both would have hidden this mismatch and
+would hide the next one, and the two layouts are not interchangeable — one places
+the suite in a path component, the other inside a directory name.
+
+**Finding 43.** The fix for 42 passed its unit tests, passed `pnpm test`, and
+`anchor-roundtrip.yml` still failed on the same error. That workflow builds a
+synthetic corpus and derives descriptors from it on every push, and the corpus it
+built was one flat directory named — verbatim — `RE2-ts-order-service-cpu_1`:
+
+```
+mkdir -p /tmp/synthetic/RE2-ts-order-service-cpu_1
+```
+
+The fixture was written in the layout the reader assumed, so it had been
+confirming the assumption rather than testing it. This is finding 42 one level
+up and in the *instrument*: the code was wrong, and so was the thing that
+certified it. Fixing the code alone left the certification intact.
+
+The corrected fixture is the corpus's own shape, and the workflow now also
+asserts the derived `caseId`, so a future drift in the path parse fails naming
+the field rather than surfacing as a zero score:
+
+```
+CASE=/tmp/synthetic/RE2-TT/ts-order-service_cpu/1
+```
+
+Verified end to end after the fix, locally, on that fixture:
+
+```
+ROUNDTRIP PASS   1/1 RE2-TT/ts-order-service_cpu/1  target=rcaeval-re2  oracle=1.00 signals=80
+ROUNDTRIP PASSED (1 case(s) round-tripped through the official layout)
+```
+
+**The method note for this pass** is that both findings are the same error —
+*testing a thing against a copy of itself* — and that the second one was only
+found because the first was fixed and the fix was then run against something that
+was not the fix. Finding 41 was a fixture too small to distinguish two
+implementations; finding 43 is a fixture too similar to the implementation to
+distinguish two layouts. Both were green. Neither was evidence. The check that
+finds them is not reading the test but asking what the test would do if the code
+were wrong, and in 43's case the answer was *pass*, because the fixture had been
+written from the code.
 
 The common thread with 35 is that all three were found by *running* something and
 reading a number, and the one that went wrong (40) went wrong at exactly the step
