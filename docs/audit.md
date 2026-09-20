@@ -352,6 +352,43 @@ not after someone reads it.
 The guard is worth having on its merits, and that is the claim this entry now
 makes. It is not a claim about what happened on 2026-09-20.
 
+**One consequence of the guard is recorded here, and it is the guard's own
+counterexample.** The first run to fetch on the fixed revision,
+[#35485498167](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485498167),
+was `cancelled` at 03:17:00, seven minutes into the fetch, and
+[#35486129312](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35486129312)
+continued on `eb4dae64` — a revision that carries the layout fix, where the
+displaced run's `307fb460` did not.
+
+The mechanism was **not** the concurrency group, and the timing rules it out
+rather than merely failing to support it. `35486129312` was *created and started*
+at 03:16:03, which is 57 seconds **before** the run it is supposed to have
+displaced was cancelled at 03:17:00. A group that displaces runs cannot cause a
+cancellation that predates the displacing run's own start. Two further
+observations agree: both runs report `event: workflow_dispatch` with
+`triggering_actor: Lambertyan`, and at the time of writing `35486129312` is
+`in_progress` while nothing else occupies the group — so a second run in the
+group did **not** displace anything, it ran alongside the first. That was the
+open question this note originally posed, and the answer is *does not displace*.
+
+**What cancelled `35485498167` is still not established, and is no longer
+claimed.** An earlier revision of this note said it was a `POST
+/actions/runs/35485498167/cancel` issued from this session. That is consistent
+with the timestamps and it may well be what happened, but no request log was
+kept for it and the claim cannot be checked, so it is withdrawn rather than left
+standing on plausibility. All that is measured is the ordering: the cancellation
+lands at 03:17:00, 57 seconds after `35486129312` started at 03:16:03, and that
+ordering is what rules the group out.
+
+The method note survives the withdrawal, because it does not depend on the
+mechanism — and the withdrawal is a second instance of the same thing. A
+plausible mechanism (the new group) was written up as the cause before the
+timestamps were read; the timestamps falsified it in one comparison; and the
+replacement sentence was written the same way, from what was plausible rather
+than from what was recorded. That is now four times in this pass — 40, 35, and
+twice here — and the second of the two is the one worth noticing, because it
+happened *while* the lesson was being written down.
+
 This is the same class of self-inflicted diagnosis as the four-concurrent-runs
 episode recorded earlier in this section, and it is recorded again rather than
 folded into it because the mechanism differs: that one was a retry loop inventing
