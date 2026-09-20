@@ -46,6 +46,33 @@ function run(args: string[]): Outcome {
   return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
+/**
+ * `run`, with the child's heap capped.
+ *
+ * The real corpus is 4.24 GB of archives that extract to roughly 32 GB, and the
+ * round trip has to survive it inside a default-sized heap. A fixture large
+ * enough to reproduce that at 1:1 is not something a unit test can write, so the
+ * heap is lowered instead and the corpus is made merely *large*: the property
+ * under test is that memory does not scale with how much corpus the walker sees,
+ * and an implementation that holds the corpus `Map<string, string>` violates it
+ * at any size once the cap is below the corpus.
+ *
+ * `--max-old-space-size` is what makes the failure a verdict rather than a
+ * coincidence: without it the test would pass on a machine with enough RAM and
+ * fail on a smaller one, which is the same defect wearing a green tick.
+ */
+function runWithHeapMb(args: string[], heapMb: number): Outcome {
+  const result = spawnSync(
+    process.execPath,
+    [`--max-old-space-size=${heapMb}`, SCRIPT, ...args],
+    { encoding: 'utf8', cwd: ROOT },
+  );
+  if (result.error !== undefined) {
+    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
+  }
+  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-roundtrip-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -96,6 +123,58 @@ function writeCases(path: string, caseIds: string[], suite = 'RE2'): void {
     path,
     JSON.stringify({ schema: 'rca-bench-rcaeval-cases/1', counts: { RE1: 0, RE2: cases.length, RE3: 0 }, cases }, null, 2),
   );
+}
+
+/**
+ * A corpus far larger than the heap the run is given, in the real case shape.
+ *
+ * Each case carries the three metrics the corpus's own CPU cases carry, over
+ * enough samples that the case is a few hundred kilobytes of JSON -- the size
+ * the real `metrics.json` files are. The bulk matters: the defect this fixture
+ * exists to catch is a reader that materialises every file it walks past, so a
+ * fixture of a few hundred bytes per case would let the whole corpus sit in a
+ * capped heap and the test would certify the bug.
+ *
+ * `pads` are what makes the *total* exceed the heap without the cases being
+ * absurd individually. They stand in for the corpus's genuine bulk -- the
+ * telemetry files that are not the three the adapter reads -- and the round trip
+ * is expected to step over them without ever holding them.
+ */
+function writeBulkCorpus(
+  root: string,
+  caseCount: number,
+  samples: number,
+  padBytes: number,
+): { cases: string[]; bytes: number } {
+  const cases: string[] = [];
+  let bytes = 0;
+  const dummy = 'x'.repeat(padBytes);
+  for (let c = 0; c < caseCount; c += 1) {
+    const caseId = `RE2-OB/service${c}_cpu/1`;
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    const half = Math.floor(samples / 2);
+    const metrics: Record<string, number[]> = { cpu_usage: [], mem_usage: [], latency: [] };
+    for (let i = 0; i < samples; i += 1) {
+      metrics.cpu_usage!.push(i < half ? 1.25 : 27.5);
+      metrics.mem_usage!.push(88.5);
+      metrics.latency!.push(i < half ? 0.4 : 9.9);
+    }
+    const body = JSON.stringify(metrics);
+    writeFileSync(join(dir, 'metrics.json'), body);
+    // Bulk beside the case, exactly as the corpus carries it: files the round
+    // trip must step over, not read.
+    writeFileSync(join(dir, 'load_0.csv'), dummy);
+    // The archives' own packaging, which the real download carries at every
+    // level: a non-payload file the walk counts or does not, but never reads.
+    // It is here so that "counted" is a decision under test rather than a
+    // coincidence of the fixture happening to hold only payload names.
+    writeFileSync(join(dir, '.DS_Store'), Buffer.from([0x00, 0x01, 0x02]));
+    bytes += body.length + padBytes;
+    cases.push(caseId);
+  }
+  return { cases, bytes };
 }
 
 describe('scripts/check-official.mjs · the round trip leaves the default verdict intact', () => {
@@ -331,5 +410,97 @@ describe('scripts/check-official.mjs · the branch reads its own inputs', () => 
     const result = run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP PASSED');
+  });
+});
+
+describe('scripts/check-official.mjs · memory does not scale with the size of the corpus', () => {
+  // The real run died here, and it died at the *last* step:
+  //
+  //   ok  Derive the case descriptors from what was downloaded
+  //   >>> Round-trip the corpus and score it with the official rule   <- exit 134
+  //   FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+  //
+  // The corpus is three archives totalling 4.24 GB that extract to roughly 32 GB
+  // on disk, and the walker read every non-binary file in the tree into one
+  // `Record<string, string>` before scoring anything. Three of the things it then
+  // did with that map needed one boolean per case and one count:
+  //
+  //   - "does this case have an inject_time.txt?" -- a `stat`, not a body;
+  //   - the "found N file(s)" line -- a count, not the bodies;
+  //   - the adapter -- which re-reads the single `metrics.json` from disk anyway.
+  //
+  // So the map was never load-bearing, and it was the whole of the memory cost.
+  // These tests hold the walker to the bound the real corpus demands: memory is a
+  // function of the largest case, not of how much corpus there is.
+
+  it('still refuses a payload file whose body is binary', () => {
+    // The walk no longer opens every file to look for a NUL, so it cannot be the
+    // thing that keeps a decoded binary out of the scorers. That duty moved to
+    // the one place a payload is opened -- `adaptCase` -- and this is the check
+    // that it did: without it the walk would report the case as present,
+    // `assertRcaevalMetrics` would be handed a body of replacement characters,
+    // and the search would be over text nobody wrote.
+    //
+    // Whether such a case is *counted* differs between the old walk (not counted,
+    // it had a NUL) and the new one (counted, the name says payload). That the
+    // case fails by name rather than passing quietly is the property that has to
+    // hold, and it holds either way.
+    const root = freshRoot();
+    const dir = join(root, 'RE2-ob-cpu_1');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    writeFileSync(join(dir, 'metrics.json'), Buffer.from([0x7b, 0x00, 0x01, 0x02, 0x7d]));
+    const cases = join(scratch, 'binary-payload.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const result = run(['--official-dir', root, '--cases', cases]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/metrics\.json is binary/);
+  });
+
+  it('survives a corpus many times larger than its heap, and scores every case', () => {
+    const root = freshRoot();
+    // ~300 MB of corpus, of which the adapter reads ~1 MB. The ratio is the
+    // point: the run is given 128 MB, so anything that holds the corpus whole
+    // cannot finish.
+    const { cases, bytes } = writeBulkCorpus(root, 20, 1_000, 15 * 1024 * 1024);
+    expect(bytes).toBeGreaterThan(280 * 1024 * 1024);
+    const casesPath = join(scratch, 'bulk.json');
+    writeCases(casesPath, cases);
+
+    const result = runWithHeapMb(['--official-dir', root, '--cases', casesPath], 128);
+
+    // A heap-limit abort is the failure this test exists for, so it is named
+    // separately from a wrong verdict: both exit non-zero, and a green run for
+    // the wrong reason is what the whole anchor is meant to rule out.
+    expect(result.stderr).not.toMatch(/heap out of memory/i);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(20 case/);
+    // Every case scored, not the first few before memory ran out. The trailing
+    // space separates the per-case verdict from the `ROUNDTRIP PASSED` summary,
+    // which would otherwise be counted as a twenty-first.
+    expect(result.stdout.match(/ROUNDTRIP PASS /g)).toHaveLength(20);
+  });
+
+  it('still counts what it walked, so the operator line keeps its meaning', () => {
+    // The corpus-wide map was also the only thing backing the "found N file(s)"
+    // count. Removing it must not remove the count: the two numbers on that line
+    // are the operator's only quantitative view of the download, and a corpus
+    // that arrived empty would otherwise report the same numbers as one that
+    // arrived whole -- the failure mode finding 15 was about.
+    const root = freshRoot();
+    const { cases } = writeBulkCorpus(root, 3, 40, 0);
+    const casesPath = join(scratch, 'counted-bulk.json');
+    writeCases(casesPath, cases);
+    const result = run(['--official-dir', root, '--cases', casesPath]);
+    expect(result.status).toBe(0);
+    // Three payload files per case: inject_time.txt, metrics.json and
+    // load_0.csv. The `.DS_Store` beside each one is not counted, because the
+    // count is of what the corpus carries as telemetry and packaging is not it
+    // -- which is also the rule the body-sniffing walk applied, by a different
+    // route. Nine, then, and seven directories: the case directory and the two
+    // levels above it, three times over, since the walk descends from the root
+    // rather than knowing the layout.
+    expect(result.stdout).toMatch(/found 9 file\(s\)/);
+    expect(result.stdout).toMatch(/, 7 directory\(ies\)/);
   });
 });

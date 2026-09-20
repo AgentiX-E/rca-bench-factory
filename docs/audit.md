@@ -172,6 +172,7 @@ different messages.
 | 42 | The corpus reader assumed our exporter's flat layout; the corpus is nested three deep | `derive the case descriptors` found no cases under a tree full of them | fixed |
 | 43 | The CI fixture that exercised finding 42 was itself written in the old flat layout | the fix passed locally and `anchor-roundtrip.yml` still failed on `RE2-ts-order-service-cpu_1` | fixed |
 | 44 | `official-data.yml` had no concurrency group, so a second dispatch cancelled the first | two runs of 2026-09-20 both `cancelled`, neither producing a measurement | fixed |
+| 45 | The corpus walk read every file in the tree into one `Record<string, string>` | exit 134 on the real corpus: `heap out of memory` at 4182 MB, no `ROUNDTRIP` line | fixed |
 
 Findings 31 and 32 are not defects in shipped code. They are defects in the
 *instruments* — the generator's diagnostics and the test fixture — and they are
@@ -2070,3 +2071,99 @@ different claims and this report keeps them apart on purpose — the whole diffi
 passes 1 through 5 was code that reported success without establishing anything, and
 "the CI job is green" would be the same mistake one level up if it were allowed to
 stand in for "the number agrees with upstream".
+
+### Pass 8 — the corpus, all of it, in a 4 GB heap
+
+Finding 42 was the layout. Fixing it moved the real run past `derive the case
+descriptors` for the first time — `270 case(s): RE1=0 RE2=270 RE3=0`, with
+`RE2-OB/checkoutservice_cpu/multi-source-data` correctly skipped — and then the job
+died one step later:
+
+```
+ok  Fetch the corpus outside the working tree | success
+ok  Compare the measured pins against the registry | success
+ok  Derive the case descriptors from what was downloaded | success
+>>> Round-trip the corpus and score it with the official rule | failure
+    FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+    [2670:0x42b1f000]  Mark-Compact (reduce) 4113.7 (4116.9) -> 4113.7 (4116.9) MB
+```
+
+The heap died at 4182 MB with no `ROUNDTRIP` line printed — the process did not
+reach its first verdict. The step that was supposed to *check* the corpus could not
+fit the corpus into memory.
+
+**Sizes, from the run's own log rather than estimated.** The three assets measure
+`bytes=1191025569`, `bytes=245629018`, `bytes=2801345134`: **4.24 GB of archives.**
+Free disk went from `86G` to `54G` across the fetch, so the extraction is on the
+order of **32 GB** — the archives are compressed and the telemetry inside them is
+not. None of that was in the repository, the registry, or any document; it is
+recoverable only from a run that got far enough to print it.
+
+**The defect.** The walk did this:
+
+```js
+const bytes = readFileSync(path);
+if (bytes.includes(0)) continue;
+files[relative] = bytes.toString('utf8');   // <- every file, whole corpus
+```
+
+So the reader materialised the entire corpus as strings before scoring anything
+against a 4 GB heap. And of the three things that then read the map, **none needed
+a body**:
+
+| Read site | What it asks | What it needs |
+|---|---|---|
+| `files[`${caseId}/inject_time.txt`] === undefined` (×2) | does this case hold the file? | a `stat`, or a set |
+| `Object.keys(files).length` | how many files arrived? | a count |
+| `adaptCase` | one `metrics.json` | **it already re-read that file from disk** |
+
+The third row is why this is a clean removal rather than a trade: the adapter never
+consulted the map, so the corpus-wide map contributed a count and two membership
+tests, and cost 32 GB to hold.
+
+**The fix.** The walk answers the two questions and keeps nothing else. Bodies are
+not opened, so its cost does not scale with bytes either: membership is decided by
+the file's extension (`json`, `csv`, `txt`, `log`, `md`) rather than by decoding
+every candidate to look for a NUL, and the NUL check moves to `adaptCase`, which is
+now the only place a payload is opened and was going to read those bytes anyway.
+`files` becomes a `Map<path, null>` — a set whose values say outright that no body
+was kept, so a future reader cannot quietly come to depend on one.
+
+**Controlled comparison, same corpus and same heap cap.** A 31 GB corpus in the
+corpus's own layout — 270 cases, each with the three metrics and 1200 samples the
+real CPU cases carry, plus the bulk telemetry the adapter never reads:
+
+| Implementation | Exit | Heap at death | Result |
+|---|---|---|---|
+| pre-fix (`readFileSync` into the map) | **134** | 4182.7 MB | `FATAL ERROR: heap out of memory`, no `ROUNDTRIP` line |
+| fixed | **0** | 166 MB peak RSS | `ROUNDTRIP PASSED (270 case(s) round-tripped through the official layout)` |
+
+The pre-fix column reproduces the CI failure exactly, down to the
+`Official-metric regression PASSED` line appearing *before* the crash — which is the
+signature that the corpus-reading branch, not the scoring, is what died. Peak RSS is
+now **flat**: 166 MB for 31 GB, because memory follows the largest case rather than
+the size of the corpus.
+
+**Why the fixture could not have caught this, and what changed.** Every existing
+round-trip fixture is a few hundred bytes per case, so the whole corpus fits in any
+heap and the accumulator is invisible — the fixture certified the assumption, which
+is finding 43's mistake in a different medium. The new test lowers the child's heap
+(`--max-old-space-size=128`) and gives it ~300 MB of corpus, so holding the corpus
+violates the cap at any size and the failure is a verdict rather than a coincidence
+of how much RAM the machine had. Injection-verified: restoring body retention turns
+**exactly one** test red, with the same `heap out of memory` abort; restoring the
+pre-fix counting rule turns a different one red, via the `.DS_Store` the fixture now
+carries, because the count is a decision under test rather than an accident of the
+fixture holding only payload names.
+
+Two consequences worth stating plainly:
+
+- the count's rule changed. The old walk counted non-binary files; the new one
+  counts payload names. These agree on the real corpus (packaging is binary *and*
+  non-payload) and diverge on a binary `metrics.json`, which the new walk counts and
+  which then fails by name in `adaptCase`. That is the right direction — a
+  present-but-broken payload is a corpus defect to report, not a file to drop — and
+  it is covered by a test of its own.
+- the `--max-old-space-size` in the test is load-bearing. Without it the test would
+  pass on a large machine and fail on a small one, which is this same defect wearing
+  a green tick.

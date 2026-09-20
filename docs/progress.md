@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean (4 guards); 1932 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean; `pnpm lint` clean (4 guards); 1951 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
@@ -312,6 +312,42 @@ that happens this anchor is *executable*, not *reproduced*, and the two are not
 the same claim. One failed attempt does not narrow the gap between them — it
 documents where the attempt stopped.
 
+The second attempt (run #35486129312, on `307fb460`) failed one step later again,
+and the sequence is now worth recording as a progress measure rather than as a
+failure count, because each attempt has moved the stop line exactly one step:
+
+| Step | Run #35480663989 | Run #35486129312 |
+| --- | --- | --- |
+| Fetch the corpus | **failure** (12m35s) | success — 3 assets, 4.24 GB verified |
+| Compare the measured pins | skipped | success |
+| Derive the case descriptors | skipped | **success** — `270 case(s): RE1=0 RE2=270 RE3=0` |
+| Round-trip and score | skipped | **failure** — `heap out of memory`, exit 134 |
+
+The descriptor step passing is finding 42's fix working on real data: 270 cases
+is 90 each for `RE2-OB`, `RE2-SS` and `RE2-TT`, and
+`RE2-OB/checkoutservice_cpu/multi-source-data` was skipped by name as a path that
+does not carry the case layout. That number is the first real-corpus quantity this
+project has produced.
+
+The round-trip step then died before printing any verdict, because the corpus walk
+held all ~32 GB of extracted telemetry as strings in a 4 GB heap (finding 45). It
+now holds none of it: the walk answers membership and a count and never opens a
+body, and the one file the adapter needs it reads itself. Measured on a 31 GB
+corpus in the corpus's own layout, with the same `--max-old-space-size=4096` that
+CI uses:
+
+| Implementation | Exit | Peak | Result |
+| --- | --- | --- | --- |
+| before finding 45 | 134 | 4182 MB heap | `heap out of memory`; no `ROUNDTRIP` line |
+| after finding 45 | 0 | 166 MB RSS | `ROUNDTRIP PASSED (270 case(s) round-tripped through the official layout)` |
+
+**Still not reproduced.** A local corpus of the right *shape* and *size* is not the
+corpus: the numbers above are a memory bound and a verdict on synthetic telemetry,
+not RCAEval's own scores. Anchor 4 stays *executable, not reproduced* until a run
+of `official-data.yml` against the real download reports its own
+`ROUNDTRIP PASSED`, and that run has not been made since this fix. What the fix
+buys is that the next run reaches the round trip instead of aborting at it.
+
 `golden-master/fetch-and-verify.sh` is superseded by `scripts/fetch-official.mjs`
 and is kept only because the Golden Master verifies it byte-for-byte; every
 document that described it as downloading the data was describing an intention.
@@ -320,17 +356,20 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 74 |
+| Commits | 79 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
-| Source lines | 13,127 |
+| Source lines | 13,205 |
 | Test files | 76 |
-| Test lines | 23,043 |
-| Tests | 1935 core + 173 CLI |
+| Test lines | 23,401 |
+| Tests | 1951 core + 173 CLI |
 
-Counted from `git ls-files` on `c57fd7eb`, not carried forward from the previous
-revision. The previous version of this table said 1891 and 73, which were two
-revisions stale — a number in a status table is a measurement and decays like one.
+Counted from `git ls-files` at `e406689`, not carried forward from the previous
+revision. The previous version of this table said 1891 and 73, and the one before
+that said 1891 and 73 across two revisions. Both were stale — a number in a status
+table is a measurement and decays like one, so it is re-taken rather than edited.
+The test count is the one figure that moves for a reason worth naming: this pass
+added six tests, all of them for finding 45.
 
 
 ## Test strategy
@@ -347,15 +386,16 @@ revisions stale — a number in a status table is a measurement and decays like 
 ## Open
 
 - **The real-corpus runs are diagnosed, and the failure has moved down the job
-  twice.** Four runs of the fourth anchor's path, each failing one step later than
-  the last.
+  three times.** Five runs of the fourth anchor's path, each failing one step
+  later than the last.
 
   | run | revision | outcome | what it established |
   | --- | --- | --- | --- |
   | [#35480663989](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35480663989) | `98fdf601` | fetch failed after **12.35 min** | nothing — the diagnostics did not exist yet |
   | [#35482150957](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35482150957) | `07a0001f` | fetch failed after **12.26 min** | `ERR_FS_FILE_TOO_LARGE`, i.e. the *verifier* could not read 2.8 GB |
   | [#35483403527](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35483403527) | `c57fd7eb` | fetch **passed**, derive failed | 3 assets extracted, 3 pins measured; the reader did not know the corpus layout |
-  | [#35485506741](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35485506741) | `307fb460` | in progress | the layout fix, and finding 43's fixture fix, are both in this revision |
+  | [#35486129312](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35486129312) | `307fb460` | derive **passed**, round trip failed | `270 case(s)` derived; the walk could not hold 32 GB in a 4 GB heap |
+  | *(next)* | — | — | finding 45's fix; the first run that can reach a verdict |
 
   The second run answered it, and the answer was in neither of the two places this
   document had been looking. Both assets that come first measured clean:

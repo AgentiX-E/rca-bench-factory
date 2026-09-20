@@ -153,26 +153,53 @@ function assertRcaevalMetrics(raw, entry) {
 }
 
 /**
- * Read an extracted corpus into the `path -> text` map every scorer takes.
+ * Walk the extracted corpus without holding it.
  *
- * Binary files are skipped rather than decoded: the corpus is telemetry, the
- * scorers read text, and a `Buffer.toString()` on a PNG would hand a scorer a
- * megabyte of replacement characters to search.
+ * The first version of this read every non-binary file into one
+ * `Record<path, string>` and handed that to the rest of the round trip. The real
+ * corpus is three archives totalling 4.24 GB that extract to roughly 32 GB on
+ * disk, and the run died on it:
  *
- * Directories are counted as they are walked rather than folded into the file
- * count. The two numbers are not interchangeable and the summary reports them
- * separately, because they answer different questions: the file count is how
- * much telemetry arrived, and the directory count is whether the archive
- * extracted to the depth the layout expects. A download that unpacked one level
- * too deep has plenty of both under a different root, and one that unpacked a
- * level too shallow has directories and no files -- so a single combined number
- * would describe neither.
+ *   FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+ *   [2670:0x42b1f000]  Mark-Compact (reduce) 4113.7 (4116.9) -> 4113.7 (4116.9) MB
+ *
+ * The map was not load-bearing. Of the three things that read it, two want a
+ * fact rather than a body -- whether a case holds an `inject_time.txt`, and how
+ * many files the tree has -- and the third, `adaptCase`, re-reads the one
+ * `metrics.json` it needs from disk anyway. So the walk now answers those two
+ * questions and keeps nothing else, and memory is a function of the largest
+ * single case instead of the size of the corpus.
+ *
+ * What is counted is decided by the *file* rather than by decoding every candidate
+ * to look for a NUL byte, so the cost of the walk does not scale with the bytes
+ * either. The corpus is telemetry plus the archives' own packaging artefacts; of
+ * those only the payload is JSON, CSV or a short text label, so `CORPUS_TEXT_
+ * EXTENSIONS` below is the counted set. This agrees with what the body-sniffing
+ * walk counted wherever the two overlap -- the payload is text, the packaging is
+ * not -- and the two places they can disagree are both deliberate. A binary
+ * `metrics.json` is counted here and then refused by name in `adaptCase`, because
+ * a present-but-broken payload is a corpus defect to report rather than a file to
+ * drop silently; a stray text file that is not telemetry is not counted, which is
+ * the more honest number for the line the operator reads.
+ *
+ * `files` is keyed by path so the caller's lookups are unchanged, and holds one
+ * entry per counted file with a `null` body: the map is a set, and its values say
+ * so rather than inviting a reader to depend on a body nobody kept.
  *
  * `root` itself is not counted: it is the argument the caller passed, not
  * something the download produced.
  */
-function readTree(root) {
-  const files = {};
+/**
+ * The extensions the corpus carries telemetry and case labels under.
+ *
+ * Everything else in the extraction is the archives' own packaging -- `.DS_Store`,
+ * icons, manifests -- which is neither counted nor read. `.txt` is here for
+ * `inject_time.txt`, which is what identifies a case.
+ */
+const CORPUS_TEXT_EXTENSIONS = new Set(['.json', '.csv', '.txt', '.log', '.md']);
+
+function walkTree(root) {
+  const files = new Map();
   let directories = 0;
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -183,10 +210,10 @@ function readTree(root) {
         continue;
       }
       if (!entry.isFile()) continue;
-      const relative = path.slice(root.length + 1);
-      const bytes = readFileSync(path);
-      if (bytes.includes(0)) continue;
-      files[relative] = bytes.toString('utf8');
+      const dot = entry.name.lastIndexOf('.');
+      const extension = dot === -1 ? '' : entry.name.slice(dot).toLowerCase();
+      if (!CORPUS_TEXT_EXTENSIONS.has(extension)) continue;
+      files.set(path.slice(root.length + 1), null);
     }
   };
   walk(root);
@@ -200,11 +227,21 @@ function readTree(root) {
  * dropped: `inject_time.txt` is the case's own label and is already in the
  * descriptor, so feeding it to the ingest only produces a quarantine entry for
  * a file that was never telemetry.
+ *
+ * This reads the one file it needs, directly. It is why the corpus-wide walk can
+ * stop keeping bodies: the adapter never asked for them.
  */
 function adaptCase(root, entry) {
-  const dir = join(root, entry.caseId);
-  const raw = readFileSync(join(dir, 'metrics.json'), 'utf8');
-  const metrics = assertRcaevalMetrics(raw, entry);
+  const path = join(root, entry.caseId, 'metrics.json');
+  const bytes = readFileSync(path);
+  // A `metrics.json` with a NUL in it is not JSON and cannot be telemetry. The
+  // check is kept where the bytes are opened, having moved out of the walk, so
+  // a binary body under a payload name is still refused rather than decoded into
+  // a megabyte of replacement characters for a scorer to search.
+  if (bytes.includes(0)) {
+    return { ok: false, reason: 'metrics.json is binary, not telemetry' };
+  }
+  const metrics = assertRcaevalMetrics(bytes.toString('utf8'), entry);
   if (!metrics.ok) return metrics;
   return {
     ok: true,
@@ -292,7 +329,7 @@ if (!existsSync(casesPath)) {
 
 const roundTripFailures = [];
 const descriptors = JSON.parse(readFileSync(casesPath, 'utf8'));
-const { files, directories } = readTree(officialDir);
+const { files, directories } = walkTree(officialDir);
 const caseCount = Array.isArray(descriptors.cases) ? descriptors.cases.length : 0;
 
 if (caseCount === 0) {
@@ -312,7 +349,7 @@ if (caseCount === 0) {
 const declared = [];
 for (const entry of descriptors.cases ?? []) {
   declared.push(entry.caseId);
-  if (files[`${entry.caseId}/inject_time.txt`] === undefined) {
+  if (!files.has(`${entry.caseId}/inject_time.txt`)) {
     roundTripFailures.push(`${entry.caseId}: declared in ${casesPath} but absent from ${officialDir}`);
   }
 }
@@ -325,7 +362,7 @@ if (declared.length > 0) {
   // of wrong that never fails a test -- it made a shrunk corpus look bigger --
   // so the two are now named for what they are.
   console.log(
-    `ROUNDTRIP declared ${declared.length} case(s), found ${Object.keys(files).length} file(s), ` +
+    `ROUNDTRIP declared ${declared.length} case(s), found ${files.size} file(s), ` +
       `${directories} directory(ies)`,
   );
 }
@@ -333,7 +370,7 @@ if (declared.length > 0) {
 let roundTripped = 0;
 for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   const label = `${String(index + 1).padStart(3)}/${declared.length} ${entry.caseId.padEnd(30)}`;
-  if (files[`${entry.caseId}/inject_time.txt`] === undefined) continue;
+  if (!files.has(`${entry.caseId}/inject_time.txt`)) continue;
 
   // One case at a time, over an adapted single-case map.
   //
