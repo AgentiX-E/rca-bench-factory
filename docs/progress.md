@@ -366,6 +366,37 @@ wrong is worth keeping:
 
 A derived expectation and an exit code are both weak on their own: the first
 disappears with the thing it measures, and the second is satisfied by any failure.
+
+### Injection matrix, pass 9
+
+P1-2: the coverage threshold cannot see a symbol nothing calls, so the export
+surface of `ir/`, `score/`, `export/` and `gates/` is now enumerated — every export
+must be named by a module outside `test/`. Writing that gate reproduced the pass-8
+defect twice, in the gate itself.
+
+| Injection | Before the fix | After the fix |
+| --- | --- | --- |
+| an un-named export appended to a scanned module | `153 passed`, silent | **red, naming it** |
+| the same export appended after only the module-list fix | `184 passed`, silent | **red** |
+| a brand-new module created under `src/util/` | — | **red**, `neither enumerated nor explained` |
+| a module deleted while still listed | — | **red**, stale entry |
+| a module exempted that nothing imports | — | **red**, `no module imports it` |
+| NEGATIVE CONTROL — tree unchanged | — | 0 (stays green) |
+
+The first row is the finding. The module list was hand-written, so a module outside
+it was never scanned and a new export in the tree was invisible to the test whose
+whole purpose is to find exactly that. Fixing the module list was not enough: the
+per-symbol cases were a `const cases = …` at describe scope, so `it.each` froze them
+at collection time and the same injection passed *again*. **Enumerating modules does
+not help if symbols are enumerated too early.**
+
+Both are now resolved inside the assertion body, and because this was the third
+occurrence of the same shape, the property itself has a test: it appends an export to
+a real file, requires the enumerated count to move, and restores the file in a
+`finally`.
+
+137 export names are enumerated. All 137 are named by a non-test module — nothing
+dead was found, and the value is that the question is now asked on every run.
 Neither is a substitute for asserting the reason.
 
 ## L4 anchor status
@@ -482,26 +513,27 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 88 |
+| Commits | 90 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
 | Source lines | 13,205 |
-| Test files | 73 core + 3 CLI |
-| Test lines | 24,198 |
-| Tests | 1978 core + 173 CLI |
+| Test files | 74 core + 3 CLI |
+| Test lines | 24,501 |
+| Tests | 2042 core + 173 CLI |
 
 Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
 previous table's own closing sentence -- that a status table is a column of
 measurements and they decay together -- was written after four of six rows went
 stale in one pass, and it held: three rows moved again here, for reasons worth
-naming. **Commits** `85 → 88`: the anchor diagnostic, the payload-name fix and the
-rule fix. **Test files** `76 → 73 core + 3 CLI` and **Test lines** `23,440 → 24,198`,
-**Tests** `1959 → 1978`: pass 8 adds eleven meta-gate tests. The file row fell
-because the old figure counted every `.ts` under `test/` and the new one counts
-tests, which is the number the runner prints.
+naming. **Commits** `85 → 88 → 90`: the anchor diagnostic, the payload-name fix, the
+rule fix, then pass 8's meta-gate and pass 9's export enumeration. **Test files**
+`76 → 73 → 74 core + 3 CLI`, **Test lines** `23,440 → 24,198 → 24,501` and
+**Tests** `1959 → 1978 → 2042`: pass 8 adds eleven meta-gate tests, pass 9 adds
+sixty-four enumeration tests. The file row fell once because the old figure counted
+every `.ts` under `test/`; it rises now by one because pass 9 adds a real test file.
 
 **Test files** counts `*.test.ts`, which is what the runner counts, and the two
-agree at `73`. Counting every `.ts` under `test/` gives `75`, because that directory
+agree at `74`. Counting every `.ts` under `test/` gives `76`, because that directory
 also holds `fixtures.ts` and `helpers.ts` -- support modules with no tests in them.
 The first draft of this row used `75`, then explained the two-number gap with a
 mechanism that does not exist (files excluded by config). Both the figure and the
@@ -547,6 +579,14 @@ is a list of the ones somebody happened to check.
   exit code is not an assertion: a gate that crashes on a missing module also exits
   1, so each failure is asserted by the gate's own diagnostic being present and a
   crash being absent.
+- **Coverage is enumerated, not only thresholded**: `pnpm test:coverage` asks whether
+  a line ran; `export-surface-enumerated.test.ts` asks whether anything outside the
+  tests *names* an export. The second question is the one a 99.9x threshold cannot
+  answer, and it is now asked of `ir/`, `score/`, `export/` and `gates/` -- 137 export
+  names. Both of the enumerations in that file are read at run time, and the property
+  is itself tested by appending to a real file and requiring the count to move. That
+  test exists because the file was written twice with the enumeration frozen too
+  early, and each frozen version passed the injection it was meant to catch.
 
 ## Open
 
@@ -784,6 +824,14 @@ is a list of the ones somebody happened to check.
   empty-reference guard) and of `gen-rcaeval-cases.mjs` are unexercised. Closing
   those means fixtures that build a whole synthetic reference or example tree,
   which is doable and not done. Recorded rather than implied.
+- **The export enumeration covers four directories, not the package.** `cli/`,
+  `ingest/`, `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`,
+  `report/` and `entity/` are exempted in `UNENUMERATED` with reasons that point at
+  other mechanisms -- the CLI reference gate, the structure-dispatch tests, the
+  vocabulary single-source tests -- and each exemption is checked by requiring that
+  some module imports the exempted one. An exemption is therefore a claim with
+  evidence, not a hole. Extending enumeration to those directories is the rest of
+  P1-2.
 
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.

@@ -2723,3 +2723,162 @@ which is a weaker claim than a test that forces them to fail, and it is the hone
 status.
 
 `progress.md`'s P1-6 tracks the remainder.
+
+---
+
+## 48 — The enumeration gate was written, and it could not see what it enumerated
+
+Finding 47 ended with the claim that an expectation must come from outside the thing
+it measures. This finding is that claim failing a third time, in the file written to
+enforce it — and then a fourth time after the first fix, which is the part worth
+recording in detail.
+
+### What P1-2 asked for
+
+`09-推进进度追踪.md` P1-2: thresholds cannot see omission. Every coverage number in
+this repository is 99.9x against a 95% gate, and that number describes the files v8
+loaded. A module that *is* reached but whose exported symbols nobody calls reports
+full statements, full branches, a satisfied threshold, and a dead export. The fix is
+to assert the other direction — every export must be named by something outside its
+own tests.
+
+`packages/core/test/export-surface-enumerated.test.ts` does that for the four
+directories the plan names: `ir/`, `score/`, `export/`, `gates/`.
+
+### The gate passed. The gate was wrong.
+
+The first version scanned a hand-written list of 17 modules and asserted, per symbol,
+that some non-test file names it. Against the real tree it reported:
+
+```
+✓ 151 passed
+× names at least one symbol per enumerated module
+    AssertionError: expected 26 to be greater than or equal to 30
+```
+
+Two things in that output matter. The 151 green cases are the substance: **every
+export of every enumerated module is already named by a non-test sibling.** That is
+a real result about the codebase and it was not assumed — it is measured, and it is
+the first time it has been measured.
+
+The single red is my own fault and I am recording it rather than quietly raising the
+constant: I wrote `toBeGreaterThanOrEqual(30)` without counting, the real number is
+26, and a threshold chosen by feel inside a file whose purpose is to replace feel with
+enumeration is a poor advertisement for itself. The assertion now reads `toBe(26)`,
+with the reason in place of the number's authority.
+
+### Injection 1 — the module list could not see a new module
+
+The 17 modules were named by hand, and a module outside the list is never scanned.
+Appending this to `export/guard.ts`:
+
+```ts
+/** INJECTION PROBE - an export no non-test module names. */
+export function injectedDeadSymbol(): string { return 'x'; }
+```
+
+produced `Tests 153 passed (153)`. Not a failure, not a mention — the injected symbol
+was **invisible to the test whose entire purpose is to find symbols nothing names**.
+
+This is finding 47's defect in a new place. There, the expectation shrank with the
+thing it measured because it was derived from the gate's own `BANNED` array. Here, the
+expectation is a hand-written list, and its blind spot is *additions to the tree*
+rather than *deletions from the gate*. Same shape: the measurement is closed under the
+operations that matter.
+
+The fix is `UNENUMERATED`, and the direction of the closure is what makes it work.
+A glob would have been enough to *see* new modules, but a glob cannot state which
+modules are deliberately outside the enumerated four. So every module in `src/` must
+appear in exactly one of two places:
+
+- `ENUMERATED_MODULES` — scanned for un-named exports, 17 entries, 137 export names.
+- `UNENUMERATED` — not scanned, with a written reason, 28 entries.
+
+Both directions are asserted: a module in neither list is red, and a path in
+`ENUMERATED_MODULES` that no longer exists is red. One alone admits a list that has
+drifted from the tree.
+
+`UNENUMERATED` also has to be a measurement rather than an escape hatch, or the fix
+trades one blind spot for a worse one. Its reasons all say "reached through X", so
+those claims are checked: every exempted module except the package entry point must
+be imported by some module. An exemption that certified dead code as fine would be a
+hole wearing a reason.
+
+That check had its own bug, found by it going red: I matched the importer's text
+against `'./llm/openai-compat.js'`, but `file` is package-relative (`src/llm/deepseek.ts`),
+so the specifier a sibling actually writes is `'./openai-compat.js'`. The module is
+imported twice and the check said zero times. Resolving specifiers properly would mean
+reimplementing Node's resolution rules, and a wrong implementation fails open — so the
+match is now on the bare specifier, which cannot be wrong about the question being
+asked: does this name appear in an import.
+
+### Injection 2 — the module list was fixed, and the same injection still passed
+
+`injectedDeadSymbol` went back in after the module-list fix. The module list now
+covered `export/guard.ts`, so the symbol was reachable. The suite reported:
+
+```
+Tests 184 passed (184)
+```
+
+Because the per-symbol cases were a `const cases = …` at describe scope. `it.each`
+materialises that array once, during collection, so the test table was a snapshot of
+the exports as they existed when the file was read — and a symbol added afterwards is
+not merely unchecked, it is absent from the list of things to check. **The file had
+learned to enumerate modules and still enumerated symbols too early.**
+
+The fixture had shrunk, again, and this time the shrink was in time rather than in
+content. It is the same defect as finding 47 and the same defect as injection 1, and
+it took three attempts in one file to get the lifetime of the expectation right.
+
+The fix moves the resolution inside the assertion body (`exportPairs()`), and — since
+this is the third time — adds a test for the property itself rather than trusting it:
+
+```ts
+it('every enumeration here is read at run time, not frozen at collection time', () => {
+  const before = exportPairs().length;
+  const target = join(SRC, 'export', 'guard.ts');
+  const original = readFileSync(target, 'utf8');
+  try {
+    writeFileSync(target, original + `\nexport const runTimeProbe${Date.now()} = 1;\n`);
+    expect(exportPairs().length).toBe(before + 1);
+  } finally {
+    writeFileSync(target, original);
+  }
+  expect(exportPairs().length).toBe(before);
+});
+```
+
+It appends to a real file, requires the count to move, and restores the file in a
+`finally`. A collection-time constant cannot pass it.
+
+### The injection matrix
+
+Each row is one real execution against the tree.
+
+| injection | before | after |
+|---|---|---|
+| append an un-named export to a scanned module | `153 passed` | **red, naming `injectedDeadSymbol`** |
+| append the same export after only the module-list fix | `184 passed` | **red** |
+| create a brand-new module under `src/util/` | — | **red**, `neither enumerated nor explained: util/injected-module.ts` |
+| delete a module still listed in `ENUMERATED_MODULES` | — | **red** (`stale entry`) |
+| exempt a module that nothing imports | — | **red** (`no module imports it`) |
+| three negative controls (tree unchanged) | — | green |
+
+### Result, and what it does not cover
+
+137 export names across the four directories, and **every one of them is named by a
+module outside `test/`**. Nothing dead was found; the value delivered here is that the
+question is now asked on every run instead of never.
+
+Two honest limits:
+
+- **Symbols, not call sites.** The failure message says "no file outside test/ names
+  it", which is what was observed. A symbol reached only through a computed property
+  or a dynamic import would be a false positive, and none exists today.
+- **Four directories, not the package.** `cli/`, `ingest/`, `transform/`, `pack/`,
+  `util/`, `llm/`, `fault/`, `evolution/`, `report/` and `entity/` are exempted with
+  reasons. Their reasons point at other mechanisms — the CLI reference gate, the
+  structure-dispatch tests, the vocabulary single-source tests — and the importer
+  check confirms they are reached. Extending enumeration to them is the remainder of
+  P1-2 and is tracked in `progress.md`.
