@@ -2474,3 +2474,143 @@ to `productionresultssa11.blob.core.windows.net`, and the signed URL in that
 redirect is a plain HTTPS host that a fetch tool can read even though the shell
 cannot reach it. The earlier note that this log was unreadable was, once again, a
 limitation of one instrument reported as a property of the thing measured.
+
+## 46 — Finding 45 named the wrong mechanism, and the guard it added had no test
+
+Finding 45 is right that the fourth anchor dies on its first case and wrong about
+why. It blamed `multi-source-data`: the derive step skips that directory, the
+scoring step dereferences it, and the two disagree by one entry. That reading is
+consistent with the log and is not what the log says.
+
+The crash line names the path:
+
+```
+'/tmp/official/RE2-OB/checkoutservice_cpu/1/metrics.json'
+                                  ^ this is a case, not the skipped directory
+```
+
+`.../1` is a case. It carries the `{suite}-{system}/{service}_{fault}/{run}` shape
+exactly, and `gen-rcaeval-cases.mjs` emitted a descriptor for it, which is how it
+reached the reader at all. So the derive step did not skip it, the scoring step
+did not dereference something the derive step had excluded, and 270 declared
+against 271 read is not what happened. Finding 45's mechanism was a second
+invention laid over the first one: finding 45 corrected "the failure has moved
+down the job three times" and then repeated the same error one level in.
+
+### What the mechanism actually is
+
+The run artifact settles it. `rcaeval-rcaeval-re2-round-trip.zip` was downloaded
+from the workflow run (5502 bytes, via the Azure Blob redirect route finding 45
+records) and holds the descriptor the failing step consumed:
+
+```
+counts: { RE1: 0, RE2: 270, RE3: 0 }
+RE2-OB/checkoutservice_cpu/1  injectTime=2024-01-15T21:36:06.000Z
+RE2-OB/checkoutservice_cpu/2  injectTime=2024-01-15T21:37:06.000Z
+RE2-OB/checkoutservice_cpu/3  injectTime=2024-01-15T21:38:06.000Z
+```
+
+Three cases under `checkoutservice_cpu`, in sequence, with real injection times,
+and **zero** cases under `multi-source`. The skip in step 10 is unrelated to the
+crash in step 11.
+
+The defect is a name. `check-official.mjs` read every case as `metrics.json`:
+
+```js
+const path = join(root, entry.caseId, 'metrics.json');
+```
+
+`metrics.json` is the name **our exporter** writes. The corpus does not. Upstream's
+own harness locates its cases by globbing `**/data.csv` and reading the labels back
+out of the path, which `docs/targets/rcaeval.md` records, and which
+`gen-rcaeval-cases.mjs` already relies on when it tests for `inject_time.txt`
+rather than for the payload. The reader was asserting a name that only one side of
+the exchange had agreed to.
+
+So the descriptor's existence proves `inject_time.txt` exists under
+`checkoutservice_cpu/1`, and the crash proves `metrics.json` does not. Both are
+true, and only one of them is about the corpus.
+
+This is finding 42 again — writer and reader disagreeing about a name — one layer
+down and in the opposite direction. Finding 42 was a reader that invented a name
+the corpus did not use; this is the same reader inventing a second one, after
+finding 42's fix taught it to stop inventing the first.
+
+### Why the fix in finding 45 did not catch it
+
+Finding 45's part 2 is "the reader asks before it opens", and the reasoning is
+sound: `ENOENT` from `openSync` names a syscall rather than a corpus, and an
+operator cannot act on it. But the guard it added asked the **wrong question**. It
+asked whether the *directory* was a case, a predicate the directory already
+satisfied, rather than whether the *payload* it was about to open existed. A guard
+on the wrong predicate fails open in exactly the case that was crashing.
+
+The fix is to resolve the payload by name before opening it, and to report a case
+that carries none of the known names by listing the names it looked under and the
+names it found. Both halves are needed: the error has to say what was missing
+*and* what was there, because "the download is truncated" and "the layout moved"
+are different findings that call for different responses.
+
+### The guard had no test, and no test could have noticed
+
+This is the part worth writing down. Finding 45's part 3 added an enumeration gate
+to `check-official.mjs`: it counts the cases that round-tripped and refuses to print
+`ROUNDTRIP PASSED` unless that count equals the number of cases the descriptor
+declared. Correct in substance, and **zero tests touched it.**
+
+Removing the gate and running the file left all 27 tests green. Removing the gate
+*and* diverting two cases past the count left them green as well. The only way to
+show the gate does anything was a controlled experiment kept outside the suite:
+
+| gate | per-case lines | counted | verdict | exit |
+|---|---|---|---|---|
+| present | `PASS 1/2`, `PASS 2/2` | 0 | `ROUNDTRIP FAILED` | 1 |
+| removed | `PASS 1/2`, `PASS 2/2` | 0 | `ROUNDTRIP PASSED (0 case(s) ...)` | **0** |
+
+Identical per-case output, and only the gate distinguishes 0-of-2 from 2-of-2.
+Without it the script certifies an empty run as a pass. A defence that does this is
+worse than no defence, because it is read as evidence — which is finding 45's own
+sentence about warnings and thresholds, now demonstrated against the gate that
+finding 45 added to fix it.
+
+**A threshold gate prevents regression, an enumeration gate discovers omission,
+and a gate with no test is neither.** The third clause is new and was expensive.
+
+### The fix, and what it cost to verify
+
+`check-official.mjs` now resolves the payload against a named set
+(`CASE_PAYLOAD_NAMES`), reports an unresolvable case with the names tried and the
+names found, and continues rather than aborting at the first — so a corpus with a
+systematically different payload name is enumerated by one dispatch instead of one
+dispatch per case. Six tests cover it, including the accepting half (`data.csv` is
+read) and a negative control, so a reader that refused everything cannot pass.
+
+Two tests now cover the enumeration gate: that a fully counted corpus is accepted,
+and that the declared and counted figures are reported as separate numbers with the
+missing case named. Both fail if the gate is removed.
+
+The reproduction is local. The earlier note that this step costs a 90-minute runner
+dispatch to observe is no longer true, and the byte-identical stack is:
+
+```
+Error: ENOENT: no such file or directory, open
+    '/tmp/redcheck/RE2-OB/checkoutservice_cpu/1/metrics.json'
+    at readFileSync (node:fs:472:19)
+    at adaptCase (.../scripts/check-official.mjs:286:17)
+```
+
+— same file, same function, one frame from the CI log's `adaptCase`.
+
+### What is still unmeasured
+
+The fix has not been through the step that failed. It is verified against a
+fixture in the official layout, the layout itself is verified against
+`docs/targets/rcaeval.md` and the run artifact, and the artifact is the real one.
+None of that is the same as step 11 of `official-data.yml` going green on the real
+corpus, and the honest status stays *"the failure is identified, reproduced locally,
+and the fix is argued and locally verified — not verified in CI"*.
+
+The remaining unknown is whether `data.csv` under `.../1/` holds the metric
+samples in a shape `assertRcaevalMetrics` accepts. The descriptor records no
+payload name, so this is not derivable from the artifact; it is the first thing the
+next dispatch will say.

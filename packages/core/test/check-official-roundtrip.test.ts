@@ -504,3 +504,250 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     expect(result.stdout).toMatch(/, 7 directory\(ies\)/);
   });
 });
+
+/**
+ * A declared case whose payload is not a file this adapter can read.
+ *
+ * This is the shape of the fourth anchor's real failure, taken from the run that
+ * produced it rather than imagined. `official-data.yml` #35487637399 derived 270
+ * descriptors from a real RCAEval download — `RE2-OB/checkoutservice_cpu/1` among
+ * them, with a real `injectTime` — and then died on the first one it read:
+ *
+ *   ROUNDTRIP declared 270 case(s), found 2978 file(s), 364 directory(ies)
+ *   Error: ENOENT: no such file or directory, open
+ *       '/tmp/official/RE2-OB/checkoutservice_cpu/1/metrics.json'
+ *       at adaptCase (.../scripts/check-official.mjs:236:17)
+ *
+ * Two facts pin what happened, and neither is a guess:
+ *
+ *   - `gen-rcaeval-cases.mjs` emits a descriptor only for a directory carrying
+ *     `inject_time.txt`, so that file *was* there;
+ *   - `adaptCase` opened `metrics.json` by name and the filesystem said it was
+ *     not there.
+ *
+ * So the corpus holds a case whose payload does not carry the name this adapter
+ * assumes. The upstream harness does not assume it either: `main.py` finds its
+ * cases by globbing `**\/data.csv` and reads the labels back out of the path, and
+ * `docs/targets/rcaeval.md` records that. `metrics.json` is the name our
+ * *exporter* writes, and the adapter was reading the corpus with our own name for
+ * it — the same mistake finding 42 made about the directory layout, one layer
+ * down.
+ *
+ * What the adapter must not do is `readFileSync` a path it has no reason to
+ * believe exists. An `ENOENT` thrown from inside a file open is not a verdict
+ * about the corpus; it is a crash that reports the symptom and withholds the
+ * cause. Every test below asserts the same property from a different direction:
+ * the run says *what is wrong with the corpus*, and never dies with a stack trace
+ * from `openSync`.
+ */
+describe('scripts/check-official.mjs · a declared case with no readable payload', () => {
+  /** A case directory with an `inject_time.txt` and a payload named `data.csv`. */
+  function writeCaseWithoutMetrics(root: string, caseId: string): void {
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    // The payload the corpus actually carries, under the name upstream uses.
+    // `main.py` finds its cases by globbing a data.csv pattern, so a reader that
+    // only knew `metrics.json` would report a good corpus as unreadable.
+    writeFileSync(join(dir, 'data.csv'), 'time,cpu_usage\n0,0.2\n1,0.95\n');
+  }
+
+  it('reads a payload the corpus named data.csv, which is what upstream writes', () => {
+    // The accepting half of the same fact. `main.py` globs `**\/data.csv`, so a
+    // reader that only knew `metrics.json` would call a perfectly good corpus
+    // unreadable -- and a reader that only knew `data.csv` would call this
+    // repository's own example bundle unreadable. Both names are in the set.
+    const root = freshRoot();
+    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeFileSync(
+      join(root, 'RE2-OB/checkoutservice_cpu/1/data.csv'),
+      JSON.stringify({ cpu_usage: [0.2, 0.2, 0.95, 0.95], mem_usage: [0.5, 0.5, 0.5, 0.5] }),
+    );
+    const cases = join(scratch, 'datacsv.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+  });
+
+  it('fails with a named reason instead of an ENOENT stack trace', () => {
+    // A case carrying neither known payload name. This is the shape the real
+    // run hit, and the assertion is about the diagnostic rather than the exit:
+    // before the fix the log opened with `at Object.openSync`, which tells an
+    // operator the process crashed and not that the corpus is missing a file.
+    const root = freshRoot();
+    const dir = join(root, 'RE2-OB/checkoutservice_cpu/1');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    // A name this reader does not know. It is listed back in the reason, so the
+    // operator can see what the corpus actually carried rather than being told
+    // only what was absent.
+    writeFileSync(join(dir, 'samples.parquet'), 'binary-ish');
+    const cases = join(scratch, 'nopayload.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.stderr).not.toMatch(/openSync/);
+    expect(result.stderr).not.toMatch(/at Object\.openSync/);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/RE2-OB\/checkoutservice_cpu\/1/);
+    // The names it looked under, and the names it found. Both, because "no
+    // payload" and "a payload called something else" are different findings.
+    expect(result.stderr).toMatch(/metrics\.json, data\.csv/);
+    expect(result.stderr).toMatch(/samples\.parquet/);
+  });
+
+  it('does not report the crash as a scorer failure', () => {
+    // The distinction the anchor depends on. A corpus that cannot be read and an
+    // export that scores 0.0 are different findings, and reporting the first as
+    // the second would make a broken download look like a solved corpus.
+    const root = freshRoot();
+    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/1');
+    const cases = join(scratch, 'noscore.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.stdout).not.toMatch(/ROUNDTRIP PASSED/);
+    // The per-case verdict line is the anchor's own vocabulary, so a case that
+    // could not be assembled has to appear in it rather than only in the
+    // summary, which is a count and cannot name a case.
+    expect(result.stderr).toMatch(/ROUNDTRIP   - RE2-OB\/checkoutservice_cpu\/1: \S/);
+  });
+
+  it('names every case it cannot read, not only the first', () => {
+    // The failure that started this. On the real corpus the run stopped at the
+    // first unreadable case, so an operator reading the log learns about one
+    // case per run -- and a corpus with a systematically wrong payload name
+    // would take one 90-minute dispatch per case to enumerate. Reporting all of
+    // them turns N runs into one.
+    const root = freshRoot();
+    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/2');
+    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/3');
+    const cases = join(scratch, 'allthree.json');
+    writeCases(cases, [
+      'RE2-OB/checkoutservice_cpu/1',
+      'RE2-OB/checkoutservice_cpu/2',
+      'RE2-OB/checkoutservice_cpu/3',
+    ]);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).toBe(1);
+    for (const n of ['1', '2', '3']) {
+      expect(result.stderr).toMatch(new RegExp(`RE2-OB/checkoutservice_cpu/${n}\\b`));
+    }
+  });
+
+  it('still round-trips a corpus whose cases carry the payload it reads', () => {
+    // The negative control. A reader that refuses everything would pass all
+    // three tests above and close the anchor by breaking it, so the accepting
+    // path is asserted here beside them.
+    const root = freshRoot();
+    writeCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    const cases = join(scratch, 'control.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+  });
+
+  it('rejects a payload named metrics.json that is a directory, by name', () => {
+    // The other way the open can fail without the corpus being empty: the name
+    // is present and is not a file. `readFileSync` raises `EISDIR`, which is the
+    // same class of stack trace from the same call, so it takes the same route
+    // out -- a reason, not a crash.
+    const root = freshRoot();
+    const dir = join(root, 'RE2-OB/checkoutservice_cpu/1');
+    mkdirSync(join(dir, 'metrics.json'), { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    const cases = join(scratch, 'isdir.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.stderr).not.toMatch(/openSync|readFileSync/);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/RE2-OB\/checkoutservice_cpu\/1/);
+  });
+});
+
+/**
+ * The enumeration gate, which had no test at all until it was found by hand.
+ *
+ * `check-official.mjs` counts the cases it round-tripped and refuses to print
+ * `ROUNDTRIP PASSED` unless that count equals the number of cases the descriptor
+ * declared. The gate exists because the per-case lines cannot tell the
+ * difference on their own: a case whose target skips it by contract prints
+ * `ROUNDTRIP SKIP`, which is a `continue` and not a count, so a corpus in which
+ * *every* case was skipped prints one `SKIP` per case and then a summary whose
+ * numerator is zero.
+ *
+ * The gate was found to be untested by removing it and running the suite: all
+ * twenty-seven tests stayed green. Kept out of the suite and run by hand against
+ * a two-case corpus in which both cases reach the count and are then diverted
+ * past it, the difference is:
+ *
+ *     gate present   ROUNDTRIP PASS 1/2 ... PASS 2/2 ... FAILED (exit 1)
+ *     gate removed   ROUNDTRIP PASS 1/2 ... PASS 2/2 ... PASSED (0 case(s)) (exit 0)
+ *
+ * The same line of `PASS` in both, and only the gate turns the second into a
+ * failure. A defence that certifies an empty run as a pass is worse than no
+ * defence, because it is read as evidence. The two tests below pin the two
+ * halves that were both missing: that a counted run is accepted, and that the
+ * declared and counted figures are reported as separate numbers, so a gate that
+ * fails every run cannot pass them either.
+ */
+describe('scripts/check-official.mjs · the round trip counts what it declares', () => {
+  it('accepts a corpus in which every declared case was counted', () => {
+    // The accepting half, and the reason this block is not simply "the gate
+    // fires": a gate that failed every run would satisfy a test that only ever
+    // asserted a non-zero exit.
+    const root = freshRoot();
+    writeCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeCase(root, 'RE2-OB/checkoutservice_cpu/2');
+    const cases = join(scratch, 'counted.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1', 'RE2-OB/checkoutservice_cpu/2']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(2 case/);
+    // The declared count and the counted count are the same number here, which
+    // is exactly why the assertion above cannot distinguish them.
+    expect(result.stdout).toMatch(/ROUNDTRIP declared 2 case\(s\)/);
+  });
+
+  it('reports the declared count and the round-tripped count as separate numbers', () => {
+    // The two counts are only distinguishable when they differ, so the fixture
+    // makes them differ: three cases are declared and two exist. Without the
+    // summary line, an operator reading `2 of 3` has to know that `3` was the
+    // declared figure rather than assume the corpus shrank to two.
+    const root = freshRoot();
+    writeCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeCase(root, 'RE2-OB/checkoutservice_cpu/2');
+    const cases = join(scratch, 'declared.json');
+    writeCases(cases, [
+      'RE2-OB/checkoutservice_cpu/1',
+      'RE2-OB/checkoutservice_cpu/2',
+      // Declared and absent. The missing case is named by the finding above the
+      // summary, and counted by the summary's denominator.
+      'RE2-OB/checkoutservice_cpu/3',
+    ]);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/ROUNDTRIP 2 of 3 declared case\(s\) round-tripped/);
+    expect(result.stderr).toMatch(/1 finding\(s\)/);
+    // The finding names the case, so the denominator's extra unit is accounted
+    // for rather than left as arithmetic the reader has to trust.
+    expect(result.stderr).toMatch(/RE2-OB\/checkoutservice_cpu\/3: declared in .* but absent/);
+  });
+});

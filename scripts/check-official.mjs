@@ -97,19 +97,19 @@ const RCAEVAL_SAMPLE_SECONDS = 60;
  * to parse. A metrics.json we can only partly read is one whose fault the round
  * trip cannot claim to have reproduced.
  */
-function assertRcaevalMetrics(raw, entry) {
+function assertRcaevalMetrics(raw, entry, payloadName = 'metrics.json') {
   let doc;
   try {
     doc = JSON.parse(raw);
   } catch (error) {
-    return { ok: false, reason: `metrics.json is not valid JSON: ${error.message}` };
+    return { ok: false, reason: `${payloadName} is not valid JSON: ${error.message}` };
   }
   if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
-    return { ok: false, reason: 'metrics.json is not a JSON object of metric -> values' };
+    return { ok: false, reason: `${payloadName} is not a JSON object of metric -> values` };
   }
   const names = Object.keys(doc);
   if (names.length === 0) {
-    return { ok: false, reason: 'metrics.json declares no metrics' };
+    return { ok: false, reason: `${payloadName} declares no metrics` };
   }
   let length = -1;
   for (const name of names) {
@@ -221,6 +221,29 @@ function walkTree(root) {
 }
 
 /**
+ * The payload names an RCAEval case may carry its metric samples under.
+ *
+ * `metrics.json` is the name *our exporter* writes, and for a long time this
+ * script read the corpus under that name too. The corpus does not guarantee it.
+ * The upstream harness locates its cases by globbing `**\/data.csv` and reading
+ * the labels back out of the path -- recorded in `docs/targets/rcaeval.md` -- so
+ * the payload's name belongs to the archive and is not something a reader may
+ * assume.
+ *
+ * The assumption is what the real run died on: 270 descriptors were derived from
+ * a download, and the first one read raised `ENOENT` for a `metrics.json` that
+ * the corpus had named something else (finding 46). The list below is the set of
+ * names this reader will look under, tried in order, and a case carrying none of
+ * them is reported by name with the names it did carry -- so a layout that moves
+ * again is a finding rather than a crash.
+ *
+ * `metrics.json` is first because it is what our own exporter writes, so the
+ * example bundle and the corpus take the same path when both are well-formed.
+ */
+const CASE_PAYLOAD_NAMES = ['metrics.json', 'data.csv'];
+const CASE_LABEL = 'inject_time.txt';
+
+/**
  * Adapt one corpus subtree to what the ingest reads, or say why it cannot.
  *
  * `metrics.json` is rewritten into the record shape and everything else is
@@ -230,18 +253,45 @@ function walkTree(root) {
  *
  * This reads the one file it needs, directly. It is why the corpus-wide walk can
  * stop keeping bodies: the adapter never asked for them.
+ *
+ * ## Why the open is guarded
+ *
+ * `readFileSync` on a path that is not there throws `ENOENT` from inside
+ * `openSync`, and the first line of that stack trace names the syscall rather
+ * than the corpus. On the real corpus that was the *entire* diagnostic a
+ * ninety-minute run produced: an operator learned that the process crashed at
+ * `adaptCase`, not that a case was missing its payload. The two call for
+ * different actions -- one says "fix the reader", the other says "the download is
+ * incomplete or the layout moved" -- and the log was giving the wrong one.
+ *
+ * So the failure is converted into a verdict. Every case is attempted rather
+ * than abandoned at the first, because a corpus whose payload name is
+ * systematically different would otherwise take one dispatch per case to
+ * enumerate; the whole list is now reported by one run.
  */
 function adaptCase(root, entry) {
-  const path = join(root, entry.caseId, 'metrics.json');
-  const bytes = readFileSync(path);
-  // A `metrics.json` with a NUL in it is not JSON and cannot be telemetry. The
-  // check is kept where the bytes are opened, having moved out of the walk, so
-  // a binary body under a payload name is still refused rather than decoded into
-  // a megabyte of replacement characters for a scorer to search.
-  if (bytes.includes(0)) {
-    return { ok: false, reason: 'metrics.json is binary, not telemetry' };
+  const dir = join(root, entry.caseId);
+  const found = locatePayload(dir);
+
+  if (found === undefined) {
+    return {
+      ok: false,
+      reason:
+        `no metric payload under any known name (${CASE_PAYLOAD_NAMES.join(', ')}); ` +
+        `the case directory holds ${describeDir(dir)}`,
+    };
   }
-  const metrics = assertRcaevalMetrics(bytes.toString('utf8'), entry);
+  if (found.reason !== undefined) return { ok: false, reason: found.reason };
+
+  const bytes = readFileSync(found.path);
+  // A payload with a NUL in it is not JSON and cannot be telemetry. The check is
+  // kept where the bytes are opened, having moved out of the walk, so a binary
+  // body under a payload name is still refused rather than decoded into a
+  // megabyte of replacement characters for a scorer to search.
+  if (bytes.includes(0)) {
+    return { ok: false, reason: `${found.name} is binary, not telemetry` };
+  }
+  const metrics = assertRcaevalMetrics(bytes.toString('utf8'), entry, found.name);
   if (!metrics.ok) return metrics;
   return {
     ok: true,
@@ -249,6 +299,50 @@ function adaptCase(root, entry) {
       [`${entry.caseId}/metrics.csv`]: metrics.csv,
     },
   };
+}
+
+/**
+ * The first payload candidate that exists under `dir`, as a file.
+ *
+ * Three outcomes, and the caller distinguishes them: a readable candidate, a
+ * candidate that is present but not a file, and none present. `undefined` is the
+ * third; an object with `reason` is the second. Collapsing the last two would
+ * make "the corpus names its payload differently" and "the download is
+ * truncated" print the same sentence, and they need different responses.
+ */
+function locatePayload(dir) {
+  const present = [];
+  let sawNonFile = null;
+  for (const name of CASE_PAYLOAD_NAMES) {
+    const path = join(dir, name);
+    let stats;
+    try {
+      stats = statSync(path);
+    } catch {
+      continue;
+    }
+    if (stats.isFile()) return { path, name };
+    present.push(name);
+    sawNonFile ??= `${name} is a ${describeEntryType(stats)}, not a file`;
+  }
+  if (sawNonFile !== null) return { reason: sawNonFile };
+  return present.length === 0 ? undefined : { reason: 'unreachable: non-files are returned above' };
+}
+
+/** The names in a directory, sorted, for a reason string an operator can act on. */
+function describeDir(dir) {
+  try {
+    return readdirSync(dir).sort().join(', ') || 'nothing';
+  } catch {
+    return 'a directory that could not be read';
+  }
+}
+
+/** A `stat` result in words, for a reason string that has to read as English. */
+function describeEntryType(stats) {
+  if (stats.isDirectory()) return 'directory';
+  if (stats.isSymbolicLink()) return 'symlink';
+  return 'non-file entry';
 }
 
 function argValue(flag) {
@@ -475,6 +569,32 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
 if (roundTripFailures.length > 0) {
   console.error('\nROUNDTRIP FAILED');
   for (const f of roundTripFailures) console.error(`ROUNDTRIP   - ${f}`);
+  // Every declared case is accounted for before the exit, so the failure count
+  // and the declared count are the same kind of number. Without this line the
+  // two can differ and nothing says so -- which is how a report that names four
+  // failures can be read as a report about four cases when the run declared
+  // three hundred.
+  console.error(
+    `ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped; ` +
+      `${roundTripFailures.length} finding(s)`,
+  );
+  process.exit(1);
+}
+
+// The enumeration gate. A run that scored nothing because every case was
+// filtered out is not a pass, and the summary below cannot tell the difference
+// on its own: `0 of 270` and `270 of 270` both print a number.
+//
+// This is the judgement progress.md states -- a threshold gate prevents
+// regression, an enumeration gate discovers omission -- applied to the one place
+// where the four anchors meet. It is a belt to the braces above: every path that
+// can skip a case already records a failure, so reaching here with a gap means a
+// path was added that does not.
+if (declared.length > 0 && roundTripped !== declared.length) {
+  console.error(
+    `\nROUNDTRIP FAILED\nROUNDTRIP   - ${declared.length} case(s) declared but ${roundTripped} round-tripped, ` +
+      `and no finding names the difference`,
+  );
   process.exit(1);
 }
 
