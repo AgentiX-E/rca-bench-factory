@@ -2614,3 +2614,112 @@ The remaining unknown is whether `data.csv` under `.../1/` holds the metric
 samples in a shape `assertRcaevalMetrics` accepts. The descriptor records no
 payload name, so this is not derivable from the artifact; it is the first thing the
 next dispatch will say.
+
+## 47 — Three gates had no test, and the test written for them was a false green
+
+Finding 46 ended on a rule: *a threshold gate prevents regression, an enumeration
+gate discovers omission, and a gate with no test is neither.* This finding is what
+happens when that rule is applied to the rest of the repository, and it found more
+than expected in two directions.
+
+### What was measured
+
+Every script that can exit 1 is a gate by definition -- it is a process whose only
+output is a pass or a refusal. The suite was asked, for each of them, whether
+anything makes it fail:
+
+| gate | exit(1) sites | tests referencing it |
+|---|---|---|
+| `check-no-mock.mjs` | 1 | 1 (by name only) |
+| `check-no-secrets.mjs` | 1 | **0** |
+| `check-cli-reference.mjs` | 2 | **0** |
+| `check-readme-sample.mjs` | 2 | **0** |
+| `build-example-bundle.mjs` | 1 | **0** |
+| `gen-examples.mjs` | 2 | **0** |
+| `verify-example-pack.mjs` | 4 | 1 |
+| `check-official.mjs` | 6 | 2 |
+| `check-no-vendored-data.mjs` | 1 | 1 |
+
+"Mentioned by name" was not the question that mattered, so it was re-asked as an
+experiment. Two probes, both in the real tree:
+
+1. A banned construct was appended to a test file. `check-no-mock.mjs` exited 1 and
+   named the file and line -- **and the entire suite stayed green**, so nothing in
+   1967 tests would have noticed the gate being removed.
+2. The gate was then broken outright (`if (false && ...)`). It printed
+   `check-no-mock: OK` on a tree that violates it, and the suite stayed green again.
+
+That is the finding-46 pattern with a larger radius: the gates that guard the
+repository's own standards were themselves unguarded, and the failure is silent in
+exactly the way that matters -- a hollowed gate and a working gate print the same
+line.
+
+### The new file, and the mistake in its first version
+
+`packages/core/test/gates-are-testable.test.ts` asserts the floor: each gate is run
+against the repository as it stands (must pass) and against a synthesised violation
+in a throwaway copy of the tree (must fail). The copy matters -- a committed
+violation would fail `main` and the gate would be deleted rather than fixed.
+
+The first version derived every fixture from the gate's own source. It read as
+elegant, and it was self-defeating:
+
+```
+### one banned pattern DELETED ###
+      Tests  9 passed (9)
+```
+
+Deleting `jest.mock` from the gate **deleted that pattern's test along with it**. A
+derived list catches *drift* -- a pattern quietly rewritten -- and cannot catch
+*deletion*, because the test definition shrinks with the thing it tests. The suite
+stayed green while the gate stopped banning something, which is finding 46 exactly,
+reproduced inside the file written to prevent it.
+
+The fix is two lists with different jobs: `requiredConstructs` is written
+independently and is the deletion guard, while `bannedPatterns` is read from the
+gate and is the drift guard. Both are needed; neither alone is sufficient.
+
+### The second mistake: a test that passed for the wrong reason
+
+The `check-cli-reference.mjs` test asserted `status === 1` on a reference with no
+command table. It passed. Removing the guard under test **also left it passing**,
+because the gate then fell through to `execFileSync` on a CLI the fixture tree does
+not contain and crashed on a missing module -- exit 1, same code, different cause:
+
+```
+CLI reference check FAILED: no command table found in docs/cli-reference.md
+node:internal/modules/cjs/loader:1247
+Error: Cannot find module '/tmp/crtree/packages/cli/dist/main.js'
+```
+
+A false green is worse than a missing test, because it occupies the place where a
+test should be. The assertion now names the reason -- the gate's own diagnostic
+present, a module-resolution crash absent -- so a gate that reports nothing and dies
+cannot satisfy it.
+
+### The three negatives, after the fixes
+
+Each injection is applied to the real tree and the meta-gate is required to go red:
+
+| injection | result |
+|---|---|
+| `if (failures.length > 0)` → `if (false && ...)` | **2 red** |
+| delete the `jest.mock` pattern from `BANNED` | **3 red**, naming it |
+| empty the `BANNED` array | **4 red** |
+| hollow `check-no-secrets.mjs` | **2 red** |
+| remove `check-cli-reference.mjs`'s no-table guard | **1 red** |
+
+### What this does not cover
+
+The meta-gate is a floor, not a ceiling, and the distinction is worth stating rather
+than leaving to be inferred. It proves no gate can be *hollowed out*. It does not
+prove every *branch* of every gate is exercised: `check-no-vendored-data.mjs` has
+failure paths that need a whole synthetic git repository, and those live in
+`check-no-vendored-data.test.ts`, which builds exactly that. Five gates above still
+have no test naming them -- `check-readme-sample.mjs`, `build-example-bundle.mjs`,
+`gen-examples.mjs`, and the second exits of `check-cli-reference.mjs` and
+`gen-rcaeval-cases.mjs`. They are covered by CI running them against the real tree,
+which is a weaker claim than a test that forces them to fail, and it is the honest
+status.
+
+`progress.md`'s P1-6 tracks the remainder.

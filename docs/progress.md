@@ -335,6 +335,39 @@ from the coverage section, and they are separated here on purpose: the `||` in t
 middle had been half-measured for the whole life of the function, and an injection
 matrix that treated it as one row would have reported it as one row.
 
+### Injection matrix, pass 8
+
+The gates were audited for testability, which found that three of them could be
+hollowed out with the suite staying green, and that the test written for a fourth
+was a false green.
+
+| Injection | Tests that fail |
+| --- | --- |
+| `check-no-mock.mjs` made unable to fail (`if (false && ...)`) | 2 (meta-gate) |
+| the `jest.mock` pattern deleted from `BANNED` | 3 (meta-gate, naming it) |
+| the `BANNED` array emptied | 4 (meta-gate) |
+| `check-no-secrets.mjs` made unable to fail | 2 (meta-gate) |
+| `check-cli-reference.mjs`'s no-table guard removed | 1 (meta-gate) |
+| NEGATIVE CONTROL — a legitimate test file added | 0 (stays green) |
+| NEGATIVE CONTROL — the meta-gate run against the real tree | 0 (stays green) |
+
+12 test failures across 5 injections, **2 negative controls green, 0 silent**.
+
+Two of these rows are only red *after* the file was fixed, and the way they were
+wrong is worth keeping:
+
+- With fixtures derived from the gate's own ban list, deleting a pattern deleted
+  its test along with it and nothing failed. The meta-gate now holds an independent
+  list for deletion and a derived list for drift, because one list cannot do both.
+- The `check-cli-reference.mjs` row passed before the fix *and* after the guard was
+  removed, because the gate fell through to a module-resolution crash that also
+  exits 1. The assertion now names the gate's own diagnostic and rejects the crash,
+  so a gate that reports nothing and dies cannot satisfy it.
+
+A derived expectation and an exit code are both weak on their own: the first
+disappears with the thing it measures, and the second is satisfied by any failure.
+Neither is a substitute for asserting the reason.
+
 ## L4 anchor status
 Four anchors, each strictly stronger than the one before:
 
@@ -449,26 +482,44 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 85 |
+| Commits | 88 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 46 (`src/`, excluding tests and build output) |
 | Source lines | 13,205 |
-| Test files | 76 → 77 counting the file this pass adds |
-| Test lines | 23,440 |
-| Tests | 1959 core + 173 CLI |
+| Test files | 73 core + 3 CLI |
+| Test lines | 24,198 |
+| Tests | 1978 core + 173 CLI |
 
-Re-taken from `git ls-files` and `git rev-list --count HEAD` at the revision this
-document ships with, not carried forward. Every figure in the table moved on this
-pass and each moved for a nameable reason:
+Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
+previous table's own closing sentence -- that a status table is a column of
+measurements and they decay together -- was written after four of six rows went
+stale in one pass, and it held: three rows moved again here, for reasons worth
+naming. **Commits** `85 → 88`: the anchor diagnostic, the payload-name fix and the
+rule fix. **Test files** `76 → 73 core + 3 CLI` and **Test lines** `23,440 → 24,198`,
+**Tests** `1959 → 1978`: pass 8 adds eleven meta-gate tests. The file row fell
+because the old figure counted every `.ts` under `test/` and the new one counts
+tests, which is the number the runner prints.
 
-- **Commits** was `79` and is `85`. This one was not a decay, it was arithmetic:
-  the previous revision recorded six commits and then added six more without
-  re-running the count.
-- **Test lines** was `23,401` and is `23,440`; **Tests** was `1951 core` and is
-  `1959`. Nine core tests were added by pass 7 — three for the reachable branch
-  positions it found in `parseRcaEvalPath`, three for the cold check-out in
-  `typecheck-entrypoint.test.ts`, and the file-level split between them is the
-  reason the test-file row shows two numbers rather than one.
+**Test files** counts `*.test.ts`, which is what the runner counts, and the two
+agree at `73`. Counting every `.ts` under `test/` gives `75`, because that directory
+also holds `fixtures.ts` and `helpers.ts` -- support modules with no tests in them.
+The first draft of this row used `75`, then explained the two-number gap with a
+mechanism that does not exist (files excluded by config). Both the figure and the
+explanation were wrong, and the explanation was the worse of the two: it was
+plausible, it cited config that says nothing of the kind, and it would have been
+believed. Re-derived from `ls packages/core/test/*.test.ts` against the runner's own
+count.
+
+How the previous pass's numbers moved, kept because the pattern is the point:
+
+- **Commits** was `79` and went to `85`. That one was not a decay, it was
+  arithmetic: the revision before it recorded six commits and then added six more
+  without re-running the count.
+- **Test lines** was `23,401` and went to `23,440`; **Tests** was `1951 core` and
+  went to `1959`. Nine core tests were added by pass 7 -- three for the reachable
+  branch positions it found in `parseRcaEvalPath`, three for the cold check-out in
+  `typecheck-entrypoint.test.ts`, and three for the file-level split, which is why
+  the test-file row showed two numbers rather than one.
 
 The sentence this table replaces said the test count was "the one figure that
 moves for a reason worth naming". It moved on the next pass too, and so did four
@@ -487,12 +538,29 @@ is a list of the ones somebody happened to check.
 - **Injection matrix**: for each defect, a source injection that reintroduces it
   and must be caught, plus negative controls that must stay green. A matrix that
   is red on everything proves nothing, so both directions are recorded.
+- **Gates are tested, not just run**: `gates-are-testable.test.ts` runs each gate
+  against the repository (must pass) and against a synthesised violation in a
+  throwaway copy of the tree (must fail). This is the floor, not a ceiling -- two
+  expectations matter and they are separate. A **derived** list read from the gate
+  catches drift but vanishes with the thing it measures, so the constructs the gate
+  must keep banning are held **independently** and asserted as a superset. And an
+  exit code is not an assertion: a gate that crashes on a missing module also exits
+  1, so each failure is asserted by the gate's own diagnostic being present and a
+  crash being absent.
 
 ## Open
 
-- **The real-corpus runs are diagnosed, and the failure has moved down the job
-  three times.** Five runs of the fourth anchor's path, each failing one step
-  later than the last.
+- **The real-corpus runs are diagnosed, and the mechanism was named wrong twice
+  before it was named right.** Five runs of the fourth anchor's path, each failing
+  one step later than the last.
+
+  "The failure has moved down the job three times" was true of those five runs and
+  false as a description of the workflow's current state: by the time it was
+  written the failure had stopped moving and was sitting still in one place. It was
+  then replaced with a mechanism -- the derive step skipping a directory the
+  scoring step still read -- that the log does not support. Finding 46 corrected it
+  from the run artifact. The lesson is that adjacent log lines are not a causal
+  chain, and the path named in the stack trace is.
 
   | run | revision | outcome | what it established |
   | --- | --- | --- | --- |
@@ -500,7 +568,7 @@ is a list of the ones somebody happened to check.
   | [#35482150957](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35482150957) | `07a0001f` | fetch failed after **12.26 min** | `ERR_FS_FILE_TOO_LARGE`, i.e. the *verifier* could not read 2.8 GB |
   | [#35483403527](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35483403527) | `c57fd7eb` | fetch **passed**, derive failed | 3 assets extracted, 3 pins measured; the reader did not know the corpus layout |
   | [#35486129312](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35486129312) | `307fb460` | derive **passed**, round trip failed | `270 case(s)` derived; the walk could not hold 32 GB in a 4 GB heap |
-  | *(next)* | — | — | finding 45's fix; the first run that can reach a verdict |
+  | *(next)* | — | — | finding 46's fix; the first run that can reach a verdict |
 
   The second run answered it, and the answer was in neither of the two places this
   document had been looking. Both assets that come first measured clean:
@@ -539,6 +607,28 @@ is a list of the ones somebody happened to check.
     a plain HTTPS host that `WebFetch` can read. The first run's log is therefore
     recoverable too, and the "unreadable log" claim in the previous version of this
     section was a limitation of the shell, not of the API.
+
+  **The mechanism, from the artifact rather than the log.** The failing step's
+  *descriptor* was recovered the same way (`GET /actions/artifacts/{id}/zip` also
+  302s to the blob host), and it holds 270 RE2 cases under
+  `checkoutservice_cpu/{1,2,3}` with real injection times and **zero** under
+  `multi-source`. So the skipped directory and the crash are unrelated: the reader
+  asked for `metrics.json` in a case directory that exists, because
+  `metrics.json` is the name *our exporter* writes and the corpus writes
+  `data.csv`. Finding 42's writer-versus-reader disagreement about a name, one
+  layer down.
+
+  The fix resolves the payload against a named set, reports a case carrying none of
+  the names by listing the names tried and the names found, and continues rather
+  than aborting at the first. Verified against a fixture in the official layout and
+  against the artifact, and reproduced locally byte-for-byte -- so the step no
+  longer costs a 90-minute dispatch to observe.
+
+  What it is not: verified in CI. The honest status is *reproduced locally, not
+  verified in CI*, and the remaining unknown is whether `data.csv` holds samples in
+  a shape `assertRcaevalMetrics` accepts. The descriptor records no payload name, so
+  that is not derivable from the artifact -- it is the first thing the next dispatch
+  will say.
 
   **The re-run, with the fix, is [#35483403527](https://github.com/AgentiX-E/rca-bench-factory/actions/runs/35483403527)
   at `c57fd7eb`.** CI and Anchor round trip are both green on the same revision
@@ -686,5 +776,14 @@ is a list of the ones somebody happened to check.
     unpaid, unreleased CI run is not, and ShareAlike triggers on *distribution*,
     which we do not do. The one real constraint is repository hygiene -- do not
     commit the data -- and that is `check-no-vendored-data.mjs`.
+- **Five gates are covered by CI running them, not by a test that forces them to
+  fail.** `gates-are-testable.test.ts` proves no gate can be hollowed out, which is
+  a floor. It does not reach every branch: `check-readme-sample.mjs`,
+  `build-example-bundle.mjs` and `gen-examples.mjs` have no test naming them, and the
+  second `exit(1)` of `check-cli-reference.mjs` (the drift report, as opposed to the
+  empty-reference guard) and of `gen-rcaeval-cases.mjs` are unexercised. Closing
+  those means fixtures that build a whole synthetic reference or example tree,
+  which is doable and not done. Recorded rather than implied.
+
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
