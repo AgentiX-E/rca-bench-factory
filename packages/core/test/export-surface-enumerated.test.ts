@@ -49,6 +49,21 @@ import { fileURLToPath } from 'node:url';
  *    expectation that cannot see the thing it is supposed to measure. The fix is
  *    `UNENUMERATED`, below, which walks `src/` and requires every module to be a
  *    deliberate member of the list or a deliberate exception.
+ *
+ * 4. The exception list turned out to be the same defect a third time, and the
+ *    third time was the hardest to see. `UNENUMERATED` was keyed by *module*:
+ *    "cli/args.ts is reached through the CLI command table". That reason is about
+ *    one or two entry points. The scan it exempted covered the module's entire
+ *    surface -- `namedExports` plus `bracedExports` -- so a symbol added to
+ *    `cli/args.ts` next month would be exempted by a reason written about a
+ *    different symbol. An exemption whose scope is wider than its argument is
+ *    finding 47 again: the expectation (the reason) no longer covers the thing
+ *    measured (every export of the module).
+ *
+ *    The repair is to key the exception by *symbol*, not by module:
+ *    `ENUMERATED_MODULES` now holds all 43 modules, and `EXEMPT_EXPORTS` holds the
+ *    individual names that genuinely have no consumer, each with its own reason.
+ *    A module-wide exemption is now impossible to express.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -56,8 +71,22 @@ const PACKAGE_ROOT = resolve(HERE, '..');
 const SRC = join(PACKAGE_ROOT, 'src');
 
 /**
- * Every module in the four directories `09-推进进度追踪.md` names as needing an
+ * The 43 modules `src/` contains, every one of them scanned.
+ *
+ * The list began as the four directories `09-推进进度追踪.md` names as needing an
  * enumeration rather than a threshold: `ir/`, `score/`, `export/` and `gates/`.
+ * The other ten directories were exempted module by module in `UNENUMERATED`,
+ * on arguments like "reached through the CLI command table" or "reached through
+ * the provider registry".
+ *
+ * Those arguments were checked, and they held -- probing all 26 non-trivial
+ * exempted modules found **zero** exports without a consumer outside `test/`.
+ * So the exemptions were not hiding dead code. They were hiding the *question*:
+ * each was a reason about one or two entry points standing in for a scan of
+ * every export the module declares. Promoting the modules is therefore not a
+ * repair of a hole; it converts 26 arguments into 26 assertions, and it is
+ * measurable that it changed nothing else -- the export count is identical
+ * before and after.
  *
  * The list is explicit rather than globbed so that adding a module is a visible
  * edit to this file. A glob would make a new module silently expected to be
@@ -66,6 +95,8 @@ const SRC = join(PACKAGE_ROOT, 'src');
  * exists to prevent for the gate scripts.
  */
 const ENUMERATED_MODULES = [
+  'coverage.ts',
+  'index.ts',
   'ir/assembler.ts',
   'ir/guards.ts',
   'ir/schema.ts',
@@ -84,77 +115,129 @@ const ENUMERATED_MODULES = [
   'export/rcaeval.ts',
   'gates/gates.ts',
   'gates/validity.ts',
+  'cli/args.ts',
+  'entity/graph.ts',
+  'evolution/hitl.ts',
+  'evolution/proposal.ts',
+  'fault/collector.ts',
+  'fault/importer.ts',
+  'ingest/file.ts',
+  'ingest/otlp.ts',
+  'ingest/prime.ts',
+  'llm/anthropic.ts',
+  'llm/deepseek.ts',
+  'llm/openai-compat.ts',
+  'llm/openai.ts',
+  'llm/provider.ts',
+  'llm/rulegen.ts',
+  'pack/archive.ts',
+  'pack/example.ts',
+  'report/html.ts',
+  'transform/engine.ts',
+  'transform/strategies.ts',
+  'util/csv.ts',
+  'util/hash.ts',
+  'util/json.ts',
+  'util/time.ts',
+  'util/unit.ts',
 ];
 
 /**
- * Exports that are deliberately not named anywhere else, with the reason.
+ * Individual exports that are deliberately not named outside `test/`, keyed by
+ * `module::symbol` rather than by module.
  *
- * Each entry weakens the gate, so each has to be argued. A symbol belongs here
- * when naming it from a test would assert something weaker than what already
- * holds -- a type alias erased at runtime, for instance, which a text scan can
- * find but a runtime cannot. Symbols that are merely inconvenient to test do not
- * belong here; that is what the file is for.
+ * `UNENUMERATED`, which this replaces, was keyed by module and therefore exempted
+ * every export the module would ever declare. Its reasons were true statements,
+ * but each was about one entry point while the exemption covered the whole
+ * surface -- an expectation narrower than the thing it measures. The promotion
+ * probe showed the reasons had in fact held for every symbol present today, which
+ * is exactly what made the defect survive: a defect that has not fired yet reads
+ * as a design.
+ *
+ * Keying by symbol makes the scope of an exemption equal to its argument. There is
+ * no way to write "this module is fine"; only "this name, for this reason".
+ *
+ * Every entry weakens the gate, so every one has to be argued. Two arguments are
+ * admissible and no others:
+ *
+ *   - the symbol erases at runtime, so "some file names it" asserts only that
+ *     some file mentions a word; or
+ *   - the symbol is installed by the package manifest rather than by a call site,
+ *     so no file *can* name it.
+ *
+ * "Inconvenient to consume" is not an argument, and neither is "reached through
+ * the CLI table" -- the promotion probe showed those all have consumers, so the
+ * honest entry is no entry at all.
  */
-const DELIBERATELY_UNNAMED: Record<string, string> = {
-  // Type-only exports erase to nothing. `ir/types.ts` publishes the IR contract
-  // as types, and `ir/schema.ts` is the runtime half of the same contract; the
-  // pair is what `docs/data-model.md` documents. Asserting the type aliases are
-  // "used" would assert only that some file mentions the word.
-  'ir/types.ts': 'type aliases and interfaces erase at runtime; the schemas carry the contract',
+const EXEMPT_EXPORTS: Record<string, string> = {
+  // `ir/types.ts` publishes the IR contract twice over: as `export type` aliases,
+  // which erase, and as six `export const` runtime vocabularies, which do not.
+  // Only the runtime half can be named by a consumer, and it is (`TESTED` carries
+  // all eight). So the exemption is per symbol: the type aliases are excused one
+  // line at a time rather than by a wildcard, because a wildcard here was wrong --
+  // the "no runtime export" precondition for `*` failed the moment I wrote it, and
+  // the check below is what said so.
+  'ir/types.ts::SignalKind': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::LogSeverity': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::SpanStatus': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::ProvenanceSource': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::FieldProvenance': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::MetricSemanticType': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::MetricPayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::LogPayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::TracePayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::EventPayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::AlertPayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::ProfilePayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::SignalPayload': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::TelemetrySignal': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::EntityKind': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::Entity': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::EntityRelation': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::EntityEdge': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::EntityGraph': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::FaultCategory': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::Comparator': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::EvidenceCheckpoint': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::CausalStep': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::RootCauseIndicator': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::GroundTruth': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::FaultCase': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::GateId': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::GateStatus': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::GateViolation': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::GateResult': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::QualityGateReport': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::IrBundle': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::ValidityCheck': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::FaultValidityVerdict': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::FaultValidityReport': 'type-only declaration; erases at runtime, so no consumer can name it',
+  // Ten `export type` lines and one interface, no runtime value among them. This
+  // is the module `vitest.config.ts` excludes from coverage by name, for the same
+  // reason: there is nothing in it to execute. The wildcard is admissible here and
+  // only here, which is what the precondition check enforces.
+  'llm/provider.ts::*': 'provider interfaces only; no runtime value to name',
+  // A bare re-export. `src/index.ts` is the package entry point, and this line is
+  // what `package.json`'s `exports` field resolves to; the manifest names it, so
+  // no file inside `src/` does or should.
+  'index.ts::assembleBundle': 'installed by the package manifest; no in-tree consumer can name it',
 };
 
 /**
- * Modules that exist and are deliberately outside the enumerated four.
+ * `export type X` and `export interface X` -- names that exist in the source but
+ * erase at runtime.
  *
- * Each entry is a claim that a missing consumer here would be caught elsewhere.
- * That claim is checkable, and the check is whether the module really is reached
- * -- a module with no importer at all would be a hole in this table wearing a
- * reason. `each module is imported by something, or is an entry point` below
- * asserts exactly that, so an entry here means "measured from another direction",
- * never "not measured".
+ * Kept separate from `namedExports` on purpose. The two are counted differently:
+ * a runtime export missing a consumer is a defect, and a type export is not
+ * checkable by this mechanism at all. Merging them would let a module delete a
+ * function and keep a same-named type, which reads as covered here.
  */
-const UNENUMERATED: Record<string, string> = {
-  // The package's public surface. Its exports ARE the re-exports of the
-  // enumerated modules, so enumerating them again would count the same symbol
-  // twice and report the second count as independent evidence.
-  'index.ts': 'the public surface; every symbol it publishes is enumerated at its source',
-  // Excluded by name in `vitest.config.ts` with its own argument, and reached
-  // through `ingest/*` rather than named directly.
-  'llm/provider.ts': 'provider interfaces; excluded from coverage by name in vitest.config.ts',
-  // Reached structurally rather than by name: the CLI imports them through its
-  // command table, and `check-cli-reference.mjs` asserts that table against
-  // `docs/cli-reference.md`.
-  'cli/args.ts': 'CLI entry point; its surface is asserted against docs/cli-reference.md',
-  // Reached structurally: every ingestion path dispatches through the
-  // `structure-dispatch` table, and `vocabulary-single-source.test.ts` asserts
-  // the vocabularies they admit.
-  'ingest/file.ts': 'reached through the ingest dispatch table, asserted by structure-dispatch tests',
-  'ingest/otlp.ts': 'reached through the ingest dispatch table',
-  'ingest/prime.ts': 'reached through the ingest dispatch table',
-  // Reached through `score/dispatch.ts`'s exporter table, whose completeness
-  // `vocabulary-single-source.test.ts` asserts against the documented targets.
-  'coverage.ts': 'reached through the CLI report path',
-  'entity/graph.ts': 'reached through the assembler and exporters',
-  'evolution/hitl.ts': 'reached through the evolution CLI path',
-  'evolution/proposal.ts': 'reached through the evolution CLI path',
-  'fault/collector.ts': 'reached through the fault spec parser path',
-  'fault/importer.ts': 'reached through the historical-import path',
-  'llm/anthropic.ts': 'reached through the provider registry',
-  'llm/deepseek.ts': 'reached through the provider registry',
-  'llm/openai-compat.ts': 'reached through the provider registry',
-  'llm/openai.ts': 'reached through the provider registry',
-  'llm/rulegen.ts': 'reached through the rule-generation path',
-  'pack/archive.ts': 'reached through the pack CLI path',
-  'pack/example.ts': 'reached through the pack CLI path',
-  'report/html.ts': 'reached through the report CLI path',
-  'transform/engine.ts': 'reached through the transform CLI path',
-  'transform/strategies.ts': 'reached through the transform dispatch table',
-  'util/csv.ts': 'reached through the ingest readers',
-  'util/hash.ts': 'reached through the scorer and the pack writer',
-  'util/json.ts': 'reached through every exporter and the pack manifest writer',
-  'util/time.ts': 'reached through the transformers',
-  'util/unit.ts': 'reached through the transformers',
-};
+function typeExports(source: string): string[] {
+  const names: string[] = [];
+  const declaration = /^export\s+(?:type|interface)\s+([A-Za-z_$][\w$]*)/gm;
+  for (const match of source.matchAll(declaration)) names.push(match[1]);
+  return names;
+}
 
 /** `export function f`, `export const c`, `export class C` -- by name. */
 function namedExports(source: string): string[] {
@@ -167,9 +250,9 @@ function namedExports(source: string): string[] {
 /**
  * Every module under `src/`, as package-relative POSIX paths.
  *
- * `src/cli/` is walked too even though no CLI module is enumerated: the point of
- * this list is to know what exists, and `UNENUMERATED` is where each omission is
- * argued. Deleting a directory would change this list, which is the signal.
+ * This is the ground truth the hand-written `ENUMERATED_MODULES` is asserted
+ * against, which is what makes that list a claim rather than a truism. Deleting a
+ * directory would change this list, which is the signal.
  */
 function allSourceModules(): string[] {
   return walk(SRC)
@@ -248,9 +331,13 @@ function nonTestSources(): Array<{ file: string; text: string }> {
  *
  * **What replaces it.** Two rules, both asserted below:
  *   1. Every name here is a real export of an enumerated module.
- *   2. Every real export is here, unless its module is in `DELIBERATELY_UNENUMERATED`.
+ *   2. Every real export is here, unless this exact `module::name` is in
+ *      `EXEMPT_EXPORTS`.
  * So deleting a real name now fails on the *name*, and inventing one fails
- * immediately rather than being absorbed by a count.
+ * immediately rather than being absorbed by a count. Rule 2 is a per-symbol
+ * exemption rather than the per-module one it started as, which is the correction
+ * recorded in the header: a module-wide exemption is wider than any single reason
+ * that can be written for it.
  *
  * The claim this list makes is deliberately narrower than the name `TESTED`
  * suggests: "some module outside `test/` mentions this identifier". That is what
@@ -284,7 +371,7 @@ const TESTED = [
   'groundTruthSchema',
   'faultCaseSchema',
   'irBundleSchema',
-  // ir/types.ts -- the runtime half; the type half is DELIBERATELY_UNENUMERATED.
+  // ir/types.ts -- the runtime half; the type half is in EXEMPT_EXPORTS.
   'IR_VERSION',
   'SIGNAL_KINDS',
   'LOG_SEVERITIES',
@@ -414,6 +501,294 @@ const TESTED = [
   'FAULT_EXPECTATIONS',
   'expectedSignalsFor',
   'verifyFaultValidity',
+  // --- promoted in P1-2: the ten directories that were exempted by module ---
+  // coverage.ts
+  'MODALITY_LOSS',
+  'TARGET_REQUIREMENTS',
+  'computeCoverage',
+  'formatCoverageReport',
+  // index.ts
+  'ANTHROPIC_DEFAULT_BASE_URL',
+  'ANTHROPIC_DEFAULT_MAX_TOKENS',
+  'ANTHROPIC_DEFAULT_MODEL',
+  'ANTHROPIC_MESSAGES_PATH',
+  'ANTHROPIC_VERSION',
+  'CLI_VERSION',
+  'DEEPSEEK_CHAT_COMPLETIONS_PATH',
+  'DEEPSEEK_DEFAULT_BASE_URL',
+  'DEEPSEEK_DEFAULT_MODEL',
+  'DEFAULT_FILE_MODE',
+  'EVOLVE_ACTIONS',
+  'EXAMPLE_PACK_PREFIX',
+  'EXAMPLE_PACK_STEPS',
+  'FILE_FORMATS',
+  'HELP_TOPICS',
+  'ISO_UTC_PATTERN',
+  'MANIFEST_FILE_NAME',
+  'MODALITY_LOSS',
+  'OPENAI_CHAT_COMPLETIONS_PATH',
+  'OPENAI_DEFAULT_BASE_URL',
+  'OPENAI_DEFAULT_MODEL',
+  'PRIME_DATASET_IDS',
+  'TARGET_REQUIREMENTS',
+  'TIME_LAYOUTS',
+  'applyExpr',
+  'applyLookup',
+  'applyMap',
+  'applyRegex',
+  'applyRule',
+  'applyTemplate',
+  'applyTime',
+  'applyUnit',
+  'approveProposal',
+  'buildAnthropicRequest',
+  'buildDeepSeekRequest',
+  'buildEvolutionProposal',
+  'buildExamplePack',
+  'buildFaultExtractionPrompt',
+  'buildOpenAiRequest',
+  'buildPackManifest',
+  'buildRulegenPrompt',
+  'checkNoSilentLoss',
+  'computeCoverage',
+  'computeRegression',
+  'computeStaleCases',
+  'convertUnit',
+  'createAnthropicProvider',
+  'createDeepSeekProvider',
+  'createOpenAiProvider',
+  'createTar',
+  'createTarGzip',
+  'csvCell',
+  'csvColumn',
+  'detectFileLayout',
+  'dimensionOf',
+  'entityId',
+  'epochMsToIsoUtc',
+  'escapeHtml',
+  'evalExpr',
+  'exampleTargetCommands',
+  'findAmbiguousAliases',
+  'findDanglingEdgeRefs',
+  'findInvalidRelations',
+  'formatCommandHelp',
+  'formatCoverageReport',
+  'formatHelp',
+  'formatVersion',
+  'getUnitDef',
+  'hitlGateFor',
+  'indexGraph',
+  'inferFaultCategory',
+  'ingestFile',
+  'ingestOtlpLogs',
+  'ingestOtlpMetrics',
+  'ingestOtlpTraces',
+  'ingestPrimeDataset',
+  'isConvertible',
+  'isProductionReady',
+  'isRecord',
+  'isSubmittable',
+  'isValidRuleChange',
+  'isWithinWindow',
+  'isoUtcToEpochMs',
+  'isoUtcToOffsetIso',
+  'knownUnits',
+  'normalizeAliases',
+  'normalizeFaultType',
+  'normalizePackEntries',
+  'parseAnthropicResponse',
+  'parseCliArgs',
+  'parseCsvObjects',
+  'parseCsvRows',
+  'parseDeepSeekResponse',
+  'parseDelimited',
+  'parseFaultExtractionResponse',
+  'parseFaultSpec',
+  'parseJsonArray',
+  'parseJsonl',
+  'parseOpenAiResponse',
+  'parseRulegenResponse',
+  'parseRulegenResponseChecked',
+  'parseTimestamp',
+  'readString',
+  'readStringArray',
+  'readTar',
+  'rejectProposal',
+  'renderCoverage',
+  'renderCsv',
+  'renderEntityGraph',
+  'renderExampleReadme',
+  'renderExampleRunScript',
+  'renderGates',
+  'renderJson',
+  'renderPackManifest',
+  'renderPage',
+  'renderScore',
+  'resolveEntityRef',
+  'rulegenLayoutFields',
+  'safeJson',
+  'sha256Bytes',
+  'transformBatch',
+  'transformTraceBatch',
+  'triggerFromGateReport',
+  'triggerFromScoreReport',
+  'validateExtractedFault',
+  'validateGeneratedLayout',
+  'verifyPackManifest',
+  // cli/args.ts
+  'CLI_VERSION',
+  'EVOLVE_ACTIONS',
+  'EXPORT_TARGETS',
+  'HELP_TOPICS',
+  'formatCommandHelp',
+  'formatHelp',
+  'formatVersion',
+  'parseCliArgs',
+  // entity/graph.ts
+  'VALID_RELATIONS',
+  'entityId',
+  'findAmbiguousAliases',
+  'findDanglingEdgeRefs',
+  'findInvalidRelations',
+  'indexGraph',
+  'normalizeAliases',
+  'resolveEntityRef',
+  // evolution/hitl.ts
+  'hitlGateFor',
+  // evolution/proposal.ts
+  'approveProposal',
+  'buildEvolutionProposal',
+  'computeRegression',
+  'computeStaleCases',
+  'isProductionReady',
+  'isSubmittable',
+  'isValidRuleChange',
+  'rejectProposal',
+  'triggerFromGateReport',
+  'triggerFromScoreReport',
+  // fault/collector.ts
+  'inferFaultCategory',
+  'normalizeFaultType',
+  'parseFaultSpec',
+  // fault/importer.ts
+  'buildFaultExtractionPrompt',
+  'parseFaultExtractionResponse',
+  'validateExtractedFault',
+  // ingest/file.ts
+  'FILE_FORMATS',
+  'detectFileLayout',
+  'ingestFile',
+  'parseDelimited',
+  'parseJsonArray',
+  'parseJsonl',
+  // ingest/otlp.ts
+  'ingestOtlpLogs',
+  'ingestOtlpMetrics',
+  'ingestOtlpTraces',
+  // ingest/prime.ts
+  'PRIME_DATASET_IDS',
+  'ingestPrimeDataset',
+  // llm/anthropic.ts
+  'ANTHROPIC_DEFAULT_BASE_URL',
+  'ANTHROPIC_DEFAULT_MAX_TOKENS',
+  'ANTHROPIC_DEFAULT_MODEL',
+  'ANTHROPIC_MESSAGES_PATH',
+  'ANTHROPIC_VERSION',
+  'buildAnthropicRequest',
+  'createAnthropicProvider',
+  'parseAnthropicResponse',
+  // llm/deepseek.ts
+  'DEEPSEEK_CHAT_COMPLETIONS_PATH',
+  'DEEPSEEK_DEFAULT_BASE_URL',
+  'DEEPSEEK_DEFAULT_MODEL',
+  'buildDeepSeekRequest',
+  'createDeepSeekProvider',
+  'parseDeepSeekResponse',
+  // llm/openai-compat.ts
+  'buildOpenAiCompatibleRequest',
+  'createOpenAiCompatibleProvider',
+  'parseOpenAiCompatibleResponse',
+  // llm/openai.ts
+  'OPENAI_CHAT_COMPLETIONS_PATH',
+  'OPENAI_DEFAULT_BASE_URL',
+  'OPENAI_DEFAULT_MODEL',
+  'buildOpenAiRequest',
+  'createOpenAiProvider',
+  'parseOpenAiResponse',
+  // llm/rulegen.ts
+  'buildRulegenPrompt',
+  'parseRulegenResponse',
+  'parseRulegenResponseChecked',
+  'rulegenLayoutFields',
+  'validateGeneratedLayout',
+  // pack/archive.ts
+  'DEFAULT_FILE_MODE',
+  'MANIFEST_FILE_NAME',
+  'buildPackManifest',
+  'createTar',
+  'createTarGzip',
+  'normalizePackEntries',
+  'readTar',
+  'renderPackManifest',
+  'verifyPackManifest',
+  // pack/example.ts
+  'EXAMPLE_PACK_PREFIX',
+  'EXAMPLE_PACK_STEPS',
+  'buildExamplePack',
+  'exampleTargetCommands',
+  'renderExampleReadme',
+  'renderExampleRunScript',
+  // report/html.ts
+  'escapeHtml',
+  'renderCoverage',
+  'renderEntityGraph',
+  'renderGates',
+  'renderPage',
+  'renderScore',
+  // transform/engine.ts
+  'checkNoSilentLoss',
+  'transformBatch',
+  'transformTraceBatch',
+  // transform/strategies.ts
+  'applyExpr',
+  'applyLookup',
+  'applyMap',
+  'applyRegex',
+  'applyRule',
+  'applyTemplate',
+  'applyTime',
+  'applyUnit',
+  'evalExpr',
+  // util/csv.ts
+  'csvCell',
+  'csvColumn',
+  'parseCsvObjects',
+  'parseCsvRows',
+  'renderCsv',
+  // util/hash.ts
+  'sha256Bytes',
+  // util/json.ts
+  'isRecord',
+  'readString',
+  'readStringArray',
+  'renderJson',
+  'safeJson',
+  // util/time.ts
+  'ISO_UTC_PATTERN',
+  'TIME_LAYOUTS',
+  'TimeParseError',
+  'epochMsToIsoUtc',
+  'isWithinWindow',
+  'isoUtcToEpochMs',
+  'isoUtcToOffsetIso',
+  'parseTimestamp',
+  // util/unit.ts
+  'UnitError',
+  'convertUnit',
+  'dimensionOf',
+  'getUnitDef',
+  'isConvertible',
+  'knownUnits',
 ];
 
 /**
@@ -428,17 +803,33 @@ const DELIBERATELY_UNENUMERATED: Record<string, string> = {
   'ir/types.ts': 'the runtime vocabularies are enumerated; the type aliases erase at runtime',
 };
 
+/**
+ * Whether a `module::name` exemption applies, including the module-wide `*` form.
+ *
+ * The `*` form exists only for the two modules that declare no runtime values at
+ * all, and it is checked below: a `*` entry whose module declares a single
+ * function or const is red. Without that check the wildcard would be a
+ * module-wide exemption by the back door -- the exact shape this file exists to
+ * remove.
+ */
+function isExempt(module: string, name: string): boolean {
+  return EXEMPT_EXPORTS[`${module}::${name}`] !== undefined ||
+    EXEMPT_EXPORTS[`${module}::*`] !== undefined;
+}
+
 describe('the enumerated list is a real list', () => {
   it('names at least one symbol per enumerated module', () => {
     // Guards against the degenerate fix: emptying TESTED would make every
     // assertion below vacuously true, which is how an enumeration gate is
-    // hollowed out while still reporting a pass.
+    // hollowed out while still reporting a pass. A module whose whole surface is
+    // exempt is the one legitimate way to declare nothing, and `EXEMPT_EXPORTS`
+    // is where that is argued.
     const declaring = new Map<string, string[]>();
     for (const module of ENUMERATED_MODULES) {
       const text = readFileSync(join(SRC, module), 'utf8');
       const names = [...namedExports(text), ...bracedExports(text)];
       declaring.set(module, names);
-      if (DELIBERATELY_UNNAMED[module] !== undefined) continue;
+      if (EXEMPT_EXPORTS[`${module}::*`] !== undefined) continue;
       expect(names.length, `${module} declares no exports at all`).toBeGreaterThan(0);
     }
     const declared = [...declaring.values()].flat();
@@ -475,19 +866,23 @@ describe('the enumerated list is a real list', () => {
     // The other direction, and the one the count was standing in for. Deleting a
     // real name from TESTED now fails and says which name, rather than failing on
     // an arithmetic mismatch that a reader has to reverse-engineer.
-    const realExports = new Set(
-      ENUMERATED_MODULES.flatMap((module) => {
-        const text = readFileSync(join(SRC, module), 'utf8');
-        return [...namedExports(text), ...bracedExports(text)];
-      }),
-    );
-    const unlisted = [...realExports].filter(
-      (name) => !TESTED.includes(name) && DELIBERATELY_UNENUMERATED[name] === undefined,
+    //
+    // Note what this does NOT exempt: a module-level exemption, which is what the
+    // previous version used. `EXEMPT_EXPORTS` is keyed by symbol, so a symbol the
+    // exemption does not name is red even when a sibling symbol in the same module
+    // is excused. The failure message says `module::name`, which is the key the
+    // contributor has to supply.
+    const realExports = ENUMERATED_MODULES.flatMap((module) => {
+      const text = readFileSync(join(SRC, module), 'utf8');
+      return [...namedExports(text), ...bracedExports(text)].map((name) => ({ module, name }));
+    });
+    const unlisted = realExports.filter(
+      ({ module, name }) => !TESTED.includes(name) && !isExempt(module, name),
     );
     expect(
-      unlisted,
-      `these exports exist but are not in TESTED: ${unlisted.join(', ')}. ` +
-        `Add each one, or add its module to DELIBERATELY_UNENUMERATED with a reason.`,
+      unlisted.map(({ module, name }) => `${module}::${name}`),
+      `these exports exist but are not in TESTED. Add each one, or add ` +
+        `'module::name' to EXEMPT_EXPORTS with a reason.`,
     ).toEqual([]);
   });
 
@@ -508,20 +903,23 @@ describe('the enumerated list is a real list', () => {
     expect(() => readFileSync(join(SRC, module), 'utf8')).not.toThrow();
   });
 
-  it('enumerates every module in src/, or says why not', () => {
+  it('enumerates every module in src/, with no exception left to make', () => {
     // This is the assertion that the injection found. `ENUMERATED_MODULES` is
     // authored by hand, so without a cross-check a new module is silently outside
     // the gate -- it can export anything with no consumer and stay green forever.
-    // Every module is therefore either enumerated or named in `UNENUMERATED` with
-    // a reason, and "a new module appeared" is a red suite rather than a shrug.
+    //
+    // There is no longer an `UNENUMERATED` escape here, and the difference is
+    // deliberate: a module added tomorrow is red until someone puts it in the
+    // list. Exempting a module from *scanning* is no longer expressible, because
+    // the probe showed every one of them had consumers, so the exemptions were
+    // buying nothing except a smaller number in this file's own evidence.
     const enumerated = new Set(ENUMERATED_MODULES);
-    const unexplained = allSourceModules().filter(
-      (module) => !enumerated.has(module) && UNENUMERATED[module] === undefined,
-    );
+    const missing = allSourceModules().filter((module) => !enumerated.has(module));
     expect(
-      unexplained,
-      `these modules are neither enumerated nor explained: ${unexplained.join(', ')}. ` +
-        `Add each to ENUMERATED_MODULES, or to UNENUMERATED with a reason.`,
+      missing,
+      `these modules are not enumerated: ${missing.join(', ')}. ` +
+        `Add each to ENUMERATED_MODULES. If one of its exports has no consumer, ` +
+        `exempt that export in EXEMPT_EXPORTS -- not the module.`,
     ).toEqual([]);
   });
 
@@ -549,13 +947,11 @@ describe('every enumerated export is named outside the tests', () => {
    * inside the assertion body is what makes the test read the current tree.
    */
   function exportPairs(): Array<readonly [string, string]> {
-    return ENUMERATED_MODULES.filter((m) => DELIBERATELY_UNNAMED[m] === undefined).flatMap(
-      (module) => {
-        const text = readFileSync(join(SRC, module), 'utf8');
-        const names = [...new Set([...namedExports(text), ...bracedExports(text)])];
-        return names.map((name) => [module, name] as const);
-      },
-    );
+    return ENUMERATED_MODULES.flatMap((module) => {
+      const text = readFileSync(join(SRC, module), 'utf8');
+      const names = [...new Set([...namedExports(text), ...bracedExports(text)])];
+      return names.map((name) => [module, name] as const);
+    });
   }
 
   it('found exports to check', () => {
@@ -582,21 +978,17 @@ describe('every enumerated export is named outside the tests', () => {
     expect(exportPairs().length).toBe(before);
   });
 
-  it.each([
-    'ir/assembler.ts',
-    'ir/guards.ts',
-    'ir/schema.ts',
-    'score/dispatch.ts',
-    'score/official.ts',
-    'score/score.ts',
-    'score/targets.ts',
-    'export/guard.ts',
-    'gates/gates.ts',
-  ])('%s names every export it declares from outside test/', (module) => {
-    // One case per module rather than one per symbol, and it re-reads the file
-    // when it runs. A symbol added tomorrow is checked tomorrow without anyone
-    // editing this list -- which is the whole point, since editing this list is
-    // the failure mode.
+  it.each(ENUMERATED_MODULES)('%s names every export it declares from outside test/', (module) => {
+    // One case per module, and it re-reads the file when it runs. A symbol added
+    // tomorrow is checked tomorrow without anyone editing this list -- which is
+    // the whole point, since editing this list is the failure mode.
+    //
+    // This is no longer limited to nine modules. It runs against all 43, which is
+    // what promoting the exempted directories buys: the same question, asked of
+    // five times as much surface, with no reason to ask it selectively. A module
+    // that genuinely cannot satisfy it has to name the symbol in `EXEMPT_EXPORTS`
+    // and argue for it -- and the whole-module form of that argument is checked
+    // separately below.
     const text = readFileSync(join(SRC, module), 'utf8');
     const names = [...new Set([...namedExports(text), ...bracedExports(text)])];
     const sources = nonTestSources();
@@ -605,54 +997,119 @@ describe('every enumerated export is named outside the tests', () => {
         if (file.endsWith(module)) return false;
         return new RegExp(`\\b${name}\\b`).test(body);
       });
-      return naming.length === 0;
+      if (naming.length > 0) return false;
+      // Only a per-symbol exemption excuses a symbol here. A `*` entry covers the
+      // module, and the module-wide entries are separately restricted below.
+      return EXEMPT_EXPORTS[`${module}::${name}`] === undefined;
     });
     expect(
       unnamed,
       `${module} exports ${unnamed.join(', ')}, which no file outside test/ names. ` +
-        `Either give each a consumer, delete it, or move the module to UNENUMERATED ` +
-        `with a reason -- in which case its whole surface is measured from elsewhere.`,
+        `Either give each a consumer, delete it, or add '${module}::<name>' to ` +
+        `EXEMPT_EXPORTS with a reason.`,
     ).toEqual([]);
   });
 });
 
-describe('DELIBERATELY_UNNAMED does not grow without an argument', () => {
+describe('an exemption is narrower than the argument for it', () => {
   it('carries a reason for every entry', () => {
-    for (const [module, reason] of Object.entries(DELIBERATELY_UNNAMED)) {
-      expect(reason.length, `${module} is exempted without a reason`).toBeGreaterThan(40);
+    for (const [key, reason] of Object.entries(EXEMPT_EXPORTS)) {
+      expect(reason.length, `${key} is exempted without a reason`).toBeGreaterThan(30);
+      expect(key, `${key} is not a module::symbol key`).toMatch(/^[\w/.+-]+::(\*|[\w$]+)$/);
     }
   });
 
-  it('exempts only modules that are in the enumerated list', () => {
-    for (const module of Object.keys(DELIBERATELY_UNNAMED)) {
-      expect(ENUMERATED_MODULES).toContain(module);
+  it('names a module that is in the enumerated list', () => {
+    for (const key of Object.keys(EXEMPT_EXPORTS)) {
+      expect(ENUMERATED_MODULES).toContain(key.split('::')[0]);
     }
+  });
+
+  it('names an export that exists, or is the deliberate wildcard', () => {
+    // A stale exemption is worse than no exemption: it reads as an argued
+    // position while covering nothing, and the symbol it was written about may
+    // have been renamed away some time ago. The one wildcard form is allowed
+    // here and constrained by the next test.
+    //
+    // **This assertion was wrong on its first run and the gate caught it.**
+    // Checking `names` -- the runtime declarations -- against a type-only
+    // exemption made `ir/types.ts::SignalKind` red for an export that *does*
+    // exist, just not as a value. Two exemptions are admissible in this file and
+    // they are checked against different declarations, so the check has to know
+    // which kind it is looking at. A symbol that is neither is still red.
+    for (const key of Object.keys(EXEMPT_EXPORTS)) {
+      const [module, symbol] = key.split('::');
+      if (symbol === '*') continue;
+      const text = readFileSync(join(SRC, module), 'utf8');
+      const declarations = new Set([
+        ...namedExports(text),
+        ...bracedExports(text),
+        ...typeExports(text),
+      ]);
+      expect(
+        declarations,
+        `${key} exempts an export ${module} does not declare, at runtime or as a type`,
+      ).toContain(symbol);
+    }
+  });
+
+  it('grants the module-wide wildcard only to a module with no runtime export', () => {
+    // The check that keeps `*` from becoming the module-wide exemption again. A
+    // wildcard is admissible for a module of pure types, where "no file names it"
+    // is not evidence of anything. If such a module ever gains a real export, this
+    // goes red and forces the exemption back down to individual symbols.
+    //
+    // **This check was blind on its first version, and the injection matrix is what
+    // found it.** It read `namedExports(text)` -- `export function`/`const`/`class`
+    // only -- and `index.ts` is 41 `export { … } from` statements with zero named
+    // declarations, so the array was empty and the assertion passed no matter what
+    // was declared. Row 3 of the matrix (grant `index.ts` a wildcard) stayed green
+    // when it should have been red. That is finding 47 for the fourth time in this
+    // file: an expectation that cannot see the thing it is supposed to measure.
+    //
+    // The repair is to ask the runtime question rather than the syntactic one. A
+    // re-export is a runtime export, so the check now compares the module's whole
+    // *declared surface* -- named declarations, inline `export { a, b }`, and
+    // `export { x } from './y.js'` -- against its type-only declarations. A module
+    // qualifies for `*` only when every symbol it publishes erases.
+    for (const key of Object.keys(EXEMPT_EXPORTS)) {
+      const [module, symbol] = key.split('::');
+      if (symbol !== '*') continue;
+      const text = readFileSync(join(SRC, module), 'utf8');
+      const runtime = new Set([...namedExports(text), ...bracedExports(text)]);
+      const types = new Set(typeExports(text));
+      const survived = [...runtime].filter((n) => !types.has(n));
+      expect(
+        survived,
+        `${module} publishes ${survived.join(', ')} at runtime, so a module-wide ` +
+          `exemption is too broad. Exempt those symbols individually, or give them ` +
+          `a consumer.`,
+      ).toEqual([]);
+    }
+  });
+
+  it('exempts only modules that exist', () => {
+    const present = new Set(allSourceModules());
+    expect(Object.keys(EXEMPT_EXPORTS).filter((k) => !present.has(k.split('::')[0]))).toEqual([]);
   });
 });
 
-describe('UNENUMERATED is a measurement, not an escape hatch', () => {
-  it('carries a reason for every entry', () => {
-    for (const [module, reason] of Object.entries(UNENUMERATED)) {
-      expect(reason.length, `${module} is exempted without a reason`).toBeGreaterThan(30);
-    }
-  });
-
-  it('holds no entry that is also enumerated', () => {
-    // Overlap would mean a module counted twice, which inflates the apparent
-    // coverage of this file rather than changing what it checks.
-    for (const module of Object.keys(UNENUMERATED)) {
-      expect(ENUMERATED_MODULES, `${module} is in both lists`).not.toContain(module);
-    }
-  });
-
-  it.each(Object.keys(UNENUMERATED).filter((m) => m !== 'index.ts'))(
+describe('a module with no importer would be dead code the table certified', () => {
+  it.each(allSourceModules().filter((m) => m !== 'index.ts' && m !== 'coverage.ts'))(
     '%s is imported by at least one other module',
     (module) => {
-      // The reason strings above say "reached through X". This is that claim,
-      // checked: an exempted module with no importer anywhere would be dead code
-      // that the exemption had quietly certified as fine. `index.ts` is excluded
-      // because it is the package entry point -- nothing inside `src/` imports it,
-      // and `package.json` names it instead.
+      // Every exemption in the previous version of this file said "reached through
+      // X". This checks the part that is still checkable after the exemptions are
+      // gone: a module that nothing imports at all is dead, regardless of whether
+      // its exports happen to be named. That is a different failure from the one
+      // `namedExports` finds, and the two do not imply each other -- a dead module
+      // can have its symbols mentioned in a comment, and a live module can export
+      // an unused helper.
+      //
+      // `index.ts` is excluded because it is the package entry point: nothing
+      // inside `src/` imports it, and `package.json` names it instead.
+      // `coverage.ts` is excluded because it is the tsup entry point for the
+      // coverage subpath export, and the same argument applies.
       //
       // The match is by bare specifier rather than by resolved path. My first
       // version compared `'./llm/openai-compat.js'` against the importer's text
@@ -669,16 +1126,11 @@ describe('UNENUMERATED is a measurement, not an escape hatch', () => {
       });
       expect(
         importers.length,
-        `${module} is exempted as "reached through ...", but no module imports it. ` +
-          `Either it is dead, or the exemption's reason is wrong.`,
+        `${module} is enumerated but nothing imports it. Either it is dead code, ` +
+          `or the comparison is wrong about the specifier a sibling writes.`,
       ).toBeGreaterThan(0);
     },
   );
-
-  it('exempts only modules that exist', () => {
-    const present = new Set(allSourceModules());
-    expect(Object.keys(UNENUMERATED).filter((m) => !present.has(m))).toEqual([]);
-  });
 });
 
 describe('the gate can actually fail', () => {

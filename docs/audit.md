@@ -3020,3 +3020,117 @@ each row:
 - **Signals other than metrics contribute nothing.** `signalKinds`, `logSeverities` and the
   trace expectations are recorded in the table but only metric series are read, so a
   fault whose only manifestation is an error log is `unverifiable`.
+
+## 50 — The exemption list was the same defect a third time, and the injection matrix found a fourth
+
+P1-2's remainder. The export enumeration covered four directories and exempted the
+other ten module by module in `UNENUMERATED`, each with a reason: "reached through
+the CLI command table", "reached through the provider registry", "reached through
+the pack CLI path".
+
+### What the exemptions were actually worth
+
+Before touching them I probed all 26 non-trivial exempted modules for exports that
+no file outside `test/` names. **Zero.** Every export of every exempted module
+already had a consumer.
+
+That result is the finding, not a disappointment. The exemptions were not hiding
+dead code -- they were hiding the *question*. Each was a reason about one or two
+entry points standing in for a scan of every export the module declares, and that
+mismatch had never been measured. It is why the promotion is verifiable rather than
+hopeful: the export surface is byte-for-byte the same set of names before and after,
+so any failure the promotion caused would be a failure of the *mechanism*, not of
+the tree.
+
+### The defect: an exemption wider than its argument
+
+`UNENUMERATED` was keyed by **module**. The reason for `cli/args.ts` was about the
+CLI command table; the exemption covered the module's entire surface. A symbol added
+there next month would have been excused by a sentence written about a different
+symbol -- and the sentence would still have read as true, because it was.
+
+This is finding 47 for the third time in one file: the expectation no longer covers
+the thing it measures. The first two were a shrinking expectation (derived from the
+gate itself) and a frozen one (materialised at collection time). This one is an
+expectation whose **scope is wrong**: correct, specific, and attached to something
+larger than itself. A defect that has not fired yet reads as a design.
+
+### The repair
+
+- `ENUMERATED_MODULES` now holds all **45** modules. There is no `UNENUMERATED`.
+  A module added tomorrow is red until it is listed; exempting a module from
+  *scanning* is no longer expressible.
+- `EXEMPT_EXPORTS` is keyed `module::symbol`, so the scope of an exemption equals the
+  scope of its argument. Only three entries survive, and only two arguments are
+  admissible: the symbol erases at runtime, or the package manifest installs it.
+- The `llm/provider.ts::*` wildcard is allowed, and constrained by a precondition:
+  a wildcard is legal only for a module with no runtime export. Otherwise `*` would
+  be the module-wide exemption again, wearing a symbol key.
+
+Measured effect: **18 → 45 modules, 140 → 516 exports** under assertion. Test cases
+in this file: 68 → 148.
+
+### The fourth instance, found by the injection matrix
+
+Row 3 of the matrix grants `index.ts` a wildcard. It stayed **green**.
+
+The precondition read `namedExports(text)` -- `export function`/`const`/`class` --
+and `index.ts` is 41 `export { … } from` statements with **zero** named declarations.
+The array was empty, so the assertion passed no matter what the module published. An
+expectation that cannot see the thing it measures, in the check I had just written to
+prevent exactly that.
+
+The repair asks the runtime question instead of the syntactic one: compare the
+module's whole declared surface -- named declarations, inline `export { a, b }`, and
+`export { x } from './y.js'` -- against its type-only declarations. A module
+qualifies for `*` only when every symbol it publishes erases. Re-run, row 3 is red
+with `index.ts publishes IR_VERSION, …, renderScore at runtime`, and the legitimate
+`llm/provider.ts` wildcard stays green.
+
+The same bug had a mirror image. I first pointed the stale-exemption check at
+`namedExports` too, which made `ir/types.ts::SignalKind` red for an export that does
+exist -- as a type. Two kinds of exemption are checked against two kinds of
+declaration, so the check now unions them and says so in the failure message.
+
+### The injection matrix
+
+Each row is one real execution against the tree; source restored and diffed clean
+after every row.
+
+| injection | result |
+|---|---|
+| a new module under `src/util/` | **2 failed** -- not enumerated |
+| an un-named export in a **promoted** module (`transform/strategies.ts`) | **2 failed** -- names `injectedDeadExport` |
+| grant `index.ts` a wildcard (it publishes 240 runtime symbols) | **1 failed** -- precondition (was green before the repair) |
+| a stale exemption naming a symbol that does not exist | **1 failed** -- `does not declare, at runtime or as a type` |
+| a stale module path in `ENUMERATED_MODULES` | **9 failed** |
+| delete a real name from `TESTED` | **1 failed** |
+| rename `util/hash.ts` so nothing can import it | **10 failed** |
+| NEGATIVE CONTROL (tree restored) | 0 (green) |
+
+Rows 2 and 7 are the ones that matter for the P1-2 claim specifically: row 2 shows
+the promoted directories are now genuinely scanned rather than argued about, and row
+7 shows the importer check that survived the exemptions still holds every module.
+
+### Result
+
+- `validity.ts` and every module in the ten promoted directories: **100 | 100 | 100 | 100**.
+- Package: **`99.95 | 99.93 | 100 | 99.95`** across 75 files; the only file below 100%
+  is `score/official.ts` at `99.64 | 99.77`, which is a pre-existing and separately
+  tracked gap.
+- Core tests **`2106 → 2186 passed`**; all 11 gates green; mutation `26`; the official
+  anchors byte-stable.
+
+### What this does not cover
+
+- **Symbols, not call sites.** The failure message says "no file outside `test/` names
+  it", which is what was observed. A symbol reached only through a computed property
+  or a dynamic import would be a false positive; none exists today.
+- **The importer check proves a module is reached, not that its exports are called.**
+  Those are different properties and neither implies the other. A dead module whose
+  symbols appear in a comment and a live module exporting an unused helper are both
+  invisible to this file.
+- **`index.ts` is checked as a module, not as a surface.** Its 240 re-exported names
+  are verified to have consumers at their *sources*; the file re-exporting them is not
+  itself asserted to be complete, which is what `pack-manifest-completeness` and the
+  package `exports` field cover.

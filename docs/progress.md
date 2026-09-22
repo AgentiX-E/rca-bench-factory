@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2106 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2186 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across 4 directories, 137 symbols, 0 orphans |
@@ -75,10 +75,17 @@ a missing guarantee.
 Every module touched by an audit pass is at **100% on all four dimensions**:
 `src/ingest/otlp.ts` after pass 2; `src/llm/openai-compat.ts` and
 `src/fault/importer.ts` after pass 3; `src/llm/rulegen.ts`,
-`src/llm/anthropic.ts` and `src/ir/types.ts` after pass 4. Pass 2 raised the
-aggregate branch figure from 99.89% to 99.96%: the exact-nanosecond conversion
-introduced a negative-timestamp path that nothing exercised, and it was covered
-with a real pre-epoch case rather than an ignore comment.
+`src/llm/anthropic.ts` and `src/ir/types.ts` after pass 4; `src/gates/validity.ts`
+after pass 9 -- `100 | 100 | 100 | 100`, driven there from
+`93.7 | 89.24 | 100 | 93.7` while the package average read `99.95 | 99.93 | 100 |
+99.95` and did not move. That is finding 49's sixth clause in the number itself: a
+new module can sit entirely below the floor while the average it is being judged
+against stays flat, because the average is a rate and the gap is a granularity.
+
+Pass 2 raised the aggregate branch figure from 99.89% to 99.96%: the
+exact-nanosecond conversion introduced a negative-timestamp path that nothing
+exercised, and it was covered with a real pre-epoch case rather than an ignore
+comment.
 
 ### Pass 7: three branch positions that were reachable and unmeasured
 
@@ -159,6 +166,7 @@ the logic is; the figure is recorded because it is measured on every run.
 | 7 | root `typecheck` entry point, `parseRcaEvalPath` | 2 | 6 tests across 2 files (3 cold-tree, 3 parser) |
 | 8 | `src/gates/` export enumeration, `test/typecheck-entrypoint.test.ts` | 2 | 18 enumerated modules; `TESTED` rewritten and both directions asserted |
 | 9 | `src/gates/validity.ts` (P1-1) | 3 | 59 tests in 1 new file; 7-row falsification matrix |
+| 10 | `test/export-surface-enumerated.test.ts` (P1-2 rest) | 2 | 45 enumerated modules (was 18); symbol-keyed exemptions; 8-row injection matrix |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
@@ -568,24 +576,39 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 90 |
+| Commits | 92 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
-| Source files | 46 (`src/`, excluding tests and build output) |
-| Source lines | 13,205 |
-| Test files | 74 core + 3 CLI |
-| Test lines | 24,501 |
-| Tests | 2106 core + 173 CLI |
+| Source files | 43 (`src/`, excluding tests and build output) |
+| Source lines | 12,500 |
+| Test files | 75 core + 3 CLI |
+| Test lines | 23,505 |
+| Tests | 2186 core + 173 CLI |
 
 Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
 previous table's own closing sentence -- that a status table is a column of
 measurements and they decay together -- was written after four of six rows went
 stale in one pass, and it held: three rows moved again here, for reasons worth
-naming. **Commits** `85 → 88 → 90`: the anchor diagnostic, the payload-name fix, the
-rule fix, then pass 8's meta-gate and pass 9's export enumeration. **Test files**
-`76 → 73 → 74 core + 3 CLI`, **Test lines** `23,440 → 24,198 → 24,501` and
-**Tests** `1959 → 1978 → 2042`: pass 8 adds eleven meta-gate tests, pass 9 adds
-sixty-four enumeration tests. The file row fell once because the old figure counted
-every `.ts` under `test/`; it rises now by one because pass 9 adds a real test file.
+naming. **Commits** `85 → 88 → 90 → 92`: the anchor diagnostic, the payload-name
+fix, the rule fix, then pass 8's meta-gate, pass 9's export enumeration and pass 10's
+signal-validity module. **Test files** `76 → 73 → 74 → 75 core + 3 CLI`,
+**Test lines** `23,440 → 24,198 → 24,501 → 23,505` and **Tests**
+`1959 → 1978 → 2042 → 2106 → 2186`: pass 8 adds eleven meta-gate tests, pass 9 adds
+sixty-four enumeration tests, pass 10 adds sixty-four validity tests, and pass 11
+adds eighty to the enumeration file. The file row fell once because the old figure
+counted every `.ts` under `test/`; it rises now by one because pass 9 adds a real
+test file.
+
+The two rows that fell in this pass point the same way and are worth separating,
+because only one of them is the table decaying. **Test lines** `24,501 → 23,505` is
+a real fall: pass 11 rewrote `export-surface-enumerated.test.ts`, replacing 144 lines
+of hand-written module-keyed exemption comments -- one short reason per exempted
+module, 26 of them -- with three symbol-keyed entries and the assertions that hold
+them. **Source lines** `13,205 → 12,500` and **Source files** `46 → 43` are not a
+fall at all: the old figures were taken before the count was restricted to `src/`,
+and they included three `.ts` files under `packages/core/` that are not source -- the
+`vitest.config.ts` and the two entry points the package publishes by path. Both
+figures are re-derived from `git ls-files 'packages/core/src/**/*.ts'`, which is what
+the row says it counts.
 
 **Test files** counts `*.test.ts`, which is what the runner counts, and the two
 agree at `74`. Counting every `.ts` under `test/` gives `76`, because that directory
@@ -879,14 +902,18 @@ is a list of the ones somebody happened to check.
   empty-reference guard) and of `gen-rcaeval-cases.mjs` are unexercised. Closing
   those means fixtures that build a whole synthetic reference or example tree,
   which is doable and not done. Recorded rather than implied.
-- **The export enumeration covers four directories, not the package.** `cli/`,
-  `ingest/`, `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`,
-  `report/` and `entity/` are exempted in `UNENUMERATED` with reasons that point at
-  other mechanisms -- the CLI reference gate, the structure-dispatch tests, the
-  vocabulary single-source tests -- and each exemption is checked by requiring that
-  some module imports the exempted one. An exemption is therefore a claim with
-  evidence, not a hole. Extending enumeration to those directories is the rest of
-  P1-2.
+- **The export enumeration covers the whole package.** `cli/`, `ingest/`,
+  `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
+  `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
+  pointing at another mechanism -- the CLI reference gate, the structure-dispatch
+  tests, the vocabulary single-source tests. Pass 11 probed all 26 of them for
+  exports that no file outside `test/` names and found **zero**, so the exemptions
+  were not hiding dead code; they were hiding the question. They were replaced by
+  **45 enumerated modules and three symbol-keyed exemptions**, taking the surface
+  under assertion from **140 to 516 exports**. What remains outside this file's reach
+  is call sites (it asserts a name is mentioned, not called) and the completeness of
+  `index.ts` as a surface, which `pack-manifest-completeness` and the package
+  `exports` field cover. See finding 50.
 
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
