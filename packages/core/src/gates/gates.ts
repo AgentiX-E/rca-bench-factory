@@ -10,17 +10,26 @@ import type {
 import { findDanglingEdgeRefs, findInvalidRelations, indexGraph, resolveEntityRef } from '../entity/graph.js';
 import { isoUtcToEpochMs, isWithinWindow } from '../util/time.js';
 import { dimensionOf } from '../util/unit.js';
+import { verifyFaultValidity, type ValidityOptions } from './validity.js';
 
 /**
  * Quality gates.
  *
  * G1 structural  - does the export satisfy the target contract? (deterministic, 100%)
  * G2 semantic    - are references resolvable, times monotonic, units consistent?
- * G3 validity    - is the anomaly signal actually strong and time-aligned?
+ * G3 validity    - did the declared fault actually happen, and is it strong and time-aligned?
  * G4 solvability - can a baseline method solve it, and is the difficulty distribution sane?
  * G5 anti-pollution - no PII, no answer leakage, no duplication against public sets.
  *
  * A gate never throws. It returns violations so the whole batch can be graded.
+ *
+ * G3 has two halves. The first is statistical and has always been here: does any
+ * metric sustain |Z| >= 2.0 after injection. The second is mechanistic and lives
+ * in `./validity.ts`: is the thing that moved the thing this fault would move.
+ * The first cannot tell a CPU fault from a network fault -- both pass if any
+ * series moves -- which is why the second exists. Enable it with
+ * `G3Options.validity`; the findings are appended as `VALIDITY_*` violations and
+ * nothing the gate previously reported is withdrawn.
  */
 
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -299,6 +308,15 @@ export interface G3Options {
   maxQuarantineRatio?: number;
   /** Observed quarantine ratio for the source dataset. */
   quarantineRatio?: number;
+  /**
+   * Enable mechanistic fault-validity verification and append its findings.
+   *
+   * Absent means off, so every existing caller and every recorded baseline keeps
+   * its current behaviour. Turning it on is a deliberate act with a measured
+   * consequence -- it will quarantine cases whose fault never manifested -- so it
+   * is a parameter rather than a silent default change.
+   */
+  validity?: ValidityOptions;
 }
 
 /** Two-sided Z-score with a floor on sigma to avoid dividing by zero. */
@@ -422,6 +440,27 @@ export function checkG3Validity(bundle: IrBundle, options: G3Options = {}): Gate
           fieldPath: `${c.caseId}.signals`,
         });
         break;
+      }
+    }
+  }
+
+  // ─── mechanistic fault validity (opt-in) ─────────────────────────────────
+  // The loop above asks whether any metric moved enough. This asks whether the
+  // right metric moved, which is a different question and the one the product's
+  // D-10 claim rests on. `unverifiable` findings are reported as information
+  // rather than as violations: an absence of evidence is not a defect in the
+  // case, and treating it as one would quarantine cases for the wrong reason.
+  if (options.validity !== undefined) {
+    for (const c of bundle.cases) {
+      const report = verifyFaultValidity({ ...bundle, cases: [c] }, options.validity);
+      if (report.verdict === 'unverifiable') continue;
+      for (const check of report.checks) {
+        if (check.passed) continue;
+        v.push({
+          code: `VALIDITY_${check.id.toUpperCase().replace(/-/g, '_')}`,
+          message: `case '${c.caseId}': ${check.detail}`,
+          fieldPath: `cases.${c.caseId}.fault`,
+        });
       }
     }
   }

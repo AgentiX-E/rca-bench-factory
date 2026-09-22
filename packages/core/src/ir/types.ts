@@ -370,3 +370,39 @@ export interface IrBundle {
   /** Signals grouped by case id. */
   signals: Record<string, TelemetrySignal[]>;
 }
+
+/**
+ * One assertion inside a fault-validity report.
+ *
+ * Same shape as `ScoreCheck` in `score/score.ts` -- `{id, passed, detail}` with a
+ * flat array and an aggregate verdict -- because the two reports answer the same
+ * kind of question ("is this artifact what it claims to be") and a reader should
+ * not have to learn two formats for it.
+ */
+export interface ValidityCheck {
+  id: string;
+  passed: boolean;
+  detail: string;
+}
+
+/**
+ * The verdict on whether a declared fault actually happened.
+ *
+ * Three values, and `unverifiable` is not a softer `invalid`. When the telemetry
+ * carries nothing the fault's mechanism could have moved, the honest answer is
+ * that the evidence cannot decide -- not that the fault failed. Collapsing the two
+ * would turn an absence of data into a finding, which is the overclaim that
+ * fault-validity verification exists to prevent.
+ */
+export type FaultValidityVerdict = 'valid' | 'invalid' | 'unverifiable';
+
+/** The report `verifyFaultValidity` returns. */
+export interface FaultValidityReport {
+  caseId: string;
+  verdict: FaultValidityVerdict;
+  checks: ValidityCheck[];
+  /** The entity the case names as root cause, and the service it resolved to. */
+  target: { entityId: string | null; service: string | null };
+  /** What the telemetry actually showed, as opposed to what was declared. */
+  observed: { affectedSeries: string[]; onsetOffsetSeconds: number | null };
+}

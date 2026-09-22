@@ -482,9 +482,32 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-fetch-'));
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
+  /**
+   * Every output directory this block creates, so it can be removed afterwards.
+   *
+   * There are twenty-two of these call sites and no cleanup used to exist for
+   * any of them. The reason that mattered is the 2 GiB case below: each run left
+   * a 2.1 GB directory behind, and a suite run repeatedly in development
+   * accumulated **1422** of them and filled the disk to 100%. At that point
+   * thirteen unrelated script tests began failing, all of them for the same
+   * reason -- they write a file and the write fails -- and none of them named
+   * the cause. A leak that presents as thirteen unrelated defects is worse than
+   * a leak, and the fix belongs at the point of creation rather than in a list
+   * of directories someone has to remember to extend.
+   */
+  const outputs: string[] = [];
+  const makeOut = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    outputs.push(dir);
+    return dir;
+  };
+  afterAll(() => {
+    for (const dir of outputs) rmSync(dir, { recursive: true, force: true });
+  });
+
   it('downloads real bytes and reports them as UNPINNED when no digest is recorded', async () => {
     const registry = writeFixtureRegistry(scratch);
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('UNPINNED');
@@ -494,7 +517,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
 
   it('accepts the download when the recorded digest matches', async () => {
     const registry = writeFixtureRegistry(scratch, { sha256: PAYLOAD_SHA, bytes: PAYLOAD.length });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('VERIFIED');
@@ -506,7 +529,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   it('fails when the recorded digest does not match the bytes served', async () => {
     const wrong = 'a'.repeat(64);
     const registry = writeFixtureRegistry(scratch, { sha256: wrong });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/expected sha256/);
@@ -515,7 +538,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
 
   it('fails when the recorded byte count does not match', async () => {
     const registry = writeFixtureRegistry(scratch, { bytes: PAYLOAD.length + 1 });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/expected \d+ bytes/);
@@ -536,7 +559,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
    */
   it('digests a download larger than 2 GiB instead of failing on the file size', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/huge`, id: 'fixture-huge' });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const report = join(scratch, 'huge-pins.json');
     const result = await runScriptAsync(
       ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
@@ -569,7 +592,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
    */
   it('reports the same digest for a small asset as an in-process hash of the same bytes', async () => {
     const registry = writeFixtureRegistry(scratch);
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const report = join(scratch, 'small-pins.json');
     const result = await runScriptAsync(
       ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
@@ -585,7 +608,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   // and not as a silent pass.
   it('reports an unreachable asset as SKIPPED, naming it, and exits non-zero', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('SKIPPED');
@@ -619,7 +642,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     writeFileSync(registry, JSON.stringify(two));
 
     const report = join(scratch, 'partial-pins.json');
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(
       ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
     );
@@ -660,7 +683,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     const expected = createHash('sha256').update(CHUNKED_BODY).digest('hex');
 
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/chunked`, id: 'fixture-chunked' });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const report = join(scratch, 'chunked-pins.json');
     const result = await runScriptAsync(
       ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
@@ -679,7 +702,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     healthy.assets.push({ ...healthy.assets[0], id: 'fixture-small', url: `${origin}/served` });
     writeFileSync(registry, JSON.stringify(healthy));
     const report = join(scratch, 'mixed-pins.json');
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(
       ['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report],
     );
@@ -704,7 +727,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
    */
   it('names the attempt number on each retry, so a three-attempt failure is legible', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     // Three attempts, and the two that were followed by a retry say so.
@@ -717,7 +740,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
 
   it('reports how long each failed attempt took', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     // A duration, not a bare "failed". The unit is asserted because a raw
     // millisecond count is a number an operator has to divide by 60000 in their
@@ -736,7 +759,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     // looks like when nothing is listening at all. Both mean no bytes moved;
     // they are named separately because the fixes differ.
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/refused` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     expect(result.stdout).toMatch(/Nothing was\s+transferred|connection was refused/);
@@ -748,7 +771,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     // the fix is a registry edit and not a re-run -- and a log that reports both
     // as "the download failed" sends the operator to the wrong one.
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/stale` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     expect(result.stdout).toMatch(/answered 404|not at this URL/);
@@ -766,7 +789,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     // curl's exit status: `--fail` exits 22 for a 404 and a 500 alike, so the
     // only thing that separates them is the status number in curl's message.
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     expect(result.stdout).toMatch(/answered 500/);
@@ -797,7 +820,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
    */
   it('honours a zero backoff instead of falling back to the default delay', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `http://127.0.0.1:${deadPort}/nothing.csv` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const startedAt = Date.now();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     const elapsed = Date.now() - startedAt;
@@ -828,7 +851,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
    */
   it('reports an attempt duration that is the attempt, not curl retrying inside it', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `http://127.0.0.1:${deadPort}/nothing.csv` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
     // The identity of the failure is asserted first: without this the duration
@@ -848,7 +871,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   // downloaded and verified correctly, naming neither the asset nor the reason.
   it('does not unpack an asset that is not an archive', async () => {
     const registry = writeFixtureRegistry(scratch);
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(0);
     expect(result.stderr).not.toMatch(/unzip/);
@@ -865,7 +888,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   // the one number nobody machine-checked.
   it('writes the measured digests to a report file when asked, and pins nothing by itself', async () => {
     const registry = writeFixtureRegistry(scratch);
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const report = join(mkdtempSync(join(tmpdir(), 'rca-bench-report-')), 'pins.json');
     const result = await runScriptAsync([
       '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
@@ -892,7 +915,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   // it would put a number in the registry that the next run would "verify".
   it('omits an unreachable asset from the report rather than reporting a partial one', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const report = join(mkdtempSync(join(tmpdir(), 'rca-bench-report-')), 'pins.json');
     const result = await runScriptAsync([
       '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
@@ -908,7 +931,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   // and could not be re-verified.
   it('reports the digest of an archive, taken before it is unpacked and deleted', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/corpus.zip`, id: 'fixture-zip' });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const report = join(mkdtempSync(join(tmpdir(), 'rca-bench-report-')), 'pins.json');
     const result = await runScriptAsync([
       '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
@@ -923,7 +946,7 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
 
   it('unpacks an archive and removes it, leaving the extracted tree', async () => {
     const registry = writeFixtureRegistry(scratch, { url: `${origin}/corpus.zip`, id: 'fixture-zip' });
-    const out = mkdtempSync(join(tmpdir(), 'rca-bench-out-'));
+    const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('EXTRACTED fixture-zip');

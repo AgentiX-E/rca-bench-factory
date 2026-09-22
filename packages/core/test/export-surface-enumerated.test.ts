@@ -83,6 +83,7 @@ const ENUMERATED_MODULES = [
   'export/rca100.ts',
   'export/rcaeval.ts',
   'gates/gates.ts',
+  'gates/validity.ts',
 ];
 
 /**
@@ -225,23 +226,65 @@ function nonTestSources(): Array<{ file: string; text: string }> {
 }
 
 /**
- * The hand-written list. Read it as a claim about the product, not about the
- * tests: every name here is one a non-test module is expected to reference.
+ * The hand-written list, corrected in the pass that added `gates/validity.ts`.
+ *
+ * **What was wrong before.** The first version held 32 entries, 7 of which do not
+ * exist anywhere in `src/`: `assembleIrBundle`, `AssembleOptions`,
+ * `assertEntityReferencesResolve`, `isInferred`, `scoreOfficialSubmission`,
+ * `guardExport` and `runQualityGates`. The real names are `assembleBundle`, the
+ * six `is*Signal` predicates, `scoreOfficial`, `assertExportableBundle` and
+ * `runAllGates`. Two injections established the consequence: deleting the real
+ * symbol `isVocabularyMember` turned the suite red, while replacing the *ghost*
+ * `assembleIrBundle` with `totallyMadeUpNameThatCannotExist` left `64 passed`.
+ * The list could not tell a real name from an invented one, and the only thing
+ * that noticed a deletion was the `toBe(26)` count -- which measures how long the
+ * list is, not whether its entries are real.
+ *
+ * That is finding 47's defect one more time, and worse than before. Findings 47
+ * and 48 were both about an expectation that shrinks with the thing it measures;
+ * this one was an expectation I fabricated. The names I invented happened to be
+ * the ones P1-1 would later need, which is exactly how the error survived review:
+ * it looked right, because I was already thinking about the next iteration.
+ *
+ * **What replaces it.** Two rules, both asserted below:
+ *   1. Every name here is a real export of an enumerated module.
+ *   2. Every real export is here, unless its module is in `DELIBERATELY_UNENUMERATED`.
+ * So deleting a real name now fails on the *name*, and inventing one fails
+ * immediately rather than being absorbed by a count.
+ *
+ * The claim this list makes is deliberately narrower than the name `TESTED`
+ * suggests: "some module outside `test/` mentions this identifier". That is what
+ * the checks below verify. It is not a claim about call sites.
  */
 const TESTED = [
   // ir/assembler.ts
-  'assembleIrBundle',
-  'AssembleOptions',
-  // ir/guards.ts
-  'assertEntityReferencesResolve',
-  'isInferred',
+  'assembleBundle',
+  // ir/guards.ts -- signal-narrowing predicates, one per payload kind.
+  'isMetricSignal',
+  'isLogSignal',
+  'isTraceSignal',
+  'isEventSignal',
+  'isAlertSignal',
+  'isProfileSignal',
   // ir/schema.ts
+  'fieldProvenanceSchema',
+  'metricPayloadSchema',
+  'logPayloadSchema',
+  'tracePayloadSchema',
+  'eventPayloadSchema',
+  'alertPayloadSchema',
+  'profilePayloadSchema',
+  'signalPayloadSchema',
+  'telemetrySignalSchema',
   'entitySchema',
+  'entityEdgeSchema',
   'entityGraphSchema',
+  'evidenceCheckpointSchema',
+  'causalStepSchema',
+  'groundTruthSchema',
   'faultCaseSchema',
   'irBundleSchema',
-  'telemetrySignalSchema',
-  // ir/types.ts -- the runtime half; the type half is DELIBERATELY_UNNAMED.
+  // ir/types.ts -- the runtime half; the type half is DELIBERATELY_UNENUMERATED.
   'IR_VERSION',
   'SIGNAL_KINDS',
   'LOG_SEVERITIES',
@@ -252,16 +295,100 @@ const TESTED = [
   'isVocabularyMember',
   // score/dispatch.ts
   'EXPORTERS',
+  'exportForScoreTarget',
   'scoreTargetInvocation',
   // score/official.ts
-  'scoreOfficialSubmission',
+  'OFFICIAL_FACETS',
+  'OFFICIAL_METRICS',
+  'officialMetric',
+  'parseOpenRcaScoringPoints',
+  'readOpenRcaGroundTruth',
+  'parseOpenRcaPrediction',
+  'readOpenRcaSubmission',
+  'parseRcaEvalPath',
+  'parseRcaEvalDirectory',
+  'readOfficialGroundTruth',
+  'oraclePrediction',
+  'readOfficialSubmission',
+  'openRcaTimeMatches',
+  'scoreOfficial',
+  'mutatePrediction',
+  'officialCaseFailures',
+  'runOfficialRegression',
+  'runAllOfficialRegressions',
   // score/score.ts
+  'checkOpenRcaStructure',
+  'checkRcaEvalStructure',
+  'checkRca100Structure',
+  'AIOPS2025_INSTANCE_TYPES',
+  'checkAioPs2025Structure',
+  'checkCloudOpsBenchStructure',
+  'checkItBenchStructure',
+  'checkOpenRca2Structure',
+  'verifyChecksums',
+  'scoreExport',
   'sha256',
-  'SCORE_TARGET_IDS',
   // score/targets.ts
-  'SCORE_TARGETS',
+  'SCORE_TARGET_IDS',
   // export/guard.ts
-  'guardExport',
+  'assertExportableBundle',
+  'STRUCTURAL_CODES',
+  'CASE_LEVEL_CODES',
+  // export/aiops2025.ts
+  'AIOPS2025_TARGET_ID',
+  'AIOPS2025_CONTRACT_VERSION',
+  'buildAioPs2025GroundTruth',
+  'buildAioPs2025Input',
+  // export/cloudopsbench.ts
+  'CLOUD_OPSBENCH_TARGET_ID',
+  'CLOUD_OPSBENCH_CONTRACT_VERSION',
+  'buildCloudOpsBenchMetadata',
+  // export/itbench.ts
+  'ITBENCH_TARGET_ID',
+  'ITBENCH_CONTRACT_VERSION',
+  'ITBENCH_SRE_DOMAIN',
+  'buildItBenchScenarioSpec',
+  // export/openrca.ts
+  'OPENRCA_TARGET_ID',
+  'OPENRCA_CONTRACT_VERSION',
+  'OPENRCA_OFFSET_MINUTES',
+  'OPENRCA_GROUNDTRUTH_HEADER',
+  'OPENRCA_TASK_INDEXES',
+  'OPENRCA_SCORING_TEMPLATES',
+  'openRcaTaskIndex',
+  'hasRootCauseElements',
+  'buildScoringPoints',
+  'buildGroundTruthCsv',
+  'buildMetricCsv',
+  'buildLogCsv',
+  'buildTraceCsv',
+  'buildPredictionJson',
+  'injectTimeUnixSeconds',
+  // export/openrca2.ts
+  'OPENRCA2_TARGET_ID',
+  'OPENRCA2_CONTRACT_VERSION',
+  'buildCausalPathJson',
+  // export/rca100.ts
+  'RCA100_TARGET_ID',
+  'RCA100_CONTRACT_VERSION',
+  'buildEntityIndex',
+  'resolveSignalEntity',
+  'buildTopologyJson',
+  'buildRca100Metrics',
+  'buildRca100Logs',
+  'buildRca100Traces',
+  'buildRca100Events',
+  'buildRca100Alerts',
+  'buildTaskJson',
+  'buildGroundTruthJson',
+  // export/rcaeval.ts
+  'RCAEVAL_TARGET_ID',
+  'RCAEVAL_CONTRACT_VERSION',
+  'RCAEVAL_SUITES',
+  'caseDirName',
+  'buildMetricsJson',
+  'buildLogsCsv',
+  'buildTracesCsv',
   // export/*.ts -- one entry point each, named in score/dispatch.ts.
   'exportOpenRca',
   'exportOpenRca2',
@@ -271,8 +398,35 @@ const TESTED = [
   'exportCloudOpsBench',
   'exportItBench',
   // gates/gates.ts
-  'runQualityGates',
+  'checkG1Structural',
+  'checkG2Semantic',
+  'checkG3Validity',
+  'checkG4Solvability',
+  'checkG5AntiPollution',
+  'runAllGates',
+  'zScore',
+  'mean',
+  'stddev',
+  'sustainedAnomalySamples',
+  'DEFAULT_SENSITIVE_PATTERNS',
+  'caseFingerprint',
+  // gates/validity.ts
+  'FAULT_EXPECTATIONS',
+  'expectedSignalsFor',
+  'verifyFaultValidity',
 ];
+
+/**
+ * Modules whose entire export surface is deliberately outside `TESTED`.
+ *
+ * `ir/types.ts` publishes the IR contract as type aliases and interfaces, which
+ * erase at runtime; `ir/schema.ts` is the runtime half of that same contract and
+ * is enumerated in full. Requiring the type aliases to be "named by a consumer"
+ * would assert only that some file mentions the word.
+ */
+const DELIBERATELY_UNENUMERATED: Record<string, string> = {
+  'ir/types.ts': 'the runtime vocabularies are enumerated; the type aliases erase at runtime',
+};
 
 describe('the enumerated list is a real list', () => {
   it('names at least one symbol per enumerated module', () => {
@@ -288,11 +442,64 @@ describe('the enumerated list is a real list', () => {
       expect(names.length, `${module} declares no exports at all`).toBeGreaterThan(0);
     }
     const declared = [...declaring.values()].flat();
-    // The measured number, not a chosen one. I first wrote 30 here without
-    // checking, the suite went red at 26, and the correction is to say what was
-    // measured. A threshold set by feel in a file whose entire purpose is to
-    // replace feel with enumeration would be a poor advertisement for itself.
-    expect(declared.filter((n) => TESTED.includes(n)).length).toBe(26);
+    // A floor, and deliberately a loose one. It used to be `toBe(26)`, an exact
+    // count, and that turned out to be the *only* thing in this file that noticed
+    // a deletion -- which meant the count was load-bearing for a property it does
+    // not describe. It measured how long `TESTED` was, not whether `TESTED` was
+    // right, and it stayed perfectly happy while seven of its entries named exports
+    // that do not exist. The two assertions below check the property directly, so
+    // this one is free to be a floor against the degenerate case of an empty list.
+    expect(declared.filter((n) => TESTED.includes(n)).length).toBeGreaterThan(50);
+  });
+
+  it('lists only names that exist as exports of an enumerated module', () => {
+    // The assertion whose absence let seven invented names through. Injecting
+    // `totallyMadeUpNameThatCannotExist` in place of a real entry used to leave
+    // the suite at 64 passed, because nothing compared this list against the
+    // source it claims to describe.
+    const realExports = new Set(
+      ENUMERATED_MODULES.flatMap((module) => {
+        const text = readFileSync(join(SRC, module), 'utf8');
+        return [...namedExports(text), ...bracedExports(text)];
+      }),
+    );
+    const invented = TESTED.filter((name) => !realExports.has(name));
+    expect(
+      invented,
+      `TESTED names ${invented.join(', ')}, which no enumerated module exports. ` +
+        `A name here is a claim that the export exists; check the module.`,
+    ).toEqual([]);
+  });
+
+  it('lists every real export, so a name cannot be dropped silently', () => {
+    // The other direction, and the one the count was standing in for. Deleting a
+    // real name from TESTED now fails and says which name, rather than failing on
+    // an arithmetic mismatch that a reader has to reverse-engineer.
+    const realExports = new Set(
+      ENUMERATED_MODULES.flatMap((module) => {
+        const text = readFileSync(join(SRC, module), 'utf8');
+        return [...namedExports(text), ...bracedExports(text)];
+      }),
+    );
+    const unlisted = [...realExports].filter(
+      (name) => !TESTED.includes(name) && DELIBERATELY_UNENUMERATED[name] === undefined,
+    );
+    expect(
+      unlisted,
+      `these exports exist but are not in TESTED: ${unlisted.join(', ')}. ` +
+        `Add each one, or add its module to DELIBERATELY_UNENUMERATED with a reason.`,
+    ).toEqual([]);
+  });
+
+  it('names a real export it can compare against, so the check is not vacuous', () => {
+    // Positive control for the two assertions above: if `namedExports` stopped
+    // matching due to a formatting change, `realExports` would be empty and both
+    // directions would pass while checking nothing.
+    const realExports = ENUMERATED_MODULES.flatMap((module) =>
+      namedExports(readFileSync(join(SRC, module), 'utf8')),
+    );
+    expect(realExports.length).toBeGreaterThan(50);
+    expect(realExports).toContain('verifyFaultValidity');
   });
 
   it.each(ENUMERATED_MODULES)('%s still exists', (module) => {

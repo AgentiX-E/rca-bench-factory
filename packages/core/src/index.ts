@@ -134,6 +134,19 @@ export type {
   G5Options,
 } from './gates/gates.js';
 
+/**
+ * Fault validity verification.
+ *
+ * Exported because it answers the question the product's D-10 claim rests on and
+ * a caller may want it without running the full gate set -- for instance to
+ * report on an existing corpus rather than to admit a new case. `FAULT_EXPECTATIONS`
+ * is part of the surface on purpose: it is the table that says what each fault
+ * category is expected to move, and a reader who wants to challenge that
+ * assumption should not have to read the source to find it.
+ */
+export { FAULT_EXPECTATIONS, expectedSignalsFor, verifyFaultValidity } from './gates/validity.js';
+export type { FaultExpectation, ValidityOptions } from './gates/validity.js';
+
 export {
   OPENRCA_CONTRACT_VERSION,
   OPENRCA_OFFSET_MINUTES,

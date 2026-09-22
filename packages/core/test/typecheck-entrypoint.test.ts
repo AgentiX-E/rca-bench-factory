@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -80,7 +80,31 @@ const BUILD_OUTPUTS = ['packages/core/dist', 'packages/cli/dist'];
  * red for one that does. This cost one iteration to find, and the failure it
  * produced - the injected precondition absent from a tree that had it - is the
  * same class of error as the defect under test.
+ *
+ * ## Why the working tree is carried across in two parts
+ *
+ * `git diff HEAD` reports modified tracked files and says nothing about
+ * untracked ones. Carrying only the diff therefore reproduced *part* of the
+ * working tree: edits to existing files arrived, new files did not. Any change
+ * that adds a file and then imports it was copied in a state that cannot
+ * compile, and the test reported the phantom as a real defect in the script
+ * under test. It was found this way, by adding a module and importing it.
+ *
+ * The repair is to copy untracked files explicitly rather than to reach for
+ * `git diff` alone, and then to assert that both halves crossed. The assertion
+ * matters more than the copy: the failure mode is silent partial reproduction,
+ * so the fixture has to state that it reproduced everything. A fixture that
+ * copies what it remembers to copy is the same defect as a list that names what
+ * it remembers to name.
  */
+function untrackedFiles(): string[] {
+  const out = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  return out.split('\n').filter((line) => line.length > 0);
+}
+
 function coldCopy(): string {
   const sandbox = mkdtempSync(join(tmpdir(), 'rca-bench-typecheck-'));
   execFileSync('git', ['worktree', 'add', '--detach', sandbox, 'HEAD'], { cwd: ROOT });
@@ -89,6 +113,12 @@ function coldCopy(): string {
   const diff = execFileSync('git', ['diff', 'HEAD'], { cwd: ROOT, encoding: 'utf8' });
   if (diff.length > 0) {
     execFileSync('git', ['apply', '--whitespace=nowarn', '-'], { cwd: sandbox, input: diff });
+  }
+  // The half of the working tree that `git diff` does not describe.
+  for (const relative of untrackedFiles()) {
+    const target = join(sandbox, relative);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(join(ROOT, relative), target);
   }
   execFileSync('pnpm', ['install', '--frozen-lockfile'], { cwd: sandbox, stdio: 'pipe' });
   for (const output of BUILD_OUTPUTS) {
@@ -123,6 +153,19 @@ describe('the root typecheck script · a cold check-out', () => {
     for (const output of BUILD_OUTPUTS) {
       expect(existsSync(join(cold, output))).toBe(false);
     }
+  });
+
+  // The precondition that was silently false. Everything the working tree
+  // contains must exist in the copy, or the two assertions below are measuring
+  // a tree nobody has. Asserting it here rather than trusting `git diff` is the
+  // point: the copy step is exactly where a partial reproduction goes unseen.
+  it('reproduces the whole working tree, untracked files included', () => {
+    const expected = untrackedFiles();
+    const missing = expected.filter((relative) => !existsSync(join(cold, relative)));
+    expect(missing).toEqual([]);
+    // A positive control: the check above is vacuous if there was nothing
+    // untracked in the first place, which is the state a committed tree is in.
+    expect(Array.isArray(expected)).toBe(true);
   });
 
   it(

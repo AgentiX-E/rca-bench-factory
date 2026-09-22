@@ -2882,3 +2882,141 @@ Two honest limits:
   structure-dispatch tests, the vocabulary single-source tests — and the importer
   check confirms they are reached. Extending enumeration to them is the remainder of
   P1-2 and is tracked in `progress.md`.
+
+## 49 — Signal validity: a verifier that said yes to everything, and the two defects the coverage pass found under it
+
+P1-1, the only real competitive gap in `06-竞品分析.md` (D-10). Every other benchmark in
+the survey scores a submission against ground truth. This one additionally asks the prior
+question — given a run's own telemetry, did the fault it claims to have injected actually
+happen? A benchmark that scores submissions against unverified injections measures nothing
+about the submission.
+
+The deliverable is `packages/core/src/gates/validity.ts`, wired into `checkG3Validity`
+behind an opt-in `validity` option so that enabling it is a decision rather than a silent
+change to every existing result.
+
+### The three verdicts
+
+`valid` / `invalid` / `unverifiable`, and the third is the one that makes the module
+honest. An absence of evidence is not a finding, and a verifier with two verdicts has to
+report "we could not check" as "it did not happen" — which is a claim the data cannot
+support. Every downstream check reports alongside rather than instead of G3's statistical
+half, which is asserted by a coexistence test.
+
+### Defect 1 — the pre-existing-anomaly check could never fire
+
+`no-preexisting-anomaly` asks whether a metric was already anomalous *before* the
+injection. The first implementation compared every baseline sample against statistics
+computed from all of them, which makes a pre-existing anomaly self-cancelling: ten samples
+of 95% followed by ten of 96% have a tiny sigma, so nothing is anomalous and the check
+passes. It could not fail. The fixture that exposed it had six normal samples and four
+saturated ones, and the check still passed, because the four saturated samples were inside
+the very baseline used to judge them.
+
+The repair is a baseline split: the first `minSustainedSamples` samples *establish* normal,
+and the remainder is *judged* against it. An anomaly cannot hide inside the statistics that
+judge it.
+
+The immediate consequence was a false positive — `stddev([20,21,19])` is exactly 1.0, so
+values of 22 and 18 sit at precisely |Z| = 2.000 and were reported as pre-existing. Hence
+`preexistingMinAbsZ` (4.0), deliberately above `minAbsZ` (2.0): "was it already broken" is a
+stronger claim than "did it move".
+
+### Defect 2 — a two-sample baseline certified every fault it was shown
+
+The comment above the baseline slice read:
+
+> With fewer than that there is nothing to establish a baseline from, and the caller treats
+> the case as unverifiable rather than guessing.
+
+**The caller did no such thing.** Nothing enforced it. A bundle with two baseline samples
+and a saturated tail was reported `valid`, all six checks green, "first sustained anomaly at
++0s" — because `stddev([20,21])` is 0.707, so a later value of 99 sits at |Z| = 111 and any
+injected fault at all clears the threshold. The check was not testing whether the fault
+happened; it was testing whether two numbers happened to be close together.
+
+This was found by the coverage pass, not by the suite. Chasing the last unreachable branch
+required reading where the baseline is constructed, and the contradiction between the
+comment and the code was in the same twelve lines.
+
+### Defect 3 — the fix for defect 2 downgraded a real `invalid`
+
+The first repair keyed the verdict on whether any series matched the expectation. That
+conflated two different absences, and two pre-existing tests caught it:
+
+- **no series matched** — a `cpu` fault whose telemetry is entirely latency has *shown*
+  that the CPU fault did not manifest. `invalid`.
+- **series matched but their baselines were too thin** — nothing is shown either way.
+  `unverifiable`.
+
+The second attempt over-corrected in the other direction and reported a case with *no
+telemetry at all* as `invalid`, which broke three more tests. The distinction that holds is
+drawn on what was **observed** (`target-observed`), not on what matched:
+
+| Situation | Verdict |
+|---|---|
+| the service emitted no metric series | `unverifiable` |
+| it emitted series, none matching the mechanism | `invalid` |
+| matching series whose baselines were too thin | `unverifiable` |
+| the ground truth names an entity absent from the graph | `invalid` (survives the guard) |
+
+Both wrong versions are recorded because the pair is the finding: the two obvious
+conditions are each wrong, in opposite directions, and only the third is right.
+
+### Dead code removed rather than covered
+
+The onset detail carried `` ${onsetOffsetSeconds >= 0 ? '+' : ''} ``, a ternary for a
+negative offset. `onsetMs` is drawn only from samples at or after `injectMs`, so an anomaly
+starting earlier is in the baseline window and can never be the onset — the offset is
+never negative and the branch is unreachable. Two attempts to write a test for it failed
+before that was understood. Removed, with a test pinning the invariant that made it dead.
+
+### The leak that presented as thirteen unrelated failures
+
+Running the suite filled the disk to 100%. Thirteen script tests failed — `check-official`,
+`check-no-vendored-data`, `apply-pins`, `fetch-official` — none of which touch anything in
+this change. The cause was **1422** leftover `/tmp/rca-bench-out-*` directories at 2.1 GB
+each: the 2 GiB digest test calls `mkdtempSync` 22 times and nothing ever removed any of
+them.
+
+This is worth recording for its shape. A leak that reports as thirteen unrelated defects in
+unrelated modules is worse than the leak, because the failure mode invites each failure to
+be diagnosed separately. The fix is at the point of creation — a `makeOut()` helper that
+registers each directory for removal — rather than a list of directories someone has to
+remember to extend.
+
+### Verification
+
+Coverage on `validity.ts` is measured **on the module, not the package**. The package
+average is what hid this: the first full run read `99.95 | 99.93 | 100 | 99.95` while
+`validity.ts` itself was `93.7 | 89.24 | 100 | 93.7`. Both statement and branch dimensions
+were under the 95% floor and the package number did not move.
+
+Final: `validity.ts` at **`100 | 100 | 100 | 100`**.
+
+Falsification matrix — every check made to fail, source restored and diffed clean after
+each row:
+
+| injection | result |
+|---|---|
+| `target-resolves` always passes | **1 failed** |
+| `target-observed` always passes | **2 failed** |
+| `mechanism-manifested` always passes | **5 failed** |
+| `onset-precision` always passes | **2 failed** |
+| `sustained-duration` always passes | **2 failed** |
+| `no-preexisting-anomaly` always passes | **2 failed** |
+| thin-baseline guard forced true | **4 failed** |
+| negative control (restored) | 0 (green) |
+
+### What this does not cover
+
+- **The mechanism table is hand-written.** It is a table of what each fault category should
+  move, derived from the taxonomy, and nothing derives it from the data. A category whose
+  real signature differs from the table would be judged wrongly. It is at least
+  totality-checked against `FAULT_CATEGORIES`, so a new category cannot be added silently.
+- **It verifies the injection, not the label.** A case whose telemetry genuinely shows a CPU
+  fault passes, whether or not the CPU fault was the one intended. Distinguishing two real
+  faults from one another is not attempted.
+- **Signals other than metrics contribute nothing.** `signalKinds`, `logSeverities` and the
+  trace expectations are recorded in the table but only metric series are read, so a
+  fault whose only manifestation is an error log is `unverifiable`.

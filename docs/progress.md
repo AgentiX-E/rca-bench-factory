@@ -9,10 +9,10 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 1959 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2106 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
-| L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency |
-| L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted |
+| L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
+| L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across 4 directories, 137 symbols, 0 orphans |
 | L4 | Official reproduction | **3 of 4 anchors met** | see below |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
 
@@ -120,6 +120,28 @@ backstop. An uncovered backstop is not coverage debt — it is the shape of the
 guarantee, and deleting it to move the number is the one edit that would remove
 the thing it exists to prove.
 
+### A new module must clear the floor on its own
+
+P1-1 added `src/gates/validity.ts` (569 lines) and the module's own figures were
+read before the package figure was trusted. That mattered: the first full run
+reported a package average of `99.95 | 99.93 | 100 | 99.95` while the new file sat
+at `93.7 | 89.24 | 100 | 93.7`, with **both** statements and branches under the
+gate. A 569-line module cannot move a 20 000-line average, so a new file can land
+well below the floor without the package number changing at all.
+
+The number to quote for new code is therefore the file's, not the package's:
+
+| Module | Statements | Branches | Functions | Lines |
+| --- | --- | --- | --- | --- |
+| `src/gates/validity.ts` | 100% | 100% | 100% | 100% |
+
+Raising it from 93.7 to 100 was not cosmetic. Two of the three uncovered regions
+were the entry points to defects recorded in `audit.md` finding 49 — a thin
+baseline that certified every fault it was shown, and a branch that was dead
+rather than merely unexercised. The third was the empty-bundle path. Reading the
+coverage report module-first is what put the baseline construction in front of a
+reader at all.
+
 `packages/cli` is at 100% on all four dimensions. It carries no gate of its own,
 because it is a thin argument-parsing shell over core and the gate belongs where
 the logic is; the figure is recorded because it is measured on every run.
@@ -135,6 +157,8 @@ the logic is; the figure is recorded because it is measured on every run.
 | 5 | `src/cli/args.ts` | 5 | 56 tests in `cli.test.ts` (5 new describe blocks + 4 invariant cases) |
 | 6 | `scripts/fetch-official.mjs` | 3 (1 withdrawn) | 5 injections; the withdrawn row is the finding |
 | 7 | root `typecheck` entry point, `parseRcaEvalPath` | 2 | 6 tests across 2 files (3 cold-tree, 3 parser) |
+| 8 | `src/gates/` export enumeration, `test/typecheck-entrypoint.test.ts` | 2 | 18 enumerated modules; `TESTED` rewritten and both directions asserted |
+| 9 | `src/gates/validity.ts` (P1-1) | 3 | 59 tests in 1 new file; 7-row falsification matrix |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
@@ -399,6 +423,37 @@ a real file, requires the enumerated count to move, and restores the file in a
 dead was found, and the value is that the question is now asked on every run.
 Neither is a substitute for asserting the reason.
 
+### Injection matrix, pass 10
+
+P1-1: G3 asks whether *some* metric moved; the new validity half asks whether **this**
+fault happened. Six checks, each of which had to be made to fail before it could be
+called a check.
+
+| Injection | Tests that fail |
+| --- | --- |
+| `target-resolves` always passes | 1 |
+| `target-observed` always passes | 2 |
+| `mechanism-manifested` always passes | 5 |
+| `onset-precision` always passes | 2 |
+| `sustained-duration` always passes | 2 |
+| `no-preexisting-anomaly` always passes | 2 |
+| thin-baseline guard forced true | 4 |
+| NEGATIVE CONTROL — source restored | 0 (stays green) |
+
+The source was diffed against a saved copy after every row and is byte-identical, so
+no row is a residual of the one before it.
+
+The thin-baseline row is the one that paid for the pass. It exists because a coverage
+sweep — not a test — reached the last unreachable branch and found that the comment
+promising a guard had no guard behind it. `stddev([20,21])` is 0.707, so a competing
+value of 99 sits at |Z| = 111 and **every** injected fault cleared the threshold. A
+verifier that says yes to everything is worse than no verifier, because it is believed.
+See `audit.md` finding 49 for the three defects and the two wrong repairs that
+preceded the right one.
+
+Cost, stated because it is real: the coverage of an existing module has to be read
+per-file, and the package figure will not tell you when a new file is under the floor.
+
 ## L4 anchor status
 Four anchors, each strictly stronger than the one before:
 
@@ -519,7 +574,7 @@ document that described it as downloading the data was describing an intention.
 | Source lines | 13,205 |
 | Test files | 74 core + 3 CLI |
 | Test lines | 24,501 |
-| Tests | 2042 core + 173 CLI |
+| Tests | 2106 core + 173 CLI |
 
 Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
 previous table's own closing sentence -- that a status table is a column of
