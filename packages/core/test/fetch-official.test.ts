@@ -134,6 +134,19 @@ let hits = 0;
 /** Set by the archive tests; `undefined` makes `/corpus.zip` 404. */
 let serveZip: Buffer | undefined;
 /**
+ * How many times `/truncated-then-complete` has been asked.
+ *
+ * The defect these tests are about cannot be seen in a single response: a retry
+ * is only observable across attempts. So the route has to remember how many
+ * times it has been asked and answer differently the second time -- and the
+ * assertion is on that count, not only on the exit code. An exit code alone
+ * would be satisfied by a script that re-downloaded three times, or by one that
+ * re-downloaded none and got lucky.
+ */
+let truncatedHits = 0;
+/** How many times `/same-length-wrong-content` has been asked. Must stay at 1. */
+let corruptedHits = 0;
+/**
  * A port on loopback with nothing listening.
  *
  * Needed because curl's exit code 7 — "Failed to connect", the code
@@ -317,6 +330,42 @@ beforeAll(async () => {
     if (req.url === '/chunked') {
       res.writeHead(200, { 'content-type': 'application/octet-stream' });
       res.end(CHUNKED_BODY);
+      return;
+    }
+    // A body that is cut short on the first request and complete afterwards.
+    //
+    // This is the shape of the production failure the retry restructure exists
+    // for: a 1.19 GB transfer that loses bytes, arrives with a valid HTTP
+    // response, and fails the digest. The server is behaving here -- `curl`
+    // exits 0, the status line is 200, the body simply ends early -- so the
+    // download layer reports success and only verification can tell.
+    //
+    // The second request answers in full, because that is what makes the
+    // difference between "retried and recovered" and "never retried" visible.
+    if (req.url === '/truncated-then-complete') {
+      truncatedHits += 1;
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      // Short by five bytes on the first request only. The count is reset by the
+      // test that uses this route, so the second request within one run sees the
+      // complete body -- and the *third* request of a later test does not, which
+      // is why the reset lives in the test rather than here.
+      res.end(truncatedHits === 1 ? PAYLOAD.slice(0, PAYLOAD.length - 5) : PAYLOAD);
+      return;
+    }
+    // A body of exactly the right length whose content differs.
+    //
+    // The counterpart to the route above, and the reason verification is split
+    // into two questions rather than one. A file can be the wrong file while
+    // being the right size, and no amount of re-downloading turns it into the
+    // right one -- so this must be reported as a pin problem and NOT retried.
+    // Its length matches `PAYLOAD`, so a run that retried it would show up as
+    // `corruptedHits > 1`.
+    if (req.url === '/same-length-wrong-content') {
+      corruptedHits += 1;
+      const wrong = Buffer.from(PAYLOAD, 'utf8');
+      wrong[0] = 0x4d; // 'm' -> 'M': same length, different digest.
+      res.writeHead(200, { 'content-type': 'text/csv' });
+      res.end(wrong);
       return;
     }
     if (req.url === '/huge') {
@@ -524,24 +573,62 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
   });
 
   // The pin is the whole reason the registry records a digest. Without this the
-  // digest would be documentation, and a substituted or truncated download
-  // would flow straight into the round trip.
+  // digest would be documentation, and a substituted download would flow
+  // straight into the round trip.
+  //
+  // The exit code is 2 rather than 1 as of the retry restructure, and that is a
+  // deliberate change of meaning rather than a renumbering: this fixture's digest
+  // is wrong while its byte count is right, which makes it a *substituted* file
+  // and not a short transfer. The two are answered differently -- one by reading
+  // the registry, the other by waiting -- so they no longer share a code. See the
+  // "retry layer" block for why, and for the assertion that this is not retried.
   it('fails when the recorded digest does not match the bytes served', async () => {
     const wrong = 'a'.repeat(64);
-    const registry = writeFixtureRegistry(scratch, { sha256: wrong });
+    const registry = writeFixtureRegistry(scratch, { sha256: wrong, bytes: PAYLOAD.length });
     const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/expected sha256/);
-    expect(result.stderr).toContain(wrong);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toMatch(/expected sha256/);
+    expect(result.stdout).toContain(wrong);
+    expect(result.stderr).toMatch(/does not match the registry pin/);
   });
 
-  it('fails when the recorded byte count does not match', async () => {
+  // A short file is retried, and is then reported as unreachable.
+  //
+  // The direction of the mismatch decides the response, so this fixture is
+  // phrased precisely: the pin says one byte *more* than was served, which makes
+  // the transfer short. Short transfers are the recoverable kind -- those bytes
+  // existed and a second attempt can still obtain them -- so the script spends
+  // all three attempts before giving up, and the failure it reports is the
+  // network one. It is not a pin problem, and calling it one would send a reader
+  // to edit a digest that is correct.
+  it('retries a short transfer and then reports it as unreachable, not as a pin problem', async () => {
     const registry = writeFixtureRegistry(scratch, { bytes: PAYLOAD.length + 1 });
     const out = makeOut();
     const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/expected \d+ bytes/);
+    expect(result.stdout).toMatch(/expected \d+ bytes, got \d+/);
+    // All three attempts spent, because a short file is worth re-fetching.
+    expect(result.stdout).toMatch(/attempt 3\/3/);
+    expect(result.stderr).toMatch(/could not be reached/);
+    expect(result.stderr).not.toMatch(/does not match the registry pin/);
+  });
+
+  // A file longer than the pin cannot be a truncation, so it is not retried.
+  //
+  // The mirror of the case above, and the reason the classification reads the
+  // direction rather than merely noticing a difference. An over-long file has no
+  // missing bytes to recover, so a retry would spend three attempts to fetch the
+  // same file again; the script stops after one and says the pin is the problem.
+  it('does not retry a file that is longer than the pin', async () => {
+    const registry = writeFixtureRegistry(scratch, { bytes: PAYLOAD.length - 1 });
+    const out = makeOut();
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toMatch(/expected \d+ bytes, got \d+/);
+    // Exactly one attempt: no `RETRYING`, and no third-attempt line.
+    expect(result.stdout).not.toContain('RETRYING');
+    expect(result.stderr).toMatch(/does not match the registry pin/);
   });
 
   /**
@@ -953,4 +1040,143 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     expect(readFileSync(join(out, 'dataset', 'case', 'metrics.json'), 'utf8')).toBe(PAYLOAD);
     expect(existsSync(join(out, 'fixture-zip.zip'))).toBe(false);
   });
+});
+
+/**
+ * The retry layer, and where it stops.
+ *
+ * Everything above tests one attempt. These test what happens across attempts,
+ * which is where the fourth anchor was broken and where no existing test could
+ * have said so.
+ *
+ * The defect, measured: the retry loop wrapped `download` and nothing else.
+ * `statSync`, `sha256Of` and the two digest comparisons all sat *after* the
+ * loop, so a transfer that arrived with a 200 and the wrong bytes went straight
+ * to `fail()`. Under `set -eu` that ends the job. The loop was real, it had
+ * backoff, it logged every attempt -- and it protected "can we get bytes",
+ * never "are the bytes right". The one failure a retry is most needed for was
+ * the one failure with no retry.
+ *
+ * Consequence, measured: twelve runs of `official-data.yml`, twelve failures,
+ * no measurement ever produced.
+ *
+ * A retry is only observable across attempts, so each test here serves a
+ * different body on the second request and asserts on the *number of requests*.
+ * An exit code alone would be satisfied by a script that never retried and got
+ * lucky, or by one that retried three times when once would have done.
+ */
+describe('scripts/fetch-official.mjs · the retry layer', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-retry-'));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  const outputs: string[] = [];
+  const makeOut = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-bench-retry-out-'));
+    outputs.push(dir);
+    return dir;
+  };
+  afterAll(() => {
+    for (const dir of outputs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  // A truncated transfer is recoverable, so the run must recover from it.
+  //
+  // The registry pins the *complete* payload. The server serves a short body
+  // first, which downloads cleanly -- HTTP 200, curl exit 0 -- and fails only at
+  // the byte count. Retrying is the correct response, and this asserts the run
+  // both retried and then succeeded, rather than merely that it did not fail.
+  it('retries a transfer that arrived short, and succeeds on the second attempt', async () => {
+    truncatedHits = 0;
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/truncated-then-complete`,
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+    const out = makeOut();
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    // Retried, and only once more than needed.
+    expect(truncatedHits).toBe(2);
+    // And the retry produced the right file, not merely a second attempt.
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('VERIFIED');
+    expect(readFileSync(join(out, 'fixture-asset'), 'utf8')).toBe(PAYLOAD);
+  }, 60_000);
+
+  // The retry must be driven by verification, not by the transport.
+  //
+  // This is the test that fails on the old code. The response is a complete,
+  // well-formed HTTP 200 with a complete body; curl reports success. Only the
+  // digest disagrees. If verification decides whether to retry, this run
+  // recovers. If the loop still wraps only the download, the job dies here.
+  it('retries when the download succeeded but the bytes are wrong', async () => {
+    truncatedHits = 0;
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/truncated-then-complete`,
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+    const out = makeOut();
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    // Named separately from the count above so a regression that stops retrying
+    // after transport success fails here with a readable reason.
+    expect(result.stdout).toContain('RETRYING');
+    expect(result.stderr).not.toMatch(/at Object\./);
+  }, 60_000);
+
+  /**
+   * A file of the right length whose contents differ is not a bad transfer.
+   *
+   * This is the other half of the fix, and the half that is easy to get wrong in
+   * the generous direction. Once retries cover verification, the tempting
+   * simplification is to retry *every* mismatch. That is the wrong answer for
+   * this one: a byte count that matches proves the transfer completed, so a
+   * differing digest is a different file -- an upstream substitution, or a pin
+   * that was transcribed incorrectly. Re-downloading cannot change either, and a
+   * loop that tries would spend the job's whole budget fetching the same wrong
+   * bytes while the log said "retrying".
+   *
+   * So the assertion is `hits === 1`: the script must not have asked twice. The
+   * exit code is separately asserted, because "did not retry" and "reported the
+   * problem correctly" are two claims and this test makes both.
+   */
+  it('does not retry a same-length digest mismatch, and reports it as a pin problem', async () => {
+    corruptedHits = 0;
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/same-length-wrong-content`,
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+    const out = makeOut();
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    // The load-bearing assertion: it asked once and stopped.
+    expect(corruptedHits).toBe(1);
+    // A distinct exit code, so the workflow can tell this from an unreachable
+    // host. Both are failures; they call for opposite next actions.
+    expect(result.status).toBe(2);
+    // And both channels name the actual problem rather than the symptom: the
+    // per-attempt line on stdout says the lengths agreed, and the summary on
+    // stderr says this is not a network failure. Asserted in both places because
+    // they are written by different code paths and one of them being wrong is
+    // exactly the kind of half-covered judgement this suite exists to catch.
+    expect(result.stdout).toMatch(/byte count matches: \d+/);
+    expect(result.stderr).toMatch(/byte counts matched/i);
+    expect(result.stderr).not.toMatch(/could not be reached/);
+  }, 60_000);
+
+  // The exit code has to distinguish the two failure classes.
+  //
+  // "We could not reach the corpus" and "the corpus is not what we pinned" both
+  // end a run, and they lead to opposite responses: the first is retried
+  // tomorrow, the second needs a human to look at a digest. Collapsing them
+  // into one code is what made the original twelve failures take a re-run to
+  // understand.
+  it('gives an unreachable asset a different exit code from a pin mismatch', async () => {
+    const registry = writeFixtureRegistry(scratch, { url: `${origin}/broken` });
+    const out = makeOut();
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/could not be reached/);
+  }, 60_000);
 });

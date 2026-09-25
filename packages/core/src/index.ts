@@ -471,6 +471,38 @@ export type {
   InjectionStatusReading,
 } from './fault/injector.js';
 
+/**
+ * Extraction-accuracy scoring for the historical-fault channel.
+ *
+ * Exported because it is the module the M1 exit condition is measured by, and a
+ * reader who wants to challenge the figure should be able to recompute it from
+ * the same inputs the CI workflow uses. `M1_STRICT_THRESHOLD` is part of the
+ * surface on purpose -- it is the number the exit condition is written against,
+ * and it should not have to be found by reading source.
+ */
+export {
+  FAULT_GOLDEN_SCHEMA,
+  M1_STRICT_THRESHOLD,
+  SCORED_FIELDS,
+  buildExtractionReport,
+  formatExtractionReport,
+  meetsM1ExitCondition,
+  parseGoldenDataset,
+  scoreExtractionSample,
+} from './fault/extraction-scoring.js';
+export type {
+  ExtractionReport,
+  ExtractionSamplePrediction,
+  FieldOutcome,
+  GoldenDataset,
+  GoldenSample,
+  LayeredRate,
+  LayerMetrics,
+  SampleState,
+  SampleVerdict,
+  ScoredField,
+} from './fault/extraction-scoring.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

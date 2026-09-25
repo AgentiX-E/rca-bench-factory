@@ -1,0 +1,181 @@
+{
+  "schema": "rca-bench-fault-golden/1",
+  "provenance": {
+    "note": "Hand-written ground truth for the historical-fault extraction channel (M13 channel B). Each incidentText is written to sound like a real support ticket or post-mortem while naming exactly one fault, so the expected record is decidable from the text alone. No incident text here is copied from any corpus: this file is authored, reviewable, and small. It exists so the M1 exit condition has a denominator that does not move when the model changes.",
+    "reviewGate": "H3",
+    "authoringRule": "The expected.type must be derivable from the incident text by a careful human reader. A sample whose answer needs context the text does not carry is a bad sample, not a hard one."
+  },
+  "samples": [
+    {
+      "id": "resource-cpu-saturation-checkout",
+      "incidentText": "Pager fired at 02:14 UTC: checkout-api p99 latency went from 180ms to 4.3s over eleven minutes. Container CPU throttling counters climbed the whole time and the pod sat pinned at its 500m limit. The load generator was unchanged from the previous week. Restarting the pod cleared it for about twenty minutes, then it returned. No error rate change in the downstream payment service.",
+      "expected": {
+        "type": "cpu-saturation",
+        "category": "resource",
+        "component": "checkout-api"
+      }
+    },
+    {
+      "id": "resource-memory-leak-recommendation",
+      "incidentText": "The recommendation service has OOMKilled every 6 to 8 hours for three days. Heap dumps show the session cache growing without bound; entries are written and never evicted. RSS climbs from 400Mi to the 2Gi limit and the kernel kills the container. Traffic is flat. Rolling back last Tuesday's release stops the growth.",
+      "expected": {
+        "type": "memory-leak",
+        "category": "resource",
+        "component": "recommendation-service"
+      }
+    },
+    {
+      "id": "resource-disk-full-log-collector",
+      "incidentText": "The log collector pod stopped accepting writes at 09:41. /var/lib/collector is at 100% usage; the retention job that should trim segments older than 24h has not run since the collector was rescheduled onto a node with a smaller data volume. Writes now fail with ENOSPC and the agent is dropping batches.",
+      "expected": {
+        "type": "disk-full",
+        "category": "resource",
+        "component": "log-collector"
+      }
+    },
+    {
+      "id": "network-delay-cart-to-inventory",
+      "incidentText": "Cart-to-inventory calls got slow after the network policy change. Client-side span duration rose from 12ms to 900ms while the inventory service's own server-side handler time stayed at 11ms, so the time is being spent on the wire. No packet loss and no retransmits. The two services are now scheduled in different availability zones.",
+      "expected": {
+        "type": "network-delay",
+        "category": "network",
+        "component": "cart-service"
+      }
+    },
+    {
+      "id": "network-loss-payment-gateway",
+      "incidentText": "Roughly 8% of calls from the order service to the payment gateway time out at 3s. tcpdump on the client side shows SYN retransmissions; the gateway's own metrics show it received far fewer requests than the client sent. The egress interface on the client node reports a rising drop counter. Retries succeed when they land on a different node.",
+      "expected": {
+        "type": "network-loss",
+        "category": "network",
+        "component": "payment-gateway"
+      }
+    },
+    {
+      "id": "network-partition-search-cluster",
+      "incidentText": "The search cluster split into two sides at 03:02 and each side elected its own leader. Queries on one side returned documents that the other side had already deleted. The split healed at 03:19 when the inter-node links came back. Nothing in the application changed; the only upstream event was a switch firmware roll on the rack carrying the third node.",
+      "expected": {
+        "type": "network-partition",
+        "category": "network",
+        "component": "search-cluster"
+      }
+    },
+    {
+      "id": "runtime-pod-kill-user-profile",
+      "incidentText": "The user-profile pod was terminated without a shutdown hook at 14:07 and a fresh one took 40 seconds to become ready, during which every request 503'd. Node conditions were healthy and memory was well under the limit, so this was the kubelet acting on an eviction decision made for a different workload on the same node. No application exception was logged because the process never got to handle a signal.",
+      "expected": {
+        "type": "pod-kill",
+        "category": "runtime",
+        "component": "user-profile"
+      }
+    },
+    {
+      "id": "runtime-container-crash-loop-media",
+      "incidentText": "The media-transcoder container has restarted 178 times in 12 hours. Each start logs a segmentation fault in the native ffmpeg binding within two seconds of receiving the first job, before the HTTP listener comes up, so no probe ever passes. Liveness probes are not the cause: the exits all predate the probe window.",
+      "expected": {
+        "type": "container-crash",
+        "category": "runtime",
+        "component": "media-transcoder"
+      }
+    },
+    {
+      "id": "middleware-redis-latency-cache",
+      "incidentText": "Cache GETs against the session Redis went from 0.4ms to 55ms at 21:30 and stayed there. The Redis instance itself reports a single command thread saturated at 100%; the SLOWLOG shows a KEYS command issued every 30 seconds by an unrelated debugging script. Application-side connection pool utilisation is normal, so clients are not the bottleneck.",
+      "expected": {
+        "type": "redis-latency",
+        "category": "middleware",
+        "component": "session-cache"
+      }
+    },
+    {
+      "id": "middleware-kafka-consumer-lag",
+      "incidentText": "Consumer group order-events accumulated 4.2 million messages of lag over six hours. The consumers are alive and polling, but their per-message processing time tripled after a schema change added a synchronous outbound call per record. Broker-side throughput is unchanged and the topic has spare partitions, so this is consumer-side throughput, not broker capacity.",
+      "expected": {
+        "type": "kafka-consumer-lag",
+        "category": "middleware",
+        "component": "order-events-consumer"
+      }
+    },
+    {
+      "id": "middleware-database-connection-pool",
+      "incidentText": "The billing service began throwing 'connection pool exhausted' after the replica promotion. Pool size is 20 and all 20 are held by threads waiting on a lock held by a transaction that is itself waiting for a connection, so no thread can make progress. Postgres reports no long-running query on the primary; the deadlock is entirely inside the service's client pool.",
+      "expected": {
+        "type": "database-connection-pool-exhaustion",
+        "category": "middleware",
+        "component": "billing-service"
+      }
+    },
+    {
+      "id": "code-null-dereference-reporting",
+      "incidentText": "The reporting service started returning 500 on /v2/summary at 11:52. Every stack trace ends in summarize() on the same line, dereferencing a field the response mapper populates only when the account has an active subscription. Accounts created after the migration have the field present but null rather than absent, which the guard does not cover.",
+      "expected": {
+        "type": "null-dereference",
+        "category": "code",
+        "component": "reporting-service"
+      }
+    },
+    {
+      "id": "code-unhandled-exception-export",
+      "incidentText": "The export worker dies mid-job and the job is never retried, because the exception escapes the worker's handler and the broker sees the connection close rather than a nack. Logs show an unhandled TypeError in the CSV writer when a column contains an embedded newline. Roughly 3% of exports fail, matching the share of datasets containing one.",
+      "expected": {
+        "type": "unhandled-exception",
+        "category": "code",
+        "component": "export-worker"
+      }
+    },
+    {
+      "id": "code-slow-regex-api-gateway",
+      "incidentText": "API gateway request latency spiked to 8s on every request path at 16:20, including paths with no downstream call. CPU on the gateway pods went to the limit. The only change was a WAF rule added ten minutes earlier containing a regex with nested quantifiers, evaluated against every request URI. Rolling the rule back restores 12ms.",
+      "expected": {
+        "type": "regex-catastrophic-backtracking",
+        "category": "code",
+        "component": "api-gateway"
+      }
+    },
+    {
+      "id": "config-datasource-url-orders",
+      "incidentText": "After the config rollout every order-service instance connected to the staging database instead of production. The symptom was silent: writes succeeded, into the wrong place. The ConfigMap key that should hold the primary JDBC URL holds the staging one; a rename during the rollout left the old key in place and the application reads the old key first.",
+      "expected": {
+        "type": "config-mismatch",
+        "category": "config",
+        "component": "order-service"
+      }
+    },
+    {
+      "id": "config-feature-flag-checkout",
+      "incidentText": "The one-click checkout button disappeared from the storefront for all users at 08:00. No deploy ran. The flag service shows flag 'one_click_checkout' flipped to false at 07:59 by a scheduled job that was supposed to flip a different flag; a copy-paste left the same key in both job definitions.",
+      "expected": {
+        "type": "feature-flag-misconfiguration",
+        "category": "config",
+        "component": "checkout-ui"
+      }
+    },
+    {
+      "id": "dependency-upstream-5xx-pricing",
+      "incidentText": "The pricing service returned 502 on 60% of requests for 18 minutes. Every failure is an upstream tax-calculation call answering 503; the pricing service's own error rate against all other dependencies is zero. The tax provider's status page shows a degradation window that matches exactly. Nothing in the pricing service's own resources moved.",
+      "expected": {
+        "type": "upstream-5xx",
+        "category": "dependency",
+        "component": "tax-calculation"
+      }
+    },
+    {
+      "id": "dependency-version-incompatibility-shipping",
+      "incidentText": "The shipping service failed to start after the image rebuild. The client library bumped from 2.x to 3.x and the retry option moved from a top-level field into a nested policy object, so construction throws on an unknown option. The failure is deterministic and reproduces in a clean namespace with the same image.",
+      "expected": {
+        "type": "library-version-incompatibility",
+        "category": "dependency",
+        "component": "shipping-service"
+      }
+    },
+    {
+      "id": "middleware-mysql-replica-lag-analytics",
+      "incidentText": "The analytics dashboard showed yesterday's totals for four hours this morning. Reads go to a replica whose relay log position fell 40 minutes behind the primary. The primary is healthy; a bulk backfill on the primary is generating write volume the replica's single applier thread cannot match. Reads on the primary are current.",
+      "expected": {
+        "type": "replica-lag",
+        "category": "middleware",
+        "component": "analytics-replica"
+      }
+    }
+  ]
+}

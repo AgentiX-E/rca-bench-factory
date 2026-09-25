@@ -3281,3 +3281,324 @@ report success, and inject into no pod at all. The refusal is what makes that im
   are real chaos experiments in the taxonomy's other categories and are refused rather
   than coerced — the refusal is asserted, but it does mean the planner covers a minority
   of what a production campaign would need.
+
+## 52 — The fourth anchor: a retry loop whose scope was narrower than its name
+
+P0-1/P1-4. `official-data.yml` has run **twelve times** since it was added and has
+**never once produced a measurement**. This finding is the first half of fixing that: the
+root cause of the step-8 failure, the repair, and the injection matrix that shows the
+repair is load-bearing. The second half — the measurement itself — is the point of the
+workflow and is recorded separately.
+
+### What the log said, and why it was not enough
+
+Every failed run ended the same way: a digest comparison that did not match, then `fail()`,
+then the job stops. The obvious reading is "the download was corrupted", and the obvious
+fix is to retry. **Both were wrong**, and the reason is visible only in the source.
+
+### The defect
+
+`scripts/fetch-official.mjs` had a retry loop. It read like this:
+
+```js
+for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  const { code, stderr, elapsedMs } = await download(asset.url, destination);
+  if (code === 0) { lastError = ''; break; }
+  lastError = `attempt ${attempt}/${MAX_ATTEMPTS} ...`;
+  if (attempt < MAX_ATTEMPTS) { await sleep(...); }
+}
+if (lastError !== '') { return { status: 'skipped', ... }; }
+
+const bytes = statSync(destination).size;      // ← outside the loop
+const digest = await sha256Of(destination);    // ← outside the loop
+if (asset.bytes !== null && bytes !== asset.bytes) { fail(...); }
+if (asset.sha256 !== null && digest !== asset.sha256) { fail(...); }
+```
+
+**The loop protects "can we get bytes", never "are the bytes right".** `statSync`,
+`sha256Of` and both comparisons sit after the loop, so a transfer that returns HTTP 200
+and a truncated body is not a bad *attempt* — it is a bad *result*, and it goes straight to
+`fail()`, which under `set -eu` ends the job.
+
+The mechanism had a name that promised retry and a scope that provided one attempt. That is
+the shape this audit has now recorded five times: findings 47, 49, 50 and 51 are all
+"an expectation whose scope is narrower than the reader would assume", and this is the
+same defect at the process level rather than inside a test.
+
+### Why a bigger retry count would not have helped
+
+Because there are two failure classes and they need **opposite** actions:
+
+| class | what it means | retryable? |
+|---|---|---|
+| the file is **short** | the transfer died mid-flight; the bytes existed and a second attempt can recover them | **yes** |
+| the file is the **right length, wrong digest** | the transfer completed; this is a *different file* (upstream substitution, or a mis-transcribed pin) | **no** |
+
+Retrying the second class is not merely useless — it spends the job's budget downloading
+the same wrong bytes. And both classes surfaced as the identical string "verification
+failed", which is why a year of red runs produced no diagnosis.
+
+### The repair, in two halves
+
+Verification moved **inside** the loop, so a bad transfer is a bad *attempt* and the loop
+still has chances left to spend:
+
+```js
+  // The transport succeeded, which is not the same as the file being right.
+  // Measuring here rather than after the loop is the whole fix.
+  const bytes = statSync(destination).size;
+  const digest = await sha256Of(destination);
+  const problem = classifyVerification(asset, { bytes, digest });
+  if (problem === null) { lastError = ''; break; }
+  lastError = `attempt ${attempt}/${MAX_ATTEMPTS} ...: ${problem.reason}`;
+  pinProblem = problem.pinProblem;
+  if (!problem.retryable) { break; }   // retrying cannot turn one file into another
+```
+
+and the two classes got separate exit codes, so the *status* carries the diagnosis the log
+used to bury:
+
+| exit | meaning | what to change |
+|---|---|---|
+| `1` | an asset could not be reached at all | re-run; the host may be back |
+| `2` | an asset downloaded fine and does not match the pin | **not** a network problem — inspect the registry or the upstream asset |
+
+`official-data.yml` now names all three statuses (`124`/`2`/`1`) in the step summary
+instead of printing `Failed with exit status N`.
+
+### A real defect, caught by the new tests before it shipped
+
+`classifyVerification` first set `pinProblem: !!bytesMismatch` — so *every* byte-count
+mismatch, including an over-long file, was routed to the "unreachable, retry it" branch.
+An over-long file cannot be a truncation; there are no missing bytes for a second attempt
+to recover, and the log would have blamed a host that had answered. The two flags now
+derive from one predicate:
+
+```js
+const short = actual.bytes < asset.bytes;
+return { retryable: short, reason: ..., pinProblem: !short };
+```
+
+### The injection matrix
+
+Twelve rows for the scorer, five for the fetch layer. Source restored and `diff`-confirmed
+byte-identical after every row. The fetch rows are the checked-in battery at
+`scripts/injection/fetch-official-retry.py`; the scorer rows are in finding 53.
+
+| injection | result |
+|---|---|
+| verification moved back outside the loop (the pre-fix shape) | **6 failed** |
+| the pin mismatch exits 1 instead of 2 | **3 failed** |
+| an over-long file is treated as short | **1 failed** |
+| the digest comparison always agrees | **2 failed** |
+| the byte-count comparison always agrees | **4 failed** |
+
+The first row is the one that matters: reverting to the original shape turns **exactly** the
+six tests that encode the corrected semantics red, which is the "delete it and a test goes
+red" guarantee this repository asks of every fix.
+
+**The other four rows were misreported when this table first appeared** — as three rows
+reading 2/1/2 plus one at 1. The battery had only been run ad hoc, so the figures were
+reconstructed from memory. Writing it to a script and re-running produced the five measured
+values above. The failure mode is worth naming because it is the same one as the finding
+itself: **an unpersisted measurement is retold in a stronger, tidier form than it had** —
+three plausible rows instead of five, each with a plausible count. The repair is a script.
+
+### What this does not cover
+
+- **The measurement still does not exist.** This finding makes the fetch survivable; it
+  does not make it succeed. Whether the twelve failures were truncations, a bad pin, or
+  both is **not yet known** — the new exit code is what will say, on the next run. Claiming
+  a root cause beyond the code-level defect would be inventing evidence.
+- **`classifyVerification` is tested against a loopback server, not against Zenodo.** The
+  classification logic is pinned; the real upstream's behaviour is not.
+- **The 1.19 GB asset is not exercised end to end.** The tests use small served payloads
+  and a synthetic >2 GiB sparse file for the digest path, so a defect that appears only at
+  real corpus scale would not be caught here.
+
+## 53 — The M1 exit condition had no measurement, and the scorer that gives it one
+
+P1-4. `docs/product.md` states M1's exit condition in terms of extraction accuracy: the
+historical-fault channel must recover the fault type and category from an incident text at
+a **strict all-fields rate of at least 70%**. Until this work, that condition had nothing
+behind it but a number in a document. The pipeline existed — `importer.ts` builds the
+prompt, parses the response and validates the spec — and **nobody had ever run it against
+known ground truth**, so the accuracy was whatever the reader assumed it was.
+
+### The measurement is on a runner, not in the sandbox
+
+The honest constraint first: this development sandbox has no reachable model endpoint and no
+key, and a scoring run that substitutes a stub for the model measures the stub. So the
+measurement runs in `.github/workflows/fault-extraction-accuracy.yml`, on a runner with
+general internet access and the organization-level DeepSeek key. That is the same reasoning
+that made P0-1 possible, and the same reasoning the fourth anchor exists on.
+
+`.github/workflows/fault-extraction-accuracy.yml` is the **first `secrets.*` reference in
+this repository.** The key reaches exactly one step, is never written to a file, is never
+echoed (the presence check prints its *length*, not its value), and never reaches the
+artefact. `scripts/check-no-secrets.mjs` is the backstop; the workflow's own header states
+the intent.
+
+### Four states, not two
+
+The first design decision, and the one the obvious implementation gets wrong. An extraction
+can end in four places:
+
+| state | meaning | charges the model? |
+|---|---|---|
+| `unparseable` | the response carried no usable JSON | yes — this is the model's failure |
+| `unvalidated` | parsed, but `validateExtractedFault` refused it | **no** — usually a pipeline defect |
+| `unverifiable` | valid, but the fault's expected signal is not in the corpus | **no** — an absence of evidence |
+| `graded` | a scoreable answer | yes |
+
+`unvalidated` is the interesting one. `importer.ts` accepted the spec and `collector.ts`
+refused it, so **one of the two is wrong** — and folding that into "wrong answer" is how a
+real bug in the validator hides behind a bad accuracy number. `unverifiable` is the rule
+this repository already applies in `gates/validity.ts`: an absence of evidence is not a
+finding, so it is not a miss either. Both were folded away in the first draft, which read
+`validation.valid` and stopped there — that version reported a **hit** for a sample nothing
+had checked.
+
+### Layered rates, with their own denominators
+
+A ratio without its denominator cannot be audited, and "type accuracy 100%" is a different
+claim at 2/2 than at 200/200. Every rate is `{ hits, total, rate }`, the same shape
+`coverage.ts` uses for its per-signal figures.
+
+Every per-field figure is reported **twice**, because they answer different questions:
+
+- **`graded`** — of the samples that produced a scoreable answer, how many got this field
+  right. The model's accuracy, conditioned on the pipeline having worked.
+- **`overall`** — of **all** samples, how many got this field right. What a caller running
+  the channel end to end actually observes, because an unparseable response costs them the
+  field too.
+
+Collapsing the two is what makes an accuracy number arguable: a run whose real problem is a
+40% parse failure can be quoted as "93% type accuracy" and nobody has lied.
+
+### An empty cell is not a zero
+
+A rate over zero samples is **`null`, never `0`**. `0` is a claim about the model; `null` is
+a statement that nothing was measured. The same rule applies one level down, to a single
+field: a sample that omits `category` is not scored as a *wrong* category.
+
+That field-level rule has a trap behind it, and it is a trap I walked into. The rule is:
+
+- the sample states **no** expectation for the field → `null`, excluded from the denominator;
+- the sample **does** state one and the model omitted it → `false`, a real miss;
+- otherwise → compare.
+
+`validateExtractedFault` **infers** a category from the type when the model omitted one. So
+a scorer that read the *validated* spec back would find `resource` sitting there and credit
+the inference to the model. The scorer reads the **raw** extraction for exactly this reason,
+and my first test of this behaviour asserted `null` on a fixture where the sample *did*
+expect `resource` — so `false` was correct and my reasoning, though right, was attached to
+the wrong fixture. Corrected into two tests that pin both directions.
+
+### The injection matrix
+
+Twelve rows, source restored and re-run green after each.
+
+| injection | result |
+|---|---|
+| `unverifiable` collapsed into `graded` | **2 failed** |
+| `unvalidated` graded as if valid | **4 failed** |
+| `unparseable` graded instead of skipped | **8 failed** |
+| an empty denominator reported as 0 instead of null | **6 failed** |
+| an omitted optional field scored `false` instead of excluded | **13 failed** |
+| the sample-id pairing check removed | **1 failed** |
+| the strict rate computed over all samples instead of graded ones | **3 failed** |
+| the M1 threshold relaxed to accept an unmeasured rate | **3 failed** |
+| a duplicate sample id accepted | **1 failed** |
+| an unexpected schema version read optimistically | **1 failed** |
+| an empty dataset accepted | **1 failed** |
+| case folding dropped from the comparison | **2 failed** |
+
+**One injection did not survive being written, and the reason is worth recording.** I first
+replaced `graded` with `verdicts` in the per-field loop, expecting the layered denominators
+to come apart — and the suite stayed green. Investigated rather than assumed: the three
+ungraded states all return the **all-null** field record, so `fields[field] !== null`
+already implies `state === 'graded'` and the two expressions are equal. **The injection was
+a no-op, not a hole.** The finding is that the original code carried two filters where one
+carries the information, and the repair is a comment stating which one is load-bearing and
+why the other is implied — not a removal, because the next reader will look for the
+`state === 'graded'` test and should be told where it went.
+
+The battery is checked in at `scripts/injection/fault-extraction-scoring.py` so this table
+can be re-derived rather than trusted.
+
+### The second injection matrix
+
+A separate battery targets the fetch layer, at
+`scripts/injection/fetch-official-retry.py`. It is deliberately **not** merged with the
+matrix above: the two target different files and are never run as one unit, and a single
+table covering both would describe a joint battery that does not exist. Five rows, source
+restored and `diff`-confirmed byte-identical after each.
+
+| injection | result |
+|---|---|
+| **verification moved back outside the retry loop** | **6 failed** |
+| a pin mismatch exits 1 instead of 2 | **3 failed** |
+| an over-long file classified as short | **1 failed** |
+| the digest comparison always agrees | **2 failed** |
+| the byte-count comparison always agrees | **4 failed** |
+
+The first row is the one that matters, because it does not remove a guard — it restores the
+**shape of the defect**. Six tests go red for it: four from the retry layer itself, and two
+that encode the short/over-long directions of a digest pin. A mechanism whose scope changes
+from "one chance" to "three chances" is visible to six independent assertions.
+
+**This table's numbers were wrong on first publication, and the reason is the same defect as
+finding 52.** The first version reported 1/1/3/2 across six rows, because the battery was
+run ad hoc and the figures were written from memory afterwards. Checking it in and re-running
+produced 6/3/1/2/4 across five. An unpersisted measurement gets retold in a stronger form
+than it actually had — which is why the fix is a script, not a correction.
+
+### The golden dataset
+
+`golden-master/fault-extraction/samples.json` — **19 hand-written incident texts**, one per
+fault, covering all seven categories (`code`, `config`, `dependency`, `middleware`,
+`network`, `resource`, `runtime`). Each is written to sound like a real support ticket while
+naming **exactly one** fault, so the expected record is decidable from the text alone. None
+is copied from any corpus: the file is authored, reviewable, and small, which is why it is
+exempted by path in `check-no-vendored-data.mjs` rather than by size.
+
+The dataset is the denominator of the whole report, so it is validated **before any request
+is spent** — a malformed sample file would otherwise be discovered at scoring time, after
+nineteen paid calls. `parseGoldenDataset` names the sample and the field on every failure,
+because a sample silently dropped there changes every rate in the report.
+
+### Three exit codes, because the fourth anchor taught that two are not enough
+
+`score-fault-extraction.mjs` is deliberately not a pass/fail gate:
+
+| exit | meaning | what to do |
+|---|---|---|
+| `0` | M1 exit condition met | — |
+| `2` | a measurement exists and misses the threshold | the model is not good enough yet; this is a **result** |
+| `3` | no graded sample | the pipeline produced no usable answer; read the **parse** rate |
+
+`2` and `3` call for different work, and collapsing them is precisely how the fourth anchor
+ran red twelve times with nobody able to tell from the status whether the data was wrong or
+the wiring was. **Failing the job on `2` would make an honest 65% look like an outage**, so
+the workflow reports the verdict and does not gate on it.
+
+### What this does not cover
+
+- **The number does not exist yet.** The scorer, the dataset, the scripts and the workflow
+  are in place and locally verified against synthetic predictions; the first real run has
+  not happened, so **there is no measured extraction accuracy to report**. This finding is
+  the instrument, not the reading.
+- **The runner's verdict is not yet observed.** Every exit path is pinned by a contract test
+  against the loopback-free local scripts (`25` tests in `fault-extraction-scripts.test.ts`),
+  but the workflow's own YAML has not executed.
+- **`--verifiable` is never set by the derive script.** The state exists, is unit-tested, and
+  currently nothing produces it. That is deliberate — wiring a "can the verifier check this"
+  answer from the model is a judgement the H3 reviewer makes — but it means the `unverifiable`
+  path is exercised only by hand-written predictions today.
+- **19 samples is a small denominator.** A 70% threshold over 19 samples moves in steps of
+  5.3 percentage points, so the figure will be noisy at the granularity of the threshold. A
+  larger dataset is future work, and the honest readout of the current one is coarse.
+- **One provider.** DeepSeek is the only backend wired into the workflow. The provider
+  abstraction is respected (the base URL and model come from repository variables), but no
+  second provider has been run against this dataset.

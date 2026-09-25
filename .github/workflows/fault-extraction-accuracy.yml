@@ -1,0 +1,200 @@
+name: Fault extraction accuracy
+
+# The M1 exit condition, measured.
+#
+# `docs/product.md` states the M1 exit condition in terms of extraction accuracy:
+# the historical-fault channel (M13 channel B) must recover the fault type and
+# category from an incident text at a strict all-fields rate of at least 70%.
+# Until this workflow existed, that condition had no measurement behind it -- it
+# was a claim in a document with nothing that could contradict it.
+#
+# ## Why this is on a runner and not in the sandbox
+#
+# The measurement needs a real LLM. The sandbox this repository is developed in
+# has no model endpoint reachable and no key, and a scoring run that substitutes
+# a stub for the model measures the stub. A GitHub runner has general internet
+# access and the organization-level DeepSeek key, so this is where the number can
+# be produced honestly.
+#
+# ## Why this is separate from CI
+#
+# It spends money and it is nondeterministic: the same commit can score 72% on
+# one run and 68% on the next, because the model is not a pure function. A gate
+# that can go red on an unchanged tree is worse than no gate, so this is not on
+# `push`. It runs on a schedule and on demand, and it reports a figure rather
+# than blocking a merge.
+#
+# ## The key
+#
+# The workflow reads `secrets.RCA_BENCH_LLM_API_KEY`, which is the first
+# `secrets.*` reference in this repository. It is passed as an environment
+# variable to one step and is never written to a file, never echoed, and never
+# reaches the artefact. `scripts/check-no-secrets.mjs` is the backstop; this
+# comment is the statement of intent.
+#
+# ## The base URL
+#
+# `RCA_BENCH_LLM_BASE_URL` is optional and defaults inside the core package to the
+# DeepSeek endpoint. It is passed through from a repository variable so a run can
+# be pointed at a different provider without editing this file -- the provider
+# abstraction exists for exactly that, and hard-coding the endpoint here would
+# reintroduce the single-vendor lock the abstraction is meant to prevent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      strict_threshold:
+        description: Override the strict all-fields threshold (0..1); empty uses the code default
+        required: false
+        default: ''
+        type: string
+  schedule:
+    # Fridays at 06:41 UTC. Weekly, off the hour, and on a different day from the
+    # official-data anchor so the two long jobs do not contend for runners.
+    - cron: '41 6 * * 5'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fault-extraction-accuracy
+  cancel-in-progress: false
+
+jobs:
+  score:
+    name: Derive and score extraction accuracy against the golden dataset
+    runs-on: ubuntu-latest
+    # Twenty samples, serialised with a 250ms gap, at a few seconds per call.
+    # Bounded so a hung request fails the job instead of occupying a runner.
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (the scripts read core's dist)
+        run: pnpm build
+
+      # The dataset is checked before any request is spent.
+      #
+      # A malformed sample file would otherwise be discovered at scoring time --
+      # after nineteen paid calls. `--help` is not enough for that; this step
+      # parses the dataset through the same reader the scorer uses, so the run
+      # fails in seconds rather than in dollars.
+      - name: Validate the golden dataset before spending a request
+        run: |
+          set -eu
+          node -e '
+            const { readFileSync } = require("node:fs");
+            import("./packages/core/dist/index.js").then((core) => {
+              const ds = core.parseGoldenDataset(
+                JSON.parse(readFileSync("golden-master/fault-extraction/samples.json", "utf8")),
+              );
+              console.log(`golden dataset: ${ds.samples.length} sample(s), schema ${ds.schema}`);
+            });
+          '
+
+      # The failure mode this step is written against is the fourth anchor's:
+      # twelve consecutive red runs, none of which produced a measurement, and
+      # the reason buried in a step that had already been retried. So the key is
+      # checked by *presence* and the message says what to do, rather than let
+      # the run fail inside a provider adapter with a 401 three steps later.
+      - name: Check the key is present
+        env:
+          RCA_BENCH_LLM_API_KEY: ${{ secrets.RCA_BENCH_LLM_API_KEY }}
+        run: |
+          set -eu
+          if [ -z "${RCA_BENCH_LLM_API_KEY:-}" ]; then
+            echo "::error title=Missing LLM key::secrets.RCA_BENCH_LLM_API_KEY is empty. Set it at the organization level; the repository cannot score a run without it."
+            exit 1
+          fi
+          echo "key present (${#RCA_BENCH_LLM_API_KEY} characters; value never printed)"
+
+      - name: Derive the extractions
+        id: derive
+        env:
+          RCA_BENCH_LLM_API_KEY: ${{ secrets.RCA_BENCH_LLM_API_KEY }}
+          RCA_BENCH_LLM_BASE_URL: ${{ vars.RCA_BENCH_LLM_BASE_URL }}
+          RCA_BENCH_LLM_MODEL: ${{ vars.RCA_BENCH_LLM_MODEL }}
+        run: |
+          set -eu
+          # The exit status is captured, not propagated. A run where the model
+          # answered badly is a *result*, and the scorer is what turns it into a
+          # verdict. Killing the job here would discard the artefact that says
+          # where it went wrong -- which is the mistake the fourth anchor made.
+          status=0
+          node scripts/derive-fault-golden.mjs --out /tmp/extraction-predictions.json || status=$?
+          echo "derive_exit=${status}" >> "$GITHUB_OUTPUT"
+          echo "derive exit status: ${status}"
+
+      - name: Score the run
+        id: score
+        run: |
+          set -eu
+          status=0
+          node scripts/score-fault-extraction.mjs \
+            --predictions /tmp/extraction-predictions.json > /tmp/extraction-report.txt 2>&1 || status=$?
+          cat /tmp/extraction-report.txt
+          echo "score_exit=${status}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Fault extraction accuracy"
+            echo
+            echo '```'
+            cat /tmp/extraction-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The three codes are the point of the script, so they are handled
+          # rather than collapsed. `2` is "the model is not good enough yet"
+          # and is a normal outcome of a measurement; `3` is "the pipeline
+          # produced no usable answer" and is a defect in the wiring. Failing
+          # the job for the first would make an honest 65% look like an outage.
+          if [ "$status" -eq 3 ]; then
+            echo "::error title=No measurement::The run produced no graded sample, so there is no accuracy to report. Read the parse and validation counts in the summary."
+            exit 1
+          fi
+          if [ "$status" -eq 1 ]; then
+            echo "::error title=Scoring failed::The predictions or the dataset could not be read."
+            exit 1
+          fi
+          echo "scorer exit status: ${status} (0 = M1 met, 2 = not met)"
+
+      - name: Upload the predictions and the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fault-extraction-accuracy
+          path: |
+            /tmp/extraction-predictions.json
+            /tmp/extraction-report.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The verdict is the last word of the job, and it is a deliberate non-gate.
+      #
+      # This job does not fail when the threshold is missed. The number is the
+      # product of the run; a red status on a measurement is what taught this
+      # repository to stop reading the fourth anchor's logs. The step *states*
+      # the outcome and the summary carries it, and a human decides whether 65%
+      # is a blocker.
+      - name: State the verdict
+        if: always()
+        run: |
+          set -eu
+          case "${{ steps.score.outputs.score_exit }}" in
+            0) echo "M1 exit condition: MET" ;;
+            2) echo "M1 exit condition: NOT MET (measurement exists; this is a result, not an outage)" ;;
+            3) echo "M1 exit condition: NOT MEASURED (no graded sample)" ;;
+            *) echo "M1 exit condition: UNKNOWN (scoring did not complete)" ;;
+          esac

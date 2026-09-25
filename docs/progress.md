@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2256 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2341 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across 4 directories, 137 symbols, 0 orphans |
@@ -37,13 +37,14 @@ with a coverage gate.
 
 | Dimension | Result | Gate |
 | --- | --- | --- |
-| Statements | 99.95% | ≥ 95% |
+| Statements | 99.96% | ≥ 95% |
 | Branches | 99.93% | ≥ 95% |
 | Functions | 100% | ≥ 95% |
-| Lines | 99.95% | ≥ 95% |
+| Lines | 99.96% | ≥ 95% |
 
 The residual is two statements and four branches, all of them documented
-backstops rather than gaps, across four sites:
+backstops rather than gaps, across four sites (the pass-13 additions are all at
+100% and do not enter this list):
 
 1. The `never` guard at the end of `aggregateFor` (`src/score/official.ts`).
    Every member of `ScoreTargetId` returns from a branch above it, so no input
@@ -83,6 +84,12 @@ new module can sit entirely below the floor while the average it is being judged
 against stays flat, because the average is a rate and the gap is a granularity.
 `src/fault/injector.ts` after pass 12, reached the same way -- the package average
 was `99.95` while that module was `100 | 85.89 | 100 | 100`.
+`src/fault/extraction-scoring.ts` after pass 13, driven the same way: the *first*
+full run put it at `96.58 | 94.38 | 100 | 96.58` -- **branches under the gate
+while the package average read `99.85`** -- and it reached `100 | 100 | 100 | 100`
+by four rounds of real tests plus the removal of one unreachable guard. That is
+finding 49's clause and this file's own "a new module must clear the floor on its
+own" section, demonstrated for the third time.
 
 Pass 2 raised the aggregate branch figure from 99.89% to 99.96%: the
 exact-nanosecond conversion introduced a negative-timestamp path that nothing
@@ -465,6 +472,62 @@ preceded the right one.
 Cost, stated because it is real: the coverage of an existing module has to be read
 per-file, and the package figure will not tell you when a new file is under the floor.
 
+### Injection matrix, pass 13
+
+P1-4 / P0-1: the extraction scorer and the fetch retry layer. Two batteries, because
+the two modules fail in different ways — the scorer is a pure function of
+(sample, prediction) and the fetch layer is a process with exit codes.
+
+**`src/fault/extraction-scoring.ts`** — 12 rows, source restored and re-run green
+after each. The full table is in `audit.md` finding 53; the two that matter most:
+
+| Injection | Tests that fail |
+| --- | --- |
+| `unvalidated` graded as if valid | 4 |
+| `unparseable` graded instead of skipped | 8 |
+| an omitted optional field scored `false` instead of excluded | 13 |
+| the strict rate computed over all samples instead of graded ones | 3 |
+| the M1 threshold relaxed to accept an unmeasured rate | 3 |
+| NEGATIVE CONTROL — source restored | 0 (stays green) |
+
+**`scripts/fetch-official.mjs`** — 5 rows, the same discipline, checked in at
+`scripts/injection/fetch-official-retry.py`:
+
+| Injection | Tests that fail |
+| --- | --- |
+| verification moved back outside the retry loop (the pre-fix shape) | 6 |
+| the pin mismatch exits 1 instead of 2 | 3 |
+| an over-long file is treated as short | 1 |
+| the digest comparison always agrees | 2 |
+| the byte-count comparison always agrees | 4 |
+| NEGATIVE CONTROL — source restored | 0 (stays green) |
+
+**These five figures were wrong in the first version of this table** (1/1/3/2 across six
+rows), because the battery was run ad hoc and the numbers were written from memory. Checking
+it in and re-running produced the values above. An unpersisted measurement gets retold in a
+stronger form than it had — which is why the fix is a script, not an edit. This is also why
+this table and the scorer battery above are **never combined**: two files, two runs.
+
+The scorer battery is checked in at `scripts/injection/fault-extraction-scoring.py`,
+so the table can be re-derived rather than believed.
+
+**One injection was a no-op, and that is the honest finding of this pass.** Replacing
+`graded` with `verdicts` in the per-field loop left the suite green. Investigated
+rather than written up as a hole: the three ungraded states all return the **all-null**
+field record, so `fields[field] !== null` already implies `state === 'graded'` and the
+two expressions are provably equal. The original code carried two filters where one
+carried the information. The repair is a comment naming which is load-bearing and why
+the other is implied — not a removal, because the next reader will look for the
+`state === 'graded'` test and should be told where it went.
+
+**One guard was deleted rather than covered.** `sameValue` accepted
+`string | undefined` on both sides and returned `false` for undefined, which read as
+defensive programming and was unreachable: its only caller has already established
+that both sides are present. A branch nothing can reach is not a guarantee — it is a
+branch a reader will trust and a threshold cannot see. The types were narrowed to
+`string`, and the *decisions* it appeared to make are in `scoreField`, where each has
+its own test.
+
 ## L4 anchor status
 Four anchors, each strictly stronger than the one before:
 
@@ -473,7 +536,7 @@ Four anchors, each strictly stronger than the one before:
 | 1 | Golden Master — exporters byte-stable against committed anchors | **met** (`pnpm golden-master` / 6 OpenRCA + 4 RCAEval files) |
 | 2 | Mutation suite — declared facets sensitive, undeclared inert | **met** (`pnpm mutation`, 26 cases) |
 | 3 | Official-metric regression — `oraclePerfect ∧ mutationsDegrade ∧ unscoredFacetsInert` | **met** (`pnpm official:check`, 8 targets scored, 1 skipped by contract) |
-| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the real run reaches the round trip and fails there, for a reason now identified and not yet verified** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`; see finding 45) |
+| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the real run fails at the fetch, for a cause now fixed and a consequence not yet observed** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`; see findings 45 and 52) |
 
 Anchor 4 is the one that would detect a misunderstanding shared by our exporter
 and our scorer. Anchors 1–3 all begin from a bundle this repository authored, so
@@ -494,6 +557,26 @@ applied, so the accurate status is *"the failure is identified; the fix is not
 verified"* — weaker than "fixed", and stronger than the previous entry, which said
 the failure "has moved down the job three times". It had stopped moving: eleven
 dispatches, the two most recent both failing at **the same step**.
+
+**What changed after twelve failures (finding 52).** The fetch step's retry loop
+wrapped only `download()`. `statSync`, `sha256Of` and both digest comparisons sat
+*after* the loop, so a transfer that returned HTTP 200 with a truncated body went
+straight to `fail()` — one bad attempt, no retry, job over. **The loop protected
+"can we get bytes", never "are the bytes right".** The mechanism's name promised a
+retry and its scope provided a single attempt.
+
+Verification now runs *inside* the loop, and the two failure classes have separate
+exit codes because they need opposite responses: a **short** file is a truncated
+transfer and is retried; a file of the **right length with the wrong digest** is a
+*different file* — upstream substitution or a bad pin — and retrying cannot turn
+one file into another. `official-data.yml` now names `124`/`2`/`1` in its step
+summary instead of printing `Failed with exit status N`.
+
+This is a genuine narrowing of the unknown, and it is **not** a claim that the
+anchor is closed. All twelve failures produced no measurement, and which class they
+belonged to is not yet known — the new exit code is what will say, on the next run.
+The status is *"the defect is fixed and the fix is verified in isolation; its effect
+on the anchor is unobserved."*
 
 The first attempt on a real runner is recorded and it failed. `official-data.yml`
 run #35480663989 completed as `failure`, with the fetch step dying after 12.35
@@ -579,13 +662,13 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 93 |
+| Commits | 94 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
-| Source files | 44 (`src/`, excluding tests and build output) |
-| Source lines | 12,900 |
-| Test files | 76 core + 3 CLI |
-| Test lines | 23,510 |
-| Tests | 2256 core + 173 CLI |
+| Source files | 45 (`src/`, excluding tests and build output) |
+| Source lines | 13,483 |
+| Test files | 78 core + 3 CLI |
+| Test lines | 25,229 core + 2,740 CLI |
+| Tests | 2341 core + 173 CLI |
 
 Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
 previous table's own closing sentence -- that a status table is a column of
@@ -598,7 +681,12 @@ pass 10's signal-validity module and pass 12's injection planner. **Test files**
 `23,440 → 24,198 → 24,501 → 23,505 → 23,510` and **Tests**
 `1959 → 1978 → 2042 → 2106 → 2186 → 2256`: pass 8 adds eleven meta-gate tests, pass 9
 adds sixty-four enumeration tests, pass 10 adds sixty-four validity tests, pass 11 adds
-eighty to the enumeration file, and pass 12 adds seventy for the injection planner. The
+eighty to the enumeration file, pass 12 adds seventy for the injection planner, and
+pass 13 adds fifty for the extraction scorer, twenty-five for its script contract, and
+nine for the fetch retry layer. **Source lines** `12,900 → 13,483` and **Source files**
+`44 → 45` are pass 13's scorer, the largest single module the fault directory has
+gained. **Test lines** gained two rows here because it is now reported per package:
+the CLI's `2,740` had been omitted from every previous revision. The
 file row fell once because the old figure counted every `.ts` under `test/`; it rises by
 one per new test file, which is what passes 9 and 12 each contributed.
 
@@ -866,6 +954,23 @@ is a list of the ones somebody happened to check.
   automated fetch, so for those targets the fourth anchor still rests on the
   synthetic path in `anchor-roundtrip.yml` and nothing more. That is a smaller
   claim than "the fourth anchor is closed" and it is the accurate one.
+- **The fourth anchor's fetch defect is fixed; whether that was *the* cause is not
+  yet known.** The retry loop wrapped only `download()`, so a bad transfer had no
+  second attempt and ended the job. That much is proved from the source and is
+  recorded as finding 52. What is *not* known is whether truncations, a bad pin or
+  both accounted for the twelve failures: no run has happened since the fix, and
+  the whole reason the fix adds an exit code is that the log could not say. The
+  honest status is *"the defect is fixed and the fix is verified in isolation; its
+  effect on the anchor is unobserved."*
+- **There is still no measured extraction accuracy.** The scorer, the 19-sample
+  golden dataset, the two runner scripts and the workflow are all in place and
+  verified locally against synthetic predictions -- but `fault-extraction-accuracy.yml`
+  has not run, so **M1's 70% strict threshold has no reading behind it**. Finding 53
+  is the instrument, not the measurement. Two further limits on the instrument:
+  `--verifiable` is produced by nothing today, so the `unverifiable` state is
+  exercised only by hand-written predictions; and 19 samples means the strict rate
+  moves in steps of 5.3 percentage points, which is coarse at the granularity of the
+  threshold itself.
 - **The OpenRCA shard-cache route does not work, and the registry said it did.**
   `golden-master/official-assets.json` used to give, as the alternative for
   OpenRCA 1.0, "reach it through the AgentiX-E/openrca-* shard repositories...

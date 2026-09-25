@@ -315,46 +315,147 @@ async function sha256Of(path) {
 }
 
 /**
+ * Decide whether a downloaded file matches the registry, and whether trying
+ * again could plausibly change the answer.
+ *
+ * ## Why the byte count is read before the digest, and why that order is the point
+ *
+ * A file shorter than the pin is a transfer that lost its tail: the bytes
+ * existed, something cut them off, and a fresh download can legitimately
+ * produce a different result. A file of the right *length* whose digest
+ * disagrees is a different file: the transfer completed, so retrying fetches
+ * the same wrong bytes again, forever.
+ *
+ * Both arrive as "verification failed", and they call for opposite actions.
+ * Treating them as one case is what made twelve scheduled runs of
+ * `official-data.yml` fail without ever producing a measurement: the comparison
+ * lived outside the attempt loop, so the one failure a retry exists for was the
+ * one failure with no retry.
+ *
+ * `retryable` is not a guess about the cause. It is the narrower claim that a
+ * second attempt could still be correct, which is exactly what the caller needs
+ * to know and all it may assume.
+ *
+ * Returns `null` when the file verifies, so the caller's happy path is a null
+ * check rather than a flag it has to remember to test.
+ */
+function classifyVerification(asset, actual) {
+  if (asset.bytes !== null && actual.bytes !== asset.bytes) {
+    // Only a file that came up *short* is retryable. A file that is longer than
+    // the pin cannot be a truncation -- there are no missing bytes for a second
+    // attempt to recover -- so it is reported as a pin problem for the same
+    // reason a differing digest is: the file is not the file the registry
+    // describes. Letting the two flags disagree here was a real defect, caught by
+    // the over-length test, and it sent an over-long download down the "network
+    // was unreachable" path where the log blamed a host that had answered.
+    const short = actual.bytes < asset.bytes;
+    return {
+      retryable: short,
+      reason: `expected ${asset.bytes} bytes, got ${actual.bytes}`,
+      pinProblem: !short,
+    };
+  }
+  if (asset.sha256 !== null && actual.digest !== asset.sha256) {
+    return {
+      retryable: false,
+      reason:
+        `expected sha256 ${asset.sha256}, got ${actual.digest} ` +
+        `(byte count matches: ${actual.bytes}). The transfer completed, so this is a ` +
+        `different file rather than a short one -- check the registry pin against a ` +
+        `fresh --report-pins measurement before re-running.`,
+      pinProblem: true,
+    };
+  }
+  return null;
+}
+
+/**
  * Fetch one asset, with backoff, and verify whatever the registry pins.
  *
  * Returns `{ status }` where the status is one of `verified`, `unpinned` or
  * `skipped`. It does not throw on a network failure: the caller decides whether
  * an unreachable upstream should fail the run, and for the round trip it must
  * not -- a corpus we could not reach has told us nothing about our exporter.
+ *
+ * ## Why verification is inside the attempt loop
+ *
+ * It used to be after it, and that is the defect this function now exists to
+ * not have. The loop wrapped `download` alone, so the sequence was: try to
+ * fetch three times, then -- once, with whatever the third attempt left on disk
+ * -- measure and compare. A transfer that arrived with a 200 and a truncated
+ * body therefore spent none of its attempts on the problem, and the `fail()`
+ * that followed ended the job under `set -eu`.
+ *
+ * An attempt is now the whole unit: get the bytes *and* confirm they are the
+ * bytes. That is what makes the retry count mean "three chances at a correct
+ * file" instead of "three chances at a response code".
+ *
+ * The `pinProblem` flag is carried out so the caller can exit with a code that
+ * distinguishes it from an unreachable host. Both are failures and neither
+ * should be silently tolerated, but one is answered by waiting and the other by
+ * reading a digest.
  */
 async function fetchAsset(asset, outDir) {
   const destination = resolve(outDir, `${asset.id}${isArchive(asset.url) ? '.zip' : ''}`);
   let lastError = '';
   let lastElapsedMs = 0;
+  let pinProblem = false;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const { code, stderr, elapsedMs } = await download(asset.url, destination);
     lastElapsedMs = elapsedMs;
-    if (code === 0) {
+
+    if (code !== 0) {
+      const detail = stderr.split('\n').find((line) => line.trim() !== '') ?? `curl exited ${code}`;
+      // The attempt number and its duration, on every attempt rather than only
+      // the last. An operator reading a three-attempt failure needs to see that
+      // all three burned the same twelve minutes -- that is what says the transfer
+      // is dying partway each time rather than the host refusing -- and a summary
+      // printed once at the end cannot express it.
+      lastError = `attempt ${attempt}/${MAX_ATTEMPTS} after ${formatDuration(elapsedMs)}: ${detail}`;
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`RETRYING  ${asset.id}: ${lastError}`);
+        // 2s, 4s by default. Long enough to clear a rate-limit window, short
+        // enough that a genuinely dead host does not stall the job.
+        //
+        // This was `BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF` and is now
+        // the plain product. The two are equivalent -- `0` times any factor is
+        // already `0` -- so the guard was dead weight rather than a defect, and it
+        // was removed after being wrongly accused of one. The measured 9-second
+        // delay against a connection refused in zero milliseconds came from
+        // `--retry-connrefused` inside curl, not from here; see the note on
+        // `download` above. Recording the correction because the first version of
+        // the audit blamed this line, and a guard that is blamed for a bug it did
+        // not cause is a guard the next reader will not trust for the right reason.
+        await sleep(2 ** attempt * 1000 * BACKOFF);
+      }
+      continue;
+    }
+
+    // The transport succeeded, which is not the same as the file being right.
+    // Measuring here rather than after the loop is the whole fix: a bad transfer
+    // is now a bad *attempt*, and the loop still has chances left to spend on it.
+    const bytes = statSync(destination).size;
+    const digest = await sha256Of(destination);
+    const problem = classifyVerification(asset, { bytes, digest });
+
+    if (problem === null) {
       lastError = '';
       break;
     }
-    const detail = stderr.split('\n').find((line) => line.trim() !== '') ?? `curl exited ${code}`;
-    // The attempt number and its duration, on every attempt rather than only
-    // the last. An operator reading a three-attempt failure needs to see that
-    // all three burned the same twelve minutes -- that is what says the transfer
-    // is dying partway each time rather than the host refusing -- and a summary
-    // printed once at the end cannot express it.
-    lastError = `attempt ${attempt}/${MAX_ATTEMPTS} after ${formatDuration(elapsedMs)}: ${detail}`;
+
+    lastError = `attempt ${attempt}/${MAX_ATTEMPTS} after ${formatDuration(elapsedMs)}: ${problem.reason}`;
+    pinProblem = problem.pinProblem;
+    console.log(`FAILED    ${asset.id}: ${problem.reason}`);
+
+    if (!problem.retryable) {
+      // Retrying cannot turn one file into another, so this exits the loop with
+      // attempts unspent rather than burning the job's budget on the same bytes.
+      // `lastError` is already set, so the reporting below stays uniform.
+      break;
+    }
     if (attempt < MAX_ATTEMPTS) {
       console.log(`RETRYING  ${asset.id}: ${lastError}`);
-      // 2s, 4s by default. Long enough to clear a rate-limit window, short
-      // enough that a genuinely dead host does not stall the job.
-      //
-      // This was `BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF` and is now
-      // the plain product. The two are equivalent -- `0` times any factor is
-      // already `0` -- so the guard was dead weight rather than a defect, and it
-      // was removed after being wrongly accused of one. The measured 9-second
-      // delay against a connection refused in zero milliseconds came from
-      // `--retry-connrefused` inside curl, not from here; see the note on
-      // `download` above. Recording the correction because the first version of
-      // the audit blamed this line, and a guard that is blamed for a bug it did
-      // not cause is a guard the next reader will not trust for the right reason.
       await sleep(2 ** attempt * 1000 * BACKOFF);
     }
   }
@@ -367,19 +468,23 @@ async function fetchAsset(asset, outDir) {
     // spent mid-transfer means the bytes were available and something stopped
     // them. Both are reported here so the log answers "what should I change?"
     // rather than only "what happened?".
-    console.log(`          ${asset.id}: ${classifyFailure(lastError, lastElapsedMs)}`);
-    return { status: 'skipped', asset, reason: lastError };
+    //
+    // A pin mismatch is neither of those and is not classified as one: it is a
+    // statement about the registry, so it says so.
+    console.log(
+      `          ${asset.id}: ${
+        pinProblem
+          ? 'the downloaded file does not match the recorded pin. This is not a transport ' +
+            'failure and downloading it again will not help; re-measure with --report-pins ' +
+            'and review the digest in the registry.'
+          : classifyFailure(lastError, lastElapsedMs)
+      }`,
+    );
+    return { status: 'skipped', asset, reason: lastError, pinProblem };
   }
 
   const bytes = statSync(destination).size;
   const digest = await sha256Of(destination);
-
-  if (asset.bytes !== null && bytes !== asset.bytes) {
-    fail(`${asset.id}: expected ${asset.bytes} bytes, got ${bytes}`);
-  }
-  if (asset.sha256 !== null && digest !== asset.sha256) {
-    fail(`${asset.id}: expected sha256 ${asset.sha256}, got ${digest}`);
-  }
 
   if (asset.sha256 === null) {
     console.log(`UNPINNED  ${asset.id}: bytes=${bytes} sha256=${digest}`);
@@ -501,9 +606,32 @@ if (reportPath !== undefined) {
   console.log(`\nREPORT    ${reportPath}: ${report.assets.length} pin(s) measured`);
 }
 
-if (skipped.length > 0) {
+// Two failure classes, two exit codes.
+//
+// Both end the run and neither is tolerated silently, but they are answered by
+// opposite actions: an unreachable host is retried when it comes back, whereas a
+// file that does not match its pin needs a human to look at the digest. One code
+// for both is what made the anchor's twelve consecutive failures take a re-run
+// and a log excavation to understand, because "the fetch failed" was all the run
+// itself would say.
+//
+// A pin mismatch is checked first: it is the more specific statement, and a run
+// that has one should not be described as having hit the network.
+const pinMismatches = results.filter((r) => r.pinProblem === true);
+if (pinMismatches.length > 0) {
   console.error(
-    `\n${skipped.length} of ${results.length} asset(s) could not be reached. ` +
+    `\n${pinMismatches.length} of ${results.length} asset(s) downloaded a file that does not ` +
+      `match the registry pin. The byte counts matched and the contents did not, so this is a ` +
+      `substituted file or a mis-transcribed digest -- not a network failure, and re-running ` +
+      `will produce the same result. Re-measure with --report-pins and review the pin.`,
+  );
+  process.exit(2);
+}
+
+const unreachable = results.filter((r) => r.status === 'skipped' && r.pinProblem !== true);
+if (unreachable.length > 0) {
+  console.error(
+    `\n${unreachable.length} of ${results.length} asset(s) could not be reached. ` +
       `The round trip will have no data for them; this is reported, not worked around.`,
   );
   process.exit(1);

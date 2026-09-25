@@ -45,6 +45,12 @@ const ALLOWED = [
   // The round-trip descriptor lists case ids and injection instants. It is a
   // derived index, not telemetry: there are no metric samples in it.
   'golden-master/rcaeval-cases.json',
+  // The fault-extraction golden samples are hand-written incident texts and
+  // their expected records. No incident text in it is copied from a corpus --
+  // the file is authored so the M1 exit condition has a denominator that does
+  // not move when the model changes. It is a fixture by construction, which is
+  // why it is exempted by path rather than by size.
+  'golden-master/fault-extraction/samples.json',
 ];
 
 /**

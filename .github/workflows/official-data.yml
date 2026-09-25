@@ -113,6 +113,22 @@ jobs:
       # retyped into the registry, and a mistyped hex digit there does not fail
       # loudly -- it makes every later run report a mismatch against a good
       # download. This makes the measurement data.
+      #
+      # The exit status is captured rather than propagated, so the failure is
+      # summarised into the step summary and the log *stays readable*: the
+      # reason a 12-minute fetch failed was the one thing the first real run
+      # did not record, and it took a re-run to find out.
+      #
+      # The three statuses are named separately because they call for different
+      # actions, and collapsing them is what made twelve consecutive failures
+      # require log excavation to understand:
+      #
+      #   124  the workflow's own per-asset bound fired; no measurement
+      #   2    an asset downloaded a file that does not match the registry pin.
+      #        This is *not* a network problem -- the bytes arrived -- so
+      #        re-running is wasted; the registry or the upstream asset has to
+      #        be looked at
+      #   1    an asset could not be reached at all; re-running is reasonable
       - name: Fetch the corpus outside the working tree
         id: fetch
         env:
@@ -125,24 +141,32 @@ jobs:
           # 900s is 2h15m of curl, which fits inside the job's 90 minutes only
           # because the job kills it -- and a job killed by its own timeout
           # reports no measurement and no reason.
-          #
-          # The exit status is captured rather than propagated, so the failure is
-          # summarised into the step summary and the log *stays readable*: the
-          # reason a 12-minute fetch failed was the one thing the first real run
-          # did not record, and it took a re-run to find out.
           status=0
           timeout 3000 node scripts/fetch-official.mjs \
             --anchor "$ANCHOR" --out /tmp/official --report-pins /tmp/pins.json || status=$?
           {
             echo "### Fetch outcome"
             echo
-            if [ "$status" -eq 124 ]; then
-              echo "**Timed out** after 50 minutes (the workflow's own per-asset bound). No measurements."
-            elif [ "$status" -eq 0 ]; then
-              echo "All assets for \`${ANCHOR}\` fetched."
-            else
-              echo "**Failed** with exit status ${status}. The per-asset reason is in the log above, one \`SKIPPED\` line per asset."
-            fi
+            case "$status" in
+              124)
+                echo "**Timed out** after 50 minutes (the workflow's own per-asset bound). No measurements."
+                ;;
+              0)
+                echo "All assets for \`${ANCHOR}\` fetched."
+                ;;
+              2)
+                echo "**Pin mismatch.** An asset completed its transfer and the bytes do not match the"
+                echo "registry: the file is not the file \`golden-master/official-assets.json\` describes."
+                echo "Retrying cannot turn one file into another, so this is reported instead of retried."
+                echo "Check the pin against a fresh \`--report-pins\` measurement, and check whether the"
+                echo "upstream asset changed under us. This is **not** a network failure."
+                ;;
+              *)
+                echo "**Unreachable** (exit status ${status}). An asset could not be downloaded. The"
+                echo "per-asset reason is in the log above, one \`SKIPPED\` line per asset, and re-running"
+                echo "is a reasonable next step."
+                ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 

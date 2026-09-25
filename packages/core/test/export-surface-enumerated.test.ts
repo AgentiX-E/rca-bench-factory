@@ -120,6 +120,7 @@ const ENUMERATED_MODULES = [
   'evolution/hitl.ts',
   'evolution/proposal.ts',
   'fault/collector.ts',
+  'fault/extraction-scoring.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -506,6 +507,15 @@ const TESTED = [
   'CHAOS_MESH_FAULT_TYPES',
   'planInjection',
   'readInjectionStatus',
+  // fault/extraction-scoring.ts -- P1-4, the M1 exit-condition measurement.
+  'FAULT_GOLDEN_SCHEMA',
+  'M1_STRICT_THRESHOLD',
+  'SCORED_FIELDS',
+  'buildExtractionReport',
+  'formatExtractionReport',
+  'meetsM1ExitCondition',
+  'parseGoldenDataset',
+  'scoreExtractionSample',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',
