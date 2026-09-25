@@ -990,13 +990,25 @@ is a list of the ones somebody happened to check.
   effect on the anchor is unobserved."*
 - **There is still no measured extraction accuracy.** The scorer, the 19-sample
   golden dataset, the two runner scripts and the workflow are all in place and
-  verified locally against synthetic predictions -- but `fault-extraction-accuracy.yml`
-  has not run, so **M1's 70% strict threshold has no reading behind it**. Finding 53
-  is the instrument, not the measurement. Two further limits on the instrument:
-  `--verifiable` is produced by nothing today, so the `unverifiable` state is
-  exercised only by hand-written predictions; and 19 samples means the strict rate
-  moves in steps of 5.3 percentage points, which is coarse at the granularity of the
-  threshold itself.
+  verified locally against synthetic predictions. The workflow has now been
+  **dispatched once** (run `36201115545`) and it **stopped at step 8,
+  `Check the key is present`**: `secrets.RCA_BENCH_LLM_API_KEY` is not visible to
+  this repository. Steps 1-7 were `success` -- including the dataset check, which
+  reported 19 samples at schema `rca-bench-fault-golden/1` -- and steps 9-10 were
+  skipped, so **no model call was made and M1's 70% strict threshold still has no
+  reading behind it**. Finding 53 is the instrument, not the measurement.
+  Two things this run did establish. First, the blocker is **credential
+  visibility, not network**: `curl https://api.deepseek.com` from the sandbox
+  returns `401`, which is the endpoint answering without a key, not a route that
+  does not exist. Second, the instrument's failure was **legible** -- the step
+  name *is* the cause, and the guard fired before any request was paid for.
+  That is the difference between this run and the fourth anchor's twelve, which
+  produced no diagnosis at all. The honest status is *"the instrument works and
+  it named its own blocker; the number it exists to produce is still absent."*
+  Two further limits on the instrument: `--verifiable` is produced by nothing
+  today, so the `unverifiable` state is exercised only by hand-written
+  predictions; and 19 samples means the strict rate moves in steps of 5.3
+  percentage points, which is coarse at the granularity of the threshold itself.
 - **The OpenRCA shard-cache route does not work, and the registry said it did.**
   `golden-master/official-assets.json` used to give, as the alternative for
   OpenRCA 1.0, "reach it through the AgentiX-E/openrca-* shard repositories...

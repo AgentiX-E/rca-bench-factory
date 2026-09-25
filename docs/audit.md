@@ -3445,6 +3445,42 @@ echoed (the presence check prints its *length*, not its value), and never reache
 artefact. `scripts/check-no-secrets.mjs` is the backstop; the workflow's own header states
 the intent.
 
+### The key is not visible to this repository, and the run said so
+
+The workflow was dispatched on 2026-09-26 (run `36201115545`) and **failed at step 8,
+`Check the key is present`**. Steps 1-7 were `success` -- including *"Validate the golden
+dataset before spending a request"*, which reported `19 sample(s), schema
+rca-bench-fault-golden/1` -- and steps 9 and 10, the derivation and the scoring, were
+`skipped`. The job uploaded no artefact. `secrets.RCA_BENCH_LLM_API_KEY` is therefore not
+visible to `AgentiX-E/rca-bench-factory`.
+
+Two things are worth separating, because conflating them is how this becomes a story about
+the environment rather than about a setting.
+
+**It is not a network problem.** `curl https://api.deepseek.com` from inside the development
+sandbox returns `401`. A `401` is the endpoint answering; an isolation failure would look
+like a connection error. The sandbox that "has no reachable model endpoint" can in fact
+reach the endpoint -- what it does not have is the credential. The runner has neither
+restriction, so the missing piece is exactly one configuration value.
+
+**It is not an unreadable failure, and that is the point.** The fourth anchor failed twelve
+times and, at the time, nobody could say from the status which layer had broken -- the
+reason was buried in a step that had already been retried, and the record of it was wrong
+twice before finding 52 corrected it. This run failed once and named its own cause: the
+step is called `Check the key is present`, and its message says which secret is empty and
+where to set it. The guard is also placed **before** the first model request, so a
+credential problem costs nothing.
+
+> A broken instrument and an instrument that says where it is broken are different
+> artefacts. The twelfth consecutive red run on the anchor was the first kind. This is the
+> second. Neither is a measurement, and neither may be reported as progress towards one.
+
+The lesson finding 52 drew -- *a mechanism whose scope is narrower than its name* -- has a
+counterpart in what to do about it. That finding's repair was to widen the retry loop and
+**split the exit codes so the failure class is visible**. The same instinct produced this
+workflow's key check, and it is the reason this run is a two-line diagnosis instead of
+another unread red X.
+
 ### Four states, not two
 
 The first design decision, and the one the obvious implementation gets wrong. An extraction
