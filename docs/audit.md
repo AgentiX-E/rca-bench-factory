@@ -3070,6 +3070,12 @@ larger than itself. A defect that has not fired yet reads as a design.
 Measured effect: **18 → 45 modules, 140 → 516 exports** under assertion. Test cases
 in this file: 68 → 148.
 
+> **Those are this pass's figures, not the tree's.** At the revision that added finding 54
+> the list holds **47 modules and 538 runtime exports**, with **37 exemption entries of
+> which two are runtime**. The three numbers above stayed correct for two passes and then
+> quietly became three different wrong answers across three documents — which is finding
+> 54, and the reason this paragraph now carries a date-scoped qualifier.
+
 ### The fourth instance, found by the injection matrix
 
 Row 3 of the matrix grants `index.ts` a wildcard. It stayed **green**.
@@ -3602,3 +3608,65 @@ the workflow reports the verdict and does not gate on it.
 - **One provider.** DeepSeek is the only backend wired into the workflow. The provider
   abstraction is respected (the base URL and model come from repository variables), but no
   second provider has been run against this dataset.
+
+---
+
+## 54 — A count written down three times, and wrong in all three
+
+This one was not found by a test, an injection or a coverage gap. It was found by
+trying to write a new sentence and needing the number it contained.
+
+### The defect
+
+Three documents stated how large the enumerated export surface is, and all three
+disagreed:
+
+| where | said | actual |
+|---|---|---|
+| `export-surface-enumerated.test.ts`, in its own comment | 43 modules | 47 |
+| `audit.md`, finding 50 | 45 modules, 516 exports | 47, 538 |
+| `progress.md`, the L3 headline row | 46 modules, 516 symbols | 47, 538 |
+
+All three were correct when written. The list grew by four modules across passes 12
+and 13 and none of the three was re-read. This is the same decay the Repository table
+in `progress.md` already names for itself, but in prose rather than in a table, and
+prose has no column header to remind a reader that it is a measurement.
+
+### Why it matters more than three wrong numbers
+
+The surface enumeration is the mechanism this repository uses to make "the export
+surface is fully tested" a *claim* rather than a *truism*. Its whole design is that
+`ENUMERATED_MODULES` is asserted equal to the modules on disk, so the list cannot
+drift. That guarantee is real and it holds — the list is correct.
+
+What drifted was the **description** of the list. So the mechanism was doing its job
+perfectly while three separate narrative claims about it were stale. Anyone auditing
+this repository would have read "45 modules" and then read a list containing 47, and
+would have had to decide which to believe. The correct answer is the list, but that
+is only obvious to someone who already knows how the gate works.
+
+**A count that describes a list must be read from the list, or it is a second source
+of truth, and a second source of truth is a source of disagreement.**
+
+### The repair
+
+- The test file no longer states a count at all. It says why, and points at the
+  assertion that makes the list authoritative.
+- The two dated figures in the docs are marked as measurements of the pass that
+  produced them, with the current values given alongside.
+- The runtime-export count (**538**) and the exemption breakdown (**37 entries: 2
+  runtime, 35 type aliases**) are stated once, in one place, derived by probe rather
+  than recalled.
+
+### What this does not cover
+
+- **Nothing prevents the next literal.** This is the third instance in this
+  repository of a number outliving its measurement, and the repair is again local.
+  The general fix would be to generate the counts into the docs the way
+  `gen-examples.mjs` generates the field tables, which is P2-4 and still open.
+- **`538` is a probe count, not a gate count.** It was obtained by re-implementing the
+  gate's own extraction over `src/`, because the gate's helpers are not exported. If
+  the gate's definition of "runtime export" differs by a symbol or two from the
+  probe's, the probe's figure is the one that is wrong. The defensible claim is
+  "roughly 538, and exactly as many as the gate scans" — and making it exact is a
+  small, separate piece of work.

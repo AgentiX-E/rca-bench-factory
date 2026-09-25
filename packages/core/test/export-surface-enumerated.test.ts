@@ -61,7 +61,7 @@ import { fileURLToPath } from 'node:url';
  *    measured (every export of the module).
  *
  *    The repair is to key the exception by *symbol*, not by module:
- *    `ENUMERATED_MODULES` now holds all 43 modules, and `EXEMPT_EXPORTS` holds the
+ *    `ENUMERATED_MODULES` now holds every module, and `EXEMPT_EXPORTS` holds the
  *    individual names that genuinely have no consumer, each with its own reason.
  *    A module-wide exemption is now impossible to express.
  */
@@ -71,7 +71,15 @@ const PACKAGE_ROOT = resolve(HERE, '..');
 const SRC = join(PACKAGE_ROOT, 'src');
 
 /**
- * The 43 modules `src/` contains, every one of them scanned.
+ * Every module `src/` contains, each one scanned.
+ *
+ * The count is not written here on purpose. It was written here as a literal three
+ * times and drifted three times -- 43 in this comment, 45 in the audit, 46 in the
+ * progress table -- while the list itself grew past all of them. A number that
+ * describes a list should be read from the list, and
+ * `enumerates every module in src/, with no exception left to make` already asserts
+ * the two are equal, so the list is the source of truth and this comment is not a
+ * second one. At the revision that removed the literals the list held 47 modules.
  *
  * The list began as the four directories `09-推进进度追踪.md` names as needing an
  * enumeration rather than a threshold: `ir/`, `score/`, `export/` and `gates/`.

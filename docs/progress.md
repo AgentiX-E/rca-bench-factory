@@ -12,9 +12,27 @@ vendored.
 | L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2341 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
-| L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across 4 directories, 137 symbols, 0 orphans |
+| L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across **every module in `src/` (47 at this revision), 538 runtime symbols, 0 orphans**, exemptions keyed by symbol rather than by module |
 | L4 | Official reproduction | **3 of 4 anchors met** | see below |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
+
+**Both CI workflows are green on the revision this document describes** (`4181060ee`):
+`CI` run `36122305441` has all 18 steps `success`, and `Anchor round trip` run
+`36122305396` has all 12 `success`. That is the full local gate list executed on a
+clean machine.
+
+The evidence here is weaker than the previous revision's and the difference is worth
+stating. Last time the job log was fetched and the coverage percentile was compared
+against these figures line by line. This time the logs endpoint redirects to
+`productionresultssa17.blob.core.windows.net`, which resolves to `198.18.0.16` in the
+sandbox -- a policy sinkhole -- so `curl` returns `000` and the log body is unreachable.
+What was verified instead is the API's structured per-step conclusion. That proves each
+step passed; it does **not** prove the numbers above match CI's byte for byte. Both are
+real evidence, at different resolutions, and they are not written as the same sentence.
+
+The blob hostname has now been different on all three occasions it has been recorded
+(`...sa11`, `...sa15`, `...sa17`), which is why the procedure says to read it from each
+redirect rather than pin it.
 
 The L0 row used to read `pnpm typecheck` clean with no qualifier, and on a cold
 check-out that was false. `packages/cli` resolves `@rca-bench-factory/core`
@@ -662,33 +680,41 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 94 |
+| Commits | 95 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
 | Source files | 45 (`src/`, excluding tests and build output) |
 | Source lines | 13,483 |
 | Test files | 78 core + 3 CLI |
-| Test lines | 25,229 core + 2,740 CLI |
+| Test lines | 25,174 core + 2,740 CLI |
 | Tests | 2341 core + 173 CLI |
+| Tracked files | 208 |
 
 Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
 previous table's own closing sentence -- that a status table is a column of
 measurements and they decay together -- was written after four of six rows went
 stale in one pass, and it held: three rows moved again here, for reasons worth
-naming. **Commits** `85 → 88 → 90 → 92 → 93`: the anchor diagnostic, the
+naming. **Commits** `85 → 88 → 90 → 92 → 93 → 94 → 95`: the anchor diagnostic, the
 payload-name fix, the rule fix, then pass 8's meta-gate, pass 9's export enumeration,
-pass 10's signal-validity module and pass 12's injection planner. **Test files**
-`76 → 73 → 74 → 75 → 76 core + 3 CLI`, **Test lines**
-`23,440 → 24,198 → 24,501 → 23,505 → 23,510` and **Tests**
-`1959 → 1978 → 2042 → 2106 → 2186 → 2256`: pass 8 adds eleven meta-gate tests, pass 9
-adds sixty-four enumeration tests, pass 10 adds sixty-four validity tests, pass 11 adds
-eighty to the enumeration file, pass 12 adds seventy for the injection planner, and
-pass 13 adds fifty for the extraction scorer, twenty-five for its script contract, and
-nine for the fetch retry layer. **Source lines** `12,900 → 13,483` and **Source files**
-`44 → 45` are pass 13's scorer, the largest single module the fault directory has
-gained. **Test lines** gained two rows here because it is now reported per package:
-the CLI's `2,740` had been omitted from every previous revision. The
-file row fell once because the old figure counted every `.ts` under `test/`; it rises by
-one per new test file, which is what passes 9 and 12 each contributed.
+pass 10's signal-validity module, pass 12's injection planner, and pass 13's two halves
+-- the extraction scorer and the fetch-layer retry scope. **Test lines**
+`23,440 → 24,198 → 24,501 → 23,505 → 23,510 → 25,229 → 25,174` and **Tests**
+`1959 → 1978 → 2042 → 2106 → 2186 → 2256 → 2341`: pass 8 adds eleven meta-gate tests,
+pass 9 adds sixty-four enumeration tests, pass 10 adds sixty-four validity tests, pass 11
+adds eighty to the enumeration file, pass 12 adds seventy for the injection planner, and
+pass 13 adds fifty-two for the extraction scorer, twenty-five for its script contract,
+and five net for the fetch retry layer. **Source lines** `12,900 → 13,483` and **Source
+files** `44 → 45` are pass 13's scorer, the largest single module the fault directory has
+gained.
+
+**Two rows in this pass move for a reason that is not the table decaying, and both are
+the same reason: the injection batteries became scripts.** `Tracked files` is new here
+(`208`) and reports what `check-no-vendored-data.mjs` reports, so the two cannot drift.
+`Test lines` core went `25,229 → 25,174`, a fall of fifty-five, even though two new
+test files were added -- because the two batteries now live in `scripts/injection/` as
+`.py` files and are therefore *not* counted in a `.ts` test-line total. The measurement
+did not shrink; the denominator changed shape. Reporting the figure without that
+sentence would invite the reading that pass 13 removed tests, which is the opposite of
+what happened.
 
 The two rows that fell in this pass point the same way and are worth separating,
 because only one of them is the table decaying. **Test lines** `24,501 → 23,505` is
@@ -1037,6 +1063,16 @@ is a list of the ones somebody happened to check.
   is call sites (it asserts a name is mentioned, not called) and the completeness of
   `index.ts` as a surface, which `pack-manifest-completeness` and the package
   `exports` field cover. See finding 50.
+
+  **Those three figures are pass 11's measurement and are kept as such** — they are
+  the record of what that pass changed, not a description of the tree today. At this
+  revision the list holds **47 modules** and **538 runtime exports**, and the
+  exemption count is **37 entries, two of which are runtime** (`llm/provider.ts::*`
+  and `index.ts::assembleBundle`); the other 35 are `ir/types.ts` type aliases that
+  erase at runtime. Pass 13 found that the same three literals had drifted three
+  different ways — 43 in the test file's own comment, 45 here, 46 in the L3 row —
+  which is why the test file no longer states any of them and points at the list
+  instead.
 
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
