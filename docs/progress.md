@@ -9,7 +9,7 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2186 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2256 core + 173 CLI tests pass |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across 4 directories, 137 symbols, 0 orphans |
@@ -81,6 +81,8 @@ after pass 9 -- `100 | 100 | 100 | 100`, driven there from
 99.95` and did not move. That is finding 49's sixth clause in the number itself: a
 new module can sit entirely below the floor while the average it is being judged
 against stays flat, because the average is a rate and the gap is a granularity.
+`src/fault/injector.ts` after pass 12, reached the same way -- the package average
+was `99.95` while that module was `100 | 85.89 | 100 | 100`.
 
 Pass 2 raised the aggregate branch figure from 99.89% to 99.96%: the
 exact-nanosecond conversion introduced a negative-timestamp path that nothing
@@ -167,6 +169,7 @@ the logic is; the figure is recorded because it is measured on every run.
 | 8 | `src/gates/` export enumeration, `test/typecheck-entrypoint.test.ts` | 2 | 18 enumerated modules; `TESTED` rewritten and both directions asserted |
 | 9 | `src/gates/validity.ts` (P1-1) | 3 | 59 tests in 1 new file; 7-row falsification matrix |
 | 10 | `test/export-surface-enumerated.test.ts` (P1-2 rest) | 2 | 45 enumerated modules (was 18); symbol-keyed exemptions; 8-row injection matrix |
+| 11 | `src/fault/injector.ts` (P1-3) | 2 | 70 tests in 1 new file; `100/100/100/100`; 11-row injection matrix; 1 dead branch removed |
 
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
@@ -576,27 +579,28 @@ document that described it as downloading the data was describing an intention.
 
 | Metric | Value |
 | --- | --- |
-| Commits | 92 |
+| Commits | 93 |
 | Packages | `@rca-bench-factory/core`, `@rca-bench-factory/cli` |
-| Source files | 43 (`src/`, excluding tests and build output) |
-| Source lines | 12,500 |
-| Test files | 75 core + 3 CLI |
-| Test lines | 23,505 |
-| Tests | 2186 core + 173 CLI |
+| Source files | 44 (`src/`, excluding tests and build output) |
+| Source lines | 12,900 |
+| Test files | 76 core + 3 CLI |
+| Test lines | 23,510 |
+| Tests | 2256 core + 173 CLI |
 
 Re-taken from `git ls-files` and `git rev-list --count HEAD` at this revision. The
 previous table's own closing sentence -- that a status table is a column of
 measurements and they decay together -- was written after four of six rows went
 stale in one pass, and it held: three rows moved again here, for reasons worth
-naming. **Commits** `85 → 88 → 90 → 92`: the anchor diagnostic, the payload-name
-fix, the rule fix, then pass 8's meta-gate, pass 9's export enumeration and pass 10's
-signal-validity module. **Test files** `76 → 73 → 74 → 75 core + 3 CLI`,
-**Test lines** `23,440 → 24,198 → 24,501 → 23,505` and **Tests**
-`1959 → 1978 → 2042 → 2106 → 2186`: pass 8 adds eleven meta-gate tests, pass 9 adds
-sixty-four enumeration tests, pass 10 adds sixty-four validity tests, and pass 11
-adds eighty to the enumeration file. The file row fell once because the old figure
-counted every `.ts` under `test/`; it rises now by one because pass 9 adds a real
-test file.
+naming. **Commits** `85 → 88 → 90 → 92 → 93`: the anchor diagnostic, the
+payload-name fix, the rule fix, then pass 8's meta-gate, pass 9's export enumeration,
+pass 10's signal-validity module and pass 12's injection planner. **Test files**
+`76 → 73 → 74 → 75 → 76 core + 3 CLI`, **Test lines**
+`23,440 → 24,198 → 24,501 → 23,505 → 23,510` and **Tests**
+`1959 → 1978 → 2042 → 2106 → 2186 → 2256`: pass 8 adds eleven meta-gate tests, pass 9
+adds sixty-four enumeration tests, pass 10 adds sixty-four validity tests, pass 11 adds
+eighty to the enumeration file, and pass 12 adds seventy for the injection planner. The
+file row fell once because the old figure counted every `.ts` under `test/`; it rises by
+one per new test file, which is what passes 9 and 12 each contributed.
 
 The two rows that fell in this pass point the same way and are worth separating,
 because only one of them is the table decaying. **Test lines** `24,501 → 23,505` is
@@ -894,6 +898,20 @@ is a list of the ones somebody happened to check.
     unpaid, unreleased CI run is not, and ShareAlike triggers on *distribution*,
     which we do not do. The one real constraint is repository hygiene -- do not
     commit the data -- and that is `check-no-vendored-data.mjs`.
+- **Active injection is planned, not performed.** `src/fault/injector.ts` emits a
+  Chaos Mesh document for each of the five kinds and reads the controller's report
+  back, and both halves are pure -- a probe over the source finds no `fetch`, `exec`,
+  `kubectl`, `child_process` or filesystem access at all. Applying the document needs a
+  cluster, and a test that needs a cluster is a test that does not run in CI. So the
+  milestone's exit condition -- five kinds, each with at least one case, through the
+  full chain to the official scorer -- is **not met**; what is met is that each kind's
+  document is correct, refusable, and asserted against Chaos Mesh's API shape. The
+  remaining work is a cluster runner. See finding 51.
+- **The Chaos Mesh mapping is asserted against a hand-written table, not against the
+  CRD.** The mapping was derived from the documentation and is asserted for internal
+  consistency and for the `TimeChaos` trap specifically -- no test validates it with a
+  live `kubectl apply --dry-run=server`, so a field renamed upstream would not be
+  caught here.
 - **Five gates are covered by CI running them, not by a test that forces them to
   fail.** `gates-are-testable.test.ts` proves no gate can be hollowed out, which is
   a floor. It does not reach every branch: `check-readme-sample.mjs`,

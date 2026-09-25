@@ -120,6 +120,7 @@ const ENUMERATED_MODULES = [
   'evolution/hitl.ts',
   'evolution/proposal.ts',
   'fault/collector.ts',
+  'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
   'ingest/otlp.ts',
@@ -501,6 +502,10 @@ const TESTED = [
   'FAULT_EXPECTATIONS',
   'expectedSignalsFor',
   'verifyFaultValidity',
+  // fault/injector.ts -- P1-3, the active-injection planner and status reader.
+  'CHAOS_MESH_FAULT_TYPES',
+  'planInjection',
+  'readInjectionStatus',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',

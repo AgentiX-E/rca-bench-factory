@@ -3134,3 +3134,150 @@ the promoted directories are now genuinely scanned rather than argued about, and
   are verified to have consumers at their *sources*; the file re-exporting them is not
   itself asserted to be complete, which is what `pack-manifest-completeness` and the
   package `exports` field cover.
+
+## 51 — Active injection: a planner that is honest about being a planner, and the trap in the DELAY mapping
+
+P1-3. The milestone asks for the five Chaos Mesh fault kinds — CPU, MEM, DISK, DELAY,
+LOSS — each verified through the full chain to the official scorer. This finding records
+what was built, and, more importantly, what was **not**, because the gap between the two
+is the deliverable.
+
+### The boundary, stated first
+
+`packages/core/src/fault/injector.ts` is a **planner and a reader**. It contains no
+`fetch`, no `exec`, no `kubectl`, no `child_process`, no filesystem access — a probe over
+the source returns two matches and both are inside comments.
+
+```
+planInjection()        ->  a Chaos Mesh document        (pure, no I/O)
+[cluster applies it -- not this module]
+readInjectionStatus()  <-  what the controller reported   (pure, no I/O)
+```
+
+That is not a shortcut. A module that shells out to `kubectl` is a module whose tests need
+a Kubernetes API server, and **a test that needs a cluster is a test that does not run in
+CI**. The deterministic core can own the document and the reading; it cannot own the
+apply. What P1-3 delivers is therefore the *half that is testable here*, and the milestone
+row stays **partially met** until a cluster run produces five real cases. Claiming
+otherwise would be the exact failure this repository's V-01 risk names.
+
+### The trap: DELAY looks like TimeChaos and must not be
+
+Chaos Mesh has a `TimeChaos` whose action reads like a delay. Mapping the DELAY fault onto
+it produces a **clock skew**, and the consequence is subtle enough to be worth spelling
+out: `gates/validity.ts` verifies a delay fault by reading network latency series, which a
+clock skew does not move — so the verifier would ask for a network signal, find none, and
+report `invalid`, discarding a case whose injection was never a network delay in the first
+place. The fault would be attributed to the system under test.
+
+Both DELAY and LOSS are therefore pinned to `NetworkChaos`, and a test asserts `TimeChaos`
+appears nowhere in the manifest for any of the five kinds.
+
+### The other four mappings, and why they are not uniform
+
+| kind | Chaos Mesh kind | action | why not the obvious alternative |
+|---|---|---|---|
+| `cpu` | `StressChaos` | — | — |
+| `memory` | `StressChaos` | — | shares the kind with `cpu`; discriminated by the `stressors` block |
+| `disk` | `IOChaos` | `fault` | a disk fault implemented as a memory burn is not a disk fault |
+| `delay` | `NetworkChaos` | `delay` | `TimeChaos` is the trap above |
+| `loss` | `NetworkChaos` | `loss` | — |
+
+`disk` uses `fault` rather than `latency` because it is the only IOChaos action that makes
+I/O **fail** rather than merely slow, and a failure is what a service's error rate and log
+severity respond to. A slowdown would be indistinguishable from load in the metrics.
+
+### Three verdicts on the controller's report, for the same reason as everywhere else
+
+`readInjectionStatus` returns `applied: true | false | 'unverifiable'`. The third value is
+the point: a controller that did not report is **not** evidence that the fault was not
+injected. Collapsing it to `false` would let one broken observability path silently
+disqualify every case it touched, which is worse than not checking at all — the same
+argument `validity.ts` makes for telemetry, applied one layer upstream.
+
+The phase table is read in both directions. `AllInjected`/`Injected` mean applied.
+`AllRecovered`/`Recovered` **also** mean applied: a case whose telemetry window closed
+after the fault recovered has proof the fault was on, and reading it as "never injected"
+would discard a good case. Only explicitly-named failure phases (`NotInjected`, `Failed`,
+`Paused`) produce `false`. An unrecognised phase is `unverifiable` **and names the phase**,
+so an upstream rename shows up as a readable message rather than as silence.
+
+### The dead branch, measured rather than covered
+
+The first version derived its `FaultSpec` through `parseFaultSpec` and branched on
+`!parsed.ok`. Coverage reported lines 242–243 uncovered and branch at `85.18`.
+
+`parseFaultSpec` has exactly four rejection reasons: input is not an object; the type is
+missing or blank; the category is not in the vocabulary; `parameters` is not an object.
+An exhaustive probe over the exact call shape — all five kinds × four parameter inputs —
+returned `ok: true` every time, because `planInjection` has already validated all four
+before the call. **The branch is unreachable.** It was removed and the import narrowed to
+type-only, rather than given a test that pretends to exercise it. `spec` is now assembled
+directly, and a separate test asserts `inferFaultCategory` agrees with the module's own
+category table for all five kinds, so the two cannot drift.
+
+### Branch coverage: nine ternaries that were only ever read one way
+
+Removing the dead branch left `100 | 85.89 | 100 | 100`, and the uncovered positions were
+nine ternaries in the manifest builders — the caller-supplied side of every CRD parameter.
+Each is a real experiment's parameter: a memory fault with no `size` burns 256Mi, a `loss`
+fault with no percentage drops **everything**.
+
+The `loss` default is deliberate and is now commented as such: a fault type named `loss`
+whose default dropped 1% of packets would be a fault that does not reliably manifest, and
+`validity.ts` would then discard the case for the planner's choice rather than for
+anything about the system under test.
+
+One of those nine stayed uncovered even after the block that was written to cover them:
+line 332, the `correlation` default of the `loss` block. The test asserted the `loss` key
+against a default and the `correlation` key against a supplied value, so **neither side of
+that one branch was ever read**. A test that names one key of a two-key object leaves the
+other key's default unasserted. Corrected to assert both keys on both sides.
+
+Final: **`100 | 100 | 100 | 100`** on `injector.ts`.
+
+### The injection matrix
+
+Ten rows, each a real execution against the tree; source restored and diffed byte-identical
+after every row.
+
+| injection | result |
+|---|---|
+| DELAY routed through `TimeChaos` (the trap) | **5 failed** |
+| DISK becomes a `StressChaos` memory burn | **6 failed** |
+| `mode: all` instead of `mode: one` | **1 failed** |
+| `unverifiable` collapsed into `false` | **2 failed** |
+| recovered injection stops counting as applied | **1 failed** |
+| unknown kind coerced instead of refused | **2 failed** |
+| blank target accepted | **1 failed** |
+| zero/negative duration accepted | **2 failed** |
+| window silently defaults instead of refusing | **1 failed** |
+| category table drifts from the collector | **1 failed** |
+| NEGATIVE CONTROL (tree restored) | 0 (green) |
+
+Two of these are worth naming as behavioural rather than structural. **Row 3**: the CRD
+default is `mode: all`, which injects into every pod matching the selector and turns a
+single-fault experiment into a multi-fault one, making the ground truth ambiguous —
+`mode: one` is pinned and asserted. **Row 7**: a blank target with a selector built from it
+would produce a label selector matching nothing, so the experiment would apply cleanly,
+report success, and inject into no pod at all. The refusal is what makes that impossible.
+
+### What this does not cover
+
+- **Nothing was applied to a cluster.** The milestone's exit condition — five kinds, each
+  with at least one case, through the full chain to the official scorer — is **not met**.
+  What is met is that the document for each kind is correct, refusable, and asserted
+  against Chaos Mesh's API shape. The remaining work is a cluster runner.
+- **The manifest is checked against a hand-written table, not against Chaos Mesh.** The
+  mapping was derived from the CRD documentation and is asserted for internal consistency
+  and for the `TimeChaos` trap specifically; no test validates it against a live
+  `kubectl apply --dry-run=server`. A CRD field renamed upstream would not be caught here.
+- **`applied: true` is not the same claim as "the fault manifested".** This module reads
+  the controller's opinion. Whether the injected fault changed the system's telemetry is
+  the question `gates/validity.ts` answers, and the two are deliberately separate: a
+  controller can report `AllInjected` for a fault that the application absorbed without
+  visible effect.
+- **Only the five kinds are planned.** `pod-kill`, `time-skew`, DNS and partition faults
+  are real chaos experiments in the taxonomy's other categories and are refused rather
+  than coerced — the refusal is asserted, but it does mean the planner covers a minority
+  of what a production campaign would need.

@@ -458,6 +458,19 @@ export type {
   FaultExtractionValidation,
 } from './fault/importer.js';
 
+export {
+  CHAOS_MESH_FAULT_TYPES,
+  planInjection,
+  readInjectionStatus,
+} from './fault/injector.js';
+export type {
+  ChaosMeshFaultType,
+  InjectionPlan,
+  InjectionPlanInput,
+  InjectionPlanResult,
+  InjectionStatusReading,
+} from './fault/injector.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,
