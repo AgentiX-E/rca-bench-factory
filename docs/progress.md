@@ -1215,3 +1215,46 @@ functions are unused and a whole-file scan matched that documentation.
 - **Concurrent battery execution is mitigated, not prevented.** A lock would close
   it. The exposure is a wrong red whose cause is now documented, and it stays on the
   unmeasured list rather than being declared solved.
+
+### The workflow reached the model
+
+Run `36216622078` against `842daee`: **13/13 steps `success`**, including the four
+that had never executed — resolve the provider, select the key, derive, score. The
+artefact went from `total_count: 0` on both prior runs to 3378 bytes.
+
+Two operators' variables were also written, which is what made the run's inputs
+explicit rather than implicit:
+
+| Variable | Value | Why it is set |
+|---|---|---|
+| `RCA_BENCH_LLM_PROVIDER` | `deepseek` | pins the *selection* to a recorded value instead of relying on the registry default |
+| `RCA_BENCH_LLM_MODEL` | `deepseek-chat` | the artefact now records a configured model rather than `null` |
+
+**Both are still weaker than they look.** `deepseek-chat` is an alias, so the run is
+*auditable* and not *pinned*: the artefact names a value, and that value does not name
+a backend. Recorded as a residual rather than as a fix.
+
+### What the green job does and does not say
+
+It says the instrument worked. It does **not** say the threshold was met, and the
+number itself is still unread — see finding 57. The scorer's exit contract bounds the
+possibility: `1` and `3` would have turned step 11 red, so the score exit was `0`
+(met) or `2` (measured, not met), and resolving those two requires the report.
+
+Every route to the report failed, and the failures are structural rather than
+transient:
+
+| Route | Why it failed |
+|---|---|
+| job log body | 302 → `productionresultssa17.blob.core.windows.net` → `http=000` |
+| artefact zip | 302 → `productionresultssa7.blob.core.windows.net` → `http=000` |
+| job summary over REST | not an endpoint (`404`) |
+| run page | renders the shell; the summary is loaded dynamically |
+
+The blob host resolves into `198.18.0.0/15`, the sinkhole range finding 55 measured,
+so this is the egress allowlist. Fifth consecutive round without a log body, and the
+first without an artefact.
+
+**M1 therefore stays unticked**, and the reason is now narrower than it was: not "the
+workflow cannot run", which is fixed, but "the number the run produced is not
+readable from this sandbox".

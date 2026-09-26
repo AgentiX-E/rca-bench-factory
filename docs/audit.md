@@ -3925,3 +3925,86 @@ the unmeasured list rather than being declared solved.
 - **The non-pristine window is unquantified.** Ten distinct revisions were observed,
   and how long each is in place was not measured, so "a reader can see one" is
   established but "how likely" is not.
+
+---
+
+## 57 — The measurement ran, and its number is unreadable from here
+
+### What is established
+
+`fault-extraction-accuracy.yml` was dispatched against `842daee` (run `36216622078`)
+and **every step succeeded**, including the three that had never executed:
+
+```
+  8. Resolve the LLM provider                         success
+  9. Select the key for the resolved provider         success
+ 10. Derive the extractions                           success
+ 11. Score the run                                    success
+ 12. Upload the predictions and the report            success
+ 13. State the verdict                                success
+```
+
+The artefact is no longer empty: 3378 bytes against `total_count: 0` on both prior
+runs, with digest `sha256:729ed7bc...`.
+
+So the provider-registry repair worked end to end. The organisation's existing key
+was used without being duplicated under a second name, which was the whole point.
+
+### What is *not* established, and why the green is not the reading
+
+**The run produced a measurement. It did not necessarily meet the threshold, and I
+cannot read which.**
+
+That is not a hedge -- it is forced by the scorer's exit contract. Step 11 exits `1`
+on `3` (no measurement) and on `1` (unreadable), and the step would therefore be red.
+It is green, so the score exit was **`0` (met) or `2` (measured, not met)**. Both are
+possible; the resolution between them is exactly the number, and the number is what
+is missing.
+
+The paths to it, and why each failed:
+
+| Path | Result |
+|---|---|
+| job log body (`/actions/jobs/<id>/logs`) | 302 → `productionresultssa17.blob.core.windows.net` → `http=000` |
+| artefact zip (`/actions/artifacts/<id>/zip`) | 302 → `productionresultssa7.blob.core.windows.net` → `http=000` |
+| job summary via REST | no such endpoint (`404`) |
+| run page HTML | renders, but loads the summary dynamically; the body is absent |
+| run page via a fetch tool | same, plus the artefact appears only as a digest |
+
+The blob host resolves to `198.18.0.36`. That is inside `198.18.0.0/15`, the same
+sinkhole range finding 55 measured for the CI log host, so this is the egress
+allowlist rather than a transient fault. It is the **fifth** consecutive round in
+which a CI log body was unreachable, and the **first** in which an artefact was also
+unreachable.
+
+### The distinction this pass must not blur
+
+Three states have been confused at least once each in this repository's history, and
+keeping them apart is the whole content of this finding:
+
+| Statement | Status |
+|---|---|
+| the workflow reaches the model | **established** -- steps 8-11 all succeeded |
+| a measurement exists | **established** -- the scorer's contract forces it, since 1 and 3 would have gone red |
+| the threshold is met | **not established** -- this is `0` vs `2`, and both are consistent with a green job |
+| the value of the rate | **not established** -- the artefact carrying it is unreachable |
+
+> "The run succeeded" is not a reading, and it is not a failure either. It is the
+> statement that the instrument worked, which is a different claim from the one the
+> instrument exists to make.
+
+### What would close it
+
+The artefact is retrievable from a machine with ordinary internet access, or from the
+GitHub UI. A second route exists and is worth taking regardless: **write the figures
+into a place the API serves**, because the run's own summary is not exposed by REST
+and the artefact host is unreachable from an allow-listed sandbox. Until one of those
+happens, "M1 met or not" stays open, and `09` must not tick it.
+
+### What this does not cover
+
+- **Nothing about the model's quality.** Whether the rate is 40% or 80% is unknown
+  here; only that it was computed.
+- **`deepseek-chat` is still an alias.** `RCA_BENCH_LLM_MODEL` is now set to it
+  explicitly, so the artefact records a configured value rather than an implicit
+  default -- but the alias floats, so the reading is *auditable* and not *pinned*.
