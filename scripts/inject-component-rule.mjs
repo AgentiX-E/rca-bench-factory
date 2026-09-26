@@ -195,7 +195,17 @@ for (const inj of injections) {
   writeFileSync(inj.file, mutated);
   const result = runSuite();
   writeFileSync(inj.file, inj.original);
-  if (result.failed > 0) {
+  // `failed === -1` means the run produced no JSON report at all -- the mutation
+  // crashed the suite before any test ran. That is a caught mutation, and it must
+  // not print the same word as a mutation nothing detected: `-1 > 0` is false, so
+  // the original form of this branch classified a broken runner as SURVIVED. This
+  // script's sibling (`inject-m1-ceiling-tests.mjs`) inherited the defect and had
+  // it exposed by an injection that made the subject exit non-zero before writing
+  // its report; the repair is applied here too rather than only where it was found.
+  if (result.failed === -1) {
+    console.log(`CAUGHT   ${inj.name}`);
+    console.log(`         (the suite failed to run at all: ${result.error ?? 'no report written'})`);
+  } else if (result.failed > 0) {
     console.log(`CAUGHT   ${inj.name}`);
     console.log(`         (failed ${result.failed}, passed ${result.passed})`);
   } else {

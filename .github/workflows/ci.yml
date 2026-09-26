@@ -72,6 +72,25 @@ jobs:
       - name: Component rule battery (no survivors, no inert mutations)
         run: node scripts/inject-component-rule.mjs
 
+      # The M1-ceiling probe reports the number the milestone's exit condition is
+      # read against, so it is held to the same standard as any other figure this
+      # repository publishes: it must move when what it measures moves. The probe
+      # partitions the ground truth into recoverable and unrecoverable components
+      # and reports the strict ceiling under two definitions; the battery drives
+      # both halves of that, and its partition guard is what makes an injection
+      # which lets the two halves disagree fail rather than print a tidy number.
+      - name: M1-ceiling probe battery (no survivors, no inert mutations)
+        run: python3 scripts/injection/m1-ceiling-probe.py
+
+      # The second half of the same standard, applied to the assertions about the
+      # probe rather than to the probe. Its first run had three survivors and two
+      # misclassified mutations: `failed > 0` counts a suite that never ran as a
+      # survivor, because zero failures is also what a passing suite reports. A
+      # mutation the runner cannot survive and a mutation nothing detects must not
+      # print the same word, so the battery now reads the total test count.
+      - name: M1-ceiling probe test battery (no survivors, no inert mutations)
+        run: node scripts/inject-m1-ceiling-tests.mjs
+
       - name: Golden Master verification
         run: node golden-master/verify.mjs
 

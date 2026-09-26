@@ -2083,3 +2083,124 @@ being recorded as an environment problem.
 The durable part is the gate. "Resolve paths from the script's own location" is a rule that can be
 checked mechanically, and it now is, on every push, including the nine files that were already
 fine -- so the check is not tuned to the one failure it was written for.
+
+
+## Pass 25 -- Measure the milestone's ceiling instead of arguing about the `component` rule
+
+Pass 24 ended by fixing a CI failure and gating its class of defect. This pass goes back to the
+question passes 21 through 23 kept restating without answering: `component` has no stated rule, so the
+field is ungradeable in principle -- and if that is true, what is M1's ceiling?
+
+It turns out the question was never a design debate. It is a measurement, and the measurement
+contradicts what the audit had been asserting.
+
+### What was done
+
+1. **Built `scripts/probe-m1-ceiling.mjs`**, which partitions the golden dataset into recoverable and
+   unrecoverable components under finding 75's loosest defensible rule and reports the strict ceiling
+   under two definitions -- with `component` required, and with it dropped. Two definitions rather
+   than one, because the difference between them is the cost of the decision the round was stuck on.
+2. **Wrote a battery for the probe** (`scripts/injection/m1-ceiling-probe.py`, 10 injections: 4 move
+   the dataset, 6 move the probe's own definitions) and drove it to **10 caught, 0 survived, 0 inert**.
+3. **Wrote 8 assertions about the probe** (`packages/core/test/m1-ceiling-probe.test.ts`), then a
+   second battery (`scripts/inject-m1-ceiling-tests.mjs`, 8 paired mutations) that drove them to
+   **8 caught, 0 survived, 0 inert** -- after a first run in which **seven of the eight survived**.
+4. **Found and fixed two classification defects in a gate already running in CI**: both injection
+   batteries tested `failed > 0` to decide whether a mutation was caught, which classifies a suite
+   that never ran as a suite nothing could break.
+5. **Found a contradiction in the audit** and recorded it as finding 78 rather than editing it away:
+   finding 69's "14/19 structural ceiling" is not reproducible, and the conclusion drawn from it --
+   "no prompt change reaches 70%" -- does not follow from a ceiling in any case.
+6. **Wired both batteries into CI** after the component-rule battery, and registered
+   `probe:m1-ceiling`, `inject:m1-ceiling` and `inject:m1-ceiling-tests` as scripts.
+
+### The measurement
+
+```
+component, under the loosest defensible rule (all hyphen tokens present):
+  recoverable   18/19
+  unrecoverable 1/19  [config-feature-flag-checkout]
+
+M1 strict threshold: 0.7
+strict, every stated field required:           ceiling 18/19 = 94.7%  CLEARS M1
+strict, component excluded from the definition: ceiling 19/19 = 100.0% CLEARS M1
+```
+
+| measurement | value |
+| --- | --- |
+| M1 strict ceiling, `component` required | **18/19 = 94.7%** |
+| M1 strict ceiling, `component` dropped | 19/19 = 100% |
+| headroom the `component` decision costs | **1 sample** |
+| samples needed to clear the 0.7 threshold | 14 of 19 |
+| headroom above the requirement | **4 samples** |
+| the audit's previous claim | a 14/19 ceiling, i.e. 5 unrecoverable samples -- **measured: 1** |
+
+### The probe battery, final state
+
+```
+CAUGHT   A. dataset: one more component unrecoverable
+CAUGHT   B. dataset: one more unrecoverable, and the ceiling must follow it down
+CAUGHT   C. dataset: fix the mislabelled sample, so nothing is unrecoverable
+CAUGHT   D. dataset: drop four components, so the ceiling falls below the M1 threshold
+CAUGHT   E. probe: count the relaxed ceiling as the strict one
+CAUGHT   F. probe: compute the ceiling rate over the wrong denominator
+CAUGHT   G. probe: report the ceiling as clearing M1 whatever it is
+CAUGHT   H. probe: make the threshold impossible to fail
+CAUGHT   I. probe: exempt the one rejected sample from the recoverable set
+CAUGHT   J. probe: let the two halves disagree, so the partition guard has to fire
+battery: 10 caught, 0 survived, 0 inert
+```
+
+### The test battery, and the seven survivors it started with
+
+```
+CAUGHT   A. test bounds the partition check, and the probe lets the halves overlap     (failed 3, passed 5)
+CAUGHT   B. test drops every identity assertion, and the probe loses the sample it names (failed 1, passed 7)
+CAUGHT   C. test recomputes the rate from the dataset instead of reading the reported one (failed 1, passed 7)
+CAUGHT   D. test asserts the threshold against a literal, and the probe moves its own   (failed 1, passed 7)
+CAUGHT   E. probe publishes the relaxed ceiling as the strict one                       (failed 1, passed 7)
+CAUGHT   F. probe publishes the threshold as 0.0                                        (failed 1, passed 7)
+CAUGHT   G. probe derives its two halves independently, so they can disagree            (no test ran at all)
+CAUGHT   H. dataset drops the mislabelled sample, so the named tripwire must break      (failed 1, passed 7)
+battery: 8 caught, 0 survived, 0 inert
+```
+
+Three rounds of `SURVIVED` preceded this, and each named a real defect rather than a weak injection:
+
+| round | survivors | what it revealed |
+| --- | --- | --- |
+| 1 | A, B, D, F, G (5) | two classification bugs (`-1 > 0`, and zero tests counting as a pass) plus three test-only injections with no mutation to expose them |
+| 2 | B, G | G was a crash misread as a survivor; B needed all four of its identity assertions relaxed before the claim was genuinely unenforced |
+| 3 | B | the identity was unenforceable until the literal was converted into a **contrast** against the other end of the mutation |
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| typecheck | clean |
+| core coverage | **2445 passed** (84 files) at `99.96 / 99.93 / 100 / 99.96` |
+| `src/fault`, `src/llm` | `100 / 100 / 100 / 100` |
+| cli coverage | 173 passed at `100 / 100 / 100 / 100` |
+| lint | `check-no-mock` OK, `check-no-secrets` OK, `check-no-vendored-data` OK (219 files), `check-official-registry` OK, `check-no-absolute-paths` OK |
+| official regression | PASSED (8 targets scored, 1 skipped by contract) |
+| Golden Master | PASSED (6 OpenRCA + 4 RCAEval files byte-stable) |
+| docs | README sample OK, CLI reference PASSED (11 commands, 13 documented) |
+| examples | up to date |
+| stability battery | 4 caught, 0 survived, 0 inert |
+| component rule battery | 8 caught, 0 survived, 0 inert |
+| **M1-ceiling probe battery** | **10 caught, 0 survived, 0 inert** |
+| **M1-ceiling test battery** | **8 caught, 0 survived, 0 inert** |
+| both workflow YAMLs | parse |
+
+Coverage moved 2437 -> 2445 tests with every dimension unchanged, the same shape as pass 23: the new
+assertions constrain a published figure rather than exercise new branches, and `src/fault` was already
+at 100%.
+
+### The open decision, now arithmetic
+
+Pass 23 framed the `component` question as the round's blocker. The measurement says it is worth one
+sample of headroom out of four -- so it should be scheduled as one sample of cleanup, not carried as
+the milestone's constraint. The binding constraint is `type` at 4/19, which is a model-accuracy figure
+rather than a ceiling: all 19 expected types are distinct slugs that survive `normalizeFaultType`
+unchanged, so nothing about the data limits how many the model can answer. That distinction is now
+asserted rather than argued, which is the difference this pass was for.

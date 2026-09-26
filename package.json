@@ -26,7 +26,10 @@
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
     "inject:stability": "node scripts/inject-stability.mjs",
     "inject:component-rule": "node scripts/inject-component-rule.mjs",
-    "check:portability": "node scripts/check-no-absolute-paths.mjs"
+    "check:portability": "node scripts/check-no-absolute-paths.mjs",
+    "probe:m1-ceiling": "node scripts/probe-m1-ceiling.mjs",
+    "inject:m1-ceiling": "python3 scripts/injection/m1-ceiling-probe.py",
+    "inject:m1-ceiling-tests": "node scripts/inject-m1-ceiling-tests.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

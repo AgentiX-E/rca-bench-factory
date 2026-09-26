@@ -5341,3 +5341,197 @@ not have run in CI. The *result* stands, because the injections did apply on the
 ran and the mutations and catches are reproducible there; but the claim "this is a gate" was
 false until this finding, since a gate that fails everywhere except one machine protects nothing.
 The distinction is worth keeping explicit: the measurement was sound, and the enforcement was not.
+
+## Finding 78 -- M1's ceiling is 18/19, and the *component* field costs exactly one sample of headroom
+
+Every pass since 21 has closed on the same open question, stated identically each time: the benchmark
+must *state* what a `component` answer denotes. Finding 75 declined to state it and gave a reason --
+`checkout-ui` is not recoverable from its own incident text, so no rule describes the ground truth.
+Finding 76 declined to state it too, and gave a different reason -- the loosest rule accepts 73% of
+the wrong answers, so no prompt edit can be validated against it.
+
+Both findings are about the *rule*. Neither answered the question the milestone is actually scored
+on: **what is M1's ceiling, and what does the `component` field cost?** That is a measurement, not a
+design debate, and it had never been taken.
+
+### The measurement
+
+`scripts/probe-m1-ceiling.mjs` computes it. Two definitions, reported side by side because a
+"ceiling" quoted without its definition is the class of number this repository has retracted three
+times:
+
+```
+component, under the loosest defensible rule (all hyphen tokens present):
+  recoverable   18/19
+  unrecoverable 1/19  [config-feature-flag-checkout]
+
+M1 strict threshold: 0.7
+strict, every stated field required:
+  ceiling 18/19 = 94.7%  CLEARS M1
+strict, component excluded from the definition:
+  ceiling 19/19 = 100.0%  CLEARS M1
+
+the decision costs 1 sample(s) of headroom: 18/19 strictly vs 19/19 without component.
+```
+
+### Why this contradicts what the documents said
+
+`docs/audit.md` finding 69 states the opposite, in the present tense:
+
+> `strict` needs 13 of 19 samples fully correct. With `type` at 4/19 and `component` at 4/19 against
+> a **14/19 structural ceiling** on `component`, no prompt change reaches 70%.
+
+Both halves of that sentence are wrong, and they are wrong in the same direction -- they make the
+milestone look unreachable when it is reachable.
+
+**The 14/19 figure was never measured.** It appears in the audit with no derivation, and the
+arithmetic does not reproduce: 18 of 19 expected components are recoverable under the rule finding 75
+itself names as the loosest defensible one. A ceiling of 14/19 implies five unrecoverable samples;
+there is one. The likely origin is a count taken over a *stricter* rule and then quoted under this
+one, which is the same defect as the `538` figure finding 54 retracted -- a number that outlived the
+measurement it came from.
+
+**"No prompt change reaches 70%" does not follow from the ceiling in any case.** The ceiling is a
+bound on what the *ground truth* admits, not on what the *model* can achieve, and the two are
+independent: a model that gets every recoverable field right scores 18/19 = 94.7%. The sentence
+conflates "the benchmark cannot ask more than 18 questions" with "the benchmark cannot be passed",
+which is the mistake a ceiling measurement exists to prevent.
+
+### What is actually true
+
+| claim | value | source |
+| --- | --- | --- |
+| expected components recoverable under the loosest rule | **18/19** | probe, and `fault-prompt-grammar.test.ts` |
+| the one exception | `config-feature-flag-checkout` / `checkout-ui` | both |
+| M1's strict ceiling, component required | **18/19 = 94.7%** | probe |
+| M1's strict ceiling, component dropped | **19/19 = 100%** | probe |
+| headroom the `component` decision costs | **1 sample** | probe |
+| samples the model must get fully right to clear 70% | **14 of 19** | `M1_STRICT_THRESHOLD` |
+| headroom above that requirement | **4 samples** | 18 - 14 |
+
+So the position is: M1 needs 14 of 19 fully correct, the field structure permits 18, and the four
+samples of slack are what the round has been spending. The `component` field -- the field two
+findings were written about, the field a whole pass was spent making executable -- **costs one
+sample of headroom out of four.**
+
+### Consequence for the open decision
+
+The decision is now an arithmetic one rather than a judgement call, and it inverts the priority the
+last several passes assigned it.
+
+**Stating the `component` rule recovers at most one sample.** Even the strongest version -- state the
+rule, re-annotate `checkout-ui` by it, get the model to answer it -- moves the ceiling from 18/19 to
+19/19. Against a 14-sample requirement that is a 7% increase in headroom, and it requires a dataset
+edit, a prompt edit, a re-run, and a new finding for each.
+
+**The binding constraint is `type`, and it is not a definitional problem.** Finding 69's `type` at
+4/19 is a model-accuracy figure, not a ceiling: all 19 expected types are distinct slugs and
+`normalizeFaultType` leaves each unchanged, so nothing about the *data* limits how many the model can
+answer. The probe asserts exactly that distinction, and finding 62's prompt fix has already been
+applied and measured without moving the number.
+
+The honest statement of M1's position is therefore: **the benchmark can ask 18 questions, the model
+answers 4 well enough to clear the bar, and closing that gap is a model capability question rather
+than a `component` definition question.** The `component` rule should still be stated -- an unstated
+rule makes the field ungradeable in principle and finding 75's argument for stating it stands -- but
+it should be scheduled as one sample of cleanup, not carried as the milestone's blocker.
+
+### Guards, because this number will be quoted
+
+The probe's own tests (`packages/core/test/m1-ceiling-probe.test.ts`) compute the expected
+recoverability **from the dataset** and require the probe to agree, rather than reading two numbers
+out of the same report -- the battery showed that a test comparing the report to itself proves only
+that the report is internally consistent. The probe partitions the ground truth into recoverable and
+unrecoverable and *derives* the second list from the first, with a guard that fires when the two
+disagree; the first draft computed them by two independent filters, and an injection that exempted
+one sample from the positive filter left the negative one untouched, so the report held two
+contradictory figures and nothing said which was right.
+
+## Finding 79 -- Two batteries classified a suite that never ran as a suite nothing could break
+
+Finding 78's probe needed assertions about its published figure, and this repository's standard for
+anything that reports a number is a battery that requires each assertion to be breakable. The file
+was written, it passed 8/8, and it was then driven through a battery of its own. **Seven of the
+eight mutations survived.**
+
+That is the finding: the tests were written and looked correct, and almost none of them could fail.
+
+### The three defects, in the order the battery found them
+
+**1. A relaxed assertion with no mutation to expose it.** Three injections changed the test file
+alone -- relaxing an equality to a bound, dropping a named tripwire, replacing a derived value with a
+literal. All three SURVIVED, and the survival was *correct*: with the probe publishing correct values,
+nothing in the file could fail, because the relaxation was the only change. An injection that edits
+only the assertion under test and leaves the subject correct is not a test of the assertion. Each was
+re-paired with the probe mutation it exists to catch, and all three then failed.
+
+**2. `-1 > 0` is false, so a broken runner read as a survivor.** `runSuite()` returns
+`failed: -1` when the vitest process produces no JSON report -- which is what a mutation that crashes
+the script under test looks like. The branch was:
+
+```js
+if (result.failed > 0) { CAUGHT } else { SURVIVED }
+```
+
+so a mutation that stopped the suite from running at all was classified SURVIVED and counted as an
+assertion nothing could break. **The sibling battery in CI (`scripts/inject-component-rule.mjs`) has
+the same branch, so this was a live defect in a gate, not only in the new file.** Both now read the
+total test count: zero tests run is caught, not survived.
+
+**3. Zero failures is also what a passing suite reports.** Fixing (2) exposed a second form of the
+same ambiguity. Vitest writes `failed: 0, passed: 0` when the test file throws during *collection* --
+the probe mutation that makes the script throw at module load is the case -- and with the fix above
+in place that still read as a suite that ran and found nothing. The distinction that actually
+separates the cases is `numTotalTests`, not either count, and it is what both batteries now use.
+
+Three ways to write "did the suite fail", and only the third distinguishes a mutation nothing detects
+from a mutation that broke the runner. This is finding 74's INERT/SURVIVED distinction in a second
+place, arrived at the same way -- by a run whose output was ambiguous rather than wrong.
+
+### The identity claim, and why its failure to be caught is *not* a defect
+
+Injection B swaps which sample is unrecoverable (the count stays at one) and relaxes every assertion
+about that identity. Four attempts were needed to make it caught, and the sequence is worth keeping
+because it shows how easily a claim becomes unenforceable:
+
+| attempt | relaxed | result | what it revealed |
+| --- | --- | --- | --- |
+| 1 | the named tripwire | SURVIVED | the partition test derives the set from the dataset independently |
+| 2 | + the derived comparison | SURVIVED | the membership test still checked the length against the same derived count |
+| 3 | + that length check | SURVIVED | nothing else pinned the identity |
+| 4 | + the literal, replaced with a *contrast* | **CAUGHT** | naming the other end of the move gives the assertion a relationship to the data |
+
+The lesson is attempt 4. A literal compared to a reported value can be relaxed into agreement, because
+relaxing it changes only the relationship between two numbers that already agree. A contrast against
+the sample the mutation moves *to* cannot: `expect(ids).not.toContain('network-delay-cart-to-inventory')`
+plus the properties of that sample fails whichever direction the swap goes. This is finding 76's
+conclusion -- an assertion that records a distribution fact has no structural consequence, so the
+question is not "can it be deleted" but "does asserting the opposite direction fail" -- reached
+independently in a different file.
+
+A correction came out of attempt 4 as well. The contrast's first version asserted that the swap
+target's text contains `cart-service` verbatim, and that is false: the incident says
+"Cart-to-inventory" and "the inventory service", and the rule accepts the component because both of
+its hyphen tokens occur, not because the joined name does. The assertion now pins the actual
+mechanism -- both tokens present, the joined form absent -- which is the distinction the whole
+`component` question turns on.
+
+### A measurement taken while a battery was writing the source
+
+One core coverage run reported `1 failed | 2444 passed`, and the rerun reported `2445 passed` with no
+failure. The cause is operational rather than logical: the run was issued while an injection battery
+was mid-flight, and a battery mutates `packages/core/src/fault/extraction-scoring.ts` and the golden
+dataset on a timer. A test that reads a file the battery had temporarily rewritten is a test that can
+fail for a reason that has nothing to do with the code. The gate chain runs the batteries in
+sequence for this reason, and the lesson generalises: **two processes that both write the same source
+tree must not run concurrently**, and a green suite is only evidence about the revision it was run
+against.
+
+### What this changes
+
+The probe's figure from finding 78 stands -- it was measured by a script, before any of this, and the
+battery's job was to check the assertions *about* it, not the figure. What changes is the confidence
+in the guards: the tests now compute their expectations from the dataset rather than from the report,
+the partition is derived rather than filtered twice, an injection that breaks the two halves apart
+trips a guard, and a suite that will not run is counted as caught. All of those are recorded as
+mutations, so the next edit to the file is checked rather than trusted.
