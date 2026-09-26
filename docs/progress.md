@@ -1812,3 +1812,94 @@ an instruction to return the identifier, which is absent rather than contradicte
 and a full census of the failure mode rather than a sample of it. The honest open question is
 whether an instruction to return identifiers moves it -- and that is a one-line prompt change
 against a measured baseline, which is the cheapest experiment this project has had.
+
+---
+
+## Pass 22 -- proving the instrument before believing its readings
+
+Two passes produced a reading and then immediately produced a reason not to act on it.
+This one is the opposite order: it establishes that the instrument is worth reading.
+
+### The refutation that saved a run
+
+Finding 72 ended with `component` as "the clearest lever in the benchmark": a formatting
+defect, a named fix, a full census. Finding 73 refutes that before any prompt is edited.
+
+Applying the real normaliser to all fifteen wrong `component` answers, **0 of 15** become the
+expected value. If the failure were formatting that column would be mostly `YES`. It is not,
+because the answers are **different entities**:
+
+| expected (component identity) | answered (mechanism or location) |
+| --- | --- |
+| `media-transcoder` | `native ffmpeg binding` |
+| `export-worker` | `CSV writer` |
+| `api-gateway` | `WAF rule` |
+| `session-cache` | `session Redis` |
+| `payment-gateway` | `client node egress interface` |
+
+A shape rule would have produced **well-formatted wrong answers** -- the exact trap finding 62
+named for `type`, applied more sharply, because here the model is not even in the
+neighbourhood. And the reason is structural: only **5 of 19** expected components appear
+verbatim in their incident text, so the identifier must be *synthesised*, and the model instead
+names the right service **plus its cache**, or the mechanism rather than the component.
+
+The lever is not the prompt. The two honest options are a **data** decision (is `session Redis`
+a wrong answer for a Redis-cache sample?) and a **design** decision (is `component` recoverable
+from these texts at all). Neither is a prompt edit, and the run that would have discovered this
+was not spent.
+
+### Then the instrument
+
+`strict` has read 0 -> 1 -> 0 and `type` 5 -> 6 -> 4 across four runs on identical inputs.
+"The model is noisy" is a conclusion *about the model*, and it requires the instrument be
+stable -- which had never been checked over the real dataset, only over hand-written fixtures.
+
+Four properties, now asserted on the real 19 samples and **in the CI gate**:
+
+| property | the invisible failure it prevents |
+| --- | --- |
+| determinism | a rate becomes a sample and is indistinguishable from a measurement |
+| input purity | a second run differs for a reason unrelated to the model |
+| order independence | positional pairing scores against the wrong ground truth; a re-sorted file reads as a model change |
+| denominator completeness | the diagnosis and the headline can disagree while both look self-consistent |
+
+**All four hold.** So the movement is model sampling, not measurement drift -- a negative result
+and the useful one: a single run is not a capability estimate, and `component` 4 -> 2 is
+sampling rather than regression.
+
+### The battery that caught itself
+
+Injection A initially reported `SURVIVED`. It had not survived: the injection's anchor did not
+match the real `return {` shape, so **the mutation never applied**. An inert injection and a
+toothless test produce the same output. That is finding 68's manufactured green in a new place
+-- a signal that reads as a substantive conclusion while being an artefact of the instrument.
+
+The battery now distinguishes three outcomes and fails on both non-`CAUGHT` ones:
+
+```
+CAUGHT  A. non-deterministic: embed a per-call counter in the report  (failed 2, passed 14)
+CAUGHT  B. mutates its input: sorts the samples in place              (failed 2, passed 14)
+CAUGHT  C. pairs by position instead of by id                         (failed 1, passed 15)
+CAUGHT  D. drops the denominator: omits a sample that missed          (failed 1, passed 0)
+battery: 4 caught, 0 survived, 0 inert
+```
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| typecheck (core, cli) | clean |
+| core coverage | **2426 passed (83 files)** -- `99.96 \| 99.93 \| 100 \| 99.96` |
+| `src/fault` / `src/llm` | **100 \| 100 \| 100 \| 100** each |
+| cli coverage | 173 passed -- `100 \| 100 \| 100 \| 100` |
+| lint / mutation / export surface | OK / 26 / 157 |
+| official / examples / docs / pack | PASSED / up to date / PASSED / 9 files verified |
+| scorer-stability battery | **4 caught, 0 survived, 0 inert** (new CI gate) |
+
+### What is next
+
+`component` is not a prompt problem, so the next real decision is about the ground truth. The
+cheapest informative step is to grade the fifteen answers **against a stated rule for what a
+component answer must be** -- and the honest question is whether the rule that makes
+`session Redis` correct is one the project wants, or whether it makes the field meaningless.
+That is a decision to take before another run, not after.

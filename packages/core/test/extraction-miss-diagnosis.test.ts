@@ -7,6 +7,7 @@ import {
   formatExtractionReport,
   parseGoldenDataset,
   scoreExtractionSample,
+  SCORED_FIELDS,
   type GoldenSample,
   type ExtractionSamplePrediction,
 } from '../src/fault/extraction-scoring.js';
@@ -360,5 +361,84 @@ describe('the report prints the diagnosis', () => {
     // the reason column.
     expect(wrongText).not.toContain('-> (omitted)');
     expect(omittedText).not.toContain('wrong-a');
+  });
+});
+
+describe('the instrument is stable over the real dataset, so a moving rate is about the model', () => {
+  // Four live runs showed `strict` moving 0 -> 1 -> 0 and `type` 5 -> 6 -> 4 on an
+  // identical dataset, an identical prompt and a nominally identical model. Reading
+  // that as "the model is noisy" is a conclusion *about the model*, and it is only
+  // available if the instrument itself is stable. That had never been checked over
+  // the real data -- every existing test in this file grades hand-written fixtures.
+  //
+  // These four properties are what "stable instrument" means concretely, and each
+  // failure mode would produce a plausible number that is not a true one.
+
+  /** A prediction that answers every scored field wrongly: the saturated case. */
+  function saturated(): ExtractionSamplePrediction[] {
+    return golden().map((s) => {
+      const e = s.expected as unknown as Record<string, string | undefined>;
+      const extracted: Record<string, string> = {};
+      for (const f of SCORED_FIELDS) {
+        if (e[f] !== undefined) extracted[f] = 'wrong-value-for-' + f;
+      }
+      return { sampleId: s.id, parseOk: true, validationValid: true, extracted } as ExtractionSamplePrediction;
+    });
+  }
+
+  it('is deterministic: two calls over the same input give identical reports', () => {
+    // A non-deterministic scorer makes every rate a sample rather than a
+    // measurement, and the two would be indistinguishable in the published number.
+    const samples = golden();
+    const preds = saturated();
+    expect(JSON.stringify(buildExtractionReport(samples, preds))).toBe(
+      JSON.stringify(buildExtractionReport(samples, preds)),
+    );
+  });
+
+  it('does not mutate the dataset it grades', () => {
+    // A scorer that sorted or rewrote the samples in place would make a second
+    // run differ from the first for a reason unrelated to the model.
+    const samples = golden();
+    const before = JSON.stringify(samples);
+    buildExtractionReport(samples, saturated());
+    expect(JSON.stringify(samples)).toBe(before);
+  });
+
+  it('pairs by id, not by position: reversing the predictions changes nothing', () => {
+    // The strongest available test of the pairing contract. If grading were
+    // positional, a re-sorted prediction file would score every sample against the
+    // wrong ground truth and the run would read as a model change.
+    const samples = golden();
+    const preds = saturated();
+    const straight = buildExtractionReport(samples, preds);
+    const reversed = buildExtractionReport(samples, [...preds].reverse());
+    expect(JSON.stringify(reversed)).toBe(JSON.stringify(straight));
+  });
+
+  it('keeps the diagnosis and the headline arithmetically consistent', () => {
+    // The diagnosis must account for the graded samples exactly. If it did not,
+    // the two published lines could disagree while each looked self-consistent,
+    // which is the failure mode the whole channel exists to prevent.
+    const samples = golden();
+    const preds = saturated();
+    const report = buildExtractionReport(samples, preds);
+
+    let graded = 0;
+    let samplesWithMiss = 0;
+    for (const s of samples) {
+      const p = preds.find((x) => x.sampleId === s.id) as ExtractionSamplePrediction;
+      if (scoreExtractionSample(s, p).state !== 'graded') continue;
+      graded += 1;
+      if (report.misses.some((m) => m.sampleId === s.id)) samplesWithMiss += 1;
+    }
+    const detailRows = report.misses.reduce((n, m) => n + m.detail.length, 0);
+
+    expect(report.missClassification.samplesWithMisses).toBe(samplesWithMiss);
+    expect(report.missClassification.wrongValue + report.missClassification.omitted).toBe(detailRows);
+    // Non-vacuity: the saturated fixture must actually saturate, or the three
+    // assertions above would hold trivially on an empty report.
+    expect(samplesWithMiss, 'the saturated fixture must miss everywhere').toBe(graded);
+    expect(detailRows, 'the saturated fixture must produce detail rows').toBeGreaterThan(0);
   });
 });

@@ -4931,3 +4931,122 @@ component and returns a phrase from it, every time.
 `omitted 0` again, on a second run. The model does not decline; it answers, and the answers are
 descriptions where identifiers were wanted. That is a formatting defect with a named fix, and
 it is the only one of the three fields for which that is true.
+
+## Finding 73: the component hypothesis is refuted before it is implemented
+
+Finding 72 ended with a named lever: `component` is answered with a description where an
+identifier was wanted, so instruct the model to return the identifier. That reading is
+correct and the proposed fix is wrong, and the arithmetic says so before any prompt is edited.
+
+Applying the *actual* normaliser (`normalizeFaultType`: lower-case, whitespace and underscores
+to hyphens, strip non-alphanumerics) to all fifteen wrong answers:
+
+```
+sample                                   expected             model answered                        slug(answered)                       match
+resource-memory-leak-recommendation      recommendation-service  recommendation service session cache  recommendation-service-session-cache  no
+resource-disk-full-log-collector         log-collector        log collector pod                     log-collector-pod                     no
+network-delay-cart-to-inventory          cart-service         cart-to-inventory network path        cart-to-inventory-network-path        no
+network-loss-payment-gateway             payment-gateway      client node egress interface          client-node-egress-interface          no
+network-partition-search-cluster         search-cluster       rack switch carrying the third node   rack-switch-carrying-the-third-node   no
+runtime-container-crash-loop-media       media-transcoder     native ffmpeg binding                 native-ffmpeg-binding                 no
+middleware-redis-latency-cache           session-cache        session Redis                         session-redis                         no
+middleware-database-connection-pool      billing-service      billing service connection pool       billing-service-connection-pool      no
+code-unhandled-exception-export          export-worker        CSV writer                            csv-writer                            no
+code-slow-regex-api-gateway              api-gateway          WAF rule                              waf-rule                              no
+config-datasource-url-orders             order-service        order-service ConfigMap               order-service-configmap               no
+config-feature-flag-checkout             checkout-ui          scheduled job flag definition         scheduled-job-flag-definition         no
+dependency-upstream-5xx-pricing          tax-calculation      tax-calculation provider              tax-calculation-provider              no
+dependency-version-incompatibility-shipping  shipping-service  client library                        client-library                        no
+middleware-mysql-replica-lag-analytics   analytics-replica    replica applier thread                replica-applier-thread                no
+
+slugifying the answer produces the expected: 0 of 15
+```
+
+**Zero of fifteen.** If the failure were formatting, this column would be mostly `YES`: the
+answer would be the right words in the wrong shape. It is not. The answers are *different
+entities*:
+
+| expected (component identity) | answered (mechanism or location) |
+| --- | --- |
+| `media-transcoder` | `native ffmpeg binding` |
+| `export-worker` | `CSV writer` |
+| `api-gateway` | `WAF rule` |
+| `session-cache` | `session Redis` |
+| `payment-gateway` | `client node egress interface` |
+
+A shape rule would therefore produce **well-formatted wrong answers**. `component` would score
+0/19 in the same way it scores 2/19 now, with the added cost of having made the prompt longer
+and the failure harder to see. This is the trap finding 62 named for `type` -- a rule that
+describes the format of an answer the model is not giving -- and it applies more sharply here,
+because the model is not even in the neighbourhood.
+
+### What the failure actually is
+
+The model is answering "what is involved in this incident", where the ground truth asks "which
+component is faulty". Those are different questions, and the second one is not answerable by
+reading the text: only **5 of 19** expected components appear verbatim in their incident text,
+so the identifier must be *synthesised* from the expectation that the incident is about a
+named service. `recommendation-service` appears as "the recommendation service"; the model
+returns `recommendation service session cache`, which names the right service **and** its
+cache. It is not a near miss on formatting, it is a different granularity.
+
+### What follows for the design
+
+The lever is not the prompt. Two honest options remain, and they are now sharply distinguished:
+
+1. **The ground truth is the thing under test.** The model's answers are defensible readings of
+   the same incidents (`session Redis` for a Redis-cache sample is not wrong). If the golden
+   labels were tightened to admit the model's granularity, `component` would move -- and the
+   change would be a *data* change whose correctness is independently arguable, not a prompt
+   tweak tuned until a number rises.
+2. **The field is over-specified for the task.** `component` at 2/19 with a uniform,
+   100%-description failure is evidence that "the component" is not recoverable from these
+   texts by this task framing, and the field's weight in `strict` should be reconsidered.
+
+Both are decisions about what is being measured. Neither is reachable by editing the prompt,
+and finding 73 exists so that the next pass does not spend a run discovering that.
+
+## Finding 74: the instrument is stable, so the moving rate is the model's
+
+Four runs produced `strict` 0 -> 1 -> 0 and `type` 5 -> 6 -> 4 on an identical dataset, an
+identical prompt and a nominally identical model. The available reading was "the model is
+noisy". That is a claim *about the model*, and it is only available if the instrument is
+stable -- and the instrument had never been tested for stability over the real data. Every
+existing scoring test graded hand-written fixtures.
+
+Four properties, now asserted over the real 19-sample dataset rather than a fixture:
+
+| property | why a violation would be invisible |
+| --- | --- |
+| **Determinism** -- two calls give byte-identical reports | a non-deterministic scorer makes every rate a sample, and a sample is indistinguishable from a measurement in the published number |
+| **Input purity** -- the scorer does not mutate the dataset | a second run would differ from the first for a reason unrelated to the model |
+| **Order independence** -- reversing the predictions changes nothing | positional pairing would score every sample against the wrong ground truth, and a re-sorted file would read as a model change |
+| **Denominator completeness** -- `samplesWithMisses` equals the graded samples with a miss, and `wrongValue + omitted` equals the detail rows | the two published lines could disagree while each looked self-consistent |
+
+All four hold. `strict`'s 0 -> 1 -> 0 is therefore **model sampling, not measurement drift** --
+which is a negative result and the useful one: it means M1's instability across runs is a fact
+about the model's output distribution, and a single run cannot be read as a capability
+estimate. That is the justification for treating `component` 4 -> 2 the same way rather than
+as a regression.
+
+### The battery found a defect in itself first
+
+Injection A (embed a per-call counter) initially reported **SURVIVED**. It had not survived --
+the injection's second anchor did not match the real `return {` shape, so the mutation was
+never applied and the test suite correctly reported nothing. An inert injection and a toothless
+test produce the *same* output: `SURVIVED`.
+
+That is the same class of defect as finding 68's manufactured green -- a signal that reads as
+a substantive conclusion while being an artefact of the instrument. The repair is that the
+battery now distinguishes three outcomes and fails on the two that are not `CAUGHT`:
+
+```
+CAUGHT  A. non-deterministic: embed a per-call counter in the report  (failed 2, passed 14)
+CAUGHT  B. mutates its input: sorts the samples in place              (failed 2, passed 14)
+CAUGHT  C. pairs by position instead of by id                         (failed 1, passed 15)
+CAUGHT  D. drops the denominator: omits a sample that missed          (failed 1, passed 0)
+battery: 4 caught, 0 survived, 0 inert
+```
+
+`INERT` is counted separately and non-zero exits non-zero, because "the mutation never
+happened" must not be reportable as "the test caught it" or as "the test missed it".

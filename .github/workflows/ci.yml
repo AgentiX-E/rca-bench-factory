@@ -46,6 +46,17 @@ jobs:
       - name: Mutation suite (gate + export, 100% interception)
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 
+      # The scorer-stability battery is a gate, not a report.
+      #
+      # It mutates the shipped scorer and requires every mutation to be caught, so
+      # it answers a question the coverage number cannot: whether the stability
+      # properties are *enforced*. Exit is non-zero for a survivor AND for an inert
+      # mutation -- an injection whose anchor no longer matches produces the same
+      # output as a toothless test, and reporting that as a pass would be a false
+      # reading of the kind findings 68 and 74 both describe.
+      - name: Scorer stability battery (no survivors, no inert mutations)
+        run: node scripts/inject-stability.mjs
+
       - name: Golden Master verification
         run: node golden-master/verify.mjs
 

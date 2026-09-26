@@ -22,7 +22,9 @@
     "official:pins": "node scripts/apply-pins.mjs",
     "site:serve": "node scripts/serve-site.mjs",
     "docs:check": "node scripts/check-readme-sample.mjs && node scripts/check-cli-reference.mjs",
-    "examples:verify": "node scripts/verify-example-pack.mjs"
+    "examples:verify": "node scripts/verify-example-pack.mjs",
+    "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
+    "inject:stability": "node scripts/inject-stability.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
