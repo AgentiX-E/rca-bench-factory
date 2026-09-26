@@ -7,12 +7,31 @@
  * not a test -- it is a comment.
  */
 import { execSync } from 'node:child_process';
-import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC = '/root/.codebuddy/artifact/rca-work/rca-bench-factory/packages/core/src/fault/extraction-scoring.ts';
-const BAK = '/tmp/extraction-scoring.bak.ts';
-const REPO = '/root/.codebuddy/artifact/rca-work/rca-bench-factory';
+/**
+ * Paths are resolved from this script's own location, never hard-coded.
+ *
+ * The first version of this file used the absolute path of the machine it was
+ * written on. That passed locally on every run and failed the first time it ran
+ * in CI -- `copyFileSync` on a path that does not exist there -- which is the
+ * exact local-green/CI-red drift the repository's gates exist to prevent, and it
+ * was introduced by a script whose whole purpose is catching that class of
+ * problem. Resolving from `import.meta.url` is the only form that cannot drift:
+ * a battery that only works on the author's checkout cannot gate anything.
+ */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '..');
+const SRC = resolve(REPO, 'packages/core/src/fault/extraction-scoring.ts');
+const BAK = resolve(REPO, 'node_modules/.cache/extraction-scoring.bak.ts');
 
+// The backup has to live somewhere writable that is not inside the tree being
+// graded. `node_modules/.cache` exists after any install and is never committed,
+// so a crashed run cannot leave a stray file that a later `git status` would
+// report as a source change.
+mkdirSync(dirname(BAK), { recursive: true });
 copyFileSync(SRC, BAK);
 const original = readFileSync(SRC, 'utf8');
 

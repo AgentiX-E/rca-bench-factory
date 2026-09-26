@@ -5238,3 +5238,106 @@ reading, and one sample (`config-feature-flag-checkout` / `checkout-ui`) whose g
 recoverable from its text at all. What is newly excluded is the *reason* a prompt edit is refused:
 not because the rule is meaningless, but because a rule with a 73% acceptance rate on wrong
 answers cannot be validated by its own rate.
+
+
+## Finding 77 -- The battery that catches false readings shipped with a false reading of its own, and the CI run is what caught it
+
+`3a04d26` pushed twelve gates and two injection batteries. Eleven passed locally and in CI.
+The twelfth -- the scorer-stability battery, the very step that exists to prove the other gates
+mean something -- **failed in CI on its first run and passed locally every time**.
+
+The job step list, read through the API because the log channel is unreachable:
+
+```
+9   Test with coverage (core + cli, ≥95% per dimension, 100% functions)   success
+10  Mutation suite (gate + export, 100% interception)                     success
+11  Scorer stability battery (no survivors, no inert mutations)           failure  <== FAILED
+12  Golden Master verification                                             skipped
+```
+
+The cause was three lines at the top of `scripts/inject-stability.mjs`:
+
+```js
+const SRC  = '/root/.codebuddy/artifact/rca-work/rca-bench-factory/packages/core/src/fault/extraction-scoring.ts';
+const BAK  = '/tmp/extraction-scoring.bak.ts';
+const REPO = '/root/.codebuddy/artifact/rca-work/rca-bench-factory';
+```
+
+**The absolute path of the machine it was written on.** On the runner there is no such
+directory, so `copyFileSync` threw before the first injection and the step exited non-zero. The
+failure was total and silent: no injection ran, so the output said nothing about the scorer, and
+a reader who saw only "battery failed" could have concluded the *tests* were weak when in fact
+the battery never started.
+
+### Why this is worse than an ordinary bug
+
+The repository's stated standard is that a pre-push gate makes local-pass/CI-fail drift
+impossible. This defect inverted it: **the script whose purpose is detecting work that only
+appears to pass was itself work that only appeared to pass.** It is finding 68's manufactured
+green in the most load-bearing place available -- not in a test, and not in a battery, but in the
+battery's own entry path. Three properties made it invisible:
+
+| property | why it hid the defect |
+| --- | --- |
+| the path was correct on the author's machine | every local run passed, including the run that produced finding 76's eight-caught result |
+| the failure mode was an exception before any output | the console showed nothing that distinguished "did not start" from "found nothing" |
+| the sibling script got it right | `verify-scorer-stability.mjs` resolves from `import.meta.url`, so a reader comparing the two would see one correct example and one correct-in-appearance example |
+
+### The fix, and the gate that prevents a repeat
+
+Paths now resolve from the script's own location, and the backup lives inside the repository
+rather than in a shared temp directory:
+
+```js
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '..');
+const SRC  = resolve(REPO, 'packages/core/src/fault/extraction-scoring.ts');
+const BAK  = resolve(REPO, 'node_modules/.cache/extraction-scoring.bak.ts');
+```
+
+Repairing the three lines is not sufficient, because the next script can make the same mistake.
+A static check was added and wired into the `lint` chain -- `scripts/check-no-absolute-paths.mjs`,
+which fails on any string literal under `/Users`, `/home`, `/root` or `/private` in `scripts/`,
+`packages/*/src` and `golden-master/`. It found **eight occurrences across five files**, three of
+which predated this round:
+
+| file | path | disposition |
+| --- | --- | --- |
+| `scripts/inject-stability.mjs` | the author's checkout | **the CI failure** -- fixed |
+| `scripts/inject-component-rule.mjs` | a fixed `/tmp` report path | written this round, fixed before it could fail |
+| `scripts/fetch-official.mjs` | `/tmp/official` output default | left: a portable fallback, and the rule was narrowed to say so |
+| `scripts/injection/*.py` (3 files) | the author's checkout, `/tmp` backups | fixed: these are cited by `docs/audit.md` as historical evidence, so deleting them would destroy the record |
+
+The check was then **verified to have teeth** by reintroducing the exact defect and confirming it
+fails, then restoring and confirming it passes -- the same discipline this finding is about.
+
+### Verification on a CI-shaped layout
+
+Passing locally proves nothing about this class of defect, so the fix was verified in a directory
+that is *not* the author's checkout:
+
+```
+$ cd /tmp/ci-sim2/work && node scripts/inject-stability.mjs
+CAUGHT  A. non-deterministic: embed a per-call counter in the report  (failed 2, passed 14)
+CAUGHT  B. mutates its input: sorts the samples in place              (failed 2, passed 14)
+CAUGHT  C. pairs by position instead of by id                         (failed 1, passed 15)
+CAUGHT  D. drops the denominator: omits a sample that missed          (failed 1, passed 0)
+battery: 4 caught, 0 survived, 0 inert
+EXIT=0
+
+$ cd /tmp/ci-sim2/work && node scripts/inject-component-rule.mjs
+battery: 8 caught, 0 survived, 0 inert
+EXIT=0
+```
+
+Running `check-no-absolute-paths.mjs` in that same directory **also** reported the two `.py`
+files, because the copy step had not yet picked up their fix -- an unplanned second demonstration
+that the check detects the real defect rather than a pattern it was tuned to.
+
+### What this changes about how the round is read
+
+Finding 76's conclusion -- 8 caught, 0 survived, 0 inert -- was produced by a battery that could
+not have run in CI. The *result* stands, because the injections did apply on the machine where it
+ran and the mutations and catches are reproducible there; but the claim "this is a gate" was
+false until this finding, since a gate that fails everywhere except one machine protects nothing.
+The distinction is worth keeping explicit: the measurement was sound, and the enforcement was not.

@@ -18,7 +18,7 @@
  * in itself; this script inherits the repair.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +26,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const SUITE = resolve(REPO, 'packages/core/test/fault-prompt-grammar.test.ts');
 const GOLDEN = resolve(REPO, 'golden-master/fault-extraction/samples.json');
+
+// The vitest report is written inside the repository and read straight back.
+// The first version used a fixed `/tmp` name, which passes on one machine and is
+// fragile in a container that shares `/tmp` between jobs. Resolving under the
+// repository keeps the read and the write on the same filesystem by construction.
+const REPORT = resolve(REPO, 'node_modules/.cache/grammar-battery.json');
+mkdirSync(dirname(REPORT), { recursive: true });
 
 const suiteOriginal = readFileSync(SUITE, 'utf8');
 const goldenOriginal = readFileSync(GOLDEN, 'utf8');
@@ -35,11 +42,11 @@ function runSuite() {
   try {
     const out = execFileSync(
       'npx',
-      ['vitest', 'run', 'packages/core/test/fault-prompt-grammar.test.ts', '--reporter=json', '--outputFile=/tmp/grammar-battery.json'],
+      ['vitest', 'run', 'packages/core/test/fault-prompt-grammar.test.ts', '--reporter=json', `--outputFile=${REPORT}`],
       { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
     void out;
-    const report = JSON.parse(readFileSync('/tmp/grammar-battery.json', 'utf8'));
+    const report = JSON.parse(readFileSync(REPORT, 'utf8'));
     return {
       failed: report.numFailedTests ?? 0,
       passed: report.numPassedTests ?? 0,
@@ -47,7 +54,7 @@ function runSuite() {
   } catch (err) {
     // A non-zero exit means failures; the JSON is still written.
     try {
-      const report = JSON.parse(readFileSync('/tmp/grammar-battery.json', 'utf8'));
+      const report = JSON.parse(readFileSync(REPORT, 'utf8'));
       return { failed: report.numFailedTests ?? 0, passed: report.numPassedTests ?? 0 };
     } catch {
       return { failed: -1, passed: 0, error: String(err).slice(0, 200) };

@@ -37,7 +37,12 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
-      - name: Lint (no mock / no secrets / no vendored corpus data)
+      # Five static checks, all of them earned by a failure rather than chosen in
+      # advance. The last one exists because `scripts/inject-stability.mjs` shipped
+      # with the author's absolute checkout path hard-coded, passed locally on every
+      # run, and failed this very workflow on its first execution -- a gate that
+      # could only pass on one machine. See finding 77.
+      - name: Lint (no mock / no secrets / no vendored data / registry / absolute paths)
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)

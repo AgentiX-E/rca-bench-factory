@@ -15,10 +15,11 @@ Restores the pristine source after every case.
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
-REPO = "/root/.codebuddy/artifact/rca-work/rca-bench-factory"
+REPO = Path(__file__).resolve().parents[2]
 SRC = f"{REPO}/scripts/fetch-official.mjs"
-PRISTINE = "/tmp/fo-pristine.mjs"
+PRISTINE = REPO / "node_modules" / ".cache" / "fo-pristine.mjs"
 
 # The first row is the one that matters: it does not remove a guard, it restores
 # the *shape* of the defect. `verification_outside_loop` moves the byte count,

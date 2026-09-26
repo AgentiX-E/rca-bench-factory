@@ -542,7 +542,7 @@ if (anchor === undefined) {
   fail('--anchor is required (one of the score targets), or pass --list');
 }
 
-const outDir = resolve(argValue('--out') ?? '/tmp/official');
+const outDir = resolve(argValue('--out') ?? resolve(process.env.TMPDIR ?? '/tmp', 'official'));
 assertOutsideRepo(outDir);
 mkdirSync(outDir, { recursive: true });
 

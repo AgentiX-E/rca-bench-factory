@@ -2003,3 +2003,83 @@ names (`checkout-api`, `user-profile`, `media-transcoder`), and the fourth corre
 acceptance rate, because 73% of wrong answers pass it. And what must not happen is editing
 `checkout-ui` away: it is the one sample where the ground truth is unrecoverable from its input,
 which makes it the benchmark's own evidence that the definition was never written down.
+
+
+## Pass 24 -- Read the CI failure to its real cause, then gate the class of defect
+
+Pass 23 ended with a green local gate chain and a pushed commit. The push came back red. This
+pass is about the four minutes spent reading that failure instead of assuming it was flaky.
+
+### What was done
+
+1. **Located the failure to a single step.** The log channel is unreachable (`302` to a sinkholed
+   host, as in every prior pass), so the job step list was read through
+   `GET /actions/jobs/{id}` -- which *is* reachable, and which reported step 11, the scorer
+   stability battery, as the one failure with eight later steps skipped.
+2. **Found the cause rather than a symptom.** Three hard-coded absolute paths in
+   `scripts/inject-stability.mjs`, one of them this machine's checkout. On the runner,
+   `copyFileSync` threw before the first injection.
+3. **Fixed the cause and the class.** Paths resolve from `import.meta.url`; backups moved from a
+   shared `/tmp` into the repository's own cache directory; a new static check
+   (`scripts/check-no-absolute-paths.mjs`) wired into the `lint` chain.
+4. **Verified the fix where it counts.** A directory that is not the author's checkout, running
+   both batteries to exit 0 -- because passing locally is exactly what this defect did.
+5. **Verified the new check has teeth** by reintroducing the defect, confirming failure, then
+   restoring and confirming pass.
+
+### The failure, in the job's own step list
+
+```
+4   Set up pnpm                                                           success
+5   Install dependencies                                                  success
+6   Build (core then cli; cli resolves core's dist)                       success
+7   Type-check                                                            success
+8   Lint (no mock / no secrets / no vendored corpus data)                 success
+9   Test with coverage (core + cli, ≥95% per dimension, 100% functions)   success
+10  Mutation suite (gate + export, 100% interception)                     success
+11  Scorer stability battery (no survivors, no inert mutations)           failure  <== FAILED
+12  Golden Master verification                                             skipped
+```
+
+### The gate audit
+
+| file | occurrences | disposition |
+| --- | --- | --- |
+| `scripts/inject-stability.mjs` | 2 (checkout path, `/tmp` backup) | **the CI failure** -- fixed |
+| `scripts/inject-component-rule.mjs` | 2 (`/tmp` report, read back) | written this pass, fixed before it could repeat the failure |
+| `scripts/injection/fault-extraction-scoring.py` | 2 | fixed: documented as historical evidence in `docs/audit.md` |
+| `scripts/injection/fetch-official-retry.py` | 2 | fixed: same |
+| `scripts/injection/fault-extraction-workflow.py` | 1 | fixed: already resolved `REPO` correctly, only the backup path moved |
+| `scripts/fetch-official.mjs` | 1 (`/tmp/official` default) | kept, and the rule narrowed: a portable fallback is not the defect |
+
+Eight occurrences, five files, one of which was already correct in the part that mattered.
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| typecheck | clean |
+| core coverage | **2437 passed** (83 files) at `99.96 / 99.93 / 100 / 99.96` |
+| `src/fault`, `src/llm` | `100 / 100 / 100 / 100` |
+| lint | `check-no-mock` OK, `check-no-secrets` OK, `check-no-vendored-data` OK (218 files), `check-official-registry` OK (11 assets), **`check-no-absolute-paths` OK** |
+| stability battery (author checkout) | 4 caught, 0 survived, 0 inert |
+| stability battery (CI-shaped directory) | **exit 0** -- was the CI failure |
+| component rule battery (CI-shaped directory) | 8 caught, 0 survived, 0 inert, **exit 0** |
+| official regression | PASSED (8 targets scored, 1 skipped by contract) |
+| Golden Master | PASSED (6 OpenRCA + 4 RCAEval files byte-stable) |
+| docs | README sample OK, CLI reference PASSED (11 commands, 13 documented) |
+| examples | up to date |
+| both workflow YAMLs | parse |
+
+### The lesson worth keeping
+
+Every prior pass in this round has been about *reading* something correctly: the separator, the
+miss diagnosis, the census, the rule. This pass is the first where the thing misread was my own
+instrument, and it was misread in the direction that is easiest to miss -- **it appeared to
+work**. A battery that exits 1 in CI and 0 locally is not a battery with a flaky suite; it is a
+battery that never ran, and the only reason it was found is that the CI result was read instead of
+being recorded as an environment problem.
+
+The durable part is the gate. "Resolve paths from the script's own location" is a rule that can be
+checked mechanically, and it now is, on every push, including the nine files that were already
+fine -- so the check is not tuned to the one failure it was written for.

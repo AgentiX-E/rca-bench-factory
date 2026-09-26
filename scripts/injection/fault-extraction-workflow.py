@@ -75,7 +75,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / '.github' / 'workflows' / 'fault-extraction-accuracy.yml'
-PRISTINE = Path('/tmp/fault-extraction-workflow.pristine.yml')
+PRISTINE = REPO / 'node_modules' / '.cache' / 'fault-extraction-workflow.pristine.yml'
 SUITE = 'test/llm/workflow-provider.test.ts'
 
 

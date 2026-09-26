@@ -10,10 +10,11 @@ Restores the pristine source after every case.
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
-REPO = "/root/.codebuddy/artifact/rca-work/rca-bench-factory"
-SRC = f"{REPO}/packages/core/src/fault/extraction-scoring.ts"
-PRISTINE = "/tmp/es-final.ts"
+REPO = Path(__file__).resolve().parents[2]
+SRC = REPO / "packages" / "core" / "src" / "fault" / "extraction-scoring.ts"
+PRISTINE = REPO / "node_modules" / ".cache" / "es-final.ts"
 
 INJECTIONS = [
     (
