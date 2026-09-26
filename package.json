@@ -24,7 +24,8 @@
     "docs:check": "node scripts/check-readme-sample.mjs && node scripts/check-cli-reference.mjs",
     "examples:verify": "node scripts/verify-example-pack.mjs",
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
-    "inject:stability": "node scripts/inject-stability.mjs"
+    "inject:stability": "node scripts/inject-stability.mjs",
+    "inject:component-rule": "node scripts/inject-component-rule.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

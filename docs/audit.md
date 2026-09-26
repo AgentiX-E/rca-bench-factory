@@ -5050,3 +5050,191 @@ battery: 4 caught, 0 survived, 0 inert
 
 `INERT` is counted separately and non-zero exits non-zero, because "the mutation never
 happened" must not be reportable as "the test caught it" or as "the test missed it".
+
+
+## Finding 75 -- The `component` rule rejects exactly one sample, and that sample is mislabelled
+
+Finding 73 established that `component`'s fifteen wrong answers are *different entities*, so no
+shape rule rescues them. Finding 74 established that the instrument is stable, so the field's
+readings are real. What neither settles is the prior question: **what is `component` a component
+of, and what rule makes a given answer right or wrong?** Without a stated rule the field is
+ungradeable in principle -- every answer is wrong for an unstated reason, which is
+indistinguishable from the grader being wrong.
+
+The cheapest way to find the rule is to look for the one that the ground truth *itself* obeys,
+since a ground truth that violates its own rule is a data defect rather than a model failure.
+Three candidates, measured over all 19 expected values:
+
+| candidate rule | coverage | verdict |
+| --- | --- | --- |
+| appears verbatim in the incident text | **5/19** | useless: the identifier must usually be *synthesised* |
+| verbatim, or with hyphens read as spaces | **13/19** | still rejects six legitimate names |
+| every hyphen token of the name appears in the text, case-insensitively | **18/19** | rejects **exactly one** |
+
+The third rule is the only one that nearly works, and the single sample it rejects is worth
+reading in full:
+
+```
+id:       config-feature-flag-checkout
+expected: checkout-ui
+
+The one-click checkout button disappeared from the storefront for all users at 08:00.
+No deploy ran. The flag service shows flag 'one_click_checkout' flipped to false at 07:59
+by a scheduled job that was supposed to flip a different flag; a copy-paste left the same
+key in both job definitions.
+```
+
+**The string `checkout-ui` does not appear, and no part of it can be derived from the text.**
+Every other expected component shares at least one token with its incident, which is why the
+token rule reaches 18/19 -- the six the space rule loses (`cart-service`, `session-cache`,
+`order-events-consumer`, `api-gateway`, `analytics-replica`) all keep their tokens
+(`cart`, `session`, `events`, `gateway`, `analytics`, `replica`) and only re-join them. This
+sample is the sole one where the ground truth is **not recoverable from the input at all**:
+
+- the failing subject is "the one-click checkout button" -- a UI element, never named as a service;
+- `checkout-ui` is a naming inference, not a reading;
+- the sample is bucketed under `category: config`, yet its mechanism is a *scheduled job*
+  flipping a flag, which is the same mechanism as `runtime-pod-kill-user-profile` -- whose
+  expected component is likewise a workload name.
+
+So `checkout-ui` is either an annotation error, or the benchmark relies on a naming convention
+it never states. Either way it is a **defect in the ground truth, not a model failure** -- and it
+is the one sample that makes the `component` rule unwritable.
+
+### The rule must not be written by watching the model
+
+The obvious failure mode is to pick whichever rule flatters the current answers. Measured, the
+fifteen wrong answers under the token rule:
+
+| how many wrong answers satisfy it | count |
+| --- | --- |
+| verbatim in the text | **7/15** |
+| all words present | **10/15** |
+
+A rule that **10 of the 15 wrong answers satisfy** cannot distinguish right from wrong -- and the
+seven that are verbatim are verbatim for the *wrong reason*, which is the sharper result:
+
+| sample | model answer | what it actually named |
+| --- | --- | --- |
+| `middleware-redis-latency-cache` | `session Redis` | the datastore instance, not the service |
+| `code-unhandled-exception-export` | `CSV writer` | a code symbol inside the faulting worker |
+| `code-slow-regex-api-gateway` | `WAF rule` | the *cause*, not the component |
+| `dependency-upstream-5xx-pricing` | `tax-calculation provider` | the upstream dependency, not the owner |
+| `config-datasource-url-orders` | `order-service ConfigMap` | the config object, not the service |
+
+Every one of these names something **real and present in the text**, one level off from what the
+field asks for. That is the same failure as `type`'s: the model answers a nearby question
+correctly. A prompt that merely asks for "the faulty component" leaves the level unstated, so
+the answers are not wrong so much as **un-asked** -- and this is a defect in the *task
+definition*, not in the model and not in the prompt's wording.
+
+### Consequence: `component` cannot be fixed by a prompt edit, and must not be fixed by editing the ground truth
+
+Two temptations, both refused on the evidence:
+
+1. **Editing the prompt to say "name the service, not the object"** -- rejected by the above. Ten
+   of fifteen wrong answers already satisfy the loosest textual rule, so a wording change cannot
+   be validated: any improvement would be indistinguishable from sampling noise (finding 74
+   showed `component` moves 4 <-> 2 across runs). The change would be unfalsifiable.
+2. **Editing `checkout-ui` to something derivable** -- rejected because the sample is evidence of
+   a real ambiguity in the benchmark's own definition, and editing it away destroys that
+   evidence while leaving the definition unwritten. The fix is to state the rule and then let
+   the sample be re-annotated *by the rule*, in a commit that can show the rule's own tests.
+
+The decision this leaves is a **data/design** one, and it is the round's open question: the
+benchmark must state what a component answer denotes (the deployed workload that owns the fault,
+on the evidence of the three well-formed samples `checkout-api`, `user-profile`,
+`media-transcoder`), after which the rule becomes testable, `checkout-ui` becomes either
+re-annotated or a named exception, and `component`'s rate becomes a capability estimate rather
+than a reading.
+
+
+## Finding 76 -- The `component` rule has discriminating power, which makes a prompt edit unfalsifiable rather than useless
+
+Finding 75 argued that the token rule cannot distinguish right from wrong, on the strength of
+"ten of fifteen wrong answers satisfy it". Writing that rule as an executable test and running it
+against the recorded run -- four right answers and fifteen wrong ones -- **falsified the claim's
+strength while confirming its conclusion**. The measurements, in the test that now pins them:
+
+| side of the run | answers | accepted by the token rule | rate |
+| --- | --- | --- | --- |
+| correct | 4 | 4 | **1.00** |
+| wrong | 15 | 11 | **0.73** |
+
+So the rule **does** discriminate: it accepts every right answer and rejects four of the fifteen
+wrong ones. Finding 75's sentence "a rule that 10 of the 15 wrong answers satisfy cannot
+distinguish right from wrong" was an overstatement -- a 73% acceptance rate over wrong answers is
+not zero discrimination, and the correct statement of the defect is different and sharper.
+
+**The defect is not that the rule cannot tell right from wrong. It is that the gap is small enough
+to be closed by a prompt edit without any change in capability.** A prompt that pushed the
+answers toward text-present vocabulary would raise the acceptance rate on the wrong side toward
+1.00 -- the *measured* rate would improve while the *number of correct answers* stayed at four.
+That is the unfalsifiability finding 75 names, and it survives the correction: the argument never
+needed the rule to be useless, only for its acceptance rate to be uncorrelated with correctness
+in the direction a measured rate would move. The correction makes the argument stronger, because
+"the metric can be gamed upward" is a more specific failure than "the metric is noise".
+
+### The rule is looser than "the answer appears in the text"
+
+Finding 75 said the accepted answers "name something real and present in the text". Measured, the
+relation is looser than that: of the eleven accepted wrong answers, **exactly one** is a case
+where the ground-truth component itself appears verbatim. The other ten are accepted on **token
+co-occurrence alone** -- the answer's words appear, but the ground-truth component does not:
+
+| sample | expected component | accepted answer | why it passes |
+| --- | --- | --- | --- |
+| `dependency-upstream-5xx-pricing` | `tax-calculation` | `tax-calculation provider` | the component appears; the answer over-qualifies it |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | `order-events` | `order` and `events` occur; the answer truncates |
+| `dependency-version-incompatibility-shipping` | `shipping-service` | `client library` | neither is the component; both occur in the text |
+| `network-loss-payment-gateway` | `payment-gateway` | `client node egress interface` | names the failing path, not the owner |
+| `code-null-dereference-reporting` | `reporting-service` | `summarize()` | names the function the trace ends in |
+| `config-feature-flag-checkout` | `checkout-ui` | `scheduled job flag definition` | names the mechanism, not the subject |
+
+The first row is the single most informative datum in the round. `tax-calculation` is **readable
+verbatim** from its incident -- the sample where the model had the answer in front of it -- and it
+still answered `tax-calculation provider`. The readable set is five samples; the correctly
+answered set is four; and the single member of the difference is the sample where the model read
+the right entity and then named it one level off. That is the failure mode in its purest form,
+and it is now an assertion rather than an anecdote.
+
+This also corrects finding 75's framing of the accepted answers as "a real object one level off".
+Ten of the eleven are not one level off from the component; they are **on a different axis** --
+the mechanism, the path, the datastore, the symbol, the config object. The model is not
+mis-levelling a name, it is answering a different question, which is what finding 73 found at the
+entity level and this finding confirms at the rule level.
+
+### The assertions were rewritten three times, each time because the battery reported SURVIVED
+
+The battery is the reason the conclusion is trustworthy, so its own history is part of the
+evidence:
+
+| version | assertion | mutation that survived it |
+| --- | --- | --- |
+| 1 | `expect(WRONG[id]).toBe('session Redis')` | any -- it compared a literal to itself |
+| 2 | `expect(satisfied.length).toBeGreaterThanOrEqual(10)` | widening the bound to `0` |
+| 3 | `expect(wrongRate).toBeGreaterThan(0.5)` plus `expect(wrongRate).toBeLessThan(rightRate)` | **none: 8 caught, 0 survived, 0 inert** |
+
+Version 1 was a tautology over a literal declared three lines above it. Version 2 tested the
+"majority" claim only at its own boundary, so no mutation inside the range moved it. Version 3
+asserts a **contrast** -- a rate over wrong answers against a rate over right answers -- which
+can fail in both directions and therefore moves when either side changes. The rewrite was not
+driven by reading the code for weakness; it was driven by eight injections, one of which
+reported `SURVIVED` after every honest attempt to make it fail.
+
+One further correction came from the same source. An intermediate version asserted that the
+readable-and-wrong set and the accepted-and-wrong set were the **same** set; measuring showed
+eight accepted wrong answers are not readable at all, so the bijection was false. The honest
+statement is a set difference with a named count, which is what the test now asserts -- and the
+injection that closes the gap in the wrong direction is caught.
+
+### Consequence for the round's open decision
+
+Nothing in this finding changes the recommendation, but it changes what the recommendation rests
+on. The benchmark still needs a **stated** rule for what a `component` answer denotes, and the
+evidence for it is now: three samples whose answer is the deployed workload named verbatim
+(`checkout-api`, `user-profile`, `media-transcoder`), four answered correctly under exactly that
+reading, and one sample (`config-feature-flag-checkout` / `checkout-ui`) whose ground truth is not
+recoverable from its text at all. What is newly excluded is the *reason* a prompt edit is refused:
+not because the rule is meaningless, but because a rule with a 73% acceptance rate on wrong
+answers cannot be validated by its own rate.

@@ -57,6 +57,16 @@ jobs:
       - name: Scorer stability battery (no survivors, no inert mutations)
         run: node scripts/inject-stability.mjs
 
+      # The `component` rule battery, for the same reason as the one above and
+      # with a sharper history. Finding 75's assertions were written three times:
+      # the first asserted a literal against an identical literal, the second a
+      # count with a `>=` bound, and only the third -- a contrast between the
+      # rule's behaviour on right and wrong answers -- could be mutated at all.
+      # Each rewrite was driven by this battery reporting SURVIVED, so it is the
+      # reason the assertions are load-bearing rather than decorative.
+      - name: Component rule battery (no survivors, no inert mutations)
+        run: node scripts/inject-component-rule.mjs
+
       - name: Golden Master verification
         run: node golden-master/verify.mjs
 

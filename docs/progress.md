@@ -1903,3 +1903,103 @@ cheapest informative step is to grade the fifteen answers **against a stated rul
 component answer must be** -- and the honest question is whether the rule that makes
 `session Redis` correct is one the project wants, or whether it makes the field meaningless.
 That is a decision to take before another run, not after.
+
+
+## Pass 23 -- Make the `component` rule executable, then let the battery delete it
+
+Passes 21 and 22 read the miss diagnosis and then proved the instrument stable. Both left the
+same hole: the diagnosis named `component` as the clearest lever and finding 73 refuted the
+prompt-shaped fix, but nothing had *stated the rule*, so the field remained ungradeable in
+principle. Pass 23 states it as a test and measures it.
+
+### What was done
+
+1. **Read all 19 incidents in full** rather than the miss list, because the question is what the
+   ground truth means and that is only visible from the texts. This was the step that found the
+   result: on 14 of 19 samples the model's answer is not a worse name for the component, it is a
+   name for something else in the same incident.
+2. **Measured three candidate rules** over all 19 expected components. Verbatim: 5/19. Verbatim
+   with hyphens read as spaces: 13/19. Every hyphen token present: **18/19**. The one rejection is
+   `config-feature-flag-checkout`, whose expected `checkout-ui` is not derivable from its text.
+3. **Wrote the rule as a test group** in `fault-prompt-grammar.test.ts`, beside the `type` block
+   it mirrors: the tripwire (exactly one rejection, named), the unrecoverable sample's properties,
+   the discrimination contrast over the recorded run, the readable-set membership, and the
+   well-formed samples' evidence for the rule finding 75 proposes.
+4. **Wrote a battery** (`scripts/inject-component-rule.mjs`, 8 injections: two mutate the golden
+   dataset, six mutate the suite) and drove the assertions through **three rewrites** until
+   nothing survived.
+5. **Corrected two overstatements in finding 75** that the executable version falsified -- the
+   rule is not indiscriminate (4/4 right vs 11/15 wrong), and the accepted answers are not "one
+   level off" but on a different axis. Both corrections are recorded as finding 76 rather than
+   quietly edited into finding 75.
+6. **Wired the battery into CI** after the stability battery, with a comment recording why the
+   assertions were rewritten three times.
+
+### The measurements
+
+| measurement | value |
+| --- | --- |
+| expected components that are lower-case hyphenated slugs | 19/19 |
+| expected components that appear verbatim in their incident | **5/19** |
+| expected components recoverable by the loosest rule | **18/19** |
+| the one rejection | `config-feature-flag-checkout` / `checkout-ui` |
+| correct answers on record | **4** |
+| wrong answers on record | **15** |
+| right answers accepted by the token rule | 4/4 (**1.00**) |
+| wrong answers accepted by the token rule | 11/15 (**0.73**) |
+| accepted wrong answers that are *not* verbatim-readable | **8** |
+| samples where the component is readable but the answer was wrong | **1** (`dependency-upstream-5xx-pricing`) |
+
+### The battery, final state
+
+```
+CAUGHT  A. golden dataset: make a second component unrecoverable from its text   (failed 1, passed 18)
+CAUGHT  B. golden dataset: fix the mislabelled sample so the rule reaches 19/19  (failed 2, passed 17)
+CAUGHT  C. suite: break the contrast by accepting only right answers             (failed 1, passed 18)
+CAUGHT  D. suite: make the rule accept every sample, so nothing is rejected      (failed 6, passed 13)
+CAUGHT  E. suite: assert the rejected list is empty instead of the named sample  (failed 1, passed 18)
+CAUGHT  F. suite: assert the right-answer rate is the ceiling it is not          (failed 1, passed 18)
+CAUGHT  G. suite: assert the accepted-versus-readable gap is closed (it is not)  (failed 1, passed 18)
+CAUGHT  H. suite: drop the empty-token guard, so a hyphens-only name passes      (failed 1, passed 18)
+battery: 8 caught, 0 survived, 0 inert
+source restored: identical to backup
+```
+
+Three rounds of `SURVIVED` preceded this, and each one identified a real defect in the assertions
+rather than in the code under test:
+
+| round | survivor | what it revealed |
+| --- | --- | --- |
+| 1 | `A. non-deterministic counter` | the injection's anchor was stale, not the test weak -- and an inert injection reads identically to a toothless test, so `INERT` became a separately counted outcome |
+| 2 | `C, D` | the assertions compared a literal to itself and bounded a count it could not exceed |
+| 3 | `G` | a distribution fact has no structural consequence, so "can it be deleted" is the wrong question; the right one is "does asserting the opposite direction fail" |
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| typecheck | clean |
+| core coverage | **2437 passed** (83 files) at `99.96 / 99.93 / 100 / 99.96` |
+| `src/fault`, `src/llm` | `100 / 100 / 100 / 100` |
+| cli coverage | 173 passed at `100 / 100 / 100 / 100` |
+| lint | `check-no-mock` OK, `check-no-secrets` OK, `check-no-vendored-data` OK (217 files), `check-official-registry` OK (11 assets) |
+| official regression | PASSED (8 targets scored, 1 skipped by contract) |
+| docs | README sample OK, CLI reference PASSED (11 commands, 13 documented) |
+| examples | up to date; 9 packed files verified against the manifest |
+| stability battery | 4 caught, 0 survived, 0 inert |
+| **component rule battery** | **8 caught, 0 survived, 0 inert** |
+| both workflow YAMLs | parse |
+
+Coverage moved 2426 -> 2437 tests with every dimension unchanged, which is the expected shape:
+the new assertions constrain data rather than exercise branches, and `src/fault` was already at
+100%.
+
+### The open decision, now with the evidence attached
+
+`component` needs a **stated rule** for what an answer denotes, and the benchmark's own data
+supplies it: the three samples answered correctly and readable verbatim are deployed workload
+names (`checkout-api`, `user-profile`, `media-transcoder`), and the fourth correct answer
+(`order-service`) is the same shape. What the rule cannot be is anything validated by the
+acceptance rate, because 73% of wrong answers pass it. And what must not happen is editing
+`checkout-ui` away: it is the one sample where the ground truth is unrecoverable from its input,
+which makes it the benchmark's own evidence that the definition was never written down.

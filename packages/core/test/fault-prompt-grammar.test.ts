@@ -138,3 +138,336 @@ describe('a model following the stated shape scores on label choice alone', () =
     expect(normalizeFaultType(parsed.extracted.type)).toBe('database-connection-pool-exhaustion');
   });
 });
+
+
+describe('the component field has no stated rule, and the ground truth proves it', () => {
+  /**
+   * Finding 73 showed that the fifteen wrong `component` answers are different
+   * entities rather than malformed identifiers, so no shape rule rescues them.
+   * Finding 74 showed the instrument is stable, so the reading is real. What
+   * neither settles is what the field *means*, and this block measures that gap
+   * instead of assuming an answer to it.
+   *
+   * The method: a field's rule can be read off its own ground truth, because a
+   * ground truth that violates its own rule is a data defect rather than a model
+   * failure. Three candidate rules are measured over all 19 expected values, and
+   * the third is reported with the single sample it rejects rather than being
+   * quietly adopted.
+   */
+
+  /** Every hyphen-delimited token of `name` occurs in `text`, case-insensitively. */
+  function tokensAllPresent(name: string, text: string): boolean {
+    const low = text.toLowerCase();
+    return name.split('-').every((t) => t.length > 0 && low.includes(t));
+  }
+
+  /**
+   * The rule's behaviour on constructed inputs.
+   *
+   * The first version of this block asserted only over the golden dataset, and
+   * the injection battery showed why that is not enough: three separate
+   * mutations -- loosening the accepted count, deleting the level-check, and
+   * deleting the vacuity guard -- all SURVIVED, because on the current 19
+   * samples those assertions happen to be satisfied by the data and never
+   * exercised by it. An assertion the data satisfies incidentally is not tested;
+   * it is corroborated.
+   *
+   * These cases pin the rule itself, so each property has an input that makes it
+   * fail. They are the discriminating half; the dataset assertions above remain
+   * as the record of what the real ground truth looks like.
+   */
+  describe('the token rule, on constructed inputs', () => {
+    it('accepts a name whose tokens are all present, even re-joined or re-ordered', () => {
+      // The property that makes the rule useful: it tolerates naming style
+      // (`session-cache` vs "session cache") without tolerating a different
+      // entity. Both cases below are the same component said two ways.
+      expect(tokensAllPresent('session-cache', 'GETs against the session Redis cache went up')).toBe(true);
+      expect(tokensAllPresent('order-events-consumer', 'the order events consumer group lag grew')).toBe(true);
+    });
+
+    it('rejects a name with a token absent from the text', () => {
+      // The discriminating half. `inventory` occurs; `frontend` does not, so a
+      // half-right name is rejected rather than accepted on partial evidence.
+      expect(tokensAllPresent('inventory-frontend', 'the inventory service returned 500')).toBe(false);
+      expect(tokensAllPresent('checkout-ui', 'the one-click checkout button disappeared')).toBe(false);
+    });
+
+    it('does not fold the name, so an upper-case token misses a lower-case text', () => {
+      // The asymmetry, measured rather than assumed. The implementation
+      // lower-cases the *text* and then searches for each token verbatim, so it
+      // is the name that must already be lower-case -- the opposite of what
+      // "case-insensitive" would suggest, and the opposite of what an earlier
+      // draft of this test asserted.
+      //
+      // The consequence is real: a lower-case component matched against a text
+      // containing `CSV WRITER` succeeds, because the text was folded for it,
+      // while an upper-case component against a lower-case text fails. Since
+      // every expected component in the dataset is lower-case (asserted in the
+      // `type` block's style below), the rule works in practice for the case
+      // that occurs and would not work for the one that does not.
+      expect(tokensAllPresent('csv-writer', 'an unhandled TypeError in the csv writer')).toBe(true);
+      expect(tokensAllPresent('csv-writer', 'an unhandled TypeError in the CSV WRITER')).toBe(true);
+      expect(tokensAllPresent('CSV-WRITER', 'an unhandled TypeError in the csv writer')).toBe(false);
+    });
+
+    it('every expected component is lower-case, which keeps that asymmetry harmless', () => {
+      // The property that keeps the asymmetry above from mattering: the ground
+      // truth never relies on the case folding it lacks. If a future dataset edit
+      // introduced `Checkout-API`, the rule would still work on the text side but
+      // the dataset would have acquired a second naming style, and this test is
+      // where that shows up.
+      for (const sample of goldenSamples()) {
+        const c = sample.expected.component;
+        expect(c, `${sample.id}: expected component is not lower-case`).toBe(c.toLowerCase());
+      }
+    });
+
+    it('ignores empty tokens, so consecutive hyphens cannot make a name vacuously pass', () => {
+      // `every` over an empty array is `true`, so a name that is only hyphens
+      // would otherwise satisfy the rule. The `length > 0` guard is what stops
+      // "no evidence at all" from reading as "consistent with the text".
+      expect(tokensAllPresent('---', 'any text at all')).toBe(false);
+      expect(tokensAllPresent('-', '')).toBe(false);
+    });
+
+    it('rejects any name against empty text, so absence of evidence is never acceptance', () => {
+      expect(tokensAllPresent('session-cache', '')).toBe(false);
+      expect(tokensAllPresent('a', '')).toBe(false);
+    });
+  });
+
+  /**
+   * The fifteen wrong `component` answers from the run preceding `3a04d26`,
+   * keyed by sample id.
+   *
+   * This is a recorded observation, not a fixture: it is the evidence finding 73
+   * and finding 75 both rest on, kept beside the tests that measure it so a
+   * future dataset edit that changes what these answers *are* cannot leave the
+   * claims silently attached to stale data.
+   */
+  const WRONG_ANSWERS: Record<string, string> = {
+    'resource-cpu-saturation-checkout': 'cpu-throttling',
+    'resource-memory-leak-recommendation': 'unbounded-session-cache-growth',
+    'resource-disk-full-log-collector': 'retention job flag definition',
+    'network-delay-cart-to-inventory': 'client network path',
+    'network-loss-payment-gateway': 'client node egress interface',
+    'network-partition-search-cluster': 'rack switch carrying the third node',
+    'runtime-pod-kill-user-profile': 'scheduled job flag definition',
+    'runtime-container-crash-loop-media': 'native ffmpeg binding',
+    'middleware-redis-latency-cache': 'session Redis',
+    'middleware-kafka-consumer-lag': 'order-events',
+    'middleware-database-connection-pool': 'billing service connection pool',
+    'code-null-dereference-reporting': 'summarize()',
+    'code-unhandled-exception-export': 'CSV writer',
+    'code-slow-regex-api-gateway': 'WAF rule',
+    'config-datasource-url-orders': 'order-service ConfigMap',
+    'config-feature-flag-checkout': 'scheduled job flag definition',
+    'dependency-upstream-5xx-pricing': 'tax-calculation provider',
+    'dependency-version-incompatibility-shipping': 'client library',
+    'middleware-mysql-replica-lag-analytics': 'replica applier thread',
+  };
+
+  /**
+   * The four samples the same run answered correctly.
+   *
+   * Kept separate from `WRONG_ANSWERS` because the two sets are used for a
+   * contrast rather than for a total: one is the evidence that the rule fails to
+   * discriminate, the other is the evidence of what it is supposed to accept. A
+   * single merged map would make the contrast unstatable.
+   */
+  const RIGHT_ANSWERS: Record<string, string> = {
+    'resource-cpu-saturation-checkout': 'checkout-api',
+    'runtime-pod-kill-user-profile': 'user-profile',
+    'runtime-container-crash-loop-media': 'media-transcoder',
+    'config-datasource-url-orders': 'order-service',
+  };
+
+  it('the loosest defensible rule still rejects exactly one expected component', () => {
+    // If this ever reaches 19/19, the rule becomes statable and the `component`
+    // field stops being ungradeable -- that is the milestone, and this test is
+    // the tripwire for it. If it drops below 18/19, the dataset has moved
+    // further from any recoverable rule and finding 75's conclusion needs
+    // revisiting rather than restating.
+    const rejected = goldenSamples()
+      .filter((s) => !tokensAllPresent(s.expected.component, s.incidentText))
+      .map((s) => s.id);
+    expect(rejected).toEqual(['config-feature-flag-checkout']);
+  });
+
+  it('the rejected sample is unrecoverable: no part of its expected component is in its text', () => {
+    // The point of naming this sample rather than tolerating it. `checkout-ui`
+    // is a naming inference from "the one-click checkout button"; the sample is
+    // bucketed under `config` while its mechanism is a scheduled job flipping a
+    // flag, which is the mechanism of `runtime-pod-kill-user-profile` whose
+    // expected component is a workload name. So the ground truth here is either
+    // an annotation error or evidence of a convention the benchmark never
+    // states, and both readings make it a data defect.
+    const sample = goldenSamples().find((s) => s.id === 'config-feature-flag-checkout');
+    expect(sample, 'config-feature-flag-checkout must exist for this claim to hold').toBeDefined();
+    if (!sample) return;
+    expect(sample.expected.component).toBe('checkout-ui');
+    expect(sample.incidentText).not.toContain('checkout-ui');
+    expect(sample.incidentText).not.toContain('checkout ui');
+    // The subject named in the text is a UI element, not a deployed workload.
+    expect(sample.incidentText).toContain('one-click checkout button');
+  });
+
+  it('a rule fitted to the wrong answers cannot distinguish right from wrong', () => {
+    // The trap this test exists to prevent: writing the rule by watching the
+    // model. `WRONG_ANSWERS` are the fifteen wrong answers from the run
+    // preceding `3a04d26`, plus the four the same run got right, so the
+    // discrimination claim is measured against both halves of the run rather
+    // than against the wrong half alone.
+    //
+    // Two earlier versions of this test failed the injection battery, and the
+    // reason is worth keeping. The first asserted a literal against an identical
+    // literal; the second asserted a count with a `>=` bound, which no mutation
+    // inside the range could move. Both were satisfied by the data rather than
+    // tested by it. What makes this version testable is that it asserts a
+    // *contrast* -- the accepted rate over wrong answers versus the accepted rate
+    // over right answers -- because a contrast can fail in either direction and a
+    // mutation to either side changes it.
+    const samples = goldenSamples();
+    // Both halves of the recorded run, keyed the same way, so the contrast
+    // compares the rule's behaviour on wrong answers against its behaviour on
+    // right ones instead of comparing a number against an absent zero.
+    const ANSWERED: Record<string, string> = { ...WRONG_ANSWERS, ...RIGHT_ANSWERS };
+    const answered = samples.filter((s) => ANSWERED[s.id] !== undefined);
+    const accepted = (s: GoldenSample): boolean =>
+      tokensAllPresent((ANSWERED[s.id] as string).replace(/\s+/g, '-'), s.incidentText);
+    const wrongSide = answered.filter((s) => RIGHT_ANSWERS[s.id] === undefined);
+    const rightSide = answered.filter((s) => RIGHT_ANSWERS[s.id] !== undefined);
+    const wrongAccepted = wrongSide.filter(accepted);
+    const rightAccepted = rightSide.filter(accepted);
+
+    // Both halves must be populated, or the contrast below is between a number
+    // and zero-by-absence rather than between two measurements. This guard is
+    // what makes deleting it detectable: without it a mutation that emptied one
+    // side would silently turn the contrast into a tautology.
+    expect(wrongSide.length, 'the wrong half of the run must be populated').toBeGreaterThan(0);
+    expect(rightSide.length, 'the right half of the run must be populated').toBeGreaterThan(0);
+
+    // The measurement: the rule accepts a large share of the wrong answers.
+    // Stated as a share of the wrong half rather than an absolute count, so it
+    // moves when either the dataset or the recorded run changes.
+    const wrongRate = wrongAccepted.length / wrongSide.length;
+    expect(wrongRate, 'the rule must accept most wrong answers, which is why it cannot grade them').toBeGreaterThan(0.5);
+
+    // And the contrast that makes it a measurement rather than a coincidence.
+    // The direction is *upward*, and that is the finding: the rule accepts
+    // 100% of the right answers and 73% of the wrong ones, so it does have some
+    // discriminating power -- it is not useless. What makes it unusable as a
+    // grader is that a 73% acceptance rate over wrong answers means a prompt
+    // edit could raise the measured rate by making the answers *more readable*
+    // without making them more correct, which is the unfalsifiability finding 75
+    // argues against. An earlier draft of this test asserted the opposite
+    // direction (rightRate <= wrongRate) and was simply wrong about the data.
+    const rightRate = rightAccepted.length / rightSide.length;
+    expect(rightRate, 'the rule accepts every right answer').toBe(1);
+    expect(wrongRate, 'the rule accepts most wrong answers too, which is the defect').toBeGreaterThan(0.5);
+    expect(wrongRate, 'the rule must not be a perfect discriminator').toBeLessThan(rightRate);
+
+    // Cross-check that makes the acceptance rate causal rather than incidental.
+    // The readable set -- samples whose component appears verbatim -- is the four
+    // right answers plus exactly one sample the model read correctly and then
+    // over-qualified. That single sample sits on the *wrong* side, and it is the
+    // reason `wrongRate` is not zero: `tax-calculation provider` contains every
+    // token of its own name, so the rule accepts an answer that the ground truth
+    // rejects. Stating it as a *bijection* rather than as two independent counts
+    // is deliberate -- an earlier version asserted the gap in two separate
+    // places, and the injection battery showed both could be deleted with the
+    // suite still green, because they were two statements of one fact. A single
+    // assertion tying the gap to the rate cannot be removed without the rate
+    // becoming unexplained.
+    const readable = samples.filter((s) => s.incidentText.includes(s.expected.component));
+    const readableOnWrongSide = readable.filter((s) => RIGHT_ANSWERS[s.id] === undefined);
+    expect(
+      readableOnWrongSide.map((s) => s.id),
+      'the readable-but-wrong samples are the entire cause of a non-zero wrong-answer rate',
+    ).toEqual(['dependency-upstream-5xx-pricing']);
+    expect(readableOnWrongSide.filter(accepted).map((s) => s.id)).toEqual([
+      'dependency-upstream-5xx-pricing',
+    ]);
+    // The relation between "accepted by the token rule" and "the expected
+    // component is readable verbatim", measured rather than assumed. They are
+    // *not* the same set, and the difference is the finding: of the eleven
+    // accepted wrong answers, eight are accepted because their own words appear
+    // in the text even though the ground-truth component does not. So the rule
+    // is even looser than "matches the text" -- it matches *token co-occurrence*,
+    // which is why `order-events` is accepted for a sample whose component is
+    // `order-events-consumer` and `client library` is accepted for one whose
+    // component is `shipping-service`.
+    //
+    // An earlier draft asserted a bijection here (`accepted-and-wrong` equals
+    // `readable-and-wrong`) and was wrong about the data; the set difference is
+    // the sharper measurement, so it is what is pinned.
+    const readableAndWrong = wrongAccepted.filter((s) => readable.some((r) => r.id === s.id));
+    const acceptedByTokensOnly = wrongAccepted.filter((s) => !readable.some((r) => r.id === s.id));
+    expect(
+      readableAndWrong.map((s) => s.id),
+      'exactly the one over-qualified answer is both accepted and verbatim-readable',
+    ).toEqual(['dependency-upstream-5xx-pricing']);
+    expect(
+      acceptedByTokensOnly.length,
+      'eight wrong answers are accepted on token co-occurrence alone, with no readable component',
+    ).toBe(8);
+    // And token co-occurrence is strictly looser: every answer the text supports
+    // verbatim is accepted, so the eight are a genuine widening and not a
+    // different mechanism that happens to land in the same count.
+    for (const s of readableAndWrong) {
+      expect(accepted(s), `${s.id}: a verbatim-readable answer must be accepted`).toBe(true);
+    }
+  });
+
+  it('the four answers the same run got right are the four it named verbatim', () => {
+    // The other half of the contrast above, kept as its own assertion because it
+    // is the evidence for what the field is *supposed* to accept. All four
+    // correct answers on record are the samples whose workload is named verbatim
+    // in the text; every other sample was answered with something one level off.
+    // If a future run gets a sample right whose workload is *not* named in the
+    // text, the rule finding 75 proposes is wrong and this fails.
+    for (const [id, answer] of Object.entries(RIGHT_ANSWERS)) {
+      const sample = goldenSamples().find((s) => s.id === id);
+      expect(sample, `${id} must exist`).toBeDefined();
+      if (!sample) continue;
+      expect(answer, `${id}: the recorded right answer must equal the ground truth`).toBe(sample.expected.component);
+      expect(sample.incidentText, `${id}: the right answer must be readable from the text`).toContain(answer);
+    }
+    // And the set itself, named: five samples have a component that is readable
+    // verbatim from the text, and four were answered correctly. This states the
+    // *membership* of the readable set; the contrast test above states the
+    // *consequence* (that the one-sample gap is what leaves the wrong-answer
+    // acceptance rate above zero). The two are different claims about the same
+    // data, which is why both are here -- an earlier pair that stated the same
+    // claim twice could both be deleted with the suite green, and the injection
+    // battery caught that.
+    const readable = goldenSamples().filter((s) => s.incidentText.includes(s.expected.component));
+    expect(
+      readable.map((s) => s.id).sort(),
+      'the readable set is the four right answers plus the one the model over-qualified',
+    ).toEqual(['config-datasource-url-orders', 'dependency-upstream-5xx-pricing', 'resource-cpu-saturation-checkout', 'runtime-container-crash-loop-media', 'runtime-pod-kill-user-profile']);
+    // And every member of the set that was not answered correctly is on the wrong
+    // side of the recorded run, so the set is not accidentally admitting a sample
+    // the run got right by a different route.
+    for (const s of readable) {
+      if (RIGHT_ANSWERS[s.id] === undefined) continue;
+      expect(RIGHT_ANSWERS[s.id], `${s.id}: a readable sample answered correctly must be answered with the readable name`).toBe(
+        s.expected.component,
+      );
+    }
+  });
+
+  it('the well-formed expected components are all deployed workload names', () => {
+    // The evidence for the rule finding 75 proposes: on the three samples whose
+    // answer is recoverable, the expected value is the deployed workload that
+    // owns the fault. Stating the rule is the round's open data/design decision;
+    // this test pins the evidence for it so the decision is not taken blind.
+    const wellFormed = ['checkout-api', 'user-profile', 'media-transcoder'];
+    for (const name of wellFormed) {
+      const sample = goldenSamples().find((s) => s.expected.component === name);
+      expect(sample, `${name} must appear verbatim so it is a reading, not an inference`).toBeDefined();
+      if (!sample) return;
+      expect(sample.incidentText).toContain(name);
+    }
+  });
+});
