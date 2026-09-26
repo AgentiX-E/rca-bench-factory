@@ -1446,3 +1446,63 @@ the shape of.
 
 The instrument is known-good and the two cheapest experiments are identified. Pass 17
 is the prompt change plus a real reading.
+
+---
+
+## Pass 17 — the prompt fix, and the three outcomes it can produce
+
+Finding 62 said `type` was undescribed and that this was fixable. This pass fixes it.
+
+### The change
+
+`buildFaultExtractionPrompt` now states the shape of `type`:
+
+> `type` is a short lower-case hyphenated slug naming the failure mechanism, e.g.
+> `cpu-saturation`, `network-delay`, `database-connection-pool-exhaustion`. Use
+> hyphens, never spaces or capitals. Prefer the mechanism over the symptom.
+
+The grammar, not the 19 labels. Handing the model the label list would lift the
+number by fitting the prompt to the same 19 samples the list came from, and the
+result would be read as capability. The convention is the part that transfers to a
+fault this repository has never seen, which is what the field is for.
+
+### TDD, with the red state recorded
+
+| Stage | Result |
+|---|---|
+| Tests written first, no source change | **2 failed / 6 passed** |
+| After the shape rule | 8 passed |
+| Injection: rule removed from the prompt | **2 failed** |
+| Injection: one expected `type` made camelCase | **2 failed** (different pair) |
+
+The 6 that passed *before* the change are the informative ones: they assert that
+every expected `type` in the real golden file is already a slug and that
+`normalizeFaultType` leaves each unchanged. Those held already, which is what makes
+the rule a description of the data rather than a requirement invented to satisfy a
+test. The two injections failing different tests shows the suite checks two
+independent properties, not one assertion written twice.
+
+### Gates at the committed revision
+
+| Gate | Result |
+|---|---|
+| core tests | **2403 passed (82 files)** |
+| core coverage | `99.96 | 99.93 | 100 | 99.96`, `importer.ts` at `100×4` |
+| cli tests / coverage | 173 passed, `100×4` |
+| lint / mutation / export-surface | OK, 26 passed, 157 passed |
+| official / examples / docs | all OK |
+
+### What the next reading decides
+
+The fix is a falsifiable prediction, and one run distinguishes three outcomes:
+
+1. **`type` barely moves** — finding 62's attribution is wrong; the low score was
+   capability, and the closed-list variant becomes the right experiment.
+2. **`type` jumps, `strict` stays 0** — finding 62's prediction holds: `category`
+   (57.9%, already specified) is the binding constraint, and M1 turns on the field
+   whose prompt was never the problem.
+3. **`type` moves, `component` does not** — finding 61's ceiling is confirmed as what
+   is holding `component`, and the remaining work there is a data or schema decision.
+
+No new instrumentation is needed for any of the three: the existing `::notice`
+annotations already carry the headline and the per-field breakdown.

@@ -4401,3 +4401,82 @@ measuring, and the second is the more honest experiment:
 
 Version 2 is the one that would generalise past this dataset, and it is cheap to run
 because the instrument is now known to work end to end.
+
+---
+
+## 63 — The shape rule is stated, and what would falsify it
+
+### What changed
+
+`buildFaultExtractionPrompt` now carries a shape rule for `type`, which was the only
+scored field the prompt left undescribed:
+
+```
+`type` is a short lower-case hyphenated slug naming the failure mechanism, e.g.
+`cpu-saturation`, `network-delay`, `database-connection-pool-exhaustion`. Use
+hyphens, never spaces or capitals. Prefer the mechanism over the symptom.
+```
+
+### Why the grammar and not the labels
+
+Listing the 19 expected labels would raise `type` by fitting the prompt to the test
+set, and the resulting number would mean nothing: it would report that the model can
+copy from a list it was handed, on the same 19 samples the list came from. Worse, it
+would be read as progress.
+
+The grammar is the part that transfers. A fault this repository has never seen still
+has to be named, and the naming convention is what the model needs to know to name it
+the way the schema expects. A closed fault-type ontology is a legitimate goal for a
+different reason -- bounded labels make aggregation possible -- but it is a separate
+decision, and the code comment says so, because collapsing the two would produce a
+number that cannot be interpreted as either.
+
+### Two halves, again
+
+This is the second time a prompt rule and a parser tolerance have been paired, and
+the pairing is deliberate for the same reason as `category`'s casing fix: the prompt
+states the rule so the model is not left to guess it, and the comparator already
+tolerates the obvious deviation (`normalizeFaultType` folds case and spaces on both
+sides) so a model that guesses the format anyway does not lose a correct answer.
+
+The difference from `category` is where the tolerance stops. `category` is closed, so
+a value outside it is *rejected*. `type` is open, so nothing is rejected and every
+answer is scored on label choice. That is the intended asymmetry: one field has a
+closed answer space and the other has an open one, and the prompt now describes each
+according to which it is.
+
+### Tests were written first and observed red
+
+| Stage | Result |
+|---|---|
+| Tests written, before any source change | **2 failed / 6 passed** |
+| After adding the shape rule | 8 passed |
+| Injection: remove the rule from the prompt | **2 failed** (the two prompt tests) |
+| Injection: make one expected `type` camelCase | **2 failed** (two *different* tests) |
+
+The 6 that passed before the change are the point: they assert properties of the
+*dataset*, and they held already. That is what makes the rule a description of the
+existing data rather than a new requirement invented to make a test pass. Had they
+failed, the rule would have been wrong and the right fix would have been to the data.
+
+The two injections failing *different* pairs is the other thing worth having: it means
+the suite checks two independent properties -- the prompt states the rule, the data
+obeys it -- rather than one assertion written twice.
+
+### What would falsify the finding
+
+The fix is a prediction, and it is testable in one run:
+
+- **If `type` does not move materially**, finding 62's attribution is wrong and the
+  low score was capability rather than specification. The next suspect would be the
+  19-way open space itself, which would make the closed-list variant the right
+  experiment.
+- **If `type` moves a lot but `strict` stays 0**, the prediction recorded in finding 62
+  holds: `category` at 57.9% with an already-stated vocabulary becomes the binding
+  constraint, and M1 then depends on a field whose prompt was never the problem.
+- **If `type` moves and `component` does not**, finding 61's ceiling argument is
+  confirmed as the reason `component` is stuck, and the remaining work there is a data
+  or schema decision rather than a prompt one.
+
+All three are decided by the same annotation the workflow already emits, so no new
+instrumentation is required to read the answer.
