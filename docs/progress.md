@@ -1506,3 +1506,73 @@ The fix is a falsifiable prediction, and one run distinguishes three outcomes:
 
 No new instrumentation is needed for any of the three: the existing `::notice`
 annotations already carry the headline and the per-field breakdown.
+
+---
+
+## Pass 18 — the reading, and the prediction that did not survive it
+
+### Run `36229820836` against `9c72a56026`
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=1/19 (5.3%)
+m1=NOT MET (>= 70% strict)
+
+type=6/19  category=11/19  component=3/19  description=0/0
+```
+
+| Field | before | after | Δ |
+|---|---|---|---|
+| `strict` | 0/19 | **1/19** | **+1** |
+| `type` | 5/19 | **6/19** | **+1** |
+| `category` | 11/19 | 11/19 | 0 |
+| `component` | 3/19 | 3/19 | 0 |
+
+### Finding 62 is refuted by its own pre-registered condition
+
+Finding 62 wrote down, before this run, that a failure to move `type` materially would
+mean "the low score was capability rather than specification". `type` moved by one
+sample. That condition is met, so the finding is refuted and this is recorded as a
+refutation rather than quietly folded into a narrative of gradual progress.
+
+Writing the falsification down first is the only reason this counts. Had the prediction
+not been stated, `strict` moving from 0 to 1 would have read as a success, and a prompt
+change that bought one sample would have been recorded as a fix.
+
+### What the prompt change is and is not
+
+- **Not a fix.** One sample on a 19-sample set is within range of run-to-run variation.
+- **Not harmful.** `category` and `component` are untouched, which is what the change
+  was scoped to do, and `strict` reached a non-zero value for the first time, which at
+  least establishes that a strict hit is reachable.
+- **Kept.** It states a property of the schema that is true, and it is cheap. It just
+  is not what was limiting the score.
+
+### The suspect that remains, and why it is now the leading one
+
+With the format stated and the score barely changed, the remaining explanation is the
+one finding 62 deferred: **the label space itself**, not its formatting. The support
+for that is internal to this run's numbers — `category` is a *closed 7-value* list,
+was never the subject of a prompt defect, and still misses 42%. Specification is not
+what holds `category` back, so it is unlikely to be what holds `type` back.
+
+Under that reading `type` and `category` are one problem ordered by difficulty, not two
+problems ordered by prompt quality.
+
+### Next: change the model, not the prompt
+
+The cheap test for a capability ceiling is the model. `RCA_BENCH_LLM_MODEL` is a
+repository variable and the registry resolves providers without code changes, so the
+same revision can be run against a different provider and the two `category` figures
+compared. If ~58% holds across providers the ceiling is the task; if it moves, it was
+the model.
+
+This is the first time the provider abstraction is used as a **measurement instrument**
+rather than as architecture, which is a different justification from the one it was
+built under and worth noting as such.
+
+### Where M1 stands
+
+**5.3% against a 70% bar.** 12 more samples would have to become fully correct. The
+pipeline is sound, the instrument is readable, three fields are measured and bounded,
+and one prompt hypothesis has been tested and rejected. M1 is not close, and the
+remaining gap is not a wiring problem.

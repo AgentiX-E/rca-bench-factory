@@ -4480,3 +4480,83 @@ The fix is a prediction, and it is testable in one run:
 
 All three are decided by the same annotation the workflow already emits, so no new
 instrumentation is required to read the answer.
+
+---
+
+## 64 — The shape rule bought one sample, and finding 62's prediction is refuted
+
+### The reading
+
+Run `36229820836` against `9c72a56026`, the first run carrying the `type` shape rule:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=1/19 (5.3%)
+m1=NOT MET (>= 70% strict)
+
+type=6/19  category=11/19  component=3/19  description=0/0
+```
+
+### Against the previous run
+
+| Field | `262fc0d` (before) | `9c72a56` (after) | Δ |
+|---|---|---|---|
+| `strict` | 0/19 (0.0%) | **1/19 (5.3%)** | **+1** |
+| `type` | 5/19 (26.3%) | **6/19 (31.6%)** | **+1** |
+| `category` | 11/19 (57.9%) | 11/19 (57.9%) | 0 |
+| `component` | 3/19 (15.8%) | 3/19 (15.8%) | 0 |
+| `description` | 0/0 | 0/0 | — |
+
+### Finding 62's prediction is refuted, and that is the result
+
+Finding 62 predicted that giving `type` the treatment `category` already had would
+produce "a large `type` jump", and offered outcome 1 explicitly: *"if `type` does not
+move materially, finding 62's attribution is wrong and the low score was capability
+rather than specification."*
+
+`+1 sample` is not a material move. **1 of 19 went from wrong to right.** The
+attribution was wrong, and the pre-registered falsification is what makes that a
+finding rather than a reinterpretation: the prediction was written down before the
+run, with the reading that would refute it, and the run produced that reading.
+
+The honest summary is that **the shape rule was cheap to test and it did not work.**
+It is not harmful -- `strict` moved off zero for the first time, and `category` and
+`component` were untouched as expected -- but an effect of one sample on a 19-sample
+set is within the range that a re-run alone could produce, and it would be wrong to
+describe the prompt as improved. The rule stays because it states a true and useful
+property of the schema, not because it is a fix.
+
+### What `strict` going to 1/19 does and does not mean
+
+It means a sample exists that is now fully correct, so the pipeline can in principle
+produce a strict hit and M1 is not a structural impossibility. It does **not** mean
+progress toward 70%: one sample is 5.3%, the bar is 70%, and 12 more samples would
+have to become fully correct.
+
+### The alternative that finding 62 named is now the live one
+
+Finding 62 proposed two variants and argued for the grammar over the closed list. The
+grammar moved one sample. The remaining suspect is the one finding 62 explicitly
+deferred: **the 19-way open label space itself.** With the format now stated and the
+score barely changed, "the model does not know which label we want" is a stronger
+explanation than "the model does not know the format".
+
+That reframes `type` and `category` as **one problem rather than two**. `category` is a
+*closed* vocabulary, it was never the subject of a prompt defect, and it still sits at
+57.9% -- a 42% miss rate against a stated 7-value list. If specification is not what
+holds `category` back, specification is probably not what holds `type` back either,
+and the two figures (57.9% and 31.6%) are ordered the way one would expect from
+difficulty (7 choices versus an open space) rather than from the prompt asymmetry
+finding 62 identified.
+
+### What the next experiment should be
+
+Not another prompt variant. The three rates are now consistent with a **capability
+ceiling for this model on this task**, and the cheap way to test that is to change the
+model, not the prompt: run the same revision against a stronger provider through the
+existing registry. If `category` stays near 58% across providers, it is the task; if it
+moves, it is the model.
+
+That experiment needs no code change -- `RCA_BENCH_LLM_MODEL` is a repository variable
+and the registry is provider-agnostic by construction -- which is the first time this
+project's LLM abstraction pays off as a measurement instrument rather than as
+architecture.
