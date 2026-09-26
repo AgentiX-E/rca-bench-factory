@@ -4054,3 +4054,112 @@ Until a re-dispatch lands, "M1 met or not" stays open, and `09` must not tick it
   A vendor model update changes the number without changing configuration, and the
   only defence is that the artefact records the name, so a shift is at least
   attributable to a window.
+
+---
+
+## 58 — The model name was a disabled alias, and I read a green run as a measurement
+
+### What was wrong
+
+`RCA_BENCH_LLM_MODEL` was set to `deepseek-chat`. That name, and `deepseek-reasoner`,
+were **disabled on 2026-07-24 15:59 UTC** — two months before the dispatch. The run
+therefore sent nineteen requests to a model the provider rejects.
+
+`DEEPSEEK_DEFAULT_MODEL` was the same string, so the defect was not confined to a
+variable an operator had set: **any run that omitted the variable failed the same way**.
+
+### Why the green job hid it
+
+Every step succeeded, and I reported that as "the workflow reached the model". The
+step timings refute the stronger reading:
+
+```
+10. Derive the extractions                           23.0s
+```
+
+19 samples × 250ms pacing = 4.75s of pure delay, leaving 18.25s for nineteen HTTP
+round trips — **0.96s each**. A real completion takes seconds; a rejected request takes
+a fraction of one. The step spent most of its budget asleep.
+
+| Statement | Corrected status |
+|---|---|
+| the workflow reached the provider | established |
+| the provider accepted the request | **no** — the model name was disabled |
+| a rate was computed | established (step 11 was green, so exit `0` or `2`) |
+| that rate describes model behaviour | **not established** |
+
+The lesson is not "check the model name". It is that **a green run was read as a
+successful measurement**, when the one column that would have exposed the problem —
+the model actually used — was never validated against the vendor's live list. A
+constant chosen from memory, in a repository whose subject is measurement discipline.
+
+### The replacement, and why it is not the obvious one
+
+`deepseek-flash`. Not `deepseek-v4-flash`: that name is **itself retired** — kept only
+as a compatibility route to V4.1-Flash since 2026-09-10 — so pinning it would have
+bought a few months and a second identical incident. `deepseek-flash` is the name
+DeepSeek's own documentation instructs callers to use.
+
+`registry.ts`'s `'deepseek-chat': 'deepseek'` is **unchanged**. That is a *provider*
+alias, not a model name — the line that lets an organisation keep its existing
+variable name. Two occurrences of the same string with different meanings is why this
+fix had to be classified entry by entry rather than replaced globally.
+
+---
+
+## 59 — The reading exists, and M1 is not met: strict 0/19
+
+### The reading
+
+Run `36226968552` against `dec77b3`, dispatched with `RCA_BENCH_LLM_MODEL=deepseek-flash`.
+Every step succeeded, and for the first time the number came back **through the REST
+API** — as a check-run annotation, which is the channel this sandbox can actually read:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=0/19 (0.0%)
+m1=NOT MET (>= 70% strict)
+```
+
+**M1 is not met.** Strict all-fields is 0%.
+
+### Why that is two results, not one
+
+The two rates disagree, and the disagreement is the finding:
+
+| Layer | Value | What it says |
+|---|---|---|
+| graded | **19/19 (100%)** | every sample parsed *and* validated — the pipeline is not broken |
+| strict | **0/19 (0%)** | every graded sample missed at least one scored field |
+
+A single blended figure could not express this, which is the argument finding 53 made
+for layered rates and this run is the first evidence for it.
+
+It also rules out the reading that would have been wrong twice: **this is not "the
+pipeline produced nothing"** (exit `3`, which would have turned step 11 red) and it is
+not "the model is correct" (exit `0`). It is a model that answers in a readable shape
+and gets no sample fully right.
+
+### What is established, and what is not
+
+| Statement | Status |
+|---|---|
+| the run reached the model, and the model answered | **established** — 19 graded samples |
+| the pipeline parses and validates its answers | **established** — 100% |
+| strict all-fields meets the 70% threshold | **not met** — 0/19 |
+| *which* field fails, and why | **not yet established** |
+
+The last row is the open question, and it is answerable: the report prints a per-field
+breakdown, so the score step now echoes those four rows as a second annotation. The
+headline said *that* it failed; the breakdown says *where*.
+
+### The channel, separately
+
+The previous three rounds could not read the number at all, and every documented route
+had a structural reason: `GITHUB_STEP_SUMMARY` is not a field on the run or job
+object, the job-log endpoint 302s to a blob host inside `198.18.0.0/15`, and the
+artefact zip does the same. `GET /check-runs/{id}` was found by probing endpoints
+rather than by assuming they would fail, and it serves annotations over REST.
+
+That this worked is worth separating from the result it delivered. The instrument
+being readable is what makes "M1 not met" a finding rather than a fourth
+inconclusive round.

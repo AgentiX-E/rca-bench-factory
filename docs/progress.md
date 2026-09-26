@@ -1280,3 +1280,55 @@ because that pairing is the part that fails silently.
 workflow cannot run", which is fixed, and no longer "the model name is valid", which
 is also fixed, but "no run has yet been dispatched with a working configuration". The
 reading channel exists; the reading has not been taken.
+
+### Pass 15 — the first real reading, and it says M1 is not met
+
+The reading came back, and it is a result rather than another inconclusive round:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=0/19 (0.0%)
+m1=NOT MET (>= 70% strict)
+```
+
+Run `36226968552` against `dec77b3`, dispatched with the corrected model name.
+
+| Layer | Value | Reading |
+|---|---|---|
+| graded | 19/19 (100%) | every sample parsed and validated — the pipeline works |
+| strict | **0/19 (0%)** | **every sample missed at least one scored field** |
+
+**M1 is not met.** The two numbers disagreeing is what makes this readable: a blended
+figure could not distinguish "the pipeline is broken" from "the model is not good
+enough yet", and those have entirely different next actions.
+
+### What the reading was taken on
+
+| Change | Why |
+|---|---|
+| `DEEPSEEK_DEFAULT_MODEL` → `deepseek-flash` | the previous value had been disabled since 2026-07-24 |
+| `RCA_BENCH_LLM_MODEL` → `deepseek-flash` | same, and this one was set by me |
+| headline echoed as a check-run annotation | `GITHUB_STEP_SUMMARY` is not REST-served and the log/artefact hosts are sinkholed |
+| per-field rows echoed as a second annotation | `strict=0/19` says *that* it failed, not *where* |
+
+The channel was found by **probing endpoints rather than assuming they fail**.
+`GET /check-runs/{id}` returns `200` and serves its annotations over REST; the same
+endpoint is how the run's two infrastructure notices were read, which independently
+confirmed step 11's exit code was not `3`.
+
+### What is still open
+
+- **Which field fails.** The report prints a per-field breakdown; the second
+  annotation now carries it. Not yet read.
+- **Whether the 0% is a normalisation gap or a genuine model miss.** `sameValue`
+  normalises both sides for `type` and `category`, and the golden samples expect only
+  `{type, category, component}` — no `description`. So the miss is in one of those
+  three, and the breakdown will name it.
+- **The model behind the name.** Pinned by name, not by weights. A vendor update
+  changes the number without changing configuration.
+
+### Gates at this revision
+
+`build` / `typecheck` / `lint` (213 tracked files) / `examples:{check,bundle:check,verify}` /
+`official:check` / `docs:check` all green. Coverage: core **2395 passed (81 files)** at
+`99.96 | 99.93 | 100 | 99.96`; cli **173 passed** at `100 | 100 | 100 | 100`.
+Mutation 26, export-surface 157.

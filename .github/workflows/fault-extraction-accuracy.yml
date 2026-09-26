@@ -242,21 +242,32 @@ jobs:
           #
           # The pattern is anchored to the report's actual layout (see
           # `formatExtractionReport`): every line is indented by two spaces. The
-          # count and layer lines both begin with `graded`, so only one of them
-          # is keyed -- the rate, matched with the `%` that a bare count lacks.
-          # Keying both produced `graded=19 graded=19/19`, which is the sort of
-          # ambiguous field a reader has to decode rather than read. A loose
-          # pattern would also match a per-field rate and report the wrong number
-          # with full confidence, so every alternative is an exact prefix.
+          # The count and layer lines both begin with `graded`, so only one of them
+          # is keyed -- the rate, which is the one a reader needs. Keying both
+          # produced `graded=19 graded=19/19`, the sort of ambiguous field a reader
+          # has to decode rather than read. A loose pattern would also match a
+          # per-field rate and report it as the headline with full confidence, so
+          # every alternative is an exact two-space-anchored prefix.
           headline=$(sed -n -e 's/^  samples *: /samples=/p' \
                           -e 's/^  graded *: \([0-9][0-9]*\)$/graded_count=\1/p' \
                           -e 's/^  graded: \(.*\)$/graded_rate=\1/p' \
                           -e 's/^  strict all-fields: /strict=/p' \
                           -e 's/^  M1 exit condition: /m1=/p' /tmp/extraction-report.txt | tr '\n' ' ')
+          # The per-field lines carry the *diagnosis*, and without them a headline
+          # reading `strict=0/19` is unactionable: it says every sample missed at
+          # least one field but not which one. The report already prints the
+          # breakdown; it is echoed here so the number and its explanation arrive
+          # through the same channel. Per-field lines are the four-space-indented
+          # `field : graded N/N (P%)  overall ...` rows, so this pattern also has
+          # to avoid the two-space headline rows it now runs alongside.
+          fields=$(sed -n 's/^    \([a-z][a-z]*\) *: graded \([0-9][0-9]*\)\/\([0-9][0-9]*\).*/\1=\2\/\3/p' /tmp/extraction-report.txt | tr '\n' ' ')
           if [ -n "$headline" ]; then
             echo "::notice title=M1 fault extraction::${headline}"
           else
             echo "::notice title=M1 fault extraction::report did not match the expected layout; read the step summary"
+          fi
+          if [ -n "$fields" ]; then
+            echo "::notice title=M1 fault extraction per-field::${fields}"
           fi
           # The three codes are the point of the script, so they are handled
           # rather than collapsed. `2` is "the model is not good enough yet"

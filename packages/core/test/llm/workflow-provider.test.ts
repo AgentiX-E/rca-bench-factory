@@ -238,14 +238,19 @@ describe('the workflow still fails early and readably', () => {
  */
 describe('the workflow publishes the accuracy where the API can serve it', () => {
   /**
-   * The `sed` expressions the score step uses, parsed into their parts.
+   * The `sed` expressions in the score step, parsed into their parts.
    *
-   * A `sed` program is `s<delim>pattern<delim>replacement<delim>flags`, and the
-   * replacement contains an unescaped `/` in none of these, so splitting on
-   * unescaped delimiters yields exactly four parts. Anything that does not split
-   * into four is not a substitution and is reported rather than skipped silently
-   * -- a pattern that silently drops out is how the headline would come back
-   * empty while the step still exits 0.
+   * Both spellings are collected. The headline uses a multi-line `sed -n -e '<expr>'`
+   * chain, and the per-field echo uses a single `sed -n '<expr>'`; matching only
+   * the first form silently dropped the second, so the per-field assertions found
+   * nothing to check while the suite stayed green -- the same shape of gap the
+   * patterns themselves have.
+   *
+   * A `sed` program is `s<delim>pattern<delim>replacement<delim>flags`, and no
+   * replacement here contains an unescaped `/`, so splitting on unescaped
+   * delimiters yields exactly four parts. Anything that does not split into four
+   * is reported rather than skipped silently -- a pattern that silently drops out
+   * is how a field would come back empty while the step still exits 0.
    */
   function headlineSubstitutions(): Array<{
     expression: string;
@@ -257,12 +262,15 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
     expect(block).not.toBe('');
     const parsed: Array<{ expression: string; pattern: string; replacement: string; key: string }> =
       [];
-    for (const match of block.matchAll(/-e '([^']*)'/g)) {
-      const expression = match[1] as string;
+    const candidates = [
+      ...[...block.matchAll(/-e '([^']*)'/g)].map((m) => m[1] as string),
+      ...[...block.matchAll(/\bsed -n '([^']*)'/g)].map((m) => m[1] as string),
+    ];
+    for (const expression of candidates) {
       const parts = expression.split(/(?<!\\)\//);
       expect(
         parts.length,
-        `'${expression}' is not a parseable sed substitution; the headline would silently lose this field`,
+        `'${expression}' is not a parseable sed substitution; the field would silently drop out`,
       ).toBe(4);
       const [verb, pattern, replacement, flag] = parts as [string, string, string, string];
       expect(verb).toBe('s');
@@ -298,7 +306,7 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
    * this gate exists to prevent.
    */
   function toJavaScriptReplacement(sedReplacement: string): string {
-    return sedReplacement.replace(/\\(\d)/g, '$$$1');
+    return sedReplacement.replace(/\\\//g, '/').replace(/\\(\d)/g, '$$$1');
   }
 
   it('states the headline as an annotation, not only as a step summary', () => {
@@ -406,5 +414,48 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
     expect(noneHeadline['graded_count']).toBe('graded_count=0');
     expect(noneHeadline['strict']).toMatch(/n\/a/);
     expect(noneHeadline['m1']).toMatch(/NOT MET \(no graded sample\)/);
+  });
+
+  it('publishes the per-field breakdown, which is what makes a miss diagnosable', () => {
+    // A headline of `strict=0/19` says every sample missed at least one field
+    // without saying which. The report already prints the breakdown, and the
+    // workflow echoes it as a second annotation so the number and its explanation
+    // arrive through the same channel -- the one this sandbox can read.
+    const block = stepBlock('Score the run');
+    const fieldExpression = /-e '([^']*)'|-n '([^']*)'/g;
+    const hasFieldPattern = [...block.matchAll(fieldExpression)].some((m) =>
+      /^s\/\^    \\\(\[a-z\]/.test((m[1] ?? m[2]) as string),
+    );
+    expect(
+      hasFieldPattern,
+      'the score step must extract the four per-field rows, not only the headline',
+    ).toBe(true);
+  });
+
+  it('extracts each per-field row from the report the scorer actually produces', () => {
+    // The per-field substitution, as written in the workflow.
+    const match = headlineSubstitutions().find((s) => /^s\/\^    \\\(\[a-z\]/.test(s.expression));
+    expect(match, 'a per-field substitution must exist').toBeDefined();
+    const regex = new RegExp(toJavaScriptPattern((match as { pattern: string }).pattern));
+
+    // The four rows for a perfect run, as `formatExtractionReport` prints them.
+    const rows = [
+      '    type        : graded 19/19 (100.0%)  overall 19/19 (100.0%)',
+      '    component   : graded 9/19 (47.4%)  overall 9/19 (47.4%)',
+    ];
+    const keyed = rows.map((row) => {
+      expect(regex.test(row), `must match: ${row}`).toBe(true);
+      return row.replace(
+        regex,
+        toJavaScriptReplacement((match as { replacement: string }).replacement),
+      );
+    });
+    expect(keyed[0]).toBe('type=19/19');
+    expect(keyed[1]).toBe('component=9/19');
+
+    // And the property that separates the per-field pattern from the headline
+    // ones: it must not claim a headline row, whose indent is two spaces.
+    expect(regex.test('  strict all-fields: 19/19 (100.0%)')).toBe(false);
+    expect(regex.test('  samples        : 19')).toBe(false);
   });
 });
