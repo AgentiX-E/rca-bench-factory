@@ -1644,3 +1644,112 @@ removed**. The two survivors are recorded with the proofs, not folded into a pas
 The diagnosis has not been *read* yet -- the code that produces it is green and its own
 gate is proven, but no run has published the classification. That run is the next step and
 it is the first one in five rounds whose result cannot be predicted from the rates alone.
+
+---
+
+## Pass 20 -- the diagnosis, read at last
+
+The run in Pass 19 dispatched and published. Run **36240660455** on `9932e766c`, all 13
+steps green. The annotation, verbatim:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=0/19 (0.0%)  m1=NOT MET (>= 70% strict)
+type=4/19 category=11/19 component=4/19 description=0/0
+classification=wrong value 38, omitted 0, samples with >= 1 miss 19
+```
+
+Four readings now exist on the same 19 samples. The rates have moved every time
+(`type` 5 -> 6 -> 4, `strict` 0 -> 1 -> 0); the two facts below have not, because they are
+about *how* the model fails rather than how often, and that is what four rounds of
+prompt-and-comparator reasoning could not reach.
+
+### `omitted 0`
+
+All 38 misses are wrong answers. Not one is a missing field. This **eliminates the
+"required fields" hypothesis outright** -- the standing explanation that the model omits
+`description` and the rate suffers for it. The model always answers. It answers wrongly.
+
+### Eight of eight wrong `category` values are legal vocabulary
+
+Checked each against `FAULT_CATEGORIES = {resource, network, runtime, middleware, code,
+config, dependency}`:
+
+```
+category misses: 8
+  actual IS a legal vocabulary value: 8
+  actual is OUTSIDE the vocabulary  : 0
+```
+
+Not one is outside the closed list. The model **reads the list and picks a different
+member** -- and since an out-of-vocabulary category makes the whole response unparseable,
+while `graded` is 19/19, it could not have been otherwise. That is a logical elimination,
+not a measurement.
+
+This is decisive against the framing finding 62 had settled on. `category`'s rate was read
+as evidence that the failure is *specification* -- the model has the right idea and cannot
+express it. It is not. The vocabulary is closed, printed in the prompt, and fully obeyed as
+a format. The failure is **choosing**, and choosing is not reached by specifying harder.
+
+### `component` is answered by quotation
+
+The `component` misses are not near-misses. They are phrases lifted from the incident text:
+
+```
+session-cache    -> session Redis
+billing-service  -> billing service database client pool
+analytics-replica -> replica applier thread
+payment-gateway  -> client node egress interface
+```
+
+The model finds the region of text that discusses the component and returns a description
+of it. This is the one failure here that *is* a formatting defect in the strict sense, and
+the one that is fixable: the expected values are identifiers, and an instruction to answer
+with the identifier is **absent rather than contradicted**.
+
+### The separated separator, and a misread that was mine
+
+My first parse of the detail annotation reported two rows where expected equalled actual --
+`order-service -> order-service`, `tax-calculation -> tax-calculation`. That would have
+meant the scorer marking correct answers wrong. It had not.
+
+The rows were space-joined and the values contain spaces (`order-service ConfigMap`,
+`tax-calculation provider`), so tokenising on whitespace split *records*. Wrote up as
+finding 70, fixed by joining with `\x1f`, and measured the fix rather than asserting it:
+**57 rows become 285 whitespace tokens** -- a 5x over-split, which is finding 70's two
+phantom rows quantified. Finding 71 records it, with three injections (space join, printable
+separator, over-large cap -- 3 / 3 / 1 tests caught).
+
+This is finding 59's complaint one level down: a reading that exists, is correct, and can
+still be misread is, for a measurement channel, the same defect as a reading that is
+missing. It cost a misdiagnosis to learn, and the repair is a byte.
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| typecheck (core, cli) | clean |
+| core coverage | **2422 passed (83 files)** -- `99.96 \| 99.93 \| 100 \| 99.96` |
+| `src/fault` | **100 \| 100 \| 100 \| 100** |
+| `src/llm` | **100 \| 100 \| 100 \| 100** |
+| cli coverage | 173 passed -- `100 \| 100 \| 100 \| 100` |
+| lint | OK (no-mock / no-secrets / no-vendored-data / official-registry) |
+| mutation | 26 passed |
+| export surface | 157 passed |
+| official / examples / docs | PASSED / up to date / PASSED |
+
+Injection battery total, 14 injections: **12 caught, 1 proven equivalent, 1 proven
+unreachable and removed**.
+
+### What this changes
+
+The deferred provider experiment is now a **testable claim rather than a hunch**: eight
+`category` answers are legal-but-different, so a second provider either produces the same
+eight choices (capability ceiling, and prompts are exhausted) or different ones (sampling
+variation, and the rate is noise). That is a falsifiable experiment with a measured
+baseline, which is what it was missing when it was ordered.
+
+M1's honest position is unchanged and now explained: `strict` needs 13 of 19, `type` is
+4/19 and `component` 4/19 against a 14/19 structural ceiling, so no prompt change reaches
+70%. The two paths are distinguishable rather than a matter of opinion -- tighten the
+ground truth to admit the model's defensible readings (a data change, possibly a *correct*
+one), or try a stronger model.

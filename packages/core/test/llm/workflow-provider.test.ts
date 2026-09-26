@@ -113,7 +113,83 @@ function toJavaScriptReplacement(sedReplacement: string): string {
   return sedReplacement.replace(/\\\//g, '/').replace(/\\(\d)/g, '$$$1');
 }
 
+/**
+ * The workflow's row cap and the separator it joins detail rows with.
+ *
+ * Both are read out of the shell rather than assumed, because both have been
+ * wrong in ways that were invisible in the workflow file and only visible in
+ * the published annotation. The separator in particular has to be a byte that
+ * cannot occur in a value: the first version joined with a space, and the
+ * values contain spaces (`order-service ConfigMap`, `tax-calculation
+ * provider`), so a reader splitting on whitespace split *records*. Measured on
+ * a saturated run: 57 rows produced 285 whitespace tokens. Two of those
+ * spurious splits read `order-service -> order-service` -- two apparent cases
+ * of the scorer marking a correct answer wrong. The scorer was right; the
+ * channel was ambiguous.
+ */
+function detailJoin(): { cap: number; separator: string } {
+  const block = stepBlock('Score the run');
+  const join = /detail=\$\(printf '%s' "\$missed_rows" \| head -n ([0-9]+) \| paste -sd "([^"]*)" -\)/.exec(
+    block,
+  );
+  expect(
+    join,
+    'the detail must be a whole-row join with an explicit separator; a character cut or a space join cannot be read back',
+  ).not.toBeNull();
+  const cap = Number((join as RegExpExecArray)[1]);
+  const separatorExpression = (join as RegExpExecArray)[2] as string;
+  // `sep` is assigned from `printf` a few lines above; follow it rather than
+  // accept the literal, so an edit that changes the byte is caught here.
+  const sepAssignment = /^\s*sep=\$\(printf '(\\[0-9]+)'\)\s*$/m.exec(block);
+  expect(sepAssignment, 'the separator must come from printf, not a literal byte').not.toBeNull();
+  expect(
+    separatorExpression,
+    'the join must use the separator the workflow computed at runtime',
+  ).toBe('$sep');
+  // The byte itself: every separator candidate must be a control character.
+  // Printable ASCII is exactly the set that can appear in a slug or a quoted
+  // incident string, so a printable separator is the defect, not a style choice.
+  const escape = (sepAssignment as RegExpExecArray)[1] as string;
+  const byte = parseInt(escape.slice(1), 8);
+  expect(byte, 'the separator must be a control byte, not a printable one').toBeLessThan(0x20);
+  expect(Number.isFinite(cap), 'the workflow must apply a row cap').toBe(true);
+  return { cap, separator: String.fromCharCode(byte) };
+}
+
 describe('the workflow covers every provider the registry can build', () => {
+  it('separates detail rows with a byte that cannot occur in a value', () => {
+    const { separator } = detailJoin();
+    // The defect this pins, stated as the property: a reader splitting the
+    // annotation on whitespace must get one token per record. If the separator is
+    // whitespace that is false by construction, and the failure is not cosmetic --
+    // it manufactures false readings of the scorer.
+    expect(
+      /\s/.test(separator),
+      `the detail rows are joined with ${JSON.stringify(separator)}, which appears inside values, so the annotation cannot be split unambiguously`,
+    ).toBe(false);
+    // And the values this dataset actually carries must be separator-free, or
+    // the choice of byte is fine in the abstract and wrong here. Taken from the
+    // real dataset rather than from the report, so a new sample with an exotic
+    // value surfaces in this test rather than in a future reading.
+    const samples = parseGoldenDataset(
+      JSON.parse(
+        readFileSync(resolve(ROOT, 'golden-master', 'fault-extraction', 'samples.json'), 'utf8'),
+      ),
+    ).samples;
+    const values = samples.flatMap((s) => {
+      const e = s.expected as unknown as Record<string, string | undefined>;
+      return [s.id, ...SCORED_FIELDS.map((f) => e[f])].filter(
+        (v): v is string => v !== undefined,
+      );
+    });
+    expect(values.length, 'the dataset must contribute values to check').toBeGreaterThan(0);
+    const offending = values.filter((v) => v.includes(separator));
+    expect(
+      offending,
+      `these dataset values contain the detail separator ${JSON.stringify(separator)}, so the annotation would be ambiguous`,
+    ).toEqual([]);
+  });
+
   it('selects a key for each registered provider', () => {
     const selected = selectedProviders();
     for (const id of LLM_PROVIDER_IDS) {
@@ -331,7 +407,6 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
     expect(parsed.length).toBeGreaterThan(0);
     return parsed;
   }
-
   it('states the headline as an annotation, not only as a step summary', () => {
     const block = stepBlock('Score the run');
     expect(block).toMatch(/::notice title=/);
@@ -648,10 +723,7 @@ describe('the workflow publishes the miss diagnosis', () => {
     const rowCount = report.misses.reduce((n, m) => n + m.detail.length, 0);
     expect(report.misses.length, 'the saturated fixture must actually miss').toBe(samples.length);
 
-    const block = stepBlock('Score the run');
-    const cap = Number(
-      /detail=\$\(printf '%s' "\$missed_rows" \| head -n ([0-9]+) \| tr '\\n' ' '\)/.exec(block)?.[1],
-    );
+    const { cap } = detailJoin();
     expect(Number.isFinite(cap), 'the workflow must apply a row cap').toBe(true);
     expect(
       cap,
@@ -695,10 +767,7 @@ describe('the workflow publishes the miss diagnosis', () => {
     // truncate an ordinary worst-case run and push routine reading into the
     // summary. Asserted as a comparison rather than an exact number so raising
     // the dataset size surfaces here instead of silently shortening the read.
-    const cap = Number(
-      /detail=\$\(printf '%s' "\$missed_rows" \| head -n ([0-9]+) \| tr '\\n' ' '\)/.exec(block)?.[1],
-    );
-    expect(Number.isFinite(cap), 'a whole-row cap must be applied before joining').toBe(true);
+    const cap = detailJoin().cap;
     expect(cap, 'the cap must cover 19 samples x 3 scored fields').toBeGreaterThanOrEqual(57);
     // The dropped count must be computed, not assumed, and the announcement must
     // name the true total so the reader can tell a truncated list from a short one.

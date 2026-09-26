@@ -4721,3 +4721,163 @@ because it was **ordered after a reading that cost nothing**. The correct sequen
 the answers, classify the misses, and only then ask whether the residual is capability. That
 is what findings 65–68 implement, and the provider experiment stays available — now with a
 measured baseline to compare against instead of an inferred one.
+
+---
+
+## Finding 69: the diagnosis answers it in one reading, and the answer invalidates finding 62
+
+Run `36240660455` (`9932e766c`), first run carrying the miss diagnosis:
+
+```
+samples=19 graded_count=19 graded_rate=19/19 (100.0%) strict=0/19 (0.0%) m1=NOT MET (>= 70% strict)
+type=4/19 category=11/19 component=4/19 description=0/0
+classification=wrong value 38, omitted 0, samples with >= 1 miss 19
+```
+
+Three facts, each of which removes a class of explanation.
+
+### `omitted 0` — the model never declines to answer
+
+All 38 misses are answers that differ from the ground truth. Not one is a missing
+field. "The model is not answering" and "the required-fields instruction is missing" are
+both eliminated, and the earlier plan to address omissions would have been work on a
+failure that does not occur.
+
+### Every wrong `category` is a legal vocabulary value
+
+Eight `category` misses. Checked mechanically against `FAULT_CATEGORIES`:
+
+| expected | actual | legal? |
+|---|---|---|
+| `resource` | `code` | yes |
+| `runtime` | `resource` | yes |
+| `runtime` | `dependency` | yes |
+| `middleware` | `resource` | yes |
+| `middleware` | `code` | yes |
+| `middleware` | `resource` | yes |
+| `code` | `config` | yes |
+| `middleware` | `resource` | yes |
+
+**8 of 8 are inside the closed list. 0 are outside.** The model read the vocabulary
+correctly and chose a different member of it.
+
+This is the fact four rounds of reasoning were missing, and it **invalidates finding 62**.
+Finding 62 argued that `type`'s low score was a *specification* defect and that `category`'s
+57.9% was the visible cost of a well-specified field — so the fix was to specify `type`
+better. That conflated two different failures:
+
+- **formatting** — the model does not know what shape a value should take. Fixable with a
+  grammar, a vocabulary, an example.
+- **choosing** — the model knows the shape and picks the wrong member. Not fixable by any
+  prompt that describes the output space, because the output space was already correct.
+
+`category` was already in the second category and I read it as evidence about the first.
+Its 57.9% is not "a well-specified field far from 100%" — it is **a semantic
+disagreement rate**, and it is the natural ceiling for any field where the label depends
+on a judgement call about the incident rather than on a fact in it.
+
+The practical consequence: **finding 63's shape rule was aimed at the wrong failure mode.**
+It was not wrong to state the grammar — a stated shape is a precondition, not a fix — but
+the predicted jump it was measured against assumed a formatting problem. It bought one
+sample because the actual problem is elsewhere.
+
+### `component` is being answered by quotation
+
+The `component` misses show a distinct and nameable behaviour: the model quotes the
+incident text instead of naming the component.
+
+| expected | actual |
+|---|---|
+| `session-cache` | `session Redis` |
+| `billing-service` | `billing service database client pool` |
+| `analytics-replica` | `replica applier thread` |
+| `log-collector` | `log-collector-data-volume` |
+| `media-transcoder` | `ffmpeg native binding` |
+| `payment-gateway` | `client node egress interface` |
+
+Where finding 61 measured that 5 of 19 expected components never appear in the text in any
+form, this shows the complementary failure: the model **finds a phrase in the text and
+returns it**, because the field is named `component` and no instruction says the answer must
+be a component *identifier* rather than a component *description*. That is a formatting
+defect in the strict sense — and unlike `category`, it is fixable, because the expected
+values are identifiers and the instruction to give identifiers is absent rather than
+contradicted.
+
+### What this says about the remaining gap
+
+`strict` needs 13 of 19 samples fully correct. With `type` at 4/19 and `component` at 4/19
+against a 14/19 structural ceiling on `component`, no prompt change reaches 70%. The
+honest statement of M1's position is: **the task, as specified by this golden set with this
+model, is not reachable by prompt engineering**, and the two candidate paths are now
+distinguishable rather than a matter of opinion — either the ground truth labels are
+tightened to admit the model's defensible readings (a data change, and possibly a
+*correct* one), or a stronger model is tried (the experiment deferred in Pass 19, now with
+a measured baseline: `category` 8/8 legal-but-different is a claim a provider comparison
+can actually test).
+
+## Finding 70: the annotation format was ambiguous, and I misread it first
+
+The first parse of the detail annotation reported **two rows where expected equalled
+actual** — `order-service -> order-service` and `tax-calculation -> tax-calculation` — which
+would have meant the scorer scoring a correct answer as wrong. It did not.
+
+The rows are space-joined, and the *values contain spaces*. `order-service` was the first
+token of the real answer `order-service ConfigMap`; `tax-calculation` the first token of
+`tax-calculation provider`. Tokenising on whitespace split records and produced two
+phantom contradictions.
+
+The scorer was correct throughout, and the diagnostic channel was not: **a separator that
+appears inside the data cannot separate the data.** This is finding 59's complaint about
+`strict=0/19` being unactionable, one level down — the reading exists, is correct, and is
+still capable of being misread, which for a measurement channel is the same defect.
+
+The repair: emit the detail with a **record separator that cannot occur in a value**.
+Values are derived from incident text and slugs, so `\x1f` (unit separator) is safe and
+conventional; a newline would work too but is harder to keep out of a shell pipeline. The
+annotation then states its own record boundary, and a reader does not have to infer it from
+the shape of the payload.
+
+## Finding 71: the separator fix, and the two numbers that prove it
+
+Finding 70's repair is one line, so it is worth recording exactly what the line is worth,
+because "we changed the separator" is not evidence and this project's standard is that a
+change carries its measurement.
+
+Two runs over the same saturated payload — 19 samples, 3 scored fields, 57 rows, wrong
+values deliberately containing spaces:
+
+| channel | records recovered | tokens if split on whitespace | rows as published |
+| --- | --- | --- | --- |
+| space join (before) | ambiguous | 285 | 57 joined into one run |
+| `\x1f` join (after) | **57** | 57 | 57, each intact |
+
+**57 rows produce 285 whitespace tokens** — a 5x over-split. That ratio is the ambiguity,
+quantified: roughly four of every five "records" a whitespace-splitting reader would see
+are not records. Finding 70's two phantom rows were the visible tip of it.
+
+The saturated payload is 5306 characters (the earlier 4044 figure used a shorter wrong
+value and was an underestimate of the worst case, not a different measurement), and the
+cap is 60 rows, so `\x1f` costs nothing in length and the payload sits far inside the 64KiB
+annotation limit.
+
+### What the test asserts, and why not the literal byte
+
+Three injections, all caught:
+
+| injection | change | tests failed |
+| --- | --- | --- |
+| L | join with a space again | 3 |
+| M | separator is `,` (printable) | 3 |
+| N | raise the cap to 1000 | 1 |
+
+Injection N failing only one test is correct rather than weak: the cap has two bounds in
+opposite directions — too small truncates a routine run, too large overflows the
+annotation — and they belong to two different tests. N violates the second
+(`expected 116200 to be less than 65535`), not the first.
+
+The test does **not** assert the literal `\x1f`. It reads the byte out of the workflow's
+own `printf`, asserts it is a control character, and then asserts that **no value in the
+real dataset contains it**. Pinning the literal would pass forever while the dataset grew a
+sample whose value happened to contain the chosen byte; asserting the property catches
+that on the commit that introduces it. This is the same reasoning as finding 66: assert the
+invariant the choice depends on, not the choice.

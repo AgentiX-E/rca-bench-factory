@@ -274,10 +274,12 @@ jobs:
           # -- only the reading was missing.
           # The `|` delimiter is used instead of `/` because the replacement
           # contains a `/`. Alternating the delimiter is the standard way to keep
-          # a substitution readable, and it keeps the test's parser simple: that
-          # parser splits on an unescaped `/`, so a literal one in the replacement
-          # would both split the expression wrongly and make the split count
-          # depend on the data.
+          # a substitution readable, and it keeps the gate's parser simple: that
+          # parser reads the delimiter out of the expression rather than assuming
+          # it, so a literal `/` in the replacement would not split the expression
+          # wrongly -- but a delimiter read off the expression is only simple if
+          # the expression actually starts with `s<delimiter>`, which the `|` form
+          # does and a bare `/`-delimited expression with a `/` inside would too.
           if [ -n "$headline" ]; then
             echo "::notice title=M1 fault extraction::${headline}"
           else
@@ -306,7 +308,19 @@ jobs:
           # 60 therefore covers every run this dataset can produce with room to
           # spare, and the truncation path exists for the day the dataset grows --
           # it is a stated bound, not the normal case.
-          detail=$(printf '%s' "$missed_rows" | head -n 60 | tr '\n' ' ')
+          # Rows are joined with U+001F (unit separator), not with a space.
+          # Measured, not assumed: the first version separated rows with spaces and
+          # the values themselves contain spaces -- `order-service ConfigMap`,
+          # `tax-calculation provider`, `billing service database client pool` -- so
+          # splitting the annotation on whitespace split *records*. That produced two
+          # rows reading `order-service -> order-service`, i.e. two apparent cases of
+          # the scorer marking a correct answer wrong. The scorer was right both
+          # times; the channel was ambiguous. A measurement channel that can be
+          # misread is the same defect as one that is missing, so the separator is
+          # one that cannot occur in a value. Values are slugs and quoted incident
+          # text, so U+001F is safe and is what it exists for.
+          sep=$(printf '\037')
+          detail=$(printf '%s' "$missed_rows" | head -n 60 | paste -sd "$sep" -)
           dropped=$((miss_row_count > 60 ? miss_row_count - 60 : 0))
           if [ -n "$detail" ]; then
             if [ "$dropped" -gt 0 ]; then
