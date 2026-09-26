@@ -437,6 +437,21 @@ export {
 export type { AnthropicOptions, AnthropicRequest } from './llm/anthropic.js';
 
 export {
+  DEFAULT_LLM_PROVIDER,
+  LLM_PROVIDER_ENV_VARS,
+  LLM_PROVIDER_IDS,
+  createLlmProvider,
+  isLlmProviderId,
+  resolveLlmProviderConfig,
+} from './llm/registry.js';
+export type {
+  LlmProviderBuildResult,
+  LlmProviderConfigResult,
+  LlmProviderId,
+  LlmProviderOptions,
+} from './llm/registry.js';
+
+export {
   inferFaultCategory,
   normalizeFaultType,
   parseFaultSpec,

@@ -18,13 +18,21 @@
  *   node scripts/derive-fault-golden.mjs --out /tmp/extraction-predictions.json
  *
  * Environment:
+ *   RCA_BENCH_LLM_PROVIDER   optional; `deepseek` (default), `openai`, `anthropic`
  *   RCA_BENCH_LLM_API_KEY    required; the key itself
- *   RCA_BENCH_LLM_BASE_URL   optional; defaults to the DeepSeek endpoint
- *   RCA_BENCH_LLM_MODEL      optional; defaults to the DeepSeek chat model
+ *   RCA_BENCH_LLM_BASE_URL   optional; per-provider default when unset
+ *   RCA_BENCH_LLM_MODEL      optional; per-provider default when unset
+ *
+ * Which provider to use is *configuration*, not a code path. This script used to
+ * call `createDeepSeekProvider` by name, which made the provider abstraction
+ * cosmetic: every adapter was interchangeable except the one a user configures.
+ * It now resolves the provider through the core registry, so an organisation that
+ * has already stored a key can point the run at it instead of being told to
+ * rename its secret to whatever this repository picked.
  *
  * Exit codes:
  *   0  every sample produced a parseable, validated extraction
- *   1  the run could not start (missing key, unreadable dataset)
+ *   1  the run could not start (missing key, unknown provider, unreadable dataset)
  *   2  at least one sample did not produce a usable extraction
  *
  * A non-zero exit does *not* mean the run is worthless -- the predictions are
@@ -91,7 +99,8 @@ async function main() {
   if (args.help) {
     console.log(
       'usage: node scripts/derive-fault-golden.mjs [--dataset <path>] --out <path>\n' +
-        'reads RCA_BENCH_LLM_API_KEY, RCA_BENCH_LLM_BASE_URL, RCA_BENCH_LLM_MODEL',
+        'reads RCA_BENCH_LLM_PROVIDER (optional), RCA_BENCH_LLM_API_KEY,\n' +
+        '      RCA_BENCH_LLM_BASE_URL, RCA_BENCH_LLM_MODEL',
     );
     return 0;
   }
@@ -100,28 +109,53 @@ async function main() {
     return 1;
   }
 
-  const apiKey = process.env['RCA_BENCH_LLM_API_KEY'] ?? '';
-  if (apiKey.trim() === '') {
+  const core = await loadCore();
+
+  // The provider is resolved before the key is checked, and both before the
+  // dataset is read. An operator should read the thing that is actually wrong
+  // first: naming an unknown provider when a valid key is present is a different
+  // fix from setting a key, and reporting one as the other wastes a round trip.
+  const providerConfig = core.resolveLlmProviderConfig(process.env);
+  if (!providerConfig.ok) {
     console.error(
-      'error: RCA_BENCH_LLM_API_KEY is not set.\n' +
-        '  The key is read here and nowhere else. Set it in the workflow environment; ' +
-        'never write it to a file in this repository.',
+      `error: ${providerConfig.error}\n` +
+        `  Set ${core.LLM_PROVIDER_ENV_VARS.provider} to one of the registered providers, ` +
+        'or leave it unset for the default.',
     );
     return 1;
   }
 
-  const core = await loadCore();
+  const apiKey = process.env[core.LLM_PROVIDER_ENV_VARS.apiKey] ?? '';
+  if (apiKey.trim() === '') {
+    console.error(
+      `error: ${core.LLM_PROVIDER_ENV_VARS.apiKey} is not set.\n` +
+        '  The key is read here and nowhere else. Each provider has its own secret in the ' +
+        'workflow; never write one to a file in this repository.',
+    );
+    return 1;
+  }
+
   const dataset = core.parseGoldenDataset(JSON.parse(readFileSync(args.dataset, 'utf8')));
 
   const options = {
     apiKey,
-    ...(process.env['RCA_BENCH_LLM_BASE_URL'] ? { baseUrl: process.env['RCA_BENCH_LLM_BASE_URL'] } : {}),
-    ...(process.env['RCA_BENCH_LLM_MODEL'] ? { model: process.env['RCA_BENCH_LLM_MODEL'] } : {}),
+    ...(process.env[core.LLM_PROVIDER_ENV_VARS.baseUrl]
+      ? { baseUrl: process.env[core.LLM_PROVIDER_ENV_VARS.baseUrl] }
+      : {}),
+    ...(process.env[core.LLM_PROVIDER_ENV_VARS.model]
+      ? { model: process.env[core.LLM_PROVIDER_ENV_VARS.model] }
+      : {}),
   };
-  const provider = core.createDeepSeekProvider(options);
+  const built = core.createLlmProvider(providerConfig.provider, options);
+  if (!built.ok) {
+    console.error(`error: ${built.error}`);
+    return 1;
+  }
+  const provider = built.provider;
 
   console.log(`Deriving extractions for ${dataset.samples.length} golden sample(s).`);
-  console.log(`Model: ${options.model ?? core.DEEPSEEK_DEFAULT_MODEL}`);
+  console.log(`Provider: ${providerConfig.provider}`);
+  console.log(`Model: ${options.model ?? '(provider default)'}`);
 
   const predictions = [];
   let unusable = 0;
@@ -176,8 +210,11 @@ async function main() {
   const report = {
     schema: 'rca-bench-fault-extraction-predictions/1',
     dataset: args.dataset,
-    provider: 'deepseek',
-    model: process.env['RCA_BENCH_LLM_MODEL'] ?? null,
+    // Recorded from the run, not restated. It was the literal `'deepseek'`, so a
+    // run against any other provider would have written an artefact claiming to
+    // be a DeepSeek run -- and the artefact is the evidence a later reader has.
+    provider: providerConfig.provider,
+    model: process.env[core.LLM_PROVIDER_ENV_VARS.model] ?? null,
     predictions,
   };
 

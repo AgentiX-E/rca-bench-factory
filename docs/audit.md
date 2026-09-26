@@ -3776,3 +3776,152 @@ evidence that they did.
 > Nineteen samples, an unpinned model alias and an unverified edge together are
 > enough to make a passing score unauditable -- and an unauditable pass is worse
 > than an honest failure, because nothing about it invites a second look.
+
+---
+
+## 56 — An injection battery mutates a checked-in file, and that is not compatible with a concurrent reader
+
+### What was observed
+
+A local gate run went red on a test that could not be red:
+
+```
+FAIL  test/llm/workflow-provider.test.ts > the workflow forwards the registry-owned
+variable names > keeps the endpoint and model optional and out of the file
+AssertionError: expected '...' to match /RCA_BENCH_LLM_BASE_URL:\s*${{ vars./
+```
+
+The assertion is that the endpoint comes from a repository variable rather than a
+hard-coded vendor URL. The workflow does exactly that, in every revision ever
+committed, and still does:
+
+```
+$ grep -n 'RCA_BENCH_LLM_BASE_URL' .github/workflows/fault-extraction-accuracy.yml
+200:          RCA_BENCH_LLM_BASE_URL: ${{ vars.RCA_BENCH_LLM_BASE_URL }}
+```
+
+So the file on disk matched the assertion, and the test that read it failed. Those
+two facts cannot both be true of the same bytes, which means the test did not read
+the file that is on disk.
+
+It had not. The injection battery for this workflow
+(`scripts/injection/fault-extraction-workflow.py`) works by writing a fault into
+the workflow, running the gate, and restoring it -- and it was running at the same
+time as `pnpm test:coverage`. The reader observed an injected revision.
+
+### Why this was not "flaky" and should not have been treated as such
+
+The tempting reading is that a test raced a file and the fix is to re-run it. That
+reading is wrong twice over.
+
+First, **the failure was self-inflicted and fully deterministic in cause**. There is
+no nondeterminism in *whether* the battery exposes a non-pristine revision -- it
+must, that is its purpose. The only variable is whether a reader happens to look
+during the window. A test that fails when an unrelated process is doing its job is
+not flaky; it is *correctly reporting a real shared-state conflict*.
+
+Second, and worse than a wrong red: the window included an **empty file**.
+
+```
+$ python3 /tmp/race-probe.py          # reader polling while the battery ran
+distinct states observed by the concurrent reader: 11
+  5c3861a96222459f  x1238   NON-PRISTINE
+  ...
+  e3b0c44298fc1c14  x4      NON-PRISTINE   <-- sha256 of the empty string
+```
+
+`e3b0c44298fc1c14` is the sha256 of zero bytes. `Path.write_text` opens with
+`O_TRUNC` and then writes, so between the truncate and the write the file is empty,
+and a reader that lands in that window sees nothing at all. Four reads of zero
+bytes in one battery run.
+
+That changes the failure mode from *misleading* to *undiagnosable*. A reader that
+observes a wrong-but-valid revision fails on a plausible assertion and sends
+someone to look at the wrong thing. A reader that observes an empty file fails to
+`SyntaxError` or a schema error, and then re-reads the file, finds it intact, and
+concludes the failure was spurious -- because it was. Nobody investigating that
+would suspect a race they have no evidence for.
+
+### The repair, and the measurement that showed it was incomplete
+
+Every mutation was routed through one helper that writes a temporary file in the
+destination directory, fsyncs it, and `os.replace`s it into position. On POSIX that
+rename is atomic, so a reader observes one revision or the other and never a
+mixture.
+
+Re-running the reader probe showed the empty-file state was gone and non-pristine
+revisions were still observable -- which is correct, and is the distinction the
+first version of this finding got wrong:
+
+- **Visibility of an injected revision cannot be eliminated.** The battery's purpose
+  is to make a fault visible to the gate. That is by design.
+- **Visibility of a truncated or empty file can be eliminated**, and must be.
+
+The probe said the fix had *not* eliminated it:
+
+```
+--- run 2 ---
+reads: 23196
+zero-byte observations: 1        <-- still there
+```
+
+One zero-byte read survived. The cause was the site the fix had not touched:
+the final crash-recovery restore, which used `shutil.copyfile`. Measured in
+isolation, with a reader polling a large file:
+
+```
+shutil.copyfile                    reads=      18 zero-byte=2
+os.replace                         reads=      13 zero-byte=0
+```
+
+`copyfile` truncates its destination too. Routing only `write_text` through the
+helper had produced a file that *looked* fully repaired -- the obvious pattern was
+gone -- while one `O_TRUNC` writer remained. The first fix was found by reading the
+diff; the remaining hole was found only by re-measuring.
+
+Five runs after routing that last site through the helper, ~116,000 reads:
+
+```
+run 1..5:  zero-byte observations: 0   truncated (<20 lines): 0   distinct revisions: 10
+```
+
+### What the two gates are, and how they were verified
+
+The battery now has two subjects, and both are gated:
+
+| Gate | Subject | Injections | Result |
+|---|---|---|---|
+| `test/llm/workflow-provider.test.ts` | the workflow cannot drift from the provider registry | 9 | 9 caught, control green |
+| `test/injection-write-discipline.test.ts` | every mutation goes through the atomic helper | 2 | 2 caught, control green |
+
+The second gate is asserted against the battery's **source**, not by racing it. A
+race-based test would pass on the broken version whenever the reader missed the
+window, and a test that fails one run in ten is worse than no test. The two
+injections restore a direct `write_text` and reinstate `shutil.copyfile`; both go
+red.
+
+### The rule this adds
+
+> A test that reads a checked-in file is not isolated from a process that rewrites
+> that file, and neither atomicity nor a green re-run makes it so. Atomicity bounds
+> the damage from *unreadable* to *readable but wrong*; it cannot make the reader
+> see the revision it expected, because there is no expected revision while a
+> battery is mid-injection.
+
+The operational consequence: **an injection battery is not run concurrently with
+the suite.** `package.json` does not express that, and nothing enforces it, so the
+mitigation is written at the top of the battery and the residual exposure stays on
+the unmeasured list rather than being declared solved.
+
+### What this does not cover
+
+- **Concurrent execution is mitigated, not prevented.** A guard that lets the
+  battery take a lock, or makes the suite refuse to start while one is held, would
+  close it. Not implemented; the exposure is a wrong red whose cause is now
+  documented.
+- **Other checked-in files are not audited for this.** The battery mutates one file.
+  Whether any other script mutates a tracked file while tests read it was not
+  surveyed.
+- **The non-pristine window is unquantified.** Ten distinct revisions were observed,
+  and how long each is in place was not measured, so "a reader can see one" is
+  established but "how likely" is not.

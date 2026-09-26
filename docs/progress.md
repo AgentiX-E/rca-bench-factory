@@ -1088,3 +1088,130 @@ is a list of the ones somebody happened to check.
 
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
+
+## Pass 14 — the provider is configuration, and a battery that mutates a checked-in file
+
+### The correction that started this pass
+
+An earlier pass told the operator to grant `rca-bench-factory` access to a secret
+named `RCA_BENCH_LLM_API_KEY`. That name was **invented by this repository** and
+then demanded from the organisation, which already stores its keys under vendor
+names. Asking for a second copy of a key under a second name is precisely the
+single-vendor coupling the provider abstraction exists to remove, so the request
+was wrong and the repair belonged in the code.
+
+The abstraction had been real everywhere except the one place a user configures.
+Three adapters existed and shared an OpenAI-compatible transport, but
+`scripts/derive-fault-golden.mjs` called `core.createDeepSeekProvider(...)` **by
+name** and read a DeepSeek-specific variable. So "provider-agnostic" held in the
+library and not at the point of use.
+
+### What was built
+
+`packages/core/src/llm/registry.ts` — 155 lines, `100 / 100 / 100 / 100`:
+
+| Symbol | Role |
+|---|---|
+| `LLM_PROVIDER_IDS` | the registry's contents, frozen and ordered |
+| `LLM_PROVIDER_ENV_VARS` | the four neutral variable names, in one place |
+| `resolveLlmProviderConfig(env)` | configuration → provider, or a legible error |
+| `createLlmProvider(id, options)` | one options shape, every vendor |
+| `isLlmProviderId(value)` | a type guard the workflow's `node -e` step uses |
+
+Three design decisions worth recording, because each is a rejection of an easier
+option:
+
+- **A set-but-unrecognised provider is an error and never falls back.** Falling back
+  would run against a different model and report the result under the requested
+  name -- a reading that is wrong in the one way a reading must not be.
+- **Blank is treated as unset, not as a value.** An unset repository variable
+  expands to the empty string in a workflow, and that is the same situation as not
+  configuring one at all.
+- **Aliases are explicit and finite** (`deepseek-chat`→deepseek, `claude`→anthropic).
+  An open-ended prefix match would silently accept `gpt-4o` as `gpt`.
+
+`derive-fault-golden.mjs` now resolves the *provider* before the key and records
+whichever provider ran in its artefact envelope, rather than the literal
+`'deepseek'` it used to write. The artefact is the evidence a later reader has; a
+hard-coded vendor in it would mislabel any other provider's run.
+
+### The workflow, and the drift gate
+
+`fault-extraction-accuracy.yml` no longer names a warehouse secret. It resolves the
+provider through the registry, then maps the provider onto whichever secret the
+organisation already defined:
+
+| Step | What it does |
+|---|---|
+| `Resolve the LLM provider` | registry lookup, error names the variable and the known values |
+| `Select the key for the resolved provider` | `case` over the provider, `::add-mask::`, then `$GITHUB_ENV` |
+
+Adding a provider is now one registry entry plus one `KEY_*` line; nothing else in
+the file changes, and that claim is asserted rather than asserted-in-a-comment.
+
+`test/llm/workflow-provider.test.ts` (15 tests) is the anti-drift gate. The defect
+was a **missing mapping**, so a presence test would have passed on the broken file:
+what must hold is set *equality* between the registry and the workflow, and the way
+to know the test checks equality is to break each side. Read as regex over the YAML
+text -- not parsed, because a YAML evaluator would be a worse dependency than a
+regex, and `check-no-mock.mjs` permits no mocking library.
+
+Nine injections, all caught, negative control green. **Two of the nine are about
+scope rather than content**: they leave every string the test looks for in place and
+still must go red, which is the same shape as finding 52.
+
+### Finding 56 — the battery and the suite cannot run at once
+
+The local suite went red on an assertion that could not be false. The cause was
+mine: the injection battery rewrites the workflow in place, and it ran concurrently
+with `pnpm test:coverage`. A polling reader observed **11 distinct file states in
+one battery run, four of them zero bytes**.
+
+The zero-byte state is the part that mattered. `Path.write_text` truncates before
+it writes, so a reader landing in that window sees an empty file and fails to a
+`SyntaxError` that points nowhere -- and re-reading the file "disproves" it. A
+wrong-but-valid revision is merely misleading; an empty one is undiagnosable.
+
+Every write moved to an `os.replace`-based helper. Re-measuring then showed the
+empty-file window was **still** open, because one site had not been converted:
+`shutil.copyfile`, which truncates too. Measured in isolation, `copyfile` gave 2
+zero-byte observations in 18 reads against 0 in 13 for `os.replace`. Five runs and
+~116,000 reads later: zero empty, zero truncated.
+
+The distinction the first version of the finding got wrong, and which is now the
+rule: **an injected revision being visible is the battery working**; an *empty or
+truncated* one is the defect. Atomicity bounds the damage from unreadable to
+readable-but-wrong; it cannot hide the injection, and must not.
+
+`test/injection-write-discipline.test.ts` (9 tests) gates the battery's own write
+discipline, verified by 2 injections. Asserted against the battery's **source**
+rather than by racing it -- a race-based test passes whenever the reader misses the
+window, and a test that fails one run in ten is worse than no test. The scanner
+strips comments and strings first, because the file documents *why* the rejected
+functions are unused and a whole-file scan matched that documentation.
+
+### Measured at this revision
+
+| Gate | Result |
+|---|---|
+| build / typecheck / lint | clean; `no corpus data` over 208 tracked files |
+| coverage core | `99.96 \| 99.93 \| 100 \| 99.96`, **2388 passed (81 files)** |
+| coverage cli | `100 \| 100 \| 100 \| 100`, 173 passed |
+| mutation | 26 passed |
+| Golden Master / official-metric / examples / docs / bundle / verify | all pass |
+| provider-registry battery | 9 injections, 9 caught, control green |
+| write-discipline battery | 2 injections, 2 caught, control green |
+
+### Still open
+
+- **The operator's DeepSeek secret name.** Whether the org's key is stored as
+  `DEEPSEEK_API_KEY` cannot be read from this session: this token gets
+  `403 Resource not accessible by personal access token` for org and repo
+  **secrets** (`200` for repo **variables**), and the `secrets` array is absent from
+  the repository payload. The workflow's mapping is the best available guess and its
+  error message names the line to edit.
+- **`RCA_BENCH_LLM_MODEL` is unset**, so a run would use the `deepseek-chat` alias.
+  The alias floats, and an unpinned model makes a score unauditable.
+- **Concurrent battery execution is mitigated, not prevented.** A lock would close
+  it. The exposure is a wrong red whose cause is now documented, and it stays on the
+  unmeasured list rather than being declared solved.

@@ -10,11 +10,11 @@ name: Fault extraction accuracy
 #
 # ## Why this is on a runner and not in the sandbox
 #
-# The measurement needs a real LLM. The sandbox this repository is developed in
-# has no model endpoint reachable and no key, and a scoring run that substitutes
-# a stub for the model measures the stub. A GitHub runner has general internet
-# access and the organization-level DeepSeek key, so this is where the number can
-# be produced honestly.
+# The measurement needs a real LLM. A scoring run that substitutes a stub for the
+# model measures the stub, so the number has to come from a real endpoint. A
+# GitHub runner reaches every provider; the development sandbox reaches exactly
+# one (see finding 55), and the workflow comments used to justify this by saying
+# the sandbox "has internet access", which is not true.
 #
 # ## Why this is separate from CI
 #
@@ -24,21 +24,35 @@ name: Fault extraction accuracy
 # `push`. It runs on a schedule and on demand, and it reports a figure rather
 # than blocking a merge.
 #
+# ## The provider, and why this file does not name one
+#
+# This workflow used to reference `secrets.RCA_BENCH_LLM_API_KEY` -- a name this
+# repository invented -- and the run failed because the organisation's existing
+# key is stored under a different name. That was the wrong repair to ask for.
+# The core package ships three interchangeable adapters behind one registry, and
+# an abstraction that holds everywhere except the place a user configures is not
+# an abstraction. So the workflow resolves the *provider* first, then maps the
+# provider onto whichever secret the organisation already defined. Storing a
+# second copy of a key under a second name is exactly the single-vendor coupling
+# the registry exists to remove.
+#
+# To add a provider: add it to the registry in `packages/core/src/llm/registry.ts`
+# and add one entry to the `PROVIDER_*` maps below. Nothing else in this file
+# changes.
+#
 # ## The key
 #
-# The workflow reads `secrets.RCA_BENCH_LLM_API_KEY`, which is the first
-# `secrets.*` reference in this repository. It is passed as an environment
-# variable to one step and is never written to a file, never echoed, and never
-# reaches the artefact. `scripts/check-no-secrets.mjs` is the backstop; this
-# comment is the statement of intent.
+# Every provider's key is passed as an environment variable to the steps that
+# need it. A key is never written to a file, never echoed (the check reports its
+# *length*), and never reaches the artefact. `scripts/check-no-secrets.mjs` is
+# the backstop; this comment is the statement of intent.
 #
-# ## The base URL
+# ## The endpoint and the model
 #
-# `RCA_BENCH_LLM_BASE_URL` is optional and defaults inside the core package to the
-# DeepSeek endpoint. It is passed through from a repository variable so a run can
-# be pointed at a different provider without editing this file -- the provider
-# abstraction exists for exactly that, and hard-coding the endpoint here would
-# reintroduce the single-vendor lock the abstraction is meant to prevent.
+# Both are optional. Unset means the provider's own default, resolved inside the
+# core package. The endpoint is *never* hard-coded here: pinning one vendor's URL
+# in the workflow would reintroduce the single-vendor lock at the layer that is
+# supposed to be provider-neutral.
 
 on:
   workflow_dispatch:
@@ -106,26 +120,83 @@ jobs:
             });
           '
 
-      # The failure mode this step is written against is the fourth anchor's:
-      # twelve consecutive red runs, none of which produced a measurement, and
-      # the reason buried in a step that had already been retried. So the key is
-      # checked by *presence* and the message says what to do, rather than let
-      # the run fail inside a provider adapter with a 401 three steps later.
-      - name: Check the key is present
+      # Which provider this run uses, resolved before anything is spent.
+      #
+      # Organisation-level variables, not repository ones: a provider choice is
+      # an organisation-wide fact, and a second copy per repository is how the
+      # two drift. An empty or absent value means the registry's default, which
+      # is the provider this project's documented figures were produced against.
+      #
+      # The resolution runs through the same function the derivation script uses,
+      # so a name that validates here cannot fail there. A workflow that
+      # re-implements the rule would be a second, weaker copy of it.
+      - name: Resolve the LLM provider
+        id: provider
         env:
-          RCA_BENCH_LLM_API_KEY: ${{ secrets.RCA_BENCH_LLM_API_KEY }}
+          RCA_BENCH_LLM_PROVIDER: ${{ vars.RCA_BENCH_LLM_PROVIDER }}
         run: |
           set -eu
-          if [ -z "${RCA_BENCH_LLM_API_KEY:-}" ]; then
-            echo "::error title=Missing LLM key::secrets.RCA_BENCH_LLM_API_KEY is empty. Set it at the organization level; the repository cannot score a run without it."
+          resolved=$(node -e '
+            import("./packages/core/dist/index.js").then((core) => {
+              const config = core.resolveLlmProviderConfig(process.env);
+              if (!config.ok) {
+                console.error(config.error);
+                process.exit(1);
+              }
+              process.stdout.write(config.provider);
+            });
+          ') || {
+            echo "::error title=Unknown LLM provider::RCA_BENCH_LLM_PROVIDER is set to an unregistered name. See the workflow header for how to add one."
+            exit 1
+          }
+          echo "provider=${resolved}" >> "$GITHUB_OUTPUT"
+          echo "resolved provider: ${resolved}"
+
+      # The key, looked up by the provider that was just resolved.
+      #
+      # This is the step that used to fail. It demanded a secret name this
+      # repository invented; the organisation stores its keys under vendor names,
+      # so the run stopped on a missing secret that was not, in fact, missing.
+      #
+      # The three cases are handled explicitly because they need different
+      # messages: a provider whose secret was never set, a provider with no
+      # mapping at all (someone added it to the registry and not to this file),
+      # and the normal path. Collapsing them into one "no key" error is how the
+      # first version cost two runs to diagnose.
+      - name: Select the key for the resolved provider
+        id: key
+        env:
+          PROVIDER: ${{ steps.provider.outputs.provider }}
+          # Each entry is the secret the organisation already defines for that
+          # vendor. Adding a provider means adding one line here.
+          KEY_DEEPSEEK: ${{ secrets.DEEPSEEK_API_KEY }}
+          KEY_OPENAI: ${{ secrets.OPENAI_API_KEY }}
+          KEY_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -eu
+          case "$PROVIDER" in
+            deepseek)  selected="${KEY_DEEPSEEK:-}" ;;
+            openai)    selected="${KEY_OPENAI:-}" ;;
+            anthropic) selected="${KEY_ANTHROPIC:-}" ;;
+            *)
+              echo "::error title=No key mapping::The registry resolved provider '${PROVIDER}', but this workflow has no secret mapped for it. Add one line to the 'Select the key' step."
+              exit 1
+              ;;
+          esac
+          if [ -z "$selected" ]; then
+            echo "::error title=Missing LLM key::Provider '${PROVIDER}' is selected but its secret is empty. Set the matching organisation secret; the repository cannot score a run without one."
             exit 1
           fi
-          echo "key present (${#RCA_BENCH_LLM_API_KEY} characters; value never printed)"
+          # Written to the environment, never to a file, and only the length is
+          # ever printed. It is masked for the rest of the job as a second belt.
+          echo "::add-mask::${selected}"
+          echo "RCA_BENCH_LLM_API_KEY=${selected}" >> "$GITHUB_ENV"
+          echo "provider=${PROVIDER} has a key present (${#selected} characters; value never printed)"
 
       - name: Derive the extractions
         id: derive
         env:
-          RCA_BENCH_LLM_API_KEY: ${{ secrets.RCA_BENCH_LLM_API_KEY }}
+          RCA_BENCH_LLM_PROVIDER: ${{ steps.provider.outputs.provider }}
           RCA_BENCH_LLM_BASE_URL: ${{ vars.RCA_BENCH_LLM_BASE_URL }}
           RCA_BENCH_LLM_MODEL: ${{ vars.RCA_BENCH_LLM_MODEL }}
         run: |

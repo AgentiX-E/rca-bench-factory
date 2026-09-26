@@ -138,6 +138,66 @@ describe('scripts/derive-fault-golden.mjs · the key read', () => {
   });
 });
 
+describe('scripts/derive-fault-golden.mjs · the provider is configuration, not a code path', () => {
+  it('names the provider variable when an unknown provider is configured', () => {
+    // The point of the registry: a run against a provider nobody registered must
+    // say so, rather than quietly falling back and reporting a DeepSeek number
+    // as if it were the requested provider's.
+    const result = run(DERIVE, ['--out', join(workdir, 'x.json')], {
+      RCA_BENCH_LLM_PROVIDER: 'gemini',
+      RCA_BENCH_LLM_API_KEY: 'irrelevant-because-the-provider-is-rejected',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/unknown LLM provider 'gemini'/);
+  });
+
+  it('lists the providers it does know, so the fix is readable', () => {
+    const result = run(DERIVE, ['--out', join(workdir, 'x.json')], {
+      RCA_BENCH_LLM_PROVIDER: 'gemini',
+      RCA_BENCH_LLM_API_KEY: 'k',
+    });
+    expect(result.stderr).toMatch(/deepseek/);
+    expect(result.stderr).toMatch(/openai/);
+    expect(result.stderr).toMatch(/anthropic/);
+  });
+
+  it('reports the provider problem before the key problem', () => {
+    // With both wrong, the provider is the first thing to fix, because a key for
+    // the wrong provider is not a key at all. Ordering is the assertion.
+    const result = runWithoutKey(DERIVE, ['--out', join(workdir, 'x.json')]);
+    const bothWrong = run(DERIVE, ['--out', join(workdir, 'x.json')], {
+      RCA_BENCH_LLM_PROVIDER: 'gemini',
+    });
+    expect(result.stderr).toMatch(/RCA_BENCH_LLM_API_KEY is not set/);
+    expect(bothWrong.stderr).toMatch(/unknown LLM provider/);
+    expect(bothWrong.stderr).not.toMatch(/API_KEY is not set/);
+  });
+
+  it('accepts a vendor-style alias so an existing secret name keeps working', () => {
+    // Configuration is written by people, who name a secret after the vendor.
+    // `claude` must resolve to anthropic rather than erroring.
+    const result = run(DERIVE, ['--out', join(workdir, 'x.json')], {
+      RCA_BENCH_LLM_PROVIDER: 'claude',
+    });
+    // No key is available in this sandbox, so the run stops at the key check --
+    // which is exactly the proof that the alias was accepted: an unresolvable
+    // provider would have exited on the provider check instead.
+    expect(result.stderr).not.toMatch(/unknown LLM provider/);
+    expect(result.stderr).toMatch(/RCA_BENCH_LLM_API_KEY is not set/);
+  });
+
+  it('says nothing about a provider when none is configured', () => {
+    // The default path must not require the variable to be set.
+    const result = runWithoutKey(DERIVE, ['--out', join(workdir, 'x.json')]);
+    expect(result.stderr).not.toMatch(/unknown LLM provider/);
+  });
+
+  it('advertises the provider variable in its own help', () => {
+    const result = runWithoutKey(DERIVE, ['--help']);
+    expect(result.stdout).toMatch(/RCA_BENCH_LLM_PROVIDER/);
+  });
+});
+
 describe('scripts/score-fault-extraction.mjs · the exit codes', () => {
   it('exits 0 and reports MET when every graded sample is fully right', () => {
     const dataset = JSON.parse(readFileSync(DATASET, 'utf8')) as {
