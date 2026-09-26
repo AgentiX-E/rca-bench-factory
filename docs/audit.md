@@ -3985,7 +3985,7 @@ keeping them apart is the whole content of this finding:
 | Statement | Status |
 |---|---|
 | the workflow reaches the model | **established** -- steps 8-11 all succeeded |
-| a measurement exists | **established** -- the scorer's contract forces it, since 1 and 3 would have gone red |
+| a measurement exists | **downgraded by finding 58** -- see the correction below |
 | the threshold is met | **not established** -- this is `0` vs `2`, and both are consistent with a green job |
 | the value of the rate | **not established** -- the artefact carrying it is unreachable |
 
@@ -3993,18 +3993,64 @@ keeping them apart is the whole content of this finding:
 > statement that the instrument worked, which is a different claim from the one the
 > instrument exists to make.
 
+#### Correction (finding 58): the run was configured with a disabled model name
+
+This finding originally recorded `a measurement exists` as **established**. That was
+too strong, and the reason is worse than a missing check.
+
+`RCA_BENCH_LLM_MODEL` was set to `deepseek-chat` for this run. That alias was
+**disabled on 2026-07-24**, two months before the dispatch. The run therefore sent
+nineteen requests to a model name that the provider rejects.
+
+The step timings say the requests did not come back as answers:
+
+```
+10. Derive the extractions                           23.0s
+```
+
+Nineteen samples at a 250ms serialisation gap is 4.75s of pure pacing, leaving
+18.25s for nineteen HTTP round trips -- **0.96s each**. A real completion for these
+prompts takes seconds per call, not one; a rejected request returns in a fraction of
+a second. The run very likely spent most of that step waiting on the pacing sleep
+rather than on the provider.
+
+Step 11 still succeeded, and the check run carries no `No measurement` error
+annotation, so `score_exit` was `0` or `2` rather than `1` or `3` -- meaning at least
+one sample was graded. What cannot be claimed is that the graded answer came from a
+model. The honest statement is narrower than the original one:
+
+| Statement | Corrected status |
+|---|---|
+| the workflow reached the provider | **established** |
+| the provider accepted the request | **no** -- the model name was disabled |
+| a measurement was computed | **established** (a rate was produced from at least one graded sample) |
+| the number describes model behaviour | **not established** -- it describes a run configured against a retired alias |
+
+The lesson is not "check the model name". It is that **the run was reported green and
+I read the green as a successful measurement**, when the one field that would have
+exposed the problem -- the model actually used -- was never validated against the
+vendor's live list. A constant chosen from memory, in a repository whose whole subject
+is measurement discipline.
+
 ### What would close it
 
-The artefact is retrievable from a machine with ordinary internet access, or from the
-GitHub UI. A second route exists and is worth taking regardless: **write the figures
-into a place the API serves**, because the run's own summary is not exposed by REST
-and the artefact host is unreachable from an allow-listed sandbox. Until one of those
-happens, "M1 met or not" stays open, and `09` must not tick it.
+The model name is corrected to `deepseek-flash` and pinned as a repository variable,
+so a re-dispatch asks a model that exists. The figures are also now repeated as a
+check-run annotation, which the REST API serves, so the reading is obtainable from an
+allow-listed sandbox rather than only from the UI or a blob host.
+
+Until a re-dispatch lands, "M1 met or not" stays open, and `09` must not tick it.
 
 ### What this does not cover
 
 - **Nothing about the model's quality.** Whether the rate is 40% or 80% is unknown
-  here; only that it was computed.
-- **`deepseek-chat` is still an alias.** `RCA_BENCH_LLM_MODEL` is now set to it
-  explicitly, so the artefact records a configured value rather than an implicit
-  default -- but the alias floats, so the reading is *auditable* and not *pinned*.
+  here; and the number the previous run produced is not a reading of model behaviour
+  at all, per the correction above.
+- **The name is pinned, but the model behind it is not.** `deepseek-flash` currently
+  serves DeepSeek-V4.1-Flash, and the vendor states that the previously-accepted
+  `deepseek-v4-flash` is itself retired and routed to the same model. Pinning the
+  *current* name is the correct choice -- `deepseek-v4-flash` would have been one
+  deprecation away from this identical failure -- but it does not freeze the weights.
+  A vendor model update changes the number without changing configuration, and the
+  only defence is that the artefact records the name, so a shift is at least
+  attributable to a window.

@@ -226,6 +226,38 @@ jobs:
             cat /tmp/extraction-report.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # The step summary and the job log are the two places the number
+          # naturally lands, and neither is readable through the REST API: the
+          # job log endpoint 302s to a blob host the sandbox cannot resolve, and
+          # a run carries no summary field at all. What *is* served by the API is
+          # the check run, whose `output.text` and annotations come back on
+          # `GET /check-runs/{id}` -- so the headline is repeated as an
+          # annotation, which is the one durable, machine-readable channel this
+          # run has.
+          #
+          # `notice` rather than `warning`: a measurement that misses the
+          # threshold is a result, not a problem with the commit, and an
+          # annotation level is read by humans who did not just open a workflow
+          # file expecting to be told their model is bad.
+          #
+          # The pattern is anchored to the report's actual layout (see
+          # `formatExtractionReport`): every line is indented by two spaces. The
+          # count and layer lines both begin with `graded`, so only one of them
+          # is keyed -- the rate, matched with the `%` that a bare count lacks.
+          # Keying both produced `graded=19 graded=19/19`, which is the sort of
+          # ambiguous field a reader has to decode rather than read. A loose
+          # pattern would also match a per-field rate and report the wrong number
+          # with full confidence, so every alternative is an exact prefix.
+          headline=$(sed -n -e 's/^  samples *: /samples=/p' \
+                          -e 's/^  graded *: \([0-9][0-9]*\)$/graded_count=\1/p' \
+                          -e 's/^  graded: \(.*\)$/graded_rate=\1/p' \
+                          -e 's/^  strict all-fields: /strict=/p' \
+                          -e 's/^  M1 exit condition: /m1=/p' /tmp/extraction-report.txt | tr '\n' ' ')
+          if [ -n "$headline" ]; then
+            echo "::notice title=M1 fault extraction::${headline}"
+          else
+            echo "::notice title=M1 fault extraction::report did not match the expected layout; read the step summary"
+          fi
           # The three codes are the point of the script, so they are handled
           # rather than collapsed. `2` is "the model is not good enough yet"
           # and is a normal outcome of a measurement; `3` is "the pipeline

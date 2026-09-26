@@ -325,13 +325,13 @@ describe('transformBatch', () => {
 
   it('records provenance for every derived field', () => {
     const res = transformBatch([{ ts: '2026-09-06 12:00:00,000', level: 'W' }], rules, {
-      modelId: 'deepseek-chat',
+      modelId: 'some-derivation-model',
       promptVersion: 'g1@1.2',
     });
     expect(res.outputs[0]?.provenance['severity']).toEqual({
       source: 'derived',
       ruleId: 'm',
-      modelId: 'deepseek-chat',
+      modelId: 'some-derivation-model',
       promptVersion: 'g1@1.2',
     });
   });

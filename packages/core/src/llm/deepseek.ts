@@ -18,13 +18,34 @@ import type { LlmProvider } from './provider.js';
  * process environment or embedded here - credentials stay out of code and git.
  */
 
-export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-chat';
+/**
+ * The default model, named as DeepSeek's current documentation names it.
+ *
+ * This was `deepseek-chat` until that alias was disabled on 2026-07-24, and a
+ * default pointing at a disabled alias is worse than a wrong one: every run that
+ * omitted `RCA_BENCH_LLM_MODEL` failed at the provider instead of at
+ * configuration, which reads as a transport fault rather than a stale constant.
+ *
+ * The replacement is deliberately *not* `deepseek-v4-flash`. That name is itself
+ * a legacy alias now -- retired with V4-Flash when V4.1-Flash shipped on
+ * 2026-09-10 and still routed only "for compatibility". Pinning a name that is
+ * one deprecation away from the same failure would buy a few months and a second
+ * identical incident. `deepseek-flash` is the name the vendor asks callers to
+ * use, and the one their own curl example uses.
+ *
+ * Cost note, since it is the reason this constant is worth a comment: the
+ * retired `deepseek-chat` and `deepseek-reasoner` both resolved to V4-Flash, so
+ * `deepseek-flash` is the migration target as documented. `deepseek-v4-pro` is
+ * the tempting-looking successor to `deepseek-reasoner` and costs roughly 3x for
+ * the same traffic; it is a capability upgrade, not a rename.
+ */
+export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-flash';
 export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
 export const DEEPSEEK_CHAT_COMPLETIONS_PATH = '/chat/completions';
 
 export interface DeepSeekOptions {
   apiKey: string;
-  /** Model identifier; defaults to `deepseek-chat`. */
+  /** Model identifier; defaults to `deepseek-flash`. */
   model?: string;
   /** API base URL; defaults to the public DeepSeek endpoint. */
   baseUrl?: string;

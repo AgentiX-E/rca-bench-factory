@@ -1225,14 +1225,17 @@ artefact went from `total_count: 0` on both prior runs to 3378 bytes.
 Two operators' variables were also written, which is what made the run's inputs
 explicit rather than implicit:
 
-| Variable | Value | Why it is set |
+| Variable | Value at that time | Why it is set |
 |---|---|---|
 | `RCA_BENCH_LLM_PROVIDER` | `deepseek` | pins the *selection* to a recorded value instead of relying on the registry default |
 | `RCA_BENCH_LLM_MODEL` | `deepseek-chat` | the artefact now records a configured model rather than `null` |
 
-**Both are still weaker than they look.** `deepseek-chat` is an alias, so the run is
-*auditable* and not *pinned*: the artefact names a value, and that value does not name
-a backend. Recorded as a residual rather than as a fix.
+**That second value was wrong, and finding 58 corrects it.** `deepseek-chat` had been
+disabled on 2026-07-24, two months before this dispatch, so the run asked a model that
+does not exist — while reporting 13/13 green. It is now `deepseek-flash`, the name
+DeepSeek's own documentation tells callers to use. The "weaker than it looks" note that
+originally stood here was an understatement: it was not merely unpinned, it was
+**invalid**.
 
 ### What the green job does and does not say
 
@@ -1255,6 +1258,25 @@ The blob host resolves into `198.18.0.0/15`, the sinkhole range finding 55 measu
 so this is the egress allowlist. Fifth consecutive round without a log body, and the
 first without an artefact.
 
+#### A route that does work, and was found by probing rather than assuming
+
+`GET /repos/{o}/{r}/check-runs/{job_id}` returns **200**, and its `output` carries an
+annotation count. The annotations themselves came back over REST: the run had exactly
+two, both infrastructure notices (a Node 20 deprecation and an `ubuntu-latest`
+migration), and neither was a workflow `::error`.
+
+That is two results at once. It is a readable channel this sandbox had not used, and
+it independently confirms step 11's conclusion — the `No measurement` annotation the
+score step emits on exit `3` is *absent*, so `score_exit` was not `3`.
+
+The workflow now repeats the headline there: the score step emits an `::notice`
+carrying `samples`, `graded_count`, `graded_rate`, `strict` and the M1 verdict,
+extracted from the report it just wrote. At this revision the extraction is a
+five-pattern `sed` over the report body, and it is covered by tests that run the
+workflow's own patterns against the strings `formatExtractionReport` actually emits —
+because that pairing is the part that fails silently.
+
 **M1 therefore stays unticked**, and the reason is now narrower than it was: not "the
-workflow cannot run", which is fixed, but "the number the run produced is not
-readable from this sandbox".
+workflow cannot run", which is fixed, and no longer "the model name is valid", which
+is also fixed, but "no run has yet been dispatched with a working configuration". The
+reading channel exists; the reading has not been taken.

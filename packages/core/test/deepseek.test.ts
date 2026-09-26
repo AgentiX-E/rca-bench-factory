@@ -41,8 +41,8 @@ async function withServer(
 
 describe('buildDeepSeekRequest', () => {
   it('builds an OpenAI-compatible request with deterministic temperature', () => {
-    expect(buildDeepSeekRequest('map these columns', 'deepseek-chat')).toEqual({
-      model: 'deepseek-chat',
+    expect(buildDeepSeekRequest('map these columns', 'deepseek-flash')).toEqual({
+      model: 'deepseek-flash',
       messages: [{ role: 'user', content: 'map these columns' }],
       temperature: 0,
       stream: false,
@@ -50,7 +50,12 @@ describe('buildDeepSeekRequest', () => {
   });
 
   it('carries the requested model verbatim', () => {
-    expect(buildDeepSeekRequest('p', 'deepseek-reasoner').model).toBe('deepseek-reasoner');
+    // Verbatim pass-through, so the fixture is deliberately a name this build
+    // does not default to. Using the default here would let a bug that
+    // substituted the default for the caller's model still pass.
+    expect(buildDeepSeekRequest('p', 'a-model-this-build-never-defaults-to').model).toBe(
+      'a-model-this-build-never-defaults-to',
+    );
   });
 });
 
@@ -93,7 +98,7 @@ describe('createDeepSeekProvider', () => {
   it('defaults to the DeepSeek model and base URL', () => {
     const provider = createDeepSeekProvider({ apiKey: 'k' });
     // The provider exposes only generate(); the constants are asserted directly.
-    expect(DEEPSEEK_DEFAULT_MODEL).toBe('deepseek-chat');
+    expect(DEEPSEEK_DEFAULT_MODEL).toBe('deepseek-flash');
     expect(DEEPSEEK_DEFAULT_BASE_URL).toBe('https://api.deepseek.com');
     expect(typeof provider.generate).toBe('function');
   });
@@ -123,7 +128,7 @@ describe('createDeepSeekProvider', () => {
     await withServer(200, JSON.stringify({ choices: [{ message: { content: 'explicit' } }] }), async (baseUrl) => {
       const options: DeepSeekOptions = {
         apiKey: 'secret',
-        model: 'deepseek-reasoner',
+        model: 'an-explicitly-configured-model',
         baseUrl,
         fetchImpl: globalThis.fetch,
       };
