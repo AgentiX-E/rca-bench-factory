@@ -3706,3 +3706,73 @@ of truth, and a second source of truth is a source of disagreement.**
   probe's, the probe's figure is the one that is wrong. The defensible claim is
   "roughly 538, and exactly as many as the gate scans" — and making it exact is a
   small, separate piece of work.
+
+---
+
+## 55 — "The sandbox has internet access" was an assumption, and it is wrong
+
+The development sandbox this repository is built in has been described, in this
+audit and in the workflows' own comments, as having internet access. That phrasing
+has been load-bearing: it is the stated reason the fourth anchor runs on a runner
+rather than locally, and it is why the extraction measurement was put on a runner
+too. It was never measured until now.
+
+| host | HTTP | |
+|---|---|---|
+| `api.deepseek.com` | **`401`** | reachable — the endpoint answered without a key |
+| `ollama.com` | `200` | reachable |
+| `api.github.com` | `200` | reachable |
+| `api.openai.com` | `000` | **unreachable** |
+| `api.anthropic.com` | `000` | **unreachable** |
+| `generativelanguage.googleapis.com` | `000` | **unreachable** |
+| `registry.npmjs.org` | `000` | **unreachable** |
+| `pypi.org` | `000` | **unreachable** |
+
+Measured 2026-09-26. The shape of the result is not "networking is broken" -- three
+hosts answer normally. It is that egress is **allow-listed, and the list is narrow**:
+among model APIs, exactly one is reachable, and it is the one this project already
+targets.
+
+### Why the wrong assumption survived this long
+
+Because it was never load-bearing in a way that could fail. Every operation that
+depended on the outside world ran on a runner. Locally, the only thing that actually
+needed the network was installing dependencies, and `registry.npmjs.org` returning
+`000` does not break that:
+
+```
+pnpm install --frozen-lockfile --offline   ->  Done in 529ms
+```
+
+The store was already warm. A cached install looks exactly like a successful online
+install, so the absence of a route stayed invisible. This is the same shape as
+findings 47, 49, 50, 51 and 52 -- *a mechanism whose scope is narrower than its
+name* -- except the mechanism here is a **belief**, and the name it is narrower than
+is "internet access".
+
+### Two consequences worth writing down
+
+**New dependencies may not be installable.** Anything that needs a package not
+already in the store will fail, and it will fail in a way that looks like a typo or
+a version conflict rather than a blocked route. Any plan of the form "install X and
+try it" must first confirm the host it fetches from is reachable.
+
+**There is one reachable model endpoint, and the measurement still cannot run on
+it.** `api.deepseek.com` answers `401`, so a local derivation would need exactly one
+thing this sandbox does not have: a key. The adapter is already in the core package,
+the dataset is checked in, and both scripts' exit-code paths have now been exercised
+end to end. So the local route is *one secret away* from producing a number.
+
+It should still not produce *the* number, and finding 53's reasoning is why. A local
+run would use `deepseek-chat`, an alias that points at whatever backend the vendor
+is serving that week -- the workflow passes the model through a repository variable
+precisely so it can be pinned, and that variable is currently unset. It would also
+reach the endpoint through a different edge (`...eo.dnse1.com`) than a runner
+likely would. Two runs whose model is not pinned and whose network path is not
+compared do not measure the same thing, and a number that looks the same is not
+evidence that they did.
+
+> A number's value depends on its denominator and on whether its source is pinned.
+> Nineteen samples, an unpinned model alias and an unverified edge together are
+> enough to make a passing score unauditable -- and an unauditable pass is worse
+> than an honest failure, because nothing about it invites a second look.
