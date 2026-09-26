@@ -42,12 +42,48 @@ export interface FaultExtractionValidation {
 const FAULT_CATEGORY_VOCABULARY =
   'resource | network | runtime | middleware | code | config | dependency';
 
+/**
+ * The shape rule for `type`, stated because the field was previously undescribed.
+ *
+ * `category` is a closed vocabulary and the prompt says so; `type` is an open
+ * vocabulary whose values are nevertheless a canonical *shape*. Until this was
+ * stated, the prompt asked for a value from a space whose form it never
+ * described, and the measured cost was visible: in the same run, on the same
+ * texts and with the same model, `category` scored 57.9% and `type` scored 26.3%.
+ * The only difference between the two fields in the prompt was that one of them
+ * was specified.
+ *
+ * The rule is a *description of the existing data*, not a new requirement. Every
+ * expected `type` in the golden dataset is already a lower-case hyphenated slug,
+ * and `normalizeFaultType` leaves each one unchanged -- both properties are
+ * asserted in `fault-prompt-grammar.test.ts` so that a dataset edit which breaks
+ * them fails a test rather than silently invalidating this text.
+ *
+ * Deliberately a grammar and not the 19 expected labels. Listing the labels would
+ * fit the prompt to the test set and would teach the model this dataset's
+ * taxonomy rather than the naming convention, which is the part that transfers to
+ * a fault the repository has never seen. The closed list remains a live option
+ * for a project that wants a bounded fault-type ontology, but it is a different
+ * decision from describing the format, and conflating them would make the
+ * resulting number uninterpretable.
+ */
+const FAULT_TYPE_SHAPE_RULE =
+  '`type` is a short lower-case hyphenated slug naming the failure mechanism, ' +
+  'e.g. `cpu-saturation`, `network-delay`, `database-connection-pool-exhaustion`. ' +
+  'Use hyphens, never spaces or capitals. Prefer the mechanism over the symptom.';
+
+
 /** Confidence below this threshold is flagged for extra reviewer scrutiny. */
 const HITL_CONFIDENCE_THRESHOLD = 0.8;
 
 /**
  * Build the prompt asking an LLM to extract a fault spec from a support ticket or
  * post-mortem. Only the incident text is carried - never the whole dataset.
+ *
+ * The prompt is deliberately a single string rather than a chat message list.
+ * `LlmProvider` is `generate(prompt) -> text`, so a message-list shape would have
+ * to be flattened by every adapter, and the flattening would differ between them
+ * in ways that show up as accuracy differences rather than as adapter bugs.
  */
 export function buildFaultExtractionPrompt(incidentText: string): string {
   return [
@@ -58,6 +94,8 @@ export function buildFaultExtractionPrompt(incidentText: string): string {
     '',
     'Respond with JSON only, in this shape:',
     `{ "type": "fault type (short)", "category": "one of: ${FAULT_CATEGORY_VOCABULARY}", "component": "faulty component", "description": "root-cause reason", "confidence": 0.0..1.0 }`,
+    '',
+    FAULT_TYPE_SHAPE_RULE,
     '',
     '`category` is matched case-insensitively against that list; any other value is rejected.',
     '',
