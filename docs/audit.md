@@ -4232,3 +4232,172 @@ graded rate cannot.
 - **Whether 70% is reachable by prompt work at all.** Every field is far below it, and
   `component` at 15.8% suggests a naming-convention gap that a prompt change may not
   close.
+
+---
+
+## 61 — The component field's ceiling: 5 of 19 samples cannot be matched without guessing
+
+### Why this was checked without the predictions
+
+Finding 60 named the open question precisely and could not answer it: are the
+`component` misses normalisation gaps (a code fix) or naming-convention divergences
+(a prompt fix)? The predictions live in the sinkholed artefact, so the plan was to
+go and fetch them.
+
+The dataset answers part of it on its own, and it was not being asked. For every
+sample, is the *expected* `component` a string that appears in the incident text
+the model was shown?
+
+| Relationship between the expected `component` and its incident text | Count |
+|---|---|
+| Appears verbatim (`checkout-api`, `order-service`, ...) | 5/19 |
+| Appears only as spaced prose (`billing-service` vs "the billing service") | 9/19 |
+| **Does not appear in any form** | **5/19** |
+
+The five in the last row are not paraphrases of something in the text. They name a
+component the text never identifies under that name:
+
+| Sample | Expected `component` | What the text actually says |
+|---|---|---|
+| `network-delay-cart-to-inventory` | `cart-service` | "Cart-to-inventory calls got slow" |
+| `middleware-redis-latency-cache` | `session-cache` | "the session Redis" |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | "Consumer group order-events" |
+| `config-feature-flag-checkout` | `checkout-ui` | "the storefront" |
+| `middleware-mysql-replica-lag-analytics` | `analytics-replica` | "The analytics dashboard" |
+
+### The middle row is not a gap — this was checked, not assumed
+
+It is tempting to file the 9 spaced-prose cases under "normalisation gap" and stop.
+They are not, and the check is one line against the shipped build:
+
+```
+"billing-service"      "billing service"          MATCH
+"checkout-ui"          "checkout UI"              MATCH
+"analytics-replica"    "the analytics replica"    MISS
+"session-cache"        "the session Redis"        MISS
+"cart-service"         "Cart-to-inventory"        MISS
+```
+
+`normalizeFaultType` lower-cases and collapses whitespace to hyphens, and `sameValue`
+applies it to **both** sides. So a model that answers `billing service` already scores
+a hit. The hyphen convention was never the problem, and "add a hyphen-insensitive
+comparator" would have been a fix for a defect that does not exist — the exact class
+of change that finds work for itself.
+
+### What this establishes, and what it does not
+
+**Establishes:** `component`'s ceiling from this dataset is **14/19 (73.7%)**, not
+19/19. Five samples require the model to produce an identifier that the input does not
+contain, which is not extraction — it is guessing a naming scheme. At 3/19 (15.8%)
+the model is well short of even that ceiling, so there *is* real headroom; but a
+perfect run on this dataset still cannot reach 100% on `component`.
+
+**Does not establish:** whether the five are wrong. This is the part that still needs
+the predictions. Two readings remain open and they point in opposite directions:
+
+1. **The dataset is under-specified.** If the model answered `inventory-service` for
+   the first row, the ground truth is asking for a name the text withheld, and the fix
+   is to the golden data — a benchmark whose ground truth is not derivable from its
+   input measures the annotator, not the model.
+2. **The text encodes the answer by convention.** `session-cache` for "the session
+   Redis" is the *role* rather than the *technology*, and a component field plausibly
+   means the role. If the model answered `redis`, the schema is under-specified rather
+   than the data being wrong.
+
+The distinction needs the answers. What has changed is that the question is now
+**bounded**: it is about 5 named samples, not about the whole field.
+
+### The consequence for M1
+
+`type` 26.3% and `category` 57.9% are unconstrained by this — both vocabularies are
+closed and stated in the prompt, so their ceilings are 19/19 and their misses are
+real. `component` is the one scored field whose ceiling is below 100% for reasons in
+the data rather than in the model.
+
+This does not change the verdict. M1 is `strict`, and `strict` needs every scored
+field at once; with `component` capped at 73.7% and `type` at 26.3%, the binding
+constraint is still `type`. But it does change what a good `component` fix looks like:
+the ceiling has to be raised deliberately, by either tightening the golden data or
+stating the naming rule in the prompt, not by adding comparator tolerance.
+
+---
+
+## 62 — `type` at 26.3% is an unstated-vocabulary problem, and the prompt can be blamed precisely
+
+### The asymmetry inside the prompt
+
+Finding 60 left `type` as the binding constraint at 5/19 (26.3%) without saying why it
+is the *worst-explained* field rather than merely the hardest. Reading the prompt
+answers it, because the prompt treats the two closed-vocabulary fields inconsistently:
+
+```
+{ "type": "fault type (short)", "category": "one of: resource | network | runtime |
+  middleware | code | config | dependency", "component": "faulty component",
+  "description": "root-cause reason", "confidence": 0.0..1.0 }
+
+`category` is matched case-insensitively against that list; any other value is rejected.
+```
+
+`category` gets a **closed vocabulary**, an explicit statement that it is closed, and a
+comparison rule. `type` gets the words "fault type (short)" and nothing else — no
+vocabulary, no grammar, no length. And the expectation is a *canonical slug*:
+
+| Property of the expected `type` | Value |
+|---|---|
+| Samples whose expected `type` appears verbatim in the incident text | **0/19** |
+| Distinct expected labels | **19 of 19** (no label repeats) |
+| Label length range | 8–35 characters, mean 17.3 |
+| Longest | `database-connection-pool-exhaustion` (35) |
+
+So the model must turn `"the pod sat pinned at its 500m limit"` into `cpu-saturation`,
+and `"all 20 are held by threads waiting on a lock held by a transaction that is itself
+waiting for a connection"` into `database-connection-pool-exhaustion`. Neither string
+occurs in the input. The prompt does not say the answer is a hyphenated slug, does not
+say how long, and does not hint at granularity.
+
+### Why the measured 26.3% is consistent with this and not with "the model is bad"
+
+Two readings fit 5/19, and the dataset separates them:
+
+- **Unstated vocabulary.** `category` — the field that *is* specified — scores 57.9%,
+  more than double. Same model, same prompt, same incident texts. The only variable
+  that moves is whether the output space is stated. That is a strong signal that the
+  prompt, not the capability, is what differs between 57.9% and 26.3%.
+- **Genuine capability failure.** A 26.3% figure with an unstated 19-way label space
+  cannot be read as "the model cannot classify faults", because nothing told it what
+  the labels are.
+
+**This is a prompt defect, not a code defect.** No comparator change helps: the model is
+not producing a near-miss of `cpu-saturation` that normalisation fails to fold, it is
+producing something from an unbounded space. Unlike finding 61, there is no ceiling
+argument to make — a stated 19-label vocabulary is derivable from the input, so
+`type`'s ceiling is 19/19 and 26.3% is fully fixable.
+
+### What this does not establish
+
+- **That stating the vocabulary reaches 70%.** It removes a structural handicap; it
+  does not guarantee the model picks the right label from a stated list. The next
+  reading is what tests that, and it is a real experiment rather than a formality:
+  `category` at 57.9% with a stated 7-value vocabulary is the closest available
+  estimate for what a stated `type` vocabulary buys, and 57.9% is still below 70%.
+- **Which of the two fields to specify first.** `category` is already specified and
+  still misses 42%; that suggests the residual is capability, not specification. So
+  the honest expectation is that `type` improves substantially and *still* lands
+  short, which would make `category` the thing that decides M1.
+
+### The fix this implies, stated as a prediction to be tested
+
+Adding the 19 expected labels to the prompt as the allowed `type` values would be
+fitting the prompt to the test set, and is not proposed. What is proposed is the same
+treatment `category` already gets: a stated vocabulary. Two versions are worth
+measuring, and the second is the more honest experiment:
+
+1. **The closed list.** State `FAULT_TYPES`, mirroring `FAULT_CATEGORIES`. Expect a
+   large `type` jump and a new failure mode where the model picks a neighbouring label.
+2. **A stated grammar.** Say `type` is a lower-case hyphenated slug naming the mechanism
+   (`<subject>-<failure>`), and leave the vocabulary open. This tests whether the miss
+   was the *format* or the *space*, which is the distinction that decides whether this
+   repository needs a fault-type ontology at all.
+
+Version 2 is the one that would generalise past this dataset, and it is cheap to run
+because the instrument is now known to work end to end.

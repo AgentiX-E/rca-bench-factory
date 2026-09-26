@@ -1379,3 +1379,70 @@ said something else entirely). That needs the predictions, which live in the sin
 artefact — so the next move is to get the answers, not another rate.
 
 It is a code-versus-prompt decision, and reading rates cannot make it.
+
+---
+
+## Pass 16 — the prompt, not the model: two findings that need no new run
+
+Finding 60 left one question and it was framed as "go fetch the predictions". Reading
+the *dataset and the prompt* instead answered two thirds of it without spending a
+request, and both answers are provable from what is already on disk.
+
+### `component` has a ceiling of 14/19, and the hyphen story is wrong
+
+Asking a question nobody had asked — for each sample, does the expected `component`
+actually appear in the incident text the model was shown? — gives:
+
+| Relationship | Count |
+|---|---|
+| Verbatim | 5/19 |
+| Spaced prose only (`billing-service` vs "the billing service") | 9/19 |
+| **Appears in no form** | **5/19** |
+
+The 9 were the tempting conclusion: "the golden data hyphenates and the model does not,
+so widen the comparator." That is wrong, and one line against the shipped build shows
+it — `normalizeFaultType` already folds `billing service` to `billing-service`, and
+`sameValue` normalises **both** sides. Those 9 already score. A hyphen-insensitive
+comparator would have been a fix for a defect that does not exist.
+
+The 5 that appear in no form are the real bound. `session-cache` is expected where the
+text says "the session Redis"; `checkout-ui` where the text says "the storefront". That
+is not extraction, it is guessing a naming scheme, so `component` **cannot exceed
+73.7%** on this dataset however good the model gets. At 15.8% there is still real
+headroom, but "fix component to 100%" was never an available goal.
+
+### `type` at 26.3% is a prompt asymmetry, and it is the binding constraint
+
+The prompt specifies `category` as a closed 7-value vocabulary and says it is closed.
+It specifies `type` as `"fault type (short)"` — nothing else. Meanwhile:
+
+| Property of expected `type` | Value |
+|---|---|
+| Appear verbatim in the incident text | **0/19** |
+| Distinct labels | **19/19** |
+| Length range / mean | 8–35 / 17.3 |
+
+So the model must produce `database-connection-pool-exhaustion` from prose that never
+says those words, with no statement that the answer is a slug. **0/19 derivable labels
+against 26.3% measured** is the coherent reading of a 26.3% score, and the contrast
+that makes it attributable is inside the same run: `category`, the field that *is*
+specified, scores **57.9%** with the same model on the same texts.
+
+This is a **prompt defect**. No comparator change addresses it, because the model is not
+producing near-misses of a known label — it is drawing from a space it was never told
+the shape of.
+
+### What changes in the plan
+
+1. `component`'s fix has a **ceiling** and it is a data-or-prompt decision, not a
+   tolerance decision. Raising it means either tightening the golden data or stating
+   the naming rule.
+2. `type`'s fix is to give it what `category` has. Two variants are worth measuring,
+   and the second is the honest one: a closed list (fits the test set) versus a stated
+   *grammar* with an open vocabulary (tests format-vs-space, and generalises).
+3. The prediction is on record so it can be falsified: `type` should jump a lot and
+   `category` should become the thing that decides M1, because `category` is *already*
+   specified and still misses 42%.
+
+The instrument is known-good and the two cheapest experiments are identified. Pass 17
+is the prompt change plus a real reading.
