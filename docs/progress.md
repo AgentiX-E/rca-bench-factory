@@ -1332,3 +1332,50 @@ confirmed step 11's exit code was not `3`.
 `official:check` / `docs:check` all green. Coverage: core **2395 passed (81 files)** at
 `99.96 | 99.93 | 100 | 99.96`; cli **173 passed** at `100 | 100 | 100 | 100`.
 Mutation 26, export-surface 157.
+
+### Pass 15b — the breakdown, and the failure is three failures
+
+The per-field annotation added in finding 59 paid for itself on the next run:
+
+```
+type=5/19  category=11/19  component=3/19  description=0/0
+strict=0/19 (0.0%)   m1=NOT MET
+```
+
+`strict=0/19` said *that* nothing was fully correct. The breakdown says *why*, and it
+is three separable problems rather than one:
+
+| Field | Graded rate | Reading |
+|---|---|---|
+| `type` | 26.3% | fault-type label rarely matches ours |
+| `category` | 57.9% | partially aligned — the vocabulary works, not reliably |
+| `component` | **15.8%** | worst; component naming conventions diverge |
+| `description` | n/a (0/0) | correctly excluded — no sample states an expectation |
+
+Three conclusions the single number could not support:
+
+1. **No single fix clears M1.** All three scored fields are below 70%, so repairing
+   `category` alone still leaves `strict` at 0.
+2. **The prompt is being obeyed.** `category` at 57.9% is far above chance across seven
+   vocabulary values. This is vocabulary alignment, not instruction-following.
+3. **`description`'s `0/0` is the mechanism working**, not a missing measurement —
+   scoring a model for an omission the ground truth made is the error finding 53 named.
+
+**It reproduces**, which is what makes the rates actionable rather than anecdotal:
+
+| Run | sha | graded | strict |
+|---|---|---|---|
+| `36226968552` | `dec77b3` | 19/19 | 0/19 |
+| `36227614249` | `262fc0d` | 19/19 | 0/19 |
+
+Two runs seven minutes and one revision apart, identical on both rates. One `0/19`
+could be an unlucky run; two, with a stable `19/19` graded rate, cannot.
+
+### What the next round has to settle
+
+The rates cannot distinguish a **normalisation gap** (the model said something
+equivalent that `sameValue` did not fold) from a **genuine model error** (the model
+said something else entirely). That needs the predictions, which live in the sinkholed
+artefact — so the next move is to get the answers, not another rate.
+
+It is a code-versus-prompt decision, and reading rates cannot make it.

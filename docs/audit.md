@@ -4163,3 +4163,72 @@ rather than by assuming they would fail, and it serves annotations over REST.
 That this worked is worth separating from the result it delivered. The instrument
 being readable is what makes "M1 not met" a finding rather than a fourth
 inconclusive round.
+
+---
+
+## 60 — The per-field breakdown, and why 0/19 is three problems not one
+
+### The reading
+
+Run `36227614249` against `262fc0d` carried the per-field annotation added in finding 59:
+
+```
+type=5/19  category=11/19  component=3/19  description=0/0
+```
+
+with the headline unchanged:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=0/19 (0.0%)
+m1=NOT MET (>= 70% strict)
+```
+
+### What it changes
+
+`strict=0/19` was a true but unactionable statement: it said no sample was fully
+correct without saying why. The breakdown resolves it into three separable problems,
+and they have different fixes:
+
+| Field | Graded | Rate | Reading |
+|---|---|---|---|
+| `type` | 5/19 | **26.3%** | the model's fault-type label rarely matches ours |
+| `category` | 11/19 | **57.9%** | partially aligned — the vocabulary works, but not reliably |
+| `component` | 3/19 | **15.8%** | the worst field; naming conventions diverge |
+| `description` | 0/0 | n/a | correctly excluded — no sample states an expectation |
+
+Three things follow that the single number could not have told us:
+
+1. **It is not one broken field.** All three scored fields are weak, so `0/19` is the
+   arithmetic consequence of three sub-threshold fields, not of a single outlier.
+   Fixing `category` alone would still leave `strict` at 0.
+2. **The prompt is not being ignored.** `category` at 57.9% is well above chance across
+   seven vocabulary values, so the model is reading the schema and attempting to comply.
+   The failure is vocabulary alignment, not instruction-following.
+3. **`description` being excluded is correct, not a gap.** Zero samples state an
+   expectation for it, and scoring a model for an omission the ground truth made is the
+   error finding 53 warned about. Its `0/0` is the mechanism working.
+
+### This reproduces, which matters more than the value
+
+Two runs, seven minutes and one revision apart, agree exactly on both rates:
+
+| Run | sha | graded | strict |
+|---|---|---|---|
+| `36226968552` | `dec77b3` | 19/19 | 0/19 |
+| `36227614249` | `262fc0d` | 19/19 | 0/19 |
+
+The consistency is evidence that this is a stable property of the configuration rather
+than sampling noise, which is what makes the per-field rates worth acting on. A single
+`0/19` could have been an unlucky run; two identical `0/19`s with a stable `19/19`
+graded rate cannot.
+
+### What this does not establish
+
+- **Whether the misses are normalisation gaps or genuine model errors.** This is the
+  next question and it is a code-versus-prompt decision. It needs the predictions
+  themselves, which are in the sinkholed artefact; the rate alone cannot distinguish
+  "the model said `network-ap-saturation` and we wanted `network`" from "the model
+  said `disk-full`". The distinction has to be settled by reading answers, not rates.
+- **Whether 70% is reachable by prompt work at all.** Every field is far below it, and
+  `component` at 15.8% suggests a naming-convention gap that a prompt change may not
+  close.
