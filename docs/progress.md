@@ -1753,3 +1753,62 @@ M1's honest position is unchanged and now explained: `strict` needs 13 of 19, `t
 70%. The two paths are distinguishable rather than a matter of opinion -- tighten the
 ground truth to admit the model's defensible readings (a data change, possibly a *correct*
 one), or try a stronger model.
+
+---
+
+## Pass 21 -- the separator confirmed in production
+
+Pass 20's fix had been proven on a synthetic payload. Run **36242319547** (`567118aea`,
+`success`) proves it on the real one, and the real one is where it matters.
+
+```
+records: 39            (cap of 60 not reached)
+tokens if split on whitespace: 70
+records containing a space: 15 of 39
+```
+
+The old space join would have published **70 whitespace tokens for 39 records** -- a measured
+1.79x over-split, against the 5x the synthetic worst case predicted. Fifteen rows would have
+been silently fragmented.
+
+More than that: two of the fifteen are
+
+```
+config-datasource-url-orders.component:order-service>order-service ConfigMap
+dependency-upstream-5xx-pricing.component:tax-calculation>tax-calculation provider
+```
+
+which are exactly the rows that produced finding 70's apparent self-scoring contradiction. The
+channel that made a correct scorer look broken is now a channel that can be read.
+
+### The reading
+
+```
+strict=0/19  type=5/19  category=11/19  component=2/19
+classification=wrong value 39, omitted 0, samples with >= 1 miss 19
+```
+
+`component` 4 -> 2, and the detail explains it: **all fifteen component rows are descriptions,
+not identifiers** -- `session Redis`, `replica applier thread`, `native ffmpeg binding`, `rack
+switch carrying the third node`, `scheduled job flag definition`. Finding 69 inferred this from
+four examples; the full detail shows it is the mechanism, not a tendency.
+
+`omitted 0` holds on a second run. The model does not decline; it answers, and for `component`
+it answers with prose. **That is the one field of the three whose failure has a named fix** --
+an instruction to return the identifier, which is absent rather than contradicted.
+
+### Gates
+
+| gate | result |
+| --- | --- |
+| CI on `567118aea` | both checks `success` |
+| workflow run | `36242319547` `success`, 13/13 steps |
+| core coverage | **2422 passed (83 files)** -- `99.96 \| 99.93 \| 100 \| 99.96` |
+| `src/fault` / `src/llm` | **100 \| 100 \| 100 \| 100** each |
+
+### What is next
+
+`component` is now the clearest lever in the whole benchmark: a formatting defect, a named fix,
+and a full census of the failure mode rather than a sample of it. The honest open question is
+whether an instruction to return identifiers moves it -- and that is a one-line prompt change
+against a measured baseline, which is the cheapest experiment this project has had.

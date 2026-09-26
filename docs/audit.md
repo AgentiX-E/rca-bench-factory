@@ -4881,3 +4881,53 @@ real dataset contains it**. Pinning the literal would pass forever while the dat
 sample whose value happened to contain the chosen byte; asserting the property catches
 that on the commit that introduces it. This is the same reasoning as finding 66: assert the
 invariant the choice depends on, not the choice.
+
+## Finding 72: the separator, confirmed on live data -- and the ambiguity was 1.79x
+
+Finding 71 proved the separator on a synthetic saturated payload. The workflow has now run with
+it: run **36242319547** on `567118aea`, `success`, and the published annotation is readable as
+records for the first time.
+
+```
+records: 39            (39 rows, cap of 60 not reached)
+tokens if split on whitespace: 70
+records containing a space: 15 of 39
+```
+
+**Fifteen of thirty-nine records contain a space**, so the old space join would have shown
+**70 whitespace tokens for 39 records** -- a 1.79x over-split, measured on the real payload
+rather than the synthetic one. Every one of those fifteen rows would have been silently
+fragmented, and a reader reconciling tokens against the `samples with >= 1 miss 19` count
+would have had no way to tell.
+
+And the phantom mechanism is right there in the data. Two of the fifteen are:
+
+```
+config-datasource-url-orders.component:order-service>order-service ConfigMap
+dependency-upstream-5xx-pricing.component:tax-calculation>tax-calculation provider
+```
+
+These are exactly the two rows that produced finding 70's apparent `order-service -> order-service`.
+The scorer was never wrong. Under a whitespace split both rows begin with a token that repeats
+the sample's own component name, which reads as "the model answered correctly and the scorer
+marked it wrong" -- the most alarming possible misreading of a diagnostic, produced by a
+separator choice.
+
+### The reading this run produced
+
+```
+samples=19 graded_count=19 graded_rate=19/19 (100.0%) strict=0/19 (0.0%) m1=NOT MET (>= 70% strict)
+type=5/19 category=11/19 component=2/19 description=0/0
+classification=wrong value 39, omitted 0, samples with >= 1 miss 19
+```
+
+`component` moved 4 -> 2, and the detail says why. **Every one of the fifteen component rows is
+a description, not an identifier** -- `session Redis`, `replica applier thread`, `native ffmpeg
+binding`, `rack switch carrying the third node`, `scheduled job flag definition`. This is
+finding 69's third fact confirmed on independent data, and the mechanism is now visible in
+full rather than inferred from four examples: the model locates the passage that discusses the
+component and returns a phrase from it, every time.
+
+`omitted 0` again, on a second run. The model does not decline; it answers, and the answers are
+descriptions where identifiers were wanted. That is a formatting defect with a named fix, and
+it is the only one of the three fields for which that is true.
