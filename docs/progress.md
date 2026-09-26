@@ -1558,17 +1558,14 @@ what holds `category` back, so it is unlikely to be what holds `type` back.
 Under that reading `type` and `category` are one problem ordered by difficulty, not two
 problems ordered by prompt quality.
 
-### Next: change the model, not the prompt
+### Next: ~~change the model, not the prompt~~ -- retracted, see Pass 19
 
-The cheap test for a capability ceiling is the model. `RCA_BENCH_LLM_MODEL` is a
-repository variable and the registry resolves providers without code changes, so the
-same revision can be run against a different provider and the two `category` figures
-compared. If ~58% holds across providers the ceiling is the task; if it moves, it was
-the model.
-
-This is the first time the provider abstraction is used as a **measurement instrument**
-rather than as architecture, which is a different justification from the one it was
-built under and worth noting as such.
+This section recommended a provider swap as the next experiment. It was challenged and the
+challenge was correct: the recommendation rested on the claim that specification does not
+explain `category`'s 42%, but **what that 42% actually is had never been measured**. Pass 19
+replaces it. The provider experiment is not withdrawn -- it is deferred until the miss
+diagnosis has classified the misses, so it is run against a measured baseline rather than
+an inferred one.
 
 ### Where M1 stands
 
@@ -1576,3 +1573,74 @@ built under and worth noting as such.
 pipeline is sound, the instrument is readable, three fields are measured and bounded,
 and one prompt hypothesis has been tested and rejected. M1 is not close, and the
 remaining gap is not a wiring problem.
+
+---
+
+## Pass 19 -- the miss diagnosis, and four bugs it found in its own gate
+
+**Trigger.** Pass 18 closed with a recommendation challenged on the spot: *"why do you need
+another LLM?"* The answer was that I did not, yet -- the plan had jumped to a provider
+comparison over an unmeasured quantity.
+
+**What changed.** `ExtractionReport` gained `misses` and `missClassification`, built in the
+same pass as the rates so the two cannot disagree; `formatExtractionReport` prints the
+classifier counts and one row per miss; the workflow publishes both as annotations.
+
+### The reading the last four rounds were missing
+
+`derive-fault-golden.mjs` had been writing every prediction's `type`, `category`,
+`component` and `description` all along. The report printed the rates and dropped the
+answers. Four rounds of prompt hypotheses and comparator reasoning were trying to infer,
+from aggregate rates, something the artefact already stated outright.
+
+**This inverts the next experiment.** Before: change the provider to test whether the task
+is hard. After: classify the misses, and only then ask. The annotation now carries both
+`wrong value N, omitted M` and the per-sample `sample field reason expected -> actual` rows.
+
+### Four bugs found in the new gate, none of them in the new feature
+
+1. **An unreachable guard, documented as protection.** Three guards prevented a
+   scored-`null` field from being reported as a miss; the comment claimed all three were
+   reachable. Only two were. `scoreField` returns `null`, never `false`, when the ground
+   truth states no expectation, so `=== false` already implies an expectation exists. The
+   third guard was deleted, not annotated.
+2. **An old equivalent mutant whose equivalence was no longer checked.** `graded` vs
+   `verdicts` in the diagnosis loop cannot be killed -- the loops are equal -- but the
+   invariant that makes them equal was asserted nowhere. It is now a test, and a mutation
+   that gives `unvalidated` a scored field fails with a named message.
+3. **A fixture that never reached its own state.** The `unvalidated` case omitted
+   `extracted`, which lands in `unparseable`. A mutation aimed at `unvalidated` survived
+   *because the state was never entered*. The test now asserts each fixture reaches its
+   named state.
+4. **An annotation cut mid-token.** `cut -c1-900` against a measured 4044-character payload
+   ended `...type:network-loss>wrong network-`, half an expected value, while the adjacent
+   comment claimed to avoid exactly that. Replaced by a whole-row cap of 60 (measured
+   maximum is 57 rows), with the omitted count stated.
+
+**And one that had been green for the wrong reason.** The workflow test's helper stripped a
+hard-coded `s/` prefix; the detail expression uses `|`. The strip matched nothing, the `|p`
+suffix stayed on the pattern, and the regex matched every line -- including the two positive
+assertions, which were passing on a stray prefix rather than on a real row. A guessed
+delimiter does not just miss defects, it can manufacture passes.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| typecheck (core, cli) | clean |
+| core coverage | **2421 passed (83 files)** -- `99.96 \| 99.93 \| 100 \| 99.96` |
+| `src/fault` | **100 \| 100 \| 100 \| 100** (was `99.38 \| 98.89`) |
+| cli coverage | 173 passed -- `100 \| 100 \| 100 \| 100` |
+| lint | OK (no-mock / no-secrets / no-vendored-data / official-registry) |
+| mutation | 26 passed |
+| export surface | 212 passed |
+| official / examples / docs | PASSED / up to date / PASSED |
+
+Injection battery, 11 injections: **9 caught, 1 proven equivalent, 1 proven unreachable and
+removed**. The two survivors are recorded with the proofs, not folded into a passing count.
+
+### What is still not known
+
+The diagnosis has not been *read* yet -- the code that produces it is green and its own
+gate is proven, but no run has published the classification. That run is the next step and
+it is the first one in five rounds whose result cannot be predicted from the rates alone.

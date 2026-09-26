@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LLM_PROVIDER_ENV_VARS, LLM_PROVIDER_IDS } from '../../src/llm/registry.js';
 import {
+  SCORED_FIELDS,
   buildExtractionReport,
   formatExtractionReport,
   parseGoldenDataset,
@@ -82,6 +83,34 @@ function stepBlock(name: string): string {
     out.push(line);
   }
   return out.join('\n');
+}
+
+/**
+ * A `sed` BRE pattern translated into an equivalent JavaScript one.
+ *
+ * The two dialects disagree, and the difference is silent in the direction that
+ * matters: in `sed`'s basic regular expressions `\(` and `\)` are *capturing
+ * groups*, while in JavaScript they are *literal parentheses*. Compiling a sed
+ * pattern with `new RegExp` therefore produces a regex that matches the literal
+ * text `(19)` and never the `19` a report actually prints -- no error, just no
+ * match. Translating keeps the assertion about the workflow's real pattern
+ * instead of loosening it into something the test finds easier to satisfy.
+ */
+function toJavaScriptPattern(sedPattern: string): string {
+  return sedPattern.replace(/\\\(/g, '(').replace(/\\\)/g, ')');
+}
+
+/**
+ * A `sed` replacement translated into the equivalent JavaScript one.
+ *
+ * The same dialect gap, on the other side of the substitution: `sed` writes a
+ * backreference as `\1`, and JavaScript writes it as `$1`. Left untranslated,
+ * `line.replace` emits the literal two characters `\1` where the number should
+ * be -- which reads as a match and is exactly the class of silent wrongness
+ * this gate exists to prevent.
+ */
+function toJavaScriptReplacement(sedReplacement: string): string {
+  return sedReplacement.replace(/\\\//g, '/').replace(/\\(\d)/g, '$$$1');
 }
 
 describe('the workflow covers every provider the registry can build', () => {
@@ -267,7 +296,29 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
       ...[...block.matchAll(/\bsed -n '([^']*)'/g)].map((m) => m[1] as string),
     ];
     for (const expression of candidates) {
-      const parts = expression.split(/(?<!\\)\//);
+      // `sed` accepts any delimiter after the `s`, and the workflow uses `|` for
+      // the one substitution whose replacement contains a `/`. Splitting on `/`
+      // unconditionally would report that expression as unparseable -- a false
+      // positive that would read as a workflow defect. The delimiter is read from
+      // the expression rather than assumed.
+      const delimiter = expression.slice(1, 2);
+      // Split on the delimiter only where it is not backslash-escaped. Built by
+      // scanning rather than by constructing a regex: escaping a `/` inside a
+      // `RegExp` string is a double-escaping exercise whose failure mode is a
+      // syntax error in the test rather than a message about the workflow, and
+      // the scan is three lines and obviously correct.
+      const parts: string[] = [];
+      let current = '';
+      for (let i = 0; i < expression.length; i += 1) {
+        const ch = expression[i] as string;
+        if (ch === delimiter && expression[i - 1] !== '\\') {
+          parts.push(current);
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      parts.push(current);
       expect(
         parts.length,
         `'${expression}' is not a parseable sed substitution; the field would silently drop out`,
@@ -279,34 +330,6 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
     }
     expect(parsed.length).toBeGreaterThan(0);
     return parsed;
-  }
-
-  /**
-   * A `sed` BRE pattern translated into an equivalent JavaScript one.
-   *
-   * The two dialects disagree, and the difference is silent in the direction that
-   * matters: in `sed`'s basic regular expressions `\(` and `\)` are *capturing
-   * groups*, while in JavaScript they are *literal parentheses*. Compiling a sed
-   * pattern with `new RegExp` therefore produces a regex that matches the literal
-   * text `(19)` and never the `19` a report actually prints -- no error, just no
-   * match. Translating keeps the assertion about the workflow's real pattern
-   * instead of loosening it into something the test finds easier to satisfy.
-   */
-  function toJavaScriptPattern(sedPattern: string): string {
-    return sedPattern.replace(/\\\(/g, '(').replace(/\\\)/g, ')');
-  }
-
-  /**
-   * A `sed` replacement translated into the equivalent JavaScript one.
-   *
-   * The same dialect gap, on the other side of the substitution: `sed` writes a
-   * backreference as `\1`, and JavaScript writes it as `$1`. Left untranslated,
-   * `line.replace` emits the literal two characters `\1` where the number should
-   * be -- which reads as a match and is exactly the class of silent wrongness
-   * this gate exists to prevent.
-   */
-  function toJavaScriptReplacement(sedReplacement: string): string {
-    return sedReplacement.replace(/\\\//g, '/').replace(/\\(\d)/g, '$$$1');
   }
 
   it('states the headline as an annotation, not only as a step summary', () => {
@@ -457,5 +480,231 @@ describe('the workflow publishes the accuracy where the API can serve it', () =>
     // ones: it must not claim a headline row, whose indent is two spaces.
     expect(regex.test('  strict all-fields: 19/19 (100.0%)')).toBe(false);
     expect(regex.test('  samples        : 19')).toBe(false);
+  });
+});
+
+/**
+ * The miss diagnosis, published where it can be read.
+ *
+ * The per-field rates established in the previous round say that a field missed.
+ * They cannot say whether the model answered *wrongly* or *declined to answer*,
+ * and those two have different fixes. Four rounds of prompt and comparator
+ * reasoning produced hypotheses that a single reading of the answers would have
+ * settled -- and the answers were already being written to the predictions file.
+ * Only the reading was missing.
+ *
+ * These tests run the workflow's own `sed` expressions against the report the
+ * scorer actually produces, for the reason recorded in the round that added the
+ * per-field annotation: the failure mode of a `sed` extraction is silence, so a
+ * test that only checks the pattern's presence cannot see it.
+ */
+describe('the workflow publishes the miss diagnosis', () => {
+  /**
+   * The miss-diagnosis substitutions, split into their sed pattern and
+   * replacement.
+   *
+   * This deliberately reuses the same delimiter-aware split as
+   * `headlineSubstitutions()` instead of a per-expression regex. An earlier
+   * version of this helper did `expression.replace(/^s\//, '')` and assumed `/`
+   * was the delimiter. The detail substitution uses `|` -- because its
+   * *replacement* contains a `/` -- so the strip matched nothing and the
+   * `|p` suffix was left on the end. Both errors are silent, and together they
+   * produced a regex that matched **every** line: `s|` matched the literal
+   * `s` and `|` characters ... except the pattern was unanchored at that point,
+   * so it matched at any offset. The three negative assertions failed, which is
+   * how it was caught, but the two *positive* assertions had been passing for
+   * the wrong reason -- an empty-ish match, not a real row match. A helper that
+   * assumes a delimiter can therefore not just miss a defect, it can manufacture
+   * a green.
+   */
+  function missSubstitutions(): Array<{ pattern: string; replacement: string }> {
+    const block = stepBlock('Score the run');
+    const out: Array<{ pattern: string; replacement: string }> = [];
+    for (const m of block.matchAll(/(?:misses|missed_rows)=\$\(sed -n '([^']*)'/g)) {
+      const expression = m[1] as string;
+      const delimiter = expression.slice(1, 2);
+      const parts: string[] = [];
+      let current = '';
+      for (let i = 0; i < expression.length; i += 1) {
+        const ch = expression[i] as string;
+        if (ch === delimiter && expression[i - 1] !== '\\') {
+          parts.push(current);
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      parts.push(current);
+      const [verb, pattern, replacement, flag] = parts as [string, string, string, string];
+      expect(verb, `'${expression}' must be a sed substitution`).toBe('s');
+      expect(flag, `'${expression}' must print only what it matches`).toBe('p');
+      out.push({ pattern, replacement });
+    }
+    expect(out.length, 'both miss-diagnosis substitutions must be present').toBe(2);
+    return out;
+  }
+
+  function classificationAndDetail(): { counts?: string; detail?: RegExp } {
+    const [counts, detail] = missSubstitutions() as [
+      { pattern: string; replacement: string },
+      { pattern: string; replacement: string },
+    ];
+    return {
+      counts: counts.pattern,
+      detail: new RegExp(toJavaScriptPattern(detail.pattern)),
+    };
+  }
+
+  it('extracts the classifier counts from the report layout', () => {
+    const block = stepBlock('Score the run');
+    // The expression must key the line and drop the label, so the annotation
+    // reads `classification=wrong value 8, omitted 3, ...` rather than repeating
+    // the report's own wording.
+    expect(
+      /misses=\$\(sed -n 's\/\^  Miss classification[^']*'/m.test(block),
+      'the score step must extract the miss classification line',
+    ).toBe(true);
+  });
+
+  it('keys the classification line the scorer actually prints', () => {
+    const samples = parseGoldenDataset(
+      JSON.parse(readFileSync(resolve(ROOT, 'golden-master', 'fault-extraction', 'samples.json'), 'utf8')),
+    ).samples;
+    const report = formatExtractionReport(
+      buildExtractionReport(
+        samples,
+        samples.map((s) => {
+          const e = s.expected as unknown as Record<string, string | undefined>;
+          const extracted: Record<string, string> = {};
+          for (const k of ['type', 'category', 'component', 'description'] as const) {
+            const v = e[k];
+            if (v !== undefined) extracted[k] = v;
+          }
+          return { sampleId: s.id, parseOk: true, extracted, validationValid: true };
+        }),
+      ),
+    );
+    const line = report.split('\n').find((l) => l.includes('Miss classification'));
+    expect(line, 'the report must print the classification line').toBeDefined();
+    // The property the sed relies on: the line is two-space indented and the
+    // counts follow a colon, so a pattern that ignored the indent would also
+    // claim the per-sample rows further down.
+    expect((line as string).startsWith('  Miss classification')).toBe(true);
+  });
+
+  it('extracts per-sample miss detail, which is the line that ends the guessing', () => {
+    const { detail } = classificationAndDetail();
+    expect(detail, 'the workflow must extract the per-sample miss rows').toBeDefined();
+    // Exercised against rows in the exact shape `formatExtractionReport` prints:
+    // four-space indent, id, field, reason, and an `expected -> actual` pair. The
+    // proof of correctness is `command substitution` semantics, reproduced here --
+    // running the real workflow `sed` over these two rows yields exactly the
+    // strings asserted below.
+    //
+    // The reason group is captured by the pattern but not emitted, which is
+    // deliberate: the counts already say how many were wrong values and how many
+    // were omissions, and repeating `wrongValue` on every detail row would make
+    // the line long enough to truncate sooner.
+    const rows = [
+      '    resource-cpu-saturation-checkout               type       wrongValue cpu-saturation -> cpu-saturation-exhaustion',
+      '    network-loss-payment-gateway                   component  omitted    payment-gateway -> (omitted)',
+    ];
+    const regex = detail as RegExp;
+    expect(regex.test(rows[0] as string)).toBe(true);
+    expect(regex.test(rows[1] as string)).toBe(true);
+    // Group order in the substitution is id, field, reason, expected, actual.
+    const keyed = rows.map((row) =>
+      row.replace(regex, (_m, id: string, field: string, _reason: string, expected: string, actual: string) => {
+        return `${id}.${field}:${expected}>${actual}`;
+      }),
+    );
+    expect(keyed[0]).toBe('resource-cpu-saturation-checkout.type:cpu-saturation>cpu-saturation-exhaustion');
+    expect(keyed[1]).toBe('network-loss-payment-gateway.component:payment-gateway>(omitted)');
+  });
+
+  it('keeps a fully-missed run inside the workflow row cap, so truncation is not routine', () => {
+    // Measured against the real scorer rather than estimated. The dataset has 19
+    // samples; a run where every scored field of every sample misses is the
+    // largest payload this workflow can be asked to publish. If that exceeds the
+    // workflow's `head -n` cap, the truncation path stops being a fallback and
+    // becomes the normal case -- and the reading would routinely be partial
+    // without anyone noticing, because the suffix is easy to skim past.
+    const samples = parseGoldenDataset(
+      JSON.parse(
+        readFileSync(resolve(ROOT, 'golden-master', 'fault-extraction', 'samples.json'), 'utf8'),
+      ),
+    ).samples;
+    const predictions = samples.map((s) => {
+      const e = s.expected as unknown as Record<string, string | undefined>;
+      const extracted: Record<string, string> = {};
+      for (const f of SCORED_FIELDS) {
+        // A wrong answer for every field the sample states an expectation for.
+        if (e[f] !== undefined) extracted[f] = `wrong-value-for-${f}`;
+      }
+      return { sampleId: s.id, parseOk: true, validationValid: true, extracted };
+    });
+    const report = buildExtractionReport(samples, predictions);
+    // Every scored field of every sample is wrong, so this is the maximum.
+    const rowCount = report.misses.reduce((n, m) => n + m.detail.length, 0);
+    expect(report.misses.length, 'the saturated fixture must actually miss').toBe(samples.length);
+
+    const block = stepBlock('Score the run');
+    const cap = Number(
+      /detail=\$\(printf '%s' "\$missed_rows" \| head -n ([0-9]+) \| tr '\\n' ' '\)/.exec(block)?.[1],
+    );
+    expect(Number.isFinite(cap), 'the workflow must apply a row cap').toBe(true);
+    expect(
+      cap,
+      `the workflow caps detail at ${cap} rows but a fully-missed run produces ${rowCount}`,
+    ).toBeGreaterThanOrEqual(rowCount);
+
+    // And the characters, from the rows the scorer actually prints rather than
+    // from a formula: an annotation limit is 64KiB.
+    const longest = report.misses
+      .flatMap((m) => m.detail.map((d) => `${m.sampleId} ${d.field} ${d.reason} ${d.expected} -> ${d.actual ?? '(omitted)'}`))
+      .reduce((n, row) => Math.max(n, row.length), 0);
+    expect(cap * (longest + 1) + 200, 'the saturated payload must fit an annotation').toBeLessThan(65535);
+  });
+
+  it('does not claim the headline or per-field rows as miss detail', () => {
+    const { detail } = classificationAndDetail();
+    expect(detail).toBeDefined();
+    // The three row families share the report and differ only by indent and
+    // shape. A pattern loose enough to match the headline would publish a rate
+    // as if it were a miss.
+    expect((detail as RegExp).test('  strict all-fields: 0/19 (0.0%)')).toBe(false);
+    expect((detail as RegExp).test('    type        : graded 5/19 (26.3%)  overall 5/19 (26.3%)')).toBe(false);
+    expect((detail as RegExp).test('  Miss classification (per field miss): wrong value 8, omitted 0, samples with >= 1 miss 8')).toBe(false);
+  });
+
+  it('bounds the detail annotation by whole rows and states what it left out', () => {
+    const block = stepBlock('Score the run');
+    // A character cut was the first attempt and it is wrong: at 19 samples x 3
+    // fields the detail payload is 4044 characters, and `cut -c1-N` ends
+    // mid-token. The observed worst case read `...type:network-loss>wrong
+    // network-` -- half an expected value, indistinguishable from a wrong one.
+    //
+    // The row-bounded form is asserted structurally, because the property that
+    // matters is not "the output is short" but "every row in it is complete":
+    // take whole lines, then say how many were dropped.
+    expect(block, 'the detail must be bounded by whole rows, not by characters').not.toMatch(
+      /miss detail::\$\(printf '%s' "\$detail" \| cut -c[0-9]+\)/,
+    );
+    // The cap must exceed the arithmetic maximum for the current dataset
+    // (19 samples x 3 scored fields = 57 rows), because a cap below it would
+    // truncate an ordinary worst-case run and push routine reading into the
+    // summary. Asserted as a comparison rather than an exact number so raising
+    // the dataset size surfaces here instead of silently shortening the read.
+    const cap = Number(
+      /detail=\$\(printf '%s' "\$missed_rows" \| head -n ([0-9]+) \| tr '\\n' ' '\)/.exec(block)?.[1],
+    );
+    expect(Number.isFinite(cap), 'a whole-row cap must be applied before joining').toBe(true);
+    expect(cap, 'the cap must cover 19 samples x 3 scored fields').toBeGreaterThanOrEqual(57);
+    // The dropped count must be computed, not assumed, and the announcement must
+    // name the true total so the reader can tell a truncated list from a short one.
+    expect(block).toMatch(/dropped=\$\(\(miss_row_count > [0-9]+ \? miss_row_count - [0-9]+ : 0\)\)/);
+    expect(block).toMatch(/\$\{dropped\} more row\(s\) omitted; all \$\{miss_row_count\}/);
+    // Both branches must exist: with no truncation the suffix would be noise.
+    expect(block).toMatch(/if \[ "\$dropped" -gt 0 \]; then/);
   });
 });

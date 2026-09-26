@@ -134,6 +134,22 @@ export interface GoldenDataset {
 }
 
 /**
+ * The fields a fault extraction can carry, as `parseFaultExtractionResponse`
+ * returns them.
+ *
+ * Named rather than inlined so the scored-prediction type below can reuse it:
+ * a `graded` verdict means this record exists, and expressing that needs to be
+ * able to name the shape.
+ */
+export interface ExtractionFields {
+  type: string;
+  category?: string;
+  component?: string;
+  description?: string;
+  confidence?: number;
+}
+
+/**
  * What a scoring run observed for one sample.
  *
  * `extracted` is the *raw* extraction, before validation, so an inferred
@@ -143,13 +159,7 @@ export interface ExtractionSamplePrediction {
   sampleId: string;
   parseOk: boolean;
   /** `parseFaultExtractionResponse` output, or absent when the parse failed. */
-  extracted?: {
-    type: string;
-    category?: string;
-    component?: string;
-    description?: string;
-    confidence?: number;
-  };
+  extracted?: ExtractionFields;
   /** `validateExtractedFault(...).valid`; absent when the parse failed. */
   validationValid?: boolean;
   /**
@@ -170,12 +180,55 @@ export interface LayerMetrics {
   description: { graded: LayeredRate; overall: LayeredRate };
 }
 
+/**
+ * Why a scored field missed, for one sample.
+ *
+ * `wrongValue` and `omitted` have different fixes -- a wrong value is the model's
+ * answer, an omission is the model declining to answer -- so collapsing them into
+ * "missed" loses the distinction the diagnosis exists to draw.
+ */
+export type MissReason = 'wrongValue' | 'omitted';
+
+export interface FieldMiss {
+  field: ScoredField;
+  reason: MissReason;
+  /** What the ground truth states. Always present; a miss requires an expectation. */
+  expected: string;
+  /** What the model answered, or `null` when it omitted the field. */
+  actual: string | null;
+}
+
+export interface SampleMiss {
+  sampleId: string;
+  /** Only the fields that missed. Never includes a field scored `null`. */
+  fields: ScoredField[];
+  detail: FieldMiss[];
+}
+
+/**
+ * Counts over every *field* miss in the run, not over samples.
+ *
+ * A sample that misses three fields contributes three, which is the right
+ * denominator for a question about fields. `samplesWithMisses` is reported
+ * separately so the two cannot be confused for each other -- the earlier rounds
+ * of this investigation read a per-sample number as if it were per-field.
+ */
+export interface MissClassification {
+  wrongValue: number;
+  omitted: number;
+  samplesWithMisses: number;
+}
+
 export interface ExtractionReport {
   total: number;
   counts: Record<SampleState, number>;
   /** Every expected field was right, over graded samples. */
   strict: LayeredRate;
   layers: LayerMetrics;
+  /** One entry per graded sample that missed at least one scored field. */
+  misses: SampleMiss[];
+  /** Per-field-miss tallies across the whole run. */
+  missClassification: MissClassification;
 }
 
 function rate(hits: number, total: number): LayeredRate {
@@ -325,13 +378,19 @@ export function buildExtractionReport(
     byId.set(p.sampleId, p);
   }
 
-  const verdicts = samples.map((s) => {
+  // The three are kept together rather than re-looked-up later. `scoreExtractionSample`
+  // pairs them by id, so a sample, its prediction and its verdict are one record
+  // here -- and the diagnosis loop below can then read all three without a lookup
+  // that the compiler cannot prove total.
+  const paired = samples.map((s) => {
     const p = byId.get(s.id);
     if (p === undefined) {
       throw new Error(`no prediction for sample '${s.id}'`);
     }
-    return scoreExtractionSample(s, p);
+    return { sample: s, prediction: p, verdict: scoreExtractionSample(s, p) };
   });
+
+  const verdicts = paired.map((r) => r.verdict);
 
   const counts: Record<SampleState, number> = {
     unparseable: 0,
@@ -345,6 +404,15 @@ export function buildExtractionReport(
 
   const total = verdicts.length;
   const graded = verdicts.filter((v) => v.state === 'graded');
+  // The same filter over the paired records, for the one loop that needs the
+  // sample and prediction alongside the verdict. The assertion records an
+  // invariant the scorer guarantees: a `graded` verdict *means* the prediction
+  // parsed and carried an extraction, because `scoreExtractionSample` cannot
+  // reach `graded` with a missing `extracted`. The type checker cannot see that
+  // through `state`, so it is stated here once instead of guarded at each use.
+  const gradedPairs = paired
+    .filter((r) => r.verdict.state === 'graded')
+    .map((r) => ({ ...r, prediction: r.prediction as ExtractionSamplePrediction & { extracted: ExtractionFields } }));
 
   const parse = rate(verdicts.filter((v) => v.state !== 'unparseable').length, total);
   const validation = rate(
@@ -393,11 +461,81 @@ export function buildExtractionReport(
     fieldRates[field] = { graded: rate(hits, scorable.length), overall: rate(hits, total) };
   }
 
+  /**
+   * The per-sample diagnosis, derived in the same pass as the rates.
+   *
+   * Built from `verdicts` and the paired predictions rather than recomputed from
+   * the raw answers, so that the diagnosis and the numbers it explains cannot
+   * disagree. A second implementation of "was this field right" is a second
+   * chance to get it wrong, and the failure would be invisible: the diagnosis
+   * would read plausibly next to a rate it does not actually describe.
+   *
+   * Only `graded` verdicts can contribute. The other three states carry all-null
+   * fields, and a null field is not a miss -- it is the absence of a comparison.
+   * Reading them as misses is the error finding 53 named, in a new place.
+   *
+   * Two guards below prevent a scored-`null` field from being reported as a
+   * miss:
+   *
+   *   1. `for (const verdict of graded)` -- only graded samples are visited.
+   *   2. `fields[field] !== false` -- a `null` outcome is skipped.
+   *
+   * A third was written and then removed: `sample.expected[field] !== undefined`.
+   * It was kept on the belief that a graded sample can carry `false` in a field
+   * the ground truth never asked about, which would let a miss through guard 2
+   * and need a backstop. That belief is false, and `scoreField` says so in one
+   * line: it returns `null`, never `false`, when `expected === undefined`. So
+   * `=== false` implies an expectation exists, guard 2 is sufficient, and the
+   * backstop was unreachable. It is gone rather than retained-and-documented,
+   * because an unreachable branch is what the `sameValue` comment above already
+   * names as a defect that hides from the threshold.
+   *
+   * The reduction from three guards to two was made by probe, not by reading: a
+   * sample with no `description` expectation, paired with a prediction that also
+   * omits `description` and gets the other three fields wrong, reports exactly
+   * three misses and `description: graded 0/0 (n/a)`. The third guard never ran.
+   *
+   * Guard 1, unlike the removed one, *is* reachable: an unparseable prediction
+   * makes its sample non-graded, and such a sample carries all-null fields.
+   */
+  const misses: SampleMiss[] = [];
+  const missClassification: MissClassification = { wrongValue: 0, omitted: 0, samplesWithMisses: 0 };
+
+  for (const { sample, prediction, verdict } of gradedPairs) {
+    const detail: FieldMiss[] = [];
+    for (const field of SCORED_FIELDS) {
+      if (verdict.fields[field] !== false) {
+        continue;
+      }
+      // `expected` is `string | undefined` to the type checker
+      // (`--noUncheckedIndexedAccess`) but provably defined here: guard 2 above
+      // only lets through a field scored `false`, and `scoreField` returns
+      // `null`, never `false`, when the sample states no expectation. The
+      // assertion records that invariant instead of a second guard for it.
+      const expected = sample.expected[field] as string;
+      const actual = prediction.extracted[field];
+      const reason: MissReason = actual === undefined ? 'omitted' : 'wrongValue';
+      if (reason === 'omitted') {
+        missClassification.omitted += 1;
+      } else {
+        missClassification.wrongValue += 1;
+      }
+      detail.push({ field, reason, expected, actual: actual ?? null });
+    }
+
+    if (detail.length > 0) {
+      misses.push({ sampleId: verdict.sampleId, fields: detail.map((d) => d.field), detail });
+      missClassification.samplesWithMisses += 1;
+    }
+  }
+
   return {
     total,
     counts,
     strict: rate(graded.filter(isStrictHit).length, graded.length),
     layers: { parse, validation, graded: gradedRate, ...fieldRates },
+    misses,
+    missClassification,
   };
 }
 
@@ -449,6 +587,30 @@ export function formatExtractionReport(report: ExtractionReport): string {
     const pct = `${(M1_STRICT_THRESHOLD * 100).toFixed(0)}%`;
     const met = meetsM1ExitCondition(report);
     lines.push(`  M1 exit condition: ${met ? 'MET' : 'NOT MET'} (>= ${pct} strict)`);
+  }
+
+  /**
+   * The diagnosis, printed after the verdict so a reader sees the number before
+   * its explanation. The counts are printed even when zero: a run with no misses
+   * printing nothing at all is indistinguishable from a diagnosis that failed to
+   * run, and the whole point of this section is that its absence is noticed.
+   */
+  lines.push('  ' + '-'.repeat(46));
+  lines.push(
+    `  Miss classification (per field miss): wrong value ${report.missClassification.wrongValue}, ` +
+      `omitted ${report.missClassification.omitted}, ` +
+      `samples with >= 1 miss ${report.missClassification.samplesWithMisses}`,
+  );
+  if (report.misses.length === 0) {
+    lines.push('  No graded sample missed a scored field.');
+  } else {
+    lines.push('  Per-sample misses (expected -> actual):');
+    for (const miss of report.misses) {
+      for (const d of miss.detail) {
+        const actual = d.actual === null ? '(omitted)' : d.actual;
+        lines.push(`    ${miss.sampleId.padEnd(44)} ${d.field.padEnd(10)} ${d.reason.padEnd(10)} ${d.expected} -> ${actual}`);
+      }
+    }
   }
   return lines.join('\n');
 }

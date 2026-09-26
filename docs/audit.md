@@ -4560,3 +4560,164 @@ That experiment needs no code change -- `RCA_BENCH_LLM_MODEL` is a repository va
 and the registry is provider-agnostic by construction -- which is the first time this
 project's LLM abstraction pays off as a measurement instrument rather than as
 architecture.
+
+---
+
+## Finding 65: the miss diagnosis answers a question the last four rounds could not
+
+Four rounds of reasoning about `type` and `category` produced four hypotheses, three of
+which needed a dispatch to test and one of which was refuted by its own pre-registered
+condition. The miss diagnosis settles the underlying question without spending a run, and
+the reason is embarrassing: **the answers were already being recorded.**
+
+`scripts/derive-fault-golden.mjs` writes every prediction's `type`, `category`, `component`
+and `description` into the artefact the scorer reads. The scorer's report printed the
+*rates* and nothing else, so the per-sample answers were present and unreadable. The
+reading was missing, not the data. Adding `misses` and `missClassification` to
+`ExtractionReport`, and two lines to the printout, exposes what was already on disk.
+
+The diagnosis distinguishes **`wrongValue` from `omitted`**, which is the distinction the
+previous rounds could not draw. A wrong value is the model's answer being incorrect; an
+omission is the model declining to answer. They have different fixes — a prompt shape rule
+addresses the first, a required-fields instruction addresses the second — and the
+headline rate collapses them.
+
+Built in the **same pass** as the rates, from the same `verdicts`, deliberately: a second
+implementation of "was this field right" is a second chance to disagree with the number it
+explains, and the failure would read plausibly.
+
+### The probe that removed a guard
+
+The first draft had three guards preventing a scored-`null` field from being reported as a
+miss, with a comment asserting all three were reachable through different inputs. That
+comment was wrong, and it was wrong in the way the codebase already warns about: a
+documented unreachable branch reads as protection.
+
+The counter-example is one line of `scoreField`:
+
+```ts
+if (expected === undefined) {
+  return null;   // not false
+}
+```
+
+A field the ground truth never asked about is `null`, never `false`. So `fields[field] ===
+false` implies an expectation exists, the third guard could never fire, and it was removed
+rather than kept-and-documented. Verified by probe, not by reading: a sample with no
+`description` expectation, paired with a prediction that also omits it and gets the other
+three fields wrong, reports exactly three misses and `description: graded 0/0 (n/a)`. The
+third guard never ran.
+
+Removing it took `extraction-scoring.ts` from `99.27 | 98.21` to `100 | 99.11`, and the
+remaining branch was a formatting ternary that a format test now pins.
+
+### The guard that stayed, and why the difference is not cosmetic
+
+The loop's other guard — `if (sample === undefined || prediction?.extracted === undefined)
+continue` — was also unreachable, and it *did* have to go, but for a different reason and
+by a different repair. Its second clause was doing real work for the type checker, which
+cannot see that a `graded` verdict implies a present `extracted`. Deleting it produced
+`TS18048: 'prediction.extracted' is possibly 'undefined'`.
+
+The repair was to make the pairing structural rather than to re-add the guard: `paired`
+now carries `{ sample, prediction, verdict }` from the single place they are already
+together, and `gradedPairs` narrows `extracted` once with a stated invariant. The lookup
+that could not be proven total is gone; the branch is gone; the type checker is satisfied.
+
+## Finding 66: equivalent mutants have to be re-proven after the code they describe changes
+
+`for (const verdict of graded)` versus `for (const verdict of verdicts)` in the diagnosis
+loop is an equivalent mutant — both give identical output — and it survived injection twice.
+The first time it was documented as equivalent on the reasoning that ungraded verdicts carry
+all-null fields. That reasoning was correct, and the test suite did not check it.
+
+The repair is not a new test for the mutant, which cannot be killed, but a test for the
+**invariant the equivalence depends on**: every ungraded verdict carries all-null fields.
+`leaves every ungraded verdict with all-null fields, which is what makes graded == verdicts`
+asserts it for all three ungraded states, and now a mutation that gives `unvalidated` a
+scored field fails with `unvalidated is ungraded but carries scored misses: [["type",false]]`.
+
+Writing that test surfaced a **second** bug in the first draft of the fixture: the
+`unvalidated` case was built as `{ parseOk: true, validationValid: false }` with no
+`extracted`, which hits the `!parseOk || extracted === undefined` branch and lands in
+`unparseable`. The fixture was not exercising the state it was named for, and a mutation
+aimed at `unvalidated` survived *because the state was never reached*. The test now asserts
+each fixture reaches its named state, so this cannot recur silently.
+
+## Finding 67: a character-truncated annotation can cut an expected value in half
+
+The miss-detail annotation was bounded with `cut -c1-900`. Measured against the real
+scorer at 19 samples × 3 scored fields, the payload is **4044 characters**, and the worst
+case ends mid-token:
+
+```
+...network-loss-payment-gateway.type:network-loss>wrong network-
+```
+
+That is half an expected value. A reader cannot tell a truncated value from a wrong one,
+which is exactly the failure the surrounding comment claimed to be avoiding — the comment
+said "a silently truncated line is worse than a stated bound" while the implementation
+produced one.
+
+Two errors compounded. The bound was a guess (900) never compared against the data, and it
+cut on characters when the unit that matters is the row. The repair takes whole rows and
+states the omission:
+
+```
+detail=$(printf '%s' "$missed_rows" | head -n 60 | tr '\n' ' ')
+dropped=$((miss_row_count > 60 ? miss_row_count - 60 : 0))
+```
+
+The cap of 60 is measured: 19 samples × 3 fields = 57 rows maximum, 4091 characters
+saturated, 64KiB annotation limit. So the truncation branch exists for a larger dataset and
+is not the normal case. A test asserts the cap is at least 57 — and fails with
+`the workflow caps detail at 10 rows but a fully-missed run produces 57` when it is not.
+
+## Finding 68: a test helper that assumes a delimiter manufactured a green
+
+The workflow test's `classificationAndDetail()` built its detail regex with
+`detail.replace(/^s\//, '')`, assuming `/` was the `sed` delimiter. The detail substitution
+uses `|`, because its *replacement* contains a `/`. So the strip matched nothing, the `|p`
+suffix stayed on the pattern, and the resulting regex — `s|^    ([a-z]...)` — matched
+**every** line.
+
+Three negative assertions failed, which is how it was caught. But the two *positive*
+assertions had been passing for the wrong reason: they matched on the stray `s|` prefix at
+any offset, not on a real row. A helper that guesses a delimiter can therefore not merely
+miss a defect, it can **manufacture** a passing test.
+
+The repair reuses the delimiter-aware scanner the sibling helper already had — reading the
+delimiter from the expression rather than assuming it, and splitting by scanning rather than
+by a constructed `RegExp`. The same class of error had already been fixed once in this file
+for `headlineSubstitutions()`; the fix was not carried across, which is finding 47's shape
+again: a lesson recorded in one place and not applied in the next.
+
+## The retraction
+
+The previous round's closing recommendation was **"change the model, not the prompt"**,
+with the argument that ~58% `category` consistency across providers would prove a capability
+ceiling. That recommendation was challenged — *"why do you need another LLM?"* — and the
+challenge was correct.
+
+The reasoning had a break at one step. From "specification does not explain `category`'s
+42%" it concluded "specification is unlikely to explain `type`'s 26.3%". But **what
+`category`'s 42% actually is was never established.** A wrong in-vocabulary label and a
+rejected out-of-vocabulary synonym are different failures with different owners, and the
+second would have been *this scorer's parser* charging the model. Proposing a provider swap
+on top of an unmeasured 42% was building on an inference presented as a result.
+
+Two things then settled it without a run:
+
+1. **A logical fact.** `parseFaultExtractionResponse({category: 'net'})` returns
+   `{"ok":false,"error":"invalid fault category 'net'"}` — an out-of-vocabulary category
+   makes the **whole response** unparseable. Since `graded` is 19/19, no sample can have
+   answered a category outside the vocabulary, in any run, for any model. The
+   "parser rejected a synonym" class is foreclosed, not merely unlikely.
+2. **The answers were already on disk.** `derive-fault-golden.mjs` had been writing every
+   prediction's fields all along.
+
+So the provider question was not wrong because providers are irrelevant; it was wrong
+because it was **ordered after a reading that cost nothing**. The correct sequence is: read
+the answers, classify the misses, and only then ask whether the residual is capability. That
+is what findings 65–68 implement, and the provider experiment stays available — now with a
+measured baseline to compare against instead of an inferred one.
