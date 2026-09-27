@@ -427,4 +427,43 @@ describe('scripts · the gate-test battery writes a report that survives a block
     const wired = code.match(/"output_tail": output_tail\(output\)/g) ?? [];
     expect(wired.length).toBe(3); // CAUGHT, REDUNDANT, SURVIVED
   });
+
+  it('every reader of a verdict tuple agrees with the tuple the battery builds', () => {
+    // **This asserts a property that a shipped crash proved necessary, and the
+    // crash was in this battery's own failure path.**
+    //
+    // Extending each verdict tuple from four fields to five -- to carry
+    // `collected` and `exit_status` -- updated the builder and the report writer
+    // and missed the loop that prints the failure list. That loop still unpacked
+    // four, so on CI the battery printed its summary, raised `ValueError: too
+    // many values to unpack (expected 4)` while listing the failures, and exited
+    // *before* `write_report` on that path. The observable result was a run that
+    // published nothing while its publish step reported success, which is why
+    // the report stayed pinned to an older run.
+    //
+    // A test of the shape rather than of the crash: every unpacking of `results`
+    // must tolerate the width the appends actually build. The assertion is on
+    // arity, so adding a sixth field cannot silently reintroduce this.
+    const code = codeOf(SOURCE);
+
+    // The width the appends build: 5 fields, the last being the detail dict.
+    //
+    // Matched on the line rather than on a balanced-parenthesis group, because a
+    // `[^)]*` stops at the `)` inside `output_tail(output)` and silently drops
+    // the three arms that carry it -- the first version of this assertion counted
+    // 3 of 5 and failed on its own regex rather than on the battery.
+    const appendLines = code
+      .split('\n')
+      .filter((line) => line.includes('results.append((name,'));
+    expect(appendLines.length).toBeGreaterThanOrEqual(5);
+    for (const line of appendLines) {
+      // name, verdict, tests, elapsed, detail -> at least 4 commas in the tuple
+      expect((line.match(/,/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    }
+
+    // Every reader must use a starred or full unpack, never a fixed four.
+    expect(code).not.toMatch(/for name, verdict, _, _ in results/);
+    expect(code).toMatch(/for name, verdict, \*_ in results/);
+    expect(code).toMatch(/for name, verdict, tests, elapsed, detail in results/);
+  });
 });

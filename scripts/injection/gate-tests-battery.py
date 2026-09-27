@@ -914,7 +914,7 @@ def main() -> int:
     if survived or inert or timed_out:
         print()
         print("Failures:")
-        for name, verdict, _, _ in results:
+        for name, verdict, *_ in results:
             if verdict in {"SURVIVED", "INERT", "TIMEOUT"}:
                 print(f"  {verdict}  {name}")
         write_report(results, summary)
