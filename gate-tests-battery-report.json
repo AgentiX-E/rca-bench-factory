@@ -138,7 +138,7 @@
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-cli-reference.test.ts",
-      "elapsed_s": 11.6
+      "elapsed_s": 11.8
     },
     {
       "name": "CLIREF 5. only the first disagreement is reported",
@@ -173,7 +173,7 @@
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-rcaeval-cases.test.ts",
-      "elapsed_s": 2.6
+      "elapsed_s": 2.7
     }
   ],
   "caught": 0,
@@ -181,10 +181,10 @@
   "inert": 0,
   "timed_out": 0,
   "redundant": 1,
-  "total_seconds": 107.5,
+  "total_seconds": 108.1,
   "slowest": {
-    "seconds": 11.7,
-    "injection": "CLIREF 2. an implemented-but-undocumented command stops being reported"
+    "seconds": 11.8,
+    "injection": "CLIREF 4. a flag the reference never mentions stops being reported"
   },
   "restore_status": 0
 }
