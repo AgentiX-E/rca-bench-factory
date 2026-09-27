@@ -410,4 +410,21 @@ describe('scripts · the gate-test battery writes a report that survives a block
     expect(code).toMatch(/return "runner_error"/);
     expect(code).toMatch(/if collected == 0:/);
   });
+
+  it('every report row carries the runner output that justified its verdict', () => {
+    // **A verdict without its evidence is readable and still not understandable,
+    // which is the same defect as a verdict without its channel.**
+    //
+    // When the first readable CI report arrived it said `0 caught, 24 survived`
+    // and stopped there. The output that would have said *why* -- what vitest
+    // actually printed -- was written to the console and nowhere else. So the
+    // tail of the runner's output is now a report field, and this asserts it on
+    // all three verdict arms: a field wired into one arm answers the question
+    // only for the cases that already had an answer.
+    const code = codeOf(SOURCE);
+    expect(code).toMatch(/def output_tail\(output: str/);
+    expect(code).toMatch(/output.splitlines\(\)\[-lines:\]/);
+    const wired = code.match(/"output_tail": output_tail\(output\)/g) ?? [];
+    expect(wired.length).toBe(3); // CAUGHT, REDUNDANT, SURVIVED
+  });
 });

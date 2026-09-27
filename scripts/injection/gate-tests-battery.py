@@ -415,6 +415,22 @@ def diagnosis(status: int, output: str, collected: int) -> str:
     return "runner_error"
 
 
+def output_tail(output: str, lines: int = 12) -> list[str]:
+    """The runner's last lines, for the report rather than for the log.
+
+    The first readable CI report said every injection survived and could not say
+    why, because the evidence that would have answered it -- what the runner
+    actually printed -- was written to the console. A verdict without its
+    evidence is the same problem as a verdict without its channel: it can be read
+    and still not be understood.
+
+    Twelve lines rather than the whole output: the assertion failure and the
+    summary are in the tail, the whole transcript is mostly transform timings,
+    and this field exists to be read by a person looking at a diff.
+    """
+    return [line for line in output.splitlines()[-lines:] if line.strip()]
+
+
 def _diagnose(status: int, output: str) -> str:
     """Say *why* a verdict was SURVIVED, because there are three causes.
 
@@ -843,12 +859,12 @@ def main() -> int:
                 print(f"         expecting: {description}")
                 print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
                 caught += 1
-                results.append((name, "CAUGHT", names, elapsed, {"collected": collected, "exit_status": status, "diagnosis": why}))
+                results.append((name, "CAUGHT", names, elapsed, {"collected": collected, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             elif name in EXPECTED_SURVIVORS:
                 print(f"REDUNDANT {name}")
                 print(f"         expecting: {description}")
                 print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
-                results.append((name, "REDUNDANT", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why}))
+                results.append((name, "REDUNDANT", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             else:
                 print(f"SURVIVED {name}")
                 print(f"         expecting: {description}")
@@ -856,7 +872,7 @@ def main() -> int:
                 print(_diagnose(status, output))
                 print(f"         [{elapsed:.1f}s]")
                 survived += 1
-                results.append((name, "SURVIVED", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why}))
+                results.append((name, "SURVIVED", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
 
     finally:
         # Releasing must not be able to change the verdict. `unlink` on a file
