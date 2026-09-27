@@ -93,6 +93,25 @@ function codeOf(source: string): string {
 }
 
 /**
+ * One top-level Python function, from its `def` to the next one.
+ *
+ * Extracting a *definition* rather than a slice between two named neighbours on
+ * purpose. The slice form -- `indexOf('def a(')` to `indexOf('def b(')` -- looks
+ * equivalent and is not: inserting any function between `a` and `b` silently
+ * makes that new function part of what gets run, and it cuts `a` off from the
+ * helpers it calls. Both happened here, and the symptom was a `NameError` inside
+ * a generated script, i.e. an empty result that reads as a wrong answer rather
+ * than as a broken harness.
+ */
+function extractPythonFunction(source: string, name: string): string {
+  const start = source.indexOf(`def ${name}(`);
+  if (start < 0) throw new Error(`no definition of ${name} in the battery`);
+  const rest = source.slice(start + 1);
+  const next = rest.search(/\ndef /);
+  return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next);
+}
+
+/**
  * A self-contained fake with the same exclusion structure as the battery.
  *
  * The real battery takes ~79s and mutates the shipped gates, so running two real
@@ -363,25 +382,35 @@ describe('scripts · the gate-test battery writes a report that survives a block
     // exists to remove, so the shapes are enumerated.
     //
     // The helper is executed rather than pattern-matched. `collected_count` is
-    // pure text in and out, so it can be lifted out of the file and run for real
-    // -- a stronger check than asserting its source looks right.
-    const source = readFileSync(BATTERY, 'utf8');
-    const start = source.indexOf('def collected_count(');
-    const end = source.indexOf('\ndef diagnosis(');
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const body = source.slice(start, end);
-
-    // Python is already a dependency of this battery, so the helper is run
-    // through it rather than reimplemented in TypeScript -- a reimplementation
-    // would pass while the shipped regex was wrong.
+    // pure text in and out. A reimplementation in TypeScript would pass while the
+    // shipped regex was wrong, so the functions are lifted out of the file and
+    // run for real.
+    //
+    // ## Why it now lifts a *set* of functions rather than one span
+    //
+    // The first version sliced from `def collected_count(` to `def diagnosis(`
+    // and called the result "the body". That is a slice between two neighbours,
+    // not a definition, and it broke the moment a function was inserted between
+    // them: the slice swallowed the new `collected_basis` whole, and it also cut
+    // `collected_count` off from the helpers it calls, since its fallback reaches
+    // `failing_tests`. The failure was a `NameError` inside the generated script,
+    // which surfaces as an empty stdout and a test that reads a missing value as
+    // a mismatch.
+    //
+    // So `extract` finds a function by name and ends it at the next top-level
+    // `def`, and the dependencies are listed rather than assumed. A future
+    // insertion between any two of these cannot silently change what is run.
     const dir = mkdtempSync(join(scratch, 'collected-'));
     const script = join(dir, 'check.py');
     writeFileSync(
       script,
       [
         'import re, sys',
-        body,
+        ...[
+          'strip_ansi',
+          'failing_tests',
+          'collected_count',
+        ].map((name) => extractPythonFunction(readFileSync(BATTERY, 'utf8'), name)),
         'cases = [',
         "    ('Tests  6 failed | 3 passed (9)', 9),",
         "    ('Tests  9 passed (9)', 9),",

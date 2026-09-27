@@ -354,37 +354,109 @@ def acquire_exclusive_lock() -> int:
     return fd
 
 
+def strip_ansi(text: str) -> str:
+    """Remove SGR colour codes so the parsers below see the same text locally and in CI.
+
+    CI is not a TTY and vitest still emits `\x1b[31m` escapes -- the captured CI
+    output has them, and the local run does not. Any pattern anchored on the first
+    visible character therefore works on one machine and not the other, which is
+    how the regexes in this file produced opposite verdicts in the two places.
+
+    A no-op on already-plain text, so stripping unconditionally is safe.
+    """
+    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+
+
 def failing_tests(output: str) -> list[str]:
-    """The names of the tests vitest marked as failed, stripped of decoration."""
+    """The names of the tests vitest marked as failed, stripped of decoration.
+
+    Three shapes are matched, because vitest prints different ones and this
+    repository has now been bitten by matching only the first:
+
+      `× name` / `✗ name`   the default reporter's failed-test lines
+      `❯ file:line:col`     the per-failure *frame* header
+
+    The frame marker is what the captured CI output actually contains. Matching
+    only `×`/`✗` found zero failures in a run whose output was ten lines of
+    failure frames, and the CAUGHT condition is `status != 0 and failed > 0` --
+    so that miss is what turned twenty-four caught injections into twenty-four
+    survivors on CI while the same code reported 24 caught here.
+
+    ANSI escapes are stripped first for the same reason: the escapes sit between
+    the marker and the name, so a pattern anchored on the line start matches in a
+    terminal and fails in a pipe.
+    """
+    plain = strip_ansi(output)
     names = []
-    for line in output.splitlines():
-        match = re.match(r"\s*[×✗]\s+(.*?)(?:\s+\d+ms)?$", line.strip())
+    for line in plain.splitlines():
+        stripped = line.strip()
+        match = re.match(r"[×✗]\s+(.*?)(?:\s+\d+ms)?$", stripped)
         if match:
             names.append(match.group(1).strip())
+            continue
+        frame = re.match(r"❯\s+(\S+?):\d+:\d+", stripped)
+        if frame:
+            names.append(f"failure in {frame.group(1)}")
     return names
 
 
 def failed_count(output: str) -> int:
-    match = re.search(r"Tests\s+(\d+) failed", output)
-    return int(match.group(1)) if match else 0
+    """How many tests vitest reported as failed.
+
+    Falls back to counting the runner's own failure frames when the summary line
+    is not in the captured text. The summary sits below the frames, so a caller
+    that keeps only a tail of the output -- as this battery's report does -- can
+    hold the evidence of failure and none of the summary. Returning 0 there made
+    the CAUGHT condition (`status != 0 and failed > 0`) false for a run that had
+    failed, which is the defect that reported twenty-four caught injections as
+    survivors on CI.
+    """
+    plain = strip_ansi(output)
+    match = re.search(r"Tests\s+(\d+) failed", plain)
+    if match:
+        return int(match.group(1))
+    return sum(1 for name in failing_tests(plain) if name.startswith("failure in "))
 
 
 def collected_count(output: str) -> int:
-    """How many tests vitest says it ran, failed or passed.
+    """How many tests the runner ran, from its summary or from its own failure list.
+    Never a lower bound presented as a total: see `collected_basis`.
 
-    This is the quantity that separates the three causes of a SURVIVED verdict,
-    and it has to come out of the runner's own summary rather than out of the
-    mutation. `Tests 6 failed | 3 passed (9)` means nine tests ran and the guard
-    is genuinely unguarded; `Tests  0 passed (0)` or no line at all means the
-    runner found nothing and the verdict says nothing about the guard.
+    This is the quantity that separates the three causes of a non-CAUGHT verdict,
+    and getting it wrong is worse than not having it.
 
-    Both numbers are read because vitest prints the failed count first and omits
-    it entirely when it is zero, so a passed-only run is a different line shape:
-    `Tests  6 failed | 3 passed (9)` versus `Tests  9 passed (9)`. The passed
-    count is anchored on `Tests` rather than on the pipe for exactly that reason
-    -- matching `| N passed` alone misses the passed-only shape, which returned 0
-    and would have labelled a fully-collected green run as `no_tests_collected`,
-    the opposite of what it means. That mistake was made and caught here.
+    ## Why the summary line alone is not enough
+
+    The first CI run that carried this field reported `collected=0` on all
+    twenty-five rows and `no_tests_collected` on all of them -- "the runner found
+    nothing, so this row says nothing about the guard". **That reading was wrong,
+    and the output_tail field proved it**: the very same rows carried
+
+        ❯ test/check-readme-sample.test.ts:353:27
+          353|     expect(result.status).toBe(0);
+             |                           ^
+
+    which is a real assertion failure in a test that really ran. So the tests were
+    collected, failed, and were reported as never having run.
+
+    The cause is ordering: vitest prints the per-failure frames, and the
+    `Tests  N failed` summary comes further down. A tail of twelve lines stops in
+    the middle of the last failure frame and never reaches it. Parsing only the
+    summary therefore returns 0 for exactly the runs that failed hardest.
+
+    ## What is counted instead
+
+    The summary line when it is present, and otherwise the runner's own list of
+    failed tests, which `failing_tests` already extracts for the CAUGHT rows. A
+    non-zero count is then evidence that tests ran, which is the only claim this
+    function is used to make -- it is never used as an exact total, only compared
+    against zero.
+
+    The `s` in `Tests` is matched case-sensitively on purpose: the summary and the
+    per-frame output are distinguishable, and the passed count is anchored on
+    `Tests` rather than on the pipe because a fully-green run prints
+    `Tests  9 passed (9)` with no pipe at all. That shape was mis-parsed once
+    already, returning 0 for a run that collected nine.
     """
     failed = re.search(r"Tests\s+(\d+) failed", output)
     passed = re.search(r"Tests\s+(?:\d+ failed \|\s*)?(\d+) passed", output)
@@ -393,7 +465,34 @@ def collected_count(output: str) -> int:
         total += int(failed.group(1))
     if passed:
         total += int(passed.group(1))
-    return total
+    if total:
+        return total
+    # No summary reached us. The failure list is equal evidence that tests ran:
+    # a test cannot fail in a run that collected nothing.
+    return len(failing_tests(output))
+
+
+def collected_basis(output: str) -> str:
+    """Which evidence `collected_count` got its number from.
+
+    `collected_count` returns one of two very different quantities, and until now
+    the report printed both as a bare integer:
+
+      "summary"   the runner's own tally, e.g. `Tests 6 failed | 3 passed (9)`.
+                  An exact total.
+      "failures"  the number of failure frames in the text we happen to hold.
+                  **A lower bound**, because the text is a tail.
+
+    The first CI report that carried `collected` printed `collected=1` on
+    twenty-four rows whose tails each held one frame. A reader takes an integer
+    captioned `collected` for a count of tests, and concludes "one test ran" --
+    where the runner had actually reported six. The number was not wrong; the
+    report presented a lower bound as a total, which is the same class of defect
+    as a verdict without its evidence.
+
+    So the basis travels with the number, and the report shows both.
+    """
+    return "summary" if re.search(r"Tests\s+\d+ (?:failed|passed)", strip_ansi(output)) else "failures"
 
 
 def diagnosis(status: int, output: str, collected: int) -> str:
@@ -401,13 +500,38 @@ def diagnosis(status: int, output: str, collected: int) -> str:
 
     The console path has `_diagnose`, which is written for a human reading a log.
     This is the same distinction in a form the report can carry, because the log
-    is the channel this project cannot read. Three values, because they call for
-    three different repairs:
+    is the channel this project cannot read. Four values, because they call for
+    four different repairs:
 
       no_tests_collected  the runner found nothing -- says nothing about the guard
       tests_passed        the tests ran and stayed green -- a real survivor
+      tests_failed        the runner reported a failing test. The guard *did*
+                           react; the verdict is decided by the CAUGHT condition
+                           above, not here.
       runner_error        the runner exited non-zero without reporting a failure
+
+    ## The ordering is the point
+
+    This used to be `collected == 0 -> no_tests_collected; status == 0 ->
+    tests_passed; else runner_error`, and on the captured CI text it labelled
+    twenty-four failing runs `runner_error`. Every one of them had
+    `expect(result.status).toBe(0)` with the `^` caret under it -- an assertion
+    failure, the most decisive thing the runner can say. It was read as "the
+    runner died before reporting anything", which points the reader at the
+    wrong repair entirely.
+
+    The cause was that `collected` was derived from the failure list, and a tail
+    of twelve lines holds one frame no matter how many tests failed, so
+    `collected` was 1... which is not 0, so the first branch was skipped and
+    `status == 1` made it `runner_error`. Two defects in series: a lower bound
+    read as a total, and a decision made on it before looking at the evidence
+    that was already in hand.
+
+    So the failure evidence is now consulted first, and it is consulted directly
+    rather than through a count.
     """
+    if status != 0 and failed_count(output) > 0:
+        return "tests_failed"
     if collected == 0:
         return "no_tests_collected"
     if status == 0:
@@ -415,7 +539,7 @@ def diagnosis(status: int, output: str, collected: int) -> str:
     return "runner_error"
 
 
-def output_tail(output: str, lines: int = 12) -> list[str]:
+def output_tail(output: str, lines: int = 40) -> list[str]:
     """The runner's last lines, for the report rather than for the log.
 
     The first readable CI report said every injection survived and could not say
@@ -424,9 +548,25 @@ def output_tail(output: str, lines: int = 12) -> list[str]:
     evidence is the same problem as a verdict without its channel: it can be read
     and still not be understood.
 
-    Twelve lines rather than the whole output: the assertion failure and the
-    summary are in the tail, the whole transcript is mostly transform timings,
-    and this field exists to be read by a person looking at a diff.
+    ## Why forty lines and not twelve
+
+    Twelve was chosen to keep the field small and was measured against the wrong
+    thing. A vitest failure frame is nine lines -- the `❯ file:line:col` header,
+    the source excerpt, the `^` caret, the blank separator -- and vitest prints
+    every frame of a file before the `Tests  N failed` summary. A twelve-line
+    tail therefore lands in the middle of the *last* frame and stops there:
+
+        ❯ test/check-readme-sample.test.ts:353:27
+          353|     expect(result.status).toBe(0)
+             |                           ^
+        ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+    That is the real tail of a row that failed six tests. The frame is proof a
+    test ran; the summary is the count; twelve lines delivered the first and never
+    the second, so every parser that prefers the summary fell back to a lower
+    bound. Forty lines reaches past the frames into the summary for a file with
+    up to four failing tests, and still excludes the bulk of the transcript,
+    which is transform timings.
     """
     return [line for line in output.splitlines()[-lines:] if line.strip()]
 
@@ -851,6 +991,7 @@ def main() -> int:
             # printing it to the log was not enough, because the log is the
             # channel this project cannot read.
             collected = collected_count(output)
+            basis = collected_basis(output)
             why = diagnosis(status, output, collected)
 
             if status != 0 and failed_count(output) > 0:
@@ -859,12 +1000,12 @@ def main() -> int:
                 print(f"         expecting: {description}")
                 print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
                 caught += 1
-                results.append((name, "CAUGHT", names, elapsed, {"collected": collected, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                results.append((name, "CAUGHT", names, elapsed, {"collected": collected, "collected_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             elif name in EXPECTED_SURVIVORS:
                 print(f"REDUNDANT {name}")
                 print(f"         expecting: {description}")
                 print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
-                results.append((name, "REDUNDANT", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                results.append((name, "REDUNDANT", [], elapsed, {"collected": collected, "collected_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             else:
                 print(f"SURVIVED {name}")
                 print(f"         expecting: {description}")
@@ -872,7 +1013,7 @@ def main() -> int:
                 print(_diagnose(status, output))
                 print(f"         [{elapsed:.1f}s]")
                 survived += 1
-                results.append((name, "SURVIVED", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                results.append((name, "SURVIVED", [], elapsed, {"collected": collected, "collected_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
 
     finally:
         # Releasing must not be able to change the verdict. `unlink` on a file
