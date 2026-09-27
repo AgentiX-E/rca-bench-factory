@@ -2282,3 +2282,73 @@ re-aimed at what the closed ceiling can still distinguish.
 The benchmark asks 19 questions and the field's definition costs nothing. The open question is no
 longer definitional: it is whether the model answers enough of those questions to clear the bar, and
 `type` remains the binding constraint with no structural ceiling behind it.
+
+## Pass 27 -- Read the `type` misses, and find the drift runs toward over-specification
+
+Findings 69 and 78 both treated `type` as a settled matter: 69 classified `category`'s misses one by one
+and 78 repeated the conclusion one field over, calling `type`'s 4/19 a "model-accuracy figure". Neither
+read the answers. This pass takes the reading.
+
+### What was read
+
+The fifteen `type` misses of run `9932e766c`, recovered from the CI annotation, where they are recorded
+as `expected>actual` rows. They are transcribed into `scripts/probe-type-misses.mjs` with the run named,
+because the alternative is a figure that cannot be read without a live LLM key -- exactly when the Zhipu
+quota makes it unavailable.
+
+### What the reading says
+
+| class | count | whose defect |
+| --- | --- | --- |
+| `form-variant` | **0** | -- |
+| `shares-token` | 9 | the model's; a near miss |
+| `different-mechanism` | 6 | the model's |
+
+**The actionable class is empty.** No answer would have been accepted by a correct `normalizeFaultType`,
+so there is no scoring defect here and no synonym table would reach nine of the fifteen. That is the
+same shape as finding 69's `category` result, now established by measurement instead of by argument.
+
+The new fact is the **direction** of the drift: 11 of 15 answers are *longer* than the expected slug
+against 2 shorter. The model describes the incident where the prompt asks it to name the mechanism --
+`replica-lag` -> `replica-apply-thread-saturation`, `redis-latency` -> `redis-command-thread-saturation`.
+That is a prompt-level constraint on abstraction level, not a vocabulary problem.
+
+### Paired injections
+
+The battery is the first here whose injections are genuinely **paired**, and that required changing the
+battery's own machinery rather than writing four more entries. A definition edit and the data edit that
+makes it observable are now expressed as one injection with an `also` slot, and `main` refuses the pair
+if the second edit changed nothing.
+
+| injection | what the pair establishes |
+| --- | --- |
+| B | an unreachable `form-variant` class is invisible until a variant exists to be discarded |
+| D | folding must be load-bearing; a variant that *also* shares a token cannot show it |
+| E | the class-exhaustiveness guard is what throws, not an incidental downstream crash |
+| E2 | E is testing the guard rather than a restructured condition |
+| H | "the gate is open" is distinguishable from "there is nothing to gate" |
+
+Two of the data halves had to be chosen rather than assumed. `POD_KILL` for D is a case variant *and* a
+token-sharer, so removing folding leaves it a near miss and the count does not move -- the first version
+of the pair survived for that reason. `CPU-SATURATION` has the needed property: its single folded token
+is not a token of the expected slug.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| type-miss probe | `form-variant 0`, `shares-token 9`, `different-mechanism 6`, over-specified 11/15 |
+| type-miss test | 8 passed |
+| type-miss battery | **14 caught, 0 survived, 0 inert** |
+| other three batteries | 26 caught, 0 survived, 0 inert |
+| lint | no mock / no secrets / no vendored data / registry / paths -- all OK |
+| all five workflow YAMLs | parse |
+
+### Where M1 stands
+
+The remaining gap is a capability gap and now has a hypothesis attached to it: the prompt asks for a
+name and the model returns a summary. That is testable against these same fifteen rows, and it is a
+different next step than "improve accuracy" would have been.
+
+This pass raised no measured accuracy and claims none. It replaced an inherited assertion with a
+measurement.

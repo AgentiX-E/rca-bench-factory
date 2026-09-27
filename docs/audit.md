@@ -5647,3 +5647,130 @@ headroom.** The milestone's remaining gap is unchanged and is the one finding 78
 answers few of those questions well enough to clear the bar, and `type` is the binding constraint with
 no structural ceiling behind it. Stating the rule did not raise the measured accuracy on its own -- it
 removed a reason the measurement could not be trusted.
+
+## Finding 81 -- The `type` shortfall is a capability limit, and it drifts toward over-specification
+
+Finding 69 classified `category`'s eight misses one by one -- `resource -> code`, `runtime -> resource`,
+and so on -- and concluded that the model chose a legal vocabulary member, so the failure was *choosing*
+rather than *formatting*. Finding 78 then argued `type` has no structural ceiling behind it and read its
+4/19 as a model-accuracy figure. **Neither reading was a reading.** Finding 69's conclusion was taken
+over `category` and *asserted* of `type`; finding 78 repeated the assertion. This round takes the
+reading, and it is the same asymmetry finding 69 was written to close, one field over.
+
+### The question, stated so it can be answered
+
+When the model's `type` differs from the expected slug, is it
+
+| class | what it means | whose defect |
+| --- | --- | --- |
+| `form-variant` | the answer normalizes equal to the expected slug | **this repository's** -- the scorer rejected an answer it should have accepted |
+| `shares-token` | same subject, more words (`cpu-saturation` -> `cpu-throttling`) | the model's, and a near miss |
+| `different-mechanism` | something else entirely (`network-loss` -> `egress-packet-drop`) | the model's |
+
+The partition matters because the first class is actionable here and the other two are not. The
+normalizer under test is `normalizeFaultType`, which is a pure **form** normalizer:
+
+```ts
+type.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '')
+```
+
+It folds case, whitespace and separators. It **strips** rather than replaces punctuation, so
+`null.dereference` becomes `nulldereference` and is *not* equal to `null-dereference`; a trailing hyphen
+is **kept**, so `cpu-saturation-` is not equal either. It performs **no synonym resolution**. Both of
+those distinctions were asserted wrongly in the first draft of the test file and are now pinned as the
+negative half of a contrast, because they are the reason the recorded misses are not form variants.
+
+### The reading
+
+The fifteen `type` misses of run `9932e766c` are recorded in the CI annotation in `expected>actual`
+form, e.g. `resource-cpu-saturation-checkout.type:cpu-saturation>cpu-throttling`. They are transcribed
+into `scripts/probe-type-misses.mjs` with their run named:
+
+```
+form-variant 0 | shares-token 9 | different-mechanism 6
+over-specified (answer longer than the expected slug): 11/15
+no form variant: the normalizer is not the defect, so no answer here was rejected
+that should have been accepted
+```
+
+**The first class is empty, and that is the load-bearing result.** Not one of the fifteen answers would
+have been accepted by a correct normalizer. There is no scoring defect to fix, and no synonym table
+would close the gap either -- a synonym table is a *form* device and nine of the fifteen misses are not
+form failures at all.
+
+### The new fact: the drift is toward over-specification
+
+| direction | count |
+| --- | --- |
+| answer longer than the expected slug | **11 / 15** |
+| answer shorter | 2 / 15 |
+| same length, different mechanism | 2 / 15 |
+
+The model is not naming a different field or inventing unrelated vocabulary. It is **describing the
+incident** where the prompt asks it to **name the mechanism**: `replica-lag` -> `replica-apply-thread-saturation`,
+`redis-latency` -> `redis-command-thread-saturation`, `disk-full` -> `disk-space-exhaustion`,
+`container-crash` -> `native-ffmpeg-segfault`. That is a specific, testable claim about the failure mode,
+and it is what makes the finding actionable -- the fix is a prompt constraint on *level of abstraction*,
+not a bigger vocabulary.
+
+### The instrument
+
+Two artefacts, because the figure is published and this repository holds published figures to one
+standard.
+
+`scripts/probe-type-misses.mjs` is the classifier that ships. Its `counts` keys are the **same strings**
+the classifier returns (`form-variant`, not `formVariant`); an earlier draft used camelCase keys with
+kebab-case values and the mismatch was invisible in the human-readable output while breaking every
+programmatic consumer. It exits `2` when a form variant is found, because that is a bug and the probe has
+to be usable as a gate rather than only as a report.
+
+`packages/core/test/type-miss-probe.test.ts` (8 tests) is the assertion half. It duplicates the
+classifier rather than importing it, and a test runs the shipped script as a **subprocess** and requires
+its output to match -- a test that imports its subject's helper proves only that the file agrees with
+itself. The discriminating test constructs form variants, so `form-variant 0` passes for the right
+reason rather than because a classifier returning `differentMechanism` for everything would also report
+zero.
+
+`scripts/injection/type-miss-probe.py` is the battery. It is the first in this repository whose
+injections are **paired**, and expressing that is a change to the battery's own machinery:
+
+| injection | pair | why half a pair is undecidable |
+| --- | --- | --- |
+| B | unreachable form-variant class + a case variant to fold | the class is empty in the baseline, so making it unreachable moves no count; the data edit alone is invisible because the variant folds |
+| D | folding removed + a variant whose only token is upper-case | `POD_KILL` also *shares a token* once folded, so removing folding leaves it classified as a near miss and the count stays 0 |
+| E | guard disabled + a non-exhaustive classifier | the three classes cover the transcription by construction, so no data mutation reaches the missing guard |
+| E2 | dead guard + a non-exhaustive classifier | says whether E tests the guard or the crash: a `covered < 0` condition reports the same benign partition as a correct one |
+| H | exit code forced to 0 + a variant that must trip it | the JSON is unchanged, so only an input *with* a form variant distinguishes "the gate is open" from "there is nothing to gate" |
+
+The pairing is expressed as an **`also` slot**, applied to the result of the first mutation, with
+`main` refusing the pair if the second edit changed nothing. An earlier version of the file described
+the pairs in prose and reported four SURVIVED -- the correct outcome for a battery asserting half a pair
+and describing the other half.
+
+An injection whose second half is a no-op is not a mutation at all. B, D and H had to have their data
+halves chosen rather than assumed: `NETWORK_LOSS` works for B because the class is *unreachable* so the
+folded variant is discarded, and `CPU-SATURATION` works for D because its single folded token is not a
+token of the expected slug. `POD_KILL` does not work for D, and that failure is recorded in the file.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| type-miss probe | 15 misses -- `form-variant 0`, `shares-token 9`, `different-mechanism 6`, over-specified 11 |
+| type-miss test | 8 passed |
+| type-miss battery | **14 caught, 0 survived, 0 inert** |
+| probe battery | 10 caught, 0 survived, 0 inert |
+| M1 test battery | 8 caught, 0 survived, 0 inert |
+| component-rule battery | 8 caught, 0 survived, 0 inert |
+
+### What this changes for M1
+
+**The remaining M1 gap is a capability gap, and the next round has a specific hypothesis to test.** The
+`type` field is the binding constraint, no normalizer change reaches it, and the measured failure mode
+is over-specification rather than misidentification. That converts "the model is not accurate enough"
+into "the prompt asks for a name and the model supplies a summary", which is a prompt change that can be
+tested against these same fifteen rows.
+
+The round did **not** raise the measured accuracy and does not claim to. It removed a hypothesis that
+was standing on an argument rather than on a reading, and it replaced it with one that stands on a
+measurement.

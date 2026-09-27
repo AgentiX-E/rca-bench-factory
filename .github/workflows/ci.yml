@@ -91,6 +91,17 @@ jobs:
       - name: M1-ceiling probe test battery (no survivors, no inert mutations)
         run: node scripts/inject-m1-ceiling-tests.mjs
 
+      # The `type`-miss classifier reports the partition that decides whether the
+      # `type` shortfall is a scoring defect or a capability limit, so it is the
+      # figure the milestone's next round is planned against. Its battery is the
+      # first here whose injections are *paired*: four of them are only decidable
+      # as a definition edit plus the data edit that makes the definition
+      # observable, and the pair is expressed as an `also` slot rather than as a
+      # comment describing one. A battery that asserts half a pair and describes
+      # the other half reports SURVIVED, correctly, and says nothing.
+      - name: Type-miss probe battery (no survivors, no inert mutations)
+        run: python3 scripts/injection/type-miss-probe.py
+
       - name: Golden Master verification
         run: node golden-master/verify.mjs
 

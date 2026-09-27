@@ -29,7 +29,9 @@
     "check:portability": "node scripts/check-no-absolute-paths.mjs",
     "probe:m1-ceiling": "node scripts/probe-m1-ceiling.mjs",
     "inject:m1-ceiling": "python3 scripts/injection/m1-ceiling-probe.py",
-    "inject:m1-ceiling-tests": "node scripts/inject-m1-ceiling-tests.mjs"
+    "inject:m1-ceiling-tests": "node scripts/inject-m1-ceiling-tests.mjs",
+    "probe:type-misses": "node scripts/probe-type-misses.mjs",
+    "inject:type-miss-probe": "python3 scripts/injection/type-miss-probe.py"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
