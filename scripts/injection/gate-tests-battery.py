@@ -24,6 +24,15 @@ Three outcomes, the same vocabulary the other batteries use:
               SURVIVED would be a false reading of the kind findings 68 and 74
               both describe.
 
+A fourth outcome is reported but is not a verdict about a guard:
+
+  - TIMEOUT   the test run exceeded `PER_INJECTION_TIMEOUT_S`, so nothing was
+              decided. It is kept separate from SURVIVED because the two call for
+              opposite repairs -- one says "write a test", the other says "the
+              machine is slower than the one this was written on" -- and a
+              battery that prints one word for both is the defect this repository
+              has now paid for three times (Pass 5 twice, finding 84 once).
+
 ## Why one mutation per guard, and not more
 
 Each entry names the *specific* assertion the mutation is expected to break, and
@@ -49,6 +58,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -59,6 +69,32 @@ REPO = Path(__file__).resolve().parents[2]
 # exercised exactly as CI exercises them.
 VITEST = ["pnpm", "exec", "vitest", "run", "--root", "packages/core"]
 
+# How long a single injection's test run may take before the battery calls it
+# rather than waiting forever.
+#
+# Without a bound, a run that hangs is indistinguishable from a run that is
+# merely slow: both end in a killed step and a bare exit code, and the reader
+# cannot tell which injection did it or whether the guard was even reached.
+# That is the same failure this battery was written to stop inflicting on the
+# gates -- an unreadable verdict that means opposite things depending on a cause
+# nobody recorded.
+#
+# 120s is ~15x the slowest test file here (`check-cli-reference.test.ts` at ~7s,
+# which spawns the real CLI as a subprocess five times). The margin is
+# deliberate: this bound is not a performance assertion, and a runner slower
+# than the author's machine must not be turned into a red battery by it. A
+# timeout therefore reports itself as TIMEOUT, separately from SURVIVED, so the
+# two can never be read as each other.
+PER_INJECTION_TIMEOUT_S = 120
+
+# How long the runner's own `--version` query may take.
+#
+# It answers in 0.3s. The bound exists because the first version of this probe
+# did not have one and did not ask for a version either -- it ran the whole core
+# suite (see `assert_vitest_is_callable`), so "the runner is slow to answer"
+# and "the runner is misinvoked" were the same silent minute.
+PREFLIGHT_TIMEOUT_S = 30
+
 
 def rename(text: str, old: str, new: str) -> str:
     """One anchored replacement, asserting the anchor was actually present."""
@@ -67,8 +103,8 @@ def rename(text: str, old: str, new: str) -> str:
     return text.replace(old, new, 1)
 
 
-def run_tests(test_file: str) -> tuple[int, str]:
-    """Run one test file; return its exit status and the lines vitest printed.
+def run_tests(test_file: str) -> tuple[int, str, float]:
+    """Run one test file; return its exit status, the lines vitest printed, and how long it took.
 
     No `check=True`: a non-zero status is the measurement. The output is captured
     so the failing test names can be reported, which is what distinguishes "the
@@ -80,14 +116,23 @@ def run_tests(test_file: str) -> tuple[int, str]:
     that has nothing to do with the guard under test, so the symptom is detected
     once, up front, by `assert_vitest_is_callable` rather than being inferred
     from a battery full of survivors.
+
+    The duration is returned rather than only used for a bound, because this
+    battery spawns one vitest process per injection and that startup is ~95% of
+    its total cost. A 107s local run became a 162s CI run on the same commit with
+    the same verdicts, and the reason is process startup, not the assertions --
+    so the cost is reported per injection instead of being left for a reader to
+    infer from a wall clock nobody prints.
     """
+    started = time.monotonic()
     proc = subprocess.run(
         [*VITEST, test_file],
         cwd=REPO,
         capture_output=True,
         text=True,
+        timeout=PER_INJECTION_TIMEOUT_S,
     )
-    return proc.returncode, proc.stdout + proc.stderr
+    return proc.returncode, proc.stdout + proc.stderr, time.monotonic() - started
 
 
 def assert_vitest_is_callable() -> None:
@@ -100,16 +145,46 @@ def assert_vitest_is_callable() -> None:
     shipped with an absolute path that passed locally and threw on the runner
     before its first injection (finding 77). Checking the runner first turns that
     into one line instead of twenty-five misleading rows.
+
+    ## Why the probe command is written out rather than derived from VITEST
+
+    The first version of this function ran `[*VITEST, "--version"]`, which is
+
+        pnpm exec vitest run --root packages/core --version
+
+    and that is not a version query at all. `run --root packages/core` puts
+    vitest into run mode and the trailing `--version` is accepted and ignored, so
+    the probe **executed the entire core suite** -- 92 files, measured at 54s on
+    the runner -- and returned its exit status. Two consequences, both measured:
+
+      - `pnpm exec vitest --version` alone returns in 0.3s; the derived form was
+        still running at 10.1s when this was bounded for the first time.
+      - The probe had no `timeout=`, so on a runner that is slower still it is
+        unbounded dead time *before the first injection*, which is the exact
+        shape of the failure it was written to prevent.
+
+    So the probe is spelled out, it is bounded, and a timeout is reported as a
+    distinct outcome rather than left to hang. A preflight that silently spends a
+    minute is not a preflight; it is a second copy of the problem.
     """
-    probe = subprocess.run(
-        [*VITEST, "--version"],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        probe = subprocess.run(
+            ["pnpm", "exec", "vitest", "--version"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            timeout=PREFLIGHT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        print("the test runner did not answer --version, so it cannot be used below")
+        print(f"  command: pnpm exec vitest --version")
+        print(f"  cwd:     {REPO}")
+        print(f"  waited:  {PREFLIGHT_TIMEOUT_S}s")
+        raise SystemExit(2)
+
     if probe.returncode != 0:
         print("the test runner is not callable, so no injection below would mean anything")
-        print(f"  command: {' '.join(VITEST)}")
+        print(f"  command: pnpm exec vitest --version")
         print(f"  cwd:     {REPO}")
         print(f"  exit:    {probe.returncode}")
         print(f"  stderr:  {probe.stderr.strip()[:400]}")
@@ -524,7 +599,9 @@ ORIGINALS: dict[str, str] = {
 
 def main() -> int:
     results: list[tuple[str, str, list[str]]] = []
-    caught = survived = inert = 0
+    caught = survived = inert = timed_out = 0
+    slowest: tuple[float, str] = (0.0, "")
+    total_seconds = 0.0
 
     assert_vitest_is_callable()
 
@@ -549,40 +626,66 @@ def main() -> int:
 
         try:
             path.write_text(mutated)
-            status, output = run_tests(test_file)
+            try:
+                status, output, elapsed = run_tests(test_file)
+            except subprocess.TimeoutExpired:
+                print(f"TIMEOUT  {name}")
+                print(f"         expecting: {description}")
+                print(f"         -- the test run exceeded {PER_INJECTION_TIMEOUT_S}s. This is not a")
+                print("            verdict about the guard: nothing was decided about whether")
+                print("            the test fails without it. Reported separately from")
+                print("            SURVIVED because the two call for opposite repairs.")
+                timed_out += 1
+                results.append((name, "TIMEOUT", []))
+                continue
         finally:
             path.write_text(original)
+
+        total_seconds += elapsed
+        if elapsed > slowest[0]:
+            slowest = (elapsed, name)
 
         if status != 0 and failed_count(output) > 0:
             names = failing_tests(output)
             print(f"CAUGHT   {name}")
             print(f"         expecting: {description}")
-            print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}")
+            print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
             caught += 1
             results.append((name, "CAUGHT", names))
         elif name in EXPECTED_SURVIVORS:
             print(f"REDUNDANT {name}")
             print(f"         expecting: {description}")
-            print(f"         -- {EXPECTED_SURVIVORS[name]}")
+            print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
             results.append((name, "REDUNDANT", []))
         else:
             print(f"SURVIVED {name}")
             print(f"         expecting: {description}")
             print("         -- the test file stayed green, so it does not guard this")
             print(_diagnose(status, output))
+            print(f"         [{elapsed:.1f}s]")
             survived += 1
             results.append((name, "SURVIVED", []))
 
     print()
-    print(f"{caught} caught, {survived} survived, {inert} inert, {len(EXPECTED_SURVIVORS)} redundant (expected)")
+    print(
+        f"{caught} caught, {survived} survived, {inert} inert, "
+        f"{timed_out} timed out, {len(EXPECTED_SURVIVORS)} redundant (expected)"
+    )
+    # The cost is printed because it is the one number that differs between the
+    # machine this was written on and the machine it runs on, and the difference
+    # is large enough to be mistaken for a verdict problem when it is not.
+    print(
+        f"time: {total_seconds:.1f}s across {len(INJECTIONS) - inert} injection(s); "
+        f"slowest {slowest[0]:.1f}s ({slowest[1] or 'none'})"
+    )
     restore_status = assert_source_restored()
     if restore_status != 0:
         return restore_status
-    if survived or inert:
+    if survived or inert or timed_out:
         print()
         print("Failures:")
         for name, verdict, _ in results:
-            if verdict in {"SURVIVED", "INERT"}:
+            if verdict in {"SURVIVED", "INERT", "TIMEOUT"}:
                 print(f"  {verdict}  {name}")
         return 1
     return 0
