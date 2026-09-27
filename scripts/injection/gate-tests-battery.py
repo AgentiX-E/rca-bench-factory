@@ -457,6 +457,24 @@ def collected_count(output: str) -> int:
     `Tests` rather than on the pipe because a fully-green run prints
     `Tests  9 passed (9)` with no pipe at all. That shape was mis-parsed once
     already, returning 0 for a run that collected nine.
+
+    ## What the number is *not*
+
+    It counts the tests the **runner invocation** reported, not the tests in
+    `test_file`. Those differ whenever an injection breaks a gate that more than
+    one test file exercises, and the CI report shows it in both directions:
+
+    | injection | `test_file` holds | reported |
+    | --- | --- | --- |
+    | `README 1` | 9 | 12 |
+    | `RCAEVAL 4` | 21 | 30 |
+
+    `RCAEVAL 4` mutates `gen-rcaeval-cases.mjs`, which several suites read, so its
+    invocation failed fifteen tests across them and collected thirty. The field is
+    therefore written as `tests_run`, not `collected`: the first name read as
+    "tests in this file", and a reader checking it against the file finds a
+    mismatch that looks like a defect in the count. The count is right -- the
+    label was wrong.
     """
     failed = re.search(r"Tests\s+(\d+) failed", output)
     passed = re.search(r"Tests\s+(?:\d+ failed \|\s*)?(\d+) passed", output)
@@ -1000,12 +1018,12 @@ def main() -> int:
                 print(f"         expecting: {description}")
                 print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
                 caught += 1
-                results.append((name, "CAUGHT", names, elapsed, {"collected": collected, "collected_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                results.append((name, "CAUGHT", names, elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             elif name in EXPECTED_SURVIVORS:
                 print(f"REDUNDANT {name}")
                 print(f"         expecting: {description}")
                 print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
-                results.append((name, "REDUNDANT", [], elapsed, {"collected": collected, "collected_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                results.append((name, "REDUNDANT", [], elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             else:
                 print(f"SURVIVED {name}")
                 print(f"         expecting: {description}")
@@ -1013,7 +1031,7 @@ def main() -> int:
                 print(_diagnose(status, output))
                 print(f"         [{elapsed:.1f}s]")
                 survived += 1
-                results.append((name, "SURVIVED", [], elapsed, {"collected": collected, "collected_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                results.append((name, "SURVIVED", [], elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
 
     finally:
         # Releasing must not be able to change the verdict. `unlink` on a file

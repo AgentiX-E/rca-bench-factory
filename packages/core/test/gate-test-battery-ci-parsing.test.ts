@@ -254,10 +254,41 @@ describe('scripts · the gate-test battery parses the output CI emits, not the o
       .map((line) => line.replace(/#.*$/, ''))
       .join('\n');
     expect(code).toMatch(/basis = collected_basis\(output\)/);
-    const wired = code.match(/"collected_basis": basis/g) ?? [];
+    const wired = code.match(/"tests_run_basis": basis/g) ?? [];
     expect(wired.length).toBe(3);
     // And it reaches the row through the same spread the other fields use.
     expect(code).toMatch(/\*\*detail/);
+  });
+
+  it('the count is named for what it counts, not for what the reader assumes', () => {
+    // **A defect the CI report exposed by disagreing with the file on disk.**
+    //
+    // The field was called `collected` and the CI rows read `collected=12` for
+    // `check-readme-sample.test.ts`, which holds nine tests. Reading that as a
+    // bug in the count is the natural response, and it is the wrong one: the
+    // number is the count of tests the *runner invocation* reported, and an
+    // injection that breaks a gate several suites read makes more than one file
+    // fail. `RCAEVAL 4` reported 30 against a file holding 21, because its
+    // invocation failed fifteen tests across several files.
+    //
+    // The count was right and the label was wrong. So the field is `tests_run`,
+    // and this asserts both halves: the name, and that no row still carries the
+    // old one under which the mismatch looked like a defect.
+    const code = SOURCE.replace(/"""[\s\S]*?"""/g, '')
+      .split('\n')
+      .map((line) => line.replace(/#.*$/, ''))
+      .join('\n');
+    expect(code).toMatch(/"tests_run": collected/);
+    // The retired spelling must be gone from every row, or two names would ship
+    // for one quantity and the next reader would have to guess which is current.
+    expect(code).not.toMatch(/"collected": collected/);
+
+    // And the semantics are documented where the number is produced, because the
+    // name alone cannot carry them: a reader who checks `tests_run` against the
+    // test file will still find a mismatch, and has to be told why.
+    const doc = SOURCE.slice(SOURCE.indexOf('def collected_count('));
+    expect(doc).toMatch(/runner invocation/);
+    expect(doc).toMatch(/RCAEVAL 4/);
   });
 
   it('a run that failed is never diagnosed as a runner error', () => {

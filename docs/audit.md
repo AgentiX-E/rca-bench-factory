@@ -6832,3 +6832,190 @@ different reason**: finding 87's channel reported a success it had not achieved,
 finding 88's report was readable and mute, and this one was a *step* reporting
 `ok` about a file that did not exist -- while the artifact count, which nobody was
 reading, said `0`.
+
+## Finding 90: the 24 survivors were a parse failure, and the parser was reading a terminal's output on CI
+
+Finding 88 closed with the question still open, in these words:
+
+> **The 24-survivor report was real.** It came from `e188c8870`, where the builder
+> and the loop were both four-wide and consistent, so that run completed and
+> genuinely reported every injection surviving. **That question is still open.**
+
+Finding 88 also built the instrument that could answer it, and said so: the rows
+would "say which of the three causes applied, and carry the runner's own output,
+without needing the log." The next CI run produced that report. **It answered the
+question, and the answer was that nothing had survived at all.**
+
+### The evidence
+
+Run `36337157149` on `d33b4e47a`, the first report to carry `collected`,
+`exit_status`, `diagnosis` and `output_tail`:
+
+```
+summary: {'caught': 0, 'survived': 24, 'inert': 0, 'timed_out': 0, 'redundant': 1}
+=== DIAGNOSIS COUNTS ===            no_tests_collected: 25
+=== collected / exit_status ===     collected=0 exit_status=1: 24
+                                    collected=0 exit_status=0:  1
+```
+
+Every row said the same thing: *the runner found nothing, so this row says nothing
+about the guard.* And the row's own `output_tail` -- the field added for exactly
+this -- said the opposite:
+
+```
+❯ test/check-readme-sample.test.ts:353:27
+  353|     expect(result.status).toBe(0);
+     |                           ^
+```
+
+That is an assertion failure in a test that ran. `repr()` on the captured text
+settled the rest:
+
+```
+'\x1b[36m \x1b[2m❯\x1b[22m test/check-readme-sample.test.ts:...'
+```
+
+**The frames are wrapped in SGR colour codes.** CI is not a TTY and vitest emits
+them anyway; a local run does not. Every regex in the battery that anchored on the
+first visible character therefore matched in a terminal and missed in CI.
+
+### Four defects, and the first fix only addressed one
+
+`failed_count` searched for `Tests\s+(\d+) failed`, and vitest prints the summary
+**below** the failure frames. The report keeps a twelve-line tail, which stops
+inside the last frame. So the count was 0 -- and the CAUGHT condition is exactly
+
+```python
+if status != 0 and failed_count(output) > 0:
+```
+
+**Twenty-four injections that the runner had plainly caught fell through to
+SURVIVED.** That is the whole of the 0-versus-24 discrepancy. It was never a
+behavioural difference between the two machines; it was one machine's text being
+read by a parser written for the other's.
+
+Fixing that is not enough, and the three further defects are each invisible to the
+others:
+
+| # | defect | what it produced | why the previous fix missed it |
+| --- | --- | --- | --- |
+| 1 | summary absent from a tail | `failed_count` 0 → SURVIVED | the summary is below the frames by construction |
+| 2 | ANSI between marker and name | same, on CI only | a terminal run has no escapes, so local stayed green |
+| 3 | `collected_count` fell back to counting frames | a **lower bound printed as `collected`** | the fallback was written to make the count non-zero, and it did |
+| 4 | `diagnosis` branched on that undercount first | twenty-four real failures labelled `runner_error` | the label looked right: status was 1 and no summary was seen |
+
+Defect 4 is the one that would have cost the most time in the next round. Every one
+of those rows carried `expect(result.status).toBe(0)` with the caret printed under
+it, and was reported as *"the runner exited non-zero without reporting a failure"*
+-- a crash. A reader following that would have gone looking for a crash in a run
+that had reported its failure precisely.
+
+Defect 3 is the same class as finding 88, one layer in: finding 88 was a quantity
+computed and never printed; this is a quantity printed under a name that overstates
+it. `collected: 1` on a row whose runner had reported six failures is not a wrong
+number, it is a floor presented as a total, and the basis now travels beside it.
+
+Defect 4's fix is an ordering, and the ordering is the point:
+
+```python
+if status != 0 and failed_count(output) > 0:
+    return "tests_failed"
+if collected == 0:
+    return "no_tests_collected"
+```
+
+The failure evidence is consulted **first**, and it is consulted directly rather
+than through a count derived from a slice of text.
+
+### The field that carried the evidence was sized to exclude it
+
+`output_tail` kept twelve lines. A vitest failure frame is nine lines -- the
+`❯ file:line:col` header, the source excerpt with line numbers, the `^` caret, and
+the blank separators -- and vitest prints *every* frame before the summary. Twelve
+lines lands in the middle of the last frame and stops:
+
+```
+❯ test/check-readme-sample.test.ts:353:27
+  353|     expect(result.status).toBe(0);
+     |                           ^
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+```
+
+That is a real captured tail of a row that failed **six tests**. The frame proves a
+test ran; the summary is the count; twelve lines delivered the first and never the
+second, so every parser that prefers the summary fell back to a floor. It keeps
+forty now, which is the field finally being sized against the thing it has to
+contain rather than against a wish for a small diff.
+
+### Verified against the bytes, not against a paraphrase
+
+The captured tails are committed verbatim, escapes intact, as
+`packages/core/test/fixtures/gate-battery-ci-output.json`, and
+`packages/core/test/gate-test-battery-ci-parsing.test.ts` replays them through the
+shipped helpers by lifting the functions out of the file and executing them. A
+fixture paraphrased into TypeScript string literals would have been written by the
+same hand as the fix, and would tend to be the shape the fix handles.
+
+Each of the four behavioural assertions was checked against the pre-fix parsers on
+those bytes, and all four fail there:
+
+| assertion | pre-fix | post-fix |
+| --- | --- | --- |
+| `failing_tests` finds an ANSI-wrapped frame | 0 names | 1 name |
+| `failed_count` without a summary in the text | 0 | 1 |
+| verdict on the exit-1 row | SURVIVED | CAUGHT |
+| `diagnosis` of a real failure | `no_tests_collected` | `tests_failed` |
+
+Replayed across all 25 captured rows, the pre-fix code reaches `caught 0` and the
+hardened code reaches `caught 24` -- reproducing the CI report and then exceeding
+it, on the same bytes.
+
+### A test that broke, and what it was actually asserting
+
+`gate-test-battery-exclusion.test.ts` lifted `collected_count` out of the file by
+slicing between two neighbouring definitions:
+
+```ts
+const start = source.indexOf('def collected_count(');
+const end = source.indexOf('\ndef diagnosis(');
+```
+
+That is a slice between two named neighbours, not a definition, and inserting
+`collected_basis` between them made it swallow the new function whole -- and cut
+`collected_count` off from `failing_tests`, which its new fallback calls. The
+generated script raised `NameError`, printed nothing, and the assertion compared an
+empty string. **An output-less subprocess reads as a wrong answer, not as a broken
+harness**, which is why it took a moment to see. It extracts by name now, and lists
+its dependencies rather than assuming them.
+
+### The result
+
+| | CI `d33b4e47a` | local, after |
+| --- | --- | --- |
+| caught | 0 | 24 |
+| survived | 24 | 0 |
+| redundant | 1 | 1 |
+| `diagnosis` labels | `no_tests_collected` ×25 | `tests_failed` ×24, `tests_passed` ×1 |
+| `collected_basis` | absent | `summary` ×25 |
+| runner restore | — | asserted, `RC=0` |
+
+The local run now reports `collected_basis: "summary"` on all twenty-five rows,
+with exact counts, and `collected=9` for the README file that the CI tail could
+only undercount as 1. That is the report doing what it was built to do: the field
+that was added to make a verdict explicable is, two rounds later, the field that
+made its own earlier value legible as a floor.
+
+### The lesson
+
+**A parser has to be written against the bytes the producing environment emits, and
+"it works here" is not evidence about there.** The mechanism had been invisible for
+three rounds for a different reason each time: the log could not be read, then the
+report was readable and mute, then the report did not exist. This time the report
+existed, was readable, and was believed -- and the belief was wrong because the
+code had read a terminal's text on a machine that does not have one.
+
+The narrower lesson is about fallbacks. **A fallback that turns 0 into a non-zero
+number is not necessarily an improvement**: defect 1's fix produced defect 3, and
+defect 3 produced defect 4. Each step made the number look more plausible while
+moving it further from what it claimed to be. The repair was not a better fallback
+but *labelling the evidence*, so that a floor is never read as a total.

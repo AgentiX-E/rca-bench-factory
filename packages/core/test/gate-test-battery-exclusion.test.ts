@@ -360,7 +360,7 @@ describe('scripts · the gate-test battery writes a report that survives a block
     // The fix is to put the distinguishing quantity in the report. Asserted on
     // the row construction, not on a comment claiming it.
     const code = codeOf(SOURCE);
-    expect(code).toMatch(/"collected": collected/);
+    expect(code).toMatch(/"tests_run": collected/);
     expect(code).toMatch(/"exit_status": status/);
     expect(code).toMatch(/"diagnosis": why/);
     // Computed once for all three verdict arms, so no arm can silently omit it.
