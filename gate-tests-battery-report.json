@@ -5,175 +5,526 @@
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-readme-sample.test.ts",
-      "elapsed_s": 1.4
+      "elapsed_s": 1.3,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 1\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-readme-sample.test.ts:\u001b[2m353:27\u001b[22m\u001b[39m",
+        "    \u001b[90m351| \u001b[39m    })\u001b[33m;\u001b[39m",
+        "    \u001b[90m352| \u001b[39m",
+        "    \u001b[90m353| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m354| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstdout)\u001b[33m.\u001b[39m\u001b[34mtoMatch\u001b[39m(\u001b[36m/PASSED \\(\\d+ sample executed\\)/\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m355| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[6/6]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "README 2. the rewrite pattern stops matching the collection marker",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-readme-sample.test.ts",
-      "elapsed_s": 1.4
+      "elapsed_s": 1.3,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 1\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-readme-sample.test.ts:\u001b[2m353:27\u001b[22m\u001b[39m",
+        "    \u001b[90m351| \u001b[39m    })\u001b[33m;\u001b[39m",
+        "    \u001b[90m352| \u001b[39m",
+        "    \u001b[90m353| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m354| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstdout)\u001b[33m.\u001b[39m\u001b[34mtoMatch\u001b[39m(\u001b[36m/PASSED \\(\\d+ sample executed\\)/\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m355| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[6/6]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "README 3. a failed sample no longer fails the run",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-readme-sample.test.ts",
-      "elapsed_s": 1.6
+      "elapsed_s": 1.5,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-readme-sample.test.ts:\u001b[2m253:27\u001b[22m\u001b[39m",
+        "    \u001b[90m251| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(\u001b[34mtreeWith\u001b[39m(readme))\u001b[33m;\u001b[39m",
+        "    \u001b[90m252| \u001b[39m",
+        "    \u001b[90m253| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m254| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstdout)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'README sample 1: OK'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m255| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'README sample 2: FAILED'\u001b[39m)\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "README 4. the block is not executed at all, only collected",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-readme-sample.test.ts",
-      "elapsed_s": 1.4
+      "elapsed_s": 1.2,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-readme-sample.test.ts:\u001b[2m253:27\u001b[22m\u001b[39m",
+        "    \u001b[90m251| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(\u001b[34mtreeWith\u001b[39m(readme))\u001b[33m;\u001b[39m",
+        "    \u001b[90m252| \u001b[39m",
+        "    \u001b[90m253| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m254| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstdout)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'README sample 1: OK'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m255| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'README sample 2: FAILED'\u001b[39m)\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "BUNDLE 1. the archive comparison always agrees",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "build-example-bundle.test.ts",
-      "elapsed_s": 2.4
+      "elapsed_s": 2.1,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/build-example-bundle.test.ts:\u001b[2m218:27\u001b[22m\u001b[39m",
+        "    \u001b[90m216| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree\u001b[33m,\u001b[39m [\u001b[32m'--check'\u001b[39m])\u001b[33m;\u001b[39m",
+        "    \u001b[90m217| \u001b[39m",
+        "    \u001b[90m218| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m219| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(metaPath)\u001b[33m;\u001b[39m",
+        "    \u001b[90m220| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'is stale'\u001b[39m)\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "BUNDLE 2. only the archive is compared, not the metadata",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "build-example-bundle.test.ts",
-      "elapsed_s": 2.4
+      "elapsed_s": 2.1,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/build-example-bundle.test.ts:\u001b[2m238:27\u001b[22m\u001b[39m",
+        "    \u001b[90m236| \u001b[39m    \u001b[90m// Both paths named, one line each.\u001b[39m",
+        "    \u001b[90m237| \u001b[39m    expect(result.stderr).toContain('rca-bench-factory-examples.tar.gz\u2026",
+        "    \u001b[90m238| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'example-pack.json is missing'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m239| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'pnpm examples:bundle'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m240| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "BUNDLE 3. an empty example directory is accepted",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "build-example-bundle.test.ts",
-      "elapsed_s": 2.4
+      "elapsed_s": 2.1,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/build-example-bundle.test.ts:\u001b[2m252:27\u001b[22m\u001b[39m",
+        "    \u001b[90m250| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree)\u001b[33m;\u001b[39m",
+        "    \u001b[90m251| \u001b[39m",
+        "    \u001b[90m252| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m253| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'no example files found'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m254| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "BUNDLE 4. the manifest's file count stops agreeing with its own listing",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "build-example-bundle.test.ts",
-      "elapsed_s": 2.4
+      "elapsed_s": 2.1,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 8\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/build-example-bundle.test.ts:\u001b[2m142:28\u001b[22m\u001b[39m",
+        "    \u001b[90m140| \u001b[39m    ) \u001b[35mas\u001b[39m { fileCount\u001b[33m:\u001b[39m number\u001b[33m;\u001b[39m paths\u001b[33m:\u001b[39m string[] }\u001b[33m;\u001b[39m",
+        "    \u001b[90m141| \u001b[39m",
+        "    \u001b[90m142| \u001b[39m    \u001b[34mexpect\u001b[39m(meta\u001b[33m.\u001b[39mfileCount)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(meta\u001b[33m.\u001b[39mpaths\u001b[33m.\u001b[39mlength)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                           \u001b[31m^\u001b[39m",
+        "    \u001b[90m143| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "    \u001b[90m144| \u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "BUNDLE 5. the tar stops being reproducible",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "build-example-bundle.test.ts",
-      "elapsed_s": 2.4
+      "elapsed_s": 2.1,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 1\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/build-example-bundle.test.ts:\u001b[2m181:27\u001b[22m\u001b[39m",
+        "    \u001b[90m179| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree\u001b[33m,\u001b[39m [\u001b[32m'--check'\u001b[39m])\u001b[33m;\u001b[39m",
+        "    \u001b[90m180| \u001b[39m",
+        "    \u001b[90m181| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m182| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstdout)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'example pack is up to date'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m183| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[3/3]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 1. --check stops comparing the data file",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m181:27\u001b[22m\u001b[39m",
+        "    \u001b[90m179| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree\u001b[33m,\u001b[39m [\u001b[32m'--check'\u001b[39m])\u001b[33m;\u001b[39m",
+        "    \u001b[90m180| \u001b[39m",
+        "    \u001b[90m181| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m182| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'data.js is stale'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m183| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'pnpm examples:gen'\u001b[39m)\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 2. a missing data file stops being reported",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m193:27\u001b[22m\u001b[39m",
+        "    \u001b[90m191| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree\u001b[33m,\u001b[39m [\u001b[32m'--check'\u001b[39m])\u001b[33m;\u001b[39m",
+        "    \u001b[90m192| \u001b[39m",
+        "    \u001b[90m193| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m194| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'is missing'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m195| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'pnpm examples:gen'\u001b[39m)\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 3. an example block is left stale instead of rewritten",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\"",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m270:19\u001b[22m\u001b[39m",
+        "    \u001b[90m268| \u001b[39m    // The suffix names how much was dropped, so a reader can tell a s\u2026",
+        "    \u001b[90m269| \u001b[39m    \u001b[90m// table from a table that was cut.\u001b[39m",
+        "    \u001b[90m270| \u001b[39m    \u001b[34mexpect\u001b[39m(after)\u001b[33m.\u001b[39m\u001b[34mtoMatch\u001b[39m(\u001b[36m/\u2026 1[0-9] more lines/\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                  \u001b[31m^\u001b[39m",
+        "    \u001b[90m271| \u001b[39m    // The three columns of the full metrics file do not all appear: w\u2026",
+        "    \u001b[90m272| \u001b[39m    \u001b[90m// written is a prefix, not the export.\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 4. a marker naming an unknown target stops throwing",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/gen-examples.test.ts\u001b[2m > \u001b[22mscripts/gen-examples.mjs \u00b7 the doc blocks it rewrites\u001b[2m > \u001b[22mrefuses an example that names a target the exporters do not produce",
+        "\u001b[31m\u001b[1mAssertionError\u001b[22m: expected +0 not to be +0 // Object.is equality\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m296:31\u001b[22m\u001b[39m",
+        "    \u001b[90m294| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree)\u001b[33m;\u001b[39m",
+        "    \u001b[90m295| \u001b[39m",
+        "    \u001b[90m296| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                              \u001b[31m^\u001b[39m",
+        "    \u001b[90m297| \u001b[39m    expect(result.stderr).toContain(\"unknown example target 'openrca-9\u2026",
+        "    \u001b[90m298| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 5. a marker naming an unexported path stops throwing",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/gen-examples.test.ts\u001b[2m > \u001b[22mscripts/gen-examples.mjs \u00b7 the doc blocks it rewrites\u001b[2m > \u001b[22mrefuses an example naming a path the target does not export",
+        "\u001b[31m\u001b[1mAssertionError\u001b[22m: expected +0 not to be +0 // Object.is equality\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m324:31\u001b[22m\u001b[39m",
+        "    \u001b[90m322| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree)\u001b[33m;\u001b[39m",
+        "    \u001b[90m323| \u001b[39m",
+        "    \u001b[90m324| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                              \u001b[31m^\u001b[39m",
+        "    \u001b[90m325| \u001b[39m    expect(result.stderr).toContain(\"example path 'order-prod/no-such-\u2026",
+        "    \u001b[90m326| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 6. a field marker that matches nothing stops throwing",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/gen-examples.test.ts\u001b[2m > \u001b[22mscripts/gen-examples.mjs \u00b7 the field tables, and what is not checked\u001b[2m > \u001b[22mrefuses a field marker that matches no documented file",
+        "\u001b[31m\u001b[1mAssertionError\u001b[22m: expected +0 not to be +0 // Object.is equality\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m373:31\u001b[22m\u001b[39m",
+        "    \u001b[90m371| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(tree)\u001b[33m;\u001b[39m",
+        "    \u001b[90m372| \u001b[39m",
+        "    \u001b[90m373| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39mnot\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                              \u001b[31m^\u001b[39m",
+        "    \u001b[90m374| \u001b[39m    expect(result.stderr).toContain('does not match any documented fil\u2026",
+        "    \u001b[90m375| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "EXAMPLES 7. the truncate modifier is ignored",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-examples.test.ts",
-      "elapsed_s": 2.9
+      "elapsed_s": 2.6,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\"",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-examples.test.ts:\u001b[2m270:19\u001b[22m\u001b[39m",
+        "    \u001b[90m268| \u001b[39m    // The suffix names how much was dropped, so a reader can tell a s\u2026",
+        "    \u001b[90m269| \u001b[39m    \u001b[90m// table from a table that was cut.\u001b[39m",
+        "    \u001b[90m270| \u001b[39m    \u001b[34mexpect\u001b[39m(after)\u001b[33m.\u001b[39m\u001b[34mtoMatch\u001b[39m(\u001b[36m/\u2026 1[0-9] more lines/\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                  \u001b[31m^\u001b[39m",
+        "    \u001b[90m271| \u001b[39m    // The three columns of the full metrics file do not all appear: w\u2026",
+        "    \u001b[90m272| \u001b[39m    \u001b[90m// written is a prefix, not the export.\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "CLIREF 1. the flag lookup loses its word boundary",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-cli-reference.test.ts",
-      "elapsed_s": 11.7
+      "elapsed_s": 10.4,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-cli-reference.test.ts:\u001b[2m198:27\u001b[22m\u001b[39m",
+        "    \u001b[90m196| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(\u001b[34mtreeWith\u001b[39m(document))\u001b[33m;\u001b[39m",
+        "    \u001b[90m197| \u001b[39m",
+        "    \u001b[90m198| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m199| \u001b[39m    // The failure names the topic that advertises it, and the flag it\u2026",
+        "    \u001b[90m200| \u001b[39m    expect(result.stderr).toContain(`'${flag}' is accepted by '${topic\u2026",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "CLIREF 2. an implemented-but-undocumented command stops being reported",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-cli-reference.test.ts",
-      "elapsed_s": 11.7
+      "elapsed_s": 10.4,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-cli-reference.test.ts:\u001b[2m127:27\u001b[22m\u001b[39m",
+        "    \u001b[90m125| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m126| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoContain\u001b[39m(\u001b[32m'CLI reference check FAILED:'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m127| \u001b[39m    expect(result.stderr).toContain(`command '${omitted}' is implement\u2026",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m128| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "    \u001b[90m129| \u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "CLIREF 3. a documented-but-unimplemented command stops being reported",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-cli-reference.test.ts",
-      "elapsed_s": 11.7
+      "elapsed_s": 10.4,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-cli-reference.test.ts:\u001b[2m139:27\u001b[22m\u001b[39m",
+        "    \u001b[90m137| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(\u001b[34mtreeWith\u001b[39m(document))\u001b[33m;\u001b[39m",
+        "    \u001b[90m138| \u001b[39m",
+        "    \u001b[90m139| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m140| \u001b[39m    expect(result.stderr).toContain(\"documents 'not-a-command', which \u2026",
+        "    \u001b[90m141| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "CLIREF 4. a flag the reference never mentions stops being reported",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-cli-reference.test.ts",
-      "elapsed_s": 11.8
+      "elapsed_s": 10.4,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-cli-reference.test.ts:\u001b[2m198:27\u001b[22m\u001b[39m",
+        "    \u001b[90m196| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m(\u001b[34mtreeWith\u001b[39m(document))\u001b[33m;\u001b[39m",
+        "    \u001b[90m197| \u001b[39m",
+        "    \u001b[90m198| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m199| \u001b[39m    // The failure names the topic that advertises it, and the flag it\u2026",
+        "    \u001b[90m200| \u001b[39m    expect(result.stderr).toContain(`'${flag}' is accepted by '${topic\u2026",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[3/3]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "CLIREF 5. only the first disagreement is reported",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "check-cli-reference.test.ts",
-      "elapsed_s": 11.7
+      "elapsed_s": 10.4,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[41m\u001b[1m FAIL \u001b[22m\u001b[49m test/check-cli-reference.test.ts\u001b[2m > \u001b[22mscripts/check-cli-reference.mjs \u00b7 the drift report\u001b[2m > \u001b[22mreports every disagreement rather than stopping at the first",
+        "\u001b[31m\u001b[1mAssertionError\u001b[22m: expected 1 to be greater than 1\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/check-cli-reference.test.ts:\u001b[2m171:29\u001b[22m\u001b[39m",
+        "    \u001b[90m169| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m170| \u001b[39m    const reported = result.stderr.split('\\n').filter((line) => line.t\u2026",
+        "    \u001b[90m171| \u001b[39m    \u001b[34mexpect\u001b[39m(reported\u001b[33m.\u001b[39mlength)\u001b[33m.\u001b[39m\u001b[34mtoBeGreaterThan\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                            \u001b[31m^\u001b[39m",
+        "    \u001b[90m172| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "    \u001b[90m173| \u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "RCAEVAL 1. --check stops comparing the descriptor file",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-rcaeval-cases.test.ts",
-      "elapsed_s": 2.8
+      "elapsed_s": 2.5,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 0\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-rcaeval-cases.test.ts:\u001b[2m277:27\u001b[22m\u001b[39m",
+        "    \u001b[90m275| \u001b[39m    \u001b[34mcaseDir\u001b[39m(root\u001b[33m,\u001b[39m \u001b[32m'RE2-OB'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'checkoutservice_cpu'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'2'\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m276| \u001b[39m    const result = run(['--official-dir', root, '--out', out, '--check\u2026",
+        "    \u001b[90m277| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m1\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m278| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstderr)\u001b[33m.\u001b[39m\u001b[34mtoMatch\u001b[39m(\u001b[36m/out of date/\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m279| \u001b[39m  })\u001b[33m;\u001b[39m",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "RCAEVAL 2. a non-directory entry at the top level is treated as a suite",
       "verdict": "REDUNDANT",
       "tests": [],
       "test_file": "gen-rcaeval-cases.test.ts",
-      "elapsed_s": 2.8
+      "elapsed_s": 2.5,
+      "collected": 0,
+      "exit_status": 0,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[1m\u001b[46m RUN \u001b[49m\u001b[22m \u001b[36mv3.2.4 \u001b[39m\u001b[90m/home/runner/work/rca-bench-factory/rca-bench-factory/packages/core\u001b[39m",
+        " \u001b[32m\u2713\u001b[39m test/gen-rcaeval-cases.test.ts \u001b[2m(\u001b[22m\u001b[2m21 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 1471\u001b[2mms\u001b[22m\u001b[39m",
+        "\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m",
+        "\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m21 passed\u001b[39m\u001b[22m\u001b[90m (21)\u001b[39m",
+        "\u001b[2m   Start at \u001b[22m 17:33:05",
+        "\u001b[2m   Duration \u001b[22m 1.82s\u001b[2m (transform 63ms, setup 0ms, collect 69ms, tests 1.47s, environment 0ms, prepare 75ms)\u001b[22m"
+      ]
     },
     {
       "name": "RCAEVAL 3. the per-suite tally drops the suites with no cases",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-rcaeval-cases.test.ts",
-      "elapsed_s": 2.8
+      "elapsed_s": 2.5,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\"",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-rcaeval-cases.test.ts:\u001b[2m354:27\u001b[22m\u001b[39m",
+        "    \u001b[90m352| \u001b[39m    // omitted: a tally that dropped them would hide the difference be\u2026",
+        "    \u001b[90m353| \u001b[39m    \u001b[90m// \"no RE3 cases\" and \"RE3 was never considered\".\u001b[39m",
+        "    \u001b[90m354| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstdout)\u001b[33m.\u001b[39m\u001b[34mtoMatch\u001b[39m(\u001b[36m/1 case\\(s\\): RE1=0 RE2=1 RE3=0/\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m355| \u001b[39m    // `RE4` never reaches `counts`; it is named with its reason inste\u2026",
+        "    \u001b[90m356| \u001b[39m    expect(result.stderr).toContain('skipped RE4-OB/checkoutservice_cp\u2026",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\u001b[22m\u001b[39m"
+      ]
     },
     {
       "name": "RCAEVAL 4. the run level is read from one directory deeper",
       "verdict": "SURVIVED",
       "tests": [],
       "test_file": "gen-rcaeval-cases.test.ts",
-      "elapsed_s": 2.7
+      "elapsed_s": 2.4,
+      "collected": 0,
+      "exit_status": 1,
+      "diagnosis": "no_tests_collected",
+      "output_tail": [
+        "\u001b[31m+ 1\u001b[39m",
+        "\u001b[36m \u001b[2m\u276f\u001b[22m test/gen-rcaeval-cases.test.ts:\u001b[2m350:27\u001b[22m\u001b[39m",
+        "    \u001b[90m348| \u001b[39m    \u001b[35mconst\u001b[39m result \u001b[33m=\u001b[39m \u001b[34mrun\u001b[39m([\u001b[32m'--official-dir'\u001b[39m\u001b[33m,\u001b[39m root\u001b[33m,\u001b[39m \u001b[32m'--out'\u001b[39m\u001b[33m,\u001b[39m out])\u001b[33m;\u001b[39m",
+        "    \u001b[90m349| \u001b[39m",
+        "    \u001b[90m350| \u001b[39m    \u001b[34mexpect\u001b[39m(result\u001b[33m.\u001b[39mstatus)\u001b[33m.\u001b[39m\u001b[34mtoBe\u001b[39m(\u001b[34m0\u001b[39m)\u001b[33m;\u001b[39m",
+        "    \u001b[90m   | \u001b[39m                          \u001b[31m^\u001b[39m",
+        "    \u001b[90m351| \u001b[39m    // Three suites, at their real counts. The zeroes are reported rat\u2026",
+        "    \u001b[90m352| \u001b[39m    // omitted: a tally that dropped them would hide the difference be\u2026",
+        "\u001b[31m\u001b[2m\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[15/15]\u23af\u001b[22m\u001b[39m"
+      ]
     }
   ],
   "caught": 0,
@@ -181,10 +532,10 @@
   "inert": 0,
   "timed_out": 0,
   "redundant": 1,
-  "total_seconds": 108.1,
+  "total_seconds": 96.2,
   "slowest": {
-    "seconds": 11.8,
-    "injection": "CLIREF 4. a flag the reference never mentions stops being reported"
+    "seconds": 10.4,
+    "injection": "CLIREF 1. the flag lookup loses its word boundary"
   },
   "restore_status": 0
 }
