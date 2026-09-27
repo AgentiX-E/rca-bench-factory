@@ -6250,3 +6250,132 @@ and the next run will name the injection if one behaves differently on a slower 
 round closed on "a property that has never been shown to fail is a comment with a print statement";
 this round adds the neighbouring case -- **a quantity that is computed every run and never printed is
 the same comment, one line further down.**
+
+---
+
+## Finding 86: the battery's wrong verdict came from a second copy of itself, and the CI log could not say so
+
+Finding 85 closed on "the next run will name the injection if one behaves differently on a slower
+machine". The next run did not have to. The failure turned out to be in neither the assertions nor the
+machine, and the reason it took a fourth round to see is that **the only place the answer existed was
+a log this environment cannot open.**
+
+### What the step timings said, and what they ruled out
+
+Three CI runs of the identical step, two of them on trees whose `scripts/` are byte-identical
+(`bafbdd7` → `e022576` touches only `docs/audit.md`):
+
+| run | sha | preflight | step 16 | local |
+| --- | --- | --- | --- | --- |
+| 36295105757 | `30ff920` | whole-suite | **162s** failure | 107s |
+| 36325497975 | `bafbdd7` | fixed | **65s** failure | 80.4s |
+| 36325967547 | `e022576` | fixed | **107s** failure | 80.4s |
+
+Two identical trees gave 65s and 107s. The step's duration is therefore **not a function of the code**,
+which retires finding 85's own slowness hypothesis: a 65s runner is *faster* than the 80.4s local run
+that passes. Everything the previous round added -- the `TIMEOUT` outcome, the per-injection `[x.xs]`
+lines, the fixed preflight -- was in place for all three runs, and step 16 still failed in all three.
+
+What those additions produced was the **shape** of the failure, printed to the one channel that is not
+readable here. `GET /actions/jobs/{id}/logs` returns a 302 to `productionresultssa16.blob.core.windows.net`,
+and the proxy refuses the connection (`http=000`); the check-run annotation says only
+`Process completed with exit code 1` at `.github:353`. That limitation is finding 55, and it had turned
+every CI failure in this round into a verdict with no cause.
+
+### The local run that went red with no explanation, and had one
+
+A plain local battery run then failed:
+
+```
+23 caught, 0 survived, 1 inert, 0 timed out, 1 redundant (expected)
+time: 97.8s across 24 injection(s); slowest 10.1s (CLIREF 1. ...)
+
+the battery did not restore its own mutations:
+  scripts/build-example-bundle.mjs
+  scripts/gen-examples.mjs
+  scripts/gen-rcaeval-cases.mjs
+RC=2
+```
+
+Three causes were tested and eliminated, in this order:
+
+1. **The loop's restore is correct.** `finally: path.write_text(original)` wraps the timed call, and a
+   full instrumented trace -- re-reading every gate after every one of the 25 injections, comparing
+   against the import-time `ORIGINALS` -- printed **zero DIRTY markers and zero INERT**, 25 restores,
+   tree clean. The logic is not the defect.
+
+2. **The tests are readers, not writers.** `build-example-bundle.test.ts:72` and
+   `gen-examples.test.ts:62` copy the live gate *into* a scratch tree and run it there; the sources
+   were hashed before and after a full run of all three gate test files and were unchanged.
+
+3. **`ORIGINALS` is not stale.** Re-imported against the tree, all five entries matched disk exactly.
+
+What is left is the one thing a single process cannot do to itself: **a second process.** The `INERT`
+on `RCAEVAL 3` is the tell -- its anchor `return Object.entries(perSuite)\n    .sort(...)` is on a line
+no other mutation touches, so the file it read had been changed by something else between two
+injections. Two copies both read the same `original` and each writes it back over the other's mutation.
+
+Reproduced on demand, two copies started three seconds apart:
+
+```
+22 caught, 1 survived, 2 inert, 0 timed out, 1 redundant (expected)
+the battery did not restore its own mutations: ...
+RC=2
+```
+
+**A survivor, from a guard that is in fact caught.** `SURVIVED` is the one verdict in this repository
+that must never be manufactured -- it is read as "write a test" and sends the next reader to fix
+something that was never broken. Two batteries sharing one working tree while both rewrite it produce
+exactly that, and the corruption is invisible in the numbers: 22 caught still looks like a battery.
+
+### The fix, and what it does not do
+
+The battery takes an `O_EXCL` lock in the OS temp directory before its first mutation and refuses the
+second run with exit 3, naming the lock path, without printing a summary line. Measured: two copies
+4s apart -- the second exited 3 with the refusal and no verdict, the first finished **24 caught, 0
+survived, 0 inert**, source restored, lock released.
+
+Why a lock and not a per-run copy of the tree: this battery's claim is about the **shipped** gates, and
+a verdict about a copy is a verdict about the copy. The resource that must not be shared is the working
+tree being rewritten, and refusing is loud and names its cause, while a corrupted baseline is a wrong
+number that reads as a finding. A stale lock after a SIGKILL is accepted deliberately -- the refusal
+names the file, so the repair is one `rm`, and a staleness heuristic can decide a *running* battery is
+dead and reintroduce the very corruption.
+
+**This does not explain CI's failure.** CI runs its steps sequentially -- no two batteries overlap
+there -- so the race fixed here is a local hazard, not the CI cause. What CI's failure is remains open,
+and the honest statement is that it is still unreproduced after the preflight, slowness, coverage
+artifacts, a broken CLI, missing generated files, the restore logic, the readers, and now concurrency
+have each been eliminated.
+
+### Closing the channel that kept the answer out of reach
+
+Since the log cannot be read here and the artifact API can (`GET /actions/runs/{id}/artifacts` answers
+cleanly, and `official-data.yml` already ships one), the battery now writes
+`gate-tests-battery-report.json` on **every** exit path and CI uploads it `if: always()`. The report
+carries each injection's verdict, the gate's test file, the seconds it took, the failing test names,
+and the run summary. A failing CI run is now a file that can be fetched and read, instead of a bare
+exit code -- which is the difference between a failure this environment can diagnose and one it can
+only observe.
+
+### Verification
+
+| check | result |
+| --- | --- |
+| py_compile | all seven batteries clean |
+| new test file | **7 passed** (`gate-test-battery-exclusion.test.ts`) |
+| concurrency, before | 2 copies 3s apart → **1 survived, 2 inert, tree dirty, rc=2** |
+| concurrency, after | 2 copies 4s apart → second **rc=3 refused**, first **24/0/0**, tree clean |
+| core suite | **2527 passed (92 files)**, +7 |
+| core coverage | `src` `100 \| 100 \| 100 \| 100`; all files `99.96 \| 99.93 \| 100 \| 99.96` |
+| cli coverage | 173 passed, `100 \| 100 \| 100 \| 100` |
+| gate-test battery | **24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant**; 78.9s; source restored |
+| CI steps 11-25 | **all pass locally in order, one uninterrupted chain** |
+| lint | six checks OK, `ALL PROPERTIES HOLD` |
+| typecheck | clean |
+
+The sentence this round adds to finding 85's "a quantity that is computed every run and never printed
+is the same comment, one line further down" is the next one along: **a verdict that is printed to a
+channel nobody can open is not a measurement either.** The battery was right about every guard, in
+every run, and the reason it looked wrong for three rounds is that it said so where no one was
+listening.
