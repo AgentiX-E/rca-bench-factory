@@ -6734,3 +6734,101 @@ one printed to a place that was readable and carried less than the console did.
 Each repair was correct and each was one step short, because "can I read it?" and
 "can I understand it?" are different questions and only the first is answered by
 having a channel at all.
+
+---
+
+## Finding 89: the battery's failure path crashed before it could report
+
+Finding 88 added fields to each verdict. Doing that changed the width of the tuple
+the battery builds, and **one reader of that tuple was not updated**:
+
+```python
+# the builder, after finding 88
+results.append((name, "SURVIVED", [], elapsed, {"collected": collected, ...}))
+
+# the failure-listing loop, unchanged
+for name, verdict, _, _ in results:
+```
+
+On CI that raises
+
+```
+ValueError: too many values to unpack (expected 4)
+```
+
+**after** the summary prints and **before** `write_report` on that path. So the
+run printed its verdicts to the log, crashed, and wrote no report at all.
+
+### How it was found
+
+The symptom was not a crash message -- it was **silence with the shape of
+success**. Run `36335878589` showed:
+
+* step 16 `FAIL` (as always),
+* step 17 `Publish the gate-test battery report` **`ok`**,
+* step 18 `Upload the gate-test battery report` **`ok`**,
+* `GET /actions/runs/36335878589/artifacts` -> **`total_count: 0`**,
+* `ci-reports` still pointing at the *previous* run's commit `9eac31ce1`.
+
+**Zero artifacts and a green upload step** is the contradiction that led to it.
+The publish step reported success because it found no report and treated that as
+"nothing to do" -- correct behaviour, and it is what made a crashed battery look
+like a run that had simply not produced anything yet.
+
+### The two facts that had to be kept apart
+
+It would have been easy, and wrong, to read this as the explanation of the
+24 survivors. It is not:
+
+1. **The 24-survivor report was real.** It came from `e188c8870`, where the
+   builder and the loop were both four-wide and consistent, so that run completed
+   and genuinely reported every injection surviving. **That question is still
+   open.**
+2. **This crash is new and is mine**, introduced by finding 88's field addition,
+   and it affected only whether *this* run's report existed.
+
+### The fix, and how the failure path was proven
+
+The loop now unpacks with a star:
+
+```python
+for name, verdict, *_ in results:
+```
+
+Proving it needed the failure path, which never runs on a green battery. It was
+forced by emptying `EXPECTED_SURVIVORS` so `RCAEVAL 2` becomes a plain `SURVIVED`:
+
+| before the fix | after the fix |
+| --- | --- |
+| summary printed, then `ValueError`, **no report** | `RC=1`, failure list printed, **report written (31676 bytes, 9 fields)** |
+
+The test asserts the shape rather than the crash -- every `results.append((name,`
+must build at least five fields, and no reader may use a fixed four-wide unpack --
+so adding a sixth field cannot silently reintroduce this.
+
+### An unrelated hazard, found while verifying
+
+Running the battery and a plain test run **concurrently** corrupts the test run.
+Six `check-readme-sample` failures appeared that way and vanished when the two were
+run in sequence, and `git status` showed the gate itself clean, so the mutations
+were restored and the *reader* was the casualty.
+
+The `O_EXCL` lock from finding 86 excludes a second **battery**; it does not
+exclude a plain `vitest` run, which is a reader and can read a gate mid-mutation.
+Recorded rather than fixed here because the honest fix is a question -- whether a
+reader should also take the lock, or whether the battery should mutate a copy and
+the gate test should read the copy -- and the current behaviour is a **local
+development hazard, not a CI one**, since CI's steps are sequential.
+
+### The lesson
+
+**A field added to a tuple is a change to every reader of it, and the compiler does
+not say so in a dynamically typed language.** Python would have caught this at the
+call site had the tuple been a dataclass or a `NamedTuple`; with a bare tuple the
+only guard is a test that asserts the width. There is now one.
+
+**And the failure was invisible for the third time in three rounds, each time for a
+different reason**: finding 87's channel reported a success it had not achieved,
+finding 88's report was readable and mute, and this one was a *step* reporting
+`ok` about a file that did not exist -- while the artifact count, which nobody was
+reading, said `0`.
