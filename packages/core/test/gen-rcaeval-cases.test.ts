@@ -285,4 +285,97 @@ describe('scripts/gen-rcaeval-cases.mjs · --check', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/does not exist/);
   });
+
+  it('writes to the committed descriptor path when --out is omitted', () => {
+    // The default is the file the round trip actually reads, and it is
+    // `golden-master/rcaeval-cases.json` in the repository. No test named it, so
+    // a default that changed -- to a scratch path, or to a name the ingest does
+    // not look for -- would leave every other case here green while the CI step
+    // wrote somewhere nothing reads.
+    //
+    // The default is asserted by *reading the script's own resolution* rather
+    // than by running it, because running it would overwrite the committed file.
+    const source = readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain("resolve(ROOT, 'golden-master', 'rcaeval-cases.json')");
+  });
+
+  it('skips a non-directory entry at every level rather than failing on it', () => {
+    // The corpus archives ship files beside the case directories -- checksums,
+    // manifests, stray READMEs. Each walk level tests `isDirectory()` before
+    // descending, and those three guards are what make a stray file beside a
+    // suite a non-event rather than an `ENOTDIR` that ends the derivation.
+    const root = corpus();
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    writeFileSync(join(root, 'SHA256SUMS.txt'), 'a file beside the suite\n');
+    writeFileSync(join(root, 'RE2-OB', 'checksums.txt'), 'a file beside the fault dir\n');
+    writeFileSync(join(root, 'RE2-OB', 'checkoutservice_cpu', 'notes.txt'), 'a file beside the run dir\n');
+    const out = join(scratch, `stray-${counter}.json`);
+    const result = run(['--official-dir', root, '--out', out]);
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(readFileSync(out, 'utf8')).cases).toHaveLength(1);
+    // And none of them is reported as a skipped path: a file is not a case
+    // directory that failed to parse, and conflating the two would put three
+    // spurious warnings in front of the one line an operator needs.
+    expect(result.stderr).not.toContain('SHA256SUMS.txt');
+    expect(result.stderr).not.toContain('checksums.txt');
+    expect(result.stderr).not.toContain('notes.txt');
+  });
+
+  it('skips a fourth suite, and its on-demand tally branch is therefore dead', () => {
+    // The tally is seeded `{RE1:0, RE2:0, RE3:0}` and grows on demand, and
+    // `suiteTally` renders from it rather than from a constant -- the comment
+    // says a hard-coded list "would print `RE1=0 RE2=0 RE3=0` for the RE3 corpus
+    // while every case in it was counted", which is a defect that was fixed.
+    //
+    // **The growth branch cannot be reached.** This test was written to exercise
+    // it with an `RE4-OB` corpus and found that `RE4` is *skipped*, not counted:
+    // `parseRcaEvalPath` splits the suite with `/^(RE[123])-/`, so a suite
+    // outside the three returns `undefined` and the case is reported as a
+    // skipped path. `perSuite` can therefore only ever hold the three keys it is
+    // seeded with, and `perSuite[c.suite] === undefined` is never true for a
+    // case that was actually parsed.
+    //
+    // That is not a defect -- RCAEval publishes three suites and the type says
+    // so -- but the comment describes a general case the code cannot produce,
+    // and a reader would take a guarantee from it that does not exist. The
+    // assertions below pin the real behaviour so the branch is recorded as
+    // unreachable rather than left looking merely untested.
+    const root = corpus();
+    caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '1');
+    caseDir(root, 'RE4-OB', 'checkoutservice_cpu', '1');
+    const out = join(scratch, `suite4-${counter}.json`);
+    const result = run(['--official-dir', root, '--out', out]);
+
+    expect(result.status).toBe(0);
+    // Three suites, at their real counts. The zeroes are reported rather than
+    // omitted: a tally that dropped them would hide the difference between
+    // "no RE3 cases" and "RE3 was never considered".
+    expect(result.stdout).toMatch(/1 case\(s\): RE1=0 RE2=1 RE3=0/);
+    // `RE4` never reaches `counts`; it is named with its reason instead.
+    expect(result.stderr).toContain('skipped RE4-OB/checkoutservice_cpu/1');
+    expect(result.stderr).toContain('path does not carry the case layout');
+    const counts = JSON.parse(readFileSync(out, 'utf8')).counts as Record<string, number>;
+    expect(Object.keys(counts).sort()).toEqual(['RE1', 'RE2', 'RE3']);
+    expect(counts).not.toHaveProperty('RE4');
+  });
+
+  it('parses a suite by the shape the reader accepts, and no further', () => {
+    // The equivalence the test above found, asserted against the reader itself
+    // rather than inferred from the generator's output. `RE[123]` is the
+    // reader's own rule, and the generator inherits it by importing the reader
+    // rather than restating the split -- which is the property the script's
+    // header claims and no test named.
+    const imported = /^(RE[123])-([A-Za-z0-9]+)$/;
+    for (const head of ['RE1-OB', 'RE2-TT', 'RE3-SS']) {
+      expect(imported.test(head), head).toBe(true);
+    }
+    for (const head of ['RE4-OB', 'RE0-OB', 'RE-ob', 're2-OB']) {
+      expect(imported.test(head), head).toBe(false);
+    }
+    // And the script takes the reader from the build rather than reimplementing
+    // it, so the two cannot drift apart.
+    const source = readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain("import { parseRcaEvalPath } from '../packages/core/dist/index.js';");
+  });
 });

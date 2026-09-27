@@ -13,7 +13,7 @@
     "typecheck": "pnpm --filter @rca-bench-factory/core typecheck && pnpm --filter @rca-bench-factory/cli typecheck",
     "test": "pnpm --filter @rca-bench-factory/core test && pnpm --filter @rca-bench-factory/cli test",
     "test:coverage": "pnpm --filter @rca-bench-factory/core test:coverage && pnpm --filter @rca-bench-factory/cli test:coverage",
-    "lint": "node scripts/check-no-mock.mjs && node scripts/check-no-secrets.mjs && node scripts/check-no-vendored-data.mjs && node scripts/check-official-registry.mjs && node scripts/check-no-absolute-paths.mjs",
+    "lint": "node scripts/check-no-mock.mjs && node scripts/check-no-secrets.mjs && node scripts/check-no-vendored-data.mjs && node scripts/check-official-registry.mjs && node scripts/check-no-absolute-paths.mjs && node scripts/verify-scorer-stability.mjs",
     "examples:gen": "node scripts/gen-examples.mjs",
     "examples:check": "node scripts/gen-examples.mjs --check",
     "examples:bundle": "node scripts/build-example-bundle.mjs",
@@ -25,13 +25,15 @@
     "examples:verify": "node scripts/verify-example-pack.mjs",
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
     "inject:stability": "node scripts/inject-stability.mjs",
+    "inject:scorer-stability": "python3 scripts/injection/scorer-stability-probe.py",
     "inject:component-rule": "node scripts/inject-component-rule.mjs",
     "check:portability": "node scripts/check-no-absolute-paths.mjs",
     "probe:m1-ceiling": "node scripts/probe-m1-ceiling.mjs",
     "inject:m1-ceiling": "python3 scripts/injection/m1-ceiling-probe.py",
     "inject:m1-ceiling-tests": "node scripts/inject-m1-ceiling-tests.mjs",
     "probe:type-misses": "node scripts/probe-type-misses.mjs",
-    "inject:type-miss-probe": "python3 scripts/injection/type-miss-probe.py"
+    "inject:type-miss-probe": "python3 scripts/injection/type-miss-probe.py",
+    "inject:gate-tests": "python3 scripts/injection/gate-tests-battery.py"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

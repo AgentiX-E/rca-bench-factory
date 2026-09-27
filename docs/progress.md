@@ -2352,3 +2352,82 @@ different next step than "improve accuracy" would have been.
 
 This pass raised no measured accuracy and claims none. It replaced an inherited assertion with a
 measurement.
+
+---
+
+## Pass 28 -- Put the coverage claim under a battery, and find a gate nothing ran
+
+Pass 27 measured `type` and left the M1 work with a hypothesis. This pass does the other half of the
+round's instruction: it takes the coverage claim from the previous pass and asks whether it is true.
+
+### The claim this pass tested
+
+The previous finding's closing sentence was a claim about the *remaining* gates:
+
+> the uncovered remainder should be assumed to contain more of the same, not less
+
+That is a prediction, so it was checked by source rather than by reading the workflow's own comments.
+Two things came back.
+
+### What the check found
+
+**Two gates have no test naming them anywhere.** `check-no-absolute-paths.mjs` is at least in the `lint`
+chain, so a job runs it. `verify-scorer-stability.mjs` is not: it is named by a `package.json` script and
+by nothing else -- no workflow step, no run chain, no test. Six properties, a documented rationale about
+the *instrument* being stable, a dedicated package script, and no job had ever executed it.
+
+**And being run is only half of it.** A probe was written to mutate the built scorer and require the
+gate to name the property that broke. Four of the six properties survived:
+
+| property | why it survived | whose fault |
+| --- | --- | --- |
+| input purity | the check snapshotted `samples` *after* two determinism runs, so an idempotent mutation had already happened and `before`/`after` agreed | the gate's |
+| order independence | a positional pairing is refused upstream by the id-mismatch throw, so the gate's own check is never reached | nobody's -- genuinely guarded upstream |
+| denominator (miss count) | every fixture made every sample miss, so the equality held with or without the guard; `if (true)` passed | the gate's |
+| denominator (omitted) | the saturated fixture answers every field, so `omitted` was pinned at 0 and its counter was unfalsifiable | the gate's |
+
+Two further defects surfaced while correcting those, both the same shape: **a check whose input cannot
+exhibit the failure it looks for.** The input-purity snapshot was taken after the code under test had
+already run. And `samplesWithMisses === graded` was true for the wrong reason in both fixtures.
+
+### What was rejected, and why that matters
+
+Changing `detail.length > 0` to `detail.length >= 0` looked like a fourth gap. It is not: `detail` only
+grows by `push`, so it is never negative and the predicates are equivalent. That is an **equivalent
+mutant**, and scoring it as a survivor would have produced a finding about the gate that was really an
+observation about a comparison operator. The first determinism mutation was rejected for the same class
+of reason -- `Date.now()` returns the same millisecond twice in a row, so it would have been a *flaky*
+detector, reporting the property as enforced half the time and as a gap the other half.
+
+### What changed
+
+| item | before | after |
+| --- | --- | --- |
+| `verify-scorer-stability.mjs` in CI | no job ran it | sixth check in the `lint` chain |
+| its checks | 6 over 1 fixture | **14 over 3 fixtures** (saturated, partial, mixed) |
+| partial fixture | -- | `omitted=19, wrongValue=38` -- exercises the omitted path |
+| mixed fixture | -- | `samplesWithMisses=18 of 19` -- the only state where the counter can fail |
+| new probe | -- | `scripts/injection/scorer-stability-probe.py`, a CI step |
+| new test file | -- | `verify-scorer-stability-script.test.ts`, 12 tests |
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| scorer-stability probe | **4 caught, 1 guarded upstream, 0 survived, 0 inert** |
+| `verify-scorer-stability.mjs` | ALL PROPERTIES HOLD, 14 checks, 3 fixtures |
+| core tests | **2512 passed** (was 2500) |
+| core coverage | `src 100/100/100/100`, `All files 99.96/99.93/100/99.96` |
+| gate-test battery | 24 caught, 0 survived, 0 inert, 1 redundant |
+| other five batteries | 26 + 14 caught, 0 survived, 0 inert |
+| lint | 6 checks, all OK (the gate is now the sixth) |
+
+### What this changes for the audit
+
+Finding 83 records this in full. The one sentence worth carrying forward is the pattern both findings
+now share, because it is what made four green properties green:
+
+> **A property that has never been shown to fail is a comment with a print statement.**
+
+That is now a CI step in its own right, so the gate's green is only meaningful while something
+independent keeps trying to break it. The pass raised no measured accuracy and claims none.

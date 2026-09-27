@@ -37,12 +37,19 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
-      # Five static checks, all of them earned by a failure rather than chosen in
-      # advance. The last one exists because `scripts/inject-stability.mjs` shipped
+      # Six static checks, all of them earned by a failure rather than chosen in
+      # advance. The fifth exists because `scripts/inject-stability.mjs` shipped
       # with the author's absolute checkout path hard-coded, passed locally on every
       # run, and failed this very workflow on its first execution -- a gate that
       # could only pass on one machine. See finding 77.
-      - name: Lint (no mock / no secrets / no vendored data / registry / absolute paths)
+      #
+      # The sixth, `verify-scorer-stability.mjs`, guards the instrument itself: that
+      # a rate is a measurement rather than a sample. It was written, documented as
+      # "worth a test rather than an assumption", given a package script -- and never
+      # added to any step, so no job had ever executed it. It belongs in this chain
+      # rather than a step of its own because the other five answer the same kind of
+      # question: is the tree in a state we are willing to measure. See finding 83.
+      - name: Lint (no mock / no secrets / no vendored data / registry / absolute paths / scorer stability)
         run: pnpm lint
 
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
@@ -101,6 +108,29 @@ jobs:
       # the other half reports SURVIVED, correctly, and says nothing.
       - name: Type-miss probe battery (no survivors, no inert mutations)
         run: python3 scripts/injection/type-miss-probe.py
+
+      # The five gate scripts above are covered by CI *running* them against the
+      # real tree, which proves they do not crash and proves nothing about
+      # whether they would refuse. That is a weaker claim than a test that forces
+      # them to fail, and this battery is what converts the one into the other:
+      # each injection removes a specific guard from a gate and requires the
+      # gate's own test file to go red. It found two things the tests could not
+      # have -- a dead branch in `check-readme-sample.mjs` whose comment promised
+      # a guarantee no input can reach, and a walk guard in
+      # `gen-rcaeval-cases.mjs` that is redundant with the try/catch below it.
+      # Both are reported rather than papered over; the redundant one is listed
+      # in the battery's `EXPECTED_SURVIVORS` with its reason, and the run fails
+      # if it ever turns into a genuine survivor.
+      - name: Gate-test battery (each gate's test provably fails when its guard is removed)
+        run: python3 scripts/injection/gate-tests-battery.py
+
+      # The scorer-stability gate is only worth its green if it would refuse a
+      # scorer that lost a stability property. Four of its properties were
+      # previously unfalsifiable -- the fixture could not exhibit the failure they
+      # looked for -- so this battery mutates the built scorer and requires the gate
+      # to name the property that broke. See finding 83.
+      - name: Scorer-stability probe battery (the stability gate refuses a broken scorer)
+        run: python3 scripts/injection/scorer-stability-probe.py
 
       - name: Golden Master verification
         run: node golden-master/verify.mjs

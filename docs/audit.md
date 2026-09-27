@@ -5774,3 +5774,264 @@ tested against these same fifteen rows.
 The round did **not** raise the measured accuracy and does not claim to. It removed a hypothesis that
 was standing on an argument rather than on a reading, and it replaced it with one that stands on a
 measurement.
+
+---
+
+## Finding 82 -- Five gates were "covered by CI running them", which is not coverage
+
+The audit said so itself, in the section on what the meta-gate does not reach:
+
+> Five gates above still have no test naming them -- `check-readme-sample.mjs`, `build-example-bundle.mjs`,
+> `gen-examples.mjs`, and the second exits of `check-cli-reference.mjs` and `gen-rcaeval-cases.mjs`. They
+> are covered by CI running them against the real tree, which is a weaker claim than a test that forces
+> them to fail, and it is the honest status.
+
+This finding closes that gap and reports what closing it exposed. Four of the five now have a test file
+of their own; the fifth already had one and gained the assertions it was missing. The count is not the
+interesting part. **Two of the five gates were carrying a guarantee that does not exist**, and neither
+was visible from a green CI run -- because a gate that runs correctly and reports correctly on a tree
+that never violates it is indistinguishable, from the outside, from a gate whose failure branch is dead.
+
+### What each test had to force
+
+A test that runs a gate against the real tree and sees exit 0 proves the gate does not crash. It does
+not prove the gate would refuse. Every test below therefore builds a tree in which the gate *must*
+refuse, and asserts the refusal:
+
+| gate | fixture | what the gate must refuse |
+| --- | --- | --- |
+| `check-readme-sample.mjs` | a throwaway tree whose `README.md` the test writes | no sample block; a `ts` block that never imports the package; a sample calling `runAllGates` with the wrong signature; one good sample beside one broken one |
+| `build-example-bundle.mjs` | a copy of `examples/order-prod` plus a writable `site/assets/` | a stale archive; a stale metadata file; both missing at once; an empty example directory |
+| `gen-examples.mjs` | a tree whose `docs/targets/*.md` the test writes | a stale `data.js`; a missing `data.js`; a marker naming an unknown target; a marker naming an unexported path; a field marker matching no documented file; an ignored `truncate` |
+| `check-cli-reference.mjs` | a reference document synthesised from the binary's own `--help` | an implemented-but-undocumented command; a documented-but-unimplemented one; a flag the reference never mentions; a reference documenting no flag; more than one disagreement at once |
+| `gen-rcaeval-cases.mjs` | a synthetic corpus on disk | a non-numeric `inject_time.txt`; a path whose head carries no suite; the default output path; a top-level file beside a suite; a fourth suite |
+
+### What the forcing exposed
+
+**A dead branch in `check-readme-sample.mjs`.** The gate has a second exit for the case where
+`body.replace(/from '@rca-bench-factory\/core'/, …)` leaves the body unchanged, and its comment says the
+rewrite "is asserted so a change to the import specifier surfaces here instead of producing a confusing
+module-resolution error". The block reaches that loop only if `body.includes("from
+'@rca-bench-factory/core'")` was true, and **that predicate and the rewrite's regex are the same literal
+string**. `includes` is true exactly when the literal occurs; `replace` changes the text exactly when the
+regex matches, which is exactly when the literal occurs. They cannot disagree on any input, so the branch
+is unreachable and its diagnostic can never be printed.
+
+This was found by trying to write the test that was supposed to cover it. Three bodies were attempted, and
+each failed for a different reason -- which is how the equivalence became visible rather than arguable:
+
+- a **double-quoted** import matches *neither* predicate, so the gate exits one guard earlier (the marker
+  contains `from` and the quotes, so the block is never collected);
+- a **line break** inside the specifier matches *both* (the marker is a substring test over the joined
+  text; the regex does not care where the literal sits);
+- an **escaped quote** inside a string literal matches *neither*.
+
+The conclusion is not that the guard is wrong -- it fails safe, and the first exit already covers the case
+its comment worries about. The conclusion is that the comment describes a reachable state and there is
+none, so a reader takes a guarantee from it that the code does not provide. The test pins the equivalence
+over a probe list and over the two literals, and says in its own comment that the `toContain` half is
+weaker than it looks -- which the battery confirmed, by mutating the branch's *body* to `if (false)` and
+observing the test file stay green.
+
+**A redundant guard in `gen-rcaeval-cases.mjs`.** The walk tests `isDirectory()` before descending at
+each of its three levels. At the top level that test is **redundant with the `try { readdirSync(suitePath)
+} catch { continue }` immediately below it**: reading a file as a directory throws `ENOTDIR`, and the
+catch skips precisely the entries `isDirectory()` would have skipped. No input separates them, so no test
+can be written that fails only when the guard is removed.
+
+This is the second instance in this repository of a check the battery proved redundant, and it is handled
+the same way pass 5 handled `Number.isSafeInteger`: **kept, and named**. The difference is where the
+record lives. There the check stayed in source with a comment; here the *injection* stays in the battery
+with a reason, listed under `EXPECTED_SURVIVORS`. Reporting it as CAUGHT would need a dishonest mutation;
+deleting it would lose the finding.
+
+Two attempts at this row are also recorded, because both were near misses of the kind that produce a
+false green: the first had the wrong indentation and the anchor silently missed, which the battery
+reports as INERT rather than as a survivor; the second targeted `runDir.isDirectory()` on the theory
+that the guard bounds the walk's depth. It does not -- the walk is a *fixed* three-level nest, so the
+guard skips file entries at the run level and has nothing to do with depth. Depth is guarded by the
+nesting itself, and the injection that establishes it reads the run level from one directory deeper.
+
+### The battery, and why it mutates gates rather than probes
+
+The four batteries beside this one mutate a *probe* and read a number it reports, because a probe is what
+publishes a figure. This one mutates a **gate** and reads whether the gate's own test file goes red,
+because what is in question is whether a test would notice a guard being removed. Twenty-five injections,
+one per guard, each an anchored replacement that asserts its anchor was present:
+
+**24 caught, 0 survived, 0 inert, 1 redundant (expected).**
+
+The battery prints the *failing test names* rather than only a verdict, because a requirement phrased as
+"some test fails" is satisfied by a test failing for an unrelated reason. `CLIREF 1` is the sharpest
+case: it drops the trailing word boundary from `mentionsFlag`, and exactly **one** test fails -- the one
+written for that boundary. The other five pass under the broken implementation, which is what makes that
+test the boundary's guard rather than one of six tests that happen to overlap.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| five new/expanded test files | 59 tests -- 9 README, 9 bundle, 14 examples, 6 CLI-ref, 21 rcaeval |
+| gate-test battery | **24 caught, 0 survived, 0 inert, 1 redundant** |
+| core tests | **2500 passed** (was 2450) |
+| core coverage | `src 100/100/100/100`, `All files 99.96/99.93/100/99.96` |
+| cli tests | 173 passed, `run.ts 100/100/100/100` |
+| golden master | PASSED (6 OpenRCA + 4 RCAEval byte-stable) |
+| official regression | PASSED (8 targets scored, 1 skipped by contract) |
+| examples / bundle / docs / pack | up to date / up to date / PASSED / 9 files verified |
+| lint (5 checks) | all OK |
+| all five workflow YAMLs | parse |
+
+### What this changes
+
+`audit.md`'s earlier sentence is retracted by supersession: the five gates named there are no longer
+covered by CI running them. The honest status of the *remaining* gates is now worse rather than better,
+and it is worth stating: `progress.md`'s P1-6 table lists 25 `process.exit(1)` sites across `scripts/`,
+of which this round brings the covered count from 5 to 14. `verify-example-pack.mjs` (4 sites),
+`check-official.mjs` (3 remaining), `check-no-vendored-data.mjs` (1), `apply-pins.mjs` and
+`fetch-official.mjs` (4) are still covered only by CI running them -- and the two guards this round
+found dead were both in the five that *had* just been covered. The implication is direct: the
+uncovered remainder should be assumed to contain more of the same, not less.
+
+---
+
+## Finding 83: the stability gate was never run, and four of its properties could not fail
+
+The previous finding closed on a claim that the *remaining* gates should be assumed to contain more
+dead guards. Checking that claim turned up something the claim did not predict: a gate that was not in
+the remainder, because nothing had ever executed it at all.
+
+### The gate that no job ran
+
+`scripts/verify-scorer-stability.mjs` opens with four properties and a rationale:
+
+> Why this is worth a test rather than an assumption: the four live runs showed `strict` moving 0 -> 1
+> -> 0 and `type` moving 5 -> 6 -> 4 on identical dataset, identical prompt and a nominally identical
+> model. Reading that as "the model is noisy" is a conclusion about the model. It is only correct if
+> the *instrument* is stable -- and the instrument had never been checked for that over the real data.
+
+It answers exactly the question the M1 work depends on: whether a reported rate is a measurement or a
+sample. Its status, checked by source rather than by reading the workflow's comments:
+
+| question | answer |
+| --- | --- |
+| Named by `package.json` as `verify:scorer-stability`? | yes |
+| Named by any workflow step? | **no** |
+| In the `lint` chain with its four sibling static checks? | **no** |
+| Named by any test file? | **no** |
+| Executed by any CI job? | **no** |
+
+Six properties, a documented rationale, a dedicated package script, and no job had ever run it. The
+CI comment that reads "The scorer-stability battery is a gate, not a report" sits directly above the
+step for `inject-stability.mjs` -- a *different* script whose name differs by three characters, which
+is plausibly how the omission stayed invisible for two rounds. The distinction matters: the battery
+asks whether the stability properties are *enforced*; this gate asks whether they *hold*, and neither
+question subsumes the other, because the battery mutates the scorer while the gate is the thing doing
+the asserting.
+
+Running it by hand passes on the real dataset, which is the failure mode: a green gate that no job
+executes is indistinguishable from a gate that does not exist.
+
+### Four of the six properties could not fail
+
+Being run is necessary and not sufficient. A property is enforced only if some mutation makes it fail,
+so a probe was written (`scripts/injection/scorer-stability-probe.py`) that mutates the built scorer --
+the gate dynamically imports `packages/core/dist`, never `src`, so mutating source would test the build
+instead of the gate -- and requires the gate to exit non-zero **and name the property**.
+
+The first run:
+
+```
+CAUGHT    determinism: stamp the report with the clock
+SURVIVED  input purity: sort the caller's sample array in place
+SURVIVED  order independence: pair predictions by position
+SURVIVED  denominator: count every graded pair as having a miss
+SURVIVED  denominator: drop the omitted half of the classification
+```
+
+Four survivors, each traced to a specific reason, and **three of the four were the gate's fault rather
+than the mutation's**:
+
+| survivor | diagnosis | whose fault |
+| --- | --- | --- |
+| `input purity` | the mutation sorted an *internal* array; the check snapshots the caller's `samples` as JSON, which an internal reorder cannot reach | mutation's -- corrected to write `s.scored = true` onto the caller's sample |
+| `order independence` | a positional pairing is refused outright by `scoreExtractionSample`'s id-mismatch throw before any rate is computed | genuinely guarded upstream -- reclassified, not fixed |
+| `denominator` (every pair counts as a miss) | both fixtures made *every* graded sample miss, so `samplesWithMisses` equalled the graded count with or without the guard | gate's -- needed a fixture with one fully correct sample |
+| `denominator` (omitted) | the saturated fixture answers every field, so `omitted` was pinned at 0 and the counter was unfalsifiable | gate's -- needed a fixture that actually omits a field |
+
+Two more defects surfaced while correcting those, and both are the same shape as the ones the previous
+finding recorded -- **a check whose input cannot exhibit the failure it looks for**:
+
+1. **`input purity` was checked on an already-scored dataset.** The determinism block ran
+   `buildExtractionReport` twice *before* the purity snapshot was taken, so any idempotent mutation had
+   already happened and `before` and `after` agreed. The check passed against a scorer that overwrote
+   every sample's `incidentText` with `"MUT"`. The snapshot is now the first use of `samples`, and
+   determinism runs on a separately re-read dataset so neither check is satisfied by the other's
+   leftovers.
+
+2. **`samplesWithMisses === graded` was true for the wrong reason.** With no clean sample in any
+   fixture, the equality held whether or not the `detail.length > 0` guard existed. Dropping that guard
+   entirely -- `if (true)` -- produced `ALL PROPERTIES HOLD`. A third fixture now answers the first
+   sample correctly, which makes the two numbers differ (`18 of 19`) and is the only state in which
+   that check can fail.
+
+### A rejected mutation, recorded because it nearly became a false report
+
+Changing `detail.length > 0` to `detail.length >= 0` looks like it breaks the same property and does
+not: `detail` is built from an empty array and only ever grows by `push`, so it is never negative and
+the two predicates are equivalent. That is an **equivalent mutant**. Scoring it as a survivor would have
+produced a finding about the gate that was really an observation about a comparison operator, and it is
+recorded in the probe with a note rather than quietly deleted.
+
+The same discipline rejected the first determinism mutation. `Date.now()` returns the same millisecond
+for two adjacent calls, so a clock-stamp mutation passes roughly as often as it fails -- a *flaky*
+detector, which would have reported the property as enforced half the time and as a gap the other half.
+The mutation is now a call counter with an explicit initialiser, which fails deterministically.
+
+### Result
+
+```
+CAUGHT    determinism: stamp the report with a call counter
+CAUGHT    input purity: write back onto the caller's sample
+GUARDED   order independence: pair predictions by position
+          refused upstream: scoreExtractionSample throws on an id mismatch before any rate is computed
+CAUGHT    denominator: count every graded pair as having a miss
+CAUGHT    denominator: stop counting the omitted half
+battery: 4 caught, 1 guarded upstream, 0 survived, 0 inert
+```
+
+`GUARDED` is a third outcome alongside CAUGHT and SURVIVED: the property holds, for a reason the gate's
+own check never observes. It is listed by name in `EXPECTED_GUARDED` so it stays visible, and the probe
+*fails* if a labelled-guarded mutation ever stops being refused -- a label that silently rots is worse
+than no label.
+
+The gate went from 6 checks over 1 fixture to **14 checks over 3 fixtures**: saturated, partial
+(`omitted=19, wrongValue=38`) and mixed (`samplesWithMisses=18 of 19`). Wiring it into the `lint` chain
+rather than a step of its own is deliberate -- the five checks alongside it answer the same kind of
+question, *is this tree in a state we are willing to measure*, and the chain is the one place a future
+static check is already looked for.
+
+### Verification
+
+| check | result |
+| --- | --- |
+| scorer-stability probe | **4 caught, 1 guarded upstream, 0 survived, 0 inert** |
+| `verify-scorer-stability.mjs` | ALL PROPERTIES HOLD, 14 checks, 3 fixtures |
+| new test file | 12 passed |
+| `pnpm lint` | 6 checks, all OK (the gate is now the sixth) |
+| source restored after every probe run | identical to backup |
+
+### What this changes for the audit's earlier claim
+
+The previous finding said the uncovered remainder "should be assumed to contain more of the same, not
+less". This finding is consistent with that and sharpens it: not only did the remainder contain more of
+the same, the count of "the same" now includes a gate outside the remainder entirely, whose four green
+properties were green because their inputs could not fail. The pattern across both findings is one
+claim worth stating plainly:
+
+> **A property that has never been shown to fail is a comment with a print statement.**
+
+That applies to the five `process.exit(1)` sites this round added tests for, to the six properties of
+this gate, and to any future check whose author has not asked what input would make it refuse. It is
+also the reason the probe is now a CI step: the gate's green is only meaningful while something
+independent keeps trying to break it.
