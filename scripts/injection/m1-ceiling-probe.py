@@ -71,37 +71,59 @@ def unrecover(name: str) -> Callable[[str], str]:
     return apply
 
 
+# The baseline the probe reports on the unmutated dataset, captured before any
+# mutation runs. Every requirement below is expressed relative to it rather than
+# against a literal, and that is a correction this battery needed.
+#
+# The first version of this file hard-coded the figures of the day -- "exactly
+# one unrecoverable sample", "an 18/19 strict ceiling". When the round that
+# stated the `component` rule re-annotated the one sample that used to be
+# unrecoverable, four injections went stale at once: three survived because the
+# property they asserted was now true of a *different* world, and one went inert
+# because its anchor (`checkout-ui`) no longer existed. None of them was a probe
+# defect; all four were the battery mistaking the day's numbers for the
+# invariant.
+#
+# A requirement that reads the baseline cannot go stale that way. It still fails
+# when the probe does not follow the mutation -- which is the whole property --
+# while surviving a dataset edit that moves the ground truth underneath it.
+BASELINE: dict = {}
+
+
 # Each entry: name, target file, mutation, requirement, description.
 # `requirement(report)` returns True when the probe *still* reports the property
 # in `description` -- i.e. the mutation was not observed. A mutation is caught
-# exactly when that comes back False.
+# exactly when that comes back False. Requirements read `BASELINE`, populated in
+# `main`, so they state a *movement* rather than the day's figure.
 INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], str]] = [
     # --- the ground truth moves; the ceiling must follow it -------------------
     (
         "A. dataset: one more component unrecoverable",
         GOLDEN,
         unrecover("cart-service"),
-        lambda r: r["component"]["unrecoverableUnderTokenRule"] == 1,
-        "exactly one unrecoverable sample",
+        lambda r: r["component"]["unrecoverableUnderTokenRule"]
+        == BASELINE["component"]["unrecoverableUnderTokenRule"],
+        "the baseline's unrecoverable count, so the ceiling did not follow the data",
     ),
     (
         "B. dataset: one more unrecoverable, and the ceiling must follow it down",
         GOLDEN,
         unrecover("cart-service"),
-        lambda r: r["strictCeiling"]["samples"] == 18,
-        "an 18/19 strict ceiling",
+        lambda r: r["strictCeiling"]["samples"] == BASELINE["strictCeiling"]["samples"],
+        "the baseline's strict ceiling, so it did not follow the ground truth down",
     ),
     (
-        "C. dataset: fix the mislabelled sample, so nothing is unrecoverable",
+        "C. dataset: make a second sample unrecoverable, in a fresh place",
         GOLDEN,
-        lambda t: rename(t, '"component": "checkout-ui"', '"component": "checkout-service"'),
-        lambda r: r["component"]["unrecoverableUnderTokenRule"] == 1,
-        "exactly one unrecoverable sample",
+        unrecover("storefront"),
+        lambda r: r["component"]["unrecoverableUnderTokenRule"]
+        == BASELINE["component"]["unrecoverableUnderTokenRule"],
+        "the baseline's unrecoverable count",
     ),
     (
-        "D. dataset: drop four components, so the ceiling falls below the M1 threshold",
+        "D. dataset: drop three components, so the ceiling falls below the M1 threshold",
         GOLDEN,
-        lambda t: unrecover("log-collector")(unrecover("shipping-service")(t)),
+        lambda t: unrecover("log-collector")(unrecover("shipping-service")(unrecover("payment-gateway")(t))),
         lambda r: r["strictCeiling"]["clearsM1"] is False,
         "a ceiling that no longer clears the 0.7 threshold",
     ),
@@ -109,9 +131,20 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
     (
         "E. probe: count the relaxed ceiling as the strict one",
         PROBE,
-        lambda t: rename(t, "  const strictCeiling = recoverable.length;", "  const strictCeiling = total;"),
-        lambda r: r["strictCeiling"]["samples"] == 18,
-        "an 18/19 strict ceiling, distinct from the relaxed 19/19",
+        # The baseline-relative form of this mutation cannot be "set strict to
+        # total", because once the rule is stated the strict ceiling *is* the
+        # total -- `recoverable.length === total` -- and the mutation would be a
+        # no-op. What the closed ceiling can still distinguish is the *denominator*
+        # of the relaxed figure, which is what the next injection drives. This one
+        # drives the strict ceiling off a wrong count instead: subtracting one
+        # models a probe that silently drops a sample from its own numerator.
+        lambda t: rename(
+            t,
+            "  const strictCeiling = recoverable.length;",
+            "  const strictCeiling = recoverable.length - 1;",
+        ),
+        lambda r: r["strictCeiling"]["samples"] == BASELINE["strictCeiling"]["samples"],
+        "the baseline's strict ceiling, so the dropped sample went unobserved",
     ),
     (
         "F. probe: compute the ceiling rate over the wrong denominator",
@@ -121,8 +154,8 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
             "  const strictCeilingRate = strictCeiling / total;",
             "  const strictCeilingRate = strictCeiling / (total - 1);",
         ),
-        lambda r: abs(r["strictCeiling"]["rate"] - 18 / 19) < 1e-9,
-        "a strict rate of 18/19 = 0.9474",
+        lambda r: abs(r["strictCeiling"]["rate"] - BASELINE["strictCeiling"]["rate"]) < 1e-9,
+        "the baseline's strict rate",
     ),
     (
         "G. probe: report the ceiling as clearing M1 whatever it is",
@@ -135,30 +168,53 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         "H. probe: make the threshold impossible to fail",
         PROBE,
         lambda t: rename(t, "const M1_STRICT_THRESHOLD = 0.7;", "const M1_STRICT_THRESHOLD = 0.0;"),
-        lambda r: r["m1Threshold"] == 0.7,
-        "the M1 threshold reported as 0.7",
+        lambda r: r["m1Threshold"] == BASELINE["m1Threshold"],
+        "the baseline's M1 threshold",
     ),
     (
-        "I. probe: exempt the one rejected sample from the recoverable set",
+        "I. probe: exempt one sample from the recoverable set",
         PROBE,
+        # The exemption is applied to the *first* sample, whatever it is, so the
+        # mutation does not depend on a named component still being unrecoverable.
+        # It removes one sample from the recoverable half, which must move the
+        # count: if it does not, the filter is not load-bearing.
         lambda t: rename(
             t,
             "  const recoverable = samples.filter((s) =>\n    tokensAllPresent(s.expected.component, s.incidentText),\n  );",
-            "  const recoverable = samples.filter(\n    (s) => tokensAllPresent(s.expected.component, s.incidentText) || s.id === 'config-feature-flag-checkout',\n  );",
+            "  const recoverable = samples.filter(\n    (s, i) => tokensAllPresent(s.expected.component, s.incidentText) && i !== 0,\n  );",
         ),
-        lambda r: r["component"]["unrecoverableUnderTokenRule"] == 1,
-        "exactly one unrecoverable sample",
+        lambda r: r["component"]["recoverableUnderTokenRule"]
+        == BASELINE["component"]["recoverableUnderTokenRule"],
+        "the baseline's recoverable count, so the exemption went unobserved",
     ),
     (
         "J. probe: let the two halves disagree, so the partition guard has to fire",
         PROBE,
+        # The guard's whole purpose: `recoverable` and `unrecoverable` must cover
+        # the dataset. The mutation does it the way the *first draft* of the probe
+        # got it wrong -- `unrecoverable` becomes a second independent filter over
+        # the raw predicate instead of being derived from `recoverable`, and
+        # `recoverable` additionally drops the first sample. The two halves now
+        # overlap and miss a sample, so the guard must throw.
+        #
+        # An earlier attempt at this injection left the derivation intact and only
+        # filtered `recoverable`, which shrank both halves together and therefore
+        # still partitioned -- it SURVIVED, correctly, because it did not reproduce
+        # the defect. Writing the injection as the original defect rather than as a
+        # plausible-looking edit is what makes it test anything.
         lambda t: rename(
             t,
             "  const unrecoverable = samples.filter((s) => !recoverable.includes(s));",
-            "  const unrecoverable = samples.filter(\n    (s) => !tokensAllPresent(s.expected.component, s.incidentText),\n  );",
+            "  const unrecoverable = samples.filter(\n"
+            "    (s) => !tokensAllPresent(s.expected.component, s.incidentText),\n"
+            "  );",
         ).replace(
-            "    tokensAllPresent(s.expected.component, s.incidentText),\n  );\n  const unrecoverable",
-            "    tokensAllPresent(s.expected.component, s.incidentText) || s.id === 'config-feature-flag-checkout',\n  );\n  const unrecoverable",
+            "  const recoverable = samples.filter((s) =>\n"
+            "    tokensAllPresent(s.expected.component, s.incidentText),\n"
+            "  );",
+            "  const recoverable = samples.filter(\n"
+            "    (s, i) => tokensAllPresent(s.expected.component, s.incidentText) && i !== 0,\n"
+            "  );",
             1,
         ),
         lambda r: (
@@ -176,6 +232,8 @@ def main() -> int:
 
     report = run_probe()
     total = report["samples"]
+    BASELINE.clear()
+    BASELINE.update(report)
     print("M1 ceiling probe battery\n")
     print(
         f"baseline: recoverable {report['component']['recoverableUnderTokenRule']}/{total}, "

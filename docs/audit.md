@@ -5535,3 +5535,115 @@ in the guards: the tests now compute their expectations from the dataset rather 
 the partition is derived rather than filtered twice, an injection that breaks the two halves apart
 trips a guard, and a suite that will not run is counted as caught. All of those are recorded as
 mutations, so the next edit to the file is checked rather than trusted.
+
+
+## Finding 80 -- The `component` rule is statable, and stating it required re-annotating one sample
+
+Finding 75 established that the `component` field was ungradeable in principle, found the token rule
+the ground truth itself obeys, and measured it rejecting exactly one sample: `config-feature-flag-checkout`,
+annotated `checkout-ui`. Finding 78 priced that sample at one of four samples of headroom and
+scheduled the fix as cleanup rather than a milestone blocker. This round does the cleanup, and the
+measurement that made it safe is the one worth recording.
+
+### What the sample actually is
+
+The hypothesis finding 75 left open was that the sample is *unrecoverable* -- that no name derivable
+from its text could be the answer. That is true of `checkout-ui`, and false of the sample:
+
+```
+id:       config-feature-flag-checkout
+expected: checkout-ui            <- the string does not appear in the text
+text:     "...disappeared from the storefront for all users..."   <- storefront does
+          "...The flag service shows flag 'one_click_checkout'..."<- flag service does
+```
+
+Measured over all 19 samples, this is the **only** annotation in the file whose name is absent from
+its own incident text. Every other expected component shares at least one token with its text; this
+one shared none, because it named a UI element inferred from the symptom rather than a workload read
+from the incident.
+
+So the finding is not "one sample is unrecoverable". It is **one sample was mis-annotated**, and the
+text it was mis-annotated from names two deployed workloads. Re-annotating it to the workload whose
+user-visible surface broke -- `storefront` -- closes the rule with no exception:
+
+| reading | ceiling | headroom over the 14-sample requirement |
+| --- | --- | --- |
+| as shipped (`checkout-ui`) | 18/19 = 94.7% | 4 samples |
+| re-annotated (`storefront`) | **19/19 = 100%** | **5 samples** |
+
+### What the re-annotation cost, which is not nothing
+
+Changing a ground-truth value moves every figure computed over it, and four of them moved:
+
+| figure | before | after |
+| --- | --- | --- |
+| readable-verbatim set | 5 | **6** |
+| readable-and-wrong | 1 | **2** |
+| wrong answers accepted by the token rule | 10/15 (0.67) | **9/15 (0.60)** |
+| accepted on token co-occurrence alone | 8 | **7** |
+| strict ceiling | 18/19 | **19/19** |
+
+The wrong-answer acceptance rate **fell**, which is the interesting part: the rule now accepts a
+smaller share of the wrong answers. It remains above 0.5, so finding 75's argument -- that a rule
+this permissive cannot grade the field, and a prompt edit toward it would be unfalsifiable -- still
+holds. The movement is recorded rather than smoothed, because a rate quoted from a stale run would
+be a false reading of exactly the kind this repository has retracted before.
+
+### The rule that is now stated
+
+`buildFaultExtractionPrompt` carries a `FAULT_COMPONENT_RULE` beside `FAULT_TYPE_SHAPE_RULE`, stating
+the *level* (the deployed workload that owns the fault, not the config object, code symbol, upstream
+dependency or UI element) and the *shape* (a lower-case hyphenated slug). The level is the
+load-bearing half: all fifteen wrong answers from the recorded run are well-formed identifiers, so a
+shape rule alone would not have changed a single one. What they got wrong was which entity they named.
+
+The rule is a description of the data, not a new requirement -- the same contract `type`'s rule makes.
+Both properties are asserted over the real file, so a dataset edit that breaks either fails a test
+rather than silently invalidating the prompt text. Deliberately not a list of the 19 answers: the
+prompt's examples (`payments-api`, `search-indexer`, `session-store`) are chosen to be unlike any
+dataset component, and a test asserts none of the 19 appears in the prompt.
+
+### The part that was nearly missed
+
+**Four injections across two batteries went stale the moment the data moved, and none of them was a
+probe or test defect.** They were the batteries mistaking the day's numbers for the invariant:
+
+| injection | how it went stale |
+| --- | --- |
+| probe battery A, B | asserted `unrecoverable == 1` and `ceiling == 18`, which encoded the gap |
+| probe battery C | anchored on `"checkout-ui"`, which no longer exists -- INERT |
+| probe battery E | `strictCeiling = total` became a no-op once `recoverable.length == total` |
+| probe battery J | exempting the re-annotated sample became a no-op for the same reason |
+| test battery A, G | same `checkout-ui` exemption, applied-but-inert -- the worst kind |
+| test battery H | anchored on `"checkout-ui"` -- INERT |
+
+The fix is structural, and it is the finding: **every requirement in the probe battery now reads the
+baseline the probe actually reports**, so it asserts a *movement* rather than a literal. A requirement
+phrased as "the ceiling fell by one" survives a dataset edit that moves the ceiling; a requirement
+phrased as "the ceiling is 18" turns into a false alarm. Two injections also had to be re-aimed at
+what the closed ceiling can still distinguish, because a mutation that is a no-op under the new data
+cannot be caught by any assertion -- E now drops a sample from the numerator, and J reproduces the
+original two-independent-filters defect rather than a plausible-looking edit that still partitions.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| probe | 19/19, unrecoverable 0/19, headroom cost 0 samples |
+| probe battery | **10 caught, 0 survived, 0 inert** |
+| test battery | **8 caught, 0 survived, 0 inert** |
+| component-rule battery | **8 caught, 0 survived, 0 inert** |
+| stability battery | **4 caught, 0 survived, 0 inert** |
+| core | 2623 passed (87 files), `src` 100 / 100 / 100 / 100 |
+| cli | 173 passed |
+| golden master | PASSED (6 OpenRCA + 4 RCAEval byte-stable) |
+| official | PASSED (8 targets, 1 skipped by contract) |
+| docs / examples / registry / bundle | up to date |
+
+### What this changes for M1
+
+**The benchmark can now ask 19 questions rather than 18, and the field's definition no longer costs
+headroom.** The milestone's remaining gap is unchanged and is the one finding 78 identified: the model
+answers few of those questions well enough to clear the bar, and `type` is the binding constraint with
+no structural ceiling behind it. Stating the rule did not raise the measured accuracy on its own -- it
+removed a reason the measurement could not be trusted.

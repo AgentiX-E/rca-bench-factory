@@ -2204,3 +2204,81 @@ the milestone's constraint. The binding constraint is `type` at 4/19, which is a
 rather than a ceiling: all 19 expected types are distinct slugs that survive `normalizeFaultType`
 unchanged, so nothing about the data limits how many the model can answer. That distinction is now
 asserted rather than argued, which is the difference this pass was for.
+
+## Pass 26 -- State the `component` rule, and re-annotate the one sample that violated it
+
+Passes 21 through 23 each closed on the same sentence: the benchmark must state what a `component`
+answer denotes. Pass 25 measured what that decision was worth (one sample of four of headroom).
+This pass takes the decision and closes the field.
+
+### The step that made it safe
+
+Before changing anything, the 19 samples were partitioned three ways -- component present verbatim,
+present as tokens, or absent -- and the result reproduced finding 75's table exactly (5 / 13 / 1).
+The one absent sample was then read in full, and the reading changed the problem:
+
+```
+id:       config-feature-flag-checkout
+expected: checkout-ui     <- not in the text
+text:     "disappeared from the storefront"   <- a deployed workload, in the text
+          "The flag service shows flag ..."   <- a second one, in the text
+```
+
+The sample was not unrecoverable. It was **mis-annotated**: `checkout-ui` names a UI element inferred
+from the symptom, and the text names two workloads instead. That is a different finding from finding
+75's, and it is the one that makes the rule statable -- a rule with no exception in the data, rather
+than a rule with one named exception.
+
+### The decision, and the measurement that bounded it
+
+Re-annotating to `storefront` (the workload whose user-visible surface broke) takes the strict ceiling
+from 18/19 to **19/19**, and the headroom cost of the field from one sample to zero. Rejected
+alternatives, on the evidence: `flag-service` is equally defensible from the text and would give the
+same ceiling, but the incident is the breakage, not the misconfiguration; and leaving it as a named
+exception keeps the field gradeable only by a rule with a built-in exception, which is the state the
+last five passes were trying to leave.
+
+### TDD, in the order it ran
+
+1. **Red first.** The component block's own tripwire (`expect(rejected).toEqual(['config-feature-flag-checkout'])`)
+   was rewritten to `toEqual([])`, plus two new tests -- the rule has no exception, and no annotation
+   is absent from its own text -- plus four tests for the prompt rule itself. 4 failed, 20 passed.
+2. **Green.** `FAULT_COMPONENT_RULE` added beside `FAULT_TYPE_SHAPE_RULE` with the level stated as a
+   contrast and the shape stated as a slug, wired into `buildFaultExtractionPrompt`; the dataset
+   re-annotated with an `annotationNote` and an `annotationRule` in its provenance.
+3. **The suite pushed back, correctly.** Two contrast tests failed because the re-annotation moved the
+   readable set from 5 to 6 and the wrong-answer rate from 0.67 to 0.60. Both were updated to the
+   *re-measured* values with the movement recorded, not smoothed.
+
+### The batteries found the stale expectations, which is their job
+
+Two of the four batteries reported non-caught outcomes on the new data:
+
+```
+probe battery:  6 caught, 3 survived, 1 inert
+test battery:   4 caught, 3 survived, 1 inert
+```
+
+**None was a probe or test defect.** Four injections had encoded the day's numbers -- `unrecoverable == 1`,
+`ceiling == 18`, an anchor on `"checkout-ui"` -- and two probe mutations had become no-ops because the
+ceiling they moved past is now closed. The fix is the one worth keeping: the probe battery's
+requirements now read the baseline the probe reports, so each asserts a *movement*. Two injections were
+re-aimed at what the closed ceiling can still distinguish.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| core | 2623 passed (87 files); `src` 100 / 100 / 100 / 100 |
+| cli | 173 passed |
+| probe | 19/19, unrecoverable 0/19, cost 0 samples |
+| four batteries | **30 caught, 0 survived, 0 inert** |
+| golden master | PASSED (byte-stable) |
+| official | PASSED (8 targets, 1 skipped by contract) |
+| docs / examples / registry / bundle / typecheck / lint | all green |
+
+### Where M1 stands
+
+The benchmark asks 19 questions and the field's definition costs nothing. The open question is no
+longer definitional: it is whether the model answers enough of those questions to clear the bar, and
+`type` remains the binding constraint with no structural ceiling behind it.

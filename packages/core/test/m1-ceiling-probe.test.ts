@@ -145,19 +145,31 @@ describe('the M1-ceiling probe · the figure it publishes', () => {
     expect(report.strictWithoutComponent.rate).toBe(1);
   });
 
-  it('clears M1 under both definitions, and that is the finding', () => {
-    // The result this probe was written for, and the one that changes the reading
-    // of the whole round: `component` is ungradeable in principle and its
-    // unrecoverable sample costs exactly one sample of headroom, so M1's ceiling
-    // is 18/19 either way and the milestone's blocker is the model's accuracy
-    // rather than the field's definition. An earlier reading -- "`component`
-    // against a 14/19 structural ceiling means no prompt change reaches 70%" --
-    // is refuted by this figure, and the refutation is the point.
+  it('clears M1 under both definitions, and the two now agree', () => {
+    // The result this probe was written for, and the one that changed the reading
+    // of the round before this one: `component`'s unrecoverable sample cost exactly
+    // one sample of headroom, so M1's ceiling was 18/19 with the field and 19/19
+    // without it, and the milestone's blocker was the model's accuracy rather than
+    // the field's definition. An earlier reading -- "`component` against a 14/19
+    // structural ceiling means no prompt change reaches 70%" -- is refuted by this
+    // figure, and the refutation is the point.
+    //
+    // The re-annotation closed the gap between the two definitions: both now read
+    // 19/19, so the field's definition costs nothing and the only remaining
+    // question is the one the probe says it is. The assertion below is therefore
+    // *stronger* than a pair of booleans -- it pins the two definitions to the same
+    // figure, which fails if a future edit reopens the gap it took this round to
+    // close.
     expect(report.strictCeiling.clearsM1).toBe(true);
     expect(report.strictWithoutComponent.clearsM1).toBe(true);
+    expect(
+      report.strictCeiling.samples,
+      'stating the rule must have made the field cost nothing, so the two definitions agree',
+    ).toBe(report.strictWithoutComponent.samples);
+    expect(report.component.unrecoverableUnderTokenRule).toBe(0);
   });
 
-  it('the one unrecoverable sample is the one finding 75 names', () => {
+  it('the partition is closed, and the sample that used to open it is named', () => {
     // The tripwire that ties this probe to the test that documents the sample.
     //
     // Every other assertion in this file derives its expectation from the dataset,
@@ -165,15 +177,36 @@ describe('the M1-ceiling probe · the figure it publishes', () => {
     // blind to *which* sample is unrecoverable, because a swap moves both sides
     // identically. The injection battery confirmed that blindness empirically: it
     // relaxed every derived comparison in this file and swapped the unrecoverable
-    // sample, and the suite stayed green. This literal is the only assertion that
-    // would have failed, so it is the only thing standing behind the claim.
-    expect(report.component.unrecoverableIds).toEqual(['config-feature-flag-checkout']);
+    // sample, and the suite stayed green. A literal naming the unrecoverable set
+    // is the only assertion that would have failed, so it is the only thing
+    // standing behind the claim.
+    //
+    // Finding 78 measured this set at `['config-feature-flag-checkout']` and priced
+    // it at one of four samples of headroom. This round re-annotated that sample,
+    // so the set is now empty and the literal is `[]` -- which is a *stronger*
+    // statement, not a vacuous one: it asserts the stated rule has no exception in
+    // the ground truth, and it fails the moment a dataset edit reintroduces one.
+    expect(report.component.unrecoverableIds).toEqual([]);
+    expect(report.component.recoverable).toBe(report.component.total);
 
-    // And a *contrast* against the sample the swap would have moved to, so the
-    // assertion above is not a bare literal with no relationship to the report.
-    // `network-delay-cart-to-inventory` is the sample the battery's injection
-    // rewrites; naming it here means a swap fails on a statement about both ends
-    // of the move rather than on one value a reader has to trust.
+    // The re-annotated sample, named, so the round's change is traceable from the
+    // probe rather than only from the test file that documents it. It must now be
+    // recoverable, and recoverable *because* the annotation names something the
+    // text carries -- the property that was missing before.
+    const reAnnotated = golden.samples.find((s) => s.id === 'config-feature-flag-checkout');
+    expect(reAnnotated, 'the re-annotated sample must exist').toBeDefined();
+    if (reAnnotated === undefined) return;
+    expect(reAnnotated.expected.component).toBe('storefront');
+    expect(reAnnotated.incidentText).toContain('storefront');
+    expect(reAnnotated.incidentText).not.toContain('checkout-ui');
+    expect(report.component.unrecoverableIds).not.toContain('config-feature-flag-checkout');
+
+    // And a *contrast* against a sample that is recoverable by token co-occurrence
+    // rather than verbatim, so the assertion above is not a bare literal with no
+    // relationship to the report. `network-delay-cart-to-inventory` is the sample
+    // the battery's swap injection rewrites; naming it here means a swap fails on
+    // a statement about both ends of the move rather than on one value a reader
+    // has to trust.
     expect(report.component.unrecoverableIds).not.toContain('network-delay-cart-to-inventory');
     const cartSample = golden.samples.find((s) => s.id === 'network-delay-cart-to-inventory');
     expect(cartSample, 'the sample the swap targets must exist').toBeDefined();

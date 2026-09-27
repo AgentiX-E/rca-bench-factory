@@ -72,6 +72,47 @@ const FAULT_TYPE_SHAPE_RULE =
   'e.g. `cpu-saturation`, `network-delay`, `database-connection-pool-exhaustion`. ' +
   'Use hyphens, never spaces or capitals. Prefer the mechanism over the symptom.';
 
+/**
+ * The rule for `component`, stated because the field was previously a bare noun.
+ *
+ * The prompt asked for the "faulty component" and described neither the *level*
+ * of entity it wanted nor the *shape* of the answer. Finding 75 measured the
+ * cost: of the fifteen wrong answers in the run preceding `3a04d26`, every one
+ * named something real and present in the incident text, one level off from what
+ * the key asks for -- `session Redis` for a fault in the `session-cache`
+ * service, `CSV writer` for one in the `export-worker`, `tax-calculation
+ * provider` for one the `pricing` service depends on. The model was answering a
+ * nearby question correctly, which is indistinguishable from the grader being
+ * wrong while the level goes unstated.
+ *
+ * The rule has two halves on purpose, and the level is the load-bearing one.
+ * A shape rule alone would not have changed a single one of those answers, since
+ * `session Redis` and `csv-writer` are both well-formed. What the answers got
+ * wrong was *which entity they named*, so that is what the prompt states.
+ *
+ * Like `FAULT_TYPE_SHAPE_RULE` this is a *description of the existing data*, not
+ * a new requirement. Every one of the 19 expected components in the golden
+ * dataset is a lower-case hyphenated slug naming a deployed workload, and every
+ * one is recoverable from its own incident text under the token rule -- both
+ * properties are asserted in `fault-prompt-grammar.test.ts`. The second of them
+ * is this round's change: `config-feature-flag-checkout` was annotated
+ * `checkout-ui`, a name its text never carries, and the text's own workload
+ * (`storefront`) is what it is now annotated with. So the rule has no exception
+ * in the data, and a wrong answer is a model failure rather than a question the
+ * benchmark cannot answer.
+ *
+ * Deliberately not a list of the 19 answers, for the reason finding 62 gives
+ * about `type`: listing them fits the prompt to the test set and teaches this
+ * dataset's taxonomy rather than the convention, so the accuracy number stops
+ * being interpretable. The examples below are chosen to be *unlike* any dataset
+ * component for exactly that reason, and a test asserts none of the 19 appears.
+ */
+const FAULT_COMPONENT_RULE =
+  '`component` is the deployed workload that owns the fault, not the config ' +
+  'object, code symbol, upstream dependency or UI element involved in it. ' +
+  'Name the service or workload you would page, as a lower-case hyphenated slug, ' +
+  'e.g. `payments-api`, `search-indexer`, `session-store`.';
+
 
 /** Confidence below this threshold is flagged for extra reviewer scrutiny. */
 const HITL_CONFIDENCE_THRESHOLD = 0.8;
@@ -98,6 +139,8 @@ export function buildFaultExtractionPrompt(incidentText: string): string {
     FAULT_TYPE_SHAPE_RULE,
     '',
     '`category` is matched case-insensitively against that list; any other value is rejected.',
+    '',
+    FAULT_COMPONENT_RULE,
     '',
     '`category`, `component` and `description` may be omitted when uncertain.',
   ].join('\n');

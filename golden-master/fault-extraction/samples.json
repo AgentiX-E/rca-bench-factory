@@ -3,7 +3,8 @@
   "provenance": {
     "note": "Hand-written ground truth for the historical-fault extraction channel (M13 channel B). Each incidentText is written to sound like a real support ticket or post-mortem while naming exactly one fault, so the expected record is decidable from the text alone. No incident text here is copied from any corpus: this file is authored, reviewable, and small. It exists so the M1 exit condition has a denominator that does not move when the model changes.",
     "reviewGate": "H3",
-    "authoringRule": "The expected.type must be derivable from the incident text by a careful human reader. A sample whose answer needs context the text does not carry is a bad sample, not a hard one."
+    "authoringRule": "The expected.type must be derivable from the incident text by a careful human reader. A sample whose answer needs context the text does not carry is a bad sample, not a hard one.",
+    "annotationRule": "The expected.component must be the deployed workload that owns the fault, and it must be recoverable from the incident text under the token rule the extraction prompt states -- every hyphen-delimited token of the name appears in the text, case-insensitively. This is asserted over the whole file in fault-prompt-grammar.test.ts, so an annotation that names something its text does not carry fails a test. One sample was re-annotated under this rule: config-feature-flag-checkout named `checkout-ui`, which its text never carries; see its annotationNote."
   },
   "samples": [
     {
@@ -147,8 +148,9 @@
       "expected": {
         "type": "feature-flag-misconfiguration",
         "category": "config",
-        "component": "checkout-ui"
-      }
+        "component": "storefront"
+      },
+      "annotationNote": "Re-annotated from `checkout-ui`, which the incident text never carries. The text names two deployed workloads -- `storefront`, whose user-visible surface broke, and the `flag service`, where the misconfiguration lives. `checkout-ui` is neither; it was inferred from the symptom rather than read from the text, so grading against it measured the annotator rather than the model (finding 75, finding 78). `storefront` is the workload whose breakage is the incident, which is what the component rule states."
     },
     {
       "id": "dependency-upstream-5xx-pricing",

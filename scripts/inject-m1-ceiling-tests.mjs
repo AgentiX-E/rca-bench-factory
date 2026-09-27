@@ -105,7 +105,7 @@ function runSuite() {
  */
 const injections = [
   {
-    name: 'A. test bounds the partition check, and the probe lets the halves overlap',
+    name: 'A. test bounds the partition check, and the probe drops a sample from one half',
     edits: [
       {
         file: TEST,
@@ -119,12 +119,29 @@ const injections = [
       {
         file: PROBE,
         apply(text) {
-          // Exempt the one rejected sample. The negative half is derived from the
-          // positive one, so it would follow -- unless the assertion bound rather
-          // than pinned the value, which is what this pair is testing.
+          // Exclude the first sample from the recoverable half while the
+          // unrecoverable half is still derived from the raw predicate, so the
+          // halves overlap. The partition guard catches this on its own, so the
+          // *pair* is what this injection tests: a bounded assertion would let the
+          // counts drift without the comparison failing.
+          //
+          // The previous form of this injection exempted
+          // `config-feature-flag-checkout` by name, which stopped being a mutation
+          // at all once the round that stated the rule re-annotated that sample --
+          // it is recoverable now, so the exemption changed nothing. Written
+          // against index 0 the mutation does not depend on any sample's value.
           return text.replace(
-            '    tokensAllPresent(s.expected.component, s.incidentText),\n  );',
-            "    tokensAllPresent(s.expected.component, s.incidentText) || s.id === 'config-feature-flag-checkout',\n  );",
+            '  const unrecoverable = samples.filter((s) => !recoverable.includes(s));',
+            '  const unrecoverable = samples.filter(\n' +
+              '    (s) => !tokensAllPresent(s.expected.component, s.incidentText),\n' +
+              '  );',
+          ).replace(
+            '  const recoverable = samples.filter((s) =>\n' +
+              '    tokensAllPresent(s.expected.component, s.incidentText),\n' +
+              '  );',
+            '  const recoverable = samples.filter(\n' +
+              '    (s, i) => tokensAllPresent(s.expected.component, s.incidentText) && i !== 0,\n' +
+              '  );',
           );
         },
       },
@@ -148,10 +165,16 @@ const injections = [
           //
           // If this is ever caught again, the file has grown a fourth consumer of
           // the same fact and one of the four should be deleted rather than kept.
+          //
+          // The literal it relaxes is `[]` now, not the old one-sample set: the
+          // round that stated the component rule closed the ceiling, so the
+          // identity claim is "no sample is unrecoverable" rather than "this one
+          // is". `toHaveLength(0)` is the relaxation of that, and it is exactly
+          // what must fail to detect a dataset edit that reopens the gap.
           return text
             .replace(
-              "expect(report.component.unrecoverableIds).toEqual(['config-feature-flag-checkout']);",
-              'expect(report.component.unrecoverableIds).toHaveLength(1);',
+              'expect(report.component.unrecoverableIds).toEqual([]);',
+              'expect(report.component.unrecoverableIds).toHaveLength(0);',
             )
             .replace(
               'expect(report.component.unrecoverableIds).toEqual(fromDataset.unrecoverable);',
@@ -167,9 +190,11 @@ const injections = [
         file: GOLDEN,
         apply(text) {
           // A different sample becomes the unrecoverable one, so the count stays
-          // at one and only the identity moves.
+          // at one and only the identity moves. Written against the *current*
+          // annotation (`storefront`) plus a second plausible component, so the
+          // mutation is a real edit to today's file rather than to yesterday's.
           return text
-            .replace('"component": "checkout-ui"', '"component": "checkout-service"')
+            .replace('"component": "storefront"', '"component": "storefront-ui"')
             .replace('"component": "cart-service"', '"component": "inventory-frontend"');
         },
       },
@@ -223,7 +248,16 @@ const injections = [
       {
         file: PROBE,
         apply(text) {
-          return text.replace('  const strictCeiling = recoverable.length;', '  const strictCeiling = total;');
+          // The closed-ceiling form. "Set strict to total" is now a no-op, since
+          // stating the rule made `recoverable.length === total`; what is still
+          // observable is a strict ceiling that does not equal the numerator it is
+          // supposed to be. Subtracting one models a probe that silently drops a
+          // sample, which the assertion `strictCeiling.samples === fromDataset
+          // .recoverable` must catch.
+          return text.replace(
+            '  const strictCeiling = recoverable.length;',
+            '  const strictCeiling = recoverable.length - 1;',
+          );
         },
       },
     ],
@@ -245,31 +279,49 @@ const injections = [
       {
         file: PROBE,
         apply(text) {
+          // Reproduce the original defect rather than a plausible-looking edit:
+          // `unrecoverable` becomes a second independent filter over the raw
+          // predicate, and `recoverable` additionally drops the first sample, so
+          // the two halves overlap and miss one. Both the guard and the
+          // partition assertion must notice.
+          //
+          // The previous form exempted `config-feature-flag-checkout` by name,
+          // which stopped being a mutation once that sample was re-annotated --
+          // it is recoverable now, so the exemption was inert in effect while
+          // still applying textually, which is the worst kind: it looked applied.
           return text
             .replace(
               '  const unrecoverable = samples.filter((s) => !recoverable.includes(s));',
               '  const unrecoverable = samples.filter(\n    (s) => !tokensAllPresent(s.expected.component, s.incidentText),\n  );',
             )
             .replace(
-              '    tokensAllPresent(s.expected.component, s.incidentText),\n  );\n  const unrecoverable',
-              "    tokensAllPresent(s.expected.component, s.incidentText) || s.id === 'config-feature-flag-checkout',\n  );\n  const unrecoverable",
+              '  const recoverable = samples.filter((s) =>\n' +
+                '    tokensAllPresent(s.expected.component, s.incidentText),\n' +
+                '  );',
+              '  const recoverable = samples.filter(\n' +
+                '    (s, i) => tokensAllPresent(s.expected.component, s.incidentText) && i !== 0,\n' +
+                '  );',
             );
         },
       },
     ],
   },
   {
-    name: 'H. dataset drops the mislabelled sample, so the named tripwire must break',
+    name: 'H. dataset reopens the gap, so the closed-partition tripwire must break',
     edits: [
       {
         file: GOLDEN,
         apply(text) {
           // The end-to-end version of injection B: rather than editing the
-          // assertion, edit the data the assertion is about. Finding 75 refuses
-          // this edit on the grounds that the sample is the benchmark's own
-          // evidence; the test that names it must fail when the edit is made, or
-          // the refusal is unenforced.
-          return text.replace('"component": "checkout-ui"', '"component": "checkout-service"');
+          // assertion, edit the data the assertion is about. The round that
+          // stated the component rule closed the ceiling by re-annotating
+          // `config-feature-flag-checkout`, and this injection undoes that -- it
+          // makes the annotated name unrecoverable again, which is the state the
+          // probe's figure of 18/19 came from.
+          //
+          // Both the probe's test and the grammar test must fail when this is
+          // made, or the round's central claim is unenforced.
+          return text.replace('"component": "storefront"', '"component": "storefront-ui"');
         },
       },
     ],

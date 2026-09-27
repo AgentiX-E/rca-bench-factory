@@ -79,14 +79,16 @@ const injections = [
     },
   },
   {
-    name: 'B. golden dataset: fix the mislabelled sample so the rule reaches 19/19',
+    name: 'B. golden dataset: reopen the gap the rule closed, so the tripwire must break',
     file: GOLDEN,
     original: goldenOriginal,
     apply(text) {
-      // Editing `checkout-ui` to something derivable. Finding 75 refuses exactly
-      // this edit on the grounds that it destroys the evidence; the test that
-      // names the sample must therefore fail when the edit is made.
-      return text.replace('"component": "checkout-ui"', '"component": "checkout-service"');
+      // Undo the round's re-annotation: make the sample's component unrecoverable
+      // from its text again. The suite now asserts the rule has *no* exception in
+      // the data, so this must fail. The earlier form of this injection edited
+      // `checkout-ui`, which no longer appears in the file -- it went inert rather
+      // than failing, which is the outcome this battery exists to make impossible.
+      return text.replace('"component": "storefront"', '"component": "storefront-ui"');
     },
   },
   {
@@ -122,11 +124,20 @@ const injections = [
     },
   },
   {
-    name: 'E. suite: assert the rejected list is empty instead of the named sample',
+    name: 'E. suite: reopen the gap the tripwire closed',
     file: SUITE,
     original: suiteOriginal,
     apply(text) {
-      return text.replace("expect(rejected).toEqual(['config-feature-flag-checkout']);", 'expect(rejected).toEqual([]);');
+      // The assertion that keeps the rule honest: no expected component may be
+      // absent from its own text. Relaxing it to "at most one is" models the
+      // state the round before this one was in, and must fail against today's
+      // data. The earlier form asserted the *opposite* relaxation (`toEqual([])`)
+      // which, once the round closed the gap, became the correct value rather
+      // than a mutation -- it stopped being an injection at all and went inert.
+      return text.replace(
+        "    expect(rejected, 'a stated rule must not have an exception in its own ground truth').toEqual([]);",
+        "    expect(rejected, 'a stated rule must not have an exception in its own ground truth').toHaveLength(1);",
+      );
     },
   },
   {
@@ -152,14 +163,18 @@ const injections = [
     apply(text) {
       // What this injection tests is the *direction* of the gap assertion, not
       // the presence of a second consumer. The gap assertions record a
-      // distribution fact -- eight of eleven accepted wrong answers are accepted
+      // distribution fact -- seven of nine accepted wrong answers are accepted
       // on token co-occurrence alone -- and a distribution fact has no
       // structural consequence elsewhere in the suite, so removing it cannot
       // break another test. Asserting the opposite direction is therefore the
       // only mutation that says whether the assertion is load-bearing, and it
       // must fail.
+      //
+      // The count moved from eight to seven when the round stated the rule and
+      // re-annotated one sample; the injection is written against the current
+      // value so it keeps testing the assertion rather than the calendar.
       return text.replace(
-        "    ).toBe(8);\n",
+        "    ).toBe(7);\n",
         '    ).toBe(0);\n',
       );
     },
