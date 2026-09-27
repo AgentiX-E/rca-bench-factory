@@ -124,19 +124,36 @@ jobs:
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
         run: python3 scripts/injection/gate-tests-battery.py
 
-      # The battery's verdicts as an artifact, uploaded even when it fails.
+      # The battery's verdicts, published to a branch so they can be read from
+      # anywhere the API is.
       #
       # This step exists because the failure it belongs to could not be read. The
-      # battery was green locally on every run and red in CI on every run, and
-      # the job log that would have said which injection diverged was not
-      # reachable: `GET /actions/jobs/{id}/logs` redirects to a storage host this
-      # project's proxy blocks (finding 55). `actions/upload-artifact` *is*
-      # reachable through the REST API, so the report is written to a file and
-      # uploaded here instead of living only in a log nobody can open.
+      # battery was green locally on every run and red in CI on every run, and the
+      # channel that would have said which injection diverged was not reachable:
+      # `GET /actions/jobs/{id}/logs` redirects to a storage host this project's
+      # proxy blocks (finding 55). Uploading the report as an artifact moved the
+      # problem rather than solving it -- the artifact is *listed* through the API
+      # and its `zip` endpoint redirects to that same blocked host, measured at
+      # 1152 bytes and `http=000`.
       #
-      # `if: always()` is the load-bearing part. A report uploaded only on
+      # Git objects are the one channel that is both reachable and carries
+      # content, because `api.github.com` serves them itself. So the report is
+      # committed to the orphan `ci-reports` branch, never to `master`: it is CI
+      # output, it is overwritten every run, and it must not land in the tree the
+      # other gates read.
+      #
+      # `if: always()` is the load-bearing part. A report published only on
       # success is a report about the case that needs no explanation; every
-      # question this artifact answers is about a run that failed.
+      # question this answers is about a run that failed.
+      - name: Publish the gate-test battery report
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/publish-battery-report.py
+
+      # The same report as a downloadable artifact, for a human reading the run
+      # page. Redundant with the branch above on purpose and cheap -- the branch is
+      # for this project's development environment, the artifact is for the UI.
       - name: Upload the gate-test battery report
         if: always()
         uses: actions/upload-artifact@v4
