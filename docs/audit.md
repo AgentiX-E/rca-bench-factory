@@ -6110,3 +6110,143 @@ A one-line consequence, recorded because it is the same class: `scripts/injectio
 committed by accident in the first attempt at this change, because `.gitignore` did not list it and
 `injection-write-discipline.test.ts` runs `py_compile` over these batteries as a syntax check. Build
 output is now ignored.
+
+## Finding 85: the preflight ran the whole suite, and the battery could not report its own cost
+
+Finding 84 built an instrument for a step that was failing in CI without a readable cause, and named
+what it had not done: the failure itself was never explained. This finding starts from that step's
+measurements rather than from its verdicts, and it did explain the failure -- not the way it was
+expected to.
+
+### The measurement that framed it
+
+Running CI steps 11-16 in order, locally, reproduces every verdict the battery prints. It does not
+reproduce the wall clock:
+
+| step | runner | local |
+| --- | --- | --- |
+| 11 scorer stability | 6s | 7s |
+| 12 component rule | 10s | 11s |
+| 13 M1-ceiling probe | 1s | 0s |
+| 14 M1-ceiling tests | 10s | 11s |
+| 15 type-miss probe | 0s | 1s |
+| **16 gate-test battery** | **162s failure** | **107s exit 0** |
+
+The four steps that bracket it agree to within a second. Step 16 is the only one that spawns a
+process per injection -- 25 of them -- and the only one that diverges. The job used 271s of a 1200s
+budget, so the step returned a verdict rather than being killed: `-1` is not what a timeout looks
+like, and neither is a completed step with a failure conclusion and ten skipped successors.
+
+That left two possibilities, and the battery could distinguish neither, because it printed no
+duration. A run that is slow and a run that is unguarded produce the same bare exit code. **A quantity
+the battery measures every time and never reports** is the same defect as a verdict with three
+meanings, one level down.
+
+### The preflight was not a preflight
+
+`assert_vitest_is_callable()` -- added by finding 84 so that a broken runner becomes one line instead
+of twenty-five misleading rows -- built its probe like this:
+
+```python
+VITEST = ["pnpm", "exec", "vitest", "run", "--root", "packages/core"]
+subprocess.run([*VITEST, "--version"])
+```
+
+which is:
+
+```
+pnpm exec vitest run --root packages/core --version
+```
+
+`run --root packages/core` puts vitest into run mode, and the trailing `--version` is accepted and
+ignored. So the probe **executed the entire core suite** -- 92 files, 2520 tests, 54s on the runner --
+and returned the suite's exit status as if it were a version query. Measured both ways before
+changing anything:
+
+```
+A: pnpm exec vitest --version                               rc=0 in 0.3s
+B: pnpm exec vitest run --root packages/core --version      still running at 10.1s
+```
+
+The probe also had no `timeout=`. Unbounded dead time *before the first injection* is precisely the
+shape of finding 77 -- a battery that never started, reporting as though it had -- re-created inside
+the check written to catch it. A preflight that silently spends a minute is not a preflight; it is a
+second copy of the problem.
+
+Fixed: the command is spelled out, bounded at `PREFLIGHT_TIMEOUT_S = 30`, and a timeout is reported as
+its own outcome with the command and the wait, because those are the two facts a reader needs.
+
+**Measured effect: the battery went from 107s to 80.4s.** The 27s is the redundant suite run, and it
+was being paid on every invocation of a step whose whole purpose is to avoid redundant work.
+
+### What the preflight does and does not explain about CI
+
+It does **not** explain the 162s failure, and saying so is the point. The preflight's ~54s sits
+*inside* the measured 162s -- it is not a step prepended to a green run. So the arithmetic is: 162s of
+runner time produced a non-zero verdict, and the preflight accounted for roughly a third of it before
+the first injection. Whether the remaining 108s contains an injection that decided differently on a
+slower machine is **not established**, and the fix is not a claim that it is.
+
+What changed is that the next run will say. Each injection prints its own duration, the run prints its
+total and its slowest entry, and a run that exceeds its bound prints `TIMEOUT` -- a fourth outcome,
+reported separately from `SURVIVED`, and reaching the failure condition. The three earlier rounds that
+paid for this distinction each paid because two opposite repairs printed the same word; this is the
+same distinction applied to duration.
+
+### The test that could not be written the obvious way
+
+The TIMEOUT branch had to be shown to execute rather than merely written. The obvious approach --
+lower `PER_INJECTION_TIMEOUT_S` in a copy of the battery and run it -- **does not work, and the reason
+is worth recording**:
+
+Running the battery from inside vitest means vitest spawning vitest, because `run_tests` invokes
+`pnpm exec vitest run`. In that nested environment the inner runner **collects no tests**, and the
+battery reports `README 1` as SURVIVED with its own diagnostic saying so:
+
+```
+-- the runner collected no tests, so this says nothing about the guard.
+```
+
+Run directly, the same battery is green in 81.1s. So the nested run measured the nesting, not the
+battery -- **a false survivor created by the harness**, which is the exact class of defect this round
+is about. The test file therefore does two separate things: it asserts the source-level properties
+(the bound exists and is read; the accumulator reaches the print; `finally` wraps the timed call), and
+it exercises the TIMEOUT branch on a **self-contained fake** that reproduces the control flow with a
+sleeping command. Running the battery for real is CI's step 16: one process, no nesting.
+
+### A source scan that read its own explanation
+
+The assertion that the broken command is gone failed on first run, because the docstring quotes the
+broken command in order to explain why it was wrong:
+
+```
+174:     The first version of this function ran `[*VITEST, "--version"]`, which is
+```
+
+A whole-file scan cannot tell "this call is made" from "this call is explained", and forbidding the
+second pushes an author to delete the reason rather than the defect. This repository had already
+settled that question in `injection-write-discipline.test.ts`, so the same answer is used here:
+comments and string literals are stripped before the scan.
+
+### Verification
+
+| check | result |
+| --- | --- |
+| py_compile | clean |
+| core suite | **2520 passed (91 files)**, +8 |
+| core coverage | `src` `100 \| 100 \| 100 \| 100`; all files `99.96 \| 99.93 \| 100 \| 99.96` |
+| cli coverage | 173 passed, `100 \| 100 \| 100 \| 100` |
+| gate-test battery | **24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant**; source restored |
+| gate-test battery cost | **80.4s** (was 107s), slowest injection 7.5s |
+| new test file | **8 passed in 1.06s** |
+| lint | six checks OK, `ALL PROPERTIES HOLD` |
+| typecheck | clean |
+
+### The claim this does not make
+
+Neither defect was shown to cause the CI failure, and finding 85 does not say they did. It says the
+step's cost is now measurable, the preflight no longer runs 2520 tests to answer a version question,
+and the next run will name the injection if one behaves differently on a slower machine. The previous
+round closed on "a property that has never been shown to fail is a comment with a print statement";
+this round adds the neighbouring case -- **a quantity that is computed every run and never printed is
+the same comment, one line further down.**
