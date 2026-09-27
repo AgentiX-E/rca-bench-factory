@@ -6572,3 +6572,165 @@ correct message every time -- and the step reported green every time, because
 nothing ever asserted what it exited with. The line that was supposed to be
 defensive was the line that made the defect unobservable, and the test that was
 supposed to catch it asserted the defect instead.
+
+---
+
+## Finding 88: the report could be read and still not be understood
+
+Finding 87 fixed the channel. Run `36333833579` on `e188c8870` was therefore the
+first CI run whose per-injection verdicts were readable from this environment, and
+it closed the loop with an answer nobody expected:
+
+```
+HEAD: gate-test battery, run 36333833579 on e188c8870:
+      0 caught, 24 survived, 0 inert, 0 timed out, 1 redundant (expected); 108.1s
+```
+
+**Every injection a survivor.** For a battery whose whole purpose is to prove the
+guards are guarded, that is either the worst possible verdict or a battery that
+could not speak, and the report could not distinguish them.
+
+### First: the mechanism is sound
+
+Before blaming CI, the same mutation was applied by hand and the **exact CI
+command** run against it:
+
+```
+$ pnpm exec vitest run --root packages/core check-readme-sample.test.ts
+ Test Files  1 failed (1)
+      Tests  6 failed | 3 passed (9)
+RC=1
+```
+
+So the injection reaches the test, the test fails, and the runner propagates the
+failure. And the CI timings match a *working* run, not a crashed one:
+
+| injection family | local (passing run) | CI (all "survived") |
+| --- | --- | --- |
+| README | 1.6s | **1.4s** |
+| BUNDLE | 2.1s | **2.4s** |
+| EXAMPLES | 2.5s | **2.9s** |
+| CLIREF | 7.4s | **11.7s** |
+
+vitest started in CI. It ran for about as long as it does here. It simply did not
+fail -- or it did not collect the tests, and **the report had thrown away the
+quantity that separates those two**.
+
+### The discarded quantity
+
+`_diagnose` already computes the collected test count, because two other batteries
+in this repository were repaired for conflating exactly these cases:
+
+```python
+collected = re.search(r"Tests\s+(\d+) (?:failed|passed)", output)
+...
+if total == 0:
+    return ("-- the runner collected no tests, so this says nothing about the guard.\n"
+```
+
+It then prints that, and **the print goes to the job log** -- the one channel this
+project cannot read (finding 55). Meanwhile `write_report` stored `[]` for every
+non-CAUGHT verdict:
+
+```python
+results.append((name, "SURVIVED", [], elapsed))
+```
+
+So "the runner started and found nothing" and "the tests ran and passed" produced
+**byte-identical reports**, and they call for opposite repairs. One is a
+configuration bug; the other is twenty-four genuine findings that would each need
+a new test.
+
+**This is finding 85's lesson one layer out.** Finding 85 was a quantity computed
+and never printed. This is a quantity that *is* printed, to a place nobody can
+read. The intermediate fix -- write it to a file -- does not help if the file
+carries a subset of what the console got.
+
+### The fix: three fields, all three arms
+
+Every row now carries:
+
+| field | meaning |
+| --- | --- |
+| `collected` | how many tests the runner itself says it ran |
+| `exit_status` | what the runner exited with |
+| `diagnosis` | `no_tests_collected` / `tests_passed` / `runner_error` |
+
+`no_tests_collected` means the runner found nothing and the row says **nothing**
+about the guard. `tests_passed` with `collected > 0` is a **real** survivor.
+`runner_error` is a crash that reported no failing test. Three causes, three
+repairs, and now one field.
+
+They are wired into **all three verdict arms**, asserted by count in the test,
+because a field wired into one arm answers the question only for the cases that
+already had an answer.
+
+### A bug in the helper, found while writing it
+
+The first `collected_count` anchored the passed count on the pipe:
+
+```python
+passed = re.search(r"\|\s*(\d+) passed", output)
+```
+
+A fully-green run prints `Tests  9 passed (9)` with **no pipe**. That pattern
+returns 0 for a run that collected nine tests, and `diagnosis` would then label it
+`no_tests_collected` -- **the exact confusion this field exists to remove,
+reproduced inside the fix for it.** It was caught by checking the helper against
+shapes rather than against one example:
+
+| output | expected | first version | fixed |
+| --- | --- | --- | --- |
+| `Tests  6 failed \| 3 passed (9)` | 9 | 9 | 9 |
+| `Tests  9 passed (9)` | 9 | **0 -- MISMATCH** | 9 |
+| `Tests  0 passed (0)` | 0 | 0 | 0 |
+| `Tests  1 failed \| 8 passed (9)` | 9 | 9 | 9 |
+| `Tests  3 failed (3)` | 3 | 3 | 3 |
+
+The test now enumerates six summary shapes **and executes the helper through
+`python3`** rather than reimplementing it in TypeScript, because a
+reimplementation would pass while the shipped regex was wrong.
+
+### One step further: a verdict without its evidence
+
+A report that can be read may still not be understood -- `0 caught, 24 survived`
+and then nothing, while the output that would explain it went to the console. So
+every row also carries `output_tail`: the runner's last twelve non-blank lines,
+where the assertion failure and the summary live.
+
+**A verdict without its evidence is the same defect as a verdict without its
+channel, one step further along.** The CAUGHT rows now ship the failing assertion
+and its source line inside the report -- `expect(result.status).toBe(0)` at
+`check-readme-sample.test.ts:353` -- so the next CI failure is diagnosable from the
+report alone.
+
+### Verification
+
+| check | result |
+| --- | --- |
+| core | **2537 passed (93 files)**; `src 100/100/100/100`; all files `99.96/99.93/100/99.96` |
+| gate-test battery | **24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant**; 78.5s; source restored |
+| REDUNDANT row | `collected: 21, exit_status: 0` -- 21 tests ran and passed, which is the distinction working |
+| report size | 13214 -> **31678 bytes** |
+| exclusion test file | **11 passed** |
+| publish test file | **6 passed** |
+| lint / typecheck / py_compile | `ALL PROPERTIES HOLD` / clean / clean |
+
+### What this does and does not settle
+
+**It settles the report's ability to answer its own question.** The next CI
+failure's rows will say which of the three causes applied, and carry the runner's
+own output, without needing the log.
+
+**It does not explain the 24 CI survivors.** This round did not diagnose them; it
+put the means of diagnosing them into the report. That question is still open, and
+it is now the only open question about this gate.
+
+### The lesson
+
+**Evidence has to travel the whole way or it is not evidence.** Finding 85's
+quantity was never printed. Finding 87's channel printed to nowhere readable. This
+one printed to a place that was readable and carried less than the console did.
+Each repair was correct and each was one step short, because "can I read it?" and
+"can I understand it?" are different questions and only the first is answered by
+having a channel at all.
