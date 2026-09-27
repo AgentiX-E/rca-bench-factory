@@ -6035,3 +6035,78 @@ That applies to the five `process.exit(1)` sites this round added tests for, to 
 this gate, and to any future check whose author has not asked what input would make it refuse. It is
 also the reason the probe is now a CI step: the gate's green is only meaningful while something
 independent keeps trying to break it.
+
+---
+
+## Finding 84: the gate-test battery's own verdict was unreadable, and it did not check its restore
+
+Finding 83 closed by wiring its probe into CI. The first run of that commit went red -- at step 16,
+which is the **gate-test battery from the previous round**, not at any step this round added. Steps 8
+(lint, now with the stability gate) and 9 (coverage, 2512 tests) both passed on the runner.
+
+The battery passes locally every time, and the runner's job log could not be read from here: the
+download redirects to a host the project's proxy blocks, which is finding 55. So the failure had no
+readable cause. Two defects follow from that, and neither is the failure itself.
+
+### The verdict was three verdicts
+
+The battery reports `SURVIVED` for three states that need three different repairs:
+
+| state | what it means | the repair |
+| --- | --- | --- |
+| the tests ran and stayed green | the guard is genuinely not guarded | add the test, or delete the guard |
+| the runner died before running anything | the instrument is broken | fix the invocation |
+| the runner ran but collected no tests | the filter matched nothing | fix the filter |
+
+A single line, "the test file stayed green, so it does not guard this", covers all three. This is the
+**third appearance** of exactly that conflation in this repository. Pass 5 found it in two other
+batteries, where `-1 > 0` is false so a crashed runner counted as a *caught* mutation, and a collection
+error reports `failed: 0, passed: 0` so "nothing was detected" read as "nothing to detect". The
+distinguishing quantity is the **total the runner reports**, never the failure count: only a run that
+collected tests can make a claim about a guard.
+
+`_diagnose` now prints which of the three it saw, with the runner's own last lines when it collected
+nothing. Verified against all three inputs rather than assumed:
+
+```
+-- the runner collected no tests, so this says nothing about the guard.
+   The last lines it printed were:
+     Error: Cannot find module 'vitest'
+-- the 9 collected test(s) all passed with the guard removed.
+-- the runner exited 137 after collecting 9 test(s), but reported
+   no failing test. That is a crash or a timeout, not a guarded property.
+```
+
+### It never verified that it restored the gates
+
+The battery mutates a gate script, runs that gate's tests, and restores the file in a `finally`. Every
+other battery in this repository *prints* a restore check; this one had none -- neither a print nor an
+assertion. That matters more here than elsewhere, because this battery writes to the scripts that
+**later CI steps execute**. A run interrupted between `write_text(mutated)` and the `finally` would
+leave a gate mutated, and every subsequent step would fail for a reason none of them could name. The
+whole job would then be diagnosed as "the tests are broken" rather than "the battery did not clean up".
+
+The restore is now asserted against bytes captured **before** any mutation, because re-reading the file
+at the end would compare a mutation against itself.
+
+### A preflight check, for the failure that already happened once
+
+`inject-stability.mjs` shipped with an absolute path that passed locally and threw on the runner
+*before its first injection*, so it reported a clean-looking run that had measured nothing (finding 77).
+A callability probe now turns that state into one line instead of twenty-five rows that mean the
+opposite of what they appear to say.
+
+### What this does not claim
+
+The underlying CI failure was **not** diagnosed. What changed is that the next run will name its own
+cause: the battery now reports which injection failed, why the verdict was what it was, and whether it
+left the tree mutated. Reporting that the cause is still unknown is the honest status, and it is the
+reason the diagnosis was built rather than the failure being re-run and hoped over.
+
+No assertion was weakened to make it pass: 24 caught, 0 survived, 0 inert, 1 redundant (expected), and
+the restore assertion added 1 more way for the run to fail.
+
+A one-line consequence, recorded because it is the same class: `scripts/injection/__pycache__/` was
+committed by accident in the first attempt at this change, because `.gitignore` did not list it and
+`injection-write-discipline.test.ts` runs `py_compile` over these batteries as a syntax check. Build
+output is now ignored.

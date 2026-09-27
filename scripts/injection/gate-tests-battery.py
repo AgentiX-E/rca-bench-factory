@@ -73,6 +73,13 @@ def run_tests(test_file: str) -> tuple[int, str]:
     No `check=True`: a non-zero status is the measurement. The output is captured
     so the failing test names can be reported, which is what distinguishes "the
     named assertion broke" from "something in the file broke".
+
+    `pnpm` is resolved through the environment rather than by absolute path,
+    because the repository is checked out at a different path on every machine.
+    That makes the *absence* of `pnpm` a possible cause of a SURVIVED verdict
+    that has nothing to do with the guard under test, so the symptom is detected
+    once, up front, by `assert_vitest_is_callable` rather than being inferred
+    from a battery full of survivors.
     """
     proc = subprocess.run(
         [*VITEST, test_file],
@@ -81,6 +88,59 @@ def run_tests(test_file: str) -> tuple[int, str]:
         text=True,
     )
     return proc.returncode, proc.stdout + proc.stderr
+
+
+def assert_vitest_is_callable() -> None:
+    """Fail loudly if the test runner cannot be invoked at all.
+
+    The distinction this preserves: a battery where every injection reports
+    SURVIVED is unreadable, because "the guard is not guarded" and "the runner
+    never started" produce the same verdict and mean opposite things. The
+    repository has been bitten by the second once already -- `inject-stability.mjs`
+    shipped with an absolute path that passed locally and threw on the runner
+    before its first injection (finding 77). Checking the runner first turns that
+    into one line instead of twenty-five misleading rows.
+    """
+    probe = subprocess.run(
+        [*VITEST, "--version"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        print("the test runner is not callable, so no injection below would mean anything")
+        print(f"  command: {' '.join(VITEST)}")
+        print(f"  cwd:     {REPO}")
+        print(f"  exit:    {probe.returncode}")
+        print(f"  stderr:  {probe.stderr.strip()[:400]}")
+        raise SystemExit(2)
+
+
+def assert_source_restored() -> int:
+    """Every mutated file must be back to its original bytes.
+
+    Restoring in a `finally` is not the same as *verifying* the restore, and the
+    difference matters here more than usual: this battery writes to the gate
+    scripts that later CI steps then execute. A run that left one mutated would
+    make the following steps fail for a reason none of them could name. The other
+    batteries in this repository print this check; this one asserts it, because
+    its subject is a set of files the rest of the job depends on.
+    """
+    dirty = []
+    for _, script, _, _, _ in INJECTIONS:
+        path = REPO / script
+        current = path.read_text()
+        if current != ORIGINALS[script]:
+            dirty.append(script)
+    if dirty:
+        print()
+        print("the battery did not restore its own mutations:")
+        for script in sorted(set(dirty)):
+            print(f"  {script}")
+        return 2
+    print()
+    print("source restored: every mutated gate is identical to its backup")
+    return 0
 
 
 def failing_tests(output: str) -> list[str]:
@@ -96,6 +156,42 @@ def failing_tests(output: str) -> list[str]:
 def failed_count(output: str) -> int:
     match = re.search(r"Tests\s+(\d+) failed", output)
     return int(match.group(1)) if match else 0
+
+
+def _diagnose(status: int, output: str) -> str:
+    """Say *why* a verdict was SURVIVED, because there are three causes.
+
+    A single line "the test file stayed green" hides the distinction that this
+    repository has already paid for twice: the guard genuinely is not guarded,
+    the runner died before running anything, and the runner ran but collected no
+    tests. Those call for three different repairs, and grouping them was exactly
+    the defect Pass 5 found in two other batteries -- where `-1 > 0` is false, so
+    a crashed runner counted as "a test failed" and a collection error reported
+    `failed: 0, passed: 0`, so "nothing was detected" read as "nothing to detect".
+
+    The distinguishing quantity is the total the runner reports, not the failure
+    count: only a run that collected tests can make a claim about a guard.
+    """
+    collected = re.search(r"Tests\s+(\d+) (?:failed|passed)", output)
+    total = 0
+    if collected:
+        total = int(collected.group(1))
+        other = re.search(r"\|\s*(\d+) passed", output)
+        if other:
+            total += int(other.group(1))
+
+    if total == 0:
+        return (
+            "         -- the runner collected no tests, so this says nothing about the guard.\n"
+            "            The last lines it printed were:\n"
+            + "".join(f"              {line}\n" for line in output.splitlines()[-6:])
+        )
+    if status == 0:
+        return f"         -- the {total} collected test(s) all passed with the guard removed."
+    return (
+        f"         -- the runner exited {status} after collecting {total} test(s), but reported\n"
+        "            no failing test. That is a crash or a timeout, not a guarded property."
+    )
 
 
 # Each entry: name, gate script, test file, mutation, description.
@@ -417,10 +513,20 @@ EXPECTED_SURVIVORS: dict[str, str] = {
     ),
 }
 
+# The bytes each gate is restored to. Captured once, before any mutation, so the
+# restore check compares against a copy taken from a tree nothing has touched --
+# reading the file again at the end would compare a mutation against itself.
+ORIGINALS: dict[str, str] = {
+    script: (REPO / script).read_text()
+    for _, script, _, _, _ in INJECTIONS
+}
+
 
 def main() -> int:
     results: list[tuple[str, str, list[str]]] = []
     caught = survived = inert = 0
+
+    assert_vitest_is_callable()
 
     for name, script, test_file, mutation, description in INJECTIONS:
         path = REPO / script
@@ -463,11 +569,15 @@ def main() -> int:
             print(f"SURVIVED {name}")
             print(f"         expecting: {description}")
             print("         -- the test file stayed green, so it does not guard this")
+            print(_diagnose(status, output))
             survived += 1
             results.append((name, "SURVIVED", []))
 
     print()
     print(f"{caught} caught, {survived} survived, {inert} inert, {len(EXPECTED_SURVIVORS)} redundant (expected)")
+    restore_status = assert_source_restored()
+    if restore_status != 0:
+        return restore_status
     if survived or inert:
         print()
         print("Failures:")

@@ -6,3 +6,9 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+
+# `python3 -m py_compile` writes these next to the script, and
+# `injection-write-discipline.test.ts` compiles the injection batteries to
+# check their syntax. Build output does not belong in the tree.
+__pycache__/
+*.pyc
