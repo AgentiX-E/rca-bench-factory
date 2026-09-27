@@ -325,4 +325,89 @@ describe('scripts · the gate-test battery writes a report that survives a block
     // the checkout path: beside the gates, derived from `REPO`.
     expect(code).toMatch(/REPORT_PATH = REPO \//);
   });
+
+  it('every report row says how many tests ran and what the runner exited with', () => {
+    // **This is the correction of a real CI run, and the distinction it adds is
+    // the whole finding.**
+    //
+    // The first CI run whose report could actually be read back said `0 caught,
+    // 24 survived` -- every single injection a survivor. The rows could not say
+    // which of the causes that was, because the report stored `[]` for every
+    // non-CAUGHT verdict while `_diagnose` computed the collected count and
+    // printed it *to the job log*, the one channel this project cannot read. So
+    // "the runner decided nothing" and "the guards genuinely do not hold"
+    // produced byte-identical reports, and they call for opposite repairs.
+    //
+    // The fix is to put the distinguishing quantity in the report. Asserted on
+    // the row construction, not on a comment claiming it.
+    const code = codeOf(SOURCE);
+    expect(code).toMatch(/"collected": collected/);
+    expect(code).toMatch(/"exit_status": status/);
+    expect(code).toMatch(/"diagnosis": why/);
+    // Computed once for all three verdict arms, so no arm can silently omit it.
+    expect(code).toMatch(/collected = collected_count\(output\)/);
+    expect(code).toMatch(/why = diagnosis\(status, output, collected\)/);
+    // And it reaches the row through the spread, rather than being dropped.
+    expect(code).toMatch(/\*\*detail/);
+  });
+
+  it('the collected count reads every shape vitest prints, including all-passed', () => {
+    // **A bug found in this very helper while writing it, and the reason it is
+    // tested against shapes rather than against one example.**
+    //
+    // The first version anchored the passed count on the pipe: `/\|\s*(\d+)
+    // passed/`. A fully-green run prints `Tests  9 passed (9)` with **no pipe**,
+    // which that pattern misses -- it returned 0 for a run that collected nine
+    // tests, and `diagnosis` would then label it `no_tests_collected`, which is
+    // the opposite of what happened. That is the exact confusion the field
+    // exists to remove, so the shapes are enumerated.
+    //
+    // The helper is executed rather than pattern-matched. `collected_count` is
+    // pure text in and out, so it can be lifted out of the file and run for real
+    // -- a stronger check than asserting its source looks right.
+    const source = readFileSync(BATTERY, 'utf8');
+    const start = source.indexOf('def collected_count(');
+    const end = source.indexOf('\ndef diagnosis(');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = source.slice(start, end);
+
+    // Python is already a dependency of this battery, so the helper is run
+    // through it rather than reimplemented in TypeScript -- a reimplementation
+    // would pass while the shipped regex was wrong.
+    const dir = mkdtempSync(join(scratch, 'collected-'));
+    const script = join(dir, 'check.py');
+    writeFileSync(
+      script,
+      [
+        'import re, sys',
+        body,
+        'cases = [',
+        "    ('Tests  6 failed | 3 passed (9)', 9),",
+        "    ('Tests  9 passed (9)', 9),",
+        "    ('Tests  0 passed (0)', 0),",
+        "    ('Tests  1 failed | 8 passed (9)', 9),",
+        "    ('Tests  3 failed (3)', 3),",
+        "    ('no summary line here', 0),",
+        ']',
+        'bad = [(o, collected_count(o), want) for o, want in cases if collected_count(o) != want]',
+        "print('OK' if not bad else f'MISMATCH {bad}')",
+      ].join('\n'),
+    );
+    const result = spawnSync('python3', [script], { encoding: 'utf8', timeout: 30_000 });
+    expect(result.stdout.trim()).toBe('OK');
+  });
+
+  it('a run that collected no tests is not reported as a survivor', () => {
+    // The three causes of a non-CAUGHT verdict are named separately rather than
+    // collapsed, because each has a different repair: `no_tests_collected` means
+    // the runner is misconfigured or found nothing and the row is silent about
+    // the guard; `tests_passed` is a real finding; `runner_error` is a crash.
+    // Collapsing them is the defect two other batteries already paid for.
+    const code = codeOf(SOURCE);
+    expect(code).toMatch(/return "no_tests_collected"/);
+    expect(code).toMatch(/return "tests_passed"/);
+    expect(code).toMatch(/return "runner_error"/);
+    expect(code).toMatch(/if collected == 0:/);
+  });
 });

@@ -239,7 +239,7 @@ LOCK_PATH = Path(tempfile.gettempdir()) / "rca-bench-factory-gate-tests-battery.
 REPORT_PATH = REPO / "gate-tests-battery-report.json"
 
 
-def write_report(results: list[tuple[str, str, list[str], float]], summary: dict[str, object]) -> None:
+def write_report(results: list[tuple[str, str, list[str], float, dict[str, object]]], summary: dict[str, object]) -> None:
     """Write the verdicts to `REPORT_PATH` as JSON, on every exit path.
 
     Deliberately unconditional and exception-tolerant. A report that is only
@@ -248,6 +248,25 @@ def write_report(results: list[tuple[str, str, list[str], float]], summary: dict
     diagnostic channel a new source of red. So a failure to write is reported to
     the console and otherwise ignored -- the exit code still carries the verdict,
     and the artifact is the thing that is *missing*, not the thing that lies.
+
+    ## Why each row carries `collected` and `exit_status`
+
+    The first CI run that could actually be read back said **0 caught, 24
+    survived** -- every injection a survivor -- and the rows could not say which
+    of the three causes it was, because the one distinguishing quantity was
+    thrown away. `_diagnose` computes the collected test count and prints it, and
+    the print goes to the job log, which is the channel that cannot be read. The
+    report stored `[]` for every non-CAUGHT verdict, so a battery that was reading
+    a *reader*'s file and a battery whose guards genuinely do not hold produced
+    byte-identical reports.
+
+    That is finding 85's "computed and never printed" one layer out: the value was
+    computed, was printed, and the printing went somewhere nobody could read it.
+    So the count is now a field. `collected == 0` means the runner started and
+    found nothing, which says nothing about any guard; `collected > 0` with
+    `exit_status == 0` means the tests ran and passed, which is a real survivor
+    and a real finding. Those are opposite claims and the report now separates
+    them without needing the log.
     """
     payload = {
         "injections": [
@@ -259,8 +278,9 @@ def write_report(results: list[tuple[str, str, list[str], float]], summary: dict
                     (tf for n, _, tf, _, _ in INJECTIONS if n == name), None
                 ),
                 "elapsed_s": round(elapsed, 1),
+                **detail,
             }
-            for name, verdict, tests, elapsed in results
+            for name, verdict, tests, elapsed, detail in results
         ],
         **summary,
     }
@@ -347,6 +367,52 @@ def failing_tests(output: str) -> list[str]:
 def failed_count(output: str) -> int:
     match = re.search(r"Tests\s+(\d+) failed", output)
     return int(match.group(1)) if match else 0
+
+
+def collected_count(output: str) -> int:
+    """How many tests vitest says it ran, failed or passed.
+
+    This is the quantity that separates the three causes of a SURVIVED verdict,
+    and it has to come out of the runner's own summary rather than out of the
+    mutation. `Tests 6 failed | 3 passed (9)` means nine tests ran and the guard
+    is genuinely unguarded; `Tests  0 passed (0)` or no line at all means the
+    runner found nothing and the verdict says nothing about the guard.
+
+    Both numbers are read because vitest prints the failed count first and omits
+    it entirely when it is zero, so a passed-only run is a different line shape:
+    `Tests  6 failed | 3 passed (9)` versus `Tests  9 passed (9)`. The passed
+    count is anchored on `Tests` rather than on the pipe for exactly that reason
+    -- matching `| N passed` alone misses the passed-only shape, which returned 0
+    and would have labelled a fully-collected green run as `no_tests_collected`,
+    the opposite of what it means. That mistake was made and caught here.
+    """
+    failed = re.search(r"Tests\s+(\d+) failed", output)
+    passed = re.search(r"Tests\s+(?:\d+ failed \|\s*)?(\d+) passed", output)
+    total = 0
+    if failed:
+        total += int(failed.group(1))
+    if passed:
+        total += int(passed.group(1))
+    return total
+
+
+def diagnosis(status: int, output: str, collected: int) -> str:
+    """A short machine-readable cause for a non-CAUGHT verdict.
+
+    The console path has `_diagnose`, which is written for a human reading a log.
+    This is the same distinction in a form the report can carry, because the log
+    is the channel this project cannot read. Three values, because they call for
+    three different repairs:
+
+      no_tests_collected  the runner found nothing -- says nothing about the guard
+      tests_passed        the tests ran and stayed green -- a real survivor
+      runner_error        the runner exited non-zero without reporting a failure
+    """
+    if collected == 0:
+        return "no_tests_collected"
+    if status == 0:
+        return "tests_passed"
+    return "runner_error"
 
 
 def _diagnose(status: int, output: str) -> str:
@@ -732,14 +798,14 @@ def main() -> int:
                 print(f"INERT    {name}")
                 print(f"         -- the anchor no longer matches: {exc}")
                 inert += 1
-                results.append((name, "INERT", [], 0.0))
+                results.append((name, "INERT", [], 0.0, {"diagnosis": "anchor_missing"}))
                 continue
 
             if mutated == original:
                 print(f"INERT    {name}")
                 print("         -- the mutation changed nothing")
                 inert += 1
-                results.append((name, "INERT", [], 0.0))
+                results.append((name, "INERT", [], 0.0, {"diagnosis": "mutation_was_a_noop"}))
                 continue
 
             try:
@@ -754,7 +820,7 @@ def main() -> int:
                     print("            the test fails without it. Reported separately from")
                     print("            SURVIVED because the two call for opposite repairs.")
                     timed_out += 1
-                    results.append((name, "TIMEOUT", [], 0.0))
+                    results.append((name, "TIMEOUT", [], 0.0, {"diagnosis": "timeout"}))
                     continue
             finally:
                 path.write_text(original)
@@ -763,18 +829,26 @@ def main() -> int:
             if elapsed > slowest[0]:
                 slowest = (elapsed, name)
 
+            # Computed once, used by every verdict below. It is the quantity that
+            # separates "the guard is not guarded" from "the runner decided
+            # nothing", and it goes into the report as well as the console --
+            # printing it to the log was not enough, because the log is the
+            # channel this project cannot read.
+            collected = collected_count(output)
+            why = diagnosis(status, output, collected)
+
             if status != 0 and failed_count(output) > 0:
                 names = failing_tests(output)
                 print(f"CAUGHT   {name}")
                 print(f"         expecting: {description}")
                 print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
                 caught += 1
-                results.append((name, "CAUGHT", names, elapsed))
+                results.append((name, "CAUGHT", names, elapsed, {"collected": collected, "exit_status": status, "diagnosis": why}))
             elif name in EXPECTED_SURVIVORS:
                 print(f"REDUNDANT {name}")
                 print(f"         expecting: {description}")
                 print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
-                results.append((name, "REDUNDANT", [], elapsed))
+                results.append((name, "REDUNDANT", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why}))
             else:
                 print(f"SURVIVED {name}")
                 print(f"         expecting: {description}")
@@ -782,7 +856,7 @@ def main() -> int:
                 print(_diagnose(status, output))
                 print(f"         [{elapsed:.1f}s]")
                 survived += 1
-                results.append((name, "SURVIVED", [], elapsed))
+                results.append((name, "SURVIVED", [], elapsed, {"collected": collected, "exit_status": status, "diagnosis": why}))
 
     finally:
         # Releasing must not be able to change the verdict. `unlink` on a file
