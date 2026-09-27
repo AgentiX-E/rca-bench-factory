@@ -6379,3 +6379,54 @@ is the same comment, one line further down" is the next one along: **a verdict t
 channel nobody can open is not a measurement either.** The battery was right about every guard, in
 every run, and the reason it looked wrong for three rounds is that it said so where no one was
 listening.
+
+### Addendum to finding 86: the artifact was listed and still could not be read
+
+The report channel added above was `actions/upload-artifact`, chosen because
+`GET /actions/runs/{id}/artifacts` answers cleanly from this environment. The next
+CI run showed that reasoning was one step short. Step 16 failed at **72s**, and:
+
+```
+Upload the gate-test battery report    success   0s
+ARTIFACTS: total: 1
+ - gate-tests-battery-report 1152 id= 10934848175
+```
+
+The artifact exists, is listed, and has the size the report should have. Fetching
+its content does not work from here:
+
+```
+GET /actions/artifacts/10934848175/zip  ->  302
+  Location: productionresultssa17.blob.core.windows.net/...
+direct GET                                                     http=000
+```
+
+So the upload **proved the report was produced and did not make it readable** --
+metadata reachable, content not. Measured across every channel this project has:
+
+| channel | metadata | content |
+| --- | --- | --- |
+| job log | n/a | blocked (finding 55) |
+| artifact | **listed** | blocked (`blob.core.windows.net`) |
+| check-run output | empty without `checks:write` | n/a |
+| **git object** | reachable | **reachable** |
+
+Git objects are the one channel that is both, because `api.github.com` serves them
+itself: `GET /repos/{o}/{r}/contents/{path}?ref={branch}` returns the bytes
+base64-encoded in the response. Verified end to end before wiring it in -- the new
+`scripts/publish-battery-report.py` committed a report to a scratch `ci-reports`
+branch and both `HEAD` and `gate-tests-battery-report.json` came back byte-exact
+through the API **from inside this environment**, which is the only test that
+matters for a channel whose purpose is to be readable here.
+
+The branch is orphaned and never `master`: the report is CI output, it is
+overwritten every run, and it must not land in the tree the other gates read. The
+artifact upload stays, because it is what a human reading the run page wants.
+
+**The generalisation, and it belongs beside finding 85's and this finding's closing
+lines:** a channel can be reachable and still not carry content, so "I can list it"
+is not the same as "I can read it". That is the fourth form of the same mistake in
+this sequence -- a property never shown to fail, a quantity computed and never
+printed, a verdict printed to a channel nobody can open, and now **a report
+published to a channel that answers with a redirect**. Each one looked like the
+thing it was meant to be.
