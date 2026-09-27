@@ -35,10 +35,32 @@ the report can never be mistaken for reviewed source.
 ## Cost, and why the step is `if: always()`
 
 Two API calls to read the branch and one to write it. It runs only when the
-battery produced a report, which is every run, and it is deliberately tolerant:
-a failure to publish is reported and does not change the job's verdict. The
-report is a diagnostic channel, and a diagnostic channel that can itself fail the
-build is a new source of red -- the mistake finding 86 is about, one level up.
+battery produced a report, which is every run.
+
+## Why a failed publish *does* fail the step
+
+The first version of this script caught every error, printed it, and returned 0,
+on the reasoning that a diagnostic channel must not manufacture the failure it
+was added to explain. That reasoning was sound and the code was wrong, and the
+observed consequence names why: the workflow's `GITHUB_TOKEN` was scoped
+`contents: read`, so the publish answered 403, the handler printed
+`could not publish the report: ...`, and **the step reported success while
+publishing nothing**. A green step that produced no readable artifact is exactly
+the failure this whole sequence has been about -- a channel that reports success
+while carrying no content -- and returning 0 is what let it stay invisible.
+
+So the exit codes are now three-valued, and the distinction is the point:
+
+| outcome | exit | why |
+| --- | --- | --- |
+| published | 0 | the channel worked |
+| nothing to publish | 0 | no report and no token are both real reasons to do nothing |
+| **publish attempted and failed** | **1** | this is not a verdict about the battery, it is a broken channel |
+
+Failing here cannot change the battery's verdict, because it cannot make the
+battery pass: step 16 has already run and its exit code is already recorded. What
+it can do is stop a broken channel from looking like a working one, which is the
+only thing it should ever have been trusted to do.
 """
 
 from __future__ import annotations
@@ -140,11 +162,14 @@ def main() -> int:
         print(f"published the report to {BRANCH} at {commit['sha'][:9]}")
         print(f"  {message}")
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError, OSError) as exc:
-        # Deliberately not fatal. This step is a diagnostic channel; failing the
-        # job here would replace the battery's verdict with this one, which is
-        # the mistake the battery itself was just repaired for.
+        # Not swallowed. The battery's verdict is already recorded -- step 16 has
+        # run and its exit code cannot be changed from here -- so failing now
+        # cannot flatter the battery. What it can do is stop a broken channel
+        # from reporting success, which is the failure finding 86 is about.
         print(f"could not publish the report: {exc}")
-        print("the battery's own exit code still carries the verdict")
+        print("the battery's own verdict is unaffected; this step reports that its")
+        print("channel is broken, which is a different thing and must not look green")
+        return 1
     return 0
 
 

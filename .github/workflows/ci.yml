@@ -6,8 +6,17 @@ on:
   pull_request:
     branches: [master]
 
+# `contents: write` is granted for one step and one step only -- publishing the
+# battery's report to the orphan `ci-reports` branch. It was `read` when that
+# step was added, so the token could not create a ref, the publish answered 403,
+# and the step's own tolerance printed the failure and returned 0. The observed
+# result was a green step that published nothing, which is this project's
+# recurring mistake one level up: a channel reporting success while carrying no
+# content. The grant is workflow-wide because that is the smallest unit GitHub
+# offers, but no other step in this job uses it, and the branch it writes to is
+# not `master`.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:

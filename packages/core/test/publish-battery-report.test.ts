@@ -36,8 +36,8 @@ import { afterAll, describe, expect, it } from 'vitest';
  * Not that a branch exists -- existence is satisfied by a branch nobody updates.
  * The properties that make the channel usable are: the report is published from
  * the file the battery wrote, the branch is not `master`, a missing report is a
- * clean skip rather than a crash, and **a publish failure cannot change the
- * battery's verdict**.
+ * clean skip rather than a crash, and **a publish that was attempted and failed
+ * is reported as a failure**.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -91,21 +91,49 @@ describe('scripts · the battery report is published to a channel that carries c
     expect(withToken.output).toContain('nothing to publish');
   });
 
-  it('a failed publish cannot change the verdict the battery reported', () => {
-    // **The property finding 86 is about, applied one level up.** A diagnostic
-    // channel that can itself fail the build replaces the verdict it was meant to
-    // carry -- the battery was just repaired for exactly that mistake. So a real
-    // report plus a token that cannot authenticate must still exit 0, and must say
-    // that the battery's own exit code is what carries the verdict.
+  it('a publish that was attempted and failed exits non-zero', () => {
+    // **This assertion is the correction of a real CI failure, not a preference.**
+    //
+    // The first version of this test asserted the opposite -- a real report plus a
+    // token that cannot authenticate exits 0 -- reasoned from "a diagnostic channel
+    // must not manufacture the failure it was added to explain". The reasoning was
+    // sound and the assertion was wrong, and CI showed exactly why: the workflow's
+    // `GITHUB_TOKEN` was scoped `contents: read`, the publish answered 403, the
+    // handler printed `could not publish the report` and returned 0, and **step 17
+    // reported success while no `ci-reports` branch existed**. A green step that
+    // published nothing is the same mistake this whole sequence is about -- a
+    // channel reporting success while carrying no content -- and an exiting-zero
+    // handler is what kept it invisible for a whole run.
+    //
+    // Failing here cannot flatter the battery: step 16 has already run and its exit
+    // code is already recorded, so this exit code cannot turn a red battery green.
+    // It reports a broken channel, which is a different fact and must not look green.
     const dir = mkdtempSync(join(scratch, 'report-'));
     writeFileSync(
       join(dir, 'gate-tests-battery-report.json'),
       JSON.stringify({ injections: [], caught: 0, survived: 1, restore_status: 0 }),
     );
     const result = run({ cwd: dir, env: { GITHUB_TOKEN: 'not-a-real-token' } });
-    expect(result.status).toBe(0);
+    expect(result.status).toBe(1);
     expect(result.output).toMatch(/could not publish/);
-    expect(result.output).toMatch(/exit code still carries the verdict/);
+    expect(result.output).toMatch(/channel is broken/);
+  });
+
+  it('the write permission the publish needs is granted, and master is not it', () => {
+    // The 403 above was a workflow file, not a code, defect: `permissions:
+    // contents: read` at the workflow level means no `GITHUB_TOKEN` in the job can
+    // create a ref. Asserted on the shipped workflow because that is the file that
+    // was wrong, and the assertion is narrow -- `contents: write` present, no
+    // `contents: write` reaching `master`, and the publish step still `if: always()`.
+    const workflow = readFileSync(
+      resolve(ROOT, '.github', 'workflows', 'ci.yml'),
+      'utf8',
+    );
+    expect(workflow).toMatch(/permissions:\n\s+contents: write/);
+    expect(workflow).not.toMatch(/contents: write[\s\S]{0,400}?refs\/heads\/master/);
+    expect(workflow).toMatch(
+      /- name: Publish the gate-test battery report\n\s+if: always\(\)/,
+    );
   });
 
   it('the summary line is built from the report it is publishing', () => {
