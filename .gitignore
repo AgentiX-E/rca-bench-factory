@@ -12,3 +12,9 @@ coverage/
 # check their syntax. Build output does not belong in the tree.
 __pycache__/
 *.pyc
+
+# The gate-test battery's own run report. It is written on every run, including
+# the failing ones, and uploaded as a CI artifact -- it is output, not source,
+# and a committed copy would be one run's verdicts read as if they were the
+# current ones.
+gate-tests-battery-report.json

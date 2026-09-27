@@ -124,6 +124,28 @@ jobs:
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
         run: python3 scripts/injection/gate-tests-battery.py
 
+      # The battery's verdicts as an artifact, uploaded even when it fails.
+      #
+      # This step exists because the failure it belongs to could not be read. The
+      # battery was green locally on every run and red in CI on every run, and
+      # the job log that would have said which injection diverged was not
+      # reachable: `GET /actions/jobs/{id}/logs` redirects to a storage host this
+      # project's proxy blocks (finding 55). `actions/upload-artifact` *is*
+      # reachable through the REST API, so the report is written to a file and
+      # uploaded here instead of living only in a log nobody can open.
+      #
+      # `if: always()` is the load-bearing part. A report uploaded only on
+      # success is a report about the case that needs no explanation; every
+      # question this artifact answers is about a run that failed.
+      - name: Upload the gate-test battery report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-tests-battery-report
+          path: gate-tests-battery-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
       # The scorer-stability gate is only worth its green if it would refuse a
       # scorer that lost a stability property. Four of its properties were
       # previously unfalsifiable -- the fixture could not exhibit the failure they

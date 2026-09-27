@@ -55,9 +55,12 @@ Exit: 0 all caught, 1 otherwise
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable
@@ -216,6 +219,119 @@ def assert_source_restored() -> int:
     print()
     print("source restored: every mutated gate is identical to its backup")
     return 0
+
+
+LOCK_PATH = Path(tempfile.gettempdir()) / "rca-bench-factory-gate-tests-battery.lock"
+
+# Where the run writes its verdicts, so they survive a CI job log that cannot be
+# read from a development environment.
+#
+# This repository's CI log is not reachable here: `GET /actions/jobs/{id}/logs`
+# redirects to a storage host the project's proxy blocks, which is finding 55.
+# That made the one failing step impossible to diagnose from the outside -- the
+# per-injection timings and the failing test names existed only in a log nobody
+# could open. `actions/upload-artifact` *is* reachable through the REST API (the
+# `official-data` workflow already ships one), so the report is written to a file
+# the workflow can upload and the API can list.
+#
+# The path is derived from `REPO` rather than hard-coded, because the checkout
+# differs on every machine and `check-no-absolute-paths.mjs` refuses a literal.
+REPORT_PATH = REPO / "gate-tests-battery-report.json"
+
+
+def write_report(results: list[tuple[str, str, list[str], float]], summary: dict[str, object]) -> None:
+    """Write the verdicts to `REPORT_PATH` as JSON, on every exit path.
+
+    Deliberately unconditional and exception-tolerant. A report that is only
+    written when the battery passes is a report about the case that needs no
+    explanation, and a report whose own write can fail the battery would make the
+    diagnostic channel a new source of red. So a failure to write is reported to
+    the console and otherwise ignored -- the exit code still carries the verdict,
+    and the artifact is the thing that is *missing*, not the thing that lies.
+    """
+    payload = {
+        "injections": [
+            {
+                "name": name,
+                "verdict": verdict,
+                "tests": tests,
+                "test_file": next(
+                    (tf for n, _, tf, _, _ in INJECTIONS if n == name), None
+                ),
+                "elapsed_s": round(elapsed, 1),
+            }
+            for name, verdict, tests, elapsed in results
+        ],
+        **summary,
+    }
+    try:
+        REPORT_PATH.write_text(json.dumps(payload, indent=2) + "\n")
+    except OSError as exc:
+        print(f"could not write the report to {REPORT_PATH}: {exc}")
+
+
+def acquire_exclusive_lock() -> int:
+    """Refuse to run if another instance of this battery is already running.
+
+    ## Why this exists
+
+    This battery rewrites the shipped gate scripts, runs a test file against the
+    mutated source, and restores the bytes it read at the top of the iteration.
+    That is safe against everything except **a second copy of itself**. Two
+    instances read the same `original`, and each writes it back over the other's
+    mutation, so one run's restore lands on a baseline the other is still using.
+
+    The symptom is not a crash. It is a *wrong verdict*: the run that had a gate
+    mutated underneath it sees the other run's restoration and reports the guard
+    as SURVIVED, and its own restore check then fails on files it did not leave
+    dirty. Measured by running two copies three seconds apart:
+
+        22 caught, 1 survived, 2 inert, 0 timed out, 1 redundant (expected)
+        the battery did not restore its own mutations: ...
+        RC=2
+
+    The 1 survivor is a guard that is in fact caught. `SURVIVED` is the one
+    verdict this repository must never manufacture, because it is read as "write
+    a test" and sends the next reader to fix something that was never broken.
+
+    ## Why a lock and not a per-run copy
+
+    Copying the tree would remove the shared resource, and it would destroy the
+    subject: this battery's claim is about the **shipped** gates, and a verdict
+    about a copy is a verdict about the copy. The resource that genuinely must
+    not be shared is the working tree while it is being rewritten, and the honest
+    repair is to refuse the second run rather than let it corrupt the first.
+
+    ## Why the OS temp directory, and why O_EXCL
+
+    Placing the lock beside the gates would put a non-source file inside the tree
+    that `check-no-absolute-paths.mjs` and the example-pack manifests both walk.
+    `tempfile.gettempdir()` is portable, is where a per-machine mutual exclusion
+    belongs, and is derived rather than hard-coded. `O_EXCL` makes the check and
+    the creation a single atomic operation, which is the whole property: an
+    `exists()` followed by a `write()` has a window between them that is exactly
+    the window this function exists to close.
+
+    A *stale* lock is possible -- a run killed with SIGKILL leaves the file
+    behind, and the next run refuses forever. That is accepted deliberately and
+    the refusal names the path, so the repair is one `rm`. The alternative, a
+    staleness heuristic based on mtime or a PID that may have been recycled, can
+    silently decide a *running* battery is dead and reintroduce the corruption;
+    a loud refusal that costs one command is the safer failure for a check whose
+    wrong answer is a fabricated SURVIVED.
+    """
+    try:
+        fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        print("another instance of this battery already holds")
+        print(f"  lock: {LOCK_PATH}")
+        print("  -- refusing rather than sharing the working tree. Two runs would")
+        print("     each restore the other's mutation, which is how a caught guard")
+        print("     gets reported as SURVIVED. If no run is active, remove the lock")
+        print("     file and re-run.")
+        raise SystemExit(3)
+    os.write(fd, str(os.getpid()).encode())
+    return fd
 
 
 def failing_tests(output: str) -> list[str]:
@@ -598,73 +714,95 @@ ORIGINALS: dict[str, str] = {
 
 
 def main() -> int:
-    results: list[tuple[str, str, list[str]]] = []
+    results: list[tuple[str, str, list[str], float]] = []
     caught = survived = inert = timed_out = 0
     slowest: tuple[float, str] = (0.0, "")
     total_seconds = 0.0
 
     assert_vitest_is_callable()
+    lock_fd = acquire_exclusive_lock()
 
-    for name, script, test_file, mutation, description in INJECTIONS:
-        path = REPO / script
-        original = path.read_text()
-        try:
-            mutated = mutation(original)
-        except AssertionError as exc:
-            print(f"INERT    {name}")
-            print(f"         -- the anchor no longer matches: {exc}")
-            inert += 1
-            results.append((name, "INERT", []))
-            continue
-
-        if mutated == original:
-            print(f"INERT    {name}")
-            print("         -- the mutation changed nothing")
-            inert += 1
-            results.append((name, "INERT", []))
-            continue
-
-        try:
-            path.write_text(mutated)
+    try:
+        for name, script, test_file, mutation, description in INJECTIONS:
+            path = REPO / script
+            original = path.read_text()
             try:
-                status, output, elapsed = run_tests(test_file)
-            except subprocess.TimeoutExpired:
-                print(f"TIMEOUT  {name}")
-                print(f"         expecting: {description}")
-                print(f"         -- the test run exceeded {PER_INJECTION_TIMEOUT_S}s. This is not a")
-                print("            verdict about the guard: nothing was decided about whether")
-                print("            the test fails without it. Reported separately from")
-                print("            SURVIVED because the two call for opposite repairs.")
-                timed_out += 1
-                results.append((name, "TIMEOUT", []))
+                mutated = mutation(original)
+            except AssertionError as exc:
+                print(f"INERT    {name}")
+                print(f"         -- the anchor no longer matches: {exc}")
+                inert += 1
+                results.append((name, "INERT", [], 0.0))
                 continue
-        finally:
-            path.write_text(original)
 
-        total_seconds += elapsed
-        if elapsed > slowest[0]:
-            slowest = (elapsed, name)
+            if mutated == original:
+                print(f"INERT    {name}")
+                print("         -- the mutation changed nothing")
+                inert += 1
+                results.append((name, "INERT", [], 0.0))
+                continue
 
-        if status != 0 and failed_count(output) > 0:
-            names = failing_tests(output)
-            print(f"CAUGHT   {name}")
-            print(f"         expecting: {description}")
-            print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
-            caught += 1
-            results.append((name, "CAUGHT", names))
-        elif name in EXPECTED_SURVIVORS:
-            print(f"REDUNDANT {name}")
-            print(f"         expecting: {description}")
-            print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
-            results.append((name, "REDUNDANT", []))
-        else:
-            print(f"SURVIVED {name}")
-            print(f"         expecting: {description}")
-            print("         -- the test file stayed green, so it does not guard this")
-            print(_diagnose(status, output))
-            print(f"         [{elapsed:.1f}s]")
-            survived += 1
-            results.append((name, "SURVIVED", []))
+            try:
+                path.write_text(mutated)
+                try:
+                    status, output, elapsed = run_tests(test_file)
+                except subprocess.TimeoutExpired:
+                    print(f"TIMEOUT  {name}")
+                    print(f"         expecting: {description}")
+                    print(f"         -- the test run exceeded {PER_INJECTION_TIMEOUT_S}s. This is not a")
+                    print("            verdict about the guard: nothing was decided about whether")
+                    print("            the test fails without it. Reported separately from")
+                    print("            SURVIVED because the two call for opposite repairs.")
+                    timed_out += 1
+                    results.append((name, "TIMEOUT", [], 0.0))
+                    continue
+            finally:
+                path.write_text(original)
+
+            total_seconds += elapsed
+            if elapsed > slowest[0]:
+                slowest = (elapsed, name)
+
+            if status != 0 and failed_count(output) > 0:
+                names = failing_tests(output)
+                print(f"CAUGHT   {name}")
+                print(f"         expecting: {description}")
+                print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
+                caught += 1
+                results.append((name, "CAUGHT", names, elapsed))
+            elif name in EXPECTED_SURVIVORS:
+                print(f"REDUNDANT {name}")
+                print(f"         expecting: {description}")
+                print(f"         -- {EXPECTED_SURVIVORS[name]}  [{elapsed:.1f}s]")
+                results.append((name, "REDUNDANT", [], elapsed))
+            else:
+                print(f"SURVIVED {name}")
+                print(f"         expecting: {description}")
+                print("         -- the test file stayed green, so it does not guard this")
+                print(_diagnose(status, output))
+                print(f"         [{elapsed:.1f}s]")
+                survived += 1
+                results.append((name, "SURVIVED", [], elapsed))
+
+    finally:
+        # Releasing must not be able to change the verdict. `unlink` on a file
+        # that is already gone raises `FileNotFoundError`, and an exception
+        # raised inside `finally` replaces the in-flight result -- so a battery
+        # that had just caught every injection would exit with a traceback
+        # instead of its summary. `missing_ok` states that the goal is "the lock
+        # is not there afterwards", not "this call removed it".
+        os.close(lock_fd)
+        LOCK_PATH.unlink(missing_ok=True)
+
+    summary = {
+        "caught": caught,
+        "survived": survived,
+        "inert": inert,
+        "timed_out": timed_out,
+        "redundant": len(EXPECTED_SURVIVORS),
+        "total_seconds": round(total_seconds, 1),
+        "slowest": {"seconds": round(slowest[0], 1), "injection": slowest[1]},
+    }
 
     print()
     print(
@@ -679,15 +817,19 @@ def main() -> int:
         f"slowest {slowest[0]:.1f}s ({slowest[1] or 'none'})"
     )
     restore_status = assert_source_restored()
+    summary["restore_status"] = restore_status
     if restore_status != 0:
+        write_report(results, summary)
         return restore_status
     if survived or inert or timed_out:
         print()
         print("Failures:")
-        for name, verdict, _ in results:
+        for name, verdict, _, _ in results:
             if verdict in {"SURVIVED", "INERT", "TIMEOUT"}:
                 print(f"  {verdict}  {name}")
+        write_report(results, summary)
         return 1
+    write_report(results, summary)
     return 0
 
 
