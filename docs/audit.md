@@ -6430,3 +6430,145 @@ this sequence -- a property never shown to fail, a quantity computed and never
 printed, a verdict printed to a channel nobody can open, and now **a report
 published to a channel that answers with a redirect**. Each one looked like the
 thing it was meant to be.
+
+---
+
+## Finding 87: the publish step reported success while publishing nothing
+
+Finding 86's addendum ended by wiring the battery's report to the orphan
+`ci-reports` branch, after verifying through `api.github.com` **from inside this
+environment** that a git object is a channel that both is reachable and carries
+content. The wiring used the workflow's own `GITHUB_TOKEN`. The next run closed
+the loop, and the answer was no.
+
+### The measurement
+
+Run `36331975404` on `ab25e7357` -- the first run whose commit contains the
+publish step:
+
+```
+ 16 FAIL  Gate-test battery (...)
+ 17 ok    Publish the gate-test battery report
+ 18 ok    Upload the gate-test battery report
+```
+
+Step 17 says **`ok`**. The branch it was supposed to create:
+
+```
+GET /git/ref/heads/ci-reports           -> 404
+GET /branches?per_page=50               -> gh-pages, master
+```
+
+**No branch. No report. No error visible anywhere.** A step that reports success
+while publishing nothing is precisely the failure this sequence has been about
+since finding 85, appearing one level up from where it was fixed.
+
+### Two layers, and the second is the finding
+
+**The first layer is an ordinary permission mistake.** The workflow declares
+
+```yaml
+permissions:
+  contents: read
+```
+
+at the workflow level, so no `GITHUB_TOKEN` in the job can create a ref. The
+publish answered `403`. The fix is one line: `contents: write`. The grant is
+workflow-wide because that is the smallest unit GitHub offers, but only one step
+uses it, and the branch it writes to is not `master`.
+
+**The second layer is why it stayed invisible, and it was deliberate.**
+`scripts/publish-battery-report.py` caught every error, printed it, and returned
+0:
+
+```python
+except (urllib.error.URLError, urllib.error.HTTPError, KeyError, OSError) as exc:
+    # Deliberately not fatal. This step is a diagnostic channel; failing the
+    # job here would replace the battery's verdict with this one, which is
+    # the mistake the battery itself was just repaired for.
+    print(f"could not publish the report: {exc}")
+    print("the battery's own exit code still carries the verdict")
+return 0
+```
+
+**The reasoning was sound and the code was wrong.** The comment's claim is true:
+a diagnostic channel that can fail the build does replace the verdict it carries.
+But `return 0` does not avoid that -- it only hides the broken channel, and a
+broken channel is *also* a false report. The observed outcome is the proof: the
+run page said the report had been published, and no report existed.
+
+The two properties are separable, and the code conflated them:
+
+* Failing this step **cannot** flatter the battery. Step 16 has already run; its
+  exit code is already recorded. Nothing this step returns can turn a red battery
+  green.
+* Failing this step **can** stop a broken channel from reporting success, which is
+  the only thing it should ever have been trusted to do.
+
+So the exit code is now three-valued, and the distinction is the point:
+
+| outcome | exit | why |
+| --- | --- | --- |
+| published | 0 | the channel worked |
+| nothing to publish (no report, or no token) | 0 | both are real reasons to do nothing |
+| **publish attempted and failed** | **1** | this is not a verdict about the battery, it is a broken channel |
+
+### The test that had to be reversed
+
+`packages/core/test/publish-battery-report.test.ts` asserted the old behaviour:
+
+```ts
+it('a failed publish cannot change the verdict the battery reported', () => {
+  // ... must still exit 0, and must say that the battery's own exit code
+  // is what carries the verdict.
+  expect(result.status).toBe(0);
+  expect(result.output).toMatch(/exit code still carries the verdict/);
+});
+```
+
+**This test passed while the bug shipped.** It encoded the wrong property in an
+assertion, which is the fifth form of the same mistake: after a property never
+shown to fail, a quantity computed and never printed, a verdict printed to a
+channel nobody can open, and a report published to a channel that answers with a
+redirect, the fifth is **a property asserted backwards so the test enforces the
+defect**. The case is rewritten to require `status === 1` and
+`/channel is broken/`, with the CI evidence in the comment so the reversal cannot
+be read as a change of preference.
+
+A sixth case asserts the shipped workflow carries `contents: write`, that the
+grant does not reach `master`, and that the publish step is still `if: always()`.
+That is asserted against the file that was actually wrong -- a permission lives in
+YAML, not in the script, and a test of the script alone could not have caught it.
+
+### Verification
+
+| check | result |
+| --- | --- |
+| rejected token | **exit 1**, `could not publish` + `channel is broken` (was exit 0) |
+| published, then read back | `ci-reports` at `6cf392896`; `HEAD` = 143-byte summary |
+| `gate-tests-battery-report.json` | **13214 bytes, `cmp` clean -- byte-exact** |
+| workflow YAML | parses; `permissions = {'contents': 'write'}`; 26 steps |
+| publish test file | **6 passed** |
+| core | **2533 passed (93 files)**; `src 100/100/100/100`; all files `99.96/99.93/100/99.96` |
+| gate-test battery | **24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant**; 80.2s; source restored |
+| lint | `ALL PROPERTIES HOLD` |
+| typecheck | clean |
+
+### What this does and does not settle
+
+**It settles the channel.** `ci-reports` now exists, holds a byte-exact copy of a
+real report, and is readable from this environment. Whether CI's step 16 fails is
+a separate question that the next failing run will finally answer in full.
+
+**It does not explain CI's step-16 failure.** The publish bug is downstream of it
+and independent: it affected whether the *result* could be read, never whether the
+battery passed. That question is still open, now with a channel that works.
+
+### The lesson
+
+**A tolerant error handler is an untested error handler.** The handler ran on
+every CI invocation, took the 403 branch on every CI invocation, and printed the
+correct message every time -- and the step reported green every time, because
+nothing ever asserted what it exited with. The line that was supposed to be
+defensive was the line that made the defect unobservable, and the test that was
+supposed to catch it asserted the defect instead.
