@@ -1,0 +1,1 @@
+gate-test battery, run local-verify on 0765acd8f: 24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant (expected); 79.3s; restore_status=0

@@ -1,0 +1,271 @@
+{
+  "injections": [
+    {
+      "name": "README 1. the sample marker stops matching, so nothing is collected",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-readme-sample.mjs \u00b7 what it asserts about a good sample > executes a sample block and reports it by number",
+        "scripts/check-readme-sample.mjs \u00b7 what it asserts about a good sample > picks the sample out by its import rather than by fence position",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > fails the sample when the call does not match the real signature",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > reports a partial pass as partial, so one broken sample is not read as all-broken",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > carries a second exit that no input can reach, and this test says so",
+        "scripts/check-readme-sample.mjs \u00b7 the repository it is shipped against > passes on the committed README, so the negatives above are not the only state it can reach"
+      ],
+      "test_file": "check-readme-sample.test.ts",
+      "elapsed_s": 1.5
+    },
+    {
+      "name": "README 2. the rewrite pattern stops matching the collection marker",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-readme-sample.mjs \u00b7 what it asserts about a good sample > executes a sample block and reports it by number",
+        "scripts/check-readme-sample.mjs \u00b7 what it asserts about a good sample > picks the sample out by its import rather than by fence position",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > fails the sample when the call does not match the real signature",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > reports a partial pass as partial, so one broken sample is not read as all-broken",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > carries a second exit that no input can reach, and this test says so",
+        "scripts/check-readme-sample.mjs \u00b7 the repository it is shipped against > passes on the committed README, so the negatives above are not the only state it can reach"
+      ],
+      "test_file": "check-readme-sample.test.ts",
+      "elapsed_s": 1.5
+    },
+    {
+      "name": "README 3. a failed sample no longer fails the run",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > fails the sample when the call does not match the real signature",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > reports a partial pass as partial, so one broken sample is not read as all-broken"
+      ],
+      "test_file": "check-readme-sample.test.ts",
+      "elapsed_s": 1.6
+    },
+    {
+      "name": "README 4. the block is not executed at all, only collected",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > fails the sample when the call does not match the real signature",
+        "scripts/check-readme-sample.mjs \u00b7 the three ways a README can be wrong > reports a partial pass as partial, so one broken sample is not read as all-broken"
+      ],
+      "test_file": "check-readme-sample.test.ts",
+      "elapsed_s": 1.5
+    },
+    {
+      "name": "BUNDLE 1. the archive comparison always agrees",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/build-example-bundle.mjs \u00b7 what it refuses > refuses a stale archive",
+        "scripts/build-example-bundle.mjs \u00b7 what it refuses > refuses a stale metadata file"
+      ],
+      "test_file": "build-example-bundle.test.ts",
+      "elapsed_s": 2.1
+    },
+    {
+      "name": "BUNDLE 2. only the archive is compared, not the metadata",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/build-example-bundle.mjs \u00b7 what it refuses > refuses a stale metadata file",
+        "scripts/build-example-bundle.mjs \u00b7 what it refuses > reports both missing artefacts rather than stopping at the first"
+      ],
+      "test_file": "build-example-bundle.test.ts",
+      "elapsed_s": 2.0
+    },
+    {
+      "name": "BUNDLE 3. an empty example directory is accepted",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/build-example-bundle.mjs \u00b7 what it refuses > refuses an example directory holding no files at all"
+      ],
+      "test_file": "build-example-bundle.test.ts",
+      "elapsed_s": 2.0
+    },
+    {
+      "name": "BUNDLE 4. the manifest's file count stops agreeing with its own listing",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/build-example-bundle.mjs \u00b7 the build > counts the manifest in the file count it advertises"
+      ],
+      "test_file": "build-example-bundle.test.ts",
+      "elapsed_s": 2.0
+    },
+    {
+      "name": "BUNDLE 5. the tar stops being reproducible",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/build-example-bundle.mjs \u00b7 the build > writes both artefacts and reports the size, the count and the digest",
+        "scripts/build-example-bundle.mjs \u00b7 the build > pins every tar field that could vary between machines",
+        "scripts/build-example-bundle.mjs \u00b7 the build > passes --check against artefacts it has just built"
+      ],
+      "test_file": "build-example-bundle.test.ts",
+      "elapsed_s": 2.1
+    },
+    {
+      "name": "EXAMPLES 1. --check stops comparing the data file",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the payload it generates > refuses a stale data file and names the command that fixes it"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.4
+    },
+    {
+      "name": "EXAMPLES 2. a missing data file stops being reported",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the payload it generates > refuses --check when the data file does not exist at all"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.4
+    },
+    {
+      "name": "EXAMPLES 3. an example block is left stale instead of rewritten",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the doc blocks it rewrites > replaces a stale example block with the real export",
+        "scripts/gen-examples.mjs \u00b7 the doc blocks it rewrites > honours the truncate modifier rather than writing the whole export"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.4
+    },
+    {
+      "name": "EXAMPLES 4. a marker naming an unknown target stops throwing",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the doc blocks it rewrites > refuses an example that names a target the exporters do not produce"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.5
+    },
+    {
+      "name": "EXAMPLES 5. a marker naming an unexported path stops throwing",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the doc blocks it rewrites > refuses an example naming a path the target does not export"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.4
+    },
+    {
+      "name": "EXAMPLES 6. a field marker that matches nothing stops throwing",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the field tables, and what is not checked > refuses a field marker that matches no documented file"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.4
+    },
+    {
+      "name": "EXAMPLES 7. the truncate modifier is ignored",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-examples.mjs \u00b7 the doc blocks it rewrites > honours the truncate modifier rather than writing the whole export"
+      ],
+      "test_file": "gen-examples.test.ts",
+      "elapsed_s": 2.4
+    },
+    {
+      "name": "CLIREF 1. the flag lookup loses its word boundary",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > does not accept a longer flag as documentation of a shorter one"
+      ],
+      "test_file": "check-cli-reference.test.ts",
+      "elapsed_s": 7.4
+    },
+    {
+      "name": "CLIREF 2. an implemented-but-undocumented command stops being reported",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > refuses a command the binary implements but the reference omits"
+      ],
+      "test_file": "check-cli-reference.test.ts",
+      "elapsed_s": 7.4
+    },
+    {
+      "name": "CLIREF 3. a documented-but-unimplemented command stops being reported",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > refuses a section heading for a command the binary does not implement"
+      ],
+      "test_file": "check-cli-reference.test.ts",
+      "elapsed_s": 7.4
+    },
+    {
+      "name": "CLIREF 4. a flag the reference never mentions stops being reported",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > refuses a reference that documents no flag at all",
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > reports every disagreement rather than stopping at the first",
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > does not accept a longer flag as documentation of a shorter one"
+      ],
+      "test_file": "check-cli-reference.test.ts",
+      "elapsed_s": 7.4
+    },
+    {
+      "name": "CLIREF 5. only the first disagreement is reported",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/check-cli-reference.mjs \u00b7 the drift report > reports every disagreement rather than stopping at the first"
+      ],
+      "test_file": "check-cli-reference.test.ts",
+      "elapsed_s": 7.4
+    },
+    {
+      "name": "RCAEVAL 1. --check stops comparing the descriptor file",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > refuses a file that has drifted from the corpus"
+      ],
+      "test_file": "gen-rcaeval-cases.test.ts",
+      "elapsed_s": 2.3
+    },
+    {
+      "name": "RCAEVAL 2. a non-directory entry at the top level is treated as a suite",
+      "verdict": "REDUNDANT",
+      "tests": [],
+      "test_file": "gen-rcaeval-cases.test.ts",
+      "elapsed_s": 2.3
+    },
+    {
+      "name": "RCAEVAL 3. the per-suite tally drops the suites with no cases",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > skips a fourth suite, and its on-demand tally branch is therefore dead"
+      ],
+      "test_file": "gen-rcaeval-cases.test.ts",
+      "elapsed_s": 2.3
+    },
+    {
+      "name": "RCAEVAL 4. the run level is read from one directory deeper",
+      "verdict": "CAUGHT",
+      "tests": [
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > recovers a service whose name contains hyphens",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > converts the recorded Unix seconds into a canonical UTC instant",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > routes each case by its own directory prefix, so cases cannot share files",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > classifies each case into its suite and counts them per suite",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > orders cases by id so two runs of the same corpus are byte-identical",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > labels a case by the corpus path, not by a re-rendering of it",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 the derivation > walks to the depth a case occurs at and no further",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 what it refuses to guess > does not treat a directory holding no inject_time.txt as a case",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 what it refuses to guess > skips a non-numeric inject_time.txt rather than emitting NaN",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 what it refuses to guess > skips a path whose head does not carry the suite and system",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > accepts a file that matches the corpus",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > refuses a file that has drifted from the corpus",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > refuses to check a file that does not exist",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > skips a non-directory entry at every level rather than failing on it",
+        "scripts/gen-rcaeval-cases.mjs \u00b7 --check > skips a fourth suite, and its on-demand tally branch is therefore dead"
+      ],
+      "test_file": "gen-rcaeval-cases.test.ts",
+      "elapsed_s": 2.3
+    }
+  ],
+  "caught": 24,
+  "survived": 0,
+  "inert": 0,
+  "timed_out": 0,
+  "redundant": 1,
+  "total_seconds": 79.3,
+  "slowest": {
+    "seconds": 7.4,
+    "injection": "CLIREF 1. the flag lookup loses its word boundary"
+  },
+  "restore_status": 0
+}
