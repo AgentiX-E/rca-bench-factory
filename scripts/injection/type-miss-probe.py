@@ -57,6 +57,14 @@ from typing import Callable
 REPO = Path(__file__).resolve().parents[2]
 PROBE = REPO / "scripts" / "probe-type-misses.mjs"
 
+# The classifier's own probe. A second instrument rather than a flag on the first,
+# because the two observe different objects: `probe-type-misses.mjs` reads a
+# recorded annotation's `type` field, and this one calls `inferFaultCategory`.
+# Finding 95 is the reason it exists -- the classifier had no observation point, so
+# a substring match that misread a config fault as `middleware` produced no signal
+# anywhere in the repository.
+CATEGORY_PROBE = REPO / "scripts" / "probe-category-inference.mjs"
+
 # Where the recorded misses actually live.
 #
 # They used to live in the probe as a `RECORDED_TYPE_MISSES` array, and every
@@ -88,6 +96,22 @@ FIXTURE = REPO / "packages" / "core" / "test" / "fixtures" / "miss-detail-567118
 # `run_probe` for why the saved-copy design was wrong.
 ADJUDICATION = REPO / "packages" / "core" / "src" / "fault" / "miss-adjudication.ts"
 
+# The category classifier. A second in-package target alongside ADJUDICATION, and
+# it exists for the same reason: the property under test lives in the package
+# rather than in the probe, so the injection has to land there and force a
+# rebuild. Finding 95 is about this file -- `inferFaultCategory` matched letter
+# sequences rather than words, so `feature-flag-misconfiguration` (a config fault)
+# resolved to `middleware` because `flag` contains `lag`.
+COLLECTOR = REPO / "packages" / "core" / "src" / "fault" / "collector.ts"
+
+# Every in-package target, mapped to the source it edits. `run_probe` takes one of
+# these at a time; keeping them in a table rather than in a chain of `if`s is what
+# makes "which file did this injection touch" answerable from the report.
+IN_PACKAGE_TARGETS = {
+    "rule": ADJUDICATION,
+    "collector": COLLECTOR,
+}
+
 
 def build_core() -> None:
     """Recompile `packages/core` so the probe sees the mutated rule.
@@ -113,6 +137,8 @@ def run_probe(
     mutation: str | None = None,
     data: str | None = None,
     rule: str | None = None,
+    in_package: str | None = None,
+    in_package_path: Path | None = None,
 ) -> dict:
     """Run the probe with `mutation` over its source, `data` over the fixture, `rule` over the adjudication.
 
@@ -122,15 +148,27 @@ def run_probe(
     rather than an error, because the probe's exit code is part of its contract
     and several of the injections below drive exactly that code.
 
-    Three files because the probe has three inputs. A DATA injection edits the
+    Four files because the probe has four inputs. A DATA injection edits the
     recorded annotation; a DEFINITION injection edits the classifier in the
-    script; a RULE injection edits the adjudication in the package and rebuilds.
-    Keeping them separate is what lets an injection say which part of the
-    instrument it is testing, and the report names the file each mutation touched.
+    script; a RULE injection edits the adjudication in the package and rebuilds;
+    a COLLECTOR injection edits the category classifier in the package and
+    rebuilds. Keeping them separate is what lets an injection say which part of
+    the instrument it is testing, and the report names the file each mutation
+    touched.
+
+    `rule` is kept as its own parameter rather than folded into `in_package` so
+    that the twenty-odd existing entries do not have to change to accommodate a
+    target that arrived later. `in_package_path` generalises the restore and
+    rebuild path to any package source.
     """
     original_probe = PROBE.read_text()
     original_fixture = FIXTURE.read_text()
-    original_rule = ADJUDICATION.read_text()
+    # The in-package input, whichever it is. `rule` and `in_package` are never
+    # both set; the first is the historical spelling and the second is the general
+    # one, and `target_edit` below carries the text for whichever was used.
+    target_path = in_package_path if in_package_path is not None else ADJUDICATION
+    target_edit = in_package if in_package is not None else rule
+    original_target = target_path.read_text() if target_edit is not None else None
     try:
         # Every mutation goes *inside* the try, and the build with it. The first
         # version wrote the rule and compiled it before entering the try, so a
@@ -145,8 +183,8 @@ def run_probe(
             PROBE.write_text(mutation)
         if data is not None:
             FIXTURE.write_text(data)
-        if rule is not None:
-            ADJUDICATION.write_text(rule)
+        if target_edit is not None:
+            target_path.write_text(target_edit)
             build_core()
         proc = subprocess.run(
             ["node", str(PROBE), "--json"],
@@ -154,17 +192,29 @@ def run_probe(
             capture_output=True,
             text=True,
         )
+        # The category probe runs in the same try, over the same mutated tree, so
+        # an injection into the classifier is measured on the classifier as it was
+        # installed rather than on a second build. Its output is merged into this
+        # report under `category`; the two probes observe different objects and the
+        # keys keep them apart.
+        cat_proc = subprocess.run(
+            ["node", str(CATEGORY_PROBE), "--json"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+        )
     finally:
         # Restore in reverse order of mutation, and verify -- a `finally` that
         # writes without checking is a promise, not a guarantee. This matters most
-        # for the rule: it is the one input that lives in the package, so an
-        # unrestored rule is a mutated source tree rather than a mutated script,
-        # and it is the one input whose restore depends on a rebuild having
-        # succeeded first.
+        # for the in-package inputs: they are the ones that live in the package, so
+        # an unrestored one is a mutated source tree rather than a mutated script,
+        # and they are the ones whose restore depends on a rebuild having succeeded
+        # first.
         PROBE.write_text(original_probe)
         FIXTURE.write_text(original_fixture)
-        if rule is not None:
-            ADJUDICATION.write_text(original_rule)
+        if target_edit is not None:
+            assert original_target is not None
+            target_path.write_text(original_target)
             # Rebuild rather than write back a saved copy of `dist`.
             #
             # Writing back `original_dist` was the first design and it is unsafe in
@@ -185,11 +235,19 @@ def run_probe(
         ):
             if path.read_text() != original:
                 raise AssertionError(f"restore failed for {label}: {path}")
-        if rule is not None and ADJUDICATION.read_text() != original_rule:
-            raise AssertionError(f"restore failed for the rule: {ADJUDICATION}")
+        if target_edit is not None and target_path.read_text() != original_target:
+            raise AssertionError(f"restore failed for {target_path.name}: {target_path}")
 
     report = json.loads(proc.stdout)
     report["exitCode"] = proc.returncode
+    # A category probe that emitted nothing is a broken instrument, not an
+    # injection that survived, and saying so here keeps the requirement checks
+    # below from reading a KeyError as a pass.
+    if cat_proc.returncode != 0 or not cat_proc.stdout.strip():
+        raise AssertionError(
+            f"the category probe produced no report: rc={cat_proc.returncode} {cat_proc.stderr[-300:]}"
+        )
+    report["category"] = json.loads(cat_proc.stdout)["totals"]
     return report
 
 
@@ -228,6 +286,28 @@ def baseline_adj(verdict: str) -> int:
     expects to remain and the run fails when it moves.
     """
     return BASELINE["adjudication"][verdict]
+
+
+# The category probe's own baseline. Kept separate from BASELINE because it is a
+# separate probe with a separate report shape: folding two instruments into one
+# dict would make an injection into the classifier able to read a figure the
+# classifier never produced.
+CATEGORY_BASELINE: dict = {}
+
+
+def cat(report: dict) -> dict:
+    """The category probe's totals from a run's report.
+
+    An injection requirement takes the whole report, so this is the one place that
+    knows the classifier's figures live under `category`. Naming the accessor after
+    the probe rather than inlining `report["category"]["totals"]` at three call
+    sites is what lets the layout change without rewriting the requirements.
+    """
+    return report["category"]
+
+
+def cat_baseline() -> dict:
+    return CATEGORY_BASELINE
 
 
 def body_of(text: str, signature: str) -> str:
@@ -689,17 +769,119 @@ INJECTIONS: list[
         ),
         'rule',
     ),
+    # --- The category classifier -------------------------------------------------
+    #
+    # P, Q and R are the first injections in this battery aimed at
+    # `inferFaultCategory`, and they exist because nothing observed it. The
+    # `type` probe reads a recorded annotation and never calls the classifier, so
+    # the substring defect of finding 95 could have shipped any answer at all with
+    # every test and every battery green. `probe-category-inference.mjs` is the
+    # observation point; these are the mutations that have to move it.
+    (
+        "P. collector: match keywords as substrings again, the exact defect of finding 95",
+        None,
+        lambda r: cat(r)["adversarialFalsePositives"] == 0,
+        "no adversarial word is classified by the letter sequence it contains",
+        # The original defect, restored: `normalized.includes(keyword)` over the
+        # whole slug.
+        #
+        # The first version replaced the *only* call site of `keywordMatchesToken`,
+        # which made the function unused and failed the build with TS6133 instead of
+        # moving the classifier. That is caught, but caught for the wrong reason --
+        # the requirement was never evaluated, so the run said nothing about the
+        # adversarial table. Keeping the call behind `false &&` leaves the function
+        # referenced, compiles, and measures the defect.
+        #
+        # The golden agreement count is deliberately not the requirement here: the
+        # substring matcher still gets 17 of 19 golden types right, so that figure
+        # cannot separate the two implementations. Only the adversarial table can.
+        lambda t: rename(
+            t,
+            "      if (tokens.some((token) => keywordMatchesToken(keyword, token))) {",
+            "      if (false && tokens.some((token) => keywordMatchesToken(keyword, token))) {\n"
+            "        return category;\n"
+            "      }\n"
+            "      if (normalized.includes(keyword)) {",
+        ),
+        'collector',
+    ),
+    (
+        "Q. collector: drop the five-character floor, so a short keyword prefixes any word",
+        None,
+        lambda r: cat(r)["adversarialFalsePositives"] == 0,
+        "the prefix form does not reach `member`, `room`, `planet` or `skill`",
+        # The floor is the reason `mem` does not match `member`. Setting it to zero
+        # keeps every golden type correct and reintroduces four adversarial false
+        # positives, which is the whole argument for the floor being load-bearing
+        # rather than stylistic.
+        lambda t: rename(t, "const MIN_PREFIX_LENGTH = 5;", "const MIN_PREFIX_LENGTH = 0;"),
+        'collector',
+    ),
+    (
+        "R. collector: drop the negation clause, so a mis- word stops being reached",
+        None,
+        lambda r: cat(r)["goldenAgreements"] == cat_baseline()["goldenAgreements"],
+        "the golden agreement count, so the negation form stays load-bearing",
+        # `config` is not a prefix of `misconfiguration` -- `mis` precedes it -- so
+        # the negation clause is the only form that reaches it. Removing the clause
+        # puts `feature-flag-misconfiguration` back to `middleware` (via `flag`)
+        # and `config-mismatch` still resolves, so the requirement is stated against
+        # the golden agreement count rather than against one row: it is the count
+        # the clause holds up.
+        #
+        # The loop guard is emptied rather than the loop deleted, for the same
+        # reason injection P keeps its call site: deleting it leaves
+        # `NEGATION_PREFIXES` unreferenced and the build fails with TS6133, which is
+        # caught but says nothing about the negation clause.
+        lambda t: rename(
+            t,
+            "  for (const negation of NEGATION_PREFIXES) {",
+            "  for (const negation of [] as readonly string[]) {\n"
+            "    void NEGATION_PREFIXES;",
+        ),
+        'collector',
+    ),
+    (
+        "S. collector: put the network row back above middleware, a symptom outranking a subject",
+        None,
+        lambda r: cat(r)["goldenAgreements"] == cat_baseline()["goldenAgreements"],
+        "the golden agreement count, so `redis-latency` is not read as a network fault",
+        # The ordering defect that the substring fix exposed rather than caused:
+        # with `latency` in the network row and that row tested first,
+        # `redis-latency` is a network fault. Moving the row back is the mutation,
+        # and it is caught by the golden count because `redis-latency` is one of
+        # the 19. This is the injection that pins the ordering, not merely the
+        # matcher.
+        lambda t: rename(
+            t,
+            "  { category: 'middleware', keywords: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'] },\n"
+            "  { category: 'network', keywords: ['network', 'latency', 'delay', 'loss', 'partition', 'bandwidth', 'dns', 'packet', 'drop', 'net'] },",
+            "  { category: 'network', keywords: ['network', 'latency', 'delay', 'loss', 'partition', 'bandwidth', 'dns', 'packet', 'drop', 'net'] },\n"
+            "  { category: 'middleware', keywords: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'] },",
+        ),
+        'collector',
+    ),
 ]
 
 
 def main() -> int:
     probe_text = PROBE.read_text()
     fixture_text = FIXTURE.read_text()
-    adjudication_text = ADJUDICATION.read_text()
+    # Every in-package target is snapshotted, not just the adjudication. The
+    # restore check at the end of this function reads these back, and a target
+    # that is mutated but not snapshotted is one the check cannot see.
+    package_snapshot = {
+        label: path.read_text() for label, path in IN_PACKAGE_TARGETS.items()
+    }
 
     report = run_probe()
     BASELINE.clear()
     BASELINE.update(report)
+    # The classifier's baseline, captured from the same unmutated run. Every
+    # collector injection below reads it, so an injection states the classifier
+    # figure it expects to hold and the run fails when it moves.
+    CATEGORY_BASELINE.clear()
+    CATEGORY_BASELINE.update(report["category"])
     print("type-miss probe battery\n")
     print(
         f"baseline: {report['total']} misses -- "
@@ -707,6 +889,13 @@ def main() -> int:
         f"shares-token {report['counts']['shares-token']}, "
         f"different-mechanism {report['counts']['different-mechanism']}, "
         f"over-specified {report['overSpecified']}\n"
+    )
+    print(
+        f"classifier: {CATEGORY_BASELINE['golden']} golden types -- "
+        f"{CATEGORY_BASELINE['goldenAgreements']} agree, "
+        f"{CATEGORY_BASELINE['goldenMisses']} miss; "
+        f"{CATEGORY_BASELINE['adversarial']} adversarial words -- "
+        f"{CATEGORY_BASELINE['adversarialFalsePositives']} false positives\n"
     )
 
     caught = survived = inert = blind = 0
@@ -751,22 +940,29 @@ def main() -> int:
             inert += 1
             continue
 
-        # A RULE injection goes first, because it is the one that lands in the
-        # package and forces a rebuild, and because `also` for such an entry is the
-        # rule edit itself rather than a pair.
-        rule = None
-        if target == 'rule':
-            base = ADJUDICATION.read_text()
+        # An IN-PACKAGE injection goes first, because it is the one that lands in
+        # the package and forces a rebuild, and because `also` for such an entry is
+        # the source edit itself rather than a pair.
+        #
+        # There are two of these now -- the adjudication and the category
+        # classifier -- so the dispatch is a table lookup rather than a comparison
+        # against one name. Both take exactly the same path: snapshot, edit, build,
+        # run, restore, rebuild.
+        in_package = None
+        in_package_path = None
+        if target in IN_PACKAGE_TARGETS:
+            in_package_path = IN_PACKAGE_TARGETS[target]
+            base = in_package_path.read_text()
             try:
-                rule = also(base) if also is not None else base
+                in_package = also(base) if also is not None else base
             except AssertionError as exc:
                 print(f"INERT    {name}")
-                print(f"         -- the rule edit did not apply: {exc}")
+                print(f"         -- the {target} edit did not apply: {exc}")
                 inert += 1
                 continue
-            if rule == base:
+            if in_package == base:
                 print(f"INERT    {name}")
-                print("         -- the rule edit changed nothing")
+                print(f"         -- the {target} edit changed nothing")
                 inert += 1
                 continue
             also = None
@@ -798,7 +994,7 @@ def main() -> int:
                 edits_source = True
 
         try:
-            result = run_probe(mutated, data, rule)
+            result = run_probe(mutated, data, in_package=in_package, in_package_path=in_package_path)
             crashed = None
         except (json.JSONDecodeError, ValueError):
             # The probe emitted no JSON at all, so its exit path is unobservable
@@ -861,24 +1057,31 @@ def main() -> int:
 
     # Restore and verify every input byte-for-byte. A battery that leaves a mutated
     # file behind produces a green run and a broken repository, and the check has
-    # to cover all three inputs now: the rule injection writes into the *package*,
-    # so an unrestored rule is a mutated source tree rather than a mutated script.
+    # to cover every input now: the in-package injections write into the *package*,
+    # so an unrestored one is a mutated source tree rather than a mutated script.
     # The fixture is checked too even though no path writes back to it outside
     # `run_probe`, because the point of this block is that it verifies rather than
     # assumes.
     PROBE.write_text(probe_text)
     restored_probe = PROBE.read_text() == probe_text
     restored_fixture = FIXTURE.read_text() == fixture_text
-    restored_rule = ADJUDICATION.read_text() == adjudication_text
-    restored = restored_probe and restored_fixture and restored_rule
+    restored_package = {
+        label: path.read_text() == package_snapshot[label]
+        for label, path in IN_PACKAGE_TARGETS.items()
+    }
+    restored = restored_probe and restored_fixture and all(restored_package.values())
 
     print(f"\nbattery: {caught} caught, {survived} survived, {inert} inert, {blind} blind")
     if restored:
-        print("source restored: identical to backup (probe, fixture, rule)")
+        print(
+            "source restored: identical to backup "
+            f"(probe, fixture, {', '.join(sorted(package_snapshot))})"
+        )
     else:
         print(
             "source restored: DIFFERS -- inspect before committing "
-            f"(probe {restored_probe}, fixture {restored_fixture}, rule {restored_rule})"
+            f"(probe {restored_probe}, fixture {restored_fixture}, "
+            f"package {restored_package})"
         )
     return 0 if caught == len(INJECTIONS) and restored else 1
 

@@ -11,6 +11,30 @@ import { checkG3Validity } from '../src/gates/gates.js';
 import { FAULT_CATEGORIES } from '../src/ir/types.js';
 import type { FaultCase, IrBundle, TelemetrySignal } from '../src/ir/types.js';
 import { BASELINE_CPU, metricAt, validBundle, validCase, cpuSignals, logAt } from './fixtures.js';
+import { inferFaultCategory } from '../src/fault/collector.js';
+
+/**
+ * The fault types the golden dataset builds cases from.
+ *
+ * Read from the dataset rather than hard-coded, because the point of the coupling
+ * test below is that the *shipped* data and the two vocabularies agree. A literal
+ * list in this file would be a third vocabulary, and it would drift from the other
+ * two exactly as silently as they can drift from each other.
+ */
+function faultTypesExercisedByTheGoldenDataset(): string[] {
+  const path = resolve(HERE, '..', '..', '..', 'golden-master', 'fault-extraction', 'samples.json');
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as { samples?: unknown };
+  if (!Array.isArray(parsed.samples)) {
+    throw new Error('golden-master/fault-extraction/samples.json carries no samples array');
+  }
+  return parsed.samples.map((sample) => {
+    const expected = (sample as { expected?: { type?: unknown } }).expected;
+    if (typeof expected?.type !== 'string') {
+      throw new Error('golden sample carries no expected.type');
+    }
+    return expected.type;
+  });
+}
 
 /**
  * Fault validity verification.
@@ -260,6 +284,69 @@ describe('the mechanism table covers the fault taxonomy', () => {
     expect(
       expectation.semanticTypes.some((t) => t === 'latency' || t === 'error_rate' || t === 'throughput'),
     ).toBe(true);
+  });
+});
+
+describe('the two vocabularies agree on the categories they share', () => {
+  /**
+   * The mechanism table's docstring says its coupling to `CATEGORY_KEYWORDS` is
+   * "asserted in the test suite in both directions". It was not.
+   *
+   * What existed was a cross-check between `FAULT_EXPECTATIONS` and
+   * `FAULT_CATEGORIES` (the block above), which is a *different* pair: it proves
+   * the table is total over the IR union. Nothing connected the table to the
+   * taxonomy in `fault/collector.ts`, so the two could disagree about which
+   * category a fault type belongs to and every suite in the repository would stay
+   * green -- while a case built by the collector would be verified against a row
+   * of the table chosen for a different category.
+   *
+   * The direction that can break is narrow and worth stating: the table is keyed
+   * by category, and the inference maps type to category. They agree when the
+   * table has an entry for every category the inference can produce. Since the
+   * table is total over `FAULT_CATEGORIES`, the real content here is that the
+   * inference *stays inside* that union -- an inference returning a category the
+   * table does not carry would leave the case unverifiable by construction.
+   *
+   * `validity.ts` must not import the collector (asserted below, and the reason
+   * this test lives in the test file rather than in the module), so the coupling
+   * is checked from outside: the verifier's contract with the generator is a test
+   * concern, not a runtime dependency.
+   */
+  it('classifies every fault type the golden dataset uses into a category the table carries', () => {
+    const types = faultTypesExercisedByTheGoldenDataset();
+    // A dataset that named no types would satisfy the loop below vacuously.
+    expect(types.length).toBeGreaterThan(0);
+    const orphaned: string[] = [];
+    for (const type of types) {
+      const category = inferFaultCategory(type);
+      if (FAULT_EXPECTATIONS[category] === undefined) {
+        orphaned.push(`${type} -> ${category}`);
+      }
+    }
+    expect(orphaned, `the inference left the table behind: ${orphaned.join(', ')}`).toEqual([]);
+  });
+
+  it('names a category, not `unknown`, for every fault type the dataset builds cases from', () => {
+    // `unknown` is a legal answer to the inference and a dead end for the gate:
+    // `expectedSignalsFor` treats it as unverifiable, so a case built from a real
+    // fault type that infers `unknown` is silently exempted from mechanistic
+    // checking. That is a defect in the keyword table, and this is where it would
+    // surface. The dataset below is the set of types the repository's own fixtures
+    // actually use, so a regression here is a regression on shipped data.
+    const unresolved = faultTypesExercisedByTheGoldenDataset()
+      .filter((type) => inferFaultCategory(type) === 'unknown');
+    expect(unresolved, `these types infer no category: ${unresolved.join(', ')}`).toEqual([]);
+  });
+
+  it('resolves a type in the order the keyword table declares, not by spelling', () => {
+    // The table is ordered and earlier rows win. This is the property that decides
+    // `network-delay` (network, not resource) and it is the property the
+    // substring defect used to violate silently: `feature-flag-misconfiguration`
+    // resolved to `middleware` because `flag` contains `lag` and the middleware
+    // row is tested first. Ordering is the mechanism, so ordering is asserted.
+    expect(inferFaultCategory('network-delay')).toBe(inferFaultCategory('delay'));
+    expect(inferFaultCategory('feature-flag-misconfiguration')).toBe('config');
+    expect(inferFaultCategory('kafka-lag')).toBe('middleware');
   });
 });
 

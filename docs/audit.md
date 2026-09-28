@@ -7703,3 +7703,233 @@ survival is the evidence. The two constructed tests exercise it; the recorded ro
 **It does not claim the other batteries are safe.** Unchanged from finding 93: the BLIND
 check and the name-based anchor exist in the type-miss battery, and whether
 `inject-m1-ceiling.mjs`'s battery can report BLIND or can misroute a target is unmeasured.
+
+## Finding 95: a config fault classified as middleware, because `flag` contains `lag`
+
+Finding 94 closed by naming the next live question and it was specific: the `category`
+direction showed "a **systematic altitude mismatch** -- every `middleware` expected value is
+recorded as `resource`, 4 of 4." That claim was pursued, and it is false. It is 3 of 4. The
+fourth `middleware` sample is not recorded as `resource` at all.
+
+Chasing the disproof is what led to a production defect, and the defect was not in the
+transcription. It was in `inferFaultCategory`.
+
+### The defect, stated as an input and an output
+
+```ts
+inferFaultCategory('feature-flag-misconfiguration')  // ->  'middleware'
+```
+
+The slug names a configuration fault. It contains `flag`, which contains `lag`, and `lag` is
+a `middleware` keyword. The middleware row is tested before the config row, so the earlier
+row won. The mechanism could not tell that `lag` was a *part of* `flag` rather than a word in
+its own right, because it was not asking about words:
+
+```ts
+if (keywords.some((k) => normalized.includes(k))) {   // the whole slug, as a letter sequence
+```
+
+`String.includes` answers "does this sequence of characters appear anywhere in that sequence
+of characters". That is a different question from "does this slug use this word", and the gap
+between the two questions is the entire defect.
+
+### The blast radius is not one row
+
+The obvious reading is that this is a bug about `lag` and `flag`. It is not, and measuring it
+is what establishes that. **32 of 40 adversarial English words produce a wrong category**:
+
+| word | matches | wrong category | word | matches | wrong category |
+| --- | --- | --- | --- | --- | --- |
+| `planet` | `net` | network | `debugger` | `bug` | code |
+| `magnet` | `net` | network | `ladybug` | `bug` | code |
+| `cabinet` | `net` | network | `dropdown` | `drop` | network |
+| `tenet` | `net` | network | `backdrop` | `drop` | network |
+| `room` | `oom` | resource | `envelope` | `env` | config |
+| `zoom` | `oom` | resource | `environment` | `env` | config |
+| `bloom` | `oom` | resource | `adbc` | `db` | middleware |
+| `member` | `mem` | resource | `dbnull` | `db` | middleware |
+| `remember` | `mem` | resource | `skill` | `kill` | runtime |
+| `aggregation` | `lag` | middleware | `flagship` | `lag` | middleware |
+
+Any English word containing `net`, `oom`, `mem`, `lag`, `db`, `env`, `bug`, `drop` or `kill`
+is classified, and most of the words that contain those trigrams have nothing to do with the
+category they trigger.
+
+The damage is not local, because `category` is not a display field. It selects the row of the
+validity gate's mechanism table that decides **which telemetry would evidence a fault**, and
+it is exported into the benchmark artefacts as `scenario_class`, `fault_taxonomy` and
+`fault_category`. A misread category is a case verified against the wrong expectation.
+
+### Four match forms, and why each one is there
+
+The fix asks about words. A keyword has to sit on a word boundary, and four forms are
+accepted -- each because a real fault type needs it, not because it seemed reasonable:
+
+| form | example | why it cannot be dropped |
+| --- | --- | --- |
+| exact | `kafka-lag` → `lag` | the base case |
+| plural | `dependencies` → `dependency` | `dependency`+`s`, and `dependency` is 10 characters |
+| prefix | `eviction` → `evict` | `evict`+`ion`; `eviction` is not the plural of `evict` |
+| negation infix | `misconfiguration` → `config` | `config` is **not** a prefix of `misconfiguration` |
+
+The negation form is the one that had to be discovered rather than assumed. The first attempt
+at the fix reasoned that `config` is a prefix of `misconfiguration` and therefore needed no
+special case. It is not: `mis` precedes it. `startsWith` cannot see an infix, so the form
+exists as an explicit clause over a closed list of prefixes (`mis`, `non`, `un`).
+
+**`de` is deliberately not in that list**, even though it is a real English prefix, because
+`de` + `bug` is `debugger` -- a false positive -- and no fault type in the corpus needs it. A
+prefix list that is closed is only useful if every member earns its place.
+
+### Both length floors are load-bearing, and the collisions are concrete
+
+```ts
+const MIN_PREFIX_LENGTH = 5;
+const MIN_PLURAL_LENGTH = 4;
+```
+
+**The 5-character prefix floor** stops `mem`⊂`member`, `mem`⊂`remember`, `mem`⊂`memento`,
+`oom`⊂`room`, `oom`⊂`zoom`, `oom`⊂`bloom`, and `net`⊂`planet`/`magnet`/`cabinet`/`tenet`. Five
+is long enough for every collision above and short enough that `evict` still reaches
+`eviction` and `config` still reaches `configuration`.
+
+**The 4-character plural floor** stops `db`+`s` from matching an unrelated `dbs` while leaving
+`dependencies` reachable from `dependency`.
+
+There is a limit worth stating plainly: `memory` is six characters, so the prefix form still
+reaches `memoryless` and classifies it `resource`. That is **correct** -- `memoryless-pool` is
+a memory fault -- and it is the one adversarial survivor, which is why the fix reduced false
+positives from 32 to **1** rather than to 0. A classifier that named no category for
+`memoryless-pool` would be worse, not cleaner.
+
+### Restoring the word boundary exposed a second defect, in the table's order
+
+With the matcher fixed, `inferFaultCategory` agreed with the golden dataset on 16 of 19 types.
+The two residual misses are separate defects, and neither was caused by the substring bug:
+
+- **`regex-catastrophic-backtracking` → `unknown`.** The `code` row had no keyword this type
+  could reach. `unknown` is the honest answer for a type the table has never seen and a false
+  answer for a type it has, and it is not harmless: `expectedSignalsFor` reads `unknown` as
+  **unverifiable**, so such a case is exempted from mechanistic checking rather than failing
+  it. Fixed by adding `regex` and `backtracking` to the `code` row.
+- **`redis-latency` → `network`.** This one is the interesting one. `latency` is a `network`
+  keyword and the network row was tested before middleware, so the *mechanism* outranked the
+  *subject*. The substring matcher had been returning `middleware` for this input by accident
+  -- the slug contains `redis` -- so removing the accident revealed that the ordering had never
+  been deliberate.
+
+The ordering question is decided by the dataset, not by preference. `redis-latency` is
+`middleware` and `network-delay` is `network`: the same mechanism, different categories. Keyword
+presence alone cannot separate them, so the row holding the subjects is tested first. The
+`middleware` row moved above `network`, and the same ordering that buries the symptom also
+keeps `kafka-consumer-lag` and `replica-lag` out of the network row.
+
+The final measurement: **19 of 19 golden types, 0 of 22 adversarial false positives.**
+
+### The second defect: a docstring asserting a guard that did not exist
+
+`packages/core/src/gates/validity.ts` claimed, of the mechanism table:
+
+> The table is total over `FAULT_CATEGORIES` and both directions are asserted in the test
+> suite, so adding a category to the IR without deciding what it moves is a red suite rather
+> than a silent gap.
+
+There was no such assertion. What existed, in `validity.test.ts`, was a cross-check between
+`FAULT_EXPECTATIONS` and `FAULT_CATEGORIES` -- a **different pair**, proving the table is total
+over the IR union. Nothing connected the table to the taxonomy in `fault/collector.ts`. The two
+could disagree about which category a fault type belongs to and every suite in the repository
+would stay green while a case built by the collector was verified against a row chosen for a
+different category.
+
+This is the class of defect finding 94 warned about from the other end: a comment describing a
+property is not evidence the property holds. It is **fixed by making the claim true** rather
+than by weakening the docstring. `validity.test.ts` now reads the golden dataset, runs every
+type the dataset builds cases from through `inferFaultCategory`, and requires the answers to
+land inside the table -- with a `unknown` check, because `unknown` is a legal answer and a dead
+end for the gate.
+
+### Nothing observed the classifier, which is why this shipped
+
+The `category` defect could have shipped **any** answer. `probe-type-misses.mjs` reads a
+recorded annotation's `type` field and never calls `inferFaultCategory`. The repository's
+whole battery apparatus was pointed at the *transcription* and none of it was pointed at the
+*classifier*.
+
+So the observation point is new: `scripts/probe-category-inference.mjs` runs the classifier
+across the 19 golden types -- read from `samples.json` rather than retyped, so the probe cannot
+drift from the data -- plus 22 adversarial words each paired with the keyword it wrongly matched.
+The adversarial table is the part that has teeth. The golden types establish that the classifier
+still works; the adversarial rows establish that it works *for the right reason*.
+
+Four injections were added to the type-miss battery against that probe. They were not written
+blind, and three of them landed wrong before they landed right:
+
+- **P** restores `normalized.includes(keyword)`, the exact defect. Its first version replaced the
+  only call site of `keywordMatchesToken`, which left the function unreferenced and failed the
+  build with `TS6133` -- caught, but caught at compile rather than at the requirement. The
+  requirement was never evaluated, so the run said nothing about the adversarial table. Keeping
+  the call behind `false &&` compiles and measures the defect. Measured: **21 of 22 adversarial
+  false positives**.
+- **Q** drops `MIN_PREFIX_LENGTH` to 0, and **R** empties the negation loop, and **S** moves the
+  network row back above middleware. R and Q hit the same `TS6133` trap as P and needed the same
+  treatment, which is now recorded at each anchor rather than rediscovered.
+- **S** is the one that pins the *ordering* rather than the matcher, and it is caught by the
+  golden agreement count because `redis-latency` is one of the 19.
+
+P's requirement is deliberately on the adversarial count and not the golden count: the substring
+matcher still gets 18 of 19 golden types right, so the golden figure **cannot separate the two
+implementations**. An injection that only moved `goldenAgreements` would be measuring the part of
+the classifier that was never broken.
+
+Battery result: **21 caught, 0 survived, 0 inert, 0 blind**, exit 0, and now all **four** inputs
+restored byte-for-byte -- the restore previously named three, and `collector.ts` would have been
+a mutated source tree invisible to the check. The classifier baseline prints in the battery
+header next to the transcription baseline, so both instruments are visible in the same run:
+
+```
+baseline: 14 misses -- form-variant 0, shares-token 8, different-mechanism 6, over-specified 7
+classifier: 19 golden types -- 19 agree, 0 miss; 22 adversarial words -- 0 false positives
+```
+
+### Finding 51 predicted this, and it still stands
+
+Finding 51 already rejected keyword-to-category inference as unsound in principle:
+
+> `parseFaultSpec` infers a category from a fault type, and the inference is a keyword match, so
+> `io-hang` is classified `resource` only because `io` is in the resource row -- a fault that
+> jams a disk queue and a fault that burns CPU are not the same experiment.
+
+**This fix does not answer that.** It makes the inference fire where a **word** is present
+instead of where a **letter sequence** is, which is a strict improvement and not a justification.
+The principled answer remains the one finding 51 implies: a fault type that does not name its
+category should be required to state it. What this fix buys is that the inference is now wrong in
+a way that can be seen and argued with, rather than wrong in a way that depends on spelling.
+
+### Coverage
+
+`packages/core/src/fault/collector.ts`: **100 / 100 / 100 / 100**. Every one of the four match
+forms, both length floors, and the multi-token clause is exercised, so the floors asserted in
+prose above are also asserted by the coverage measurement rather than only by the argument.
+Package total: **99.96 / 99.94 / 100 / 99.96**. Repository suite: **2776 passed in 99 files**,
+14 of them new. Lint reports `ALL PROPERTIES HOLD`; core and CLI typecheck clean.
+
+### What this does not claim
+
+**It does not claim the classifier is now correct.** It claims the classifier no longer names a
+category because of a letter sequence, and that this is measurable. Finding 51's objection is
+untouched.
+
+**It does not claim 19 of 19 means the taxonomy is right.** The dataset and the classified table
+now agree; that is agreement between two artefacts this repository maintains, not evidence that
+either matches reality.
+
+**It does not claim the eight recorded `category` misses are explained.** Those are misses in a
+model transcript, and how a model labels a fault is a different question from how this classifier
+does. Finding 94's instrument is what answers that question, and it has not yet been pointed at
+these eight.
+
+**It does not claim `score/official.ts` is clean.** `keywordHit` there is the same substring
+shape in AIOps2025 scoring, and it still needs its own reading.
+
+**It does not claim the other batteries are safe.** Unchanged from findings 93 and 94: whether
+`inject-m1-ceiling.mjs`'s battery can report BLIND or misroute a target remains unmeasured.
