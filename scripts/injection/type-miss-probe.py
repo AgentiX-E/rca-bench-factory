@@ -72,29 +72,82 @@ PROBE = REPO / "scripts" / "probe-type-misses.mjs"
 # invoked with no `--run`.
 FIXTURE = REPO / "packages" / "core" / "test" / "fixtures" / "miss-detail-567118aea.txt"
 
+# The adjudication rule, which is a third input and a different kind of one.
+#
+# The probe imports its classifier from the built package: the classification is
+# reproduced in the script on purpose (a classifier whose definition moves with
+# the artefact it classifies cannot report on that artefact) but the *adjudication*
+# is imported, because it has one correct implementation. That makes injecting into
+# the rule a two-step edit -- mutate the TypeScript, rebuild, run -- and the
+# rebuild is what makes this file an input to the battery rather than a comment
+# about it.
+#
+# `ADJUDICATION` is the source, and it is also the authority: the compiled output
+# the probe loads is derived from it, so restoring the rule means recompiling
+# rather than writing back a saved copy of the build. See the restore block in
+# `run_probe` for why the saved-copy design was wrong.
+ADJUDICATION = REPO / "packages" / "core" / "src" / "fault" / "miss-adjudication.ts"
 
-def run_probe(mutation: str | None = None, data: str | None = None) -> dict:
-    """Run the probe, optionally with `mutation` over its source and `data` over the fixture.
 
-    The source and the fixture are always restored, including when the probe
-    fails to run, so the report below can be read during a run that exits
-    non-zero. `check=True` is deliberately *not* used: a non-zero exit is a
-    measurement in this battery rather than an error, because the probe's exit
-    code is part of its contract and two of the injections below drive exactly
-    that code.
+def build_core() -> None:
+    """Recompile `packages/core` so the probe sees the mutated rule.
 
-    Two files because the probe has two inputs now. A DATA injection edits the
-    recorded annotation; a DEFINITION injection edits the reader. Keeping them
-    separate is what lets an injection say which half of the instrument it is
-    testing, and the report names the file each mutation touched.
+    `tsc` only, not the whole `pnpm build` pipeline: the probe loads the compiled
+    `index.js` graph and nothing else, and the narrower command is what keeps the
+    battery's runtime in seconds rather than minutes. A build failure is raised
+    rather than swallowed -- an injection whose mutation does not compile would
+    otherwise run the *previous* build and report against a rule it did not
+    install.
+    """
+    proc = subprocess.run(
+        ["pnpm", "exec", "tsc", "-p", "tsconfig.json"],
+        cwd=REPO / "packages" / "core",
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(f"the mutated rule did not compile: {proc.stdout[-400:]}")
+
+
+def run_probe(
+    mutation: str | None = None,
+    data: str | None = None,
+    rule: str | None = None,
+) -> dict:
+    """Run the probe with `mutation` over its source, `data` over the fixture, `rule` over the adjudication.
+
+    Every input is restored, including when the probe fails to run, so the report
+    below can be read during a run that exits non-zero. `check=True` is
+    deliberately *not* used: a non-zero exit is a measurement in this battery
+    rather than an error, because the probe's exit code is part of its contract
+    and several of the injections below drive exactly that code.
+
+    Three files because the probe has three inputs. A DATA injection edits the
+    recorded annotation; a DEFINITION injection edits the classifier in the
+    script; a RULE injection edits the adjudication in the package and rebuilds.
+    Keeping them separate is what lets an injection say which part of the
+    instrument it is testing, and the report names the file each mutation touched.
     """
     original_probe = PROBE.read_text()
     original_fixture = FIXTURE.read_text()
-    if mutation is not None:
-        PROBE.write_text(mutation)
-    if data is not None:
-        FIXTURE.write_text(data)
+    original_rule = ADJUDICATION.read_text()
     try:
+        # Every mutation goes *inside* the try, and the build with it. The first
+        # version wrote the rule and compiled it before entering the try, so a
+        # mutation that failed to compile -- which is exactly what happened while
+        # writing injection M -- raised out of `run_probe` with the mutated source
+        # still on disk and nothing left to restore it. `packages/core/src/fault/
+        # miss-adjudication.ts` was left corrupt across a whole run, and the
+        # corruption then surfaced as a syntax error inside the probe rather than
+        # as anything pointing at the battery. A restore that only covers the
+        # *successful* path is not a restore.
+        if mutation is not None:
+            PROBE.write_text(mutation)
+        if data is not None:
+            FIXTURE.write_text(data)
+        if rule is not None:
+            ADJUDICATION.write_text(rule)
+            build_core()
         proc = subprocess.run(
             ["node", str(PROBE), "--json"],
             cwd=REPO,
@@ -102,12 +155,53 @@ def run_probe(mutation: str | None = None, data: str | None = None) -> dict:
             text=True,
         )
     finally:
+        # Restore in reverse order of mutation, and verify -- a `finally` that
+        # writes without checking is a promise, not a guarantee. This matters most
+        # for the rule: it is the one input that lives in the package, so an
+        # unrestored rule is a mutated source tree rather than a mutated script,
+        # and it is the one input whose restore depends on a rebuild having
+        # succeeded first.
         PROBE.write_text(original_probe)
         FIXTURE.write_text(original_fixture)
+        if rule is not None:
+            ADJUDICATION.write_text(original_rule)
+            # Rebuild rather than write back a saved copy of `dist`.
+            #
+            # Writing back `original_dist` was the first design and it is unsafe in
+            # a way that is invisible until it bites: the snapshot is taken at entry,
+            # so if `dist` was *already* stale or corrupt when the battery started --
+            # which is exactly what the M-writing failure left behind -- every
+            # subsequent `run_probe` faithfully restores the corruption. The probe
+            # then fails to parse, the battery reports a syntax error from
+            # `node_modules`-adjacent code, and nothing points at the restore.
+            #
+            # The rule source is the authority and `dist` is derived, so the restore
+            # is a compile. A build failure here is not swallowed: a battery that
+            # cannot leave the tree buildable has to say so.
+            build_core()
+        for label, path, original in (
+            ("probe", PROBE, original_probe),
+            ("fixture", FIXTURE, original_fixture),
+        ):
+            if path.read_text() != original:
+                raise AssertionError(f"restore failed for {label}: {path}")
+        if rule is not None and ADJUDICATION.read_text() != original_rule:
+            raise AssertionError(f"restore failed for the rule: {ADJUDICATION}")
 
     report = json.loads(proc.stdout)
     report["exitCode"] = proc.returncode
     return report
+
+
+def replace_function_body(text: str, signature: str, body: str) -> str:
+    """Swap the body of the function declared by `signature`, keeping its header.
+
+    Thin wrapper over `body_of` so an injection reads as "replace this function's
+    body with that", which is the claim being made, rather than as a text splice.
+    """
+    whole = body_of(text, signature)
+    header = whole[: whole.index("{") + 1]
+    return rename(text, whole, f"{header}\n{body}}}" + "\n")
 
 
 def rename(text: str, old: str, new: str) -> str:
@@ -126,6 +220,41 @@ def baseline_count(kind: str) -> int:
     return BASELINE["counts"][kind]
 
 
+def baseline_adj(verdict: str) -> int:
+    """The baseline count of one adjudication verdict.
+
+    The adjudication block was added in finding 94. It is read through the same
+    baseline as the partition, so an injection into the rule states the figure it
+    expects to remain and the run fails when it moves.
+    """
+    return BASELINE["adjudication"][verdict]
+
+
+def body_of(text: str, signature: str) -> str:
+    """The full text of the function whose declaration line starts with `signature`.
+
+    Used to replace a whole function body by *name* rather than by line range.
+
+    The first version of injection M addressed lines 171..181, and a later edit to
+    the module moved the function by a line -- so the range ate the `Adjudication`
+    type declaration that had slid into it, the build failed, and the failure
+    arrived as a compile error in a file the injection was supposed to restore
+    byte-for-byte. Anchoring on the signature makes the same drift fail *loudly at
+    the anchor* instead of silently deleting the wrong span, which is the property
+    finding 93 established for data injections and this generalises to source.
+    """
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, line in enumerate(lines) if line.startswith(signature)), None)
+    if start is None:
+        raise AssertionError(f"no function declaration starts with: {signature!r}")
+    depth = 0
+    for index in range(start, len(lines)):
+        depth += lines[index].count("{") - lines[index].count("}")
+        if depth == 0 and index > start:
+            return "".join(lines[start : index + 1])
+    raise AssertionError(f"unterminated function body for: {signature!r}")
+
+
 # Each entry: name, mutation, requirement, description, `also`.
 #
 # `mutation` is applied to the probe source; `also`, when present, is applied to
@@ -140,10 +269,11 @@ def baseline_count(kind: str) -> int:
 INJECTIONS: list[
     tuple[
         str,
-        Callable[[str], str],
+        Callable[[str], str] | None,
         Callable[[dict], bool],
         str,
         Callable[[str], str] | None,
+        str,
     ]
 ] = [
     # --- the definition moves; the classification must move with it -----------
@@ -201,6 +331,7 @@ INJECTIONS: list[
             "network-loss-payment-gateway.type:network-loss>egress-interface-packet-loss",
             "network-loss.type:network-loss>NETWORK_LOSS",
         ),
+        'fixture',
     ),
     (
         "C. probe: drop the token test, so near misses become different mechanisms",
@@ -238,6 +369,7 @@ INJECTIONS: list[
             "resource-cpu-saturation-checkout.type:cpu-saturation>cpu-throttling",
             "cpu-saturation-checkout.type:cpu-saturation>CPU-SATURATION",
         ),
+        'fixture',
     ),
     (
         "E. probe: report the partition without guarding it, and break the partition",
@@ -373,6 +505,7 @@ INJECTIONS: list[
             "network-loss-payment-gateway.type:network-loss>egress-interface-packet-loss",
             "network-loss.type:network-loss>NETWORK_LOSS",
         ),
+        'fixture',
     ),
     # --- the data moves; the classification must follow it --------------------
     #
@@ -400,6 +533,7 @@ INJECTIONS: list[
             "network-loss-payment-gateway.type:network-loss>egress-interface-packet-loss",
             "network-loss-payment-gateway.type:network-loss>NETWORK_LOSS",
         ),
+        'fixture',
     ),
     (
         "J. data: drop a recorded miss entirely",
@@ -416,6 +550,7 @@ INJECTIONS: list[
             "\x1fruntime-pod-kill-user-profile.type:pod-kill>kubelet-eviction",
             "",
         ),
+        'fixture',
     ),
     (
         "K. data: give a different-mechanism answer a token from its own key",
@@ -453,6 +588,7 @@ INJECTIONS: list[
             "runtime-pod-kill-user-profile.type:pod-kill>kubelet-eviction",
             "runtime-pod-kill-user-profile.type:pod-kill>kubelet-pod-eviction",
         ),
+        'fixture',
     ),
     (
         "L. data: shorten a different-mechanism answer into a token-sharer",
@@ -470,6 +606,88 @@ INJECTIONS: list[
             "dependency-upstream-5xx-pricing.type:upstream-5xx>dependency-degradation",
             "dependency-upstream-5xx-pricing.type:upstream-5xx>upstream-unavailable",
         ),
+        'fixture',
+    ),
+    # --- the adjudication, finding 94 -------------------------------------------
+    #
+    # The four below are DEFINITION injections into `miss-adjudication.ts`, which
+    # is the rule finding 91 asked for. They are new because the module is new, and
+    # a new module with no injection is a module whose behaviour is asserted rather
+    # than tested: every one of them removes a specific decision the rule makes and
+    # requires the probe's published figure to move.
+    (
+        "M. rule: make the morphological test inert, so an inflection is never reached",
+        None,
+        lambda r: r["adjudication"]["same-fault-different-altitude"] == baseline_adj("same-fault-different-altitude"),
+        "the baseline same-altitude count, so the morphological test is not load-bearing",
+        # `void a; void b;` rather than dropping the parameters: `noUnusedParameters`
+        # is on, and a mutation that does not compile is caught by the build rather
+        # than by the requirement -- different claims, and this battery has to be
+        # able to tell them apart.
+        lambda t: replace_function_body(
+            t,
+            "function sharesMorpheme(",
+            "  void a;\n  void b;\n  return null;\n",
+        ),
+        'rule',
+    ),
+    (
+        "N. rule: replace the morphological test's floor with the token test it backs up",
+        None,
+        lambda r: r["adjudication"]["same-fault-different-altitude"] == baseline_adj("same-fault-different-altitude"),
+        "the baseline same-altitude count, so the morphological branch is not load-bearing",
+        # N replaces the *last* reachable decision in `sharesMorpheme` with an
+        # unconditional miss, which is what "the floor is wrong" would have to look
+        # like to be observable on this data. It is deliberately not "set the floor
+        # to 3", and that is the finding this injection records.
+        #
+        # Setting the floor to 3 was the first version and it **SURVIVED**, for a
+        # reason worth keeping: on the 14 recorded rows the floor is never the
+        # deciding factor. `replica` / `replication` is reached because `replica`
+        # *consumes a whole token*, not because it is five characters long, and the
+        # five unreached rows share no prefix at any length. So `length >= 3` and
+        # `length >= 5` produce identical output on this dataset, and an injection
+        # that changes it cannot be caught -- the mutation is invisible, the
+        # requirement holds, and the run reports SURVIVED while the floor is
+        # untested. That is a true statement about coverage and a false one about
+        # the rule being wrong.
+        #
+        # The floor's effect is demonstrated where it can be: the two constructed
+        # tests in `miss-adjudication.test.ts` (`config-mismatch` / `container-crash`
+        # must be different; `replica` / `replication` must be reached). This
+        # injection therefore targets the branch those tests would notice, and the
+        # floor's own weakness is recorded here rather than papered over with a
+        # mutation that cannot fail.
+        lambda t: replace_function_body(
+            t,
+            "function sharesMorpheme(",
+            "  void a;\n  void b;\n  return null;\n",
+        ),
+        # The target is NOT optional in intent, and leaving it off is the second
+        # defect this entry has had. Written without it, `main` defaults the target
+        # to 'source', so this lambda -- which anchors on a function that exists in
+        # the *rule* -- was applied to the probe script, raised `no function
+        # declaration starts with: 'function sharesMorpheme('`, and the entry
+        # reported INERT while reading as though the rule had been mutated. N's
+        # first version was a SURVIVED floor; this one was an INERT misroute; both
+        # were invisible in the printed name and both are the failure mode of an
+        # anchor that moved. The default is deliberately kept (every pre-existing
+        # pair is a source pair), so the mistake is available to make again -- and
+        # that is what the INERT accounting is for: it is loud here precisely
+        # because the message names the anchor, not the injection.
+        'rule',
+    ),
+    (
+        "O. rule: call an unreached pair undecided, collapsing a measurement into a non-answer",
+        None,
+        lambda r: r["adjudication"]["different-fault"] == baseline_adj("different-fault"),
+        "the baseline unreached count, so the verdict cannot be quietly downgraded",
+        lambda t: rename(
+            t,
+            "  return { ...base, verdict: 'different-fault', basis: null };\n}",
+            "  return { ...base, verdict: 'undecided', basis: null };\n}",
+        ),
+        'rule',
     ),
 ]
 
@@ -477,6 +695,7 @@ INJECTIONS: list[
 def main() -> int:
     probe_text = PROBE.read_text()
     fixture_text = FIXTURE.read_text()
+    adjudication_text = ADJUDICATION.read_text()
 
     report = run_probe()
     BASELINE.clear()
@@ -493,11 +712,31 @@ def main() -> int:
     caught = survived = inert = blind = 0
     for entry in INJECTIONS:
         name, mutate, requirement, description, also = entry[:5]
-        # A pure-data injection edits the fixture and leaves the rule alone; its
-        # mutation slot is None. The `mutated == probe_text` guard below asks
-        # whether the *rule* changed, which is the wrong question for it and would
-        # report INERT on a pair that is about to edit the fixture. So only run
-        # that guard when a rule mutation was declared at all.
+        # Which file this injection's *second* edit lands in, declared by the
+        # entry rather than inferred. Three inputs now, so there are three
+        # targets, and the default stays 'source' because that is where every
+        # pre-existing pair already went.
+        #
+        # Writing the target down rather than inferring it is deliberate. An
+        # inferred target would be a guess, and this battery's whole history is
+        # of injections that silently tested nothing because an anchor moved:
+        # inferring the file would let a pair land in the wrong one and still
+        # look like it applied.
+        #
+        # The default is 'source' because that is where every pair written before
+        # the rule module existed goes, and it stays the default even though it has
+        # now produced one misroute (N, whose rule anchor was applied to the probe
+        # and reported INERT with the anchor named). The alternative -- making the
+        # target mandatory -- would be a one-line change that removes the mistake
+        # and also removes the evidence that the battery reports it, so the default
+        # is kept and every `'rule'` and `'fixture'` entry states itself.
+        target = entry[5] if len(entry) > 5 else 'source'
+
+        # A pure-data injection edits the fixture and leaves the classifier alone;
+        # its mutation slot is None. The `mutated == probe_text` guard below asks
+        # whether the *classifier* changed, which is the wrong question for it and
+        # would report INERT on a pair that is about to edit the fixture. So only
+        # run that guard when a source mutation was declared at all.
         edits_source = mutate is not None
         try:
             mutated = mutate(probe_text) if edits_source else probe_text
@@ -512,21 +751,33 @@ def main() -> int:
             inert += 1
             continue
 
+        # A RULE injection goes first, because it is the one that lands in the
+        # package and forces a rebuild, and because `also` for such an entry is the
+        # rule edit itself rather than a pair.
+        rule = None
+        if target == 'rule':
+            base = ADJUDICATION.read_text()
+            try:
+                rule = also(base) if also is not None else base
+            except AssertionError as exc:
+                print(f"INERT    {name}")
+                print(f"         -- the rule edit did not apply: {exc}")
+                inert += 1
+                continue
+            if rule == base:
+                print(f"INERT    {name}")
+                print("         -- the rule edit changed nothing")
+                inert += 1
+                continue
+            also = None
+            target = 'source'
+
         data = None
         if also is not None:
-            # The paired second edit. Which file it lands in is declared by the
-            # entry, because the probe has two inputs now: the rule (the source)
-            # and the recorded misses (the fixture). A pair is usually one edit to
-            # each, but E and E2 pair two edits to the *rule* -- they break the
-            # classifier's exhaustiveness, which is a property of the rule and not
-            # of any row.
-            #
-            # Writing the target down rather than inferring it is deliberate. An
-            # inferred target would be a guess, and this battery's whole history is
-            # of injections that silently tested nothing because an anchor moved:
-            # inferring the file would let a pair land in the wrong one and still
-            # look like it applied.
-            target = 'fixture' if len(entry) < 6 else entry[5]
+            # The paired second edit. A pair is usually one edit to each file, but
+            # E and E2 pair two edits to the *classifier source* -- they break its
+            # exhaustiveness, which is a property of the classifier and not of any
+            # row.
             base = fixture_text if target == 'fixture' else mutated
             try:
                 paired = also(base)
@@ -547,7 +798,7 @@ def main() -> int:
                 edits_source = True
 
         try:
-            result = run_probe(mutated, data)
+            result = run_probe(mutated, data, rule)
             crashed = None
         except (json.JSONDecodeError, ValueError):
             # The probe emitted no JSON at all, so its exit path is unobservable
@@ -608,13 +859,27 @@ def main() -> int:
             )
             caught += 1
 
-    # Restore and verify byte-for-byte. A battery that leaves a mutated file behind
-    # produces a green run and a broken repository.
+    # Restore and verify every input byte-for-byte. A battery that leaves a mutated
+    # file behind produces a green run and a broken repository, and the check has
+    # to cover all three inputs now: the rule injection writes into the *package*,
+    # so an unrestored rule is a mutated source tree rather than a mutated script.
+    # The fixture is checked too even though no path writes back to it outside
+    # `run_probe`, because the point of this block is that it verifies rather than
+    # assumes.
     PROBE.write_text(probe_text)
-    restored = PROBE.read_text() == probe_text
+    restored_probe = PROBE.read_text() == probe_text
+    restored_fixture = FIXTURE.read_text() == fixture_text
+    restored_rule = ADJUDICATION.read_text() == adjudication_text
+    restored = restored_probe and restored_fixture and restored_rule
 
     print(f"\nbattery: {caught} caught, {survived} survived, {inert} inert, {blind} blind")
-    print(f"source restored: {restored and 'identical to backup' or 'DIFFERS -- inspect before committing'}")
+    if restored:
+        print("source restored: identical to backup (probe, fixture, rule)")
+    else:
+        print(
+            "source restored: DIFFERS -- inspect before committing "
+            f"(probe {restored_probe}, fixture {restored_fixture}, rule {restored_rule})"
+        )
     return 0 if caught == len(INJECTIONS) and restored else 1
 
 

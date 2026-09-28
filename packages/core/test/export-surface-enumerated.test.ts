@@ -130,6 +130,7 @@ const ENUMERATED_MODULES = [
   'fault/collector.ts',
   'fault/extraction-scoring.ts',
   'fault/miss-detail.ts',
+  'fault/miss-adjudication.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -531,6 +532,13 @@ const TESTED = [
   'isTruncated',
   'parseMissDetail',
   'readMissDetail',
+  // fault/miss-adjudication.ts -- finding 94, the rule finding 91 asked for.
+  'adjudicateAll',
+  'adjudicateMiss',
+  'countAdjudications',
+  'crossProduct',
+  'sampleAdjudication',
+  'tokenize',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',

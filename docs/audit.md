@@ -7508,3 +7508,198 @@ verbatim and gained a `data` slot. K was rewritten, because its original propert
 out to be unsatisfiable in the form it was stated. Two were already data-only. The count
 of injections is unchanged at 14, which is a coincidence and not a result.
 
+## Finding 94: the adjudication rule is a measurement now, and it says nine of fourteen rather than fourteen
+
+Finding 91 declined to claim a result it had every reason to believe. Its own words:
+
+> The 39 misses are all same-mechanism by inspection, but inspection is mine, and the
+> adjudication has to be a rule over the recorded rows rather than a reading of them.
+> Until that rule exists, "the labels are too fine" is a hypothesis with strong support,
+> not a measurement.
+
+This finding is that rule, built and run against the fourteen `type` misses of run
+`567118aea` (the corrected rows, not the transcript). It was written to confirm 91. It
+falsified part of it, and the falsified part is the more useful result.
+
+### A rule over two strings cannot answer a semantic question, and pretending otherwise would have manufactured the figure
+
+The first design returned a boolean: reachable or not. That design is wrong before it is
+written, because `different-fault` is a **decision** and `same-fault-different-altitude` is
+**permission**. Two strings that share a morpheme *may* be the same fault at a different
+altitude; they are not thereby *proved* to be. A binary verdict turns "these look related"
+into "these are the same fault", which is exactly the step 91 refused to make by hand.
+
+So the verdict has three values:
+
+| verdict | means |
+|---|---|
+| `different-fault` | a **proof** of difference -- the two descriptions cannot be the same fault |
+| `same-fault-different-altitude` | a **permission** -- a shared morpheme licenses relabelling, it does not require it |
+| `undecided` | neither; the honest third value |
+
+`undecided` is not a failure mode. It is the value that lets the rule report a limit
+instead of a verdict, and on this dataset it is deliberately the value the rule **cannot**
+assign to a real pair -- see below.
+
+### Three implementations, two of which were wrong in instructive ways
+
+**Suffix matching.** The first rule looked for a shared suffix, on the reasoning that
+inflections share their ends. It reported `replica-lag` / `replication-apply-bottleneck` as
+`different-fault`, because `replica` is a **prefix** of `replication`. The reasoning was
+backwards: English inflects at the end but compounds and truncations do not.
+
+**Naive prefix matching.** Switched to prefixes, floor of 3 characters. That reported
+`config-mismatch` / `container-crash` as `same-fault-different-altitude`, on `con`. Three
+characters is not a morpheme.
+
+**Prefix that consumes a whole token or is at least five characters.** This is the rule
+that survived:
+
+```ts
+function sharesMorpheme(a: string, b: string): string | null {
+  const limit = Math.min(a.length, b.length);
+  for (let length = limit; length >= 3; length -= 1) {
+    const prefix = a.slice(0, length);
+    if (!b.startsWith(prefix)) continue;
+    const consumesAToken = length === a.length || length === b.length;
+    if (consumesAToken || length >= 5) return prefix;
+  }
+  return null;
+}
+```
+
+`config`/`container` share `con` and neither consumes a token, so they are different.
+`replica`/`replication` is reached because `replica` **consumes a whole token** -- not
+because of the length floor. `exhausted`/`exception` share `ex` and are different.
+
+### The measurement: nine of fourteen, and the five are the interesting part
+
+Run against the fourteen recorded rows, the rule reaches **nine** and leaves **five**:
+
+```
+adjudication (finding 94): same-altitude 9 | unreached 5 | undecided 0
+```
+
+The nine bases are, in output order, `cpu`, `disk`, `loss`, `redis`, `connection`,
+`regex`, `config`, `incompatibility`, `replica` -- a list the test asserts exactly, so a
+change to the classifier that moves any row shows up as a changed basis rather than as a
+changed count.
+
+The five the rule could not reach:
+
+| expected | recorded | why no morpheme exists |
+|---|---|---|
+| `memory-leak` | `unbounded-session-cache-growth` | a leak *is* unbounded growth; different words for one mechanism |
+| `pod-kill` | `kubelet-eviction` | eviction is the kubelet killing the pod; the mechanism is named from the other end |
+| `container-crash` | `ffmpeg-native-segmentation-fault` | the crash is the SIGSEGV; the cause is a native fault |
+| `kafka-consumer-lag` | `synchronous-outbound-call` | the lag is the *symptom*; the cause is the call blocking the poll loop |
+| `upstream-5xx` | `dependency-degradation` | an upstream 5xx is how a degraded dependency presents |
+
+Not one of these five shares **any substring at any length**. Their relationship is
+semantic and no function over the two strings will find it. This is what finding 91 was
+looking at when it said "same-mechanism by inspection" -- accurate, and only inspection
+could see it.
+
+**So the lexical half of 91's claim is 9 of 14, not 14 of 14.** The claim is not wrong; it
+is narrower than it was stated, and the narrowness is now a number.
+
+`unreached` is deliberately **not** `different-fault`. A pair the rule cannot reach has not
+been proved different -- it has been proved unreachable *by this rule*. Reporting the five
+as `different-fault` would have produced a clean, wrong figure; reporting them as
+`undecided` would have hidden five genuine same-mechanism pairs behind a non-answer.
+They get their own name and their own list.
+
+### The cross-product cost, and the binding field is not the one 91 named
+
+`strict` scoring needs every scored field on one sample, so the **lowest** per-field count
+caps it. Finding 91 named `category` at 11/19. The general form says the minimum, and the
+minimum is `component` at **2/19**:
+
+| field | samples with a miss |
+|---|---|
+| `component` | 2 / 19 |
+| `category` | 11 / 19 |
+| `type` | 14 / 19 |
+
+`crossProduct` computes this rather than restating it, and skips any field with
+`total === 0` -- `description` is optional, and an unscored field's `0` hits would become
+the binding constraint and cap `strict` at zero. That skip is two lines and it was the only
+uncovered region in the module; it now has two tests rather than an ignore comment.
+
+Samples blocked by a miss the rule calls `different-fault` are counted separately and
+cross-checked against the `unreached` set, so a sample cannot be reported as blocked for a
+reason the rule did not actually establish.
+
+### The battery, and the two ways this injection set was wrong before it was right
+
+Three new injections (M, N, O) target the rule module. They are new because the module is
+new, and a module with no injection is a module whose behaviour is asserted rather than
+tested. The run is now:
+
+```
+battery: 17 caught, 0 survived, 0 inert, 0 blind
+source restored: identical to backup (probe, fixture, rule)
+```
+
+**M's anchor was a line range, and it ate the wrong thing.** The first version addressed
+`src_lines(t, 171, 181)`. A later edit moved the function by one line, so the range spanned
+the `Adjudication` type declaration instead, the build failed, and the mutation was left on
+disk with nothing to restore it -- because the write and the build both ran *before* the
+`try`. `packages/core/src/fault/miss-adjudication.ts` was corrupt across a whole run, and
+the corruption surfaced as `SyntaxError: Unexpected token '|'` inside the probe. Fixed in
+three places: the anchor is now by **name** (`body_of(text, "function sharesMorpheme(")`),
+every mutation and the build moved **inside** the `try`, and the restore **recompiles**
+rather than writing back a saved `dist` -- a saved snapshot taken at entry faithfully
+restores a tree that was already corrupt. Each file is then verified byte-for-byte, and the
+run prints which of the three inputs it checked. This is finding 93's lesson generalised
+from data anchors to source anchors: an anchor that moves must fail **at the anchor**.
+
+**N was wrong twice, in the two ways that matter.** Its first version set the length floor
+to 3 and **SURVIVED**. That survival is a real finding and it is kept: on these fourteen
+rows the floor is **never the deciding factor**. `replica`/`replication` is reached by
+consuming a whole token, and the five unreached rows share no prefix at any length, so
+`length >= 3` and `length >= 5` produce identical output on this dataset. An injection
+that changes it cannot be caught. The floor's effect is demonstrated where it can be --
+the two constructed tests -- and the floor's weakness is recorded at the anchor rather than
+papered over. N's replacement targets the branch those constructed tests *would* notice.
+
+Its second version then reported **INERT** with:
+
+```
+-- the paired source edit did not apply: no function declaration starts with: 'function sharesMorpheme('
+```
+
+The entry was written as a five-tuple, so `main` defaulted its target to `'source'`, and a
+lambda anchored on a function that exists only in the **rule** was applied to the probe
+script. The printed name said "rule" and the edit went to the script.
+
+The default was **kept** deliberately. Making the target mandatory is a one-line change
+that removes the mistake and also removes the evidence that the battery reports it; every
+`'rule'` and `'fixture'` entry now states itself, and the misroute is recorded at the
+anchor. Both of N's failures were invisible in the injection's name, which is the property
+the INERT accounting exists to make loud.
+
+### What this changes for the next round
+
+The `category` direction is now the live question, and it is a **systematic altitude
+mismatch**: every `middleware` expected value is recorded as `resource`, 4 of 4. That is a
+consistent off-by-one-altitude rather than fourteen independent adjudications, and it is
+the next thing to measure with this rule rather than by reading rows.
+
+### What this does not claim
+
+**It does not claim the five unreached rows are different faults.** They are unreached by a
+morpheme rule. Four of the five have a defensible same-mechanism reading and the fifth
+(`container-crash` / native segmentation fault) is at minimum the same *event* at a
+different altitude. The rule's output is `unreached`, which is a statement about the rule.
+
+**It does not claim the nine are proved same-altitude.** The verdict is a permission. The
+rule licenses relabelling; whether the relabelling *should* happen is a labelling decision
+this finding does not take.
+
+**It does not claim the length floor is tested.** It is not, on this dataset, and N's
+survival is the evidence. The two constructed tests exercise it; the recorded rows do not.
+
+**It does not claim the other batteries are safe.** Unchanged from finding 93: the BLIND
+check and the name-based anchor exist in the type-miss battery, and whether
+`inject-m1-ceiling.mjs`'s battery can report BLIND or can misroute a target is unmeasured.

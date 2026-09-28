@@ -324,6 +324,33 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
         (c) => c.actual.split('-').length > c.expected.split('-').length,
       ).length;
       expect(report.overSpecified, `run ${run}`).toBe(localLonger);
+
+      // The adjudication block. It is asserted through the subprocess rather than
+      // only through `miss-adjudication.test.ts` because the wiring is a separate
+      // claim from the rule: the rule can be right and the probe can still print
+      // it against the wrong rows, which is exactly what finding 92 was.
+      expect(report.adjudication, `run ${run}`).toBeDefined();
+      expect(report.adjudication.total, `run ${run}`).toBe(local.length);
+      expect(
+        report.adjudication['same-fault-different-altitude'] +
+          report.adjudication['different-fault'] +
+          report.adjudication.undecided,
+        `run ${run}: the three verdicts must cover every row`,
+      ).toBe(report.adjudication.total);
+      expect(
+        report.unreached.length,
+        `run ${run}: the unreached list must match the count`,
+      ).toBe(report.adjudication['different-fault']);
+      // The unreached rows must come from the rows actually classified. A list
+      // carrying a name that is not among the misses would mean the adjudication
+      // ran over something other than the partition above it.
+      const localAnswers = new Set(local.map((c) => c.expected));
+      for (const entry of report.unreached) {
+        expect(
+          localAnswers.has(entry.expected),
+          `run ${run}: '${entry.expected}' is not one of the classified misses`,
+        ).toBe(true);
+      }
     }
   });
 

@@ -51,7 +51,7 @@ import { fileURLToPath } from 'node:url';
 // reader has one correct implementation and it is checked against the recorded
 // annotation by its own tests; a second copy here would be a second thing to keep
 // correct, and the failure would be silent -- a stale copy reads successfully.
-import { parseMissDetail } from '../packages/core/dist/index.js';
+import { adjudicateAll, countAdjudications, parseMissDetail } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -249,12 +249,43 @@ function main() {
   }
 
   const overSpecified = classified.filter((c) => c.overSpecified).length;
+
+  // The adjudication, which answers the question the partition cannot.
+  //
+  // The partition above is lexical and it is about the *scorer*: is this answer
+  // one the normalizer should have folded? It says nothing about whether the
+  // answer is the same fault. Finding 91 needed that and could not build it;
+  // finding 94 built it. Both run here because they are different instruments over
+  // the same rows and reporting either as the other is the error finding 92 named.
+  //
+  // `different-fault` means **the rule could not reach this pair**, not "these are
+  // different faults". The distinction is in the module note and it is the reason
+  // the count is reported as "unreached" rather than as "wrong".
+  const adjudicated = adjudicateAll(
+    rows.map(([sampleId, expected, actual]) => ({
+      sampleId,
+      field: 'type',
+      expected,
+      actual: actual === '(omitted)' ? null : actual,
+    })),
+  );
+  const adjudication = countAdjudications(adjudicated);
+  const unreached = adjudicated.filter((m) => m.verdict === 'different-fault');
+
   const payload = {
     source,
     total: classified.length,
     counts,
     overSpecified,
     classified,
+    adjudication,
+    unreached: unreached.map((m) => ({ expected: m.expected, actual: m.actual })),
+    adjudicated: adjudicated.map((m) => ({
+      expected: m.expected,
+      actual: m.actual,
+      verdict: m.verdict,
+      basis: m.basis,
+    })),
   };
 
   if (args.json) {
@@ -273,6 +304,18 @@ function main() {
     );
     console.log(
       `over-specified (answer longer than the expected slug): ${overSpecified}/${classified.length}`,
+    );
+    console.log(
+      `\nadjudication (finding 94): same-altitude ${adjudication['same-fault-different-altitude']} | ` +
+        `unreached ${adjudication['different-fault']} | undecided ${adjudication.undecided}`,
+    );
+    for (const m of unreached) {
+      console.log(`  unreached  ${m.expected} -> ${m.actual}`);
+    }
+    console.log(
+      '\n`unreached` means no shared morpheme reaches the pair -- it is a limit of the rule, ' +
+        'not a verdict that the two faults differ. Reading it as the latter is the inversion ' +
+        'this probe exists to prevent.',
     );
     if (counts['form-variant'] === 0) {
       console.log(

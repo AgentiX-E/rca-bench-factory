@@ -526,6 +526,22 @@ export {
 } from './fault/miss-detail.js';
 export type { MissDetailReading, MissDetailRow } from './fault/miss-detail.js';
 
+export {
+  adjudicateAll,
+  adjudicateMiss,
+  countAdjudications,
+  crossProduct,
+  sampleAdjudication,
+  tokenize,
+} from './fault/miss-adjudication.js';
+export type {
+  AdjudicatedMiss,
+  Adjudication,
+  AdjudicationCounts,
+  CrossProduct,
+  SampleAdjudication,
+} from './fault/miss-adjudication.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,
