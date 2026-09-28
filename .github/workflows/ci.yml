@@ -115,7 +115,16 @@ jobs:
       # observable, and the pair is expressed as an `also` slot rather than as a
       # comment describing one. A battery that asserts half a pair and describes
       # the other half reports SURVIVED, correctly, and says nothing.
-      - name: Type-miss probe battery (no survivors, no inert mutations)
+      #
+      # Three ways an injection can fail to test anything, all three fatal. A
+      # SURVIVED mutation left the requirement true. An INERT one never applied.
+      # BLIND is the one this battery learned the hard way: the edit applied to
+      # the recorded answers but the published partition did not move at all, so
+      # the anchor was on a row the edit could not reclassify -- the requirement
+      # went False and the run looked caught while the probe's actual decision had
+      # not been exercised. It is checked for data-only injections, where "the
+      # partition must move" is the whole point of the edit.
+      - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
         run: python3 scripts/injection/type-miss-probe.py
 
       # The five gate scripts above are covered by CI *running* them against the

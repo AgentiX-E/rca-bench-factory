@@ -57,19 +57,43 @@ from typing import Callable
 REPO = Path(__file__).resolve().parents[2]
 PROBE = REPO / "scripts" / "probe-type-misses.mjs"
 
+# Where the recorded misses actually live.
+#
+# They used to live in the probe as a `RECORDED_TYPE_MISSES` array, and every
+# DATA injection below edited that array. Finding 92 removed it: the probe now
+# reads the annotation body of a named run, so the data is a *fixture* and the
+# probe is a reader. Retargeting these injections is not a mechanical edit -- it
+# is the battery following the data to its new home, and the failure mode of not
+# doing it is exactly what happened: seven injections reported INERT because
+# their anchor had been deleted, and an INERT injection is a battery that says
+# nothing about the property it was written for.
+#
+# The fixture is the *default* run's body, which is the one the probe reads when
+# invoked with no `--run`.
+FIXTURE = REPO / "packages" / "core" / "test" / "fixtures" / "miss-detail-567118aea.txt"
 
-def run_probe(mutation: str | None = None) -> dict:
-    """Run the probe, optionally with `mutation` written over its source.
 
-    The source is always restored, including when the probe fails to run, so the
-    report below can be read during a run that exits non-zero. `check=True` is
-    deliberately *not* used: a non-zero exit is a measurement in this battery
-    rather than an error, because the probe's exit code is part of its contract
-    and two of the injections below drive exactly that code.
+def run_probe(mutation: str | None = None, data: str | None = None) -> dict:
+    """Run the probe, optionally with `mutation` over its source and `data` over the fixture.
+
+    The source and the fixture are always restored, including when the probe
+    fails to run, so the report below can be read during a run that exits
+    non-zero. `check=True` is deliberately *not* used: a non-zero exit is a
+    measurement in this battery rather than an error, because the probe's exit
+    code is part of its contract and two of the injections below drive exactly
+    that code.
+
+    Two files because the probe has two inputs now. A DATA injection edits the
+    recorded annotation; a DEFINITION injection edits the reader. Keeping them
+    separate is what lets an injection say which half of the instrument it is
+    testing, and the report names the file each mutation touched.
     """
-    original = PROBE.read_text()
+    original_probe = PROBE.read_text()
+    original_fixture = FIXTURE.read_text()
     if mutation is not None:
         PROBE.write_text(mutation)
+    if data is not None:
+        FIXTURE.write_text(data)
     try:
         proc = subprocess.run(
             ["node", str(PROBE), "--json"],
@@ -78,7 +102,8 @@ def run_probe(mutation: str | None = None) -> dict:
             text=True,
         )
     finally:
-        PROBE.write_text(original)
+        PROBE.write_text(original_probe)
+        FIXTURE.write_text(original_fixture)
 
     report = json.loads(proc.stdout)
     report["exitCode"] = proc.returncode
@@ -171,10 +196,10 @@ INJECTIONS: list[
         # neither half passes this requirement, and only the pair does.
         lambda r: r["counts"]["form-variant"] == baseline_count("form-variant") + 1,
         "the variant supplied by the paired data edit, which the unreachable class discarded",
-        lambda s: rename(
-            s,
-            "  ['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],",
-            "  ['network-loss-payment-gateway', 'network-loss', 'NETWORK_LOSS'],",
+        lambda d: rename(
+            d,
+            "network-loss-payment-gateway.type:network-loss>egress-interface-packet-loss",
+            "network-loss.type:network-loss>NETWORK_LOSS",
         ),
     ),
     (
@@ -208,10 +233,10 @@ INJECTIONS: list[
         # requirement reads does move.
         lambda r: r["counts"]["form-variant"] == baseline_count("form-variant") + 1,
         "the class the case variant must land in, which needs the folding step to be reached at all",
-        lambda s: rename(
-            s,
-            "  ['resource-cpu-saturation-checkout', 'cpu-saturation', 'cpu-throttling'],",
-            "  ['resource-cpu-saturation-checkout', 'cpu-saturation', 'CPU-SATURATION'],",
+        lambda d: rename(
+            d,
+            "resource-cpu-saturation-checkout.type:cpu-saturation>cpu-throttling",
+            "cpu-saturation-checkout.type:cpu-saturation>CPU-SATURATION",
         ),
     ),
     (
@@ -248,6 +273,7 @@ INJECTIONS: list[
             "  return 'different-mechanism';\n}",
             "  return 'unclassified';\n}",
         ),
+        'source',
     ),
     (
         "E2. probe: the guard must be load-bearing, so a dead one has to be caught",
@@ -274,6 +300,7 @@ INJECTIONS: list[
             "  return 'different-mechanism';\n}",
             "  return 'unclassified';\n}",
         ),
+        'source',
     ),
     (
         "N. probe: make the classifier's classes non-exhaustive, so the guard must fire",
@@ -326,11 +353,7 @@ INJECTIONS: list[
         # `form-variant 1` while exiting 0. Without the supplied variant the
         # mutation is invisible in the JSON and observable only as an exit code
         # that was already 0.
-        lambda t: rename(
-            rename(t, "  return counts['form-variant'] === 0 ? 0 : 2;", "  return 0;"),
-            "  ['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],",
-            "  ['network-loss-payment-gateway', 'network-loss', 'NETWORK_LOSS'],",
-        ),
+        lambda t: rename(t, "  return counts['form-variant'] === 0 ? 0 : 2;", "  return 0;"),
         # The JSON is unchanged by this mutation -- only the exit code moves -- so
         # a requirement phrased over `counts` cannot detect it and is a bad test.
         # It needs an input that *has* a form variant, which the paired data edit
@@ -345,58 +368,115 @@ INJECTIONS: list[
         # pins the variant as well.
         lambda r: r["counts"]["form-variant"] == baseline_count("form-variant") and r["exitCode"] == 0,
         "the variant supplied by the paired data edit reaching an intact gate",
-        None,
+        lambda d: rename(
+            d,
+            "network-loss-payment-gateway.type:network-loss>egress-interface-packet-loss",
+            "network-loss.type:network-loss>NETWORK_LOSS",
+        ),
     ),
     # --- the data moves; the classification must follow it --------------------
+    #
+    # These four edit the *fixture* and nothing else, so their `mutation` slot is
+    # `None` and the edit rides in the `also` slot with target `'fixture'`.
+    #
+    # They used to edit a `RECORDED_TYPE_MISSES` array inside the probe. Finding 92
+    # deleted that array -- the probe now reads a named run's annotation -- and these
+    # four went INERT, because their anchor no longer existed. CI caught it and the
+    # local run reproduced it, which is the battery working: an injection whose
+    # anchor has moved must fail loudly, because an INERT injection reports nothing
+    # about the property it was written for while still counting as a run.
+    #
+    # Retargeting moved the anchor from a JavaScript array literal to the annotation
+    # row that carries the same miss. It is the same edit at the same altitude, and
+    # the row it edits is now the one the reading actually comes from -- which is a
+    # stricter test than before, because the probe reads this file at runtime.
     (
         "I. data: turn a recorded near miss into a form variant",
-        lambda t: rename(
-            t,
-            "['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],",
-            "['network-loss-payment-gateway', 'network-loss', 'NETWORK_LOSS'],",
-        ),
+        None,
         lambda r: r["counts"]["form-variant"] == baseline_count("form-variant"),
         "the baseline form-variant count (0), so a genuine form variant was not classified as one",
-        None,
+        lambda d: rename(
+            d,
+            "network-loss-payment-gateway.type:network-loss>egress-interface-packet-loss",
+            "network-loss-payment-gateway.type:network-loss>NETWORK_LOSS",
+        ),
     ),
     (
         "J. data: drop a recorded miss entirely",
-        lambda t: rename(
-            t,
-            "  ['runtime-pod-kill-user-profile', 'pod-kill', 'kubelet-eviction'],\n",
-            "",
-        ),
+        None,
         lambda r: r["total"] == BASELINE["total"],
         "the baseline miss total, so a removed row went unobserved",
-        None,
+        # The leading unit separator is part of the anchor so the edit removes the
+        # whole row rather than splicing two neighbours into one malformed row:
+        # `...kubelet-eviction` + the next row's id would read as a single row whose
+        # sample id is a sentence, and the total would not move -- the injection
+        # would look caught for the wrong reason or survive for the wrong one.
+        lambda d: rename(
+            d,
+            "\x1fruntime-pod-kill-user-profile.type:pod-kill>kubelet-eviction",
+            "",
+        ),
     ),
     (
-        "K. data: move a different-mechanism row into the token-sharing class",
-        lambda t: rename(
-            t,
-            "  ['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],",
-            "  ['network-loss-payment-gateway', 'network-loss', 'loss-detected-by-egress-probe'],",
-        ),
-        lambda r: r["counts"]["shares-token"] == baseline_count("shares-token"),
-        "the baseline shares-token count, so a row changed class unnoticed",
+        "K. data: give a different-mechanism answer a token from its own key",
         None,
+        lambda r: r["counts"]["different-mechanism"] == baseline_count("different-mechanism"),
+        "the baseline different-mechanism count, so the class did not shrink when a row became reachable",
+        # The first two attempts at this entry were wrong, and both were wrong in
+        # the way this battery exists to detect, so the record is worth keeping.
+        #
+        # Attempt 1 asserted the *shares-token* count while editing a row into that
+        # class. The three classes are a partition over the 14 rows, so a row can
+        # only leave a class by arriving in another, which means the arriving class
+        # grows by exactly the one that left -- a single class count cannot see a
+        # between-class move, and the injection reported SURVIVED.
+        #
+        # Attempt 2 edited `cpu-saturation>cpu-throttling` and
+        # `disk-full>disk-space-exhaustion` in the belief that they were
+        # different-mechanism rows. They are not: `classify` shares a token on
+        # `cpu-` and on `disk-` respectively, so both were already in the sharing
+        # class. The fixture changed, the partition did not, and the battery still
+        # printed CAUGHT -- a caught injection that tests nothing, which is the
+        # exact failure mode the INERT accounting exists to prevent and which this
+        # entry shows is not fully prevented. Anchors must be chosen from the
+        # classifier's *output* for the row, not from a reading of the two strings.
+        #
+        # The real six different-mechanism rows are `memory-leak`,
+        # `pod-kill`, `container-crash`, `kafka-consumer-lag`, `upstream-5xx` and
+        # `replica-lag`. This one is genuine: `pod-kill` and `kubelet-eviction`
+        # share no token. Giving the answer `pod` puts it in the sharing class, and
+        # the different-mechanism count must fall from 6 to 5 -- observable in a
+        # single count because the edit is within the partition and the class
+        # watched is the one the row left.
+        lambda d: rename(
+            d,
+            "runtime-pod-kill-user-profile.type:pod-kill>kubelet-eviction",
+            "runtime-pod-kill-user-profile.type:pod-kill>kubelet-pod-eviction",
+        ),
     ),
     (
         "L. data: shorten a different-mechanism answer into a token-sharer",
-        lambda t: rename(
-            t,
-            "['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],",
-            "['network-loss-payment-gateway', 'network-loss', 'network-congestion'],",
-        ),
+        None,
         lambda r: r["counts"]["different-mechanism"] == baseline_count("different-mechanism"),
         "the baseline different-mechanism count, so a class emptied silently",
-        None,
+        # `dependency-degradation` shares `dependency` with `upstream-5xx`?  It does
+        # not -- the key is `upstream-5xx` and the only shared kind of token is the
+        # literal one. This row is in the different-mechanism class, and
+        # `upstream` is the token both `upstream-5xx` and `upstream-unavailable`
+        # carry, so this edit is the one that genuinely moves a different-mechanism
+        # row into the sharing class and pulls its count down.
+        lambda d: rename(
+            d,
+            "dependency-upstream-5xx-pricing.type:upstream-5xx>dependency-degradation",
+            "dependency-upstream-5xx-pricing.type:upstream-5xx>upstream-unavailable",
+        ),
     ),
 ]
 
 
 def main() -> int:
     probe_text = PROBE.read_text()
+    fixture_text = FIXTURE.read_text()
 
     report = run_probe()
     BASELINE.clear()
@@ -410,44 +490,64 @@ def main() -> int:
         f"over-specified {report['overSpecified']}\n"
     )
 
-    caught = survived = inert = 0
-    for name, mutate, requirement, description, also in INJECTIONS:
+    caught = survived = inert = blind = 0
+    for entry in INJECTIONS:
+        name, mutate, requirement, description, also = entry[:5]
+        # A pure-data injection edits the fixture and leaves the rule alone; its
+        # mutation slot is None. The `mutated == probe_text` guard below asks
+        # whether the *rule* changed, which is the wrong question for it and would
+        # report INERT on a pair that is about to edit the fixture. So only run
+        # that guard when a rule mutation was declared at all.
+        edits_source = mutate is not None
         try:
-            mutated = mutate(probe_text)
+            mutated = mutate(probe_text) if edits_source else probe_text
         except AssertionError as exc:
             print(f"INERT    {name}")
             print(f"         -- {exc}")
             inert += 1
             continue
-        if mutated == probe_text:
+        if edits_source and mutated == probe_text:
             print(f"INERT    {name}")
             print("         -- the mutation changed nothing")
             inert += 1
             continue
 
+        data = None
         if also is not None:
-            # The paired second edit. It must apply *and* change the text: a pair
-            # whose second half never landed would still run the first half's
-            # requirement, which is the half the pairing exists to make decidable,
-            # and the injection would report a pass or a failure that means
-            # nothing. `also` is applied to `mutated` rather than to `probe_text`
-            # so the two halves cannot fight over the same anchor.
+            # The paired second edit. Which file it lands in is declared by the
+            # entry, because the probe has two inputs now: the rule (the source)
+            # and the recorded misses (the fixture). A pair is usually one edit to
+            # each, but E and E2 pair two edits to the *rule* -- they break the
+            # classifier's exhaustiveness, which is a property of the rule and not
+            # of any row.
+            #
+            # Writing the target down rather than inferring it is deliberate. An
+            # inferred target would be a guess, and this battery's whole history is
+            # of injections that silently tested nothing because an anchor moved:
+            # inferring the file would let a pair land in the wrong one and still
+            # look like it applied.
+            target = 'fixture' if len(entry) < 6 else entry[5]
+            base = fixture_text if target == 'fixture' else mutated
             try:
-                paired = also(mutated)
+                paired = also(base)
             except AssertionError as exc:
                 print(f"INERT    {name}")
-                print(f"         -- the paired edit did not apply: {exc}")
+                print(f"         -- the paired {target} edit did not apply: {exc}")
                 inert += 1
                 continue
-            if paired == mutated:
+            if paired == base:
                 print(f"INERT    {name}")
-                print("         -- the paired edit changed nothing, so the pair never formed")
+                print(f"         -- the paired {target} edit changed nothing, so the pair never formed")
                 inert += 1
                 continue
-            mutated = paired
+            if target == 'fixture':
+                data = paired
+            else:
+                mutated = paired
+                edits_source = True
 
         try:
-            result = run_probe(mutated)
+            result = run_probe(mutated, data)
             crashed = None
         except (json.JSONDecodeError, ValueError):
             # The probe emitted no JSON at all, so its exit path is unobservable
@@ -465,6 +565,38 @@ def main() -> int:
             print(f"SURVIVED {name}")
             print(f"         -- it still reported {description}, so the mutation changed nothing observable")
             survived += 1
+        elif (
+            data is not None
+            and not edits_source
+            and result["counts"] == BASELINE["counts"]
+            and result["total"] == BASELINE["total"]
+        ):
+            # A DATA-ONLY injection edited the recorded answers and the probe
+            # published a byte-identical partition. The requirement is False and
+            # the exit code is not zero, so the naive reading is "caught" -- but
+            # nothing about the classification moved, which means the edit landed
+            # on a row whose class the edit could not change. K hit exactly this
+            # twice: it renamed `cpu-saturation>cpu-throttling` to
+            # `cpu-load>cpu-throttling` and the partition stayed 0/8/6, because
+            # both strings share `cpu`. An injection in that state tests the probe
+            # no more than an INERT one does, and calling it caught is how a
+            # battery reports coverage it does not have. Counted apart, and it
+            # fails the run.
+            #
+            # Scoped to injections that did *not* edit the source. A paired
+            # injection like B changes the classifier and the data together; its
+            # requirement is about the classifier, and the data edit is there to
+            # make the changed classifier observable. The partition is under no
+            # obligation to move in that case, and holding it to one would fail a
+            # correct pair -- which B did on the first run of this check.
+            print(f"BLIND    {name}")
+            print(
+                "         -- the recorded answers changed but the partition did not "
+                f"({result['total']} rows, {result['counts']['form-variant']}/"
+                f"{result['counts']['shares-token']}/{result['counts']['different-mechanism']}), "
+                "so the anchor is on a row the edit cannot move"
+            )
+            blind += 1
         else:
             print(f"CAUGHT   {name}")
             print(
@@ -481,7 +613,7 @@ def main() -> int:
     PROBE.write_text(probe_text)
     restored = PROBE.read_text() == probe_text
 
-    print(f"\nbattery: {caught} caught, {survived} survived, {inert} inert")
+    print(f"\nbattery: {caught} caught, {survived} survived, {inert} inert, {blind} blind")
     print(f"source restored: {restored and 'identical to backup' or 'DIFFERS -- inspect before committing'}")
     return 0 if caught == len(INJECTIONS) and restored else 1
 
