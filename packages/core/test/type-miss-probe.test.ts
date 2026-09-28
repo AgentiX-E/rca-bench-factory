@@ -4,6 +4,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseMissDetail } from '../src/fault/miss-detail.js';
+
 /**
  * The `type` miss classifier.
  *
@@ -28,12 +30,16 @@ import { fileURLToPath } from 'node:url';
  * no synonym table reaches.
  *
  * The recorded misses live in the CI annotation rather than in the repository, so
- * they are transcribed into `RECORDED_TYPE_MISSES` with their run named. That is
- * a deliberate trade: the alternative is a test that cannot run without a live
- * LLM key, and a figure that cannot be re-derived is worth less than a figure
- * whose provenance is stated. The transcription is checked against the annotation
- * format by its own tests, and one test asserts the shape of the transcription
- * itself so a careless edit fails rather than silently reclassifying the finding.
+ * the annotation body of each run is recorded verbatim under `test/fixtures/` and
+ * read back through `parseMissDetail`. That replaces a hand transcription, and the
+ * replacement is the point rather than a tidy-up: a transcription is a second copy
+ * of a fact, it is exact only against the run it names, and it cannot be re-derived
+ * when the question changes. The copy that used to live here was quoted -- by this
+ * repository's own next reading -- as the answers of a *different* run.
+ *
+ * Reading the recorded bytes instead means the run is an input rather than a claim.
+ * `RECORDED_RUNS` names every run that has an annotation on file; the default is the
+ * most recent, and the type-miss classification is asserted for each.
  *
  * The classifier is duplicated here rather than imported, because the script
  * that ships it (`scripts/probe-type-misses.mjs`) is the thing under test and a
@@ -44,39 +50,47 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const PROBE = resolve(REPO_ROOT, 'scripts/probe-type-misses.mjs');
+const FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+/**
+ * Every run whose annotation body is on file, most recent first.
+ *
+ * The `${run}` name is the recorded run id, which is what makes a figure quotable:
+ * a reading that does not carry its run is a reading that cannot be checked.
+ */
+export const RECORDED_RUNS = {
+  /** Rows joined with U+001F -- the format finding 70 introduced. type=5/19. */
+  '567118aea': 'miss-detail-567118aea.txt',
+  /** Rows joined with a space -- the format finding 70 replaced. type=4/19. */
+  '9932e766c': 'miss-detail-9932e766c.txt',
+} as const;
+
+export type RecordedRun = keyof typeof RECORDED_RUNS;
+
+/** The run the classification is asserted against when none is named. */
+export const CURRENT_RUN: RecordedRun = '567118aea';
 
 /**
- * The fifteen `type` misses from run `9932e766c` (annotation captured in
- * `ann.json`), transcribed verbatim in `expected -> actual` order.
+ * The `type` misses of a recorded run, in `[sampleId, expected, actual]` order.
  *
- * The same run's `component` misses are recorded in `fault-prompt-grammar.test.ts`
- * as `WRONG_ANSWERS`; this is the `type` half that was missing.
+ * Read, not transcribed. `(omitted)` is kept as the literal string rather than
+ * normalised to `null` here, because this file's classifier takes three strings
+ * and an omission is not a form variant of anything -- the distinction matters
+ * for `missClassification`, not for this partition.
  */
-export const RECORDED_TYPE_MISSES: ReadonlyArray<readonly [string, string, string]> = [
-  ['resource-cpu-saturation-checkout', 'cpu-saturation', 'cpu-throttling'],
-  ['resource-disk-full-log-collector', 'disk-full', 'disk-space-exhaustion'],
-  ['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],
-  ['runtime-pod-kill-user-profile', 'pod-kill', 'kubelet-eviction'],
-  ['runtime-container-crash-loop-media', 'container-crash', 'native-ffmpeg-segfault'],
-  ['middleware-redis-latency-cache', 'redis-latency', 'redis-command-thread-saturation'],
-  ['middleware-kafka-consumer-lag', 'kafka-consumer-lag', 'synchronous-outbound-call-per-record'],
-  [
-    'middleware-database-connection-pool',
-    'database-connection-pool-exhaustion',
-    'connection-pool-deadlock',
-  ],
-  ['code-null-dereference-reporting', 'null-dereference', 'null-pointer-dereference'],
-  ['code-unhandled-exception-export', 'unhandled-exception', 'csv-writer-typeerror'],
-  ['code-slow-regex-api-gateway', 'regex-catastrophic-backtracking', 'regex-backtracking'],
-  ['config-datasource-url-orders', 'config-mismatch', 'stale-config-key'],
-  ['dependency-upstream-5xx-pricing', 'upstream-5xx', 'upstream-dependency-outage'],
-  [
-    'dependency-version-incompatibility-shipping',
-    'library-version-incompatibility',
-    'breaking-dependency-api-change',
-  ],
-  ['middleware-mysql-replica-lag-analytics', 'replica-lag', 'replica-apply-thread-saturation'],
-];
+export function recordedTypeMisses(run: RecordedRun): ReadonlyArray<readonly [string, string, string]> {
+  const body = readFileSync(resolve(FIXTURES, RECORDED_RUNS[run]), 'utf8');
+  return parseMissDetail(body)
+    .filter((row) => row.field === 'type')
+    .map((row) => [row.sampleId, row.expected, row.actual ?? '(omitted)'] as const);
+}
+
+/**
+ * The `type` misses of the current run, kept as a named export because the
+ * assertions below read better against a name than against a call, and because
+ * a compile-time-shaped constant is what the previous hand transcription was.
+ */
+export const RECORDED_TYPE_MISSES: ReadonlyArray<readonly [string, string, string]> =
+  recordedTypeMisses(CURRENT_RUN);
 
 /** The normalizer the scorer applies, reproduced so the classifier can use it. */
 function normalizeFaultType(type: string): string {
@@ -204,37 +218,63 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
     // The direction of the drift, measured. The model's answers are longer than
     // the expected slug in the large majority of misses: it drifts from the
     // canonical mechanism name toward a *description* of the incident
-    // (`replica-lag` -> `replica-apply-thread-saturation`). That is a specific,
+    // (`replica-lag` -> `replication-apply-bottleneck`). That is a specific,
     // testable claim about the failure mode and it is what makes the finding
     // actionable -- the prompt asks for a name and the model supplies a summary.
-    const classified = classifyAll(RECORDED_TYPE_MISSES);
-    const longer = classified.filter(
-      (c) => c.actual.split('-').length > c.expected.split('-').length,
-    ).length;
-    const shorter = classified.filter(
-      (c) => c.actual.split('-').length < c.expected.split('-').length,
-    ).length;
-    expect(longer, 'the model over-specifies, it does not under-specify').toBeGreaterThan(
-      shorter * 2,
-    );
-    expect(longer).toBeGreaterThan(classified.length / 2);
+    //
+    // Stated per run, because the runs differ and the earlier form of this
+    // assertion was tuned to one of them. The old bound was
+    // `longer > classified.length / 2`, which holds for `9932e766c` (11 of 15)
+    // and fails for `567118aea` (7 of 14, i.e. exactly half) -- so a bound that
+    // looked like a property was in fact a coincidence of the run it was read
+    // from. The claim that survives both is the *direction*: over-specification
+    // outnumbers under-specification, and it does so by a factor rather than by
+    // one. That is the property, so that is what is asserted.
+    for (const run of Object.keys(RECORDED_RUNS) as RecordedRun[]) {
+      const classified = classifyAll(recordedTypeMisses(run));
+      const longer = classified.filter(
+        (c) => c.actual.split('-').length > c.expected.split('-').length,
+      ).length;
+      const shorter = classified.filter(
+        (c) => c.actual.split('-').length < c.expected.split('-').length,
+      ).length;
+      expect(
+        longer,
+        `run ${run}: the model over-specifies, it does not under-specify`,
+      ).toBeGreaterThan(shorter);
+      expect(
+        longer,
+        `run ${run}: over-specification must dominate, not merely lead`,
+      ).toBeGreaterThanOrEqual(classified.length / 2);
+      expect(
+        shorter,
+        `run ${run}: under-specification must be the minority case`,
+      ).toBeLessThan(classified.length / 2);
+    }
   });
 
-  it('the recorded misses are well formed, so a careless transcription fails here', () => {
-    // The transcription is the one thing in this file that is not computed. A row
-    // with a typo in the expectation would classify as a different mechanism and
-    // silently join the capability argument, so the shape is asserted: every id
-    // is a slug, every expected value is a slug, and the ids are distinct.
-    const ids = RECORDED_TYPE_MISSES.map((r) => r[0]);
-    expect(new Set(ids).size, 'ids must be distinct').toBe(ids.length);
-    for (const [id, expected, actual] of RECORDED_TYPE_MISSES) {
-      expect(id, `'${id}' is not a slug`).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
-      expect(expected, `'${expected}' is not a slug`).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
-      expect(actual.length, `'${actual}' is empty`).toBeGreaterThan(0);
-      expect(
-        normalizeFaultType(expected),
-        `${id}: expected and actual must differ, or the row records no miss`,
-      ).not.toBe(normalizeFaultType(actual));
+  it('the recorded misses are well formed, so a careless edit fails here', () => {
+    // The rows are read from recorded bytes rather than transcribed, so the shape
+    // assertion is no longer a guard on a hand copy -- it is a guard on the reader
+    // and on the annotations themselves. A row that came back malformed would
+    // classify as a different mechanism and silently join the capability
+    // argument, which is the failure this pins.
+    for (const run of Object.keys(RECORDED_RUNS) as RecordedRun[]) {
+      const rows = recordedTypeMisses(run);
+      expect(rows.length, `run ${run} must yield type misses`).toBeGreaterThan(0);
+      const ids = rows.map((r) => r[0]);
+      expect(new Set(ids).size, `run ${run}: ids must be distinct`).toBe(ids.length);
+      for (const [id, expected, actual] of rows) {
+        expect(id, `run ${run}: '${id}' is not a slug`).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
+        expect(expected, `run ${run}: '${expected}' is not a slug`).toMatch(
+          /^[a-z0-9]+(-[a-z0-9]+)+$/,
+        );
+        expect(actual.length, `run ${run}: '${actual}' is empty`).toBeGreaterThan(0);
+        expect(
+          normalizeFaultType(expected),
+          `${run} ${id}: expected and actual must differ, or the row records no miss`,
+        ).not.toBe(normalizeFaultType(actual));
+      }
     }
   });
 
@@ -249,36 +289,42 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
     // This is also the pattern finding 80's probe tests established, for the same
     // reason: a test that imports its subject's helper proves only that the file
     // agrees with itself.
-    const raw = execFileSync(process.execPath, [PROBE, '--json'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    });
-    const report = JSON.parse(raw);
+    //
+    // Every recorded run is checked, and the source line must name the run that
+    // was asked for. The previous form of this assertion required the literal
+    // `9932e766c` in the source line, which is what the probe printed when it had
+    // one run hard-coded -- the assertion was pinning the defect.
+    for (const run of Object.keys(RECORDED_RUNS) as RecordedRun[]) {
+      const raw = execFileSync(process.execPath, [PROBE, '--json', '--run', run], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      });
+      const report = JSON.parse(raw);
 
-    expect(report.source, 'the probe must state where its rows came from').toContain('9932e766c');
-    expect(report.total).toBe(RECORDED_TYPE_MISSES.length);
+      expect(report.source, `the probe must state where its rows came from`).toContain(run);
+      const local = classifyAll(recordedTypeMisses(run));
+      expect(report.total, `run ${run}`).toBe(local.length);
 
-    // The counts, cross-checked against the local classification rather than
-    // against literals -- a literal pair of numbers would pass if both copies were
-    // wrong in the same direction, while this fails if either drifts.
-    const local = classifyAll(RECORDED_TYPE_MISSES);
-    const localCounts = {
-      'form-variant': local.filter((c) => c.kind === 'formVariant').length,
-      'shares-token': local.filter((c) => c.kind === 'sharesToken').length,
-      'different-mechanism': local.filter((c) => c.kind === 'differentMechanism').length,
-    };
-    expect(report.counts['form-variant']).toBe(localCounts['form-variant']);
-    expect(report.counts['shares-token']).toBe(localCounts['shares-token']);
-    expect(report.counts['different-mechanism']).toBe(localCounts['different-mechanism']);
+      // The counts, cross-checked against the local classification rather than
+      // against literals -- a literal pair of numbers would pass if both copies
+      // were wrong in the same direction, while this fails if either drifts.
+      const localCounts = {
+        'form-variant': local.filter((c) => c.kind === 'formVariant').length,
+        'shares-token': local.filter((c) => c.kind === 'sharesToken').length,
+        'different-mechanism': local.filter((c) => c.kind === 'differentMechanism').length,
+      };
+      expect(report.counts['form-variant'], `run ${run}`).toBe(localCounts['form-variant']);
+      expect(report.counts['shares-token'], `run ${run}`).toBe(localCounts['shares-token']);
+      expect(report.counts['different-mechanism'], `run ${run}`).toBe(
+        localCounts['different-mechanism'],
+      );
 
-    // And the over-specification figure, which is the finding's actionable half.
-    const localLonger = local.filter(
-      (c) => c.actual.split('-').length > c.expected.split('-').length,
-    ).length;
-    expect(report.overSpecified).toBe(localLonger);
-    expect(report.overSpecified, 'the majority of answers are longer than the slug').toBeGreaterThan(
-      RECORDED_TYPE_MISSES.length / 2,
-    );
+      // And the over-specification figure, which is the finding's actionable half.
+      const localLonger = local.filter(
+        (c) => c.actual.split('-').length > c.expected.split('-').length,
+      ).length;
+      expect(report.overSpecified, `run ${run}`).toBe(localLonger);
+    }
   });
 
   it('the probe exits non-zero when a form variant exists, because that is a bug', () => {

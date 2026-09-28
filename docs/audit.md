@@ -7019,3 +7019,350 @@ number is not necessarily an improvement**: defect 1's fix produced defect 3, an
 defect 3 produced defect 4. Each step made the number look more plausible while
 moving it further from what it claimed to be. The repair was not a better fallback
 but *labelling the evidence*, so that a floor is never read as a total.
+
+## Finding 91: two successful M1 runs were never read, and reading them settles four rounds of hypotheses
+
+Four rounds -- findings 62, 64, 65 and 78 -- closed by proposing an experiment for the
+next round. Findings 62 and 64 proposed prompt variants and measured them. Finding 65
+built the `missClassification` instrument and named the question it would answer.
+Finding 78 measured M1's ceiling and re-classified the blocker as model capability.
+
+**Two of those runs had already happened and nobody read them.** Run `36240660455`
+(`9932e766c`) and run `36242319547` (`567118aea`) both completed `success` on
+2026-09-26, after `9c72a56` -- the revision finding 64 read -- and both carried the
+full annotation set: headline, per-field, miss classification, and per-row miss detail.
+`09-推进进度追踪.md` recorded `9c72a56` as the latest reading. The instrument finding 65
+built was reporting from the moment it shipped, into a channel that is readable, and the
+readings sat uncollected for two revisions.
+
+### The three readings, side by side
+
+| run | sha | `strict` | `type` | `category` | `component` | miss classification |
+| --- | --- | --- | --- | --- | --- | --- |
+| `36229820836` | `9c72a56` | 1/19 | 6/19 | **11/19** | 3/19 | not yet emitted |
+| `36240660455` | `9932e766c` | 0/19 | 4/19 | **11/19** | 4/19 | wrong value 38, omitted 0 |
+| `36242319547` | `567118aea` | 0/19 | 5/19 | **11/19** | 2/19 | wrong value 39, omitted 0 |
+
+### What the two unread runs establish
+
+**1. `category` is bit-stable and `type` is not.**
+
+| field | three values | spread |
+| --- | --- | --- |
+| `type` | 6, 4, 5 | **2 samples (10.5 pp)** |
+| `category` | 11, 11, 11 | **0** |
+| `component` | 3, 4, 2 | **2 samples (10.5 pp)** |
+
+`category` scored 11/19 three times, across three revisions of the prompt and the
+pipeline. `type` and `component` each moved by two samples. The stability is not
+"the model is consistent" -- it is that **the same eleven samples are being answered
+correctly each time**, which is what makes the miss list worth reading rather than
+re-running.
+
+**2. The miss is never an omission.**
+
+```
+wrong value 38, omitted 0, samples with >= 1 miss 19      (9932e766c)
+wrong value 39, omitted 0, samples with >= 1 miss 19      (567118aea)
+```
+
+Finding 65 built this distinction to separate "the model answered incorrectly" from
+"the model declined to answer", because they have different repairs -- a shape rule for
+the first, a required-fields instruction for the second. **Every one of the 39 misses is
+a wrong value. Not one is an omission.** `samplesWithMisses` is 19 of 19, so the
+required-fields instruction has nothing to fix.
+
+### What the miss detail shows, and it is not what any prior round assumed
+
+The per-row detail names both sides. Reading the 14 `type` misses in full:
+
+| expected | the model answered | relationship |
+| --- | --- | --- |
+| `cpu-saturation` | `cpu-throttling` | the same fault, named by effect rather than by cause |
+| `memory-leak` | `unbounded-session-cache-growth` | a leak, described by its mechanism |
+| `disk-full` | `disk-space-exhaustion` | **exact synonym** |
+| `network-loss` | `egress-interface-packet-loss` | **exact synonym, more specific** |
+| `pod-kill` | `kubelet-eviction` | the event, named by its trigger |
+| `container-crash` | `ffmpeg-native-segmentation-fault` | the crash, named by its cause |
+| `redis-latency` | `redis-single-thread-cpu-saturation` | the latency, named by its cause |
+| `kafka-consumer-lag` | `synchronous-outbound-call` | the lag, named by its cause |
+| `database-connection-pool-exhaustion` | `connection-pool-deadlock` | same pool, cause versus state |
+| `regex-catastrophic-backtracking` | `catastrophic-regex-backtracking` | **word order only** |
+| `config-mismatch` | `stale-config-key` | the mismatch, named by its instance |
+| `upstream-5xx` | `dependency-degradation` | the same event, a different abstraction level |
+| `library-version-incompatibility` | `dependency-api-incompatibility` | the same incompatibility, another noun |
+| `replica-lag` | `replication-apply-bottleneck` | the lag, named by its cause |
+
+**Eight of the fourteen share at least one token with the expected value, and one is a
+word-order permutation.** Not one is a different fault.
+
+And the `category` misses show the same thing one level up:
+
+| expected | the model answered | count |
+| --- | --- | --- |
+| `middleware` | `resource` | **4** |
+| `resource` | `code` | 1 |
+| `runtime` | `resource` | 1 |
+| `runtime` | `dependency` | 1 |
+| `code` | `config` | 1 |
+
+`middleware` is the expected category four times and the model answered `resource` all
+four times. The middleware samples are `redis-latency`, `kafka-consumer-lag`,
+`database-connection-pool` and `mysql-replica-lag` -- all of which *do* manifest as host
+resource pressure, which is exactly the observable the incident text describes. The
+model classifies **where the symptom appeared**; the ground truth records **which tier
+owns the fault**.
+
+### Why this is a finding about the benchmark, not about the model
+
+The two fields are scored by exact equality after `normalizeFaultType`, which folds case,
+whitespace and separators -- and `extraction-scoring.ts` says in its own words that it
+refuses a synonym table:
+
+> A category is folded the same way, with no synonym table -- deciding that `net` means
+> `network` is a judgement, and `importer.ts` deliberately leaves that judgement to the
+> H3 reviewer.
+
+That refusal is correct and should stay. **The finding is not "the comparator should
+accept synonyms."** It is that the *ground truth's granularity* and the *model's
+granularity* are different, and under exact equality that difference is scored as error
+regardless of which one is right. The evidence is that the disagreement is systematic and
+directional: the answer is consistently a **mechanism, a cause, or a more specific
+instance** of the expected abstraction, and never a neighbouring fault.
+
+That distinction decides what a fix would even be, and it rules out the two the recent
+rounds were considering:
+
+- **Not a prompt defect.** Findings 62 and 64 tried stating the format, and the format is
+  not what differs -- the model produces a well-formed slug. It produces the *wrong
+  altitude* of slug, and no prompt has told it which altitude the ground truth uses,
+  because the ground truth does not state one.
+- **Not a comparator defect in the sense of needing synonyms.** Accepting
+  `disk-space-exhaustion` for `disk-full` is a judgement; the module is right to refuse
+  it, and the judgement belongs to whoever owns the dataset.
+- **It is a labelling-granularity question**, and unlike the two above it is answerable
+  without another LLM run: the 39 miss rows are recorded, and each can be adjudicated
+  as "the same fault at a different altitude" or "a genuinely different fault" by a rule
+  that does not need the model in the loop.
+
+### What this does not establish
+
+- **That a coarser ground truth reaches 70%.** This is the same trap finding 78 was
+  written to avoid. The 39 misses are *all* same-mechanism by inspection, but inspection
+  is mine, and the adjudication has to be a rule over the recorded rows rather than a
+  reading of them. Until that rule exists, "the labels are too fine" is a hypothesis with
+  strong support, not a measurement.
+- **How many samples the granularity actually costs.** 14 `type` misses is a count of
+  misses, not a count of samples that would become `strict` hits. `strict` requires all
+  three scored fields at once, and `category` at 11/19 caps it independently. The
+  arithmetic has to be done over the per-sample cross-product, which the per-row detail
+  now makes possible.
+- **Whether the model or the ground truth is the one to change.** Both are defensible and
+  it is a product decision. What is not defensible is continuing to treat it as a model
+  capability gap, which is how finding 78 re-classified it.
+
+### The process defect, which is the same one as finding 90 one level out
+
+Finding 90 established that a parser must be written against the bytes the producing
+environment emits. This is the adjacent failure: **an instrument can be correct,
+readable, and reporting, and still not read.** Finding 65 built `missClassification` and
+wired it to an annotation precisely so the question of *why* fields miss would be
+answerable. Two runs emitted it. The gap was not the instrument, the channel, or the
+format -- it was that no step in the loop reads back the annotations of runs that
+already completed, so "what does the latest run say" was answered from a document
+rather than from the runs.
+
+The repair is not a code change. It is that **the reading is taken from the runs, not
+from the last document that mentioned a run** -- and the first application of that rule
+is this finding.
+
+---
+
+## Finding 92: the two readings of the `type` misses disagreed, and the transcript was the wrong one
+
+Finding 91 closed by naming a reconciliation it could not do from where it stood. The
+`type` misses had been read twice and the two readings did not match:
+
+- **The live annotation of run `567118aea`**, read directly: **14** `type` misses.
+- **`scripts/probe-type-misses.mjs`**, whose output was quoted as the current figure:
+  **15** `type` misses, and it printed `different-mechanism 6` where the first reading
+  called all 14 the same mechanism at a different altitude.
+
+Finding 91 recorded the discrepancy and refused to resolve it by preference, which was
+right. What it could not say -- because it had not done it -- is **which of the two was
+reading the run**, and the answer turns out to settle the question and expose a second
+defect underneath it.
+
+### The transcript was exact, against a different run
+
+`probe-type-misses.mjs` carried `RECORDED_TYPE_MISSES`, fifteen rows, and its own
+docstring named the run: *"the fifteen `type` misses from run `9932e766c`"*. That claim
+is **true**. Re-derived from the annotation of `9932e766c`, the fifteen rows match the
+transcription **byte for byte**, in order, with no difference in any field -- including
+the awkward ones (`native-ffmpeg-segfault`, `synchronous-outbound-call-per-record`,
+`replica-apply-thread-saturation`).
+
+So nothing was mistranscribed. The defect is that the figure was **quoted as current**.
+The two runs are one commit apart and both succeeded:
+
+| run | sha | `type` | `category` | `component` | strict | `type` misses |
+|---|---|---|---|---|---|---|
+| `36240660455` | `9932e766c` | 4/19 | 11/19 | 4/19 | 0/19 | **15** |
+| `36242319547` | `567118aea` | **5/19** | 11/19 | 2/19 | 0/19 | **14** |
+
+The `type` set is not merely reworded between them. Three rows moved:
+
+| sample | in `9932e766c` | in `567118aea` |
+|---|---|---|
+| `resource-memory-leak-recommendation.type` | *not a miss* | `memory-leak -> unbounded-session-cache-growth` |
+| `code-null-dereference-reporting.type` | `null-dereference -> null-pointer-dereference` | *not a miss* |
+| `code-unhandled-exception-export.type` | `unhandled-exception -> csv-writer-typeerror` | *not a miss* |
+
+And eight of the rows present in both carry **different answers**:
+
+| sample | `9932e766c` | `567118aea` |
+|---|---|---|
+| `network-loss-payment-gateway` | `egress-packet-drop` | `egress-interface-packet-loss` |
+| `runtime-container-crash-loop-media` | `native-ffmpeg-segfault` | `ffmpeg-native-segmentation-fault` |
+| `middleware-redis-latency-cache` | `redis-command-thread-saturation` | `redis-single-thread-cpu-saturation` |
+| `middleware-kafka-consumer-lag` | `synchronous-outbound-call-per-record` | `synchronous-outbound-call` |
+| `code-slow-regex-api-gateway` | `regex-backtracking` | `catastrophic-regex-backtracking` |
+| `dependency-upstream-5xx-pricing` | `upstream-dependency-outage` | `dependency-degradation` |
+| `dependency-version-incompatibility-shipping` | `breaking-dependency-api-change` | `dependency-api-incompatibility` |
+| `middleware-mysql-replica-lag-analytics` | `replica-apply-thread-saturation` | `replication-apply-bottleneck` |
+
+Five answers are stable across both runs (`cpu-throttling`, `disk-space-exhaustion`,
+`kubelet-eviction`, `stale-config-key`, `connection-pool-deadlock`). Eight of thirteen
+shared rows changed. That is not sampling noise on a fixed question; it is a different
+question or a different prompt, and the answers moved with it.
+
+**The conclusion finding 91 needs is therefore the one its own data supported.** The
+`type` reading that matters is `567118aea`'s, and the `type` figure is **14, not 15**.
+
+### The separator changed between the two runs, and both are in the record
+
+Re-deriving the rows exposed a second defect, and it is why the reconciliation could not
+be done by re-reading the annotation naively.
+
+`9932e766c` joins its rows with **a space**. `567118aea` joins them with **U+001F**.
+That change is finding 70's fix and the reasoning in the workflow is sound: values
+contain spaces, so a space join cannot be split unambiguously, and a whitespace split
+manufactured rows reading `order-service -> order-service` -- two cases of the scorer
+apparently marking a correct answer wrong.
+
+Measured on `9932e766c`'s recorded body: splitting on spaces yields **56 tokens** where
+the run published **38 rows**. The 18 extra tokens are the tails of multi-word values --
+`network`, `path`, `node`, `egress`, `interface`, `native`, `binding`, `Redis`,
+`service`, `database`, `client`, `pool`, `writer`, `rule`, `ConfigMap`, `provider`,
+`applier`, `thread`.
+
+Both separators still have to be readable, because the space-separated runs are already
+published and immutable and they are the only evidence of what the model said before the
+change. The space form is recovered by an anchor rule rather than by a split: a row
+begins with `<slug>.<field>:` where `field` is one of four known names, so a token that
+matches the anchor starts a row and a token that does not is a continuation. Rejoined on
+that rule, all 38 rows come back with the multi-word values intact --
+`cart-to-inventory network path`, `billing service database client pool`,
+`order-service ConfigMap`.
+
+**The rule is decidable but not sound**, and the difference is stated in the module
+rather than glossed. It fails on an `actual` that itself begins `<slug>.<field>:`. The
+recorded run contains no such answer, so the limit does not bite on the evidence in
+hand -- but the limit is the reason the separator was changed, so it is asserted rather
+than commented.
+
+### The classifier's partition is not the disputed one, but the *count* was
+
+Re-running the classifier over the correct run:
+
+| run | misses | `form-variant` | `shares-token` | `different-mechanism` | over-specified |
+|---|---|---|---|---|---|
+| `567118aea` (correct) | **14** | **0** | **8** | **6** | 7/14 |
+| `9932e766c` (what was quoted) | 15 | 0 | 9 | 6 | 11/15 |
+
+Two things follow, and they point in opposite directions from finding 91's framing.
+
+**`form-variant 0` holds on both runs.** No answer was rejected that the normalizer
+should have accepted. The scorer is not the defect. This is the one claim all three
+readings agree on, and it is the claim that matters most, because a form variant would
+be a bug in this repository.
+
+**`different-mechanism 6` also holds on both runs**, and it is not in tension with
+"all 14 are the same mechanism at a different altitude" -- it is a disagreement about
+what the three classes mean. The classifier's `different-mechanism` means *shares no
+token with the expected slug*; `pod-kill -> kubelet-eviction` shares nothing lexically
+and is still the same incident at a different altitude. So the classifier's 6 does not
+contradict finding 91's adjudication, and finding 91's adjudication does not overrule
+the classifier's 6. They answer different questions:
+
+- **The classifier** answers *can the normalizer reach this?* -- a lexical question, and
+  the one this repository can act on.
+- **Finding 91's adjudication** answers *is this the same fault?* -- a semantic question,
+  and the one a ground-truth change would need.
+
+Reporting either as the other is the error. The classifier's output must not be read as
+a count of genuinely different faults, and finding 91's adjudication must not be read as
+a normalizer verdict.
+
+### The assertion that was pinning the defect
+
+Fixing the reading turned up a test that was holding the old figure in place. In
+`type-miss-probe.test.ts`:
+
+```
+expect(longer).toBeGreaterThan(classified.length / 2);
+```
+
+This holds for `9932e766c` (11 of 15) and **fails for `567118aea`** (7 of 14 -- exactly
+half). It looked like a property of the model and was a coincidence of the run it was
+read from. The claim that survives both runs is the *direction*: over-specification
+outnumbers under-specification. That is now what is asserted, and it is asserted **per
+run**, so a future run that inverts the direction fails rather than being explained away.
+
+The same test required the probe's source line to contain the literal `9932e766c`. That
+assertion was pinning the hard-coded run. It now requires the source line to name the run
+that was **asked for**, which is the property that keeps a figure quotable.
+
+### What was built, and what it does not claim
+
+`packages/core/src/fault/miss-detail.ts` reads the annotation body into rows. It is the
+first thing in this repository that *reads* the channel rather than describing it, and
+the gap it closes is not cosmetic: the only previous consumer carried a copy of one run's
+contents instead of a reader, because the channel lives in CI and reading it needs a
+token, a run id, and a check-run lookup.
+
+`scripts/probe-type-misses.mjs` no longer hard-codes its input. It reads the recorded
+annotation through `parseMissDetail`, takes the run as a parameter (`--run`, default the
+most recent), and names the run in its output. The two recorded runs are both readable
+and both asserted.
+
+`packages/core/test/fixtures/miss-detail-567118aea.txt` and
+`miss-detail-9932e766c.txt` are the verbatim annotation bodies, escapes intact -- one
+U+001F-joined, one space-joined. They are the evidence, and they are in the repository so
+the reading can be re-derived without a token.
+
+**It does not claim the adjudication rule finding 91 asked for.** That rule decides "the
+same fault at a different altitude" versus "a genuinely different fault", and this
+finding does not build it -- it establishes what the rule must be applied to, which is
+14 rows from `567118aea` and not 15 from `9932e766c`. Building the rule over the wrong
+row set would have adjudicated a run nobody is discussing.
+
+**It does not claim the granularity costs anything.** 14 `type` misses is a count of
+misses. `strict` needs all three scored fields on one sample, and `category` at 11/19
+caps `strict` independently of `type`. The per-sample cross-product is now computable
+from the recorded rows; computing it is the next step, not this one.
+
+### The process rule, applied and now encoded
+
+Finding 91 stated the rule and applied it once, by hand. This finding is the second
+application and it is enforced:
+
+- **The reading is taken from the runs, not from the last document that mentioned a
+  run.** The transcription was exact and the figure was still wrong, because exactness
+  is relative to a subject and the subject had moved.
+- **A figure carries its run.** `recordedTypeMisses(run)` takes the run as an argument;
+  the probe prints the run it read; the tests assert per run. A figure with no run
+  attached cannot be checked, and one with the wrong run attached is worse than none.
+
+The three-line version, for the next round: **when two readings disagree, do not
+reconcile them by argument. Find which one is reading the thing, and delete the other.**

@@ -518,6 +518,14 @@ export type {
   ScoredField,
 } from './fault/extraction-scoring.js';
 
+export {
+  MISS_DETAIL_TITLE,
+  isTruncated,
+  parseMissDetail,
+  readMissDetail,
+} from './fault/miss-detail.js';
+export type { MissDetailReading, MissDetailRow } from './fault/miss-detail.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

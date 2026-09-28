@@ -43,40 +43,60 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The reader is imported from the built package rather than reproduced here.
+// Reproducing it was the earlier design and it is the defect this script is being
+// repaired for: the classifier reproduced `normalizeFaultType` on purpose (a
+// classifier whose definition moves with the artefact it classifies cannot report
+// on that artefact) and that reasoning does not extend to the *reader*. The
+// reader has one correct implementation and it is checked against the recorded
+// annotation by its own tests; a second copy here would be a second thing to keep
+// correct, and the failure would be silent -- a stale copy reads successfully.
+import { parseMissDetail } from '../packages/core/dist/index.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 
 /**
- * The fifteen `type` misses from run `9932e766c`, transcribed `expected, actual`.
+ * The `type` misses of a recorded run, read from the recorded annotation.
  *
- * The same run's `component` misses are recorded as `WRONG_ANSWERS` in
- * `fault-prompt-grammar.test.ts`; this is the `type` half that was missing.
+ * Each fixture is the verbatim annotation body of the run it names, with escapes
+ * intact. Reading them through `parseMissDetail` rather than carrying a
+ * transcription is the repair for the defect this script caused: it used to hold
+ * a copy of run `9932e766c`'s rows inline, exact against that run, and a later
+ * reading quoted those rows as the answers of run `567118aea`. Eight of fourteen
+ * rows disagreed with the annotation and two rows were attributed a `type` miss
+ * that their run assigned to `component`.
+ *
+ * A figure that cannot be re-derived is worth less than one whose provenance is
+ * stated -- so the provenance is stated, by deriving it.
  */
-const RECORDED_TYPE_MISSES = [
-  ['resource-cpu-saturation-checkout', 'cpu-saturation', 'cpu-throttling'],
-  ['resource-disk-full-log-collector', 'disk-full', 'disk-space-exhaustion'],
-  ['network-loss-payment-gateway', 'network-loss', 'egress-packet-drop'],
-  ['runtime-pod-kill-user-profile', 'pod-kill', 'kubelet-eviction'],
-  ['runtime-container-crash-loop-media', 'container-crash', 'native-ffmpeg-segfault'],
-  ['middleware-redis-latency-cache', 'redis-latency', 'redis-command-thread-saturation'],
-  ['middleware-kafka-consumer-lag', 'kafka-consumer-lag', 'synchronous-outbound-call-per-record'],
-  [
-    'middleware-database-connection-pool',
-    'database-connection-pool-exhaustion',
-    'connection-pool-deadlock',
-  ],
-  ['code-null-dereference-reporting', 'null-dereference', 'null-pointer-dereference'],
-  ['code-unhandled-exception-export', 'unhandled-exception', 'csv-writer-typeerror'],
-  ['code-slow-regex-api-gateway', 'regex-catastrophic-backtracking', 'regex-backtracking'],
-  ['config-datasource-url-orders', 'config-mismatch', 'stale-config-key'],
-  ['dependency-upstream-5xx-pricing', 'upstream-5xx', 'upstream-dependency-outage'],
-  [
-    'dependency-version-incompatibility-shipping',
-    'library-version-incompatibility',
-    'breaking-dependency-api-change',
-  ],
-  ['middleware-mysql-replica-lag-analytics', 'replica-lag', 'replica-apply-thread-saturation'],
-];
+const RUNS = {
+  /** The current format: rows joined with U+001F. type=5/19. */
+  '567118aea': 'miss-detail-567118aea.txt',
+  /** Before finding 70 changed the separator: rows joined with a space. type=4/19. */
+  '9932e766c': 'miss-detail-9932e766c.txt',
+};
+
+/** The run this script reads by default: the most recent recorded one. */
+const DEFAULT_RUN = '567118aea';
+
+/** Read a recorded run's `type` misses. Throws rather than returning an empty set. */
+function recordedTypeMisses(run) {
+  const file = RUNS[run];
+  if (file === undefined) {
+    throw new Error(
+      `unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}`,
+    );
+  }
+  const body = readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', file), 'utf8');
+  return {
+    run,
+    rows: parseMissDetail(body)
+      .filter((row) => row.field === 'type')
+      .map((row) => [row.sampleId, row.expected, row.actual ?? '(omitted)']),
+  };
+}
+
 
 /**
  * The normalizer the scorer applies, reproduced.
@@ -115,11 +135,17 @@ function classify(expected, actual) {
 }
 
 function parseArgs(argv) {
-  const out = { predictions: '', json: false };
+  const out = { predictions: '', json: false, run: DEFAULT_RUN };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--predictions') {
       out.predictions = resolve(argv[i + 1] ?? '');
+      i += 1;
+    } else if (a === '--run') {
+      // Which recorded run to read. Named rather than implied, because the defect
+      // this replaced was exactly a run being implied: the script read one run's
+      // contents while a reader assumed another's.
+      out.run = argv[i + 1] ?? DEFAULT_RUN;
       i += 1;
     } else if (a === '--json') {
       out.json = true;
@@ -170,15 +196,20 @@ function main() {
     return 1;
   }
   if (args.help) {
-    console.log('Usage: node scripts/probe-type-misses.mjs [--predictions <report.json>] [--json]');
+    console.log(
+      'Usage: node scripts/probe-type-misses.mjs [--predictions <report.json>] ' +
+        '[--run <recorded-run>] [--json]',
+    );
+    console.log(`\nRecorded runs: ${Object.keys(RUNS).join(', ')} (default: ${DEFAULT_RUN})`);
     return 0;
   }
 
   let rows;
   let source;
   if (args.predictions === '') {
-    rows = RECORDED_TYPE_MISSES;
-    source = 'recorded run 9932e766c (transcribed from the CI annotation)';
+    const recorded = recordedTypeMisses(args.run);
+    rows = recorded.rows;
+    source = `recorded run ${recorded.run} (read from the CI annotation body, not transcribed)`;
   } else {
     try {
       const report = JSON.parse(readFileSync(args.predictions, 'utf8'));
@@ -263,4 +294,4 @@ if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].re
   process.exit(main());
 }
 
-export { RECORDED_TYPE_MISSES, classify, normalizeFaultType, typeMissesFrom };
+export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom };

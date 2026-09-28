@@ -129,6 +129,7 @@ const ENUMERATED_MODULES = [
   'evolution/proposal.ts',
   'fault/collector.ts',
   'fault/extraction-scoring.ts',
+  'fault/miss-detail.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -525,6 +526,11 @@ const TESTED = [
   'meetsM1ExitCondition',
   'parseGoldenDataset',
   'scoreExtractionSample',
+  // fault/miss-detail.ts -- finding 92, reading the published miss detail back.
+  'MISS_DETAIL_TITLE',
+  'isTruncated',
+  'parseMissDetail',
+  'readMissDetail',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',
