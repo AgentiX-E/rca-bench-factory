@@ -7366,3 +7366,145 @@ application and it is enforced:
 
 The three-line version, for the next round: **when two readings disagree, do not
 reconcile them by argument. Find which one is reading the thing, and delete the other.**
+
+---
+
+## Finding 93: the battery's own injections went blind, and one of them had been blind all along
+
+Finding 92 removed `RECORDED_TYPE_MISSES` from the probe. Seven injections in
+`scripts/injection/type-miss-probe.py` were anchored on that array's rows, and an
+injection whose anchor has been deleted does not fail -- it reports **INERT**, which the
+battery counts as a run and does not count as a pass. CI failed on `95cb64e64` at step
+15 with exit 1 and no report; the local run reproduced it exactly: `7 caught, 0 survived,
+7 inert`, every INERT line reading `anchor not found: "  ['network-loss-payment-gateway',
+'network-loss', 'egress-packet-drop`.
+
+That is the battery behaving correctly. It is the same failure this project has now seen
+three times in a row -- a figure outliving the thing it described -- and this time the
+instrument caught itself.
+
+### The data moved, so the injections followed it
+
+The recorded misses now live in `packages/core/test/fixtures/miss-detail-567118aea.txt`,
+which is the annotation body of a named run. `run_probe` therefore takes two inputs --
+the probe source and the fixture -- and restores both in a `finally`, because the report
+has to be readable during a run that exits non-zero.
+
+Each paired injection now **declares** which file its second edit lands in:
+
+```python
+target = 'fixture' if len(entry) < 6 else entry[5]
+```
+
+Written down rather than inferred. An inferred target would be a guess, and this
+battery's entire history is of injections that silently tested nothing because an anchor
+moved; inferring the file would let a pair land in the wrong one and still look applied.
+Four of the seven retargeted injections turned out to be pure-data -- K, L, and the
+already-data J -- and those carry `mutate = None`. `main` had to stop calling
+`mutate(probe_text)` unconditionally, and had to stop running the `mutated == probe_text`
+early-exit for them: that guard asks whether the *rule* changed, which is the wrong
+question for an injection whose whole edit is in the data. It would have reported INERT
+on a correct injection.
+
+### The third verdict: BLIND
+
+Retargeting K is where this finding became worth writing. K edits the recorded answers.
+The first anchor renamed `cpu-saturation>cpu-throttling` to `cpu-load>cpu-throttling` --
+two strings that share `cpu`. The second renamed `disk-full>disk-space-exhaustion` to
+`disk>disk-exhaustion` -- two strings that share `disk`. In both cases the edit landed on
+a row that was **already in the class the edit was meant to move it out of**. The
+partition stayed `0/8/6`, the requirement went False, the exit code was non-zero, and the
+battery printed:
+
+```
+CAUGHT   K. data: ...
+         (form-variant 0, shares-token 8, different-mechanism 6, total 14, ...)
+```
+
+`CAUGHT` with an identical partition. The requirement had been falsified by something
+other than the mechanism under test, and the run looked like coverage it did not have.
+This is the same defect as INERT, arriving by a different route, and the battery had no
+name for it.
+
+It does now:
+
+```python
+elif (
+    data is not None
+    and not edits_source
+    and result["counts"] == BASELINE["counts"]
+    and result["total"] == BASELINE["total"]
+):
+    print(f"BLIND    {name}")
+    blind += 1
+```
+
+Scoped to data-only injections, because that is where "the partition must move" is the
+whole point of the edit. A *paired* injection like B changes the classifier and the data
+together; its requirement is about the classifier, and the partition is under no
+obligation to move. B failed the first run of this check for exactly that reason, and
+failing a correct injection is how a check gets deleted, so the scope is part of the fix.
+
+Verified load-bearing rather than asserted: with K re-anchored to a value that cannot move
+its class (`kubelet-eviction` -> `kubelet-oom-eviction`, still sharing no token with
+`pod-kill`), the battery reports `13 caught, 0 survived, 0 inert, 1 blind` and **exits 1**.
+
+### K watches the class the row leaves
+
+A within-partition edit can only be observed in the class the row **left**, because the
+three classes are a partition over the 14 rows: a row can only leave a class by arriving
+in another, and the arriving class grows by exactly the one that left. So a single class
+count cannot see a between-class move *in general*, and the only way a single-count
+requirement works is if it is the losing class. K's first shape watched the gaining class
+and reported SURVIVED, correctly -- the injection was wrong, not the probe.
+
+K is now anchored on a row genuinely in the different-mechanism class.
+`pod-kill` / `kubelet-eviction` share no token, so this is the real thing:
+
+```python
+lambda d: rename(
+    d,
+    "runtime-pod-kill-user-profile.type:pod-kill>kubelet-eviction",
+    "runtime-pod-kill-user-profile.type:pod-kill>kubelet-pod-eviction",
+),
+```
+
+and the requirement is the losing count: `different-mechanism == 6`. The run reports
+`0/9/5` and the count moved. Both wrong attempts are recorded at the anchor rather than
+deleted, because "this anchor was chosen by reading the two strings instead of the
+classifier's output for them" is the reusable lesson and it is invisible in a diff that
+only shows the final anchor.
+
+The six real different-mechanism rows are `memory-leak`, `pod-kill`, `container-crash`,
+`kafka-consumer-lag`, `upstream-5xx` and `replica-lag`, read from the classifier and not
+inferred. That list is in the comment because the next person to write an injection here
+will need it and will otherwise make attempt 2 again.
+
+### What changed
+
+| | before | after |
+|---|---|---|
+| injections green | 7 caught / 7 inert | **14 caught / 0 survived / 0 inert / 0 blind** |
+| verdicts | CAUGHT, SURVIVED, INERT | CAUGHT, SURVIVED, INERT, **BLIND** |
+| `run_probe` inputs | probe source | probe source + annotation fixture |
+| pair target | implicit (source) | declared per entry |
+| CI step name | no survivors, no inert | no survivors, no inert, **no blind** |
+
+### What this does not claim
+
+**It does not claim the other batteries have no blind injections.** The BLIND check was
+added to this battery because this battery is where the defect was found. Whether
+`inject-m1-ceiling.mjs`'s battery or the gate battery can report BLIND depends on whether
+their injections are anchored on data that can be edited without moving the observable;
+that is unmeasured, and the honest reading is that the other batteries are now suspect in
+a way they were not before.
+
+**It does not claim K's property was previously covered.** K reported SURVIVED for one
+anchor and CAUGHT-for-nothing for two others. The property "a row that becomes reachable
+leaves the unreachable class" had no passing injection before this commit.
+
+**It does not claim the retargeting was mechanical.** Four of the seven kept their edit
+verbatim and gained a `data` slot. K was rewritten, because its original property turned
+out to be unsatisfiable in the form it was stated. Two were already data-only. The count
+of injections is unchanged at 14, which is a coincidence and not a result.
+
