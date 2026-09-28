@@ -542,6 +542,20 @@ export type {
   SampleAdjudication,
 } from './fault/miss-adjudication.js';
 
+export {
+  COUNTER_EVIDENCE_PHRASES,
+  assessCounterEvidence,
+  countCounterEvidence,
+  counterEvidenceReport,
+} from './fault/miss-distractor.js';
+export type {
+  CounterEvidenceCounts,
+  CounterEvidenceReading,
+  CounterEvidenceReport,
+  CounterEvidenceVerdict,
+  GradedSample,
+} from './fault/miss-distractor.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

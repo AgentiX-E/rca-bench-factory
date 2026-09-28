@@ -131,6 +131,7 @@ const ENUMERATED_MODULES = [
   'fault/extraction-scoring.ts',
   'fault/miss-detail.ts',
   'fault/miss-adjudication.ts',
+  'fault/miss-distractor.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -539,6 +540,11 @@ const TESTED = [
   'crossProduct',
   'sampleAdjudication',
   'tokenize',
+  // fault/miss-distractor.ts -- finding 96, why the category misses miss.
+  'COUNTER_EVIDENCE_PHRASES',
+  'assessCounterEvidence',
+  'countCounterEvidence',
+  'counterEvidenceReport',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',

@@ -7933,3 +7933,166 @@ shape in AIOps2025 scoring, and it still needs its own reading.
 
 **It does not claim the other batteries are safe.** Unchanged from findings 93 and 94: whether
 `inject-m1-ceiling.mjs`'s battery can report BLIND or misroute a target remains unmeasured.
+
+---
+
+## Finding 96: the eight `category` misses follow a sentence that names a different category
+
+Finding 95 closed by naming its own successor:
+
+> Finding 94's instrument is what answers that question, and it has not yet been pointed at these
+> eight.
+
+This is that pointing. It produced a **new, measured finding**, and the finding is not the one I
+expected to write.
+
+### What was read
+
+The eight recorded `category` misses were read from both annotations (`567118aea`, `9932e766c`)
+and checked against `golden-master/fault-extraction/samples.json`:
+
+| Sample id | Expected | Answered | Counter-evidence phrase in the text |
+|---|---|---|---|
+| `resource-memory-leak-recommendation` | resource | code | *(none)* |
+| `runtime-pod-kill-user-profile` | runtime | resource | `well under the limit` |
+| `runtime-container-crash-loop-media` | runtime | dependency | *(none)* |
+| `middleware-redis-latency-cache` | middleware | resource | `not the bottleneck` |
+| `middleware-kafka-consumer-lag` | middleware | code | `unchanged` |
+| `middleware-database-connection-pool` | middleware | resource | `no long-running` |
+| `code-slow-regex-api-gateway` | code | config | *(none)* |
+| `middleware-mysql-replica-lag-analytics` | middleware | resource | `are current` |
+
+Three properties were verified before the pattern was named. The eight misses are **identical in
+both recorded runs**, so this is not run noise. **Every sample id resolves** in the golden dataset,
+so nothing was read from a stale artefact. And the annotation's `expected.category` **matches the
+dataset's own category 8 of 8**, so the ground truth is not two disagreeing sources.
+
+### The finding
+
+**Every missed incident contains a sentence naming a different category as the thing that is *not*
+happening, and the model answers with that category.** `well under the limit` says the resource is
+not the resource problem; the model answers `resource`. `not the bottleneck` says the middleware is
+not the bottleneck; the model answers `resource`. The distractor is a *negation of a category*, and
+the model reads the category and drops the negation.
+
+Measured on the 19-sample golden dataset with a closed list of 10 phrases:
+
+| Figure | Value |
+|---|---|
+| Samples carrying the phrase | 6 |
+| Category misses reached by the phrase | **5 of 8** |
+| **Precision** | **5/6** |
+| **Recall** | **5/8** |
+
+The confusion matrix, stated plainly, because it is what says the phrase carries signal:
+
+```
+has phrase & missed   5
+has phrase & correct  1
+no phrase & missed    3
+no phrase & correct  10
+```
+
+### The confound, excluded by measurement rather than by argument
+
+The obvious objection is that a longer incident text is harder, and longer texts are more likely to
+contain any given phrase. That was tested rather than dismissed:
+
+| Control | Result |
+|---|---|
+| Mean length with the phrase | 365 chars |
+| Mean length without | 330 chars |
+| Gap | 35 chars |
+| Misses caught by a 400-char length threshold | **1 of 8** |
+
+Text length is **not** the signal. A length threshold tuned to this very dataset reaches one of the
+eight; the phrase reaches five. The gap in means is small enough that a length-based predictor
+would have to be fitted to the eight to do anything, which is the definition of overfitting to the
+outcome.
+
+### It is recorded as a three-valued reading, for finding 94's reason
+
+`assessCounterEvidence` returns `counter-evidence-present`, `counter-evidence-absent`, or
+`not-assessable`. The third value exists for the same reason finding 94 introduced `undecided`: a
+**missing input must not be reported as a clean reading**. Empty and whitespace-only text returns
+`not-assessable`, and `counterEvidenceReport` counts such a sample in `gradedTotal` and on neither
+side of the miss accounting -- it is not evidence either way, and counting it on one side would move
+a figure on the strength of an input that was never read.
+
+The phrase list is **closed**, 10 entries, and closed rather than a regex for the same reason
+`NEGATION_PREFIXES` is closed: a pattern loose enough to catch prose catches prose.
+
+### A correction to finding 94
+
+Finding 94 recorded that the four `middleware` misses each answered `resource`. That is **false at
+three of four**: `middleware-kafka-consumer-lag` was answered **`code`**. The correction is recorded
+here because a finding that overstates its own regularity is how the next finding starts from a
+wrong premise.
+
+### Three injection lessons
+
+The battery now carries 24 injections (A–V), all caught, **0 survived / 0 inert / 0 blind**. The
+three new ones cost real mistakes before they worked, and each mistake is a distinct failure class:
+
+**T — the compile-time trap, again.** The first version of the mutation renamed
+`COUNTER_EVIDENCE_PHRASES` to `_UNUSED`. `tsc` rejected it three ways at once (`TS6133` on the
+constant, the inferred parameter type it fed, and the `index.ts` re-export). It was **caught, but at
+compile, with the requirement never evaluated** -- the same shape as finding 95's P/Q/R. The fix
+empties the array in place, so the mutation is a legal program that the battery has to reason about.
+
+**U — an unobservable branch cannot be defended.** Folding the third value into `absent` moved
+**nothing**, because the baseline `notAssessable` was **0** on real data. The mutation would have
+SURVIVED. It is now observable because the **probe itself** exercises the empty and whitespace
+inputs, giving the baseline `notAssessable: 2`. This is finding 95's lesson N restated: a mutation
+whose figure is never the deciding one tests the battery, not the code.
+
+**V — requiring the wrong field.** The first requirement read `withPhrase` (6, unchanged) and would
+have **SURVIVED**. Measured, the mutation moves `gradedTotal` 19 → 8. The requirement now names
+`gradedTotal`. Same defect class as N, caught by measuring rather than by reading.
+
+### A name collision the battery reported badly
+
+`cat()` -- the classifier probe added in finding 95 -- and the probe's own `category` block, added
+in this finding, both claimed the key `category`. The merge **silently overwrote** the block, and the
+battery then failed with `KeyError: 'withPhrase'` rather than naming the collision. The classifier
+merge is renamed `classifier`, with a comment at the merge site saying why. The battery should have
+said "two writers, one key"; it said "missing key", and the difference cost a debugging cycle.
+
+### Verification
+
+`packages/core/src/fault/miss-distractor.ts`: **100 / 100 / 100 / 100** -- statements, branches,
+functions, lines. Two branches reached only by the divide-by-zero guards (`withPhrase === 0`,
+`missedTotal === 0`) were **uncovered at 90.5% branch** until tests were written for an empty
+denominator; a `NaN` in a report compares false against every threshold a gate might use, so these
+guards needed tests that assert a `NaN` is not produced, not merely that the code runs. Package
+total: **99.96 / 99.94 / 100 / 99.96**. Repository suite: **2809 passed in 100 files**, 33 of them
+new. Battery: **24 caught, 0 survived, 0 inert, 0 blind**, all five inputs restored byte-for-byte.
+Lint: `ALL PROPERTIES HOLD`. Core and CLI typecheck clean. All injection scripts `py_compile` clean.
+
+### What this does not claim
+
+**It does not claim the phrase causes the miss.** The phrase is a **correlate** with measured
+precision and recall, and the readings are named per row rather than asserted in bulk. The report
+prints the phrase it actually matched -- for `middleware-redis-latency-cache` that is
+`not the bottleneck`, not the `is normal` I had read by hand. The instrument names its own basis
+rather than my reading of it.
+
+**It does not claim the predictor is complete.** It reaches **5 of 8**. A report that rounded this
+to "all eight" would be exactly the over-claim finding 91 refused to make by hand, and the
+three unreached misses are printed by name rather than summarised away.
+
+**It does not claim the dataset is fair to the model.** Whether writing a counter-evidence sentence
+into the incident text and then grading a category is a well-posed task is a **labelling question**,
+and it is not answered here. If it is unfair, the fix belongs in the dataset, not in the model.
+
+**It does not claim anything about `inferFaultCategory`.** That was finding 95. This finding is about
+a model transcript against a dataset, and the two must not be conflated: the classifier and the
+model can both be wrong, and here they are wrong for unrelated reasons.
+
+**`score/official.ts:900` is verified as a different case.** `keywordHit` there is the same substring
+shape, but it is **correct use**: it is a *scoring* heuristic measuring lexical overlap between two
+strings, and it makes no category claim, so a substring match is the intended semantics rather than a
+defect. Checked in full at finding 95 and re-checked here.
+
+**It does not claim the other batteries are safe.** Unchanged from findings 93, 94, and 95: whether
+`inject-m1-ceiling.mjs`'s battery can report BLIND or misroute a target remains unmeasured.

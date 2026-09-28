@@ -52,6 +52,11 @@ import { fileURLToPath } from 'node:url';
 // annotation by its own tests; a second copy here would be a second thing to keep
 // correct, and the failure would be silent -- a stale copy reads successfully.
 import { adjudicateAll, countAdjudications, parseMissDetail } from '../packages/core/dist/index.js';
+import {
+  assessCounterEvidence,
+  countCounterEvidence,
+  counterEvidenceReport,
+} from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -94,6 +99,102 @@ function recordedTypeMisses(run) {
     rows: parseMissDetail(body)
       .filter((row) => row.field === 'type')
       .map((row) => [row.sampleId, row.expected, row.actual ?? '(omitted)']),
+  };
+}
+
+/**
+ * Read a recorded run's `category` misses.
+ *
+ * The same fixture as `recordedTypeMisses`, filtered on a different field. Both
+ * fields are in one annotation body, so reading them through one parser is what
+ * keeps the two blocks agreeing about which run they describe -- finding 92's
+ * defect was a block quoting rows from a run it did not name.
+ */
+function recordedCategoryMisses(run) {
+  const file = RUNS[run];
+  if (file === undefined) {
+    throw new Error(
+      `unknown run '${run}'; recorded runs are ${Object.keys(RUNS).join(', ')}`,
+    );
+  }
+  const body = readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', file), 'utf8');
+  return parseMissDetail(body).filter((row) => row.field === 'category');
+}
+
+/**
+ * Build the `category` block: the misses, the reading for each, and the figures.
+ *
+ * A missed sample whose id is not in the golden dataset is reported in
+ * `unresolved` and excluded from the figures rather than skipped. Skipping it would
+ * make the denominators depend on the join succeeding, which is the shape of error
+ * that turns a partial join into a confident percentage.
+ */
+function categoryEvidence(run, rows) {
+  const goldenPath = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
+  const golden = JSON.parse(readFileSync(goldenPath, 'utf8'));
+  if (!Array.isArray(golden.samples)) {
+    throw new Error(`${goldenPath} carries no samples array`);
+  }
+  const textById = new Map(golden.samples.map((sample) => [sample.id, sample.incidentText]));
+  const missedIds = new Set(rows.map((row) => row.sampleId));
+
+  const unresolved = rows.filter((row) => !textById.has(row.sampleId)).map((row) => row.sampleId);
+
+  // Every graded sample, not only the misses: precision needs the texts the model
+  // got *right*, because a phrase that appears in a correct answer is a false
+  // positive and the block would otherwise report only its hits.
+  const graded = golden.samples
+    .filter((sample) => typeof sample.incidentText === 'string')
+    .map((sample) => ({
+      sampleId: sample.id,
+      incidentText: sample.incidentText,
+      missed: missedIds.has(sample.id),
+    }));
+
+  const report = counterEvidenceReport(graded);
+  const readings = rows.map((row) => {
+    const text = textById.get(row.sampleId);
+    const reading = assessCounterEvidence(text ?? '');
+    return {
+      sampleId: row.sampleId,
+      expected: row.expected,
+      actual: row.actual,
+      verdict: reading.verdict,
+      phrase: reading.phrase,
+    };
+  });
+
+  // The three values are counted over the *graded* texts above, where the third
+  // value never occurs -- every golden sample has text, so `not-assessable` would
+  // be reported as 0 and stay 0 no matter what the reader did with a missing input.
+  // That is an unobservable branch, and an unobservable branch is one the battery
+  // cannot defend (v1.35's injection N is the recorded case: it SURVIVED because
+  // the figure it moved was never the deciding one).
+  //
+  // So the empty and whitespace-only cases are probed explicitly, alongside the
+  // real texts. These are the inputs the third value exists for, and reporting them
+  // is what makes "no text to read" distinguishable from "text with no phrase" in
+  // the output rather than only in the module's docstring.
+  const synthetic = ['', '   \n\t '].map((text) => assessCounterEvidence(text));
+  const syntheticCounts = countCounterEvidence(synthetic);
+  const realReadings = rows.map((row) => assessCounterEvidence(textById.get(row.sampleId) ?? ''));
+  const realCounts = countCounterEvidence(realReadings);
+
+  return {
+    run,
+    misses: rows.length,
+    unresolved,
+    // The synthetic readings are folded into the same counts, so the reported
+    // total is what the reader was actually asked, not what the dataset happened
+    // to contain.
+    counts: {
+      present: realCounts.present,
+      absent: realCounts.absent,
+      notAssessable: realCounts.notAssessable + syntheticCounts.notAssessable,
+    },
+    ...report,
+    readings,
+    syntheticNotAssessable: syntheticCounts.notAssessable,
   };
 }
 
@@ -272,6 +373,30 @@ function main() {
   const adjudication = countAdjudications(adjudicated);
   const unreached = adjudicated.filter((m) => m.verdict === 'different-fault');
 
+  // The `category` block, which answers a question neither instrument above asks.
+  //
+  // The partition and the adjudication are both about the `type` field. Finding 69
+  // read `category`'s eight misses by eye and concluded that a legal vocabulary
+  // member was chosen, so the failure was *choosing* rather than *formatting* --
+  // an unfalsified reading naming no mechanism. Finding 96 measured the mechanism:
+  // each missed incident contains a sentence naming a *different* category as the
+  // thing that is not happening, and the model answers with that category.
+  //
+  // This block is where that becomes re-derivable. It reads the incident text of
+  // each missed sample out of the golden dataset -- resolving the sample id, so a
+  // miss the dataset does not carry is reported rather than silently skipped -- and
+  // runs the counter-evidence reading over it. Both denominators are printed
+  // because the predictor is incomplete: it reaches 5 of the 8, and the report says
+  // so rather than rounding to "all eight".
+  //
+  // It is only computable against a recorded run: the incident texts belong to the
+  // dataset, and a `--predictions` file names sample ids that may not be in it. The
+  // block is therefore absent rather than wrong when a predictions file is given,
+  // and `--json` consumers see the key missing.
+  const categoryBlock = args.predictions === ''
+    ? categoryEvidence(args.run, recordedCategoryMisses(args.run))
+    : null;
+
   const payload = {
     source,
     total: classified.length,
@@ -286,6 +411,7 @@ function main() {
       verdict: m.verdict,
       basis: m.basis,
     })),
+    ...(categoryBlock === null ? {} : { category: categoryBlock }),
   };
 
   if (args.json) {
@@ -317,6 +443,33 @@ function main() {
         'not a verdict that the two faults differ. Reading it as the latter is the inversion ' +
         'this probe exists to prevent.',
     );
+    if (categoryBlock !== null) {
+      const c = categoryBlock;
+      console.log(
+        `\ncategory counter-evidence (finding 96): ${c.misses} misses | ` +
+          `present ${c.counts.present} | absent ${c.counts.absent} | not-assessable ${c.counts.notAssessable}`,
+      );
+      for (const r of c.readings) {
+        const basis = r.phrase === null ? '' : `  (via '${r.phrase}')`;
+        console.log(`  ${r.verdict.padEnd(26)} ${r.expected} -> ${r.actual}${basis}`);
+      }
+      console.log(
+        `\nprecision ${c.missedWithPhrase}/${c.withPhrase} (of the texts carrying a phrase, ` +
+          `the share that are misses) | recall ${c.missedWithPhrase}/${c.missedTotal} ` +
+          `(of the misses, the share reached) | not reached ${c.missedWithoutPhrase}`,
+      );
+      console.log(
+        `\nThe predictor is incomplete: ${c.missedWithoutPhrase} of ${c.missedTotal} misses ` +
+          'carry no phrase from the list. It is a correlate at these counts, not a cause, ' +
+          'and the dataset writes the counter-evidence into the text by construction.',
+      );
+      if (c.unresolved.length > 0) {
+        console.log(
+          `\nWARNING: ${c.unresolved.length} missed sample id(s) are not in the golden dataset ` +
+            `and are excluded from the figures: ${c.unresolved.join(', ')}`,
+        );
+      }
+    }
     if (counts['form-variant'] === 0) {
       console.log(
         '\nno form variant: the normalizer is not the defect, so no answer here was rejected ' +

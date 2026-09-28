@@ -104,12 +104,20 @@ ADJUDICATION = REPO / "packages" / "core" / "src" / "fault" / "miss-adjudication
 # resolved to `middleware` because `flag` contains `lag`.
 COLLECTOR = REPO / "packages" / "core" / "src" / "fault" / "collector.ts"
 
+# The counter-evidence reader. A third in-package target, and the first one whose
+# subject is a *reading of the incident text* rather than of the model's answer.
+# Finding 96 measures that the `category` misses follow a counter-evidence sentence
+# at 5/6 precision and 5/8 recall; this file is where that measurement lives, so it
+# is where the injections have to land.
+DISTRACTOR = REPO / "packages" / "core" / "src" / "fault" / "miss-distractor.ts"
+
 # Every in-package target, mapped to the source it edits. `run_probe` takes one of
 # these at a time; keeping them in a table rather than in a chain of `if`s is what
 # makes "which file did this injection touch" answerable from the report.
 IN_PACKAGE_TARGETS = {
     "rule": ADJUDICATION,
     "collector": COLLECTOR,
+    "distractor": DISTRACTOR,
 }
 
 
@@ -245,9 +253,21 @@ def run_probe(
     # below from reading a KeyError as a pass.
     if cat_proc.returncode != 0 or not cat_proc.stdout.strip():
         raise AssertionError(
-            f"the category probe produced no report: rc={cat_proc.returncode} {cat_proc.stderr[-300:]}"
+            f"the classifier probe produced no report: rc={cat_proc.returncode} {cat_proc.stderr[-300:]}"
         )
-    report["category"] = json.loads(cat_proc.stdout)["totals"]
+    # `classifier`, not `category`.
+    #
+    # The two probes measure different objects and both had a claim on the word:
+    # `probe-category-inference.mjs` reports what `inferFaultCategory` answers for a
+    # type (finding 95), while `probe-type-misses.mjs` now emits a `category` block
+    # of its own, which is the counter-evidence reading of the `category` *field*
+    # (finding 96). The first version of this line used `category` for the classifier
+    # and silently overwrote the probe's own block -- the battery then failed with a
+    # `KeyError: 'withPhrase'` rather than with anything naming the collision.
+    #
+    # Renaming the merge rather than the probe's block, because the block's name is
+    # the field it is about and the merge's name is the instrument that produced it.
+    report["classifier"] = json.loads(cat_proc.stdout)["totals"]
     return report
 
 
@@ -288,26 +308,45 @@ def baseline_adj(verdict: str) -> int:
     return BASELINE["adjudication"][verdict]
 
 
-# The category probe's own baseline. Kept separate from BASELINE because it is a
+# The classifier probe's own baseline. Kept separate from BASELINE because it is a
 # separate probe with a separate report shape: folding two instruments into one
 # dict would make an injection into the classifier able to read a figure the
 # classifier never produced.
 CATEGORY_BASELINE: dict = {}
 
+# The counter-evidence reader's baseline, for the same reason again. It is a third
+# instrument over a third object -- the incident text rather than the answer or the
+# type -- and finding 96 is what it measures.
+DISTRACTOR_BASELINE: dict = {}
+
 
 def cat(report: dict) -> dict:
-    """The category probe's totals from a run's report.
+    """The classifier probe's totals from a run's report.
 
     An injection requirement takes the whole report, so this is the one place that
-    knows the classifier's figures live under `category`. Naming the accessor after
-    the probe rather than inlining `report["category"]["totals"]` at three call
-    sites is what lets the layout change without rewriting the requirements.
+    knows the classifier's figures live under `classifier`.
     """
-    return report["category"]
+    return report["classifier"]
 
 
 def cat_baseline() -> dict:
     return CATEGORY_BASELINE
+
+
+def dist(report: dict) -> dict:
+    """The counter-evidence block from a run's report.
+
+    The caveat that bit this module already: `classifier` used to be called
+    `category`, and `category` is also the name of the probe's own block for the
+    `category` field. Two instruments, one word. This accessor reads the field's
+    block and `cat` reads the classifier's, and neither can be confused with the
+    other at a call site.
+    """
+    return report["category"]
+
+
+def dist_baseline() -> dict:
+    return DISTRACTOR_BASELINE
 
 
 def body_of(text: str, signature: str) -> str:
@@ -861,6 +900,89 @@ INJECTIONS: list[
         ),
         'collector',
     ),
+    # --- The counter-evidence reader ---------------------------------------------
+    #
+    # T, U and V are the first injections aimed at a *reading of the incident text*.
+    # Finding 96's claim is the measurement these three defend: the `category` misses
+    # follow a counter-evidence sentence at 5/6 precision and 5/8 recall. Each one
+    # attacks a different load-bearing part of it -- the phrase list, the third
+    # value, and the denominators.
+    (
+        "T. distractor: empty the phrase list, so no text is ever observed to carry one",
+        None,
+        lambda r: dist(r)["withPhrase"] == dist_baseline()["withPhrase"],
+        "the count of texts carrying a phrase, so the list is not decorative",
+        # The list is what the finding *is*. An empty list makes every reading
+        # `absent`, which is a well-formed answer that reports nothing -- exactly the
+        # shape of defect that survives a suite which only checks the output parses.
+        #
+        # The array is emptied in place rather than renamed. Renaming it was the
+        # first version and it fails the build on three counts at once (the internal
+        # reference, the parameter's inferred type, and the `index.ts` re-export) --
+        # caught, but caught at compile with the requirement never evaluated, which
+        # is the same wrong-reason trap v1.36's P/Q/R recorded. Emptying keeps every
+        # reference valid and is the mutation that measures the claim.
+        lambda t: rename(
+            t,
+            "export const COUNTER_EVIDENCE_PHRASES: readonly string[] = [\n"
+            "  'unchanged',\n"
+            "  'not the bottleneck',\n"
+            "  'no long-running',\n"
+            "  'well under the limit',\n"
+            "  'are current',\n"
+            "  'is healthy',\n"
+            "  'is normal',\n"
+            "  'was healthy',\n"
+            "  'no error rate',\n"
+            "  'no application',\n"
+            "];",
+            "export const COUNTER_EVIDENCE_PHRASES: readonly string[] = [];",
+        ),
+        'distractor',
+    ),
+    (
+        "U. distractor: fold the third value into absence, so a missing input reads as clean",
+        None,
+        lambda r: dist(r)["counts"]["notAssessable"] == dist_baseline()["counts"]["notAssessable"],
+        "the not-assessable count, so 'no text to read' cannot be reported as 'no phrase found'",
+        # The failure mode finding 94 named for `undecided`: a value that exists so
+        # that "we could not check" is not reported as "we checked and it passed".
+        # The baseline is 0 not-assessable on this dataset, so the requirement is
+        # stated against the *count*, and the mutation makes a reading that was
+        # `not-assessable` become `absent`. The probe's own `counts` block is what
+        # observes it -- which is why the counts carry all three values rather than
+        # only the positive one.
+        lambda t: rename(
+            t,
+            "    return { verdict: 'not-assessable', phrase: null, present: false };",
+            "    return { verdict: 'counter-evidence-absent', phrase: null, present: false };",
+        ),
+        'distractor',
+    ),
+    (
+        "V. distractor: count only the misses, so the denominator stops being the graded set",
+        None,
+        lambda r: dist(r)["gradedTotal"] == dist_baseline()["gradedTotal"],
+        "the graded total, so the denominator is the dataset rather than the misses",
+        # The denominator attack, and the reason it matters: a report that counted
+        # only the misses would let precision read against a set chosen after the
+        # outcome was known. The instrument has to grade every sample in the dataset
+        # and mark which ones missed, rather than filtering first -- which is why the
+        # requirement is on `gradedTotal` (19) and not on `withPhrase`.
+        #
+        # The first version of this entry required `withPhrase` and would have
+        # SURVIVED: the mutation leaves that figure at 6, because the phrase appears
+        # in the same six texts either way. Requiring the field the mutation actually
+        # moves is the difference between an injection and a decoration, and it is
+        # the same lesson as v1.35's N -- whose floor change survived because the
+        # figure it moved was never the deciding one.
+        lambda t: rename(
+            t,
+            "  const graded = samples.filter((sample) => sample.incidentText.trim() !== '').length;",
+            "  const graded = samples.filter((sample) => sample.incidentText.trim() !== '' && sample.missed).length;",
+        ),
+        'distractor',
+    ),
 ]
 
 
@@ -881,7 +1003,11 @@ def main() -> int:
     # collector injection below reads it, so an injection states the classifier
     # figure it expects to hold and the run fails when it moves.
     CATEGORY_BASELINE.clear()
-    CATEGORY_BASELINE.update(report["category"])
+    CATEGORY_BASELINE.update(report["classifier"])
+    # And the counter-evidence reader's baseline, from the probe's own `category`
+    # block. Three instruments, three baselines, and each injection reads the one
+    # belonging to the object it mutates.
+    DISTRACTOR_BASELINE.update(report["category"])
     print("type-miss probe battery\n")
     print(
         f"baseline: {report['total']} misses -- "
@@ -896,6 +1022,19 @@ def main() -> int:
         f"{CATEGORY_BASELINE['goldenMisses']} miss; "
         f"{CATEGORY_BASELINE['adversarial']} adversarial words -- "
         f"{CATEGORY_BASELINE['adversarialFalsePositives']} false positives\n"
+    )
+    # The counter-evidence reader's own line. Printed for the same reason the
+    # classifier's is: an injection that moves a figure nobody printed is an
+    # injection whose failure has nowhere to show up, and this battery has
+    # already shipped one of those (U, whose baseline was 0 until the probe
+    # was made to exercise the empty inputs).
+    print(
+        f"counter-evidence: {DISTRACTOR_BASELINE['gradedTotal']} graded -- "
+        f"{DISTRACTOR_BASELINE['withPhrase']} carry the phrase, "
+        f"{DISTRACTOR_BASELINE['counts']['absent']} carry none, "
+        f"{DISTRACTOR_BASELINE['counts']['notAssessable']} not assessable; "
+        f"misses reached {DISTRACTOR_BASELINE['missedWithPhrase']}"
+        f"/{DISTRACTOR_BASELINE['missedTotal']}\n"
     )
 
     caught = survived = inert = blind = 0
