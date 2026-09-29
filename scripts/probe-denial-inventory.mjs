@@ -38,18 +38,34 @@
  *
  * Usage: node scripts/probe-denial-inventory.mjs [--json]
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import {
-  DENIAL_MARKERS,
-  assessCategoryDenial,
-  buildDenialInventory,
-} from '../packages/core/dist/fault/denial-inventory.js';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DATASET = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
+
+/**
+ * The reading is imported from the build output, and the build is not run by this
+ * script. Without this guard a cold check-out fails with a bare
+ * `ERR_MODULE_NOT_FOUND` naming a path that looks like a typo -- which is how it
+ * failed the first time this probe was written. The failure should say what is
+ * missing and what to run.
+ */
+const BUNDLE = resolve(REPO, 'packages', 'core', 'dist', 'fault', 'denial-inventory.js');
+if (!existsSync(BUNDLE)) {
+  process.stderr.write(
+    `error: ${BUNDLE} is missing.\n` +
+      '  This probe reads the built module, not the source.\n' +
+      '  Run: npx tsc -p packages/core/tsconfig.json\n',
+  );
+  process.exit(1);
+}
+
+const { DENIAL_MARKERS, assessCategoryDenial, buildDenialInventory } = await import(
+  pathToFileURL(BUNDLE).href
+);
 
 /**
  * The category each recorded miss was answered with, transcribed from the CI
