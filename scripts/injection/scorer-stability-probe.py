@@ -124,6 +124,38 @@ def main() -> int:
         print(f"built scorer not found at {DIST}; run `pnpm build` first")
         return 2
 
+    # Every path this battery writes, mapped to the bytes it held beforehand.
+    #
+    # The restore below compared `DIST` against a snapshot taken here, which
+    # verifies the one file the author remembered. That is the same shape as the
+    # defect measured in `m1-ceiling-probe.py`: that battery reported
+    # `sources restored: identical to backup`, exit 0, while 8098 lines of
+    # `docs/audit.md` had been replaced by a golden fixture. Recording the writes
+    # makes the restored set a consequence of running rather than a list to
+    # maintain, so a second target added later is covered by construction.
+    written: dict[Path, str] = {}
+
+    def write_recorded(path: Path, text: str) -> None:
+        if path not in written:
+            written[path] = path.read_text(encoding="utf8")
+        path.write_text(text, encoding="utf8")
+
+    def restore_recorded() -> bool:
+        """Restore the recorded set, refusing the vacuous pass.
+
+        `all(...)` over an empty mapping is `True`, so a battery that recorded
+        nothing would report a clean restore having verified nothing. The same
+        shape was measured in `m1-ceiling-probe.py`: with recording disabled it
+        printed `files written and restored: 0` beside `identical to backup`.
+        An empty set means the injections never applied, which is already a
+        failure, so it is refused here rather than reported as success.
+        """
+        if not written:
+            return False
+        for path, original in written.items():
+            path.write_text(original, encoding="utf8")
+        return all(path.read_text(encoding="utf8") == text for path, text in written.items())
+
     backup = DIST.read_text(encoding="utf8")
     caught = 0
     guarded: list[str] = []
@@ -143,7 +175,7 @@ def main() -> int:
                 inert.append(label)
                 print(f"INERT     {label}")
                 continue
-            DIST.write_text(mutated, encoding="utf8")
+            write_recorded(DIST, mutated)
 
             code, out, err = run_gate()
             combined = out + err
@@ -180,16 +212,18 @@ def main() -> int:
                     print(f"SURVIVED  {label}")
                     print("          gate exited 0 with the property broken")
 
-            DIST.write_text(source, encoding="utf8")
+            write_recorded(DIST, source)
     finally:
-        DIST.write_text(backup, encoding="utf8")
+        for path, original in written.items():
+            path.write_text(original, encoding="utf8")
 
-    restored = DIST.read_text(encoding="utf8") == backup
+    restored = restore_recorded()
     print()
     print(
         f"battery: {caught} caught, {len(guarded)} guarded upstream, "
         f"{len(survived)} survived, {len(inert)} inert"
     )
+    print(f"files written and restored: {len(written)}")
     print(f"source restored: {'identical to backup' if restored else 'DIFFERS FROM BACKUP'}")
     if not restored:
         return 2

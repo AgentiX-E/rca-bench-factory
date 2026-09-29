@@ -8096,3 +8096,165 @@ defect. Checked in full at finding 95 and re-checked here.
 
 **It does not claim the other batteries are safe.** Unchanged from findings 93, 94, and 95: whether
 `inject-m1-ceiling.mjs`'s battery can report BLIND or misroute a target remains unmeasured.
+
+---
+
+## Finding 97: the batteries wrote to files they never verified
+
+### The open question, finally answered
+
+Findings 93, 94, 95 and 96 each closed with the same unmeasured sentence:
+
+> whether other batteries can report BLIND or misroute a target remains unmeasured.
+
+v1.38 pointed at it. The answer is **yes, and worse than "misroute"**: a battery
+**silently overwrites a file it does not restore**, and reports a clean run afterwards.
+
+### The defect
+
+`scripts/injection/m1-ceiling-probe.py`, before this finding:
+
+```python
+original = probe_text if target == PROBE else golden_text   # line 247
+...
+target.write_text(mutated)                                  # line 261
+```
+
+Any target that is not `PROBE` reads the **golden fixture's text** as its source, and the mutated
+result is written to `target`. Only `PROBE` and `GOLDEN` are used today, so the two cases that
+exist are exactly the two the expression handles. **It was never wrong in a run, and it is wrong
+for every target added later.**
+
+### The measurement
+
+An eleventh injection targeting `docs/audit.md` was added to prove it rather than argue it:
+
+```
+CAUGHT   Z. misroute probe: target a third file, whose text is not the fixture
+battery: 11 caught, 0 survived, 0 inert
+files written and restored: 2
+sources restored: identical to backup
+```
+
+**Exit 0. Green. And `docs/audit.md` -- 8098 lines of audit -- had been replaced by the golden
+fixture JSON and truncated to 183 lines.** Restored with `git checkout -- docs/audit.md` and
+verified back at 8098.
+
+### Why it still said "restored"
+
+```python
+restored = PROBE.read_text() == probe_text and GOLDEN.read_text() == golden_text
+```
+
+The check names **the files it knows about**, not **the files it wrote**. That is the same defect
+finding 92 fixed in `type-miss-probe.py` by naming four inputs -- fixed locally, and never
+generalised. Five batteries share the shape:
+
+| Battery | Verified | Written | Status |
+|---|---|---|---|
+| `injection/m1-ceiling-probe.py` | `PROBE`, `GOLDEN` | via `target` | **confirmed exploitable** |
+| `injection/scorer-stability-probe.py` | `DIST` | `DIST` | latent -- one target |
+| `inject-stability.mjs` | `SRC` | `SRC` | latent -- one target |
+| `inject-m1-ceiling-tests.mjs` | `TEST`, `PROBE`, `GOLDEN` | via `applied` | latent |
+| `inject-component-rule.mjs` | per-entry `inj.file` | via `inj.file` | latent, closest to correct |
+
+Only the first is proven to have destroyed anything. The rest are reported as sharing the
+**shape**, and that word is used deliberately: a check that is right because the current target
+list is short is not a check.
+
+### A second defect, found while fixing the first
+
+The first fix routed every write through a recorder and derived the restore from it:
+
+```python
+restored = all(path.read_text() == original for path, original in _WRITTEN.items())
+```
+
+**`all(...)` over an empty mapping is `True`.** Measured by disabling the recorder:
+
+```
+battery: 10 caught, 1 survived, 0 inert
+files written and restored: 0
+sources restored: identical to backup
+```
+
+A battery that recorded nothing reported a clean restore **having verified nothing**. A vacuous
+pass is worse than the hard-coded pair it replaced: the pair at least verified two real files.
+
+This was caught by injection K, whose requirement reads the recorded set rather than a computed
+figure -- and **K SURVIVED** on the sabotaged recorder, which is how the hole was found at all.
+The guard is now explicit:
+
+```python
+if not _WRITTEN:
+    return False
+```
+
+Re-measured with the recorder still disabled: `sources restored: DIFFERS -- inspect before
+committing`, **exit 1**. Healthy run: 11 caught, `files written and restored: 2`, exit 0.
+
+**The lesson is not "a recorder is better than a list".** It is that **the fix introduced the same
+class of defect it removed** -- a check that passes for a reason other than the property it
+asserts -- and the only thing that caught it was an injection written to falsify the fix itself.
+
+### The fix
+
+The restored set is derived from the writes, in all five batteries. Two properties are asserted:
+
+1. **A target's own text is read from that path.** `original = target.read_text()`. No path maps
+   implicitly onto a fixture, so an entry whose mutation cannot match its own file fails loudly as
+   INERT rather than being silently substituted.
+2. **The restore covers what was written, and refuses the empty set.** A recorder keeps prior
+   bytes at the first write; the check reads the recorded set back and requires it to be non-empty.
+
+Each battery now prints `files written and restored: N` beside its verdict, so the *scope* of the
+restore is visible in the output rather than implied.
+
+A new test file, `packages/core/test/injection-target-routing.test.ts` (7 tests), holds all five
+batteries to both rules and **enumerates the batteries from the directory**, so a battery added
+later fails the suite until it is brought under them. The two exempt batteries
+(`gate-tests-battery.py`, `type-miss-probe.py`) are named with the reason, because an omission has
+to be a decision rather than a default.
+
+### What was verified, and how
+
+Every battery was re-run after the fix, and every one reports `0 survived / 0 inert` with a
+non-empty derived restore:
+
+| Battery | Result |
+|---|---|
+| `injection/m1-ceiling-probe.py` | 11 caught, 0 survived, 0 inert; 2 files written and restored |
+| `injection/scorer-stability-probe.py` | 4 caught, 1 guarded upstream, 0 survived, 0 inert; 1 file |
+| `inject-stability.mjs` | 4 caught, 0 survived, 0 inert; 1 file |
+| `inject-m1-ceiling-tests.mjs` | passes; set derived from `ORIGINALS` |
+| `inject-component-rule.mjs` | 8 caught, 0 survived, 0 inert; 2 files |
+
+`git status` after all five run shows exactly the five battery files and the new test -- no
+residue. The fix was validated by re-running the third-target probe: `docs/audit.md` survives at
+8098 lines with its own header, and the battery reports `files written and restored: 3`.
+
+### Verification
+
+Repository suite: **2816 passed in 101 files**, 7 of them new. Package coverage:
+**99.96 / 99.94 / 100 / 99.96**. Lint: `ALL PROPERTIES HOLD`. Core and CLI typecheck clean. All
+injection scripts `py_compile` clean.
+
+### What this does not claim
+
+**It does not claim the other four batteries destroyed anything.** Only the m1 battery's selector
+is proven exploitable. The rest share the shape and are now fixed as a class, which is a claim
+about the code and not about their history.
+
+**It does not claim the batteries are now audited.** This fixes the *restore*. Whether a battery's
+requirement can be satisfied by a mutation it does not follow is finding 95's lesson N and remains
+a per-injection property -- and this very finding added one such lesson by shipping, briefly, a
+mutation that survived the fix.
+
+**It does not claim a derived restore is sufficient.** It removes one way for a check to be blind.
+A recorder can still be bypassed by a write that does not go through it, which is why the
+`write_recorded` routing is itself asserted and why the direct `.write_text(` count is checked in
+`injection-write-discipline.test.ts`.
+
+**It does not claim the third-target injection is the only unmeasured one.** It is the one that was
+run. The rule now makes the *next* target safe by construction, which is a different and weaker
+statement than "all paths are tested".

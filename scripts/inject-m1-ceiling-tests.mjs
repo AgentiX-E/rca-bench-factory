@@ -385,15 +385,27 @@ for (const inj of injections) {
   }
 }
 
-// Restore and prove restoration byte-for-byte.
-writeFileSync(TEST, testOriginal);
-writeFileSync(PROBE, probeOriginal);
-writeFileSync(GOLDEN, goldenOriginal);
-const restored =
-  readFileSync(TEST, 'utf8') === testOriginal &&
-  readFileSync(PROBE, 'utf8') === probeOriginal &&
-  readFileSync(GOLDEN, 'utf8') === goldenOriginal;
+// Restore and prove restoration byte-for-byte, over the recorded set rather than
+// over three names repeated from the top of the file.
+//
+// The version before this listed `TEST`, `PROBE` and `GOLDEN` twice: once when
+// the snapshots were taken and once when they were written back. That is a list
+// to keep in step, and a file missing from the second copy is a file that is
+// written and never restored -- measured in `m1-ceiling-probe.py`, which
+// reported `sources restored: identical to backup` while 8098 lines of
+// `docs/audit.md` had been replaced by a fixture. Driving both loops from
+// `ORIGINALS` means the set restored is the set snapshotted, by construction.
+for (const [file, text] of Object.entries(ORIGINALS)) writeFileSync(file, text);
+const mismatched = Object.entries(ORIGINALS).filter(
+  ([file, text]) => readFileSync(file, 'utf8') !== text,
+);
+const restored = mismatched.length === 0;
 
 console.log(`\nbattery: ${caught} caught, ${survivors} survived, ${inert} inert`);
-console.log(`sources restored: ${restored ? 'identical to backup' : 'DIFFERS -- inspect before committing'}`);
+console.log(`files snapshotted and restored: ${Object.keys(ORIGINALS).length}`);
+console.log(
+  restored
+    ? 'sources restored: identical to backup'
+    : `sources restored: ${mismatched.map(([f]) => f).join(', ')} DIFFER -- inspect before committing`,
+);
 process.exit(survivors === 0 && inert === 0 && restored ? 0 : 1);

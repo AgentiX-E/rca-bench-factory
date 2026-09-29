@@ -106,6 +106,27 @@ const injections = [
 let survivors = 0;
 let inert = 0;
 
+/**
+ * Every file this battery writes, mapped to the bytes it held beforehand.
+ *
+ * The restore below used to compare `SRC` against a backup taken at startup,
+ * which verifies the one file the author remembered. `m1-ceiling-probe.py` was
+ * measured doing exactly that while writing a third file it never restored:
+ * 8098 lines of `docs/audit.md` replaced by a fixture, `sources restored:
+ * identical to backup`, exit 0. The check was honest about what it knew and
+ * blind to what it did not.
+ *
+ * Recording the writes makes the restored set a consequence of running, so a
+ * file touched later is covered by construction rather than by someone
+ * remembering to add it here.
+ */
+const written = new Map();
+
+function writeRecorded(file, text) {
+  if (!written.has(file)) written.set(file, readFileSync(file, 'utf8'));
+  writeFileSync(file, text);
+}
+
 for (const inj of injections) {
   const mutated = inj.apply(original);
   if (mutated === original) {
@@ -117,9 +138,9 @@ for (const inj of injections) {
     inert += 1;
     continue;
   }
-  writeFileSync(SRC, mutated);
+  writeRecorded(SRC, mutated);
   const r = runSuite();
-  writeFileSync(SRC, original);
+  writeRecorded(SRC, original);
   if (r.failed > 0) {
     console.log(`CAUGHT  ${inj.name}  (failed ${r.failed}, passed ${r.passed})`);
   } else {
@@ -128,10 +149,16 @@ for (const inj of injections) {
   }
 }
 
-writeFileSync(SRC, original);
-copyFileSync(BAK, SRC);
+// Restore over the recorded set and verify all of it. The backup file is kept
+// for crash recovery, not as the thing that decides whether the restore worked.
+for (const [file, text] of written) writeFileSync(file, text);
+const mismatched = [...written].filter(([file, text]) => readFileSync(file, 'utf8') !== text);
 console.log('');
-const restored = execSync(`diff -q ${BAK} ${SRC} || true`, { shell: '/bin/bash' }).toString();
-console.log(restored.trim() === '' ? 'source restored: identical to backup' : 'source restore FAILED');
+console.log(`files written and restored: ${written.size}`);
+console.log(
+  mismatched.length === 0
+    ? 'source restored: identical to backup'
+    : `source restore FAILED for ${mismatched.map(([f]) => f).join(', ')}`,
+);
 console.log(`battery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert`);
-process.exit(survivors === 0 && inert === 0 ? 0 : 1);
+process.exit(survivors === 0 && inert === 0 && mismatched.length === 0 ? 0 : 1);

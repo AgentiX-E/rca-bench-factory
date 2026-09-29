@@ -43,6 +43,48 @@ REPO = Path(__file__).resolve().parents[2]
 PROBE = REPO / "scripts" / "probe-m1-ceiling.mjs"
 GOLDEN = REPO / "golden-master" / "fault-extraction" / "samples.json"
 
+# Every path this battery writes, mapped to the bytes it held beforehand.
+#
+# The restore check used to name `PROBE` and `GOLDEN` explicitly, which verifies
+# the files the author remembered rather than the files the run touched. Measured
+# with an eleventh injection targeting `docs/audit.md`: the battery reported
+# `0 survived, 0 inert` and `sources restored: identical to backup`, exit 0, while
+# 8098 lines of audit had been replaced by the golden fixture and truncated to
+# 183. The restore was honest about the two paths it knew and blind to the third.
+#
+# Recording the writes makes the restored set a consequence of running rather
+# than a list to maintain, so a target added later is covered by construction --
+# which is the only way a check can protect a file that does not exist yet.
+_WRITTEN: dict[Path, str] = {}
+
+
+def write_recorded(path: Path, text: str) -> None:
+    """Write `path`, remembering its prior bytes the first time it is touched."""
+    if path not in _WRITTEN:
+        _WRITTEN[path] = path.read_text()
+    path.write_text(text)
+
+
+def restore_recorded() -> bool:
+    """Put every recorded file back and report whether all of them match.
+
+    The empty case is refused rather than accepted. `all(...)` over an empty
+    mapping is `True`, so a battery that recorded nothing would report
+    `sources restored: identical to backup` having verified nothing at all --
+    the same vacuous pass this recorder exists to remove, reintroduced by the
+    shape of the check. Measured: with recording disabled the battery printed
+    `files written and restored: 0` and `identical to backup` in the same run.
+
+    Requiring at least one recorded file makes the check falsifiable. A battery
+    with no writes is a battery whose injections never applied, which is already
+    INERT and already a failure.
+    """
+    if not _WRITTEN:
+        return False
+    for path, original in _WRITTEN.items():
+        path.write_text(original)
+    return all(path.read_text() == original for path, original in _WRITTEN.items())
+
 
 def run_probe() -> dict:
     out = subprocess.run(
@@ -223,13 +265,42 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         ),
         "recoverable and unrecoverable summing to the sample count, i.e. a partition",
     ),
+    # --- the battery's own restore -------------------------------------------------
+    (
+        "K. battery: verify a fixed pair instead of the files that were written",
+        # This one is unlike every entry above: it does not mutate the subject, it
+        # mutates *this script's* notion of what it touched. The target is the
+        # golden fixture -- the same file A uses -- so the entry is a real
+        # injection that runs, and the requirement reads the recorded set.
+        #
+        # The defect it guards was measured, not imagined. A battery that restores
+        # and verifies `PROBE` and `GOLDEN` by name reported, with an eleventh
+        # injection present:
+        #
+        #     battery: 11 caught, 0 survived, 0 inert
+        #     sources restored: identical to backup
+        #
+        # Exit 0 -- while 8098 lines of `docs/audit.md` had been replaced by this
+        # fixture's JSON and truncated to 183. The check was honest about the two
+        # paths it named and blind to the third, which it had itself written.
+        #
+        # What makes the mutation observable is the *count*. A restore that names
+        # two paths reports 2 whatever happens; one derived from the writes reports
+        # what the run touched. The requirement is therefore on the recorded set,
+        # which the battery reads back after restoring.
+        GOLDEN,
+        unrecover("cart-service"),
+        lambda r: len(_WRITTEN) < 2,
+        "a recorded write set smaller than the files this battery writes",
+    ),
 ]
 
 
 def main() -> int:
-    probe_text = PROBE.read_text()
-    golden_text = GOLDEN.read_text()
-
+    # No snapshots taken up front. The restore reads each file's bytes at its
+    # first write (see `write_recorded`), so a file this battery has never heard
+    # of is still restored -- and a snapshot pair taken here would be the fixed
+    # list the fix removed, one line further up.
     report = run_probe()
     total = report["samples"]
     BASELINE.clear()
@@ -244,7 +315,16 @@ def main() -> int:
 
     caught = survived = inert = 0
     for name, target, mutate, requirement, description in INJECTIONS:
-        original = probe_text if target == PROBE else golden_text
+        # The source text comes from `target` itself.
+        #
+        # This read `probe_text if target == PROBE else golden_text`, which
+        # routes every target that is not `PROBE` onto the fixture. The two
+        # targets that exist today are exactly the two the expression handles, so
+        # it was never wrong in a run -- and it was measured wrong the moment a
+        # third existed. Reading the target means a new entry cannot inherit
+        # another file's text, and a target whose text the mutation cannot match
+        # fails loudly as INERT instead of being silently substituted.
+        original = target.read_text()
         try:
             mutated = mutate(original)
         except AssertionError as exc:
@@ -258,7 +338,7 @@ def main() -> int:
             inert += 1
             continue
 
-        target.write_text(mutated)
+        write_recorded(target, mutated)
         try:
             result = run_probe()
             crashed = None
@@ -266,7 +346,7 @@ def main() -> int:
             result = None
             crashed = (exc.stderr or exc.stdout or "").strip().splitlines()
         finally:
-            target.write_text(original)
+            write_recorded(target, original)
 
         if crashed is not None:
             # A probe that cannot run under the mutation counts as caught, but it
@@ -291,13 +371,15 @@ def main() -> int:
             )
             caught += 1
 
-    # Restore and verify byte-for-byte. A battery that leaves a mutated file behind
-    # produces a green run and a broken repository.
-    PROBE.write_text(probe_text)
-    GOLDEN.write_text(golden_text)
-    restored = PROBE.read_text() == probe_text and GOLDEN.read_text() == golden_text
+    # Restore and verify byte-for-byte, over the set that was actually written.
+    # A battery that leaves a mutated file behind produces a green run and a
+    # broken repository -- and a battery that *verifies* a fixed pair while
+    # writing a third produces a green run and a broken repository it reports as
+    # clean, which is worse. See `_WRITTEN`.
+    restored = restore_recorded()
 
     print(f"\nbattery: {caught} caught, {survived} survived, {inert} inert")
+    print(f"files written and restored: {len(_WRITTEN)}")
     print(f"sources restored: {restored and 'identical to backup' or 'DIFFERS -- inspect before committing'}")
     return 0 if caught == len(INJECTIONS) and restored else 1
 

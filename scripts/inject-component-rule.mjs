@@ -230,12 +230,29 @@ for (const inj of injections) {
   }
 }
 
-// Restore and prove restoration byte-for-byte.
-writeFileSync(SUITE, suiteOriginal);
-writeFileSync(GOLDEN, goldenOriginal);
-const restored =
-  readFileSync(SUITE, 'utf8') === suiteOriginal && readFileSync(GOLDEN, 'utf8') === goldenOriginal;
+// Restore and prove restoration byte-for-byte, derived from the injections
+// rather than from two names repeated from the top of the file.
+//
+// Each entry already carries the file it targets and that file's original text,
+// so the set to restore is a property of the entry list. Writing `SUITE` and
+// `GOLDEN` back by name instead meant an injection added against a third file
+// would be restored only if someone also added it here. Measured in
+// `m1-ceiling-probe.py`: that battery reported `sources restored: identical to
+// backup` while 8098 lines of `docs/audit.md` had been replaced by a fixture.
+// Deriving the set means such an entry is covered by construction.
+const targets = new Map();
+for (const inj of injections) {
+  if (!targets.has(inj.file)) targets.set(inj.file, inj.original);
+}
+for (const [file, text] of targets) writeFileSync(file, text);
+const mismatched = [...targets].filter(([file, text]) => readFileSync(file, 'utf8') !== text);
+const restored = mismatched.length === 0;
 
 console.log(`\nbattery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert`);
-console.log(`source restored: ${restored ? 'identical to backup' : 'DIFFERS -- inspect before committing'}`);
+console.log(`files written and restored: ${targets.size}`);
+console.log(
+  restored
+    ? 'source restored: identical to backup'
+    : `source restore DIFFERS for ${mismatched.map(([f]) => f).join(', ')} -- inspect before committing`,
+);
 process.exit(survivors === 0 && inert === 0 && restored ? 0 : 1);
