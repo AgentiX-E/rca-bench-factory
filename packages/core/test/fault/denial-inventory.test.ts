@@ -81,6 +81,25 @@ const REACHED_MISSES: ReadonlyArray<{ sampleId: string; answered: string }> = [
   { sampleId: 'middleware-kafka-consumer-lag', answered: 'code' },
 ];
 
+/**
+ * The three `category` misses finding 96's phrase predictor does not reach.
+ *
+ * Named, because the claim about them is specific and has to survive a dataset edit
+ * that changes which misses are unreached. They are the complement of
+ * `REACHED_MISSES` within the recorded misses -- asserted as a partition rather than
+ * trusted, since a hand-written complement is exactly the kind of second copy of a
+ * fact this repository has been burned by.
+ *
+ * The answered category is transcribed from the recorded run for the same reason
+ * `REACHED_MISSES` carries it: there is no route from the annotation to a category
+ * without the vocabulary, so the answer is data and the join is by sample id.
+ */
+const UNREACHED_CATEGORY_MISSES: ReadonlyArray<{ sampleId: string; answered: string }> = [
+  { sampleId: 'resource-memory-leak-recommendation', answered: 'code' },
+  { sampleId: 'runtime-container-crash-loop-media', answered: 'dependency' },
+  { sampleId: 'code-slow-regex-api-gateway', answered: 'config' },
+];
+
 describe('the dataset states the standard this reading measures against', () => {
   it('carries the authoring rule it is held to', () => {
     // The finding quotes the dataset's own words. If the dataset is reworded, the
@@ -475,5 +494,68 @@ describe('the shipped probe reports what this module computes', () => {
     const report = probeReport();
     expect(report.category.missedWithPhrase).toBeLessThan(report.denial.unsupportedMisses);
     expect(report.denial.unsupportedMisses).toBe(report.denial.misses);
+  });
+
+  it('reaches the three misses the phrase predictor does not, and they read absent', () => {
+    // The relation between the two instruments, measured rather than assumed.
+    //
+    // Finding 96's phrase predictor reaches 5 of the 8 `category` misses and says so,
+    // printing the other three by name. It is tempting to read those three as "a
+    // different phenomenon" -- an earlier draft of finding 98 said they "are not
+    // claimed here" -- and that is false: this reading reaches them, and they read
+    // `absent`.
+    //
+    // They read `absent` *because* the text carries no term of the answered category
+    // at all, which is also why the phrase predictor cannot reach them: it looks for a
+    // sentence naming a category in order to deny it, and there is no term to deny.
+    // So the phrase predictor is a **special case** of this reading rather than a rival
+    // to it, and the three it misses are the cases where the absence is total.
+    //
+    // The three are named here rather than described, so the claim cannot survive a
+    // dataset edit that changes which misses are unreached.
+    const report = probeReport();
+    const reached = new Set(
+      report.denial.readings
+        .filter((r) => r.verdict !== 'absent' && r.verdict !== 'denied-only')
+        .map((r) => r.sampleId),
+    );
+
+    // The two lists partition the eight misses. Asserted, because a hand-written
+    // complement is a second copy of a fact and this repository has already been
+    // burned once by a transcription quoted as the answers of a different run.
+    const recorded = new Set(report.denial.readings.map((r) => r.sampleId));
+    const named = new Set([
+      ...REACHED_MISSES.map((m) => m.sampleId),
+      ...UNREACHED_CATEGORY_MISSES.map((m) => m.sampleId),
+    ]);
+    expect(named.size, 'the two lists must not overlap').toBe(
+      REACHED_MISSES.length + UNREACHED_CATEGORY_MISSES.length,
+    );
+    expect(
+      [...recorded].filter((id) => !named.has(id)),
+      'every recorded miss must be named in one of the two lists',
+    ).toEqual([]);
+    expect(
+      [...named].filter((id) => !recorded.has(id)),
+      'and no list may name a sample that is not a recorded miss',
+    ).toEqual([]);
+
+    for (const id of UNREACHED_CATEGORY_MISSES.map((m) => m.sampleId)) {
+      const reading = report.denial.readings.find((r) => r.sampleId === id);
+      expect(reading, `${id} must be among the readings`).toBeDefined();
+      expect(
+        reading!.verdict,
+        `${id}: the answered category is absent, which is why the phrase predictor finds no phrase`,
+      ).toBe('absent');
+    }
+
+    // And the reason they are unreached, asserted rather than described: the phrase
+    // predictor needs a phrase and these texts carry none. If a future dataset edit
+    // gave one of them a phrase, this fails and the two blocks stop being nested --
+    // which is a change worth failing for.
+    expect(
+      report.denial.misses - report.category.missedWithPhrase,
+      'the misses the phrase predictor cannot reach are exactly the ones whose answered category is absent with no phrase',
+    ).toBe(UNREACHED_CATEGORY_MISSES.length);
   });
 });

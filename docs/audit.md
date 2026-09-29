@@ -8333,6 +8333,17 @@ text does not carry as an assertion. The predictor that reaches 5 of 8 is a *wea
 than the one that reaches 8 of 8, and finding 96's block is retained beside this one precisely
 because the two figures disagreeing is the evidence that they measure different things.
 
+**The eight are not the five plus three more of the same kind.** The three the phrase predictor
+does not reach -- `resource-memory-leak-recommendation` (→ `code`),
+`runtime-container-crash-loop-media` (→ `dependency`), `code-slow-regex-api-gateway` (→ `config`)
+-- read `absent` too, and they read `absent` *because* the text carries no term of the answered
+category at all. The phrase predictor misses them for that reason: it looks for a sentence that
+names a category in order to deny it, and there is no such sentence, because there is no term to
+deny. So the phrase predictor is a **special case** of this reading, not a rival to it -- and the
+three it misses are the cases where the absence is total rather than partial. That relation was
+not visible before this reading existed, and it is the reason the two blocks are kept side by side
+rather than the weaker one being retired.
+
 ### The control, which is what keeps the reading from being trivial
 
 If a denial were enough to produce `denied-only`, the reading would flag everything and mean
@@ -8371,7 +8382,7 @@ separate rather than a boolean.
 | File | Change |
 |---|---|
 | `packages/core/src/fault/denial-inventory.ts` | new: three-valued reading of whether a category is present, denied, or absent, plus the corpus partition |
-| `packages/core/test/fault/denial-inventory.test.ts` | new: 30 tests, including the correction as an assertion |
+| `packages/core/test/fault/denial-inventory.test.ts` | new: 31 tests, including the correction as an assertion |
 | `scripts/probe-type-misses.mjs` | new `denial` block, beside the existing `category` block |
 | `scripts/probe-denial-inventory.mjs` | new standalone reading, and `probe:denial-inventory` |
 | `scripts/injection/type-miss-probe.py` | 3 new injections (W/X/Y) and a fourth in-package target |
@@ -8407,9 +8418,9 @@ The probe block is separately checked by four subprocess tests in the module's o
 which **run `scripts/probe-type-misses.mjs` and cross-check its figures against the module**. The
 wiring is a separate claim from the reading: a block can call the right function on the right
 texts and still print them against the wrong rows, which is finding 92's defect. Two falsification
-checks were run by hand -- reversing the column the block reads (2 of 30 tests fail) and
-disconnecting the block from the payload (4 of 30 fail) -- so the tests discriminate rather than
-agree.
+checks were run by hand -- reversing the column the block reads (2 of 31 tests fail),
+disconnecting the block from the payload (4 of 31 fail), and overlapping the reached/unreached
+partition (1 of 31 fails) -- so the tests discriminate rather than agree.
 
 Y's first draft filtered on a `missed` field that `InventorySample` does not carry, and the build
 failed with TS2339: caught, but caught at compile with the requirement never evaluated. That is
@@ -8418,7 +8429,7 @@ mutation that cannot compile is a mutation that measured nothing.**
 
 ### Verification
 
-Repository suite: **2849 passed in 102 files**, 5 of them new. `src/fault` coverage:
+Repository suite: **2850 passed in 102 files**, 5 of them new. `src/fault` coverage:
 **100 / 100 / 100 / 100**; the new module alone is 77/77 lines, 77/77 statements, 3/3 functions,
 32/32 branches. Lint: `ALL PROPERTIES HOLD`. Core and CLI typecheck clean. Injection battery:
 **27 caught, 0 survived, 0 inert, 0 blind**, restore identical to backup across probe, fixture and
@@ -8434,9 +8445,27 @@ here. No sample text was edited.
 that in eight of eight cases the text does not carry the answered category as an assertion, so
 "the model chose a category the text supports" is not available as an explanation.
 
-**It does not claim the three unreached misses behave the same way.** The reading covers the
-`category` field. The three misses finding 96's phrase predictor does not reach were measured
-separately as sharing no phrase pattern, and they are not claimed here.
+**It does not claim the reading is the only instrument that reaches these misses.** It is not a
+*different* reading of the same five samples: it reaches **all eight**, including the three
+finding 96's phrase predictor does not -- and all three read `absent`:
+
+```
+  absent        resource-memory-leak-recommendation   answered code
+  absent        runtime-container-crash-loop-media    answered dependency
+  absent        code-slow-regex-api-gateway           answered config
+```
+
+Those three carry no counter-evidence phrase, which is why the phrase predictor misses them; the
+denial inventory does not need a phrase, because **the absence of a term needs nothing to detect
+but the absence**. So the two instruments are not nested -- the phrase predictor is a *special
+case* of the pattern, and the three it misses are the cases where the absence is total. That is a
+correction to the framing this finding opened with: the claim is not about the five reached
+misses, it is about all eight. An earlier draft of this paragraph said the three unreached misses
+"are not claimed here", which was true of finding 96's instrument and false of this one.
+
+**It does not claim every category miss has this shape for the same reason.** Four are `absent`
+with no phrase at all, one is `denied-only`, and three are `absent` where finding 96's predictor
+sees nothing. The shared property is the absence of an assertion, not a shared mechanism.
 
 **It does not claim causation.** With n=19 this is a structural observation recorded with both
 denominators. That the authoring and the failures coincide is measured; that one caused the other
