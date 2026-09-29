@@ -116,26 +116,19 @@ export interface DenialReading {
 }
 
 /**
- * The category keyword rows, mirroring `fault/collector.ts`.
+ * The category keyword rows, shared with the agreement reading.
  *
- * Duplicated here rather than imported, and the duplication is deliberate: this
- * module must be able to disagree with the classifier. Importing the classifier's
- * table would make "the vocabulary says this word belongs to this category" and
- * "the reading found the word here" the same act, and finding 95 is the record of
- * what happens when a table and a reading of it are not separable.
+ * They moved to `category-terms.ts` when `component-agreement.ts` needed the same table,
+ * and the move is the point: two readings each carrying their own copy of the vocabulary
+ * could disagree about what a word means, and the disagreement would look like a
+ * difference between the *readings*. One table, two readers.
  *
- * A test asserts both tables agree on every category they share, so a change to one
- * without the other fails rather than drifts.
+ * The duplication with `fault/collector.ts` is still deliberate -- see `category-terms.ts`
+ * for why the readings must be able to disagree with the classifier -- and still checked
+ * by a test that requires the two tables to agree on every category they share.
  */
-const CATEGORY_TERMS: Readonly<Record<string, readonly string[]>> = {
-  middleware: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'],
-  network: ['network', 'latency', 'delay', 'loss', 'partition', 'bandwidth', 'dns', 'packet', 'drop', 'net'],
-  resource: ['cpu', 'memory', 'mem', 'disk', 'stress', 'capacity', 'oom', 'saturation', 'leak'],
-  runtime: ['pod', 'kill', 'crash', 'restart', 'evict', 'container', 'panic'],
-  code: ['exception', 'error', 'bug', 'null', 'stack', 'throw', 'logic', 'regex', 'backtracking'],
-  config: ['config', 'setting', 'env', 'yaml', 'property', 'mismatch'],
-  dependency: ['dependency', 'upstream', 'downstream', 'third-party', 'sdk', 'library'],
-};
+export { CATEGORY_TERMS } from './category-terms.js';
+import { CATEGORY_TERMS } from './category-terms.js';
 
 /** Split on sentence and clause boundaries, so a denial is scoped to its clause. */
 function clauses(text: string): string[] {

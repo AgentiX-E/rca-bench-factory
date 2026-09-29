@@ -119,6 +119,22 @@ DISTRACTOR = REPO / "packages" / "core" / "src" / "fault" / "miss-distractor.ts"
 # three injections W/X/Y below are what say the reading is load-bearing.
 DENIAL = REPO / "packages" / "core" / "src" / "fault" / "denial-inventory.ts"
 
+# The component-agreement reading. A fifth in-package target, and the one finding 99
+# lands in. `DENIAL` reads the *incident text*; this reads the model's own two output
+# fields against each other -- the `category` against the `component` from the same
+# answer. It is the mechanism `DENIAL` cannot reach, because text absence admits both
+# "could not read the incident" and "read it and mislabelled the category", while an
+# internal inconsistency between the answer's own fields admits only the second.
+AGREEMENT = REPO / "packages" / "core" / "src" / "fault" / "component-agreement.ts"
+
+# The shared vocabulary, extracted from `DENIAL` when `AGREEMENT` needed the same table.
+# It is a target in its own right because the extraction created a *new* way for the two
+# readings to disagree: if a reader carried its own copy, the disagreement would present
+# as a difference between the readings rather than between their tables. An injection
+# into this file therefore moves *both* readings, which is what makes it worth a target
+# rather than being folded into one of them.
+CATEGORY_TERMS = REPO / "packages" / "core" / "src" / "fault" / "category-terms.ts"
+
 # Every in-package target, mapped to the source it edits. `run_probe` takes one of
 # these at a time; keeping them in a table rather than in a chain of `if`s is what
 # makes "which file did this injection touch" answerable from the report.
@@ -127,6 +143,8 @@ IN_PACKAGE_TARGETS = {
     "collector": COLLECTOR,
     "distractor": DISTRACTOR,
     "denial": DENIAL,
+    "agreement": AGREEMENT,
+    "terms": CATEGORY_TERMS,
 }
 
 
@@ -337,6 +355,12 @@ DISTRACTOR_BASELINE: dict = {}
 # the same and be harder to see, because a wrong-dict read is a valid-looking number.
 DENIAL_BASELINE: dict = {}
 
+# The agreement reading's baseline, and a fifth dict. Same reason as the fourth: it observes
+# a different object again -- the answer's *internal* consistency, not the text and not the
+# answer's support by the text -- so a mutation that moves it must not be observable as a
+# movement in any of the four above, or the separateness of the readings would be untested.
+AGREEMENT_BASELINE: dict = {}
+
 
 def cat(report: dict) -> dict:
     """The classifier probe's totals from a run's report.
@@ -380,6 +404,20 @@ def denial(report: dict) -> dict:
 
 def denial_baseline() -> dict:
     return DENIAL_BASELINE
+
+
+def agreement(report: dict) -> dict:
+    """The agreement reading's block from a run's report.
+
+    Named after the property -- whether the answer agrees with itself -- rather than after the
+    module, so a call site reads as the claim being checked. Four readings now read four
+    different objects and no two share a word.
+    """
+    return report["agreement"]
+
+
+def agreement_baseline() -> dict:
+    return AGREEMENT_BASELINE
 
 
 def body_of(text: str, signature: str) -> str:
@@ -1130,6 +1168,107 @@ INJECTIONS: list[
         ),
         'denial',
     ),
+    # --- The component-agreement reading -------------------------------------------
+    #
+    # Z, AA and AB are the injections finding 99 brought. They land in a fifth in-package
+    # target, and they exist because the `agreement` block publishes figures that each encode
+    # a claim: that the reading recognises support when it is there (Z), that "no component to
+    # read" is not reported as disagreement (AA), and that the vocabulary the reading uses is
+    # the shared one rather than a private copy (AB).
+    #
+    # The reading is the mechanism finding 98 could not reach, so these are the injections
+    # that say so: a reading which cannot be moved is a reading that reports nothing, and the
+    # finding's whole force is that this one moves.
+    (
+        "Z. agreement: never recognise support, so every component reads as a disagreement",
+        None,
+        lambda r: agreement(r)["syntheticCounts"]["agrees"]
+        == agreement_baseline()["syntheticCounts"]["agrees"],
+        "the synthetic agreement count, so the reading can distinguish support from its absence",
+        # The discriminating half. The baseline has 0 agreements on this fixture, so the
+        # requirement is a movement claim rather than a value: the mutation forces the
+        # `agrees` branch unreachable by returning the disagreeing verdict from both paths,
+        # which drives no figure *up* on this data.
+        #
+        # That makes this the shape U and the `notAssessable` baseline nearly had -- a
+        # requirement on a figure that is already at its floor cannot be moved by a mutation
+        # that only removes agreements. So the mutation is paired with the *denominator*
+        # instead: forcing every component to disagree also folds the `not-assessable` row
+        # into the graded set, which moves `graded` from 7 to 8. The requirement below reads
+        # `graded`, which is the figure this mutation actually moves -- the lesson V records,
+        # applied before the injection ships rather than after.
+        #
+        # Written as a body replacement rather than by deleting the branch, so every reference
+        # stays valid and the defect is observable at run time. Deleting it was the first
+        # version and it fails the build on `terms` becoming unused -- caught, but caught at
+        # compile with the requirement never evaluated.
+        lambda t: rename(
+            t,
+            "  const lower = component.toLowerCase();\n"
+            "  const found = terms.filter((term) => lower.includes(term));\n"
+            "  return found.length > 0\n"
+            "    ? { verdict: 'agrees', terms: found }\n"
+            "    : { verdict: 'disagrees', terms: [] };",
+            "  const lower = component.toLowerCase();\n"
+            "  const found = terms.filter((term) => lower.includes(term));\n"
+            "  return found.length > 0 || true\n"
+            "    ? { verdict: 'disagrees', terms: [] }\n"
+            "    : { verdict: 'disagrees', terms: [] };",
+        ),
+        'agreement',
+    ),
+    (
+        "AA. agreement: treat a missing component as a disagreement, so a blank field counts against the answer",
+        None,
+        lambda r: agreement(r)["syntheticCounts"]["notAssessable"]
+        == agreement_baseline()["syntheticCounts"]["notAssessable"],
+        "the synthetic not-assessable count, so 'no component to read' is not reported as a disagreement",
+        # Finding 94's rule for the third value, and this time the baseline is **1** rather
+        # than 0 -- `middleware-kafka-consumer-lag` genuinely has no component row -- so the
+        # injection is observable without the probe having to construct an input, which is
+        # what U needed and did not have.
+        #
+        # Folding the blank case into `disagrees` would move `graded` 7 -> 8 and `disagrees`
+        # 7 -> 8 while `agrees` stayed 0, so the figure reads *better*: a sample with nothing
+        # to read would be counted as evidence for the finding. That direction is the reason
+        # the third value exists -- a missing input must never improve a figure.
+        lambda t: rename(
+            t,
+            "    return { verdict: 'not-assessable', terms: [] };",
+            "    return { verdict: 'disagrees', terms: [] };",
+        ),
+        'agreement',
+    ),
+    (
+        "AB. terms: empty the shared vocabulary, so both readings lose their basis at once",
+        None,
+        lambda r: denial(r)["counts"]["absent"] == denial_baseline()["counts"]["absent"]
+        and agreement(r)["syntheticCounts"]["agrees"]
+        == agreement_baseline()["syntheticCounts"]["agrees"],
+        "the absent count and the synthetic agreement count, the figures this one mutation moves in each",
+        # The extraction's own risk, pinned. `category-terms.ts` was created when a second
+        # reading needed the same vocabulary, and the defect it introduces is that a change
+        # now lands in **two** instruments. This injection is the only one in the battery whose
+        # requirement reads two blocks, because it is the only mutation that edits a file two
+        # blocks depend on -- and a requirement that read one of them would report a partial
+        # effect as the whole one.
+        #
+        # An empty table makes every category unrecognised. In `denial-inventory` that means
+        # every sample is `absent` (the `terms.length === 0` branch); in `component-agreement`
+        # it means every sample `disagrees` (its own unknown-category branch, which resolves
+        # the opposite way and is asserted in that module's tests). Both are well-formed
+        # reports that measure nothing, which is the shape this battery exists to catch.
+        #
+        # Emptied in place rather than renamed: renaming would fail the build on the internal
+        # reference and on the `index.ts` re-export -- caught, but the wrong-reason trap this
+        # battery has now recorded five times.
+        lambda t: rename(
+            t,
+            "  middleware: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'],",
+            "  middleware: [],",
+        ),
+        'terms',
+    ),
 ]
 
 
@@ -1162,6 +1301,11 @@ def main() -> int:
     # two readings would be untested.
     DENIAL_BASELINE.clear()
     DENIAL_BASELINE.update(report["denial"])
+    # And a fifth, from the `agreement` block. Five instruments, five baselines, and each
+    # injection reads the one belonging to the object it mutates -- except AB, which reads
+    # two, because it edits the vocabulary two of them share.
+    AGREEMENT_BASELINE.clear()
+    AGREEMENT_BASELINE.update(report["agreement"])
     print("type-miss probe battery\n")
     print(
         f"baseline: {report['total']} misses -- "
@@ -1204,6 +1348,14 @@ def main() -> int:
         f"{DENIAL_BASELINE['unsupportedMisses']} were answered with an unsupported category "
         f"({DENIAL_BASELINE['answeredCategoryAbsent']} absent, "
         f"{DENIAL_BASELINE['answeredCategoryDeniedOnly']} denied-only)\n"
+    )
+    # The agreement reading's line, printed for the same reason as the other four.
+    print(
+        f"component agreement: {AGREEMENT_BASELINE['graded']} graded -- "
+        f"{AGREEMENT_BASELINE['agrees']} agree, "
+        f"{AGREEMENT_BASELINE['disagrees']} disagree, "
+        f"{AGREEMENT_BASELINE['notAssessable']} not assessable "
+        f"({', '.join(AGREEMENT_BASELINE['unassessableIds']) or 'none'})\n"
     )
 
     caught = survived = inert = blind = 0

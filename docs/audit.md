@@ -8475,3 +8475,158 @@ is not.
 five of five". The measurement is four absent and one denied-only. A finding that records only its
 conclusion and not the claim it replaced is a finding that cannot be re-checked when the question
 changes, which is the reason the superseded reading is quoted above in full.
+
+## Finding 99: the misses named a component that does not carry the category they answered
+
+### Why finding 98 was not yet a mechanism
+
+Finding 98 measured that the answered category has no term in the **incident text**, in 8 of 8
+`category` misses. That is a statement about the dataset's *input*, and on its own it admits two
+explanations that produce the identical figure:
+
+1. the model failed to read the incident, so it reached for a category the text does not raise;
+2. the model read the incident correctly and mislabelled the category anyway.
+
+A model that named the right mechanism and then emitted an unsupported category would look
+exactly like a model that understood nothing. Finding 98 could not tell them apart, because it
+only ever read one side of the exchange.
+
+### The field that separates them
+
+`component` is the model's **own** output. The `category` and the `component` come from the same
+call over the same text. If the category were read off the mechanism the model itself identified,
+the answered category's vocabulary would appear in the component it named.
+
+Measured over the seven recorded `category` misses that carry a `component` row:
+
+| sample | answered | component the model named | answered category's terms in it |
+|---|---|---|---|
+| `resource-memory-leak-recommendation` | code | "recommendation service session cache" | none |
+| `runtime-pod-kill-user-profile` | resource | "kubelet" | none |
+| `runtime-container-crash-loop-media` | dependency | "native ffmpeg binding" | none |
+| `middleware-redis-latency-cache` | resource | "session Redis" | none |
+| `middleware-database-connection-pool` | resource | "billing service connection pool" | none |
+| `code-slow-regex-api-gateway` | config | "WAF rule" | none |
+| `middleware-mysql-replica-lag-analytics` | resource | "replica applier thread" | none |
+
+**7 of 7.**
+
+And the components are *right*: `kubelet` is the correct component for `pod-kill`; `session Redis`
+is the correct component for `redis-latency`; `WAF rule` is the correct component for
+`regex-catastrophic-backtracking`. The model identifies the mechanism and then emits a category
+that is not derivable from it.
+
+**So the failure is in the relation between the two fields, not in reading the incident.** That
+is a different claim from finding 98's, it points at a different fix, and it is the one finding
+98's measurement could not reach.
+
+### The denominator, and the row that is excluded rather than passed
+
+`middleware-kafka-consumer-lag` is the eighth miss and it carries **no `component` row** -- because
+the model answered the component *correctly* there. It named the mechanism right and still got the
+category wrong.
+
+That row is excluded from the denominator, not counted as a pass, and this is asserted rather than
+trusted:
+
+```
+component agreement (finding 99): 7/7 misses named a component that carries no term of the
+  category they answered -- 0 agree, 1 not assessable
+  ...
+Excluded, not passed: middleware-kafka-consumer-lag -- no component row was recorded because
+  the component was answered *correctly* there. Counting it as an eighth pass would be the
+  partial-join defect finding 92 records.
+```
+
+It is also the **counter-case**, and it is why this reading cannot be inverted. A category is
+evidently not always derivable from a component: this row has a correct component and a wrong
+category. So "the component determines the category" is false, and the finding is narrower -- that
+in every case where both were recorded, they disagree.
+
+### The extraction, and the new way to be wrong it created
+
+`component-agreement.ts` needed the same category vocabulary `denial-inventory.ts` used, so the
+table moved to `category-terms.ts`. The extraction is not a tidy-up: two readings each carrying
+their own copy could disagree about what a word *means*, and that disagreement would present as a
+difference between the **readings** rather than between their tables. One table, two readers.
+
+The duplication with `fault/collector.ts` is deliberately retained -- the readings must be able to
+disagree with the classifier (finding 95) -- and a test now asserts that every term the reading
+table contains actually routes to that category through `inferFaultCategory`. A term that routed
+elsewhere would make the reading and the classifier disagree about the **word** rather than about
+the **answer**.
+
+### The three injections, and the two defects they found before they shipped
+
+All three were **written wrong first and SURVIVED**, and the diagnosis of each is the content:
+
+| | Mutation | First requirement | Why it survived | Fixed by |
+|---|---|---|---|---|
+| **Z** | force `disagrees` on both return paths | `inventory.agrees` | the baseline is already **0**, so the branch the mutation removes was never exercised | exercising the `agrees` branch synthetically |
+| **AA** | fold the blank component into `disagrees` | `inventory.notAssessable` | `buildAgreementInventory` filters `component === null` *before* calling the reading, so the reading's own blank branch is unreachable through the probe | exercising it synthetically |
+| **AB** | empty the `middleware` row | `graded` in both blocks | `graded` did not move; `denial.counts.absent` moved **4 → 7** | requiring the field the mutation moves |
+
+Z and AA are the same failure the battery has recorded twice before (finding 95's N, finding 96's
+U): **a figure at its floor is a figure no mutation can move.** The first version of the probe's
+`agreement` block could not distinguish support from its absence, because the recorded run contains
+no supporting component and the blank case was filtered out upstream.
+
+The repair is to probe both branches explicitly, reported apart from the inventory so the
+denominator keeps describing the annotation:
+
+```
+synthetic: {"agrees": 1, "disagrees": 0, "notAssessable": 1}
+  (empty component) -> not-assessable | (component supports it) -> agrees
+```
+
+AB is the third occurrence of the wrong-field defect (V, then N) and it is the only injection in
+the battery whose requirement reads **two** blocks -- because it is the only mutation that edits a
+file two blocks depend on, and a requirement reading one of them would report a partial effect as
+the whole one.
+
+Final battery: **30 caught, 0 survived, 0 inert, 0 blind**, restore identical across probe, fixture
+and all **six** in-package targets.
+
+### What was built
+
+| File | Change |
+|---|---|
+| `packages/core/src/fault/component-agreement.ts` | new: read whether an answer's category is supported by the component that answer named |
+| `packages/core/src/fault/category-terms.ts` | new: the vocabulary two readings now share |
+| `packages/core/test/fault/component-agreement.test.ts` | new: 22 tests |
+| `scripts/probe-type-misses.mjs` | `agreement` block, with the synthetic branch exercise |
+| `scripts/injection/type-miss-probe.py` | 3 injections (Z/AA/AB), two new in-package targets, a fifth baseline |
+| `packages/core/src/index.ts` | registers the reading and the shared table |
+| `packages/core/test/export-surface-enumerated.test.ts` | enumerates both new modules |
+
+### Verification
+
+Repository suite: **2876 passed in 103 files**, against 2850 in 102 before this iteration. The
+**26** new tests are 20 in the new reading's own file plus 6 added to the enumerated-surface test;
+that package declared 20, and the number is stated here from the measured delta rather than from
+the file count, because the two disagree and the file count is the one that would have been wrong.
+`src/fault` coverage:
+**100 / 100 / 100 / 100**; `component-agreement.ts` alone is 46/46 lines, 46/46 statements,
+2/2 functions, 19/19 branches. Lint: `ALL PROPERTIES HOLD`. Core and CLI typecheck clean;
+injection script `py_compile` clean. Battery: 30 caught, 0 survived, 0 inert, 0 blind.
+
+### What this does not claim
+
+**It does not claim the model misnames components.** In all seven the component is the mechanism
+the incident describes. It is the category that is unsupported.
+
+**It does not claim `component` is a reliable key.** It is a free-text field with no vocabulary, so
+the reading is a term search and can only ever report `disagrees` -- "no term found" -- and never
+`mislabels`, because there is no table for a component to violate. The bound is stated in the
+module.
+
+**It does not claim a category is derivable from a component.** `middleware-kafka-consumer-lag` has
+a correct component and a wrong category. The reading cannot be inverted into "the component
+determines the category", and that row is why.
+
+**It does not claim causation.** Seven rows. The co-occurrence is measured; that one field caused
+the other is not.
+
+**And it does not claim finding 98 was wrong.** Finding 98 measured the text; this measures the
+answer. They are two objects, and the second is the one that rules out "the model simply could not
+read the incident" as the explanation.

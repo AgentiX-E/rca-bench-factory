@@ -568,6 +568,22 @@ export type {
   InventorySample,
 } from './fault/denial-inventory.js';
 
+// The shared category vocabulary, exported because two readings now read through it and
+// the agreement test asserts it has not drifted from the classifier's. A table that only
+// its own module can see cannot be cross-checked by anything else.
+export { CATEGORY_TERMS } from './fault/category-terms.js';
+
+export {
+  assessComponentAgreement,
+  buildAgreementInventory,
+} from './fault/component-agreement.js';
+export type {
+  AgreementInventory,
+  AgreementReading,
+  AgreementSample,
+  AgreementVerdict,
+} from './fault/component-agreement.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

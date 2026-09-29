@@ -62,6 +62,11 @@ import {
 // only consumer, and it is what turns "the text carries counter-evidence" into "the
 // answer the model gave has no term in the text".
 import { assessCategoryDenial, buildDenialInventory } from '../packages/core/dist/index.js';
+// And the agreement reading, which needs nothing from the dataset: it reads the model's own
+// `component` against the model's own `category`. Finding 99 is the mechanism finding 98
+// could not reach, and the reason it needs no incident text is that it is an internal
+// consistency check on the answer.
+import { assessComponentAgreement, buildAgreementInventory } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -318,6 +323,90 @@ function denialEvidence(run, rows) {
 }
 
 /**
+ * Build the `agreement` block: is the category a miss emitted derivable from the component
+ * that same answer named?
+ *
+ * This is the block that answers the question the `denial` block leaves open. That block
+ * measures the answered category's absence from the **incident text**, which admits two
+ * explanations -- the model could not read the incident, or it read it and mislabelled the
+ * category. Both produce the same figure.
+ *
+ * The `component` field separates them, because it is the model's **own** output, produced by
+ * the same call from the same text. If the category were read off the mechanism the model
+ * identified, the answered category's vocabulary would appear in the component it named.
+ *
+ * It reads only the recorded annotation, so a sample missing a `component` row is reported in
+ * `unassessableIds` rather than counted either way. `middleware-kafka-consumer-lag` is the
+ * live instance: it has no component row because the model answered the component *correctly*
+ * there, which makes it the counter-case for the finding rather than a silent pass.
+ */
+function agreementEvidence(run, rows) {
+  const components = new Map();
+  for (const row of rows) {
+    if (row.field === 'component') components.set(row.sampleId, row.actual);
+  }
+
+  const samples = rows
+    .filter((row) => row.field === 'category')
+    .map((row) => ({
+      sampleId: row.sampleId,
+      category: row.actual,
+      component: components.get(row.sampleId) ?? null,
+    }));
+
+  const inventory = buildAgreementInventory(samples);
+
+  const readings = samples
+    .filter((sample) => sample.component !== null)
+    .map((sample) => {
+      const reading = assessComponentAgreement({
+        component: sample.component,
+        category: sample.category,
+      });
+      return {
+        sampleId: sample.sampleId,
+        answered: sample.category,
+        component: sample.component,
+        verdict: reading.verdict,
+        terms: reading.terms,
+      };
+    });
+
+  // The branches the recorded run cannot reach, exercised explicitly.
+  //
+  // `buildAgreementInventory` filters out the samples with no component *before* calling the
+  // reading, so on this fixture the reading's own blank-input branch is never executed -- and
+  // neither is its agreeing branch, because all seven recorded misses disagree. Both are
+  // real branches with real verdicts, and a branch no input reaches is a branch the battery
+  // cannot defend: injections Z and AA were written against exactly these two and both
+  // SURVIVED, which is how this was found.
+  //
+  // So the empty component and a component that genuinely supports its category are probed
+  // alongside the real ones. This is the same repair finding 96's block needed for U's
+  // `notAssessable` baseline, and it is recorded here rather than rediscovered: a figure at
+  // its floor is a figure no mutation can move.
+  const synthetic = [
+    { sampleId: '(empty component)', component: '', category: 'middleware' },
+    { sampleId: '(component supports it)', component: 'the session Redis cache', category: 'middleware' },
+  ].map((s) => ({ ...s, ...assessComponentAgreement(s) }));
+
+  return {
+    run,
+    ...inventory,
+    readings,
+    synthetic,
+    // Counted apart from `inventory`, which is about the recorded run. Folding them in would
+    // make `graded` and `disagrees` describe a set that is not the annotation, and the whole
+    // point of the denominator is that it is the rows the run actually recorded.
+    syntheticCounts: {
+      agrees: synthetic.filter((s) => s.verdict === 'agrees').length,
+      disagrees: synthetic.filter((s) => s.verdict === 'disagrees').length,
+      notAssessable: synthetic.filter((s) => s.verdict === 'not-assessable').length,
+    },
+  };
+}
+
+/**
  * The normalizer the scorer applies, reproduced.
  *
  * It is *not* imported from the built package, and that is deliberate: this
@@ -532,6 +621,21 @@ function main() {
     ? denialEvidence(args.run, recordedCategoryMisses(args.run))
     : null;
 
+  // The `agreement` block, which needs the model's own two fields rather than the dataset.
+  //
+  // Unlike the two blocks above it does not read the incident text at all: it reads the
+  // `category` an answer emitted against the `component` the same answer emitted. That is
+  // what makes it a statement about the model rather than about the dataset, and it is the
+  // mechanism finding 98 could not reach.
+  //
+  // It reads the *unfiltered* recorded rows, because the component for a sample lives on a
+  // different row than its category miss -- filtering to `category` first would discard the
+  // very records this block needs, and every sample would read `not-assessable`, which is a
+  // well-formed report that measures nothing.
+  const agreementBlock = args.predictions === ''
+    ? agreementEvidence(args.run, parseMissDetail(readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', RUNS[args.run]), 'utf8')))
+    : null;
+
   const payload = {
     source,
     total: classified.length,
@@ -548,6 +652,7 @@ function main() {
     })),
     ...(categoryBlock === null ? {} : { category: categoryBlock }),
     ...(denialBlock === null ? {} : { denial: denialBlock }),
+    ...(agreementBlock === null ? {} : { agreement: agreementBlock }),
   };
 
   if (args.json) {
@@ -647,6 +752,33 @@ function main() {
         console.log(
           `\nWARNING: ${d.unresolved.length} missed sample id(s) are not in the golden dataset ` +
             `and are excluded from the figures: ${d.unresolved.join(', ')}`,
+        );
+      }
+    }
+    if (agreementBlock !== null) {
+      const a = agreementBlock;
+      console.log(
+        `\ncomponent agreement (finding 99): ${a.disagrees}/${a.graded} misses named a component ` +
+          `that carries no term of the category they answered -- ${a.agrees} agree, ` +
+          `${a.notAssessable} not assessable`,
+      );
+      for (const r of a.readings) {
+        console.log(
+          `  ${r.verdict.padEnd(10)} ${r.sampleId.padEnd(42)} answered ${String(r.answered).padEnd(11)} ` +
+            `component "${r.component}"`,
+        );
+      }
+      console.log(
+        `\nThe components are the mechanism the incident describes -- \`kubelet\` for pod-kill, ` +
+          `\`session Redis\` for redis-latency. The model names the mechanism correctly and then ` +
+          `emits a category that is not derivable from it, so the failure is in the relation ` +
+          `between the two fields rather than in reading the incident.`,
+      );
+      if (a.notAssessable > 0) {
+        console.log(
+          `\nExcluded, not passed: ${a.unassessableIds.join(', ')} -- no component row was ` +
+            'recorded because the component was answered *correctly* there. Counting it as an ' +
+            'eighth pass would be the partial-join defect finding 92 records.',
         );
       }
     }

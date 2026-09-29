@@ -133,6 +133,8 @@ const ENUMERATED_MODULES = [
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
+  'fault/category-terms.ts',
+  'fault/component-agreement.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -550,6 +552,11 @@ const TESTED = [
   'DENIAL_MARKERS',
   'assessCategoryDenial',
   'buildDenialInventory',
+  // fault/category-terms.ts -- the one vocabulary two readings now share.
+  'CATEGORY_TERMS',
+  // fault/component-agreement.ts -- finding 99, whether the answer carries its own category.
+  'assessComponentAgreement',
+  'buildAgreementInventory',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',
