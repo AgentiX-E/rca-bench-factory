@@ -57,6 +57,11 @@ import {
   countCounterEvidence,
   counterEvidenceReport,
 } from '../packages/core/dist/index.js';
+// And the denial inventory, imported for the same reason: it has one correct
+// implementation and the probe is a reader of it. Finding 98's block below is the
+// only consumer, and it is what turns "the text carries counter-evidence" into "the
+// answer the model gave has no term in the text".
+import { assessCategoryDenial, buildDenialInventory } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -198,6 +203,119 @@ function categoryEvidence(run, rows) {
   };
 }
 
+
+/**
+ * Build the `denial` block: of the misses, how many were answered with a category
+ * the incident text does not carry.
+ *
+ * The block above asks a question about the *text* -- does it carry counter-evidence.
+ * This one asks a question about the *answer* -- is the category the model chose
+ * supported by the text at all. They are different measurements, and finding 98 is
+ * the record of why the difference matters: the first was expected to explain the
+ * second and, measured, it does not. Four of the five reached misses were answered
+ * with a category the text never mentions; only one was answered with a category the
+ * text names in order to deny.
+ *
+ * The reading is three-valued per the module: `denied-only`, `also-asserted`,
+ * `absent`, and `not-assessable` for a blank input. All four are counted, because a
+ * value that is never observed is a value the battery cannot defend.
+ *
+ * The misses are read against the category the model **answered**, not the category
+ * that was expected. That is the whole point: `expected` is what the answer should
+ * have been and the text will of course carry it. Reading the expected category would
+ * report `also-asserted` for every sample and measure nothing.
+ *
+ * The control is reported separately. `resource-cpu-saturation-checkout` is the only
+ * sample that both carries a denial and was answered correctly, and it reads
+ * `also-asserted` -- so the reading does not simply flag every denial it sees.
+ */
+function denialEvidence(run, rows) {
+  const goldenPath = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
+  const golden = JSON.parse(readFileSync(goldenPath, 'utf8'));
+  if (!Array.isArray(golden.samples)) {
+    throw new Error(`${goldenPath} carries no samples array`);
+  }
+  const byId = new Map(golden.samples.map((sample) => [sample.id, sample]));
+  const missedIds = new Set(rows.map((row) => row.sampleId));
+  const unresolved = rows.filter((row) => !byId.has(row.sampleId)).map((row) => row.sampleId);
+
+  const readings = rows
+    .filter((row) => byId.has(row.sampleId))
+    .map((row) => {
+      const sample = byId.get(row.sampleId);
+      const reading = assessCategoryDenial({
+        text: sample.incidentText,
+        category: row.actual,
+      });
+      return {
+        sampleId: row.sampleId,
+        expected: row.expected,
+        answered: row.actual,
+        verdict: reading.verdict,
+        markers: reading.markers,
+      };
+    });
+
+  // The corpus partition, each sample read against its own *expected* category.
+  //
+  // This is the denominator the finding has to state: of 19 samples, how many carry
+  // their own answer only as a denial. It is deliberately not restricted to the
+  // misses -- a reading that only ever looks at the failures cannot say whether the
+  // failures are unusual.
+  const inventory = buildDenialInventory(
+    golden.samples
+      .filter((sample) => typeof sample.incidentText === 'string')
+      .map((sample) => ({
+        sampleId: sample.id,
+        text: sample.incidentText,
+        category: sample.expected?.category ?? '',
+      })),
+  );
+
+  // The blank inputs, probed explicitly for the reason the counter-evidence block
+  // probes them: the dataset has no blank text, so the fourth value would otherwise
+  // be reported as 0 forever and no mutation of it could be observed.
+  const synthetic = ['', '   \n\t '].map((text) =>
+    assessCategoryDenial({ text, category: 'resource' }).verdict,
+  );
+
+  // The control, looked up by id rather than by position so a dataset reorder does
+  // not silently move it.
+  const controlId = 'resource-cpu-saturation-checkout';
+  const controlSample = byId.get(controlId);
+  const control = controlSample
+    ? {
+        sampleId: controlId,
+        expected: controlSample.expected.category,
+        ...assessCategoryDenial({
+          text: controlSample.incidentText,
+          category: controlSample.expected.category,
+        }),
+      }
+    : null;
+
+  return {
+    run,
+    misses: rows.length,
+    unresolved,
+    graded: inventory.graded,
+    counts: {
+      deniedOnly: inventory.deniedOnly,
+      alsoAsserted: inventory.alsoAsserted,
+      absent: inventory.absent,
+      notAssessable: inventory.notAssessable + synthetic.filter((v) => v === 'not-assessable').length,
+    },
+    deniedOnlyShare: inventory.deniedOnlyShare,
+    unsupportedMisses: readings.filter(
+      (r) => r.verdict === 'absent' || r.verdict === 'denied-only',
+    ).length,
+    answeredCategoryAbsent: readings.filter((r) => r.verdict === 'absent').length,
+    answeredCategoryDeniedOnly: readings.filter((r) => r.verdict === 'denied-only').length,
+    control,
+    readings,
+    syntheticNotAssessable: synthetic.filter((v) => v === 'not-assessable').length,
+  };
+}
 
 /**
  * The normalizer the scorer applies, reproduced.
@@ -397,6 +515,23 @@ function main() {
     ? categoryEvidence(args.run, recordedCategoryMisses(args.run))
     : null;
 
+  // The `denial` block, which is a question about the answer rather than the text.
+  //
+  // Finding 96 recorded counter-evidence in the *text* and closed with an explicit
+  // gap: whether writing such a sentence and then grading a category is a well-posed
+  // task. This block answers it from the dataset side, without editing the dataset,
+  // by asking of each missed sample whether the category the model *answered* has any
+  // term in the text at all.
+  //
+  // It is the block that corrected its own founding claim. The expectation was "the
+  // text names the answered category only to deny it, five of five"; the measurement
+  // is four absent and one denied-only, which is a stronger statement than the one it
+  // replaced. That correction is why the block exists rather than a paragraph in a
+  // finding: the tidy version is the one a careful writer produces by hand.
+  const denialBlock = args.predictions === ''
+    ? denialEvidence(args.run, recordedCategoryMisses(args.run))
+    : null;
+
   const payload = {
     source,
     total: classified.length,
@@ -412,6 +547,7 @@ function main() {
       basis: m.basis,
     })),
     ...(categoryBlock === null ? {} : { category: categoryBlock }),
+    ...(denialBlock === null ? {} : { denial: denialBlock }),
   };
 
   if (args.json) {
@@ -467,6 +603,50 @@ function main() {
         console.log(
           `\nWARNING: ${c.unresolved.length} missed sample id(s) are not in the golden dataset ` +
             `and are excluded from the figures: ${c.unresolved.join(', ')}`,
+        );
+      }
+    }
+    if (denialBlock !== null) {
+      const d = denialBlock;
+      console.log(
+        `\ndenial inventory (finding 98): ${d.misses} misses read against the category the model ` +
+          `answered -- ${d.answeredCategoryAbsent} absent, ${d.answeredCategoryDeniedOnly} denied-only, ` +
+          `${d.unsupportedMisses} unsupported in total`,
+      );
+      for (const r of d.readings) {
+        const via = r.markers.length === 0 ? '' : `  (via ${r.markers.map((m) => `'${m}'`).join(', ')})`;
+        console.log(
+          `  ${r.verdict.padEnd(15)} ${r.expected.padEnd(11)} -> answered ${String(r.answered).padEnd(11)}${via}`,
+        );
+      }
+      console.log(
+        `\nin no case does the text assert the category the model chose. The expected shape ` +
+          `was "named only to deny it" in all five; measured, it is ${d.answeredCategoryAbsent} ` +
+          `of ${d.misses} that are absent and ${d.answeredCategoryDeniedOnly} of ${d.misses} ` +
+          'denied-only, which is the correction this block exists to carry.',
+      );
+      console.log(
+        `\ncorpus partition (each sample read against its own expected category): ` +
+          `${d.graded} graded | denied-only ${d.counts.deniedOnly} | also-asserted ${d.counts.alsoAsserted} | ` +
+          `absent ${d.counts.absent} | not-assessable ${d.counts.notAssessable} ` +
+          `(share denied-only ${(d.deniedOnlyShare * 100).toFixed(1)}%)`,
+      );
+      if (d.control !== null) {
+        console.log(
+          `control ${d.control.sampleId}: expected ${d.control.expected}, read ${d.control.verdict} ` +
+            `(markers: ${d.control.markers.join(', ') || 'none'}) -- a denial of a non-category ` +
+            'does not read as denied-only',
+        );
+      } else {
+        console.log(
+          'control resource-cpu-saturation-checkout: NOT FOUND in the dataset, so the reading is ' +
+            'not shown to be discriminating',
+        );
+      }
+      if (d.unresolved.length > 0) {
+        console.log(
+          `\nWARNING: ${d.unresolved.length} missed sample id(s) are not in the golden dataset ` +
+            `and are excluded from the figures: ${d.unresolved.join(', ')}`,
         );
       }
     }

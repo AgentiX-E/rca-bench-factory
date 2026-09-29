@@ -132,6 +132,7 @@ const ENUMERATED_MODULES = [
   'fault/miss-detail.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
+  'fault/denial-inventory.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -545,6 +546,10 @@ const TESTED = [
   'assessCounterEvidence',
   'countCounterEvidence',
   'counterEvidenceReport',
+  // fault/denial-inventory.ts -- finding 98, whether the text carries the answer.
+  'DENIAL_MARKERS',
+  'assessCategoryDenial',
+  'buildDenialInventory',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',

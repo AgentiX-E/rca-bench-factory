@@ -111,6 +111,14 @@ COLLECTOR = REPO / "packages" / "core" / "src" / "fault" / "collector.ts"
 # is where the injections have to land.
 DISTRACTOR = REPO / "packages" / "core" / "src" / "fault" / "miss-distractor.ts"
 
+# The denial inventory. A fourth in-package target, and the one finding 98 lands in.
+# Where `DISTRACTOR` asks "does the text carry counter-evidence", this module asks the
+# question that decides whether the task is well-posed at all: "is the category the
+# model *answered* present in the text, or only denied by it". It is a different
+# object -- the answer, not the text's phrasing -- so it is a different file, and the
+# three injections W/X/Y below are what say the reading is load-bearing.
+DENIAL = REPO / "packages" / "core" / "src" / "fault" / "denial-inventory.ts"
+
 # Every in-package target, mapped to the source it edits. `run_probe` takes one of
 # these at a time; keeping them in a table rather than in a chain of `if`s is what
 # makes "which file did this injection touch" answerable from the report.
@@ -118,6 +126,7 @@ IN_PACKAGE_TARGETS = {
     "rule": ADJUDICATION,
     "collector": COLLECTOR,
     "distractor": DISTRACTOR,
+    "denial": DENIAL,
 }
 
 
@@ -319,6 +328,15 @@ CATEGORY_BASELINE: dict = {}
 # type -- and finding 96 is what it measures.
 DISTRACTOR_BASELINE: dict = {}
 
+# The denial inventory's baseline, and the reason it is a fourth dict rather than an
+# entry in `DISTRACTOR_BASELINE`: they observe different objects. `DISTRACTOR_BASELINE`
+# is filled from the probe's `category` block, which is a reading of the *text's
+# phrasing*. This one is filled from the `denial` block, which is a reading of the
+# *answer's support*. Finding 96 recorded that two instruments sharing one name
+# (`category`) cost a debugging round; two instruments sharing one baseline would cost
+# the same and be harder to see, because a wrong-dict read is a valid-looking number.
+DENIAL_BASELINE: dict = {}
+
 
 def cat(report: dict) -> dict:
     """The classifier probe's totals from a run's report.
@@ -347,6 +365,21 @@ def dist(report: dict) -> dict:
 
 def dist_baseline() -> dict:
     return DISTRACTOR_BASELINE
+
+
+def denial(report: dict) -> dict:
+    """The denial inventory's block from a run's report.
+
+    Named after the *class* of observation -- whether the answered category is
+    supported -- rather than after the module that computes it, so a call site reads
+    as the claim being checked. `dist` reads the text's phrasing and this reads the
+    answer's support, and the two never share a word.
+    """
+    return report["denial"]
+
+
+def denial_baseline() -> dict:
+    return DENIAL_BASELINE
 
 
 def body_of(text: str, signature: str) -> str:
@@ -983,6 +1016,120 @@ INJECTIONS: list[
         ),
         'distractor',
     ),
+    # --- The denial inventory ------------------------------------------------------
+    #
+    # W, X and Y are the injections finding 98 brought. They land in a fourth
+    # in-package target and they exist because the `denial` block publishes three
+    # figures that each encode a claim: that the reading discriminates between a
+    # denial and an assertion (W), that "no term in the text" is not reported as
+    # "denied" (X), and that the corpus denominator is the dataset rather than the
+    # misses (Y). Each one attacks a different claim, and each states the figure it
+    # expects to move.
+    #
+    # The `denial` block is not a flag on the `category` block. They read different
+    # objects -- the text's phrasing and the answer's support -- and finding 98 exists
+    # because the first was expected to explain the second and does not. An injection
+    # that moved `category`'s figures while leaving `denial`'s alone would be evidence
+    # for that separateness; these three instead defend `denial` on its own terms,
+    # because a block nothing can move is a block that reports nothing.
+    (
+        "W. denial: make every term-carrying clause a denial, so an assertion reads as a denial",
+        None,
+        lambda r: denial(r)["counts"]["alsoAsserted"] == denial_baseline()["counts"]["alsoAsserted"],
+        "the also-asserted count, so a denial and an assertion are not the same reading",
+        # The orthogonal value. `also-asserted` exists so that "the text names this
+        # category in order to deny it" and "the text names this category, full stop"
+        # are not the same verdict -- the distinction the control rests on. If every
+        # matched clause counted as a denial, `also-asserted` would go to 0 and
+        # `denied-only` would swallow the corpus, which is a well-formed report that
+        # says the reading cannot tell the two apart.
+        #
+        # The mutation forces `found` non-empty rather than deleting the branch, so
+        # every reference stays valid and the defect is observable at run time rather
+        # than at compile. The compile-time version is the wrong-reason trap: the
+        # requirement would never be evaluated.
+        #
+        # The baseline is 14 also-asserted on this dataset, which is what makes the
+        # injection observable. An `also-asserted` count of 0 would make this mutation
+        # SURVIVE for the reason U's baseline of 0 nearly did.
+        lambda t: rename(
+            t,
+            "    const found = DENIAL_MARKERS.filter((marker) => low.includes(marker));\n"
+            "    if (found.length > 0) {",
+            "    const found = DENIAL_MARKERS.filter((marker) => low.includes(marker));\n"
+            "    if (found.length > 0 || true) {",
+        ),
+        'denial',
+    ),
+    (
+        "X. denial: fold absence into denial, so a text that never names the category reads as denying it",
+        None,
+        lambda r: denial(r)["counts"]["absent"] == denial_baseline()["counts"]["absent"],
+        "the absent count, so 'the text never mentions this' is not reported as 'the text denies this'",
+        # The finding *is* the distinction. Four of the five reached misses -- and,
+        # over the whole corpus, this is the majority value -- were answered with a
+        # category that has no term in the text at all. Folding `absent` into
+        # `denied-only` would turn that into "the text names the category in order to
+        # deny it", which is the false claim finding 98 corrected, restored as code.
+        #
+        # This is the mutation that would have made the superseded 5-of-5 reading pass.
+        # It is the reason the correction is load-bearing rather than cosmetic: without
+        # the separate value, the wrong finding and the right one are indistinguishable
+        # in the report.
+        #
+        # The mutation returns `denied-only` from the early exit, leaving every
+        # reference to the type intact. Renaming `absent` was the alternative and it
+        # fails the build on the union member, the consumer in `buildDenialInventory`,
+        # and the `index.ts` re-export -- caught, but caught at compile with the
+        # requirement never evaluated.
+        lambda t: rename(
+            t,
+            "    return { verdict: 'absent', markers: [] };",
+            "    return { verdict: 'denied-only', markers: [] };",
+        ),
+        'denial',
+    ),
+    (
+        "Y. denial: restrict the corpus to its long samples, so the denominator is chosen rather than given",
+        None,
+        lambda r: denial(r)["graded"] == denial_baseline()["graded"],
+        "the graded total, so the denominator is the dataset rather than the misses",
+        # The denominator attack, and it is the same one V makes against the
+        # counter-evidence reader -- which is why the two are separate entries rather
+        # than one: the fact that a defect class recurs in a sibling instrument is
+        # worth pinning in both, and a mutation that only moved one of them would be
+        # evidence that they were in fact one instrument after all.
+        #
+        # The reading is over the whole corpus on purpose. `denied-only` on 1 of 8
+        # misses is unremarkable; on 1 of 19 samples it says something about the
+        # dataset's authoring. A report whose denominator is chosen after the outcome
+        # is known can make either figure look like the other.
+        #
+        # The requirement is on `graded`, not on `deniedOnly`, because the mutation
+        # leaves the *numerator* alone -- the 19 samples and the 8 misses share the one
+        # denied-only case. Requiring `deniedOnly` would SURVIVE, which is the lesson
+        # V records: require the figure the mutation actually moves.
+        #
+        # The filter is on the *text*, which every sample has, rather than on a
+        # `missed` flag, which `InventorySample` does not carry. The first version
+        # wrote `s.missed === true` and the build failed with TS2339 -- caught, but
+        # caught at compile with the requirement never evaluated, which is the
+        # wrong-reason trap this battery has now recorded four times (P/Q/R, T, and
+        # here). The mutation has to be expressible without changing the type, because
+        # a mutation that edits two files is a mutation whose single effect cannot be
+        # read off the report.
+        #
+        # Restricting to a short-text subset is the same defect in substance: the
+        # denominator becomes a set chosen for being small rather than the corpus.
+        lambda t: rename(
+            t,
+            "  for (const sample of samples) {\n"
+            "    const reading = assessCategoryDenial({ text: sample.text, category: sample.category });",
+            "  for (const sample of samples.filter((s) => s.text.length > 400)) {\n"
+            "    const reading = assessCategoryDenial({ text: sample.text, category: sample.category });",
+        ),
+        'denial',
+    ),
 ]
 
 
@@ -1008,6 +1155,13 @@ def main() -> int:
     # block. Three instruments, three baselines, and each injection reads the one
     # belonging to the object it mutates.
     DISTRACTOR_BASELINE.update(report["category"])
+    # A fourth instrument and a fourth baseline. Filled from the probe's `denial`
+    # block, which reads the *answer's* support rather than the text's phrasing, and
+    # therefore cannot share a dict with the block above: the mutation that moves one
+    # must not be observable as a movement in the other, or the separateness of the
+    # two readings would be untested.
+    DENIAL_BASELINE.clear()
+    DENIAL_BASELINE.update(report["denial"])
     print("type-miss probe battery\n")
     print(
         f"baseline: {report['total']} misses -- "
@@ -1035,6 +1189,21 @@ def main() -> int:
         f"{DISTRACTOR_BASELINE['counts']['notAssessable']} not assessable; "
         f"misses reached {DISTRACTOR_BASELINE['missedWithPhrase']}"
         f"/{DISTRACTOR_BASELINE['missedTotal']}\n"
+    )
+    # The denial inventory's own line. It is a fourth instrument over a fourth object
+    # -- the answer rather than the text or the type -- and it is printed for the
+    # reason the other three are: an injection that moves a figure nobody printed is
+    # an injection whose failure has nowhere to show up.
+    print(
+        f"denial inventory: {DENIAL_BASELINE['graded']} graded -- "
+        f"{DENIAL_BASELINE['counts']['deniedOnly']} denied-only, "
+        f"{DENIAL_BASELINE['counts']['alsoAsserted']} also-asserted, "
+        f"{DENIAL_BASELINE['counts']['absent']} absent, "
+        f"{DENIAL_BASELINE['counts']['notAssessable']} not assessable; "
+        f"of {DENIAL_BASELINE['misses']} misses, "
+        f"{DENIAL_BASELINE['unsupportedMisses']} were answered with an unsupported category "
+        f"({DENIAL_BASELINE['answeredCategoryAbsent']} absent, "
+        f"{DENIAL_BASELINE['answeredCategoryDeniedOnly']} denied-only)\n"
     )
 
     caught = survived = inert = blind = 0

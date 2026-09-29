@@ -556,6 +556,18 @@ export type {
   GradedSample,
 } from './fault/miss-distractor.js';
 
+export {
+  DENIAL_MARKERS,
+  assessCategoryDenial,
+  buildDenialInventory,
+} from './fault/denial-inventory.js';
+export type {
+  DenialInventory,
+  DenialReading,
+  DenialVerdict,
+  InventorySample,
+} from './fault/denial-inventory.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

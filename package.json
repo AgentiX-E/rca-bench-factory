@@ -34,7 +34,8 @@
     "probe:type-misses": "node scripts/probe-type-misses.mjs",
     "probe:category-inference": "node scripts/probe-category-inference.mjs",
     "inject:type-miss-probe": "python3 scripts/injection/type-miss-probe.py",
-    "inject:gate-tests": "python3 scripts/injection/gate-tests-battery.py"
+    "inject:gate-tests": "python3 scripts/injection/gate-tests-battery.py",
+    "probe:denial-inventory": "node scripts/probe-denial-inventory.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

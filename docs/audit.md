@@ -8258,3 +8258,191 @@ A recorder can still be bypassed by a write that does not go through it, which i
 **It does not claim the third-target injection is the only unmeasured one.** It is the one that was
 run. The rule now makes the *next* target safe by construction, which is a different and weaker
 statement than "all paths are tested".
+
+## Finding 98: the misses were answered with a category the text does not carry
+
+### The gap this closes
+
+Finding 96 measured that the `category` misses follow a sentence naming a different
+category as the thing that is *not* happening. It closed with an explicit gap:
+
+> **It does not claim the dataset is fair to the model.** Whether writing a
+> counter-evidence sentence into the incident text and then grading a category is a
+> **well-posed task** is a labelling question, and it is not answered here.
+
+That is a question about the dataset, not about the model, and this finding answers it from
+the dataset side **without modifying the dataset**.
+
+### The standard the dataset states for itself
+
+`golden-master/fault-extraction/samples.json` carries its own authoring criteria in `provenance`:
+
+> **note**: "Each incidentText is written to sound like a real support ticket or post-mortem
+> while naming exactly one fault, so the expected record is **decidable from the text alone**."
+>
+> **authoringRule**: "The expected.type must be **derivable from the incident text** by a
+> careful human reader. A sample whose answer needs context the text does not carry is a bad
+> sample, not a hard one."
+
+Those are the criteria this finding measures against, and a test asserts the quoted text is
+what the dataset actually says, so the finding cannot drift from its own standard.
+
+### The measurement, and the claim it falsified
+
+The reading was written to support a claim I had already stated in the plan:
+
+> "In five of five, the category the model answered is named in the text for the sole purpose
+> of being ruled out."
+
+**Measured, that is false.** The five misses finding 96's predictor reaches split **four to one**:
+
+| Missed sample | Expected | Answered | The answered category in the text | Verdict |
+|---|---|---|---|---|
+| `middleware-database-connection-pool` | middleware | resource | **no term at all** | `absent` |
+| `middleware-redis-latency-cache` | middleware | resource | **no term** -- the denial is about the *client pool* | `absent` |
+| `middleware-mysql-replica-lag-analytics` | middleware | resource | **no term** -- the text says the primary `is healthy` | `absent` |
+| `runtime-pod-kill-user-profile` | runtime | resource | `memory`, under `well under the limit` | `denied-only` |
+| `middleware-kafka-consumer-lag` | middleware | code | **no term** -- the denial is about *broker throughput* | `absent` |
+
+**In four of five the answered category has no term in the text whatsoever.** In the fifth the
+only term sits inside a denial. **In none of the five does the text assert it.**
+
+The corrected statement is stronger than the one it replaced: the model is not choosing among
+hypotheses the text raises and inverting the one it rules out. It is producing a category the
+text does not support at all. The 5-of-5 reading survives only as the superseded draft, because
+the distance between it and the measurement *is* the finding.
+
+Over the whole corpus the same reading is more emphatic still. Reading each of the eight
+`category` misses against the category the model **answered**:
+
+```
+denial inventory (finding 98): 8 misses read against the category the model answered --
+  7 absent, 1 denied-only, 8 unsupported in total
+  absent          resource    -> answered code
+  denied-only     runtime     -> answered resource   (via 'healthy', 'well under')
+  absent          runtime     -> answered dependency
+  absent          middleware  -> answered resource
+  absent          middleware  -> answered code
+  absent          middleware  -> answered resource
+  absent          code        -> answered config
+  absent          middleware  -> answered resource
+```
+
+**Eight of eight.** Every recorded `category` miss was answered with a category the incident
+text does not carry as an assertion. The predictor that reaches 5 of 8 is a *weaker* instrument
+than the one that reaches 8 of 8, and finding 96's block is retained beside this one precisely
+because the two figures disagreeing is the evidence that they measure different things.
+
+### The control, which is what keeps the reading from being trivial
+
+If a denial were enough to produce `denied-only`, the reading would flag everything and mean
+nothing. The dataset carries exactly one sample that both contains a denial and was answered
+correctly -- `resource-cpu-saturation-checkout`:
+
+> "…the pod sat pinned at its 500m limit. **The load generator was unchanged** from the previous
+> week."
+
+Its denial denies **the load generator** -- an instrument, not a taxonomy category. It reads
+`also-asserted`, and the probe prints it first and separately:
+
+```
+control resource-cpu-saturation-checkout: expected resource, read also-asserted
+  (markers: none) -- a denial of a non-category does not read as denied-only
+```
+
+A denial of a *category* invites that category as an answer. A denial of a *non-category* does not.
+
+### The reading is clause-scoped, and that is load-bearing
+
+The five reached misses discuss the denied category in one clause and the real cause in another.
+A document-level test -- "does the category appear outside any denial, anywhere" -- would call
+every one of them `also-asserted` and find nothing. So the reading splits on `[.!?;]` and then on
+`, `, and attributes a verdict per clause: `denied-only` only when **every** clause carrying a
+term carries it inside a denial.
+
+The three-valued verdict is finding 94's rule applied to a fourth instrument: `absent` and
+`denied-only` are different observations, and collapsing them would let "the text never mentions
+resource" and "the text says resource is fine" produce one figure. **That collapse is exactly the
+mutation that would have made the superseded 5-of-5 claim pass**, which is why the values are
+separate rather than a boolean.
+
+### What was built
+
+| File | Change |
+|---|---|
+| `packages/core/src/fault/denial-inventory.ts` | new: three-valued reading of whether a category is present, denied, or absent, plus the corpus partition |
+| `packages/core/test/fault/denial-inventory.test.ts` | new: 30 tests, including the correction as an assertion |
+| `scripts/probe-type-misses.mjs` | new `denial` block, beside the existing `category` block |
+| `scripts/probe-denial-inventory.mjs` | new standalone reading, and `probe:denial-inventory` |
+| `scripts/injection/type-miss-probe.py` | 3 new injections (W/X/Y) and a fourth in-package target |
+| `packages/core/src/index.ts` | registers `DENIAL_MARKERS`, `assessCategoryDenial`, `buildDenialInventory` |
+| `packages/core/test/export-surface-enumerated.test.ts` | enumerates the new module |
+
+`DENIAL_MARKERS` is a closed list of ten entries and is deliberately **not** finding 96's phrase
+list. That list detects counter-evidence in the text; this one detects the grammatical shape of a
+negation. Conflating them would break the control, which carries `unchanged` -- a finding-96
+phrase -- while denying a non-category.
+
+`CATEGORY_TERMS` is duplicated from `fault/collector.ts` on purpose, and the duplication is the
+point: the module must be able to *disagree* with the classifier. Importing the table would make
+"the vocabulary says this word belongs to this category" and "the reading found this word here"
+the same act, which is finding 95's lesson. A test asserts the two tables agree on every shared
+category, so a change to one without the other fails rather than drifts.
+
+### The batteries
+
+Three injections land in the new module, all caught, with `0 survived / 0 inert / 0 blind`:
+
+| | Mutation | Figure it must move |
+|---|---|---|
+| **W** | force every term-carrying clause to count as a denial | `counts.alsoAsserted` (14) |
+| **X** | return `denied-only` where the reading returns `absent` | `counts.absent` (4) |
+| **Y** | restrict the corpus to its long samples | `graded` (19) |
+
+Each requirement reads a baseline captured from the unmutated run rather than a literal, so a
+dataset edit moves the requirement with the data. X is the mutation that would restore the
+superseded 5-of-5 claim as code, which is why the values are separate rather than folded.
+
+The probe block is separately checked by four subprocess tests in the module's own test file,
+which **run `scripts/probe-type-misses.mjs` and cross-check its figures against the module**. The
+wiring is a separate claim from the reading: a block can call the right function on the right
+texts and still print them against the wrong rows, which is finding 92's defect. Two falsification
+checks were run by hand -- reversing the column the block reads (2 of 30 tests fail) and
+disconnecting the block from the payload (4 of 30 fail) -- so the tests discriminate rather than
+agree.
+
+Y's first draft filtered on a `missed` field that `InventorySample` does not carry, and the build
+failed with TS2339: caught, but caught at compile with the requirement never evaluated. That is
+the fourth occurrence of this trap in this battery and it is recorded here as a pattern: **a
+mutation that cannot compile is a mutation that measured nothing.**
+
+### Verification
+
+Repository suite: **2849 passed in 102 files**, 5 of them new. `src/fault` coverage:
+**100 / 100 / 100 / 100**; the new module alone is 77/77 lines, 77/77 statements, 3/3 functions,
+32/32 branches. Lint: `ALL PROPERTIES HOLD`. Core and CLI typecheck clean. Injection battery:
+**27 caught, 0 survived, 0 inert, 0 blind**, restore identical to backup across probe, fixture and
+all four in-package targets.
+
+### What this does not claim
+
+**It does not claim the dataset is wrong.** It reports a criterion. Whether the criterion should
+change is a separate decision with its own regression surface, and it is deliberately not taken
+here. No sample text was edited.
+
+**It does not claim the model would be right otherwise.** The answers are wrong. The finding is
+that in eight of eight cases the text does not carry the answered category as an assertion, so
+"the model chose a category the text supports" is not available as an explanation.
+
+**It does not claim the three unreached misses behave the same way.** The reading covers the
+`category` field. The three misses finding 96's phrase predictor does not reach were measured
+separately as sharing no phrase pattern, and they are not claimed here.
+
+**It does not claim causation.** With n=19 this is a structural observation recorded with both
+denominators. That the authoring and the failures coincide is measured; that one caused the other
+is not.
+
+**It was wrong once, and the correction is the finding.** The claim was "named only to deny it,
+five of five". The measurement is four absent and one denied-only. A finding that records only its
+conclusion and not the claim it replaced is a finding that cannot be re-checked when the question
+changes, which is the reason the superseded reading is quoted above in full.
