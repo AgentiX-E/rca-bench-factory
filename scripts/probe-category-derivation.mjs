@@ -39,12 +39,25 @@
  * **0 of 8 are consistent in both runs.** A property that appears in one run and not the
  * next is a property of the run.
  *
+ * ## The downstream question
+ *
+ * Finding 102 left one question open that decides whether its own decision is available: does
+ * anything downstream depend on `expected.category` being *predicted* rather than derived?
+ * Four consumers read the field and **two of them branch** on it; the other two index a total
+ * record and cannot disagree whatever the category is. Under the actual derivation no branching
+ * consumer moves on any of the 19 samples, and under the alternative reading only 1 of 19
+ * (0.0526) moves -- below the floor of 0.2, so the reading **does not separate** and the
+ * lossless figure is self-consistency rather than evidence.
+ *
  * ## What is not claimed
  *
  * Not that the prompt should state the derivation -- that is a decision this probe informs
  * and does not take. Not that finding 98 is wrong; it read the incident text and stands.
  * Not that the dataset is wrong: it is self-consistent, and self-consistent is all the
  * check establishes, since the dataset and the classifier were written by the same hand.
+ * Not that the 19-of-19 agreement means the derivation is correct: the consumers branch on
+ * the same label the derivation is checked against, so the agreement is a fixed point of a
+ * shared author rather than an independent confirmation.
  *
  * Usage: node scripts/probe-category-derivation.mjs [--json]
  */
@@ -83,11 +96,60 @@ const {
   assessDatasetConformance,
   assessDerivability,
   assessDiscriminatingPower,
+  assessDownstreamAgreement,
   assessExcess,
   assessMissDerivability,
   assessMissStability,
 } = await import(pathToFileURL(BUNDLE).href);
 const { parseMissDetail } = await import(pathToFileURL(MISS_DETAIL).href);
+
+/**
+ * The table `validity.expectedSignalsFor` looks categories up in, imported rather than copied.
+ *
+ * The probe must not restate this key set: a category added to the table would otherwise leave
+ * the probe asserting that the consumer misses, which is a wrong reading produced by a stale
+ * copy. Importing it means the mirror of `validity` stays a mirror.
+ */
+const { FAULT_EXPECTATIONS } = await import(
+  pathToFileURL(resolve(REPO, 'packages', 'core', 'dist', 'gates', 'validity.js')).href
+);
+
+/**
+ * The four consumers of `expected.category`, each with the behaviour its source actually has.
+ *
+ * Read from the source rather than assumed, because the `branches` flag is the whole content of
+ * the downstream reading: two of these four select different behaviour on the category and two
+ * merely project it into a label. Counting four branch points where there are two is precisely
+ * the overstatement this list exists to prevent, so each `outcome` mirrors the source:
+ *
+ *   - `gates/validity.ts:148-155` looks the category up in `FAULT_EXPECTATIONS` and returns
+ *     `unverifiable` on a miss -- a branch.
+ *   - `export/rcaeval.ts:148` skips an RE3 case unless the category is `code` -- a branch.
+ *   - `export/itbench.ts:119` and `export/cloudopsbench.ts:79` index a total
+ *     `Record<FaultCategory, string>` with no guard -- no branch, so no category can change
+ *     their control flow and neither is evidence of agreement.
+ */
+const CONSUMERS = [
+  {
+    name: 'gates/validity.ts:148',
+    branches: true,
+    outcome: (category) => (category in FAULT_EXPECTATIONS ? 'checked' : 'unverifiable'),
+  },  {
+    name: 'export/rcaeval.ts:148',
+    branches: true,
+    outcome: (category) => (category === 'code' ? 'kept' : 'skipped'),
+  },
+  {
+    name: 'export/itbench.ts:119',
+    branches: false,
+    outcome: (category) => `label:${category}`,
+  },
+  {
+    name: 'export/cloudopsbench.ts:79',
+    branches: false,
+    outcome: (category) => `taxonomy:${category}`,
+  },
+];
 
 const parsed = JSON.parse(readFileSync(DATASET, 'utf8'));
 const samples = parsed.samples.map((s) => ({
@@ -149,6 +211,7 @@ const derivability = assessDerivability(samples);
 const excess = assessExcess(adversarialWords());
 const misses = assessMissDerivability(runs[0].misses);
 const stability = assessMissStability(runs);
+const downstream = assessDownstreamAgreement(samples, CONSUMERS);
 
 if (process.argv.includes('--json')) {
   process.stdout.write(
@@ -187,6 +250,17 @@ if (process.argv.includes('--json')) {
           everIds: stability.everIds,
           graded: stability.graded,
           reason: stability.reason,
+        },
+        downstream: {
+          consumers: downstream.consumers,
+          graded: downstream.graded,
+          inert: downstream.inert,
+          moved: downstream.moved,
+          share: downstream.share,
+          lossless: downstream.lossless,
+          separates: downstream.separates,
+          floor: downstream.floor,
+          reason: downstream.reason,
         },
       },
       null,
@@ -263,6 +337,35 @@ process.stdout.write(
     `     count as a measurement of the model.\n\n`,
 );
 
+process.stdout.write(
+  `${line}\n` +
+    `THE DOWNSTREAM QUESTION -- does anything depend on the field being predicted?\n` +
+    `  consumers of expected.category: ${downstream.consumers.length}\n` +
+    downstream.consumers
+      .map((c) => `    ${c.branches ? 'BRANCHES' : 'projects'}  ${c.name}\n`)
+      .join('') +
+    `  samples where no BRANCHING consumer moves: ${downstream.inert} of ${downstream.graded} (${downstream.share.toFixed(4)})\n` +
+    `  lossless (deriving the field away changes no branching consumer): ${downstream.lossless}\n\n` +
+    `  VERDICT -- can this reading separate a derived category from a mis-derived one?\n` +
+    `    load-bearing: ${downstream.separates}\n` +
+    `    floor: ${downstream.floor}\n` +
+    `    reason: ${downstream.reason}\n` +
+    (downstream.separates
+      ? `    -> separating, so the lossless figure above is a result and not an artefact\n` +
+        `       of a reading with nothing to disagree with.\n\n`
+      : `    -> NOT separating. The lossless figure is self-consistency: the consumers\n` +
+        `       branch on the same label the derivation is checked against, and the\n` +
+        `       dataset and the classifier share an author. An agreement that cannot be\n` +
+        `       made to fail is not evidence that the derivation is right.\n\n`) +
+    `  -> and the count of two branching consumers is load-bearing: two of the four\n` +
+    `     index a total record with no guard, so they cannot disagree whatever the\n` +
+    `     category is. The reading is over two chances to disagree, not four.\n` +
+    (downstream.moved.length === 0
+      ? `     No sample moves under the actual derivation, which is why the figure is a\n` +
+        `     denominator and not a numerator.\n\n`
+      : `     ${downstream.moved.length} samples move under the actual derivation; see --json.\n\n`),
+);
+
 process.stdout.write(`  detail -- per miss, in run ${CURRENT_RUN}:\n`);
 for (const row of misses.rows) {
   const mark = row.consistent ? 'CONSISTENT' : row.derived === 'unknown' ? 'no category in slug' : `!= ${row.derived}`;
@@ -284,5 +387,8 @@ process.stdout.write(
     `      probe informs and does not take.\n` +
     `    - not that finding 98 is wrong. It read the incident text and stands.\n` +
     `    - not that the dataset is wrong. It is self-consistent, and self-consistent is\n` +
-    `      all the check establishes.\n`,
+    `      all the check establishes.\n` +
+    `    - not that the 19-of-19 downstream agreement is a confirmation. The consumers\n` +
+    `      branch on the same label the derivation is checked against, and the reading\n` +
+    `      does not separate (see the verdict above), so it cannot be made to fail.\n`,
 );

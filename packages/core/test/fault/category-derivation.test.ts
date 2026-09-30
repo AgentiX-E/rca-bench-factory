@@ -26,17 +26,24 @@ import { describe, expect, it } from 'vitest';
 import { inferFaultCategory } from '../../src/fault/collector.js';
 import { CATEGORY_TERMS } from '../../src/fault/category-terms.js';
 import { parseMissDetail } from '../../src/fault/miss-detail.js';
+import { FAULT_CATEGORIES } from '../../src/ir/types.js';
 import {
   ALT_READING_FLOOR,
+  DOWNSTREAM_FLOOR,
   EXCESS_ALLOWANCE,
   assessDatasetConformance,
   assessDerivability,
   assessDiscriminatingPower,
+  assessDownstreamAgreement,
   assessExcess,
   assessMissDerivability,
   assessMissStability,
   buildCategoryDerivationReport,
+  downstreamCaveat,
+  duplicateTypeDeclarations,
+  type CategoryConsumer,
   type DerivationSample,
+  type DownstreamReading,
   type MissSample,
   type RunMisses,
 } from '../../src/fault/category-derivation.js';
@@ -944,5 +951,581 @@ describe('L. a blank field is excluded from every denominator', () => {
     const derivability = assessDerivability([{ sampleId: 'x', type: '', category: 'runtime' }]);
     expect(derivability.graded).toBe(0);
     expect(derivability.total).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M. The module's own declarations, and the defect that motivated checking them
+// ---------------------------------------------------------------------------
+
+/**
+ * This module shipped a duplicated declaration, and the duplication is why this group exists.
+ *
+ * `category-derivation.ts` declared `export interface MissReading` twice, at two places ~65 lines
+ * apart, with field-for-field identical bodies. Typescript **merges** duplicate interface
+ * declarations: the build passed, the typecheck passed, and every test in this file that imports
+ * `MissReading` passed. The only artefact that carried the evidence was the emitted declaration
+ * file, `dist/fault/category-derivation.d.ts`, which declared it on line 155 and again on line 219.
+ *
+ * Two properties of that defect decide what a test can and cannot do about it:
+ *
+ *   1. The bodies were **identical**, so nothing observable changed and **no behavioural test was
+ *      possible**. The defect was structural. Any test written as though it had caught a
+ *      behavioural bug would be claiming a stronger result than the evidence supports, and this
+ *      group states that plainly rather than dressing it up.
+ *   2. When merged declarations **differ**, the merge silently produces a **union** of their
+ *      fields -- one shape to a source reader, another to a type reader, neither wrong on its own
+ *      terms. So the only signature covering both cases is the source text.
+ *
+ * Hence a reader of the source text, and hence these tests: the detector's positive case (a file
+ * that does declare twice), its negative case (a file that does not), the pair control that makes
+ * the identical/differing distinction explicit, and the assertion that this module is clean.
+ *
+ * The regex is deliberately the same one `export-surface-enumerated.test.ts` uses for
+ * `export interface X`, so the two checks agree about what counts as a declaration. That is
+ * asserted below rather than left as a comment, because two readers that disagree about the
+ * definition of a declaration would let a third declaration form slip between them.
+ */
+describe('M. the module declares each of its names once', () => {
+  function moduleSource(): string {
+    return readFileSync(resolve(REPO_ROOT, 'packages', 'core', 'src', 'fault', 'category-derivation.ts'), 'utf8');
+  }
+
+  it('finds no duplicated declaration in this module', () => {
+    // The regression this pins. Before the fix this returned `['MissReading']`; after it, empty.
+    expect(duplicateTypeDeclarations(moduleSource())).toEqual([]);
+  });
+
+  it('finds nothing in the emitted declaration file either, which is where the duplicate surfaced', () => {
+    // The source check is the primary one, but the `.d.ts` is what a consumer of this package
+    // reads and it is a second artefact that could carry a duplicate the source no longer has --
+    // for instance if a declaration were re-exported twice. Asserting the built file closes that.
+    const declaration = readFileSync(
+      resolve(REPO_ROOT, 'packages', 'core', 'dist', 'fault', 'category-derivation.d.ts'),
+      'utf8',
+    );
+    expect(duplicateTypeDeclarations(declaration)).toEqual([]);
+  });
+
+  it('reports a name declared twice, so the detector can fail', () => {
+    // The positive control. Without it the empty result above is equally consistent with a
+    // detector that never matches anything.
+    const source = [
+      'export interface Alpha { a: string }',
+      'export type Beta = number;',
+      'export interface Alpha { a: string }',
+    ].join('\n');
+    expect(duplicateTypeDeclarations(source)).toEqual(['Alpha']);
+  });
+
+  it('reports nothing for a file that declares each name once', () => {
+    const source = ['export interface Alpha { a: string }', 'export type Beta = number;'].join('\n');
+    expect(duplicateTypeDeclarations(source)).toEqual([]);
+  });
+
+  it('reports a name declared once as an interface and once as a type alias', () => {
+    // Both forms merge or collide at the type level, so the detector must not be an
+    // interface-only reader. This is the case a narrower regex would miss.
+    const source = ['export interface Alpha { a: string }', 'export type Alpha = number;'].join('\n');
+    expect(duplicateTypeDeclarations(source)).toEqual(['Alpha']);
+  });
+
+  it('reports each repeated name once, however many times it repeats', () => {
+    // Three declarations of one name is one defect, not two. A detector that reported per
+    // repetition would make the count a function of how badly a file was duplicated.
+    const source = [
+      'export interface Alpha { a: string }',
+      'export interface Alpha { a: string }',
+      'export interface Alpha { a: string }',
+    ].join('\n');
+    expect(duplicateTypeDeclarations(source)).toEqual(['Alpha']);
+  });
+
+  it('ignores a non-exported declaration, because only exports merge into the public surface', () => {
+    // A local re-declaration is a compile error in Typescript rather than a silent merge, so it
+    // needs no reading. This asserts the detector does not report a name it should not.
+    const source = [
+      'interface Alpha { a: string }',
+      'interface Alpha { a: string }',
+      'export interface Beta { b: string }',
+    ].join('\n');
+    expect(duplicateTypeDeclarations(source)).toEqual([]);
+  });
+
+  it('does not report a declaration indented inside a doc comment, because the pattern is line-anchored', () => {
+    // This test was written asserting the opposite, and the code was right. The pattern is
+    // anchored with `^` under the `m` flag, so a declaration must begin at column zero to match --
+    // and prose in a doc comment is indented by ` * `. That accident is what keeps every
+    // docstring in this repository out of the reading and makes the detector usable on it.
+    //
+    // It is asserted rather than assumed because the accident is load-bearing: a future change
+    // that allowed leading whitespace would start reporting the declaration examples that
+    // documentation legitimately contains, and the empty result on this module would be a
+    // coincidence rather than a property.
+    const indented = ['/**', ' * export interface Alpha { a: string }', ' */'].join('\n');
+    expect(duplicateTypeDeclarations(indented)).toEqual([]);
+
+    // The other direction, so the assertion above is not just "the reader returns nothing": an
+    // unindented duplicate is still reported, which is the form a real defect takes.
+    const unindented = [
+      'export interface Alpha { a: string }',
+      'export interface Alpha { a: string }',
+    ].join('\n');
+    expect(duplicateTypeDeclarations(unindented)).toEqual(['Alpha']);
+  });
+
+  it('uses the same definition of a declaration as the export-surface check', () => {
+    // Two readers that disagree about what a declaration is would let a form slip between them.
+    // This asserts the forms rather than one regex literal, because there is no third check to
+    // import the pattern from: the assertion is that both files name `interface` and `type`
+    // after `export`, and that both anchor it at the start of a line.
+    const surface = readFileSync(
+      resolve(REPO_ROOT, 'packages', 'core', 'test', 'export-surface-enumerated.test.ts'),
+      'utf8',
+    );
+    const module = moduleSource();
+
+    const forms = (text: string): boolean =>
+      /export\\s\+\(\?:type\|interface\)/.test(text) && text.includes('^export');
+    expect(forms(surface), 'export-surface-enumerated.test.ts declares its forms').toBe(true);
+    expect(forms(module), 'category-derivation.ts declares the same forms').toBe(true);
+    // And neither has drifted into accepting an indented declaration, which is the specific way
+    // the two would come to disagree about the docstring case.
+    expect(surface).not.toContain('^\\\\s*export');
+    expect(module).not.toContain('^\\\\s*export');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// N. The rule the dataset follows is stated, and the file is checked against it whole
+// ---------------------------------------------------------------------------
+
+/**
+ * Finding 102 established that the dataset's `category` is derivable from its `type`, and that
+ * the rule which makes it so was written down **nowhere** -- not in the dataset's `provenance`,
+ * not in the extraction prompt, not in a test. It was a fact about the file that only the
+ * classifier's source recorded.
+ *
+ * The deferred product decision is whether the prompt should state the rule. That decision is not
+ * taken here. What is taken is the half that is a defect rather than a decision: a file that
+ * follows a rule it does not state is a file whose rule will be broken by the next person to add
+ * a sample, silently, because nothing checks it.
+ *
+ * So the rule is recorded in `provenance.categoryRule` -- beside `authoringRule` and
+ * `annotationRule`, the two rules already stated there in the same voice -- and this group makes
+ * the word "total" an assertion rather than an adjective.
+ */
+describe('N. the dataset states the rule it follows, and the whole file obeys it', () => {
+  function provenance(): Record<string, string> {
+    const parsed = JSON.parse(readFileSync(DATASET, 'utf8')) as {
+      provenance: Record<string, string>;
+    };
+    return parsed.provenance;
+  }
+
+  it('states the category rule, and quotes the module that implements it', () => {
+    // The finding quotes the dataset's own words, so the quoted text is an assertion: if the
+    // rule is reworded the finding must be revisited rather than quietly measuring against a
+    // standard that no longer exists. The same discipline `denial-inventory.test.ts` applies to
+    // the authoring rule.
+    const rule = provenance()['categoryRule'];
+    expect(rule).toBeDefined();
+    expect(rule).toContain('inferFaultCategory');
+    expect(rule).toContain('19 of 19');
+    expect(rule).toContain('self-consistency');
+  });
+
+  it('says the rule is checked over the whole file, not per sample', () => {
+    // The distinction is the point of the group: a per-sample check finds a wrong label, a
+    // whole-file check finds a *new* sample that was never checked. Only the second is what
+    // makes adding a sample safe.
+    const rule = provenance()['categoryRule'] ?? '';
+    expect(rule).toContain('over the whole file');
+  });
+
+  it('records that the product decision was deliberately not taken here', () => {
+    // Reading the rule off the data is not the same as telling the model the rule. The provenance
+    // text must not read as though it had taken that decision, and neither must this suite.
+    const rule = provenance()['categoryRule'] ?? '';
+    expect(rule).toContain('product decision');
+    expect(rule).toMatch(/deliberately not taken/);
+  });
+
+  it('keeps the rule beside the two rules already stated, in the same container', () => {
+    // Not a separate file or a comment: a reader who finds `authoringRule` and `annotationRule`
+    // must find the third rule in the same place, or the file has three rules in two homes.
+    const keys = Object.keys(provenance());
+    expect(keys).toContain('authoringRule');
+    expect(keys).toContain('annotationRule');
+    expect(keys).toContain('categoryRule');
+  });
+
+  it('derives a real category for every sample in the file, so the rule is total over it', () => {
+    // The assertion the rule's text promises. `assessDerivability` reports this, and this test
+    // states it independently of any reading's share, so a reading that stopped excluding
+    // undefined types could not move the claim.
+    const members = new Set<string>(FAULT_CATEGORIES);
+    for (const sample of loadDataset()) {
+      const derived = inferFaultCategory(sample.expected.type);
+      expect(members.has(derived), `${sample.id}: ${sample.expected.type} -> ${derived}`).toBe(true);
+    }
+  });
+
+  it('never derives `unknown` for a sample in this file, which is the escape hatch staying unused', () => {
+    // `unknown` is a member of the union, so the totality test above would accept it. It is the
+    // taxonomy's escape hatch for "unclassified", and a golden sample labelled `unknown` would
+    // mean the file had been shipped with a fault it cannot name. Asserting its absence keeps
+    // `unknown` out of the measured distribution rather than merely legal in it.
+    const unknowns = loadDataset()
+      .filter((sample) => inferFaultCategory(sample.expected.type) === 'unknown')
+      .map((sample) => sample.id);
+    expect(unknowns).toEqual([]);
+  });
+
+  it('agrees with the labelled category for every sample, counted per sample and not in aggregate', () => {
+    // The whole-file form of finding 102's result: nineteen individual equalities rather than
+    // one equality of two counts. A reading that reported 19 of 19 while transposing two samples
+    // would pass the aggregate and fail this.
+    for (const sample of loadDataset()) {
+      expect(
+        inferFaultCategory(sample.expected.type),
+        `${sample.id}: labelled ${sample.expected.category}`,
+      ).toBe(sample.expected.category);
+    }
+  });
+
+  it('fails on a sample whose type does not derive its label, so the whole-file claim can break', () => {
+    // The control: the same loop as above, over a file with one label moved to a category its
+    // type does not derive. If this stayed green the assertion above would be checking nothing.
+    const broken = loadDataset().map((sample) =>
+      sample.id === 'resource-cpu-saturation-checkout'
+        ? { ...sample, expected: { ...sample.expected, category: 'dependency' } }
+        : sample,
+    );
+    const disagreements = broken.filter(
+      (sample) => inferFaultCategory(sample.expected.type) !== sample.expected.category,
+    );
+    expect(disagreements.map((sample) => sample.id)).toEqual(['resource-cpu-saturation-checkout']);
+  });
+
+  it('fails on a sample whose type derives nothing, so the totality claim can break', () => {
+    // The other control. Totality is the weaker-sounding of the two claims and the easier to
+    // lose: a new sample typed with a phrase the table does not know would still be counted in
+    // any share that forgot to exclude it.
+    const members = new Set<string>(FAULT_CATEGORIES);
+    const broken = loadDataset().map((sample) =>
+      sample.id === 'network-service-port-misconfig'
+        ? { ...sample, expected: { ...sample.expected, type: 'quantum-entanglement-drift' } }
+        : sample,
+    );
+    const undefinedTypes = broken
+      .map((sample) => inferFaultCategory(sample.expected.type))
+      .filter((category) => !members.has(category));
+    // `unknown` IS a member, so the filter above does not catch it -- which is exactly why the
+    // separate `unknown` assertion exists. This control is about a type the table cannot place
+    // at all producing a category outside the union, and it is stated in those terms.
+    expect(undefinedTypes).toEqual([]);
+    expect(inferFaultCategory('quantum-entanglement-drift')).toBe('unknown');
+    expect(members.has('unknown')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O. Downstream agreement -- whether anything depends on the field being predicted
+// ---------------------------------------------------------------------------
+
+/**
+ * The four real consumers, with the `branches` flag each one's source actually has.
+ *
+ * Two branch and two project, and the distinction is the entire content of this reading. The two
+ * that do not branch index a total `Record<FaultCategory, string>` with no guard
+ * (`export/itbench.ts:119`, `export/cloudopsbench.ts:79`), so no category can change their
+ * control flow; a reading that counted them as evidence would report a two-consumer result as a
+ * four-consumer result. That overstatement was made in the first draft of this section's prose and
+ * is corrected here in a test rather than only in a comment.
+ *
+ * `validity`'s outcome mirrors `FAULT_EXPECTATIONS[fault.category]` -- a miss returns
+ * `unverifiable`, so a category outside the table silently removes a fault's verifiability.
+ * `rcaeval`'s mirrors the RE3 filter, which skips a case unless the category is `code`.
+ */
+const REAL_CONSUMERS: CategoryConsumer[] = [
+  {
+    name: 'gates/validity.ts:148',
+    branches: true,
+    outcome: (category) =>
+      ['resource', 'network', 'runtime', 'middleware', 'code', 'config', 'dependency', 'unknown'].includes(
+        category,
+      )
+        ? 'checked'
+        : 'unverifiable',
+  },
+  { name: 'export/rcaeval.ts:148', branches: true, outcome: (c) => (c === 'code' ? 'kept' : 'skipped') },
+  { name: 'export/itbench.ts:119', branches: false, outcome: (c) => `label:${c}` },
+  { name: 'export/cloudopsbench.ts:79', branches: false, outcome: (c) => `taxonomy:${c}` },
+];
+
+describe('O. downstream agreement measures what depends on the predicted field', () => {
+  it('grades every sample the dataset labels', () => {
+    const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
+    expect(reading.graded).toBe(19);
+  });
+
+  it('moves no branching consumer on any sample of this corpus', () => {
+    // The result: the derivation and the labels agree everywhere the branching consumers look, so
+    // the field is derivable away without moving them. This is the figure the verdict governs.
+    const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
+    expect(reading.moved).toEqual([]);
+    expect(reading.inert).toBe(19);
+    expect(reading.share).toBe(1);
+    expect(reading.lossless).toBe(true);
+  });
+
+  it('reports four consumers and says how many of them branch', () => {
+    // The count that must not be inflated. `consumers.length` is 4 and `branches` is true on two
+    // of them; a reader who takes the first number as the size of the evidence is wrong, and the
+    // per-consumer flag is what makes that checkable rather than a claim in a comment.
+    const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
+    expect(reading.consumers).toHaveLength(4);
+    expect(reading.consumers.filter((c) => c.branches)).toHaveLength(2);
+    expect(reading.consumers.filter((c) => !c.branches).map((c) => c.name)).toEqual([
+      'export/itbench.ts:119',
+      'export/cloudopsbench.ts:79',
+    ]);
+  });
+
+  it('does not separate, and the reason names the floor it fell below', () => {
+    // The verdict, and the honest reading of it. Under the alternative derivation -- the
+    // pre-finding-95 substring reading, which this codebase shipped -- `feature-flag-misconfiguration`
+    // derives `middleware` where the label says `config`, so `validity` moves. That is 1 of 19,
+    // below the floor, so the reading cannot tell a derived category from a mis-derived one and
+    // the lossless figure above is self-consistency rather than a result.
+    const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
+    expect(reading.separates).toBe(false);
+    expect(reading.floor).toBe(DOWNSTREAM_FLOOR);
+    expect(reading.reason).toContain('cannot tell a derived category from a mis-derived one');
+  });
+
+  it('separates on the disagreement sample alone, because one of one is above the floor', () => {
+    // This test was written asserting `separates: false` and the code was right to disagree. The
+    // share is a *fraction*, so the same single sample that contributes 1 of 19 (0.0526) to the
+    // corpus contributes 1 of 1 (1.0) here -- above the floor. The reading separates, and the
+    // contrast between the two runs of the same sample is the clearest statement of what the
+    // floor does: it is not a property of the sample, it is a property of the corpus the sample
+    // was counted in.
+    //
+    // That is worth keeping as a test rather than as a correction to the prose. A reader who took
+    // "the alternative moves one sample" as sufficient for "below the floor" would be wrong in
+    // exactly this direction, and the assertion names the sample so the arithmetic cannot drift.
+    const one = assessDownstreamAgreement(
+      [
+        {
+          sampleId: 'feature-flag-misconfiguration',
+          type: 'feature-flag-misconfiguration',
+          category: 'config',
+        },
+      ],
+      REAL_CONSUMERS,
+    );
+    // The sample's own derivation agrees, so it is inert under the actual reading...
+    expect(one.moved).toEqual([]);
+    expect(one.lossless).toBe(true);
+    expect(one.graded).toBe(1);
+    // ...and the alternative moves it, which on a one-sample corpus is above the floor.
+    expect(one.separates).toBe(true);
+    expect(one.reason).toContain('1 of 1');
+    expect(one.reason).toContain('can tell a derived category from a mis-derived one');
+
+    // The same sample in the corpus is below the floor. Both figures are asserted together,
+    // because either alone is compatible with a `separates` that ignores the denominator.
+    const corpus = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
+    expect(corpus.separates).toBe(false);
+    expect(corpus.reason).toContain('1 of 19');
+  });
+
+  it('reaches the separating branch with a corpus the alternative reading moves throughout', () => {
+    // The pair control for `separates`, the same discipline group J applies to
+    // `assessDiscriminatingPower`. Without it a hardcoded `false` would be indistinguishable from
+    // the honest answer on this corpus -- which is exactly how injection AM survived the first
+    // battery and why this control exists.
+    const reading = assessDownstreamAgreement(
+      [
+        { sampleId: 'a', type: 'feature-flag-misconfiguration', category: 'config' },
+        { sampleId: 'b', type: 'redis-latency', category: 'network' },
+      ],
+      REAL_CONSUMERS,
+    );
+    // Both types are ones the substring reading classifies differently from these labels, so
+    // `validity` moves on both and the honest verdict is `true`.
+    expect(reading.separates).toBe(true);
+    expect(reading.reason).toContain('can tell a derived category from a mis-derived one');
+  });
+
+  it('reports the samples a consumer does move, with the consumer that moved', () => {
+    // The populated case, with a consumer whose outcome is deliberately sensitive. This is the
+    // shape a real disagreement would take, and it asserts that `moved` names *which* consumer
+    // moved -- a count alone would not tell a reader whether the fault was in `validity` or in
+    // the RE3 filter.
+    const sensitive: CategoryConsumer[] = [
+      { name: 'sensitive', branches: true, outcome: (c) => c },
+    ];
+    const reading = assessDownstreamAgreement(
+      [{ sampleId: 'x', type: 'container-crash', category: 'middleware' }],
+      sensitive,
+    );
+    expect(reading.moved).toHaveLength(1);
+    expect(reading.moved[0]?.sampleId).toBe('x');
+    expect(reading.moved[0]?.labelled).toBe('middleware');
+    expect(reading.moved[0]?.derived).toBe('runtime');
+    expect(reading.moved[0]?.moved).toEqual(['sensitive']);
+    expect(reading.moved[0]?.inert).toBe(false);
+    expect(reading.lossless).toBe(false);
+    expect(reading.inert).toBe(0);
+  });
+
+  it('excludes a sample blank in either field from the denominator', () => {
+    // The same rule every other reader in this module follows: a field that was not present was
+    // not read, and counting it would let an absent value move a figure.
+    const reading = assessDownstreamAgreement(
+      [
+        { sampleId: 'blank-type', type: '   ', category: 'config' },
+        { sampleId: 'blank-category', type: 'container-crash', category: '  ' },
+        { sampleId: 'graded', type: 'container-crash', category: 'runtime' },
+      ],
+      REAL_CONSUMERS,
+    );
+    expect(reading.graded).toBe(1);
+    expect(reading.inert).toBe(1);
+    expect(reading.share).toBe(1);
+  });
+
+  it('returns a zero share, not a vacuous one, when nothing is graded', () => {
+    const reading = assessDownstreamAgreement([], REAL_CONSUMERS);
+    expect(reading.graded).toBe(0);
+    expect(reading.share).toBe(0);
+    expect(reading.lossless).toBe(true);
+    // And the refutation over an empty corpus must not claim separation it cannot have measured.
+    expect(reading.separates).toBe(false);
+  });
+
+  it('treats a consumer list as evidence only through the branching flag, not through its length', () => {
+    // With no branching consumer the reading cannot move, and the test records that this is a
+    // property of the consumer set rather than a finding about the derivation. This is the trap
+    // the four-consumer count invites, stated as an input rather than as prose.
+    const projectionsOnly: CategoryConsumer[] = [
+      { name: 'p1', branches: false, outcome: (c) => `x:${c}` },
+      { name: 'p2', branches: false, outcome: (c) => `y:${c}` },
+    ];
+    const reading = assessDownstreamAgreement(datasetSamples(), projectionsOnly);
+    expect(reading.consumers).toHaveLength(2);
+    expect(reading.moved).toEqual([]);
+    expect(reading.lossless).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P. The report carries the downstream verdict, and never without its refutation
+// ---------------------------------------------------------------------------
+
+describe('P. the report carries the downstream reading beside its verdict', () => {
+  function report(consumers?: CategoryConsumer[]) {
+    return buildCategoryDerivationReport({
+      samples: datasetSamples(),
+      misses: runMisses(CURRENT_RUN).misses,
+      runs: RECORDED_RUNS,
+      adversarialWords: adversarialWords(),
+      ...(consumers === undefined ? {} : { consumers }),
+    });
+  }
+
+  it('carries the reading when consumers are supplied', () => {
+    const built = report(REAL_CONSUMERS);
+    expect(built.downstream).toEqual(assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS));
+  });
+
+  it('omits it rather than defaulting to a vacuous agreement when none are supplied', () => {
+    // An absent consumer list is not evidence of agreement. The field is optional so that a
+    // caller with no consumers asserts nothing, instead of receiving a `lossless: true` it did
+    // not measure.
+    expect(report().downstream).toBeUndefined();
+  });
+
+  it('says in the caveats that the downstream question was not asked', () => {
+    // The omitted case must be visible in the prose too, or a reader of the honesty list would
+    // take the conformance discussion as covering the consumers.
+    const honesty = report().honesty.join('\n');
+    expect(honesty).toContain('not asked at all');
+  });
+
+  it('records the lossless verdict with the reason it is not a result', () => {
+    const honesty = report(REAL_CONSUMERS).honesty.join('\n');
+    expect(honesty).toContain('change nothing observable');
+    expect(honesty).toContain('tested against nothing');
+  });
+
+  it('counts the non-branching consumers as the non-evidence they are', () => {
+    // The correction that a two-consumer result is not a four-consumer result, stated where a
+    // reader of the report will meet it.
+    const honesty = report(REAL_CONSUMERS).honesty.join('\n');
+    expect(honesty).toContain('index a total map with no guard');
+  });
+
+  it('puts the downstream verdict in the caveat list, which is the field that is non-empty by construction', () => {
+    // Placement, not merely presence: the verdict has to reach a reader through `honesty`, which
+    // is the field a test already asserts is never shorter than four sentences.
+    const built = report(REAL_CONSUMERS);
+    expect(built.honesty.length).toBeGreaterThanOrEqual(5);
+    expect(built.honesty.some((line) => line.includes('Downstream agreement'))).toBe(true);
+  });
+
+  it('states the separating direction when a consumer does move, which this corpus cannot reach', () => {
+    // The corpus is lossless, so the separating sentence of `downstreamCaveat` is unreachable
+    // through the report builder. A constructed reading supplies it, because leaving the branch
+    // uncovered would mean a module that reports its coverage with a line no input reaches --
+    // the same defect group J exists to close, one level up.
+    const reading: DownstreamReading = {
+      consumers: [
+        { name: 'validity', branches: true },
+        { name: 'itbench', branches: false },
+      ],
+      graded: 2,
+      inert: 1,
+      moved: [
+        {
+          sampleId: 'a',
+          type: 'feature-flag-misconfiguration',
+          labelled: 'config',
+          derived: 'middleware',
+          moved: ['validity'],
+          inert: false,
+        },
+      ],
+      share: 0.5,
+      lossless: false,
+      separates: true,
+      floor: DOWNSTREAM_FLOOR,
+      reason: 'constructed',
+    };
+    const caveat = downstreamCaveat(reading).join('\n');
+    expect(caveat).toContain('1 samples move');
+    expect(caveat).toContain('does separate and the verdict rests on it');
+    expect(caveat).toContain('Separating is not the same as agreeing');
+    // And it must NOT carry the lossless sentence, which is the failure a single parameterised
+    // template would produce: the affirmative case printed under a refutation.
+    expect(caveat).not.toContain('tested against nothing');
+  });
+
+  it('states the lossless direction without the separating sentence', () => {
+    // The mirror of the test above, so the two directions are pinned against each other rather
+    // than each against a constant. A helper that returned a fixed string would satisfy one and
+    // fail the other.
+    const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
+    const caveat = downstreamCaveat(reading).join('\n');
+    expect(caveat).toContain('tested against nothing');
+    expect(caveat).not.toContain('does separate and the verdict rests on it');
+    // The names are interpolated rather than summarised, so a reader can see which consumers the
+    // figure is about -- and, in the same sentence, which of them were never going to move.
+    expect(caveat).toContain('gates/validity.ts:148');
+    expect(caveat).toContain('export/itbench.ts:119');
+    expect(caveat).toContain('out of 4 that read it');
   });
 });

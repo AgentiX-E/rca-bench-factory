@@ -257,43 +257,6 @@ export function assessExcess(words: readonly string[]): ExcessReading {
 // (d) The miss test -- with its criterion stated as a choice
 // ---------------------------------------------------------------------------
 
-/** How many recorded misses are consistent with the rule the dataset uses. */
-export interface MissReading {
-  /** Misses carrying an answered type. The denominator. */
-  graded: number;
-  /**
-   * Misses where the model's **own** answered type derives the category it answered.
-   *
-   * This is the honest criterion. A miss satisfies it when the model reported a slug and then
-   * a category that slug actually implies -- i.e. it disagrees with the label coherently,
-   * rather than failing to connect the two fields.
-   */
-  consistent: number;
-  /** The misses that satisfy it, named. */
-  consistentIds: string[];
-  /** Per-miss detail, so a reader can check the criterion rather than trust the count. */
-  rows: {
-    sampleId: string;
-    answeredType: string;
-    derived: string;
-    answeredCategory: string;
-    expectedCategory: string;
-    consistent: boolean;
-  }[];
-  /**
-   * The same misses under the **loose** criterion: is the answered category derivable from
-   * *some* slug at all?
-   *
-   * Reported beside `consistent` so the criterion's choice is visible as a choice. The loose
-   * figure is worthless and the test suite asserts it is the larger of the two: every category
-   * is reachable from its own bare keyword (`error` -> `code`), so every answered category is
-   * trivially derivable and the loose count describes the vocabulary rather than the model.
-   */
-  reachableLoosely: number;
-  /** Whether the honest criterion found nothing, which is the measured result. */
-  noneConsistent: boolean;
-}
-
 /**
  * Test the recorded misses against the rule.
  *
@@ -318,10 +281,31 @@ export interface MissReading {
  * `replication-apply-bottleneck`. The single consistent case therefore exists in one run only,
  * and **0 of 8 is consistent in both**.
  *
- * So `consistent` is reported per run and `stableAcrossRuns` is reported beside it, because a
- * property that appears in one run and not the next is a different object from a property of
- * the model -- and reporting only the run that showed it would be choosing the flattering
- * number, which is the defect this module exists to prevent.
+ * So `consistent` is reported per run and the stability result is reported beside it as
+ * `MissStability`, because a property that appears in one run and not the next is a different
+ * object from a property of the model -- and reporting only the run that showed it would be
+ * choosing the flattering number, which is the defect this module exists to prevent.
+ *
+ * (This docstring named a `stableAcrossRuns` field until group M's review of the module. No
+ * such field was ever declared: the stability reading lives in `MissStability` and reaches a
+ * reader through `CategoryDerivationReport.missStability`. A doc that names a field which does
+ * not exist is the same class of defect as the duplicated declaration below -- invisible to
+ * the compiler, and wrong in the direction a reader cannot check without opening the type.)
+ *
+ * ## Declared once, and why that is stated here
+ *
+ * This interface was declared **twice** when the module first shipped, and Typescript merged
+ * the two declarations silently: the build passed, every test passed, and the duplicate
+ * reached the published `dist/fault/category-derivation.d.ts` as two `export interface`
+ * declarations of the same name.
+ *
+ * The two bodies were field-for-field identical, so **no behaviour changed** -- which is
+ * exactly why nothing caught it, and why the honest description of the defect is *structural*
+ * rather than a correctness bug. It is recorded here because the failure mode is durable: a
+ * duplicated declaration is invisible to `tsc`, invisible to every test that imports the type,
+ * and visible only by reading the source or the emitted `.d.ts`. `category-derivation.test.ts`
+ * group M now asserts the source declares each exported type once; the emitted file is checked
+ * by injection AL, which rebuilds and reads it.
  */
 export interface MissReading {
   /** Misses carrying an answered type. The denominator. */
@@ -612,6 +596,276 @@ export function assessDiscriminatingPower(samples: DerivationSample[]): PowerRea
 }
 
 // ---------------------------------------------------------------------------
+// (f) Downstream agreement -- what depends on the field the rule would replace
+// ---------------------------------------------------------------------------
+
+/**
+ * One consumer of `category`, named, with the set of categories it distinguishes.
+ *
+ * `branches` is the load-bearing flag and it is declared rather than inferred, because the
+ * distinction it draws is exactly the one this section is most likely to get wrong. A consumer
+ * **branches** when the category selects different behaviour; a consumer that merely *projects*
+ * the category into a label differs in its output but not in its control flow, and calling the
+ * two the same thing is how a two-consumer result gets reported as a four-consumer result.
+ *
+ * Measured for this repository:
+ *
+ *   - `validity.expectedSignalsFor` (`gates/validity.ts:148-155`) **branches**: it looks the
+ *     category up in `FAULT_EXPECTATIONS` and returns `{semanticTypes: [], unverifiable: true}`
+ *     on a miss, so a category outside the table silently removes the fault's verifiability.
+ *   - `export/rcaeval.ts:148` **branches**: `if (suite === 'RE3' && fc.fault.category !== 'code')`
+ *     skips the case before any file is written.
+ *   - `export/itbench.ts:119` and `export/cloudopsbench.ts:79` **do not branch**: both index a
+ *     total `Record<FaultCategory, string>` with no guard, so a changed category changes the
+ *     emitted label and nothing else.
+ */
+export interface CategoryConsumer {
+  /** Where the consumer lives, so a figure can be traced to a file. */
+  name: string;
+  /** Whether the category selects different behaviour, as measured above. */
+  branches: boolean;
+  /**
+   * The outcome this consumer derives from a category.
+   *
+   * A function rather than a key set, because the four consumers are not all membership tests:
+   * `validity` returns `unverifiable` for a category outside its table, and `rcaeval`'s RE3
+   * filter returns a boolean. Handing the comparison a function keeps `assessDownstreamAgreement`
+   * from having to know which shape each consumer has.
+   */
+  outcome: (category: string) => string;
+}
+
+/** One sample, read under its label and under its derivation. */
+export interface DownstreamSampleReading {
+  sampleId: string;
+  type: string;
+  labelled: string;
+  derived: string;
+  /** Consumers whose outcome differs between the label and the derivation. */
+  moved: string[];
+  /** True when no consumer moves -- the field is derivable away for this sample. */
+  inert: boolean;
+}
+
+/** Whether deriving the field away would change any downstream outcome. */
+export interface DownstreamReading {
+  /** The consumers compared, each named. */
+  consumers: { name: string; branches: boolean }[];
+  /** Samples carrying both fields. The denominator. */
+  graded: number;
+  /** Samples no consumer moves on. */
+  inert: number;
+  /** The samples a consumer does move on, named, with the consumers that moved. */
+  moved: DownstreamSampleReading[];
+  /** `inert / graded`, or 0 when nothing is graded. */
+  share: number;
+  /**
+   * The verdict: does the derivation replace the field without moving a consumer?
+   *
+   * True on this corpus. Note what it is *not*: it is not a statement that the derivation is
+   * correct, and not a statement that no consumer could ever move. It says the derivation and the
+   * labels agree everywhere the consumers look, so **on this corpus** a producer could stop
+   * predicting the field without a downstream change -- which is a different claim from "should".
+   */
+  lossless: boolean;
+  /**
+   * Whether the reading can tell a right category from a wrong one.
+   *
+   * False on this corpus, and for a reason worth stating: the consumers branch on the *same
+   * label* the derivation is checked against, and the dataset and the classifier share an author.
+   * Agreement between them is self-consistency. A reading that cannot be made to fail cannot
+   * report a result, which is why this verdict is printed above every figure it governs -- the
+   * discipline findings 100 and 102 established for their own readings.
+   */
+  separates: boolean;
+  /** The share below which agreement is self-consistency rather than a signal. */
+  floor: number;
+  /** Why `separates` has the value it has, in a sentence a report can print. */
+  reason: string;
+}
+
+/**
+ * The floor below which downstream agreement is self-consistency.
+ *
+ * The same value as `ALT_READING_FLOOR`, and deliberately a separate constant: the two readings
+ * have the same arithmetic but different subjects, and sharing one name would make a change to
+ * one silently move the other. The comparison trap finding 100 recorded -- a `separates` that was
+ * true for arithmetic reasons -- is the reason both are stated rather than inlined.
+ */
+export const DOWNSTREAM_FLOOR = 0.2;
+
+/**
+ * Compare what each consumer would derive from the label against what it would derive from the
+ * rule's output, sample by sample.
+ *
+ * ## Why this exists
+ *
+ * Finding 102 established that `expected.category` is derivable from `expected.type` on 19 of 19
+ * samples, and closed by saying the decision it informs -- dataset rule or model prompt -- now has
+ * a subject. It did not ask the question that decides whether that decision is even available:
+ * **does anything downstream depend on the field being predicted rather than derived?**
+ *
+ * `category` is consumed in four places, two of which branch on its value. If the derivation
+ * agreed with the label only mostly, deriving would move a sample's verifiability or drop it from
+ * an RE3 export -- silently, because neither consumer is exercised by the extraction suite.
+ *
+ * ## The two readings it compares
+ *
+ * `labelled` is the dataset's own `expected.category`; `derived` is `inferFaultCategory`'s answer
+ * for the same sample's `expected.type`. They agree on 19 of 19, so `moved` is empty and the
+ * verdict is `lossless: true`.
+ *
+ * ## And the refutation, which is the point
+ *
+ * `separates` is measured against an **alternative derivation** -- the pre-finding-95 substring
+ * reading, kept in this module as a contrast precisely because this codebase shipped it. Under it
+ * `feature-flag-misconfiguration` derives `middleware` where the label says `config`, which is a
+ * different bucket in `validity.expectedSignalsFor`, so that consumer moves and the reading
+ * demonstrably *can* separate.
+ *
+ * The honest part, recorded here rather than left for a reader to discover: the same alternative
+ * does **not** move `rcaeval`'s RE3 filter, because `config` and `middleware` are both non-`code`
+ * and both are skipped. On this corpus the RE3 consumer therefore contributes **zero**
+ * discriminating power, and the verdict rests on `validity` alone. A reader who assumed all four
+ * consumers were evidence would be counting two projections and one inert filter as though they
+ * were three more chances to disagree.
+ */
+export function assessDownstreamAgreement(
+  samples: DerivationSample[],
+  consumers: readonly CategoryConsumer[],
+): DownstreamReading {
+  const readable = samples.filter(
+    (sample) => sample.type.trim() !== '' && sample.category.trim() !== '',
+  );
+
+  const moved: DownstreamSampleReading[] = [];
+  for (const sample of readable) {
+    const derived = inferFaultCategory(sample.type);
+    const shifted = consumers
+      .filter(
+        (consumer) => consumer.outcome(sample.category) !== consumer.outcome(derived),
+      )
+      .map((consumer) => consumer.name);
+    if (shifted.length > 0) {
+      moved.push({
+        sampleId: sample.sampleId,
+        type: sample.type,
+        labelled: sample.category,
+        derived,
+        moved: shifted,
+        inert: false,
+      });
+    }
+  }
+
+  const graded = readable.length;
+
+  // The refutation, measured rather than asserted: run the same comparison with the derivation
+  // replaced by the alternative reading, and ask whether ANY consumer moves. If none does, the
+  // reading cannot separate anything and `separates` is false for a statistical reason rather
+  // than by fiat. A test pins both ends, so neither a hardcoded true nor a hardcoded false passes.
+  let alternativeMoves = 0;
+  for (const sample of readable) {
+    const alternative = substringReading(sample.type);
+    const differs = consumers.some(
+      (consumer) => consumer.outcome(sample.category) !== consumer.outcome(alternative),
+    );
+    if (differs) alternativeMoves += 1;
+  }
+
+  const share = graded === 0 ? 0 : (graded - moved.length) / graded;
+  const alternativeShare = graded === 0 ? 0 : alternativeMoves / graded;
+  const separates = alternativeShare > DOWNSTREAM_FLOOR;
+
+  const reason = separates
+    ? `an alternative derivation moves a consumer on ${alternativeMoves} of ${graded} ` +
+      `(${alternativeShare.toFixed(4)}), above the floor of ${DOWNSTREAM_FLOOR}, so the reading ` +
+      `can tell a derived category from a mis-derived one`
+    : `an alternative derivation moves a consumer on only ${alternativeMoves} of ${graded} ` +
+      `(${alternativeShare.toFixed(4)}), at or below the floor of ${DOWNSTREAM_FLOOR}, so the ` +
+      `reading cannot tell a derived category from a mis-derived one`;
+
+  return {
+    consumers: consumers.map((consumer) => ({
+      name: consumer.name,
+      branches: consumer.branches,
+    })),
+    graded,
+    inert: graded - moved.length,
+    moved,
+    share,
+    lossless: moved.length === 0,
+    separates,
+    floor: DOWNSTREAM_FLOOR,
+    reason,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// (g) The module's own declarations -- one name, one declaration
+// ---------------------------------------------------------------------------
+
+/**
+ * The exported type names a source file declares more than once.
+ *
+ * ## Why this is a reading rather than a lint rule
+ *
+ * Typescript **merges** duplicate `interface` declarations of the same name. The build passes,
+ * every test that imports the type passes, and the only place the duplication surfaces is the
+ * emitted `.d.ts`, which carries the declaration twice. This module shipped that way: see the
+ * note on `MissReading`.
+ *
+ * The consequence is asymmetric and is what makes this worth a function rather than a habit.
+ * When two merged declarations are **field-for-field identical** -- which is the case here --
+ * nothing observable changes, so no test can be written against the behaviour. When they
+ * **differ**, the merge silently produces a *union* of their fields: a reader of the source sees
+ * one shape, a reader of the type sees another, and neither is wrong on its own terms.
+ *
+ * So the only signature that covers both cases is the source text itself. That is what this
+ * reads, and it is deliberately the same regex `export-surface-enumerated.test.ts` uses for
+ * `export interface X`, so the two checks agree about what a declaration is.
+ *
+ * Not to be confused with a *value* redeclaration, which Typescript rejects at compile time and
+ * therefore needs no reading: this covers `interface` and `type` aliases only, which are the two
+ * forms a compiler accepts twice.
+ *
+ * Each offending name is reported **once**, however many times it is declared. A three-fold
+ * duplicate is one defect rather than two, and a count that grew with the repetition would make
+ * the figure a function of how badly a file went wrong rather than of whether it did. The
+ * implementation is a scan rather than a filter over occurrence indexes precisely because
+ * `names.filter((n, i) => names.indexOf(n) !== i)` looks right and is wrong -- it returns the
+ * name once per *extra* occurrence, which is off by one in the direction a reader would not
+ * check. A control in group M pins it.
+ */
+export function duplicateTypeDeclarations(source: string): string[] {
+  const declaration = /^export\s+(?:type|interface)\s+([A-Za-z_$][\w$]*)/gm;
+  const seen = new Set<string>();
+  const reported: string[] = [];
+  for (const match of source.matchAll(declaration)) {
+    // `match[1]` is a string in fact -- the capture group is non-optional in the pattern -- but
+    // `string | undefined` to the compiler under `noUncheckedIndexedAccess`. The cast below
+    // states that, and it is the honest form here rather than a shortcut:
+    //
+    //   * `if (name === undefined) continue;` is a branch the pattern makes unreachable, so the
+    //     module cannot report honest 100% branch coverage -- the line would need an exemption,
+    //     which is the defect this module exists to remove.
+    //   * `match[1] ?? ''` has the same problem in smaller print: the fallback is itself a
+    //     branch, and it is equally unreachable.
+    //
+    // A cast that the pattern justifies is narrower than a line that cannot be covered, and the
+    // positive/negative controls in group M would catch the cast being wrong: a pattern that
+    // stopped capturing would make every control return `['']`-shaped nonsense rather than pass.
+    const name = match[1] as string;
+    if (seen.has(name)) {
+      if (!reported.includes(name)) reported.push(name);
+      continue;
+    }
+    seen.add(name);
+  }
+  return reported;
+}
+
+// ---------------------------------------------------------------------------
 // The report -- verdict first
 // ---------------------------------------------------------------------------
 
@@ -631,6 +885,14 @@ export interface CategoryDerivationReport {
   misses: MissReading;
   /** Whether the miss result survives the run change. A run-specific result is not a finding. */
   missStability: MissStability;
+  /**
+   * Whether deriving the field away would move any consumer that branches on it.
+   *
+   * Absent only when the caller supplies no consumer list. It is present in the probe and in the
+   * tests, which read the real consumer set; a caller that has no consumers is not asserting
+   * anything, so the field is optional rather than defaulted to a vacuous agreement.
+   */
+  downstream?: DownstreamReading;
   /** What these figures do not show, in sentences. Non-empty by construction. */
   honesty: string[];
 }
@@ -646,6 +908,18 @@ export function buildCategoryDerivationReport(input: {
   misses: MissSample[];
   runs: RunMisses[];
   adversarialWords: readonly string[];
+  /**
+   * The consumers of the field the rule would replace, supplied by the caller.
+   *
+   * Not derived here: this module does not import the export or gate packages, and it should not
+   * start. Whether a consumer branches is a fact about that consumer's source, which the caller
+   * reads; this module measures what the consequence of the branch is. Keeping the two apart is
+   * what lets section (f) be checked by supplying a consumer whose answer is known.
+   *
+   * Optional so that an existing caller is not forced to invent a consumer list, but the probe
+   * and the tests both supply the real one -- and the honesty list says so when it is absent.
+   */
+  consumers?: readonly CategoryConsumer[];
 }): CategoryDerivationReport {
   const discriminatingPower = assessDiscriminatingPower(input.samples);
   const conformance = assessDatasetConformance(input.samples);
@@ -653,8 +927,21 @@ export function buildCategoryDerivationReport(input: {
   const excess = assessExcess(input.adversarialWords);
   const misses = assessMissDerivability(input.misses);
   const missStability = assessMissStability(input.runs);
+  const downstream =
+    input.consumers === undefined
+      ? undefined
+      : assessDownstreamAgreement(input.samples, input.consumers);
 
   const honesty = [
+    `Conformance (${conformance.conforming} of ${conformance.graded}) says the dataset obeys ` +
+      `its own rule. It says nothing about whether the consumers of the field would agree with ` +
+      `the rule: the dataset and the classifier were written by the same hand, so a shared ` +
+      `mistake would conform perfectly.` +
+      (downstream === undefined
+        ? ` This report was built without a consumer list, so the question of downstream ` +
+          `agreement was not asked at all -- which is not the same as asking it and getting a yes.`
+        : ` The downstream reading below asks that question directly and is the reason this ` +
+          `figure must not be quoted on its own.`),
     `The miss figure (${misses.consistent} of ${misses.graded} consistent) comes from a ` +
       `reading that disagrees with the label on ${discriminatingPower.differ.length} of ` +
       `${discriminatingPower.graded} expected types, below the floor of ` +
@@ -668,11 +955,9 @@ export function buildCategoryDerivationReport(input: {
       `current matcher, not of the word list. Under the substring reading the same words give ` +
       `${excess.underSubstringReading}, so the word list does provoke the defect the matcher ` +
       `was built to remove.`,
-    `Conformance (${conformance.conforming} of ${conformance.graded}) says the dataset obeys ` +
-      `its own rule. It does not say the rule is right: the dataset and the classifier were ` +
-      `written by the same hand, and a shared mistake would conform perfectly.`,
     `This module reads the labelled fields. It says nothing about whether the incident text ` +
       `carries what the labels claim -- that is finding 98's reading, which stands separately.`,
+    ...(downstream === undefined ? [] : downstreamCaveat(downstream)),
   ];
 
   return {
@@ -682,6 +967,53 @@ export function buildCategoryDerivationReport(input: {
     excess,
     misses,
     missStability,
+    downstream,
     honesty,
   };
+}
+
+/**
+ * The downstream caveat, stated in the direction the reading actually measured.
+ *
+ * A helper rather than an inline template because the two verdicts need opposite sentences and
+ * the difference between them is the whole point of section (f): a lossless reading means the
+ * field is decorative, and a separating one means the field is load-bearing. Writing one
+ * sentence and parameterising the numbers would let the affirmative case be printed under a
+ * refutation, which is exactly the defect this module exists to prevent.
+ *
+ * Exported, and that is a coverage decision rather than an API one. Both directions are reachable
+ * through `assessDownstreamAgreement` in principle, but on this corpus only the lossless one is:
+ * no consumer moves on any sample, so the separating sentence is unreachable through the report
+ * builder and would otherwise be an uncovered branch in a module that reports its coverage. A
+ * test supplies a constructed reading for each direction instead, which is the same repair group
+ * J applies to the other uncovered branches.
+ */
+export function downstreamCaveat(downstream: DownstreamReading): string[] {
+  const names = downstream.consumers.map((consumer) => consumer.name).join(', ');
+  const branching = downstream.consumers.filter((consumer) => consumer.branches);
+  const branchingNames = branching.map((consumer) => consumer.name).join(', ');
+  const base =
+    `Downstream agreement: ${downstream.inert} of ${downstream.graded} samples keep the same ` +
+    `treatment under the ${branching.length} consumer(s) that branch on the field ` +
+    `(${branchingNames}), out of ${downstream.consumers.length} that read it (${names}).`;
+
+  if (downstream.lossless) {
+    return [
+      base +
+        ` Deriving the field away would therefore change nothing observable for those ` +
+        `consumers, so a derivation that passes their check has been tested against nothing.`,
+      `The consumers that do not branch are not evidence of agreement and are counted as such: ` +
+        `${downstream.consumers.length - branching.length} of ${downstream.consumers.length} ` +
+        `index a total map with no guard, so no category can change their output and they ` +
+        `cannot distinguish a right derivation from a wrong one.`,
+    ];
+  }
+
+  return [
+    base +
+      ` Under the alternative reading, ${downstream.moved.length} samples move, so this reading ` +
+      `does separate and the verdict rests on it rather than on the figures above.`,
+    `Separating is not the same as agreeing: a consumer can reject the derivation for the right ` +
+      `reason or the wrong one, and this reading records only that its treatment changed.`,
+  ];
 }

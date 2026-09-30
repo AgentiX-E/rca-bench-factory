@@ -605,21 +605,28 @@ export type {
 // figure drawn from it is quoted. See `fault/category-derivation.ts`.
 export {
   ALT_READING_FLOOR,
+  DOWNSTREAM_FLOOR,
   EXCESS_ALLOWANCE,
   assessDatasetConformance,
   assessDerivability,
+  assessDownstreamAgreement,
   assessExcess,
   assessMissDerivability,
   assessMissStability,
   assessDiscriminatingPower,
   buildCategoryDerivationReport,
+  downstreamCaveat,
+  duplicateTypeDeclarations,
 } from './fault/category-derivation.js';
 export type {
   AlternativeReading,
   AlternativeReadingName,
+  CategoryConsumer,
   CategoryDerivationReport,
   ConformanceReading,
   DerivabilityReading,
+  DownstreamReading,
+  DownstreamSampleReading,
   DerivationSample,
   ExcessReading,
   MissReading,

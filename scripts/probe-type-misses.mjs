@@ -79,11 +79,51 @@ import { buildAgreementContrast } from '../packages/core/dist/index.js';
 // `category` from its own `type` on 19 of 19, so the derivation is the authoring rule --
 // and, printed above every figure, the reading that reports it cannot separate the model
 // from a correct answerer (2 of 19, below the floor of 0.2).
-import { buildCategoryDerivationReport, assessDatasetConformance, assessDerivability, assessDiscriminatingPower } from '../packages/core/dist/index.js';
+import {
+  buildCategoryDerivationReport,
+  assessDatasetConformance,
+  assessDerivability,
+  assessDownstreamAgreement,
+  assessDiscriminatingPower,
+  duplicateTypeDeclarations,
+} from '../packages/core/dist/index.js';
+// And the table `validity.expectedSignalsFor` looks categories up in, imported rather than
+// copied so that the consumer mirror below cannot go stale: a category added to the table would
+// otherwise leave the probe asserting that the consumer misses.
+import { FAULT_EXPECTATIONS } from '../packages/core/dist/gates/validity.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DATASET = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
+
+/**
+ * The four consumers of `expected.category`, each with the behaviour its source actually has.
+ *
+ * The `branches` flag is the whole content of the downstream reading, and the honest value is
+ * two rather than four: `gates/validity.ts:148` and `export/rcaeval.ts:148` select different
+ * behaviour on the category, while `export/itbench.ts:119` and `export/cloudopsbench.ts:79`
+ * index a total `Record<FaultCategory, string>` with no guard. A count of four would report a
+ * two-consumer result as a four-consumer result, which is the overstatement this table's
+ * `branches` column exists to make checkable.
+ */
+const CATEGORY_CONSUMERS = [
+  {
+    name: 'gates/validity.ts:148',
+    branches: true,
+    outcome: (category) => (category in FAULT_EXPECTATIONS ? 'checked' : 'unverifiable'),
+  },
+  {
+    name: 'export/rcaeval.ts:148',
+    branches: true,
+    outcome: (category) => (category === 'code' ? 'kept' : 'skipped'),
+  },
+  { name: 'export/itbench.ts:119', branches: false, outcome: (category) => `label:${category}` },
+  {
+    name: 'export/cloudopsbench.ts:79',
+    branches: false,
+    outcome: (category) => `taxonomy:${category}`,
+  },
+];
 
 /**
  * The `type` misses of a recorded run, read from the recorded annotation.
@@ -567,6 +607,7 @@ function derivationEvidence(rowsByRun) {
     misses: runs[0] === undefined ? [] : runs[0].misses,
     runs,
     adversarialWords,
+    consumers: CATEGORY_CONSUMERS,
   });
 
   // The branches the golden corpus cannot reach, exercised explicitly.
@@ -613,6 +654,68 @@ function derivationEvidence(rowsByRun) {
       { sampleId: '(a)', type: 'redis-latency', category: 'code' },
       { sampleId: '(b)', type: 'feature-flag-misconfiguration', category: 'runtime' },
     ]),
+    // The downstream reading's two unreachable directions, and the third occurrence of the
+    // same repair in this module.
+    //
+    // On this corpus no branching consumer moves on any sample, so `lossless` is true, `moved`
+    // is empty and `separates` is false -- three values a hardcode would reproduce exactly. The
+    // controls below supply the inputs that reach the other ends:
+    //
+    //   * `moved` -- a corpus where the label and the derivation disagree, so the `moved` list
+    //     is populated. `lossless` is asserted here too, because an entry that read the corpus
+    //     figure would be satisfied by the mutation it is meant to catch.
+    //   * `separating` -- two samples the alternative reading moves *throughout*, so an honest
+    //     `separates` is true. This is AH/AI's pair at the third reading: with the corpus at
+    //     false, only an input that must give true makes a hardcoded false observable.
+    sensitive: assessDownstreamAgreement(
+      [{ sampleId: '(diverging sample)', type: 'container-crash', category: 'middleware' }],
+      [{ name: '(category itself)', branches: true, outcome: (category) => category }],
+    ),
+    downstreamSeparating: assessDownstreamAgreement(
+      [
+        { sampleId: '(a)', type: 'feature-flag-misconfiguration', category: 'config' },
+        { sampleId: '(b)', type: 'redis-latency', category: 'network' },
+      ],
+      CATEGORY_CONSUMERS,
+    ),
+  };
+
+  // The module's own declarations, read from its source rather than from any figure it
+  // publishes.
+  //
+  // This is the one part of the block that reads a *file* rather than a reading, and it is here
+  // because the defect it detects is invisible to every reading. Typescript merges duplicate
+  // `interface` declarations silently, so a module that declares `MissReading` twice typechecks,
+  // builds, passes every behavioural test, and can only be caught by looking at the text. The
+  // module ships `duplicateTypeDeclarations` for exactly this, and the count of declarations read
+  // is published beside the duplicate list so the two figures can be checked against each other:
+  // a duplicate list that is empty because the reader found nothing is a different claim from one
+  // that is empty because the reader read nothing.
+  const moduleText = readFileSync(
+    resolve(REPO, 'packages', 'core', 'src', 'fault', 'category-derivation.ts'),
+    'utf8',
+  );
+  const declarationsRead = [...moduleText.matchAll(/^export\s+(?:type|interface)\s+([A-Za-z_$][\w$]*)/gm)];
+  // The detector's *positive* control, and the reason AN can be caught at all.
+  //
+  // On this corpus `duplicates` is empty and the honest implementation returns an empty list, so
+  // a version that hardcoded `[]` would be indistinguishable -- AN read the corpus figure and
+  // survived, correctly. The detector takes its source as a parameter, so a source that declares
+  // one name twice can be supplied directly: there an honest implementation reports the name and
+  // a hardcoded empty list does not. This is the same repair AI and AQ needed, made possible here
+  // because the function is pure over its input rather than tied to one file.
+  const duplicateControlSource =
+    'export interface Repeated {\n' +
+    '  value: number;\n' +
+    '}\n' +
+    'export interface Repeated {\n' +
+    '  value: number;\n' +
+    '}\n' +
+    'export type Unique = string;\n';
+  const declarations = {
+    declarationsRead: declarationsRead.length,
+    duplicates: duplicateTypeDeclarations(moduleText),
+    duplicatesFoundInControl: duplicateTypeDeclarations(duplicateControlSource),
   };
 
   // The report is spread rather than re-listed field by field, so a field added to the
@@ -621,6 +724,21 @@ function derivationEvidence(rowsByRun) {
   // published report while the test -- which read the module directly -- stayed green.
   return {
     ...report,
+    declarations,
+    // The size of the evidence, published beside the reading rather than left for a reader to
+    // count. `consumers.length` is four and this is two, and injection AR exists because the
+    // difference is the whole claim: two of the four index a total record with no guard, so they
+    // cannot disagree whatever the category is.
+    //
+    // Derived from the report's own consumer flags rather than from `CATEGORY_CONSUMERS`, so a
+    // change to the mirror moves this figure through the module under test -- the property every
+    // other figure in this block has.
+    downstream: report.downstream === undefined
+      ? undefined
+      : {
+          ...report.downstream,
+          branching: report.downstream.consumers.filter((consumer) => consumer.branches).length,
+        },
     controls: {
       disagreement: {
         conforming: controls.disagreement.conforming,
@@ -639,6 +757,17 @@ function derivationEvidence(rowsByRun) {
         differ: controls.separating.differ.length,
         graded: controls.separating.graded,
         share: controls.separating.share,
+      },
+      sensitive: {
+        moved: controls.sensitive.moved.length,
+        inert: controls.sensitive.inert,
+        graded: controls.sensitive.graded,
+        lossless: controls.sensitive.lossless,
+      },
+      downstreamSeparating: {
+        separates: controls.downstreamSeparating.separates,
+        graded: controls.downstreamSeparating.graded,
+        reason: controls.downstreamSeparating.reason,
       },
     },
     readingsPerRun: runs.map(({ run, misses }) => ({ run, misses: misses.length })),
@@ -1136,6 +1265,42 @@ function main() {
           `are not a result. What the answer licenses is a *decision* about where the fix ` +
           `belongs, which this block informs and does not take.`,
       );
+      if (d.downstream !== undefined) {
+        // The question that decides whether the decision is available at all, printed with its
+        // own verdict above its own figures. The consumer count is split by branch rather than
+        // reported as a total, because the total is the number a reader would take as the size
+        // of the evidence and it is twice the honest one.
+        const branching = d.downstream.consumers.filter((c) => c.branches);
+        console.log(
+          `\n  and whether anything downstream depends on the field being *predicted*:`,
+        );
+        console.log(
+          `    consumers of expected.category: ${d.downstream.consumers.length}, of which ` +
+            `${branching.length} branch on it -- ${branching.map((c) => c.name).join(', ')}`,
+        );
+        console.log(
+          `    the other ${d.downstream.consumers.length - branching.length} index a total map ` +
+            `with no guard, so no category can change their control flow`,
+        );
+        console.log(
+          `    samples where no branching consumer moves: ${d.downstream.inert} of ` +
+            `${d.downstream.graded} (${d.downstream.share.toFixed(4)}), lossless ` +
+            `${d.downstream.lossless}`,
+        );
+        console.log(
+          `    can this reading separate a derived category from a mis-derived one? ` +
+            `${d.downstream.separates} (floor ${d.downstream.floor})`,
+        );
+        console.log(`      reason: ${d.downstream.reason}`);
+        console.log(
+          d.downstream.separates
+            ? `      -> so the lossless figure is a result and not an artefact of a reading ` +
+                `with nothing to disagree with.`
+            : `      -> so the lossless figure is self-consistency: the consumers branch on the ` +
+                `same label the derivation is checked against, and the dataset and the ` +
+                `classifier share an author. It is not evidence that the derivation is right.`,
+        );
+      }
       console.log(`\n  what this does not establish:`);
       for (const sentence of d.honesty) {
         console.log(`    - ${sentence}`);

@@ -567,14 +567,18 @@ const TESTED = [
   // fault/category-derivation.ts -- the category rule the dataset uses, checked, with its own
   // discriminating power measured and printed before any figure drawn from it.
   'ALT_READING_FLOOR',
+  'DOWNSTREAM_FLOOR',
   'EXCESS_ALLOWANCE',
   'assessDatasetConformance',
   'assessDerivability',
+  'assessDownstreamAgreement',
   'assessExcess',
   'assessMissDerivability',
   'assessMissStability',
   'assessDiscriminatingPower',
   'buildCategoryDerivationReport',
+  'downstreamCaveat',
+  'duplicateTypeDeclarations',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',

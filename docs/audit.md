@@ -9097,3 +9097,252 @@ contrast. A figure printed without its qualifier is the failure finding 99 recor
 
 **And it does not retract finding 98.** That finding read the incident text and stands. This module
 reads the labelled fields and says nothing about whether the text carries what the labels claim.
+
+## Finding 103: the module that checks a rule shipped a defect it could not check, and the check it needed had a subject
+
+Finding 102 closed with the labelling question answered and a product decision deferred. This
+finding is what happened when that module was read carefully enough to extend it, and it produced
+three things: a structural defect in the module itself, a rule the dataset follows but never
+stated, and the measurement that decides whether the deferred decision is available.
+
+### The defect: a declaration, published twice
+
+`category-derivation.ts` declared `export interface MissReading` **twice** — at line 261 and again
+at line 326, roughly 65 lines apart. Typescript **merges** duplicate interface declarations, so:
+
+* the build passed;
+* `tsc --noEmit` passed;
+* every test in the 72-test suite that imported `MissReading` passed;
+* and the duplicate reached the **published** declaration file. `dist/fault/category-derivation.d.ts`
+  carried `export interface MissReading` on line 155 and again on line 219.
+
+Parsing both blocks, stripping comments and comparing them field by field: **identical**. So
+**nothing observable changed, and no behavioural test was possible**. The defect was *structural*.
+Any test written as though it had caught a behavioural bug would be claiming a stronger result than
+the evidence supports, and that is stated here rather than dressed up.
+
+**Why duplicate declarations warrant a reading at all**, given that this one changed nothing: the
+consequence is asymmetric. When two merged declarations are identical, nothing observable changes.
+When they **differ**, the merge silently produces the **union** of their fields — a source reader
+sees one shape, a type reader another, and neither is wrong on its own terms. So the only signature
+covering both cases is the **source text**, and the module now reads its own.
+
+`duplicateTypeDeclarations(source)` is `export`ed and answers with the names declared more than
+once. It deliberately uses the same form-recognition as `export-surface-enumerated.test.ts` — both
+name `interface` and `type` after `export` and both anchor at the start of a line — so the two
+checks agree about what a declaration is, and a test asserts the agreement rather than leaving it as
+a comment.
+
+### The defect found while fixing that one: a docstring naming a field that does not exist
+
+`grep -n "stableAcrossRuns"` found exactly one occurrence, and it was in a docstring. The field it
+named was never declared. The real carrier is `MissStability` / `report.missStability`, and the
+interface's actual fields are `graded`, `consistent`, `consistentIds`, `rows`, `reachableLoosely`,
+`noneConsistent`.
+
+This is the **same class of defect as the duplicate**: invisible to the compiler, and wrong in a
+direction a reader cannot check without opening the type. It is worth recording that the second
+defect was found by grepping *after* the first — a defect hunt that found one rarely stops at one.
+
+### The rule the dataset follows and never stated
+
+Finding 102 established that the dataset's `category` is derivable from its `type`. That rule
+appeared **nowhere**: not in `provenance`, not in the extraction prompt, not in a test. It was a
+fact about the file that only the classifier's source recorded.
+
+The deferred product decision is whether the **prompt** should state the rule, and this finding does
+not take it. What it takes is the half that is a defect rather than a decision: a file that follows
+a rule it does not state is a file whose rule the next person to add a sample will break, silently,
+because nothing checks it.
+
+So `golden-master/fault-extraction/samples.json` gains `provenance.categoryRule`, beside
+`authoringRule` and `annotationRule` — the two rules already stated there, in the same voice. It
+names `inferFaultCategory`, records the 19-of-19 result, says the check is asserted **over the whole
+file**, records that the concordance is **self-consistency** rather than a result, and says the
+product decision was **deliberately not taken** there.
+
+New test group N makes the word "total" an assertion rather than an adjective: every sample's
+`expected.type` must derive a member of `FAULT_CATEGORIES`; **no** sample may derive `unknown`
+(the taxonomy's escape hatch staying unused rather than merely legal); and the conformance is
+asserted as **nineteen individual equalities**, not one equality of two counts — a reading that
+reported 19 of 19 while transposing two samples would pass the aggregate and fail this. Both
+directions have controls, so neither claim can break silently.
+
+### The measurement that decides whether the deferred decision is available
+
+Finding 102 said its decision now had a subject. It did not ask the question that determines whether
+the decision **exists**: **does anything downstream depend on `expected.category` being predicted
+rather than derived?**
+
+`category` is consumed in four places. **Only two of them branch:**
+
+| Consumer | Branches | Why |
+|---|---|---|
+| `gates/validity.ts:148-155` | **yes** | looks the category up in `FAULT_EXPECTATIONS`; a miss returns `{semanticTypes: [], unverifiable: true}` |
+| `export/rcaeval.ts:148` | **yes** | `if (suite === 'RE3' && fc.fault.category !== 'code')` skips the case before writing files |
+| `export/itbench.ts:119` | no | indexes a total `Record<FaultCategory, string>` with **no guard** |
+| `export/cloudopsbench.ts:79` | no | same shape, `TAXONOMY_BY_CATEGORY` |
+
+The first draft of this section — and the plan agent that reviewed it — called all four "branch
+points". Measured, the honest count is **two**, and the correction is recorded because it is the
+exact overstatement the section exists to prevent: a two-consumer result published as a
+four-consumer result.
+
+`assessDownstreamAgreement(samples, consumers)` takes the four as `{name, branches, outcome}`
+triples and compares each consumer's outcome under the label against its outcome under the
+derivation. On this corpus no branching consumer moves on any sample: `inert: 19 of 19`,
+`lossless: true`.
+
+**And then the refutation, which is the point.** `separates` is measured against an **alternative
+derivation** — the pre-finding-95 substring reading, kept in the module as a contrast precisely
+because this codebase shipped it. Under it `feature-flag-misconfiguration` derives `middleware`
+where the label says `config`, a different bucket in `validity.expectedSignalsFor`, so that consumer
+moves:
+
+```
+1 of 19 = 0.0526   floor: 0.2   separates: false
+```
+
+So the reading **cannot** separate, and `lossless: true` is **self-consistency, not a result**.
+
+The honest part, recorded rather than left for a reader to discover: the same alternative does
+**not** move `rcaeval`'s RE3 filter, because `config` and `middleware` are both non-`code` and both
+are skipped. **On this corpus the RE3 consumer contributes zero discriminating power**, and the
+verdict rests on `validity` alone. A reader who assumed all four consumers were evidence would be
+counting two projections and one inert filter as three more chances to disagree.
+
+### Three more unreachable branches, and the same repair a fourth time
+
+`assessDownstreamAgreement` adds a fourth reading with the same shape as the other three, and the
+battery found the same trap in it. `moved` is empty, `lossless` is `true` and `separates` is `false`
+on this corpus — three values a hardcode would reproduce exactly.
+
+The repair is the one findings 96, 100 and 102 already applied, for the fourth time: **construct the
+input that reaches the branch and publish it in `controls`.**
+
+* `controls.sensitive` — one sample whose type derives `runtime` and whose label says `middleware`,
+  read through a consumer whose outcome is the category itself. Honest: `moved: 1`,
+  `lossless: false`. A mutation that makes the comparison agree by construction moves it to
+  `moved: 0`, `lossless: true`.
+* `controls.downstreamSeparating` — two samples the alternative reading moves throughout. Honest:
+  `separates: true`, `2 of 2`. This is what makes a hardcoded `separates: false` observable.
+
+With both ends pinned, the only implementation that passes is one whose verdict is computed.
+
+The fourth reading also produced a **corrected expectation in the test suite rather than in the
+code**, twice — both times because the code was right and the assertion was wrong:
+
+1. I wrote a test asserting `separates: false` for the one sample the alternative moves, and the
+   code disagreed. On a one-sample corpus that sample is `1 of 1 = 1.0`, **above** the floor. The
+   share is a *fraction*, so the same sample contributes `1 of 19` to the corpus and `1 of 1` alone.
+   Both figures are now asserted together, because either alone is compatible with a `separates`
+   that ignores its denominator.
+2. I wrote a test asserting the duplicate detector reports a declaration in an indented doc comment.
+   It does not, and the regex is right: anchored with `^` under `m`, a declaration must begin at
+   column zero, and prose in a doc comment is indented by ` * `. That accident is what keeps every
+   docstring in this repository out of the reading, so it is now asserted rather than assumed.
+
+And the detector itself had a **real defect the test caught**: `names.filter((n, i) => names.indexOf(n) !== i)`
+returns a repeated name once per *extra* occurrence — three declarations yield `['Alpha', 'Alpha']`.
+It looked right and is off by one in the direction a reader would not check. Fixed by a scan that
+reports each offending name exactly once.
+
+### What the deferral now rests on
+
+The decision finding 101 deferred and finding 102 gave a subject is **available**, and this finding
+is what makes it available: because no branching consumer moves, a producer could stop predicting
+`category` on this corpus without a downstream change. That is a claim about **this corpus** and it
+is not a claim that the derivation is right — the consumers branch on the same label the derivation
+is checked against, and the dataset and the classifier share an author.
+
+### Files
+
+| File | Change |
+|---|---|
+| `packages/core/src/fault/category-derivation.ts` | retired the duplicate `MissReading` + corrected its docstring; new section (f) `assessDownstreamAgreement` + `DOWNSTREAM_FLOOR`; new section (g) `duplicateTypeDeclarations`; `downstream?` on the report + `downstreamCaveat` |
+| `packages/core/src/index.ts` | registers `DOWNSTREAM_FLOOR`, `assessDownstreamAgreement`, `downstreamCaveat`, `duplicateTypeDeclarations`, and 5 types |
+| `golden-master/fault-extraction/samples.json` | `provenance.categoryRule`, the third rule stated beside the other two |
+| `packages/core/test/fault/category-derivation.test.ts` | 72 → **108 tests**; new groups M (the detector and the defect that motivated it), N (the stated rule, checked whole-file), O (downstream agreement), P (the report carries the verdict with its refutation) |
+| `packages/core/test/export-surface-enumerated.test.ts` | enumerates the new module surface |
+| `scripts/probe-category-derivation.mjs` | the four real consumers, the downstream verdict printed above its figures, `--json` block |
+| `scripts/probe-type-misses.mjs` | `declarations` sub-block, `controls.sensitive`, `controls.downstreamSeparating`, `downstream.branching`, the downstream paragraph in the block |
+| `scripts/injection/type-miss-probe.py` | 8 injections (AL–AS), incl. the duplicate re-injected and its renamed companion |
+
+### Verification
+
+Repository suite: **2850 passed in 102 files**. `src/fault` coverage: **100 / 100 / 100 / 100**,
+`category-derivation.ts` at **108 tests**. The two gaps the report named were closed by adding the
+tests it asked for rather than by an exemption: an unreachable `undefined` guard (removed — a
+branch no input reaches cannot be covered, so the form was changed to one that has no branch) and
+the `downstreamCaveat` separating direction (exported and tested directly, because the corpus is
+lossless and only the other direction is reachable through the report).
+
+Battery: **47 caught, 0 survived, 0 inert, 0 blind**, all twelve in-package targets restored
+byte-for-byte.
+
+#### The eight new injections took five battery runs, and four of the five failures were mine
+
+The injections were written from a reading of the module rather than from its text, and the battery
+found the difference each time. Recording them here because the pattern is the finding: every one
+was caught by the mechanism the battery exists to be, and none of them would have been caught by
+reading the entry list.
+
+**Run 1 — the in-package slot.** AO, AP, AQ and AR reported `INERT` with `anchor not found`, and AS
+raised `KeyError: 'downstream'`. AO/AP/AQ rewrite statements in `category-derivation.ts`, and I had
+declared them with the default `'source'` target, so their edits were applied to the JS probe, where
+those strings do not exist. The fix is the target slot, not a rewrite of the anchors — the anchors
+were already exact.
+
+**Run 2 — the same three, one level deeper.** They still reported `INERT`, because `main()` builds
+the in-package edit from `also` alone:
+
+```python
+in_package = also(base) if also is not None else base
+```
+
+An entry whose target is `'derivation'` and whose `mutate` holds the edit has that edit applied to
+the probe and the module left untouched. The shape a single in-package edit needs is `mutate = None`
+with the edit in `also`, which is what AD and AK already used.
+
+**Run 3 — AN, AO and AQ survived.** In each case the entry's *finding* is sound and its
+*requirement* was not: it asserted a figure the mutation leaves alone. AO read
+`conformance.conforming`, which is 19 before and after — every recorded row already agrees with its
+label, so a by-construction criterion reports the same headline, while the figure that moves is
+`misses.consistent` (0 → 8). **A SURVIVED is a bad test, not a bad claim.**
+
+**Run 4 — AO caught, AN and AQ still survived.** Both are genuinely indistinguishable on this
+corpus: the honest `duplicates` is `[]` and a hardcoded `[]` matches it byte for byte, and the
+honest downstream verdict *is* `false`, so a hardcoded `false` reproduces every published figure.
+My first reaction was to declare them INERT-shaped mirrors and move on. That was wrong, and the
+precedent says so: **AI had survived against `discriminatingPower` for exactly this reason**, and
+the repair was the `controls.separating` reading, which supplies an input where the constant is the
+wrong answer. The same repair applies here — `controls.downstreamSeparating` for AQ, and for AN a
+newly published positive control, since `duplicateTypeDeclarations` is pure over its source and a
+source declaring one name twice can simply be handed to it.
+
+**Run 5 — 47 caught.** The exit code demands every injection be caught
+(`return 0 if caught == len(INJECTIONS) and restored else 1`), so an "intentionally INERT" entry
+cannot be expressed at all: a mirror that does not survive is the only kind that can be stated.
+
+The generalisable form: **when a mutation is indistinguishable on the corpus, the fix is to change
+the input, not the verdict.** Declaring a survivor intentional is available and is usually wrong —
+it was wrong here twice, and in both cases the control that catches it already existed for a
+different reading.
+
+### What this does not establish
+
+**It does not establish that the derivation is correct.** The consumers branch on the same label the
+derivation is checked against, and `separates` is false. An agreement that cannot be made to fail is
+not evidence, and the module prints that above the figure rather than below it.
+
+**It does not establish that the prompt should state the rule.** That is still the deferred product
+decision, and `provenance.categoryRule` records that it was not taken here. What the rule's being
+written down establishes is that adding a sample now fails a test instead of quietly breaking a rule
+nobody had recorded.
+
+**It does not establish that the RE3 consumer is inert in general.** It is inert *for this
+disagreement*, because `config` and `middleware` are both non-`code`. A different mis-derivation
+into or out of `code` would move it, and the reading would then have a second chance to disagree.
+
+**And it does not upgrade the miss figure.** The 0-of-8 count remains below-floor and run-dependent,
+printed with both qualifiers wherever it appears.

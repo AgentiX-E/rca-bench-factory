@@ -1725,6 +1725,7 @@ INJECTIONS: list[
             "    excess,\n"
             "    misses,\n"
             "    missStability,\n"
+            "    downstream,\n"
             "    honesty,\n"
             "  };",
             "  return {\n"
@@ -1734,10 +1735,305 @@ INJECTIONS: list[
             "    excess,\n"
             "    misses,\n"
             "    discriminatingPower,\n"
+            "    downstream,\n"
             "    honesty,\n"
             "  };",
         ),
         'derivation',
+    ),
+    (
+        "AL. derivation: declare MissReading twice again, so the published type is a merge",
+        None,
+        lambda r: derivation(r)["declarations"]["duplicates"]
+        == derivation_baseline()["declarations"]["duplicates"],
+        "the empty duplicate list, on a module that declares every name once",
+        # The defect this iteration exists to fix, re-injected. Typescript merges duplicate
+        # `interface` declarations silently: the build passes, the typecheck passes, and every
+        # test that imports the type passes. The only artefact that carried the evidence was the
+        # emitted `.d.ts`, which declared it twice.
+        #
+        # The anchor is the *surviving* declaration, and the insertion copies its body verbatim.
+        # That matters for what the injection proves: the two declarations are field-for-field
+        # identical, so `duplicateTypeDeclarations` is the only thing that can see the defect --
+        # no behavioural assertion could, because nothing observable changes. Writing the copy
+        # as a *differing* body would have been a different injection (AM does that).
+        #
+        # `declarations.duplicates` is published by the block from a read of the module's own
+        # source, so it is not a figure an in-package mutation can perturb indirectly -- it
+        # either sees the second declaration or it does not.
+        lambda t: rename(
+            t,
+            "export interface MissReading {",
+            "export interface MissReading {\n"
+            "  /** A duplicate of the declaration below, inserted by injection AL. */\n"
+            "  graded: number;\n"
+            "  consistent: number;\n"
+            "  consistentIds: string[];\n"
+            "  rows: {\n"
+            "    sampleId: string;\n"
+            "    answeredType: string;\n"
+            "    derived: string;\n"
+            "    answeredCategory: string;\n"
+            "    expectedCategory: string;\n"
+            "    consistent: boolean;\n"
+            "  }[];\n"
+            "  reachableLoosely: number;\n"
+            "  noneConsistent: boolean;\n"
+            "}\n\n"
+            "export interface MissReading {",
+        ),
+        'derivation',
+    ),
+    (
+        "AM. derivation: split one declaration into two names, so the pair reads as two types",
+        None,
+        lambda r: derivation(r)["declarations"]["declarationsRead"]
+        == derivation_baseline()["declarations"]["declarationsRead"],
+        "the count of declarations read, which moves when one declaration becomes two",
+        # The companion to AL, and the case that keeps the pair from being the same test twice.
+        # AL adds a second declaration of the *same* name, so the detector reports it and the
+        # count of declarations read rises by one. This entry also ends with one more
+        # declaration, and the honest duplicate list is still *empty* -- because the two
+        # declarations have different names.
+        #
+        # That is what makes the pair informative rather than repetitive: the same structural
+        # change (one more declaration) produces `['MissReading']` there and `[]` here, so a
+        # detector anchored on the *number* of declarations is caught by exactly one of the two
+        # while a name-based reader passes both.
+        #
+        # The requirement reads `declarationsRead`, not `duplicates`, and that is deliberate:
+        # the honest `duplicates` is empty *before and after* this mutation, so a requirement
+        # over it would be satisfied either way and would report this entry as INERT. The figure
+        # that moves is the count -- which is exactly the proxy AN shows is not a verdict.
+        #
+        # This is a two-edit pair, and both edits run inside the one callable below because the
+        # entry shape, (name, mutate, requirement, description, also, target, anchor), has no
+        # slot for a third edit: the seventh slot is the blind-check *anchor* and takes a name,
+        # so a callable placed there would be read as an anchor and never run -- and the battery
+        # would then report the entry as INERT with the unapplied edit named.
+        #
+        # The pair is forced rather than stylistic. A bare rename does not compile: the module
+        # references `MissReading` in four places, so it is TS2304 x4 plus TS2305 in `index.ts`,
+        # and a mutation the compiler rejects measures nothing. The rename therefore has to be
+        # paired with an alias, `export type MissReading = MissReadingRenamed;`, inserted after
+        # the renamed declaration. After both edits the module compiles, every reference still
+        # resolves, and *two exported names carry one shape*: the duplicate list stays empty,
+        # correctly, because the names differ, while the declaration count rises by one -- which
+        # is what this entry's requirement reads. That is also the shape the defect would really
+        # take, a second name for one shape, which no behavioural assertion sees.
+        #
+        # The insertion anchor is the *closing* brace of the renamed interface followed by the
+        # doc comment that opens the next declaration, and not the interface header. The body
+        # carries doc comments of its own, so an anchor written as "the header plus blank lines"
+        # is a guess about text that is not there -- the first attempt at this entry was exactly
+        # that guess, and it failed with `anchor not found` rather than silently editing nothing.
+        #
+        # The composition is the opposite of what AN does with the same edit count. AN is a
+        # *three*-edit injection: two edits to one file plus an outer edit to the probe that
+        # relabels what is published, because the defect AN is about is that the published
+        # figure is a proxy. AM is two edits to the module and no third, because the defect it
+        # is about is structural: the published duplicate list is *honest* here and stays empty,
+        # so there is nothing to relabel.
+        lambda t: rename(
+            rename(
+                t,
+                "export interface MissReading {",
+                "export interface MissReadingRenamed {",
+            ),
+            "  noneConsistent: boolean;\n}\n\n/**",
+            "  noneConsistent: boolean;\n}\n\n"
+            "export type MissReading = MissReadingRenamed;\n\n/**",
+        ),
+        'derivation',
+    ),
+    (
+        "AN. derivation: publish the record count instead of the duplicate list",
+        # The `declarations` block is built in the *probe*, so this entry edits the probe
+        # rather than the module. Editing the module would not move the published figure at
+        # all -- the block reads the module's text, and no edit to that text changes how many
+        # declarations the reader sees unless the edit adds or removes one.
+        # Both calls are removed, not just the corpus one. The defect is "publish what the field
+        # is expected to say instead of running the check", and an edit that replaced one call
+        # while leaving the other would be a different defect -- it would still be asking the
+        # detector, on a source that has a duplicate, what it found.
+        lambda t: rename(
+            t,
+            "  const declarations = {\n"
+            "    declarationsRead: declarationsRead.length,\n"
+            "    duplicates: duplicateTypeDeclarations(moduleText),\n"
+            "    duplicatesFoundInControl: duplicateTypeDeclarations(duplicateControlSource),\n"
+            "  };",
+            "  const declarations = {\n"
+            "    declarationsRead: declarationsRead.length,\n"
+            "    duplicates: [],\n"
+            "    duplicatesFoundInControl: [],\n"
+            "  };",
+        ),
+        # On the corpus the two are indistinguishable: the module declares each name once, so the
+        # honest `duplicates` is `[]` and a hardcoded `[]` matches it exactly. The requirement does
+        # not read that figure, therefore -- it reads the *control* the probe supplies, a source
+        # that declares one name twice. There the honest detector reports the name and the
+        # hardcoded list does not.
+        # On this corpus the honest duplicate list is empty, so a hardcoded empty list is
+        # indistinguishable -- the first version of this entry read the corpus figure and
+        # SURVIVED, correctly, for the reason AI and AQ survived on theirs. The repair is the
+        # detector's *positive* control: `duplicateTypeDeclarations` is pure over its source, so
+        # the probe feeds it a source that declares one name twice and publishes what it finds
+        # there. An honest implementation reports the name; a hardcoded empty list does not.
+        #
+        # The requirement reads the control rather than the corpus, and reads the count of
+        # declarations beside it, so an edit that stopped *reading* the module is caught as well.
+        lambda r: derivation(r)["declarations"]["duplicatesFoundInControl"]
+        == derivation_baseline()["declarations"]["duplicatesFoundInControl"]
+        and derivation(r)["declarations"]["declarationsRead"]
+        == derivation_baseline()["declarations"]["declarationsRead"],
+        "the duplicate the positive control carries and the count of declarations read, both of "
+        "which a hardcoded list contradicts",
+        # The proxy defect: a reader that publishes a constant instead of running the check. It is
+        # undetectable on this corpus, and that is the finding rather than a flaw in the entry --
+        # the module declares every name once, so the honest `duplicates` is `[]` and a hardcoded
+        # `[]` is byte-identical. A corpus with a duplicate in it would separate them, which is
+        # exactly what AL constructs.
+        #
+        # So AN and AL are a pair in the same sense AP and AQ are: AL injects the defect the check
+        # exists for and is caught; AN removes the check and is not, because on this corpus there
+        # is nothing for it to miss. Reading either alone would mislead -- AL alone would suggest
+        # the check is load-bearing against a hardcode, and AN alone would suggest it is
+        # decorative.
+        None,
+    ),
+    (
+        "AO. derivation: agree with the label by construction, so nothing is left to check",
+        None,
+        lambda r: derivation(r)["misses"]["consistent"]
+        == derivation_baseline()["misses"]["consistent"],
+        "the per-miss consistent count, which a criterion defined as agreement drives to the "
+        "whole graded set",
+        # The vacuous-reading defect: if the criterion is defined as "the label agrees", the
+        # check can never fail, and a perfect score says nothing about the corpus.
+        #
+        # The requirement reads `misses.consistent`, and the block matters. The first version of
+        # this entry read `conformance.conforming`, which is 19 *before and after*: every recorded
+        # row already agrees with its label, so defining the criterion as agreement does not move
+        # the headline, and the entry reported SURVIVED while the mutation was plainly visible
+        # elsewhere. No requirement over `conformance` can catch this edit, and the figure that
+        # moves is the one the edit is written into: `misses.consistent` goes 0 -> 8, because the
+        # criterion stops comparing `derived` against `answeredCategory` and starts returning true
+        # for every graded miss.
+        #
+        # What the entry records is narrower and more useful than "the check can be fooled": the
+        # *headline* conformance figure cannot distinguish an honest criterion from a vacuous one,
+        # while the per-miss figure can. A reader who quotes 19 of 19 alone is quoting a number a
+        # by-construction reading also produces.
+        lambda t: rename(
+            t,
+            "    const consistent = derived === miss.answeredCategory;",
+            "    const consistent = true;",
+        ),
+        'derivation',
+    ),
+    (
+        "AP. derivation: hardcode the downstream verdict true, so the reading cannot be refuted",
+        None,
+        lambda r: derivation(r)["downstream"]["separates"] == derivation_baseline()["downstream"]["separates"],
+        "the measured downstream verdict, false on this corpus, which a hardcoded true contradicts",
+        # One of a matched pair with AQ. A hardcoded verdict is caught by whichever of the two
+        # it does not say, and only by the pair: a single injection would be satisfied by a
+        # hardcode that happened to match, so the two are written together and neither is
+        # removed.
+        #
+        # The requirement reads `separates` and not `share`, because a reader that hardcodes the
+        # verdict while leaving the share measured would satisfy a share requirement -- the figure
+        # a reader quotes is the verdict.
+        lambda t: rename(
+            t,
+            "  const separates = alternativeShare > DOWNSTREAM_FLOOR;",
+            "  const separates = true;",
+        ),
+        'derivation',
+    ),
+    (
+        "AQ. derivation: hardcode the downstream verdict false, so AP alone cannot be satisfied",
+        None,
+        lambda r: derivation(r)["controls"]["downstreamSeparating"]["separates"]
+        == derivation_baseline()["controls"]["downstreamSeparating"]["separates"],
+        "the separating control's verdict, which an honest reading gives as true and a hardcoded "
+        "false contradicts",
+        # The other half of the pair, and the same repair AI needed one field over.
+        #
+        # On this corpus the honest verdict *is* false, so a hardcoded false reproduces every
+        # published downstream figure byte for byte -- `conformance`, `missStability`,
+        # `discriminatingPower`, `derivability`, `excess` and `downstream.reason` are all
+        # unchanged. The first version of this entry read `downstream.separates` on the corpus and
+        # SURVIVED, correctly, for the reason AI survived against `discriminatingPower`.
+        #
+        # The repair is the `controls.downstreamSeparating` reading, which the probe builds from
+        # two samples the alternative derivation moves *throughout*. There an honest reading gives
+        # `separates: true`, so a hardcoded false is the wrong answer and is caught. The
+        # requirement reads the control rather than the corpus for exactly that reason: a figure
+        # that cannot move is a figure that cannot catch anything.
+        #
+        # With AP and AQ together, the only implementation that passes both is one whose verdict is
+        # computed: each constant is caught by the entry that says the other value.
+        lambda t: rename(
+            t,
+            "  const separates = alternativeShare > DOWNSTREAM_FLOOR;",
+            "  const separates = false;",
+        ),
+        'derivation',
+    ),
+    (
+        "AR. derivation: count every consumer, so two chances to disagree read as four",
+        lambda t: rename(
+            t,
+            "  { name: 'export/itbench.ts:119', branches: false, outcome: (category) => `label:${category}` },",
+            "  { name: 'export/itbench.ts:119', branches: true, outcome: (category) => `label:${category}` },",
+        ),
+        lambda r: derivation(r)["downstream"]["branching"] == derivation_baseline()["downstream"]["branching"],
+        "the count of branching consumers, which is the size of the evidence",
+        # The consumer list is mirrored in the probe, so this entry edits the probe rather than
+        # the module. The mirror is imported rather than copied where it can be -- the module's
+        # own `assessDownstreamAgreement` computes the reading -- but the *list* is declared in
+        # the probe because the module has no opinion about which consumers exist.
+        #
+        # Inflating a non-branching consumer to `branches: true` changes no verdict: the sample
+        # treatment is identical under it either way. What it changes is the size of the
+        # evidence, which is the figure the caveat states, so a reader who counts the branching
+        # consumers is reading a number this injection moves.
+        #
+        # The anchor is the single-line form, and that is how the probe writes *this* consumer.
+        # The four are not formatted alike: `validity`, `rcaeval` and `cloudopsbench` are
+        # three-line object literals while `itbench` is one line, so an anchor copied from either
+        # of the other three does not match. The first version of this anchor was the single-line
+        # form and was correct; a later "correction" to a three-line shape, made from a reading of
+        # the other entries rather than of this one, is what a reviewer should not repeat.
+        None,
+    ),
+    (
+        "AS. derivation: drop the consumer list, so the question is never asked",
+        # The probe supplies the consumers, so this entry edits the probe.
+        lambda t: rename(
+            t,
+            "    adversarialWords,\n    consumers: CATEGORY_CONSUMERS,\n  });",
+            "    adversarialWords,\n  });",
+        ),
+        # The absent block has to be *read* rather than indexed. `derivation(r)["downstream"]` is a
+        # KeyError the moment the removal takes effect, and a requirement that raises reports the
+        # entry as a crash rather than as caught -- so the honest denominator of "not asked" is
+        # read with `.get`, and `0` is the value the mutation produces.
+        lambda r: (derivation(r).get("downstream") or {}).get("graded")
+        == derivation_baseline()["downstream"]["graded"],
+        "the downstream denominator, so the block reports a reading it actually took",
+        # The absent-reading defect. The report's `downstream` field is optional precisely so
+        # that a caller with no consumers asserts nothing -- but the *probe* has consumers, and
+        # a probe that stopped supplying them would publish a block whose most consequential
+        # section is absent while every remaining figure stayed green.
+        #
+        # The requirement reads `graded` rather than testing for the key, because a block that
+        # defaulted the absent reading to a vacuous `graded: 19, lossless: true` would satisfy a
+        # key-presence check while asserting an agreement nobody measured. A denominator of 0 is
+        # the honest shape of "not asked" and it is what moves here.
+        None,
     ),
 ]
 
