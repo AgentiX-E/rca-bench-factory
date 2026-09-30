@@ -86,6 +86,37 @@ def restore_recorded() -> bool:
     return all(path.read_text() == original for path, original in _WRITTEN.items())
 
 
+def crash_reason(lines: list[str]) -> str:
+    """The informative line of a node stack trace, not the version banner.
+
+    This reported `lines[-1]`, which for every node failure is `Node.js vX.Y.Z`.
+    Measured on injection J, whose whole purpose is for the recoverability
+    partition guard to throw: the battery printed
+
+        CAUGHT   J. probe: let the two halves disagree...
+                 (the probe failed to run: Node.js v22.13.1)
+
+    The real message -- `Error: recoverability partition does not cover the
+    dataset: 18 + 0 != 19` -- was on stderr and was discarded, because the banner
+    is always last. The comment above the call site says a mutation that breaks
+    the script for an unrelated reason must "stay visible"; taking the last line
+    made exactly that invisible, and the injection that most needed a legible
+    reason was the one whose reason was least legible. A crash and a guard firing
+    print identically under this rule.
+
+    The first line starting with `Error:` is the thrown message. Falling back to
+    the first non-blank line keeps a non-node failure (a python traceback, a
+    shell error) readable instead of collapsing it to its last line too.
+    """
+    for line in lines:
+        if line.strip().startswith("Error:"):
+            return line.strip()
+    for line in lines:
+        if line.strip():
+            return line.strip()
+    return "no output"
+
+
 def run_probe() -> dict:
     out = subprocess.run(
         ["node", str(PROBE), "--json"],
@@ -137,7 +168,7 @@ BASELINE: dict = {}
 # in `description` -- i.e. the mutation was not observed. A mutation is caught
 # exactly when that comes back False. Requirements read `BASELINE`, populated in
 # `main`, so they state a *movement* rather than the day's figure.
-INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], str]] = [
+INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], str, str | None]] = [
     # --- the ground truth moves; the ceiling must follow it -------------------
     (
         "A. dataset: one more component unrecoverable",
@@ -146,6 +177,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         lambda r: r["component"]["unrecoverableUnderTokenRule"]
         == BASELINE["component"]["unrecoverableUnderTokenRule"],
         "the baseline's unrecoverable count, so the ceiling did not follow the data",
+        None,
     ),
     (
         "B. dataset: one more unrecoverable, and the ceiling must follow it down",
@@ -153,6 +185,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         unrecover("cart-service"),
         lambda r: r["strictCeiling"]["samples"] == BASELINE["strictCeiling"]["samples"],
         "the baseline's strict ceiling, so it did not follow the ground truth down",
+        None,
     ),
     (
         "C. dataset: make a second sample unrecoverable, in a fresh place",
@@ -161,6 +194,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         lambda r: r["component"]["unrecoverableUnderTokenRule"]
         == BASELINE["component"]["unrecoverableUnderTokenRule"],
         "the baseline's unrecoverable count",
+        None,
     ),
     (
         "D. dataset: drop three components, so the ceiling falls below the M1 threshold",
@@ -168,6 +202,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         lambda t: unrecover("log-collector")(unrecover("shipping-service")(unrecover("payment-gateway")(t))),
         lambda r: r["strictCeiling"]["clearsM1"] is False,
         "a ceiling that no longer clears the 0.7 threshold",
+        None,
     ),
     # --- the definition moves; the number must move with it -------------------
     (
@@ -187,6 +222,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         ),
         lambda r: r["strictCeiling"]["samples"] == BASELINE["strictCeiling"]["samples"],
         "the baseline's strict ceiling, so the dropped sample went unobserved",
+        None,
     ),
     (
         "F. probe: compute the ceiling rate over the wrong denominator",
@@ -198,6 +234,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         ),
         lambda r: abs(r["strictCeiling"]["rate"] - BASELINE["strictCeiling"]["rate"]) < 1e-9,
         "the baseline's strict rate",
+        None,
     ),
     (
         "G. probe: report the ceiling as clearing M1 whatever it is",
@@ -205,6 +242,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         lambda t: rename(t, "      clearsM1: strictCeilingRate >= M1_STRICT_THRESHOLD,", "      clearsM1: true,"),
         lambda r: r["strictCeiling"]["clearsM1"] is False,
         "a ceiling that does not clear the 0.7 threshold",
+        None,
     ),
     (
         "H. probe: make the threshold impossible to fail",
@@ -212,6 +250,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         lambda t: rename(t, "const M1_STRICT_THRESHOLD = 0.7;", "const M1_STRICT_THRESHOLD = 0.0;"),
         lambda r: r["m1Threshold"] == BASELINE["m1Threshold"],
         "the baseline's M1 threshold",
+        None,
     ),
     (
         "I. probe: exempt one sample from the recoverable set",
@@ -228,6 +267,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         lambda r: r["component"]["recoverableUnderTokenRule"]
         == BASELINE["component"]["recoverableUnderTokenRule"],
         "the baseline's recoverable count, so the exemption went unobserved",
+        None,
     ),
     (
         "J. probe: let the two halves disagree, so the partition guard has to fire",
@@ -264,6 +304,11 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
             == r["samples"]
         ),
         "recoverable and unrecoverable summing to the sample count, i.e. a partition",
+        # The guard's own message, not a bare crash. Measured under this
+        # injection: `Error: recoverability partition does not cover the dataset:
+        # 18 + 0 != 19`. Requiring the text means this entry cannot be satisfied
+        # by the probe dying some other way.
+        "recoverability partition does not cover the dataset",
     ),
     # --- the battery's own restore -------------------------------------------------
     (
@@ -292,6 +337,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
         unrecover("cart-service"),
         lambda r: len(_WRITTEN) < 2,
         "a recorded write set smaller than the files this battery writes",
+        None,
     ),
 ]
 
@@ -314,7 +360,7 @@ def main() -> int:
     )
 
     caught = survived = inert = 0
-    for name, target, mutate, requirement, description in INJECTIONS:
+    for name, target, mutate, requirement, description, crash_contains in INJECTIONS:
         # The source text comes from `target` itself.
         #
         # This read `probe_text if target == PROBE else golden_text`, which
@@ -352,8 +398,23 @@ def main() -> int:
             # A probe that cannot run under the mutation counts as caught, but it
             # is reported apart from the requirement checks so a mutation which
             # breaks the script for an unrelated reason stays visible.
+            #
+            # A crash-path injection may also declare `crash_contains`, the text
+            # its failure must carry. Without it, "CAUGHT" here means only "the
+            # probe died", and an injection written to make a guard fire is
+            # satisfied by a probe that dies on a typo -- taking the last stderr
+            # line made the two literally indistinguishable, since both end in
+            # the version banner. For J the declaration is the partition message,
+            # so the entry now fails if the guard stops firing, whatever the
+            # reason.
+            reason = crash_reason(crashed)
+            if crash_contains is not None and crash_contains not in " ".join(crashed):
+                print(f"SURVIVED {name}")
+                print(f"         -- the probe crashed, but not with {crash_contains!r}: {reason}")
+                survived += 1
+                continue
             print(f"CAUGHT   {name}")
-            print(f"         (the probe failed to run: {crashed[-1] if crashed else 'no output'})")
+            print(f"         (the probe failed to run: {reason})")
             caught += 1
         elif requirement(result):
             print(f"SURVIVED {name}")

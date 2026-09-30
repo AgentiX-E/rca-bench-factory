@@ -217,6 +217,45 @@ describe('a restore over nothing is a failure, not a success', () => {
   });
 });
 
+describe('a caught-by-crash injection reports the failure, not the version banner', () => {
+  it('extracts the thrown message instead of the last line of stderr', () => {
+    // The defect: the crash path reported `crashed[-1]`, and for every node
+    // failure the last line is `Node.js vX.Y.Z`. Measured on injection J, whose
+    // entire purpose is for the recoverability-partition guard to throw:
+    //
+    //     CAUGHT   J. probe: let the two halves disagree...
+    //              (the probe failed to run: Node.js v22.13.1)
+    //
+    // The message it was written to produce --
+    // `Error: recoverability partition does not cover the dataset: 18 + 0 != 19`
+    // -- was on stderr and was discarded. The comment above that call site says a
+    // mutation which breaks the script for an unrelated reason must "stay
+    // visible"; taking the last line made exactly that invisible, and a guard
+    // firing became indistinguishable from a typo.
+    const source = read(PY_BATTERIES[0].file);
+
+    // The last line must no longer be what is printed.
+    expect(source).not.toMatch(/crashed\[-1\]/);
+    // The reporter is a named helper, so the extraction rule has one home.
+    expect(source).toMatch(/def crash_reason\(/);
+    // And it prefers the exception line over the first line, because a node
+    // stack trace opens with the file path and the message is below it.
+    expect(source).toMatch(/startswith\("Error:"\)/);
+  });
+
+  it('requires the guard message from the injection that exists to fire it', () => {
+    // A crash on its own is not evidence that the guard fired -- `CAUGHT` here
+    // means only "the probe died". J therefore declares the text its failure must
+    // carry, and the runner fails the entry as SURVIVED when the text is absent.
+    // Without this, J would pass on a probe that never reached the guard.
+    const source = read(PY_BATTERIES[0].file);
+    expect(source).toMatch(/crash_contains/);
+    expect(source).toMatch(/crash_contains is not None and crash_contains not in/);
+    // The declaration itself, on J.
+    expect(source).toMatch(/"recoverability partition does not cover the dataset"/);
+  });
+});
+
 describe('the batteries that exist are the batteries that are checked', () => {
   it('enumerates every injection battery in the repository', () => {
     // A test that checks a hand-written list of batteries goes stale the moment

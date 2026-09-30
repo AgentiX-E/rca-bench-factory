@@ -8808,3 +8808,131 @@ two sides is not in hand, and inventing one on this corpus is the move that prod
 **And it does not retract finding 98.** Finding 98 measured the text against the expected
 category, is independent of this vocabulary, and stands. The two findings that fell to their own
 measurement were 99 and, before it, the 5-of-5 claim inside 98's own draft.
+
+---
+
+## Finding 101: the battery reported the version banner and threw away the guard's message
+
+Found by reading the m1-ceiling battery's output rather than by a test, minutes after finishing
+finding 100 — the same way finding 100's arithmetic contradiction was found, and for the same
+reason: the output was on screen and it did not say what it claimed to say.
+
+The battery line for injection J read:
+
+```
+CAUGHT   J. probe: let the two halves disagree, so the partition guard has to fire
+         (the probe failed to run: Node.js v22.13.1)
+```
+
+J exists so that the recoverability-partition guard throws. The line reports a **node crash**, and
+the version banner is all of it that survives. The crash path in `m1-ceiling-probe.py` was:
+
+```python
+if crashed is not None:
+    # A probe that cannot run under the mutation counts as caught, but it
+    # is reported apart from the requirement checks so a mutation which
+    # breaks the script for an unrelated reason stays visible.
+    print(f"CAUGHT   {name}")
+    print(f"         (the probe failed to run: {crashed[-1] if crashed else 'no output'})")
+```
+
+`crashed[-1]` is the last non-empty line of stderr. For every node failure that is the version
+banner, always. The comment immediately above says the separation exists so an unrelated break
+"stays visible" — and the line under it guaranteed that it did not.
+
+### What the message actually was
+
+Reproducing J by hand, from the repository root:
+
+```
+Error: recoverability partition does not cover the dataset: 18 + 0 != 19
+    at main (file:///.../scripts/probe-m1-ceiling.mjs:120:11)
+```
+
+**The guard fires, and always did.** J is a real injection and its subject works. My first reading
+of that line — that J was a false green masking a parse error — was wrong, and the measuring run is
+what corrected it. The finding is not that the injection is broken. The finding is that the report
+made a working guard indistinguishable from a broken script:
+
+| what happened | what the battery printed |
+|---|---|
+| the partition guard threw its own message | `(the probe failed to run: Node.js v22.13.1)` |
+| the probe died on a syntax error | `(the probe failed to run: Node.js v22.13.1)` |
+
+Those two rows are the same string. A battery whose crash path cannot tell a guard from a typo is a
+battery that cannot report the thing it was built to report — and it is the third instance of the
+*reported-field* family this campaign has produced, after finding 95's N and finding 100's own
+`separates`, with the difference that here the discarded field was a human-readable message rather
+than a number.
+
+### The repair, and the part that makes it a check
+
+`crash_reason(lines)` returns the first line beginning with `Error:`, falling back to the first
+non-blank line so a non-node failure stays readable rather than collapsing to its last line. The
+call site now prints `crash_reason(crashed)`.
+
+That alone would have been a display fix. What makes it a check is the seventh slot:
+
+```python
+INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], str, str | None]] = [...]
+```
+
+J declares `"recoverability partition does not cover the dataset"`, and the runner fails the entry
+as `SURVIVED` when a crash arrives without that text:
+
+```python
+reason = crash_reason(crashed)
+if crash_contains is not None and crash_contains not in " ".join(crashed):
+    print(f"SURVIVED {name}")
+    print(f"         -- the probe crashed, but not with {crash_contains!r}: {reason}")
+    survived += 1
+    continue
+```
+
+Without the slot, `CAUGHT` on the crash path means only "the probe died", and an injection written
+to make a guard fire is satisfied by a probe that dies for any reason. With it, J now fails if the
+guard stops firing — whatever replaces it, including a typo. The other ten entries declare `None`
+and are unaffected: their requirement reads a report, and they do not crash.
+
+### Verification
+
+The battery prints J's real message:
+
+```
+CAUGHT   J. probe: let the two halves disagree, so the partition guard has to fire
+         (the probe failed to run: Error: recoverability partition does not cover the dataset: 18 + 0 != 19)
+```
+
+Battery `11 caught, 0 survived, 0 inert`, `files written and restored: 2`,
+`sources restored: identical to backup`, exit 0 — unchanged, because the change is to what is
+displayed and to what the entry requires, not to what the injections do.
+
+Two tests added to `packages/core/test/injection-target-routing.test.ts`, 7 → 9 in that file:
+one asserts the last line is no longer what is printed and that `crash_reason` prefers `Error:`;
+one asserts the `crash_contains` wire and J's declaration. Both were confirmed falsifiable by
+reverting the extraction by hand: the first goes red with
+`(the probe failed to run: Node.js v22.13.1)` visible in its own failure output — the defect,
+quoted by the test that rejects it — and the file restores byte-identical.
+
+Writing the second test cost one iteration. Its first assertion was `not.toMatch(/crashed\[-1\]/)`,
+which failed against correct code because my own comment above the new call site quoted the old
+expression while explaining why it was wrong. Rewording the comment was the fix; loosening the
+assertion would have been the wrong one, since the pattern is exactly what must not return. This is
+the same trade as finding 100's `separates`: keep the strict form, fix the thing that trips it.
+
+Suite 2912 passed in 104 files (was 2910/104); `src/fault` 100 / 100 / 100 / 100; package
+99.96 / 99.94 / 100 / 99.96; lint `ALL PROPERTIES HOLD`; `py_compile` clean; CI 2/2 green on the
+preceding factory sha `a20ff54ad`.
+
+### What this does not establish
+
+It does not establish that the crash path is exercised anywhere else — because there is nowhere
+else for it to be. Swept rather than assumed: `[-1]` appears in no other battery
+(`scorer-stability-probe.py`, `gate-tests-battery.py`, `type-miss-probe.py`, and the three
+`inject-*.mjs` files), and `gate-tests-battery.py` has no `CalledProcessError` handler at all,
+only `TimeoutExpired`, so the idiom had no second home to hide in. The only surviving occurrence of
+the pattern in the tree is the docstring of `crash_reason` quoting what it replaced.
+
+The sweep was prompted by finding 100's own history: the assertion that a defect is isolated is
+itself a claim, and on this codebase the unmeasured version of that claim has been wrong more than
+once. Here it held.
