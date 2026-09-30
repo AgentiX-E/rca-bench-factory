@@ -601,6 +601,34 @@ export type {
   BaselineSample,
 } from './fault/agreement-baseline.js';
 
+// The category rule the dataset uses, checked, and measured for discriminating power before any
+// figure drawn from it is quoted. See `fault/category-derivation.ts`.
+export {
+  ALT_READING_FLOOR,
+  EXCESS_ALLOWANCE,
+  assessDatasetConformance,
+  assessDerivability,
+  assessExcess,
+  assessMissDerivability,
+  assessMissStability,
+  assessDiscriminatingPower,
+  buildCategoryDerivationReport,
+} from './fault/category-derivation.js';
+export type {
+  AlternativeReading,
+  AlternativeReadingName,
+  CategoryDerivationReport,
+  ConformanceReading,
+  DerivabilityReading,
+  DerivationSample,
+  ExcessReading,
+  MissReading,
+  MissSample,
+  MissStability,
+  PowerReading,
+  RunMisses,
+} from './fault/category-derivation.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

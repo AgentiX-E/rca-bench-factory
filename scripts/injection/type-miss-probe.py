@@ -134,6 +134,13 @@ AGREEMENT = REPO / "packages" / "core" / "src" / "fault" / "component-agreement.
 # figures and its own verdict, and none of them touches the reading it controls.
 BASELINE = REPO / "packages" / "core" / "src" / "fault" / "agreement-baseline.ts"
 
+# The category derivation check, created by finding 102. It is a target because it is a
+# *check* rather than a reading: it asserts the dataset obeys its own derivation, and a
+# check that no mutation can disturb is a check nobody has run. Its injections read its
+# own counts and its own verdict, and none of them touches the classifier it reads
+# through -- moving the classifier would be testing the wrong file.
+DERIVATION = REPO / "packages" / "core" / "src" / "fault" / "category-derivation.ts"
+
 # The shared vocabulary, extracted from `DENIAL` when `AGREEMENT` needed the same table.
 # It is a target in its own right because the extraction created a *new* way for the two
 # readings to disagree: if a reader carried its own copy, the disagreement would present
@@ -153,6 +160,7 @@ IN_PACKAGE_TARGETS = {
     "agreement": AGREEMENT,
     "terms": CATEGORY_TERMS,
     "baseline": BASELINE,
+    "derivation": DERIVATION,
 }
 
 
@@ -421,6 +429,9 @@ AGREEMENT_BASELINE: dict = {}
 # would make them indistinguishable.
 BASELINE_BASELINE: dict = {}
 
+# The category-derivation control's baseline, captured before any mutation. Seventh block.
+DERIVATION_BASELINE: dict = {}
+
 
 def cat(report: dict) -> dict:
     """The classifier probe's totals from a run's report.
@@ -494,6 +505,19 @@ def baseline_baseline() -> dict:
     return BASELINE_BASELINE
 
 
+def derivation(report: dict) -> dict:
+    """The category derivation block from a run's report.
+
+    Named after the check rather than the module, so a call site reads as the claim being
+    checked. Seven readings now read seven objects and no two share a word.
+    """
+    return report["derivation"]
+
+
+def derivation_baseline() -> dict:
+    return DERIVATION_BASELINE
+
+
 def blind_anchor(result: dict | None, which: str) -> tuple:
     """The figures the blind check compares, read from the block the entry declared.
 
@@ -525,6 +549,30 @@ def blind_anchor(result: dict | None, which: str) -> tuple:
             b["predicted"]["supporting"],
             b["predicted"]["graded"],
             b["separates"],
+        )
+
+    if which == 'derivation':
+        # The verdict is the first figure the derivation check publishes, and it is the one
+        # every injection here is aimed at moving. A `category` edit cannot reach it; a
+        # change to the conformance count can. Anchoring on the published verdict means an
+        # injection that lands where the check cannot see it is still reported BLIND.
+        if result is None:
+            return (
+                DERIVATION_BASELINE["discriminatingPower"]["separates"],
+                DERIVATION_BASELINE["discriminatingPower"]["differ"],
+                DERIVATION_BASELINE["conformance"]["conforming"],
+                DERIVATION_BASELINE["conformance"]["graded"],
+                DERIVATION_BASELINE["misses"]["consistent"],
+                DERIVATION_BASELINE["missStability"]["stableIds"],
+            )
+        d = derivation(result)
+        return (
+            d["discriminatingPower"]["separates"],
+            d["discriminatingPower"]["differ"],
+            d["conformance"]["conforming"],
+            d["conformance"]["graded"],
+            d["misses"]["consistent"],
+            d["missStability"]["stableIds"],
         )
 
     raise AssertionError(f"unknown blind anchor {which!r}")
@@ -1487,6 +1535,210 @@ INJECTIONS: list[
         lambda t: rename(t, "export const BASELINE_FLOOR = 0.2;", "export const BASELINE_FLOOR = 0;"),
         'baseline',
     ),
+    # --- The category-derivation control, finding 102 --------------------------------
+    #
+    # AF to AK exist because the derivation block publishes a *checked invariant* and then a
+    # verdict about whether the check can separate anything, and a verdict is a claim like any
+    # other. Six claims, six mutations, each one making exactly one of them false:
+    #
+    #   AF  the conformance count is a count of disagreements, so it must fall to 0-like
+    #   AG  the rule is total, so `unknown` must not be counted as defined
+    #   AH  `separates` is false, and hardcoding it true must not pass
+    #   AI  `separates` is false, and hardcoding it false must not pass either
+    #   AJ  the published verdict must be the computed one, not a proxy for it
+    #   AK  the verdict must be the *first* field, not merely present
+    #
+    # AH and AI are a pair and neither is sufficient alone. A battery that only pins
+    # `separates: false` passes for a module that hardcodes false; a battery that only pins
+    # `separates: true` passes for a module that hardcodes true. Neither end alone tests the
+    # verdict, so both ends are pinned and the verdict is tested only in combination.
+    #
+    # This is the finding-100 defect in its new home. There, `separates` was first written as
+    # `predicted < expected` -- arithmetic that happened to be true for the wrong reason -- and
+    # the probe printed `true` directly above a sentence saying the opposite. Repeating it here
+    # is not hypothetical: the same author wrote both modules a few hours apart, and the second
+    # was written *because* the first was caught by reading output rather than by a test.
+    (
+        "AF. derivation: count a disagreement as conforming, so the check reports 19 of 19 anyway",
+        None,
+        lambda r: derivation(r)["controls"]["disagreement"]["conforming"]
+        == derivation_baseline()["controls"]["disagreement"]["conforming"],
+        "the conforming count **on a sample that disagrees by construction**",
+        # The first version of this entry read `conformance.conforming`, which on this corpus is
+        # 19 of 19 *before* the mutation, so forcing the always-conform branch changed nothing
+        # and the entry SURVIVED. The harness was right and the entry was wrong: a mutation to a
+        # branch no input reaches cannot be observed, and calling that survival a defect in the
+        # module would have been the wrong repair.
+        #
+        # The repair is the `controls.disagreement` probe: one sample whose type derives
+        # `runtime` and whose label says `middleware`. On that input the honest reading is
+        # `0 of 1` with the sample named in `disagreements`; the mutated reading is `1 of 1` with
+        # an empty list. The figure moves, so the branch is now observable.
+        #
+        # This is Finding 100's `synthetic` argument at a second module, and it is the second
+        # time this battery has had to make a branch reachable before it could test it. The first
+        # time was finding 96's `notAssessable` baseline (injection U).
+        lambda t: rename(
+            t,
+            "    const derived = inferFaultCategory(sample.type);\n"
+            "    if (derived === sample.category) {\n"
+            "      conforming += 1;\n"
+            "    } else {",
+            "    const derived = inferFaultCategory(sample.type);\n"
+            "    if (true) {\n"
+            "      conforming += 1;\n"
+            "    } else {",
+        ),
+        'derivation',
+    ),
+    (
+        "AG. derivation: treat `unknown` as a defined category, so the rule reads as total",
+        None,
+        lambda r: derivation(r)["controls"]["undefined"]["defined"]
+        == derivation_baseline()["controls"]["undefined"]["defined"],
+        "the defined count **on a type the table does not know**",
+        # Same repair as AF, and the same wrong first entry. Derivability asks whether every
+        # labelled type lands on a real category; the corpus answers yes for all 19, so removing
+        # the `unknown` branch left the figure at 19 and the entry SURVIVED.
+        #
+        # `controls.undefined` passes two samples, one whose type derives nothing and one whose
+        # type derives `runtime`. The honest reading is `1 of 2` with the unknown type named; the
+        # mutated reading is `2 of 2` with an empty `undefinedTypes`. Note that the control pairs
+        # a known and an unknown type rather than passing only the unknown one: with only the
+        # unknown sample, `defined` is 0 either way and the mutation is inert again.
+        lambda t: rename(
+            t,
+            "    if (inferFaultCategory(sample.type) === 'unknown') {\n"
+            "      undefinedTypes.push(sample.type);\n"
+            "    }",
+            "    if (false) {\n"
+            "      undefinedTypes.push(sample.type);\n"
+            "    }",
+        ),
+        'derivation',
+    ),
+    (
+        "AH. derivation: hardcode the verdict true, so the check claims a separation it did not measure",
+        None,
+        lambda r: derivation(r)["discriminatingPower"]["separates"]
+        == derivation_baseline()["discriminatingPower"]["separates"],
+        "the load-bearing verdict, which is the claim the derivation block exists to make",
+        # The finding-100 defect, moved. `separates` is the one boolean in this block and it is
+        # the block's whole subject: everything under it is a figure drawn from a reading whose
+        # power is recorded here. Hardcoding it true makes the probe print "the reading
+        # separates the model from a correct answerer" above figures showing it does not.
+        #
+        # The anchor is the `const separates = ...` line rather than the constant, so this
+        # mutation and AE (which lowers the floor) are recognisably different edits: AE moves
+        # the arithmetic and this moves the conclusion. If only one of them were present, a
+        # module that computed the verdict correctly but ignored it would pass.
+        lambda t: rename(
+            t,
+            "  const separates = share > ALT_READING_FLOOR;",
+            "  const separates = true;",
+        ),
+        'derivation',
+    ),
+    (
+        "AI. derivation: hardcode the verdict false, so AH alone cannot pass",
+        None,
+        lambda r: derivation(r)["controls"]["separating"]["separates"]
+        == derivation_baseline()["controls"]["separating"]["separates"],
+        "the same verdict as AH, pinned at the other end, **on a reading that does separate**",
+        # AH alone is not a check. A module that shrank to `separates: true` is caught by AH --
+        # and a module that shrank to `separates: false` passes it, because false is the value
+        # this corpus legitimately produces. That is the shape of every "pin the observed value"
+        # check: it tests the *value* and not the *derivation*.
+        #
+        # The first version of this entry read `discriminatingPower.separates`, which is false
+        # before and after a hardcode-false mutation, so it SURVIVED -- correctly, and for the
+        # same reason AF and AG did. The repair is the `controls.separating` probe: two samples
+        # whose types both provoke an alternative reading, so an honest reading gives
+        # `separates: true` and a hardcoded false is caught.
+        #
+        # With this and AH together, the only implementation that passes both is one whose
+        # verdict is computed: every constant is caught by exactly one of the pair, on an input
+        # where that constant is the wrong answer.
+        lambda t: rename(
+            t,
+            "  const separates = share > ALT_READING_FLOOR;",
+            "  const separates = false;",
+        ),
+        'derivation',
+    ),
+    (
+        "AJ. derivation: publish the count of alternative readings instead of the verdict",
+        None,
+        lambda r: derivation(r)["discriminatingPower"]["differ"]
+        == derivation_baseline()["discriminatingPower"]["differ"],
+        "the differing-type list, so every published figure is the computed one",
+        # The injection-AC defect shape, in the derivation block: a requirement that reads a
+        # *proxy* for the property instead of the property. AC's version was reading a count
+        # that could not move; this one reads a figure that moves for a reason unrelated to the
+        # verdict.
+        #
+        # `differSet` is a Set, so its spread is the union of the two readings' differing types.
+        # Replacing the *Set population* with a per-reading proxy -- adding each reading's first
+        # differing type once per reading, so a type both readings disagree about appears twice --
+        # leaves `share` unchanged in value but makes the list no longer a set: the block prints
+        # it per reading so a reader can check the union by hand, and a duplicated entry is a
+        # union that is no longer a union.
+        #
+        # The first version of this entry replaced the spread with
+        # `alternativeReadings.map((reading) => reading.differ.length)` -- a `number[]` assigned
+        # to a `string[]` -- and the build refused it: TS2322. The battery reported the compile
+        # error rather than a survival, which is the harness working, but a mutation the compiler
+        # rejects is not measuring anything and the entry had to be rewritten to one the language
+        # accepts. `concat` on the per-reading lists is the same defect in a well-typed shape.
+        lambda t: rename(
+            t,
+            "  const differ = [...differSet];",
+            "  const differ = substringDiffer.concat(shadowingDiffer);",
+        ),
+        'derivation',
+    ),
+    (
+        "AK. derivation: report the verdict last, so a reader can quote the figures without reaching it",
+        None,
+        lambda r: list(derivation(r))[0] == list(derivation_baseline())[0],
+        "the report's field order, which the module's own test asserts on the type",
+        # The ordering is not a style choice and the module says so in a comment on the field:
+        # "Put the figures first and the verdict last and a reader can quote the figures without
+        # ever reaching it; that is the failure this ordering prevents, and a test asserts the
+        # order." This mutation is the failure itself.
+        #
+        # The requirement reads `list(...)[0]` rather than the value of a named field, because
+        # the claim is about *position* rather than about any figure's value -- and a requirement
+        # that read `discriminatingPower.separates` would be satisfied by a report with the
+        # verdict at the bottom, which is exactly the report this mutation produces.
+        #
+        # The render order in `probe-type-misses.mjs` and the human-readable output are both
+        # derived from this key order, so the mutation moves the block's *subject* and not just
+        # its sort. `missStability` is moved to the front because it is the block's most
+        # quotable figure -- a count -- and quoting it is precisely what the ordering forbids.
+        lambda t: rename(
+            t,
+            "  return {\n"
+            "    discriminatingPower,\n"
+            "    conformance,\n"
+            "    derivability,\n"
+            "    excess,\n"
+            "    misses,\n"
+            "    missStability,\n"
+            "    honesty,\n"
+            "  };",
+            "  return {\n"
+            "    missStability,\n"
+            "    conformance,\n"
+            "    derivability,\n"
+            "    excess,\n"
+            "    misses,\n"
+            "    discriminatingPower,\n"
+            "    honesty,\n"
+            "  };",
+        ),
+        'derivation',
+    ),
 ]
 
 
@@ -1530,6 +1782,12 @@ def main() -> int:
     # make them indistinguishable.
     BASELINE_BASELINE.clear()
     BASELINE_BASELINE.update(report["baseline"])
+    # And a seventh, from the `derivation` block -- which is not a reading at all but a *check*:
+    # it asserts the dataset obeys its own derivation and then reports whether the reading that
+    # asserts it can separate anything. A check reads an object none of the six above read, so it
+    # gets its own dict for the same reason they do.
+    DERIVATION_BASELINE.clear()
+    DERIVATION_BASELINE.update(report["derivation"])
     print("type-miss probe battery\n")
     # The baseline control's own line, and it goes first because it is the one figure in this
     # battery that *refutes* another. Printed for the reason the other five are: an injection
@@ -1592,6 +1850,36 @@ def main() -> int:
         f"{AGREEMENT_BASELINE['disagrees']} disagree, "
         f"{AGREEMENT_BASELINE['notAssessable']} not assessable "
         f"({', '.join(AGREEMENT_BASELINE['unassessableIds']) or 'none'})\n"
+    )
+    # The derivation check's own line, and it goes above the partition because it is a *verdict*
+    # about whether any figure below it can separate anything. Printed for the reason the other
+    # six are -- an injection that moves a figure nobody printed has nowhere to fail -- and for
+    # one more: this block's first field is its subject, so a reader who stops here has read
+    # the thing that governs the rest.
+    print(
+        f"derivation: verdict load-bearing {DERIVATION_BASELINE['discriminatingPower']['separates']} "
+        f"(alternative readings differ on {len(DERIVATION_BASELINE['discriminatingPower']['differ'])}"
+        f"/{DERIVATION_BASELINE['discriminatingPower']['graded']}, "
+        f"floor {DERIVATION_BASELINE['discriminatingPower']['floor']}); "
+        f"rules: conformance {DERIVATION_BASELINE['conformance']['conforming']}"
+        f"/{DERIVATION_BASELINE['conformance']['graded']}, "
+        f"derivability {DERIVATION_BASELINE['derivability']['defined']}"
+        f"/{DERIVATION_BASELINE['derivability']['graded']}, "
+        f"excess {DERIVATION_BASELINE['excess']['classified']}"
+        f"/{DERIVATION_BASELINE['excess']['tested']} "
+        f"(substring {DERIVATION_BASELINE['excess']['underSubstringReading']}); "
+        f"misses consistent in every run {len(DERIVATION_BASELINE['missStability']['stableIds'])}"
+        f"/{DERIVATION_BASELINE['missStability']['graded']}\n"
+        f"  controls (the branches the corpus cannot reach, so a mutation to them is observable): "
+        f"disagreeing sample conforms {DERIVATION_BASELINE['controls']['disagreement']['conforming']}"
+        f"/{DERIVATION_BASELINE['controls']['disagreement']['graded']}"
+        f" {DERIVATION_BASELINE['controls']['disagreement']['disagreementIds']}; "
+        f"unknown type defined {DERIVATION_BASELINE['controls']['undefined']['defined']}"
+        f"/{DERIVATION_BASELINE['controls']['undefined']['graded']}"
+        f" {DERIVATION_BASELINE['controls']['undefined']['undefinedTypes']}; "
+        f"separating reading separates {DERIVATION_BASELINE['controls']['separating']['separates']} "
+        f"({DERIVATION_BASELINE['controls']['separating']['differ']}"
+        f"/{DERIVATION_BASELINE['controls']['separating']['graded']})\n"
     )
 
     caught = survived = inert = blind = 0

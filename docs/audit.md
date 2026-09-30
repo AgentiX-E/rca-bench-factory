@@ -8936,3 +8936,164 @@ the pattern in the tree is the docstring of `crash_reason` quoting what it repla
 The sweep was prompted by finding 100's own history: the assertion that a defect is isolated is
 itself a claim, and on this codebase the unmeasured version of that claim has been wrong more than
 once. Here it held.
+
+---
+
+## Finding 102: the labelling question has an answer, and it answers a different question than it was asked
+
+Finding 101 closed with a decision deferred:
+
+> The next step is not another reading of the component field; it is a decision about whether the
+> fix belongs in the dataset's authoring rule or in the model's prompt, and that decision needs the
+> labelling question answered first.
+
+This finding answers the labelling question, and then measures whether the answer can be used.
+
+### The question, asked precisely
+
+`buildFaultExtractionPrompt` (`importer.ts:129-147`) gives the model three instructions. For `type`
+it gives `FAULT_TYPE_SHAPE_RULE`. For `component` it gives `FAULT_COMPONENT_RULE`. For `category` it
+gives only a closed vocabulary and a case rule:
+
+```
+`category` is matched case-insensitively against that list; any other value is rejected.
+```
+
+It never connects `type` to `category`. So the question is not what the prompt says — that is
+readable and it says nothing — but **what rule the dataset was actually labelled under**. If the
+labels obey a derivation from `type`, then that derivation is the dataset's authoring rule, and the
+prompt's silence is a gap between the prompt and the data. If they do not, there is no rule for the
+prompt to state.
+
+### The answer, from the data
+
+```
+inferFaultCategory(expected.type) === expected.category       19 of 19
+```
+
+No residue, no near-miss, no case to argue. The dataset derives its own `category` from its own
+`type`, and the derivation is total: all 19 labelled types land on a real category, with 0 falling
+through to `unknown`.
+
+So the derivation is the authoring rule. That is what the data says, and it is stated by the
+data's own contents rather than by anyone's reading of the prompt.
+
+### And then the measurement that governs it
+
+A checked invariant produces figures, and figures get quoted. So the same module measures whether
+the reading that reports the invariant can separate **the model** from **a correct answerer** —
+which is the property a finding needs and which conformance does not have.
+
+Two alternative readings were built, each one a defect this codebase has actually shipped:
+
+| Reading | What it does | Differs on |
+|---|---|---|
+| `substring` | finding 95's matcher: keywords as letter sequences anywhere in the slug | `feature-flag-misconfiguration` (via `lag` ⊂ `flag`) |
+| `row-shadowing` | ignores the table's ordering rule, reading subject and mechanism in table order | `redis-latency`, `feature-flag-misconfiguration` |
+
+They differ on **different** types, so the union is the union and not the maximum:
+
+```
+differ: 2 of 19 (0.1053)   floor: 0.2   separates: false
+```
+
+**The reading cannot separate anyone.** It agrees with the label on 17 of 19 expected types, so a
+miss count drawn from it is the difference between two estimates of nothing. This is finding 100's
+result in a new place: there the reading was of the `component` field with a baseline of 1 of 19;
+here it is the `category` field with a baseline of 2 of 19. Same floor, same verdict.
+
+### The second measurement, which the first one needed
+
+The one figure that would look like a result is the miss count: does the model's *own* answered
+`type` derive the *own* answered category? Under the loose criterion — "is the answered category
+derivable from *some* slug in the sample" — the answer is **8 of 8**, and that reading is vacuous,
+because every legal vocabulary member is derivable from some slug.
+
+The honest criterion reads the model's own two fields against each other, and it is **0 of 8** in
+the current run. But that number is not stable either. Measured across both recorded runs:
+
+```
+per run: 567118aea = 0/8    9932e766c = 1/7
+consistent in EVERY run: 0 of 8
+consistent in AT LEAST ONE run: 1 of 8  (middleware-mysql-replica-lag-analytics)
+```
+
+The one consistent miss is consistent in `9932e766c` only, because that run answered
+`replica-apply-thread-saturation` (which carries `saturation`, a `resource` term) where the current
+run answers `replication-apply-bottleneck` (which carries nothing the table knows). **The figure is
+a property of the run, not of the model**, and an earlier draft of this finding would have called it
+a finding on the strength of one run.
+
+### The excess check, and why its zero is a measurement
+
+The rule is also read against 21 adversarial words extracted from `fault.test.ts`. It classifies
+**0 of 21**. A zero from a reading that can only return zero is not a measurement — which is why the
+same words are read a second time through the pre-finding-95 substring matcher, which classifies
+**21 of 21**. The word list does provoke the defect the matcher was built to remove; the matcher is
+what suppresses it.
+
+### What was built
+
+| File | Change |
+|---|---|
+| `packages/core/src/fault/category-derivation.ts` | new: the conformance check, the derivability and excess readings, the honest miss criterion, the run-stability reading, and the discriminating-power verdict printed first |
+| `packages/core/test/fault/category-derivation.test.ts` | new: 72 tests in twelve groups, including the branch-reachability controls the battery's survivals forced |
+| `scripts/probe-category-derivation.mjs` | new: verdict printed above every figure it governs, with the floor and the both-ways arithmetic |
+| `scripts/probe-type-misses.mjs` | `derivation` block, plus its `controls` section; the block reads **every** recorded run, which no other block does |
+| `scripts/injection/type-miss-probe.py` | 6 injections (AF–AK), an eighth in-package target, a seventh baseline, a `derivation` blind anchor |
+| `packages/core/src/index.ts` | registers 2 constants, 6 functions, 10 types |
+| `packages/core/test/export-surface-enumerated.test.ts` | enumerates the new module |
+
+### The defect this iteration found in itself, twice
+
+The first battery run reported **AF, AG and AI SURVIVED**, and the honest reading of that is not
+"the module is defective" — it is "the entries were bad". Each mutation targeted a branch this
+corpus cannot reach:
+
+* nothing disagrees, so `assessDatasetConformance`'s disagreement branch is never entered;
+* every type derives a real category, so `assessDerivability`'s `unknown` branch is never entered;
+* `separates` is legitimately `false`, so hardcoding it false changes nothing.
+
+A mutation to a branch no input reaches is a mutation the harness cannot observe, and reporting it
+as SURVIVED is the harness working. The repair is the one finding 100 applied to the `baseline`
+block and finding 96 applied to `notAssessable`: **construct the input that reaches the branch, and
+report it.** A `controls` section now probes one sample that disagrees by construction, one type the
+table does not know (paired with one it does, or the control is inert one level down), and one
+reading whose alternatives disagree about everything — which is what makes a hardcoded `separates:
+false` observable. With both ends pinned, the only implementation that passes is one whose verdict
+is computed.
+
+The second defect was AJ: its first version replaced `differ` with a `number[]` and the build
+refused it (`TS2322`). A mutation the compiler rejects measures nothing, so it was rewritten to the
+same defect in a well-typed shape — concatenating the per-reading lists instead of unioning them,
+so the type both readings disagree about appears twice.
+
+Both are recorded because both are the same lesson finding 97–101 keep re-teaching: **a battery's
+survivals are a claim about the battery before they are a claim about the code.**
+
+### Verification
+
+Repository suite: **2814 passed in 102 files**, against 2790 in 102 before this iteration. `src/fault`
+coverage: **100 / 100 / 100 / 100**, `category-derivation.ts` included — reached by adding the tests
+the coverage report asked for rather than by an exemption, and the two branch gaps it named
+(lines 164, 375) and the four line gaps (226-227) are now exercised. Lint: `ALL PROPERTIES HOLD`.
+Core and CLI typecheck clean; injection script `py_compile` clean. Battery: **39 caught, 0 survived,
+0 inert, 0 blind**, restore identical across all **ten** in-package targets.
+
+### What this does not establish
+
+**It does not establish that the prompt should state the derivation.** That is the decision finding
+101 deferred, and this finding informs it rather than taking it. What it establishes is that the
+decision has a subject: a rule exists, it is total, and it lives in the data rather than in the
+prompt.
+
+**It does not establish that the rule is right.** The dataset and the classifier were written by the
+same hand, so conformance is self-consistency and a shared mistake would conform perfectly. The
+module says so in its own `honesty` list rather than leaving a reader to infer it.
+
+**It does not revive the miss count.** 0 of 8 is printed with the floor and the run-dependence
+beside it, in the module, in the probe, and in the block — in the same style as finding 100's
+contrast. A figure printed without its qualifier is the failure finding 99 recorded.
+
+**And it does not retract finding 98.** That finding read the incident text and stands. This module
+reads the labelled fields and says nothing about whether the text carries what the labels claim.

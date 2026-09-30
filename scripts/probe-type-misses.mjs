@@ -72,6 +72,15 @@ import { assessComponentAgreement, buildAgreementInventory } from '../packages/c
 // measurement it needed, and it refutes the figure rather than supporting it.
 import { buildAgreementContrast } from '../packages/core/dist/index.js';
 
+// And the category rule the dataset uses, with its discriminating power measured. Finding
+// 101 closed by saying the next step is a decision about whether the fix belongs in the
+// dataset's authoring rule or in the model's prompt, and that the decision needs the
+// labelling question answered first. This block is the answer: the dataset derives its own
+// `category` from its own `type` on 19 of 19, so the derivation is the authoring rule --
+// and, printed above every figure, the reading that reports it cannot separate the model
+// from a correct answerer (2 of 19, below the floor of 0.2).
+import { buildCategoryDerivationReport, assessDatasetConformance, assessDerivability, assessDiscriminatingPower } from '../packages/core/dist/index.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DATASET = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
@@ -464,6 +473,180 @@ function baselineEvidence(agreement) {
 }
 
 /**
+ * Build the `derivation` block: the rule the dataset uses, checked, and its power measured.
+ *
+ * Finding 101's own recorded next step was a decision -- does the fix belong in the
+ * dataset's authoring rule or in the model's prompt -- and it said that decision needs the
+ * labelling question answered first. This block is the answer, and it is what the decision
+ * is made from:
+ *
+ *   inferFaultCategory(expected.type) === expected.category   ->  19 of 19
+ *
+ * The dataset and the classifier were both written here, so conforming proves
+ * self-consistency and nothing more -- the block says so in its own `honesty` list rather
+ * than leaving a reader to infer it. The rule is also checked for *excess*: on 21
+ * adversarial words extracted from `fault.test.ts`, the current matcher classifies 0, while
+ * the substring reading finding 95 removed classifies 21, so the 0 measures the matcher and
+ * not the word list.
+ *
+ * ## Why the verdict comes first, and why that is not a style choice
+ *
+ * Checking a rule produces figures, and figures get quoted. Two alternative readings -- the
+ * substring reading finding 95 removed, and a row-shadowing reading that ignores the table's
+ * order -- disagree with the label on 1 of 19 expected types each, on *different* types, for
+ * a union of 2 of 19 = 0.1053. That is below the floor of 0.2, so the reading agrees with
+ * almost everything and a miss count drawn from it cannot be told apart from nothing.
+ *
+ * So the verdict is the first field of the report and this block prints it first, above every
+ * figure it governs. This is finding 100's result in a new place: there the reading was of
+ * the `component` field with a baseline of 1 of 19; here it is `category` with 2 of 19. Same
+ * floor, same verdict.
+ *
+ * ## And the miss figure does not survive the run change
+ *
+ * The consistency reading is taken over both recorded runs, not one, because a figure that
+ * appears in one run and not the next is a property of the run. It is 0 of 8 in both: the
+ * one consistent miss is `middleware-mysql-replica-lag-analytics`, consistent in `9932e766c`
+ * only because that run reported `replica-apply-thread-saturation` (which carries
+ * `saturation`) where the current run reports `replication-apply-bottleneck` (which carries
+ * nothing the table knows).
+ *
+ * Every input is read from disk or from the recorded fixtures. Nothing is transcribed, for
+ * the reason `RUNS` above records: this script already shipped one wrong figure by holding a
+ * copy of a run's rows.
+ */
+function derivationEvidence(rowsByRun) {
+  const golden = JSON.parse(readFileSync(DATASET, 'utf8'));
+  if (!Array.isArray(golden.samples)) {
+    throw new Error(`${DATASET} carries no samples array`);
+  }
+
+  const samples = golden.samples.map((s) => ({
+    sampleId: s.id,
+    type: s.expected.type,
+    category: s.expected.category,
+  }));
+  const expectedCategoryOf = new Map(golden.samples.map((s) => [s.id, s.expected.category]));
+
+  // Both fields come from the same run's rows, so the answered `type` and the answered
+  // `category` cannot be paired across runs. Pairing them across runs is the exact defect
+  // this script was repaired for -- a `type` from one run quoted beside a `category` from
+  // another reads as a finding and is an artifact.
+  const runs = rowsByRun.map(({ run, rows }) => {
+    const answeredTypes = new Map(
+      rows.filter((row) => row.field === 'type').map((row) => [row.sampleId, row.actual]),
+    );
+    const misses = [];
+    for (const row of rows) {
+      if (row.field !== 'category') continue;
+      const answeredType = answeredTypes.get(row.sampleId);
+      // A category miss whose sample carried no type miss has an answered type the fixture
+      // does not record. Excluded and counted, rather than defaulted: a default would enter
+      // the denominator as a data point and the figure would depend on the default.
+      if (answeredType === undefined) continue;
+      misses.push({
+        sampleId: row.sampleId,
+        answeredType,
+        answeredCategory: row.actual,
+        expectedCategory: expectedCategoryOf.get(row.sampleId),
+      });
+    }
+    return { run, misses };
+  });
+
+  // The adversarial words, extracted from the test that owns them rather than copied, so a
+  // word added there is measured here without a second edit.
+  const faultTest = readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fault.test.ts'), 'utf8');
+  const adversarialWords = [];
+  for (const match of faultTest.matchAll(/\[\s*'([a-z0-9-]+)',\s*'[a-z-]+',\s*'[a-z]+'\s*\]/g)) {
+    adversarialWords.push(match[1]);
+  }
+
+  const report = buildCategoryDerivationReport({
+    samples,
+    misses: runs[0] === undefined ? [] : runs[0].misses,
+    runs,
+    adversarialWords,
+  });
+
+  // The branches the golden corpus cannot reach, exercised explicitly.
+  //
+  // This is the repair for the defect the battery found, and it is Finding 100's `synthetic`
+  // argument arriving at a second module. The corpus conforms 19 of 19, derives 19 of 19, and
+  // legitimately reports `separates: false`. So on this corpus:
+  //
+  //   * `assessDatasetConformance`'s disagreement branch is **never entered** -- nothing
+  //     disagrees. Injections AF forced the branch to always-conform and SURVIVED, because a
+  //     branch nothing reaches cannot be moved by editing it. The figure stayed 19 of 19.
+  //   * `assessDerivability`'s `unknown` branch is **never entered** -- every labelled type
+  //     lands on a real category. AG removed that branch and SURVIVED, for the same reason.
+  //   * `separates` is **already false**, so an edit that hardcodes it false changes nothing.
+  //     AI pinned that end and SURVIVED. AH, which hardcodes true, was caught -- and the pair
+  //     is only informative once both ends are observable.
+  //
+  // A branch no input reaches is a branch the battery cannot defend, and reporting it as
+  // "the mutation changed nothing observable" is the harness working correctly on a bad entry.
+  // So the inputs that reach those branches are constructed and reported here, the way the
+  // `category` block above constructs the empty and whitespace-only texts for its own
+  // third value.
+  //
+  // They are counted apart from the corpus figures rather than folded in, for the reason that
+  // block states: folding them in would make `graded` describe a set that is not the dataset.
+  const controls = {
+    // One sample that disagrees by construction: its type derives `runtime`, its label says
+    // `middleware`. This is the input `disagreements` exists for, and the only thing that makes
+    // "the dataset conforms" distinguishable from "the check stopped looking".
+    disagreement: assessDatasetConformance([
+      { sampleId: '(disagreeing sample)', type: 'container-crash', category: 'middleware' },
+    ]),
+    // One type that derives nothing the table knows. `undefinedTypes` exists for this input
+    // and would otherwise stay empty forever, which is how `total` came to be a figure that
+    // could not move.
+    undefined: assessDerivability([
+      { sampleId: '(undefined type)', type: 'quantum-entanglement-drift', category: 'code' },
+      { sampleId: '(defined type)', type: 'container-crash', category: 'runtime' },
+    ]),
+    // And the verdict's other end. A reading whose alternatives disagree about *everything* is
+    // one where `separates` must be true, so a module that hardcodes false is caught here
+    // rather than passing on a corpus that happens to produce false.
+    separating: assessDiscriminatingPower([
+      { sampleId: '(a)', type: 'redis-latency', category: 'code' },
+      { sampleId: '(b)', type: 'feature-flag-misconfiguration', category: 'runtime' },
+    ]),
+  };
+
+  // The report is spread rather than re-listed field by field, so a field added to the
+  // module reaches this block without an edit here. The first version of the `baseline`
+  // block above listed its fields by hand and a later field was silently absent from the
+  // published report while the test -- which read the module directly -- stayed green.
+  return {
+    ...report,
+    controls: {
+      disagreement: {
+        conforming: controls.disagreement.conforming,
+        graded: controls.disagreement.graded,
+        disagreementIds: controls.disagreement.disagreements.map((d) => d.sampleId),
+        conforms: controls.disagreement.conforms,
+      },
+      undefined: {
+        defined: controls.undefined.defined,
+        graded: controls.undefined.graded,
+        undefinedTypes: controls.undefined.undefinedTypes,
+        total: controls.undefined.total,
+      },
+      separating: {
+        separates: controls.separating.separates,
+        differ: controls.separating.differ.length,
+        graded: controls.separating.graded,
+        share: controls.separating.share,
+      },
+    },
+    readingsPerRun: runs.map(({ run, misses }) => ({ run, misses: misses.length })),
+    adversarialWords,
+  };
+}
+
+/**
  * The normalizer the scorer applies, reproduced.
  *
  * It is *not* imported from the built package, and that is deliberate: this
@@ -706,6 +889,24 @@ function main() {
     ? baselineEvidence(agreementBlock)
     : null;
 
+  // The `derivation` block -- the rule the dataset uses, checked, and its power measured.
+  //
+  // This is the block finding 101 asked for. Its next step was a decision -- dataset
+  // authoring rule or model prompt -- and it recorded that the decision needs the labelling
+  // question answered first. The block answers it and then, above every figure, records that
+  // the reading which answers it cannot separate the model from a correct answerer.
+  //
+  // It reads **every** recorded run rather than the selected one, which no block above does.
+  // The reason is that one of its figures is a stability result: whether the consistency
+  // count survives the run change. A single run cannot report that, and a count taken from
+  // one run while claiming to describe the model is exactly the artifact this block exists
+  // to refuse.
+  const derivationBlock = args.predictions === ''
+    ? derivationEvidence(
+        Object.keys(RUNS).map((run) => ({ run, rows: parseMissDetail(readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', RUNS[run]), 'utf8')) })),
+      )
+    : null;
+
   const payload = {
     source,
     total: classified.length,
@@ -724,6 +925,7 @@ function main() {
     ...(denialBlock === null ? {} : { denial: denialBlock }),
     ...(agreementBlock === null ? {} : { agreement: agreementBlock }),
     ...(baselineBlock === null ? {} : { baseline: baselineBlock }),
+    ...(derivationBlock === null ? {} : { derivation: derivationBlock }),
   };
 
   if (args.json) {
@@ -876,6 +1078,68 @@ function main() {
           `classifier's *slug* table; a component is a service name or an infrastructure noun, and ` +
           `is not a slug.`,
       );
+    }
+    if (derivationBlock !== null) {
+      const d = derivationBlock;
+      // The verdict first, before any figure it governs. A reader who stops one line into
+      // this block must have read the thing that governs everything below it -- which is the
+      // ordering the module's report enforces and a test asserts, printed here in the same
+      // words so the two cannot drift.
+      console.log(
+        `\nTHE RULE the dataset uses, checked -- and, first, whether the check can separate ` +
+          `anything:`,
+      );
+      console.log(
+        `  can this reading separate the model from a correct answerer? ` +
+          `${d.discriminatingPower.separates}`,
+      );
+      console.log(
+        `    alternative readings disagree with the label on ${d.discriminatingPower.differ.length} ` +
+          `of ${d.discriminatingPower.graded} (${d.discriminatingPower.share.toFixed(4)}), ` +
+          `floor ${d.discriminatingPower.floor}`,
+      );
+      for (const alt of d.discriminatingPower.alternativeReadings) {
+        console.log(`      ${alt.name}: ${alt.differ.length} -- ${JSON.stringify(alt.differ)}`);
+      }
+      console.log(
+        `\n  the rule is: inferFaultCategory(expected.type) === expected.category`,
+      );
+      console.log(
+        `    conformance: the dataset derives its own labels: ${d.conformance.conforming} ` +
+          `of ${d.conformance.graded}`,
+      );
+      console.log(
+        `    derivability: expected types landing on a real category: ${d.derivability.defined} ` +
+          `of ${d.derivability.graded}`,
+      );
+      console.log(
+        `    excess: adversarial words the rule classifies: ${d.excess.classified} ` +
+          `of ${d.excess.tested} (allowance ${d.excess.within ? 'met' : 'exceeded'})`,
+      );
+      console.log(
+        `      the same words under the substring reading: ${d.excess.underSubstringReading} ` +
+          `-- so the 0 measures the matcher, not the word list`,
+      );
+      console.log(
+        `\n  and the miss figure this check would license does not survive the run change:`,
+      );
+      console.log(
+        `    per run: ${d.missStability.perRun.map((r) => `${r.run}=${r.reading.consistent}/${r.reading.graded}`).join('  ')}`,
+      );
+      console.log(
+        `    consistent in EVERY run: ${d.missStability.stableIds.length} of ${d.missStability.graded}` +
+          ` (consistent in at least one: ${d.missStability.everIds.length})`,
+      );
+      console.log(
+        `\n  so the labelling question is answered -- the derivation is the dataset's own ` +
+          `authoring rule, total on all ${d.derivability.graded} types -- and the figures above ` +
+          `are not a result. What the answer licenses is a *decision* about where the fix ` +
+          `belongs, which this block informs and does not take.`,
+      );
+      console.log(`\n  what this does not establish:`);
+      for (const sentence of d.honesty) {
+        console.log(`    - ${sentence}`);
+      }
     }
     if (counts['form-variant'] === 0) {
       console.log(

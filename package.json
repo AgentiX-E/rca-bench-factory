@@ -36,7 +36,8 @@
     "inject:type-miss-probe": "python3 scripts/injection/type-miss-probe.py",
     "inject:gate-tests": "python3 scripts/injection/gate-tests-battery.py",
     "probe:denial-inventory": "node scripts/probe-denial-inventory.mjs",
-    "probe:agreement-baseline": "node scripts/probe-agreement-baseline.mjs"
+    "probe:agreement-baseline": "node scripts/probe-agreement-baseline.mjs",
+    "probe:category-derivation": "node scripts/probe-category-derivation.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
