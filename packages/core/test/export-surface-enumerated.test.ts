@@ -135,6 +135,7 @@ const ENUMERATED_MODULES = [
   'fault/denial-inventory.ts',
   'fault/category-terms.ts',
   'fault/component-agreement.ts',
+  'fault/agreement-baseline.ts',
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/file.ts',
@@ -557,6 +558,11 @@ const TESTED = [
   // fault/component-agreement.ts -- finding 99, whether the answer carries its own category.
   'assessComponentAgreement',
   'buildAgreementInventory',
+  // fault/agreement-baseline.ts -- the control for finding 99, which refutes its 7 of 7.
+  'BASELINE_FLOOR',
+  'readBaselineSupport',
+  'buildBaselineInventory',
+  'buildAgreementContrast',
   // --- promoted in P1-2: the ten directories that were exempted by module ---
   // coverage.ts
   'MODALITY_LOSS',

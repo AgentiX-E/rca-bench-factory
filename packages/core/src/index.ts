@@ -584,6 +584,23 @@ export type {
   AgreementVerdict,
 } from './fault/component-agreement.js';
 
+// The control for finding 99. The agreement reading reported `7 of 7` with no baseline;
+// run against the dataset's own components -- right by construction -- it fails 18 of 19,
+// so the figure distinguishes nothing. Exported because a control that lives only in a
+// test file is a control the next iteration cannot re-run against a new corpus.
+export {
+  BASELINE_FLOOR,
+  buildAgreementContrast,
+  buildBaselineInventory,
+  readBaselineSupport,
+} from './fault/agreement-baseline.js';
+export type {
+  AgreementContrast,
+  BaselineInventory,
+  BaselineReading,
+  BaselineSample,
+} from './fault/agreement-baseline.js';
+
 export { hitlGateFor } from './evolution/hitl.js';
 export type {
   EvolutionActionKind,

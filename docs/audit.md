@@ -8478,6 +8478,18 @@ changes, which is the reason the superseded reading is quoted above in full.
 
 ## Finding 99: the misses named a component that does not carry the category they answered
 
+> **Refuted by finding 100.** The measurement below is reproduced exactly, and every component
+> it names is the component the model named. What is false is the reading's force: run against
+> the dataset's **own** components -- right by construction -- the same reading fails 18 of 19,
+> so `7 of 7` distinguishes the model from a correct answerer by nothing. `CATEGORY_TERMS` is the
+> classifier's *slug* table and a `component` is a service name, so the reading asks a question
+> neither side was written to answer.
+>
+> The finding is retained in full, and not rewritten, because the distance between what it
+> claimed and what its own control shows is the finding. This is the second time in two findings
+> that a claim made before measurement was corrected by measuring it -- the first being finding
+> 98's own 5-of-5 draft. See finding 100.
+
 ### Why finding 98 was not yet a mechanism
 
 Finding 98 measured that the answered category has no term in the **incident text**, in 8 of 8
@@ -8511,10 +8523,20 @@ Measured over the seven recorded `category` misses that carry a `component` row:
 
 **7 of 7.**
 
+> **And this is where the reading stops carrying the claim, which finding 100 measured.** `7 of 7`
+> is a true count and a false instrument: the same reading fails 18 of the dataset's 19 correct
+> components. The table above is reproducible and every cell is accurate; what does not follow is
+> that the figure separates the model from a correct answerer.
+
 And the components are *right*: `kubelet` is the correct component for `pod-kill`; `session Redis`
 is the correct component for `redis-latency`; `WAF rule` is the correct component for
 `regex-catastrophic-backtracking`. The model identifies the mechanism and then emits a category
 that is not derivable from it.
+
+> **That last sentence is the claim finding 100 refutes.** "Not derivable from it" is something the
+> vocabulary cannot establish, because it is not derivable for most correct components either. What
+> stands is the observation: the component and the category are not related by the vocabulary of
+> the category.
 
 **So the failure is in the relation between the two fields, not in reading the incident.** That
 is a different claim from finding 98's, it points at a different fix, and it is the one finding
@@ -8630,3 +8652,159 @@ the other is not.
 **And it does not claim finding 98 was wrong.** Finding 98 measured the text; this measures the
 answer. They are two objects, and the second is the one that rules out "the model simply could not
 read the incident" as the explanation.
+
+---
+
+## Finding 100: finding 99 had no baseline, and with one it does not separate anything
+
+Finding 99 closed with a falsification test proposed for it:
+
+> finding 99 narrows the question to the two fields' relation, but it says nothing about
+> *which* field the model derives from what. The decidable next step is a probe over the
+> **correct** samples -- for all 11 that are both component- and category-correct, does the
+> component carry a term of the category? If yes there, the 7-of-7 becomes a discriminating
+> statistic rather than a co-occurrence; if the same 7-of-7 rate shows up on correct answers
+> too, finding 99 is measuring nothing and I should say so.
+
+**It is the second.** The reading fails almost every component known to be correct.
+
+### The measurement
+
+The agreement reading was applied to the dataset's **own** `expected.component` values, which
+are right by construction:
+
+```
+expected components supporting their category:  1 of 19
+predicted components supporting their category: 0 of 7
+```
+
+Eighteen of nineteen correct components carry no term of the category they are correctly
+labelled with. A reading that fails 18 of 19 components that are correct cannot have
+distinguished anything when it failed the seven. **Finding 99's `7 of 7` is an artifact of the
+vocabulary, not a measurement of the model.**
+
+The one that agrees is `session-cache` against `middleware`, because it contains `cache`. That
+single coincidence is the whole of the 1.
+
+### Why, and this is the durable part
+
+`CATEGORY_TERMS` is the **classifier's** table. It maps a fault *slug* to category terms, and it
+was built so `inferFaultCategory` can read slugs like `middleware-redis-latency-cache`. A
+`component` is a **service name** -- `checkout-api`, `payment-gateway`, `billing-service` -- or,
+when the model reaches past the service, an infrastructure noun like `kubelet` or `WAF rule`.
+Neither is a slug. The table was never a vocabulary for components, and reading components with
+it asks a question neither side was written to answer.
+
+The reading itself is not wrong and is not repaired here. It answers "does this component carry
+this category's vocabulary", and it answers correctly. What was wrong was the **inference from
+its output to the model's behaviour**, which is why the deliverable is a control rather than a
+fix.
+
+### The defence, measured rather than argued
+
+The natural rescue is that finding 99 measured the *answered* category, and the model answered
+the wrong category, so of course the component does not support it. Read against the **expected**
+category instead:
+
+| sample | expected | component the model named | supports? |
+|---|---|---|---|
+| `resource-memory-leak-recommendation` | resource | `recommendation service session cache` | no |
+| `runtime-pod-kill-user-profile` | runtime | `kubelet` | no |
+| `runtime-container-crash-loop-media` | runtime | `native ffmpeg binding` | no |
+| `middleware-redis-latency-cache` | middleware | `session Redis` | **yes, `redis`** |
+| `middleware-database-connection-pool` | middleware | `billing service connection pool` | no |
+| `code-slow-regex-api-gateway` | code | `WAF rule` | no |
+| `middleware-mysql-replica-lag-analytics` | middleware | `replica applier thread` | no |
+
+**1 of 7.** Against an expected-side baseline of 1 of 19. The rescue does not hold either.
+
+### The column finding 99 overtook
+
+Read against the **expected** category, finding 98 had already established these same components
+are absent from the incident text 8 of 8. That is the measured column, and it is the one that
+carries. Finding 99 described the answered-category column as "the mechanism 98 could not reach";
+measured, the answered-category column is the one that says nothing.
+
+### The comparison trap, which the first version of this shipped with
+
+The control's first `separates` was `predicted.supportShare < expected.supportShare`. That is
+`0.0 < 0.0526`, which is `true` -- a 1-of-19 baseline means the expected side's true rate is
+indistinguishable from zero, so `0/7 < 1/19` is the difference between two estimates of zero and
+not a separation. The probe printed `separates: true` directly above the sentence "the reading
+does NOT separate them", both of which were written by me in the same file, and the contradiction
+was found by reading the output rather than by a test.
+
+This is the floor trap this audit has now recorded four times -- finding 95's N, finding 96's U,
+finding 99's Z and AA -- arriving in a new form. In each of those the floor was a count no
+mutation could move; here the floor is a *rate* that makes a comparison true for an arithmetic
+reason rather than a statistical one. The repair is `separates = expected.supportShare >
+BASELINE_FLOOR`, with the floor stated rather than buried, and injection AE pins the verdict so
+the arithmetic cannot return.
+
+### A real defect in the module, found by an injection
+
+Injection AC -- "count every component as supporting" -- **SURVIVED**, and the survival is what
+found it: `buildBaselineInventory` destructured `terms` and counted `terms.length > 0`, so the
+verdict `readBaselineSupport` returned was read, put on the row, and then thrown away. The corpus
+figure was a function of a **proxy** for the verdict rather than the verdict, so a change to the
+support rule that did not also change the term list was invisible. Fixed to count
+`reading.supports`, with a test asserting the coupling over both sides of the corpus, and AC then
+caught.
+
+This is the wrong-field family again (V, N, AB), and it is the first instance where the wrong
+field was inside the module under test rather than in the injection.
+
+### A latent harness defect that this finding exposed
+
+`subprocess.run(..., capture_output=True)` truncates `probe-type-misses.mjs`'s output **in this
+environment, non-deterministically**. Measured on the same command, read to EOF through a pipe:
+16384 bytes once, 8192 on the next two runs. The probe's true output, redirected to a file, is a
+stable 16396. `python3` and `bash` pass 20000 bytes through the identical pipe, so this is not a
+sandbox cap; it is specific to how this node process's stdout is drained.
+
+The battery ran for several findings without noticing, because the truncated payload stayed valid
+JSON up to the cut until the `baseline` block pushed the output past the boundary. It then
+surfaced as `JSONDecodeError: Unterminated string`, which names the symptom and not the cause --
+the failure mode this audit keeps recording. `_run_json_probe` now routes stdout through a
+temporary file, which is deterministic across repeated runs, and reports the byte count so a
+genuine truncation stays distinguishable from a probe that correctly refused to report. Raising
+`AssertionError` from that path also aborted the battery on injection N, which *intends* to
+publish nothing; it raises `ValueError` so the caller's existing handling applies.
+
+### What was built
+
+| File | Change |
+|---|---|
+| `packages/core/src/fault/agreement-baseline.ts` | new: read the same agreement reading against components that are right by construction, and state whether the contrast is load-bearing |
+| `packages/core/test/fault/agreement-baseline.test.ts` | new: 31 tests, including the defence and the arithmetic trap |
+| `scripts/probe-agreement-baseline.mjs` | new: both sides, the contrast, and the floor, with a `dist` guard |
+| `scripts/probe-type-misses.mjs` | `baseline` block, printed beside the claim it refutes |
+| `scripts/injection/type-miss-probe.py` | 3 injections (AC/AD/AE), a seventh in-package target, a sixth baseline, a per-injection blind anchor, and the file-routed probe invocation |
+| `packages/core/src/index.ts` | registers the control |
+| `packages/core/test/export-surface-enumerated.test.ts` | enumerates the new module |
+
+### Verification
+
+Repository suite: **2910 passed in 104 files**, against 2876 in 103 before this iteration. `src/fault`
+coverage: **100 / 100 / 100 / 100**, `agreement-baseline.ts` included. Lint: `ALL PROPERTIES HOLD`.
+Core and CLI typecheck clean; injection script `py_compile` clean. Battery: **33 caught, 0 survived,
+0 inert, 0 blind**, restore identical across all **nine** in-package targets.
+
+### What this does not claim
+
+**It does not claim finding 99's observations were false.** Every component it named is the
+component the model named, and every one of those does lack the answered category's terms. What is
+false is that the figure distinguishes the model from a correct answerer.
+
+**It does not claim the vocabulary is wrong.** `CATEGORY_TERMS` does what it was built for. It was
+applied to an object it does not describe.
+
+**It does not claim a component *should* name its category.** Most correct components do not, and
+that is not a defect in them -- it is the reason the reading cannot be used this way at all.
+
+**It does not propose a replacement reading.** A reading of the component that would separate the
+two sides is not in hand, and inventing one on this corpus is the move that produced finding 99.
+
+**And it does not retract finding 98.** Finding 98 measured the text against the expected
+category, is independent of this vocabulary, and stands. The two findings that fell to their own
+measurement were 99 and, before it, the 5-of-5 claim inside 98's own draft.

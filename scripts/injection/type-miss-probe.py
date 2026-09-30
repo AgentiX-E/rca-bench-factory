@@ -51,6 +51,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -127,6 +128,12 @@ DENIAL = REPO / "packages" / "core" / "src" / "fault" / "denial-inventory.ts"
 # internal inconsistency between the answer's own fields admits only the second.
 AGREEMENT = REPO / "packages" / "core" / "src" / "fault" / "component-agreement.ts"
 
+# The control for the agreement reading, created by finding 100. It is a target because it
+# is the file that carries the *refutation* of finding 99, and a refutation that no mutation
+# can disturb is a refutation nobody has checked. Its three injections read its own two
+# figures and its own verdict, and none of them touches the reading it controls.
+BASELINE = REPO / "packages" / "core" / "src" / "fault" / "agreement-baseline.ts"
+
 # The shared vocabulary, extracted from `DENIAL` when `AGREEMENT` needed the same table.
 # It is a target in its own right because the extraction created a *new* way for the two
 # readings to disagree: if a reader carried its own copy, the disagreement would present
@@ -145,6 +152,7 @@ IN_PACKAGE_TARGETS = {
     "denial": DENIAL,
     "agreement": AGREEMENT,
     "terms": CATEGORY_TERMS,
+    "baseline": BASELINE,
 }
 
 
@@ -166,6 +174,61 @@ def build_core() -> None:
     )
     if proc.returncode != 0:
         raise AssertionError(f"the mutated rule did not compile: {proc.stdout[-400:]}")
+
+
+def _run_json_probe(script: Path) -> subprocess.CompletedProcess:
+    """Run a probe with `--json` and capture its output **through a file**.
+
+    `subprocess.run(..., capture_output=True)` truncates this probe's output in this
+    environment, and it does so **non-deterministically**. Measured on the same command,
+    reading stdout to EOF through a pipe returned 16384 bytes once and 8192 bytes on the
+    next two runs, while the probe's true output -- redirected to a file -- is a stable
+    16396. `python3` and `bash` pass 20000 bytes through the identical pipe, so this is
+    not a sandbox cap; it is specific to how this node process's output is drained.
+
+    The battery ran for several findings without noticing, because the truncated payload
+    still happened to be valid JSON up to the cut until finding 100's `baseline` block
+    pushed the output past the boundary. It then surfaced as a `JSONDecodeError:
+    Unterminated string` inside `run_probe` rather than as anything naming truncation --
+    the failure mode this file's own comments keep recording, arriving once more.
+
+    Routing through a temp file is deterministic across four consecutive runs (16396
+    every time), and the size is asserted against the byte count the file actually holds
+    so a partial write cannot pass as a complete one.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = Path(tmp) / "probe.json"
+        with out_path.open("wb") as handle:
+            proc = subprocess.run(
+                ["node", str(script), "--json"],
+                cwd=REPO,
+                stdout=handle,
+                stderr=subprocess.PIPE,
+            )
+        raw = out_path.read_bytes()
+
+    if not raw.strip():
+        # `ValueError`, not `AssertionError`, and deliberately so.
+        #
+        # Several injections in this battery *intend* to make the probe publish nothing --
+        # N renames the last classification branch so the partition ceases to be exhaustive
+        # and the probe's own guard throws. That is a measurement, not a harness error, and
+        # the caller already converts `JSONDecodeError`/`ValueError` into "the probe produced
+        # no report, so no classification was published" and counts it CAUGHT.
+        #
+        # Raising `AssertionError` here aborted the whole battery on N -- the exact failure
+        # mode this file's comments keep recording, arriving once more: a diagnostic that
+        # replaced a handled condition with an unhandled one. The message keeps the byte
+        # count, so a genuine truncation is still distinguishable from a probe that
+        # correctly refused to report.
+        raise ValueError(
+            f"{script.name} produced no report: rc={proc.returncode}, "
+            f"{len(raw)} bytes on stdout, "
+            f"{proc.stderr.decode('utf-8', 'replace')[-300:]}"
+        )
+
+    proc.stdout = raw.decode("utf-8")
+    return proc
 
 
 def run_probe(
@@ -221,23 +284,13 @@ def run_probe(
         if target_edit is not None:
             target_path.write_text(target_edit)
             build_core()
-        proc = subprocess.run(
-            ["node", str(PROBE), "--json"],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-        )
+        proc = _run_json_probe(PROBE)
         # The category probe runs in the same try, over the same mutated tree, so
         # an injection into the classifier is measured on the classifier as it was
         # installed rather than on a second build. Its output is merged into this
         # report under `category`; the two probes observe different objects and the
         # keys keep them apart.
-        cat_proc = subprocess.run(
-            ["node", str(CATEGORY_PROBE), "--json"],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-        )
+        cat_proc = _run_json_probe(CATEGORY_PROBE)
     finally:
         # Restore in reverse order of mutation, and verify -- a `finally` that
         # writes without checking is a promise, not a guarantee. This matters most
@@ -361,6 +414,13 @@ DENIAL_BASELINE: dict = {}
 # movement in any of the four above, or the separateness of the readings would be untested.
 AGREEMENT_BASELINE: dict = {}
 
+# The baseline control's own dict, and a sixth. It reads a sixth object again -- components
+# whose correctness is *given* rather than measured -- so the separateness argument extends:
+# a mutation that moves it must not be observable as movement in any of the five above. In
+# particular AC and AB both empty a term table, one shared and one private, and a single dict
+# would make them indistinguishable.
+BASELINE_BASELINE: dict = {}
+
 
 def cat(report: dict) -> dict:
     """The classifier probe's totals from a run's report.
@@ -418,6 +478,56 @@ def agreement(report: dict) -> dict:
 
 def agreement_baseline() -> dict:
     return AGREEMENT_BASELINE
+
+
+def baseline(report: dict) -> dict:
+    """The baseline control's block from a run's report.
+
+    Named for the *role* it plays rather than the module it lives in, because its role is the
+    claim being checked: it is the baseline the agreement block was missing. Six readings now
+    read six objects and no two share a word.
+    """
+    return report["baseline"]
+
+
+def baseline_baseline() -> dict:
+    return BASELINE_BASELINE
+
+
+def blind_anchor(result: dict | None, which: str) -> tuple:
+    """The figures the blind check compares, read from the block the entry declared.
+
+    Returns a tuple so any anchor can be compared with `==`. The default anchor is the
+    classifier's partition, which is what every injection written before finding 100 was
+    implicitly anchored on; the slot became explicit when AD showed that a `category` edit
+    cannot move it and was being reported BLIND for the right behaviour.
+
+    `None` means the baseline run, which is what the live run is compared against.
+    """
+    if which == 'classifier':
+        if result is None:
+            return (BASELINE["total"], tuple(sorted(BASELINE["counts"].items())))
+        return (result["total"], tuple(sorted(result["counts"].items())))
+
+    if which == 'baseline':
+        if result is None:
+            return (
+                BASELINE_BASELINE["expected"]["supporting"],
+                BASELINE_BASELINE["expected"]["graded"],
+                BASELINE_BASELINE["predicted"]["supporting"],
+                BASELINE_BASELINE["predicted"]["graded"],
+                BASELINE_BASELINE["separates"],
+            )
+        b = baseline(result)
+        return (
+            b["expected"]["supporting"],
+            b["expected"]["graded"],
+            b["predicted"]["supporting"],
+            b["predicted"]["graded"],
+            b["separates"],
+        )
+
+    raise AssertionError(f"unknown blind anchor {which!r}")
 
 
 def body_of(text: str, signature: str) -> str:
@@ -1269,6 +1379,114 @@ INJECTIONS: list[
         ),
         'terms',
     ),
+    # --- The baseline control, finding 100 -----------------------------------------
+    #
+    # AC, AD and AE exist because the baseline block publishes a *refutation*, and a
+    # refutation is a claim like any other: it asserts that the expected side agrees on 1 of
+    # 19 (AC), that the model's side agrees on 0 of 7 (AD), and that the contrast is not
+    # load-bearing because the expected share sits below the floor (AE). Each can be false,
+    # and each is pinned by a mutation that would make it false.
+    #
+    # The block they land in is the one that says finding 99's `7 of 7` is an artifact. If
+    # any of these three survives, the refutation is unsupported and finding 99 stands.
+    (
+        "AC. baseline: count every component as supporting, so the expected side reads 19 of 19",
+        None,
+        lambda r: baseline(r)["expected"]["supporting"]
+        == baseline_baseline()["expected"]["supporting"],
+        "the expected side's supporting count, which is the only figure this mutation moves",
+        # The expected side's figure is `1 of 19`, and the whole refutation rests on it being
+        # low. Forcing `readBaselineSupport` to report support unconditionally drives it to
+        # 19 of 19 -- and, on the predicted side, to 7 of 7. Both are real movements.
+        #
+        # Note what this does *not* do: it does not make `separates` true. With both sides at
+        # 1.0 the expected share is above the floor, so a naive `predicted < expected`
+        # comparison would have been satisfied here -- which is exactly why the module's
+        # `separates` was rewritten to read the floor. A mutation that moves the figure
+        # without moving the verdict is the cross-check that the two are independent.
+        lambda t: rename(
+            t,
+            "  const found = terms.filter((term) => lower.includes(term));\n"
+            "  return { terms: found, supports: found.length > 0 };",
+            "  const found = terms.filter((term) => lower.includes(term));\n"
+            "  return { terms: found, supports: true };",
+        ),
+        'baseline',
+    ),
+    (
+        "AD. baseline: read the predicted side against the expected category, so it reads 1 of 7",
+        None,
+        lambda r: baseline(r)["predicted"]["supporting"]
+        == baseline_baseline()["predicted"]["supporting"],
+        "the predicted side's supporting count, so the two sides are not interchangeable",
+        # The defect this guards against is real and it is the defence the finding's own test
+        # runs deliberately: reading the misses against the *expected* category rather than the
+        # *answered* one takes the predicted side from 0 of 7 to 1 of 7. That is a plausible,
+        # well-intentioned edit -- and it changes which claim the block reports, because the
+        # block's subject is the answered category.
+        #
+        # Modelled in the fixture rather than in the module, because the probe builds the
+        # predicted side from the `category` the run answered: rewriting the recorded answers to
+        # the categories their samples expect is the same edit from the data's side, and it does
+        # not require the block to take a different input than the one it is supposed to read.
+        #
+        # Seven replacements, one per recorded `category` miss. The first version of this entry
+        # passed the edit through `also` with target `'fixture'`, and the harness discarded it:
+        # `also` is consumed to build a *paired* edit, and writing `data = paired` after already
+        # writing `data = mutated` left two fixture edits competing. It reported INERT while the
+        # mutation, applied by hand, moved `predicted.supporting` from 0 to 1. Passing the edit in
+        # the `mutation` slot is what the target expects.
+        lambda t: t.replace(
+            "resource-memory-leak-recommendation.category:resource>code",
+            "resource-memory-leak-recommendation.category:resource>resource",
+        )
+        .replace(
+            "runtime-pod-kill-user-profile.category:runtime>resource",
+            "runtime-pod-kill-user-profile.category:runtime>runtime",
+        )
+        .replace(
+            "runtime-container-crash-loop-media.category:runtime>dependency",
+            "runtime-container-crash-loop-media.category:runtime>runtime",
+        )
+        .replace(
+            "middleware-redis-latency-cache.category:middleware>resource",
+            "middleware-redis-latency-cache.category:middleware>middleware",
+        )
+        .replace(
+            "middleware-database-connection-pool.category:middleware>resource",
+            "middleware-database-connection-pool.category:middleware>middleware",
+        )
+        .replace(
+            "code-slow-regex-api-gateway.category:code>config",
+            "code-slow-regex-api-gateway.category:code>code",
+        )
+        .replace(
+            "middleware-mysql-replica-lag-analytics.category:middleware>resource",
+            "middleware-mysql-replica-lag-analytics.category:middleware>middleware",
+        ),
+        'fixture',
+        'baseline',
+    ),
+    (
+        "AE. baseline: lower the floor to zero, so any difference is called load-bearing",
+        None,
+        lambda r: baseline(r)["separates"] == baseline_baseline()["separates"],
+        "the load-bearing verdict itself, which is the claim the control exists to make",
+        # The one injection in this battery whose requirement reads a **boolean**. Every other
+        # one reads a figure, and that is the weakness this one closes: a control that reports
+        # `1 of 19` and `0 of 7` and then concludes "load-bearing" is a control whose
+        # conclusion does not follow from its own numbers. Zeroing the floor makes the
+        # expected share clear it, so `separates` flips to true and the block announces a
+        # separation it did not measure.
+        #
+        # This is the defect the module was actually shipped with, caught by reading the probe
+        # output rather than by a test: the first `separates` was `predicted < expected`, which
+        # is `0/7 < 1/19`, which is true. The probe printed `separates: true` directly above
+        # the sentence "the reading does NOT separate them". The injection keeps that from
+        # returning by pinning the verdict rather than the arithmetic.
+        lambda t: rename(t, "export const BASELINE_FLOOR = 0.2;", "export const BASELINE_FLOOR = 0;"),
+        'baseline',
+    ),
 ]
 
 
@@ -1306,7 +1524,25 @@ def main() -> int:
     # two, because it edits the vocabulary two of them share.
     AGREEMENT_BASELINE.clear()
     AGREEMENT_BASELINE.update(report["agreement"])
+    # And a sixth, from the `baseline` block -- the control that refutes the fifth. It reads
+    # components whose correctness is given rather than measured, so it is a different object
+    # again. AC and AB both empty a term table, one shared and one private; a single dict would
+    # make them indistinguishable.
+    BASELINE_BASELINE.clear()
+    BASELINE_BASELINE.update(report["baseline"])
     print("type-miss probe battery\n")
+    # The baseline control's own line, and it goes first because it is the one figure in this
+    # battery that *refutes* another. Printed for the reason the other five are: an injection
+    # that moves a figure nobody printed is an injection whose failure has nowhere to show up.
+    print(
+        f"baseline control: expected {BASELINE_BASELINE['expected']['supporting']}"
+        f"/{BASELINE_BASELINE['expected']['graded']} support their category "
+        f"({BASELINE_BASELINE['expected']['supportShare']:.4f}), "
+        f"predicted {BASELINE_BASELINE['predicted']['supporting']}"
+        f"/{BASELINE_BASELINE['predicted']['graded']}, "
+        f"load-bearing {BASELINE_BASELINE['separates']} "
+        f"(floor {BASELINE_BASELINE['baselineFloor']})\n"
+    )
     print(
         f"baseline: {report['total']} misses -- "
         f"form-variant {report['counts']['form-variant']}, "
@@ -1380,6 +1616,21 @@ def main() -> int:
         # and also removes the evidence that the battery reports it, so the default
         # is kept and every `'rule'` and `'fixture'` entry states itself.
         target = entry[5] if len(entry) > 5 else 'source'
+
+        # Which block the blind check anchors on, declared by the entry with a seventh slot.
+        #
+        # The check asks "did the mutation move something the probe actually reads?" and its
+        # default answer is the classifier's `counts`/`total` partition. That is right for a
+        # fixture edit aimed at the `type` field, and wrong for one aimed at `category`: a
+        # `category` answer cannot move the classifier's partition, so AD -- which rewrites
+        # the seven recorded categories to their expected values -- was reported BLIND while
+        # demonstrably moving `baseline.predicted.supporting` from 0 to 1.
+        #
+        # The check itself is not weakened, and the fix is not to exempt AD: the anchor is
+        # made explicit, so an injection that misses its target still fails whichever block it
+        # declared. AD declares `baseline`, the block its edit moves, and would still be
+        # caught if it landed on a row that block cannot see.
+        anchor = entry[6] if len(entry) > 6 else 'classifier'
 
         # A pure-data injection edits the fixture and leaves the classifier alone;
         # its mutation slot is None. The `mutated == probe_text` guard below asks
@@ -1477,6 +1728,7 @@ def main() -> int:
             and not edits_source
             and result["counts"] == BASELINE["counts"]
             and result["total"] == BASELINE["total"]
+            and blind_anchor(result, anchor) == blind_anchor(None, anchor)
         ):
             # A DATA-ONLY injection edited the recorded answers and the probe
             # published a byte-identical partition. The requirement is False and

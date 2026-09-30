@@ -68,8 +68,13 @@ import { assessCategoryDenial, buildDenialInventory } from '../packages/core/dis
 // consistency check on the answer.
 import { assessComponentAgreement, buildAgreementInventory } from '../packages/core/dist/index.js';
 
+// The control for the block above. `7 of 7` was reported without a baseline; this is the
+// measurement it needed, and it refutes the figure rather than supporting it.
+import { buildAgreementContrast } from '../packages/core/dist/index.js';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
+const DATASET = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
 
 /**
  * The `type` misses of a recorded run, read from the recorded annotation.
@@ -407,6 +412,58 @@ function agreementEvidence(run, rows) {
 }
 
 /**
+ * The control for the `agreement` block: run the same reading over components that are known to be right.
+ *
+ * The agreement block reported `7 of 7` and had no baseline, so the figure had nothing to be
+ * compared against. This reads the golden dataset's own `expected.component` values -- right by
+ * construction -- with the identical reading, and reports both sides plus whether the
+ * difference is load-bearing.
+ *
+ * The predicted side is taken from the agreement block rather than transcribed again: two
+ * transcriptions of the same run is two chances to disagree with each other, and finding 96
+ * already recorded what two instruments sharing one name costs.
+ */
+function baselineEvidence(agreement) {
+  if (agreement === null) return null;
+
+  const parsed = JSON.parse(readFileSync(DATASET, 'utf8'));
+  const expected = parsed.samples.map((s) => ({
+    sampleId: s.id,
+    category: s.expected.category,
+    component: s.expected.component,
+  }));
+
+  const predicted = agreement.readings.map((r) => ({
+    sampleId: r.sampleId,
+    category: r.answered,
+    component: r.component,
+  }));
+
+  const contrast = buildAgreementContrast({ expected, predicted });
+
+  return {
+    expected: {
+      graded: contrast.expected.graded,
+      supporting: contrast.expected.supporting,
+      supportingIds: contrast.expected.supportingIds,
+      supportShare: contrast.expected.supportShare,
+    },
+    predicted: {
+      graded: contrast.predicted.graded,
+      supporting: contrast.predicted.supporting,
+      supportingIds: contrast.predicted.supportingIds,
+      supportShare: contrast.predicted.supportShare,
+    },
+    shareDelta: contrast.shareDelta,
+    baselineFloor: contrast.baselineFloor,
+    separates: contrast.separates,
+    reason: contrast.reason,
+    // The columns the contrast is read from, so a report can be diagnosed without a re-run.
+    expectedRows: contrast.expected.rows,
+  };
+}
+
+/**
  * The normalizer the scorer applies, reproduced.
  *
  * It is *not* imported from the built package, and that is deliberate: this
@@ -636,6 +693,19 @@ function main() {
     ? agreementEvidence(args.run, parseMissDetail(readFileSync(resolve(REPO, 'packages', 'core', 'test', 'fixtures', RUNS[args.run]), 'utf8')))
     : null;
 
+  // The `baseline` block -- the control the agreement block above did not have.
+  //
+  // The agreement reading reported `7 of 7` and nothing to compare it against. This runs
+  // the same reading over the dataset's **own** components, which are right by
+  // construction, and reports both sides and whether the difference is load-bearing.
+  //
+  // It reads the golden dataset rather than the recorded run, because the whole point is
+  // to read components whose correctness is not in question. The predicted side is passed
+  // in from the agreement block so the two cannot be built from different transcriptions.
+  const baselineBlock = args.predictions === ''
+    ? baselineEvidence(agreementBlock)
+    : null;
+
   const payload = {
     source,
     total: classified.length,
@@ -653,6 +723,7 @@ function main() {
     ...(categoryBlock === null ? {} : { category: categoryBlock }),
     ...(denialBlock === null ? {} : { denial: denialBlock }),
     ...(agreementBlock === null ? {} : { agreement: agreementBlock }),
+    ...(baselineBlock === null ? {} : { baseline: baselineBlock }),
   };
 
   if (args.json) {
@@ -781,6 +852,30 @@ function main() {
             'eighth pass would be the partial-join defect finding 92 records.',
         );
       }
+    }
+    if (baselineBlock !== null) {
+      const b = baselineBlock;
+      console.log(
+        `\nTHE CONTROL, which refutes the block above: read the same way against components ` +
+          `that are right by construction -- ${b.expected.supporting} of ${b.expected.graded} ` +
+          `support their category, against ${b.predicted.supporting} of ${b.predicted.graded} ` +
+          `for the model's.`,
+      );
+      console.log(
+        `  the reading fails ${b.expected.graded - b.expected.supporting} of ${b.expected.graded} ` +
+          `components that are correct, so it cannot have distinguished anything when it failed ` +
+          `the ${b.predicted.graded}.`,
+      );
+      console.log(`  the one that supports: ${b.expected.supportingIds.join(', ') || 'none'}`);
+      console.log(
+        `  load-bearing: ${b.separates} (floor ${b.baselineFloor}) -- ${b.reason}`,
+      );
+      console.log(
+        `\n  so finding 99's ${b.predicted.graded - b.predicted.supporting} of ${b.predicted.graded} ` +
+          `is an artifact of the vocabulary, not a measurement of the model. CATEGORY_TERMS is the ` +
+          `classifier's *slug* table; a component is a service name or an infrastructure noun, and ` +
+          `is not a slug.`,
+      );
     }
     if (counts['form-variant'] === 0) {
       console.log(
