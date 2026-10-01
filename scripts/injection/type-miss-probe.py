@@ -1984,30 +1984,32 @@ INJECTIONS: list[
     ),
     (
         "AR. derivation: count every consumer, so two chances to disagree read as four",
+        None,
+        lambda r: derivation(r)["downstream"]["branching"] == derivation_baseline()["downstream"]["branching"],
+        "the count of branching consumers, which is not the size of the evidence",
+        # The census is owned by the module, so this entry edits the module.
+        #
+        # The entry predates Finding 104 and its anchor did not survive the change: it was written
+        # against `branches: false`, the two-valued flag the census carried before the roles
+        # replaced it, and it edited a copy of the list that lived in the probe. Finding 104 moved
+        # the census into `category-derivation.ts` and deleted the probe's copy, so the old anchor
+        # matched nothing and the entry went INERT -- silently, for as long as it took to run the
+        # battery, because an anchor that no longer exists produces no compile error and no test
+        # failure. This is the one entry the refactor broke, and it is recorded in the audit as
+        # part of Finding 104 rather than quietly repaired here.
+        #
+        # The claim is unchanged and is the v1.43 half of the evidence story: inflating a
+        # projecting consumer to `branches` changes no *verdict* -- the sample treatment is
+        # identical under it either way, which is what AU and AV say -- so what it moves is the
+        # size of the evidence. `branching` counts the filters and `evidence` counts the consumers
+        # that can reject, and since Finding 104 the two are different numbers (2 and 3) rather
+        # than the same number spelled twice.
         lambda t: rename(
             t,
-            "  { name: 'export/itbench.ts:119', branches: false, outcome: (category) => `label:${category}` },",
-            "  { name: 'export/itbench.ts:119', branches: true, outcome: (category) => `label:${category}` },",
+            "  { name: 'export/itbench.ts:119', role: 'projects', outcome: (category) => `label:${category}` },",
+            "  { name: 'export/itbench.ts:119', role: 'branches', outcome: (category) => `label:${category}` },",
         ),
-        lambda r: derivation(r)["downstream"]["branching"] == derivation_baseline()["downstream"]["branching"],
-        "the count of branching consumers, which is the size of the evidence",
-        # The consumer list is mirrored in the probe, so this entry edits the probe rather than
-        # the module. The mirror is imported rather than copied where it can be -- the module's
-        # own `assessDownstreamAgreement` computes the reading -- but the *list* is declared in
-        # the probe because the module has no opinion about which consumers exist.
-        #
-        # Inflating a non-branching consumer to `branches: true` changes no verdict: the sample
-        # treatment is identical under it either way. What it changes is the size of the
-        # evidence, which is the figure the caveat states, so a reader who counts the branching
-        # consumers is reading a number this injection moves.
-        #
-        # The anchor is the single-line form, and that is how the probe writes *this* consumer.
-        # The four are not formatted alike: `validity`, `rcaeval` and `cloudopsbench` are
-        # three-line object literals while `itbench` is one line, so an anchor copied from either
-        # of the other three does not match. The first version of this anchor was the single-line
-        # form and was correct; a later "correction" to a three-line shape, made from a reading of
-        # the other entries rather than of this one, is what a reviewer should not repeat.
-        None,
+        "derivation",
     ),
     (
         "AS. derivation: drop the consumer list, so the question is never asked",
@@ -2034,6 +2036,214 @@ INJECTIONS: list[
         # key-presence check while asserting an agreement nobody measured. A denominator of 0 is
         # the honest shape of "not asked" and it is what moves here.
         None,
+    ),
+    # ---------------------------------------------------------------------------------------
+    # The six entries Finding 104 adds.
+    #
+    # The contract is `(name, mutate, requirement, description, also, target[, anchor])`. These
+    # six were first written with the mutate slot omitted, which slid every later item one place
+    # to the left: the edit lambda landed in the description slot and the target string landed in
+    # `also`. `main` then read `also` as the string "derivation", the in-package branch's
+    # `in_package = also(base)` compared `base` with `base`, and all six were reported INERT with
+    # "the edit changed nothing" -- against anchors that were, in fact, exactly right. Every one
+    # of the six anchors matches its target file byte-for-byte.
+    #
+    # That is a second Finding-104 subject and it is recorded in the audit: the battery has no
+    # shape check, so a malformed entry and a no-op edit are indistinguishable in its output, and
+    # the reader's natural next move -- inspect the anchor -- confirms the anchor is fine and
+    # leaves the entry firing at nothing.
+    #
+    # What the six are for. `AT` reproduces the census-short-by-one defect Finding 104 found;
+    # `AU` and `AV` move `evidence` in the two directions the old two-valued flag conflated;
+    # `AW` is the row order the refutation silently depends on; `AX` is the overstatement in its
+    # most direct form; `AY` is the boundary case where the roles vanish entirely.
+    # ---------------------------------------------------------------------------------------
+    (
+        "AT. derivation: drop the aiops2025 consumer from the census",
+        None,
+        # The census size, which is the figure a short census moves. Read from the module's own
+        # published reading rather than from the constant, so a census that was dropped but whose
+        # length was reported separately would still be caught.
+        lambda r: len(derivation(r)["downstream"]["consumers"])
+        == len(derivation_baseline()["downstream"]["consumers"]),
+        # The census completeness defect. `export/aiops2025.ts:76` reads `fc.fault.category`
+        # through a `??` fallback that the corpus reaches on 16 of 19 samples, and it was absent
+        # from both hand-written copies of the list. A census that is short by one reports a
+        # smaller evidence count than the repository has, and the caveat prints that count.
+        #
+        # The mutation *removes* the entry. The first version renamed it, so the edit stayed a
+        # single anchored replacement and the array stayed well-formed -- and the entry SURVIVED,
+        # correctly, because a rename leaves `consumers.length` at five. That is the v1.43
+        # wrong-field trap in its usual shape: the requirement read the figure the mutation was
+        # *supposed* to move, and the mutation did not move it. The repair is to change the
+        # input rather than the verdict, so the whole entry is deleted -- including its doc
+        # comment and closing brace, which is what keeps the array well-formed as a *four*-entry
+        # list rather than a five-entry one with a renamed member.
+        "the consumer census, so a field the copies once omitted is not omitted again",
+        lambda t: rename(
+            t,
+            "  {\n"
+            "    name: 'export/aiops2025.ts:76',\n"
+            "    role: 'verified',\n"
+            "    // The exporter's own table is keyed by *type* and falls back to the IR category. Simulated at\n"
+            "    // the same granularity the other entries use: what this records is that the consumer holds a\n"
+            "    // second opinion and admits when it has none, not what that opinion is for each slug. The\n"
+            "    // per-slug reachability is a corpus measurement and lives in the test that makes it.\n"
+            "    outcome: (category) => `table-or-ir:${category}`,\n"
+            "  },\n",
+            "",
+        ),
+        "derivation",
+    ),
+    (
+        "AU. derivation: role the aiops2025 consumer as a projection",
+        None,
+        # `evidence`, the count the caveat prints. Not `consumers.length`: that figure is unmoved
+        # by this edit, which is exactly the point.
+        lambda r: derivation(r)["downstream"]["evidence"]
+        == derivation_baseline()["downstream"]["evidence"],
+        # The `verified` role's reason to exist. The two-valued flag this census replaced could
+        # not express it at all: `aiops2025` neither branches nor projects, and recording it as
+        # either is wrong in a different direction. As `projects` it leaves the evidence set, so
+        # the reading reports two chances to disagree where the repository has three -- and the
+        # figure would be right for the wrong reason, which is what AU exists to catch.
+        "the evidence count, so a consumer that can reject is not counted as one that cannot",
+        lambda t: rename(
+            t,
+            "    name: 'export/aiops2025.ts:76',\n    role: 'verified',",
+            "    name: 'export/aiops2025.ts:76',\n    role: 'projects',",
+        ),
+        "derivation",
+    ),
+    (
+        "AV. derivation: inflate a projecting consumer into a branching one",
+        None,
+        # `evidence`, and the flag partition behind it. A promoted projection moves `evidence` up
+        # by one while leaving `consumers.length` alone, so a requirement reading the length would
+        # pass under this mutation.
+        lambda r: derivation(r)["downstream"]["evidence"]
+        == derivation_baseline()["downstream"]["evidence"],
+        # The mirror of AU, and the direction the v1.43 prose got wrong: counting the two label
+        # interpolations as evidence reports a three-consumer result as a five-consumer result.
+        # This mutation promotes one of them, and it is the overstatement Finding 104 corrected.
+        "the evidence count, so a projection is not counted as a chance to disagree",
+        lambda t: rename(
+            t,
+            "  { name: 'export/itbench.ts:119', role: 'projects', outcome: (category) => `label:${category}` },",
+            "  { name: 'export/itbench.ts:119', role: 'branches', outcome: (category) => `label:${category}` },",
+        ),
+        "derivation",
+    ),
+    (
+        "AW. derivation: swap two rows of the reading table",
+        None,
+        # The *substring* reading's own disagreement list, which is the one this order decides.
+        #
+        # Not the top-level `discriminatingPower.differ`: that figure is the union across both
+        # alternative readings, and the second of them -- `row-shadowing` -- differs on
+        # `redis-latency` for a reason an order change cannot repair. Moving `config` above
+        # `middleware` empties the substring reading's list and leaves the union at two, so a
+        # requirement reading the union SURVIVED. That was this entry's first requirement, and it
+        # is the wrong-field trap recorded in v1.43: the requirement read a figure the mutation
+        # does not move. Reading the named reading is what makes the order visible.
+        lambda r: next(
+            alt["differ"]
+            for alt in derivation(r)["discriminatingPower"]["alternativeReadings"]
+            if alt["name"] == "substring"
+        )
+        == next(
+            alt["differ"]
+            for alt in derivation_baseline()["discriminatingPower"]["alternativeReadings"]
+            if alt["name"] == "substring"
+        ),
+        # The unchecked dependency. The shipped order tests `middleware` before `config` and that
+        # ordering is what makes the substring reading derive `middleware` where the label says
+        # `config`. Reversing it removes the disagreement without touching the matcher -- which is
+        # how Finding 104 established that this is a second defect and not finding 95's.
+        #
+        # The mutation *moves* the config row above middleware in one anchored replacement of the
+        # whole six-line span, rather than inserting a duplicate row. The first version inserted
+        # it and kept both, on the reasoning that a duplicate key is a silent JS overwrite whose
+        # *first* occurrence wins for `Object.entries` order -- which is the behaviour being
+        # mutated. That reasoning was wrong and the compiler said so: `tsc` rejects a duplicate
+        # property in an object literal with `TS1117`, so the mutation was a compile error rather
+        # than a measurement. A mutation that does not compile measures nothing, and the entry
+        # would have been counted as a harness crash rather than as a caught defect.
+        "the substring reading's disagreements with the labels, so an order change is visible",
+        lambda t: rename(
+            t,
+            "  middleware: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'],\n"
+            "  network: ['network', 'latency', 'delay', 'loss', 'partition', 'bandwidth', 'dns', 'packet', 'drop', 'net'],\n"
+            "  resource: ['cpu', 'memory', 'mem', 'disk', 'stress', 'capacity', 'oom', 'saturation', 'leak'],\n"
+            "  runtime: ['pod', 'kill', 'crash', 'restart', 'evict', 'container', 'panic'],\n"
+            "  code: ['exception', 'error', 'bug', 'null', 'stack', 'throw', 'logic', 'regex', 'backtracking'],\n"
+            "  config: ['config', 'setting', 'env', 'yaml', 'property', 'mismatch'],\n",
+            "  config: ['config', 'setting', 'env', 'yaml', 'property', 'mismatch'],\n"
+            "  middleware: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'],\n"
+            "  network: ['network', 'latency', 'delay', 'loss', 'partition', 'bandwidth', 'dns', 'packet', 'drop', 'net'],\n"
+            "  resource: ['cpu', 'memory', 'mem', 'disk', 'stress', 'capacity', 'oom', 'saturation', 'leak'],\n"
+            "  runtime: ['pod', 'kill', 'crash', 'restart', 'evict', 'container', 'panic'],\n"
+            "  code: ['exception', 'error', 'bug', 'null', 'stack', 'throw', 'logic', 'regex', 'backtracking'],\n",
+        ),
+        "terms",
+    ),
+    (
+        "AX. derivation: report the census size as the evidence count",
+        None,
+        # `evidence`, the field the mutation moves. The mutation satisfies any requirement that
+        # only checks the field exists or is a number, so the requirement reads the value -- and
+        # the v1.43 run-3 failure is the precedent for how easy it is to write one that a
+        # hardcode satisfies too.
+        lambda r: derivation(r)["downstream"]["evidence"]
+        == derivation_baseline()["downstream"]["evidence"],
+        # The overstatement in its most direct form: the report publishes `evidence` beside
+        # `consumers`, and this makes the first equal the second. A reader who quotes the figure
+        # the caveat prints is then quoting five consumers that can reject a wrong category where
+        # three can.
+        "the evidence count, so the size of the census is not published as the size of the evidence",
+        lambda t: rename(
+            t,
+            "    evidence: consumers.filter((consumer) => consumer.role !== 'projects').length,",
+            "    evidence: consumers.length,",
+        ),
+        "derivation",
+    ),
+    (
+        "AY. derivation: point the evidence accessor at the branching roles",
+        None,
+        # `evidence`, which this mutation moves from three to two. The partition is *not* the
+        # figure to read here: `verifying` and `projecting` are computed by the probe from the
+        # census's own roles, so an edit to the accessor below them leaves both exactly where
+        # they were. That was this entry's first requirement and it SURVIVED -- the v1.43
+        # wrong-field trap a third time, in its least obvious form: the partition looks like the
+        # role-shaped figure, and it is not the role-shaped figure *this* edit moves.
+        lambda r: derivation(r)["downstream"]["evidence"]
+        == derivation_baseline()["downstream"]["evidence"],
+        # The role vocabulary's boundary, at the source rather than at the report.
+        #
+        # Two earlier drafts of this entry were rejected by the compiler, and both rejections are
+        # the finding rather than an obstacle to it:
+        #
+        #  - Deleting the `role` lines is `TS2741`: `role` is required by `CategoryConsumer`, so a
+        #    census cannot lose its roles at all. The boundary this entry was written for *cannot
+        #    be reached* through the type, which is a stronger statement than the entry could make.
+        #  - Collapsing the union to `'branches' | 'branches' | 'verified'` is `TS2367`: the
+        #    narrowed type makes the accessor's `role !== 'projects'` comparison statically
+        #    impossible, so `tsc` refuses the program that would misreport.
+        #
+        # What is left is the mutation that does compile and does misreport: keep the vocabulary,
+        # keep every role, and have the accessor count the wrong one. The two `projects` consumers
+        # already carry `branches` in their `outcome` closure and `role` is what distinguishes
+        # them, so flipping the accessor to `=== 'branches'` publishes two as the evidence count
+        # while `verifying` and `projecting` both move -- three becomes one, five becomes three,
+        # and no number in the report is the honest one.
+        "the role partition, so an accessor pointed at the wrong role cannot report an evidence count",
+        lambda t: rename(
+            t,
+            "    evidence: consumers.filter((consumer) => consumer.role !== 'projects').length,",
+            "    evidence: consumers.filter((consumer) => consumer.role === 'branches').length,",
+        ),
+        "derivation",
     ),
 ]
 

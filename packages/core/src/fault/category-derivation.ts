@@ -52,8 +52,19 @@
  * visibly a measurement of the matcher rather than of the word list.
  */
 
+import { FAULT_CATEGORIES } from '../ir/types.js';
 import { inferFaultCategory } from './collector.js';
 import { CATEGORY_TERMS } from './category-terms.js';
+
+/**
+ * The category names `gates/validity.ts` holds expectations for, read from `FAULT_CATEGORIES`
+ * rather than listed again.
+ *
+ * `FAULT_EXPECTATIONS` is a total `Record<FaultCategory, FaultExpectation>`, so membership in it
+ * is membership in the IR vocabulary, and restating the eight names here would be a second copy of
+ * a fact this module can read. It is a set because the consumer's outcome is a membership test.
+ */
+const FAULT_EXPECTATION_KEYS: ReadonlySet<string> = new Set(FAULT_CATEGORIES);
 
 /** One dataset sample, reduced to the two fields the rule is about. */
 export interface DerivationSample {
@@ -600,40 +611,115 @@ export function assessDiscriminatingPower(samples: DerivationSample[]): PowerRea
 // ---------------------------------------------------------------------------
 
 /**
- * One consumer of `category`, named, with the set of categories it distinguishes.
+ * What a consumer of `category` can *do* with it -- which is a different question from whether it
+ * reads the field, and the difference is the whole of this section's subject.
  *
- * `branches` is the load-bearing flag and it is declared rather than inferred, because the
- * distinction it draws is exactly the one this section is most likely to get wrong. A consumer
- * **branches** when the category selects different behaviour; a consumer that merely *projects*
- * the category into a label differs in its output but not in its control flow, and calling the
- * two the same thing is how a two-consumer result gets reported as a four-consumer result.
+ * A three-way role rather than the `branches: boolean` this replaced, because the two-valued flag
+ * could not express `verified` and so recorded it as nothing at all:
  *
- * Measured for this repository:
+ *   - **`branches`** -- the category selects different behaviour. `gates/validity.ts:148-155` looks
+ *     it up in `FAULT_EXPECTATIONS` and returns `{semanticTypes: [], unverifiable: true}` on a
+ *     miss, so a category outside the table silently removes the fault's verifiability.
+ *     `export/rcaeval.ts:148` skips a case unless the category is `code`. **Both can reject a
+ *     wrong category**, so both are evidence.
+ *   - **`projects`** -- the category is interpolated into an emitted label through a total
+ *     `Record<FaultCategory, string>` with no guard: `export/itbench.ts:119`,
+ *     `export/cloudopsbench.ts:79`. A changed category changes the label and nothing else, and
+ *     **every** category produces a label, so neither can reject anything. They are consumers, and
+ *     they are not evidence, and conflating the two is how a one-consumer result gets reported as
+ *     a three-consumer result.
+ *   - **`verified`** -- the consumer holds an **independent opinion** about what the category
+ *     should be and falls back to the IR field when it has none:
+ *     `export/aiops2025.ts:76`, `AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fc.fault.category`.
+ *     The table is keyed by *type*, not by category, so where it has an entry it is a second
+ *     opinion that can disagree with the IR -- and where it does not, the `??` admits the opinion
+ *     is unknown. Measured on the corpus: the fallback is reached on **16 of 19** samples and the
+ *     emitted value would move on **14 of 19** if the category changed, which is what makes this a
+ *     real consumer rather than a formality. It is evidence, and it does not branch -- which is
+ *     exactly the case the old boolean had no way to record.
  *
- *   - `validity.expectedSignalsFor` (`gates/validity.ts:148-155`) **branches**: it looks the
- *     category up in `FAULT_EXPECTATIONS` and returns `{semanticTypes: [], unverifiable: true}`
- *     on a miss, so a category outside the table silently removes the fault's verifiability.
- *   - `export/rcaeval.ts:148` **branches**: `if (suite === 'RE3' && fc.fault.category !== 'code')`
- *     skips the case before any file is written.
- *   - `export/itbench.ts:119` and `export/cloudopsbench.ts:79` **do not branch**: both index a
- *     total `Record<FaultCategory, string>` with no guard, so a changed category changes the
- *     emitted label and nothing else.
+ * This entry is why the census moved into this module. It was absent from both hand-written probe
+ * copies of the consumer list, and a list maintained in two places was wrong in both.
+ */
+export type CategoryRole = 'branches' | 'projects' | 'verified';
+
+/**
+ * One consumer of `category`, named, roled, and reduced to the outcome it derives.
+ *
+ * `role` is declared rather than inferred, because the distinction it draws is exactly the one
+ * this section is most likely to get wrong -- and it was got wrong: the first draft called all four
+ * consumers "branch points", and its correction called the two projections consumers that "read"
+ * the field, which counts them as evidence by another route.
  */
 export interface CategoryConsumer {
   /** Where the consumer lives, so a figure can be traced to a file. */
   name: string;
-  /** Whether the category selects different behaviour, as measured above. */
-  branches: boolean;
+  /** What the consumer can do with the category. See `CategoryRole`. */
+  role: CategoryRole;
   /**
    * The outcome this consumer derives from a category.
    *
-   * A function rather than a key set, because the four consumers are not all membership tests:
-   * `validity` returns `unverifiable` for a category outside its table, and `rcaeval`'s RE3
-   * filter returns a boolean. Handing the comparison a function keeps `assessDownstreamAgreement`
-   * from having to know which shape each consumer has.
+   * A function rather than a key set, because the consumers are not all membership tests:
+   * `validity` returns `unverifiable` for a category outside its table, `rcaeval`'s RE3 filter
+   * returns a boolean, and the two projections return interpolated labels. Handing the comparison
+   * a function keeps `assessDownstreamAgreement` from having to know which shape each has.
    */
   outcome: (category: string) => string;
 }
+
+/**
+ * Every consumer of `category`, owned here rather than restated by each caller.
+ *
+ * The census lived in two probe scripts as two hand-written arrays of four, and
+ * `export/aiops2025.ts:76` was in neither. A list maintained in two places is a list that can be
+ * right in one and wrong in the other; it was wrong in both, and the `evidence` count below was
+ * short by one consumer that the corpus reaches on 16 of 19 samples.
+ *
+ * The outcomes are simulations of what each call site derives, kept deliberately coarse: this
+ * module does not import the export or gate packages and should not start, because whether a
+ * consumer branches is a fact about that consumer's source while the *consequence* of the branch is
+ * what this module measures. Keeping them apart is what lets section (f) be checked by supplying a
+ * consumer whose answer is known.
+ */
+export const CATEGORY_CONSUMERS: readonly CategoryConsumer[] = [
+  {
+    name: 'gates/validity.ts:148',
+    role: 'branches',
+    // A miss in `FAULT_EXPECTATIONS` returns `unverifiable`, so a category outside the table
+    // silently removes the fault's verifiability. The table is total over `FaultCategory`, so this
+    // can only fire on a value the type system already excludes -- which is why it is a branch
+    // worth having rather than a formality.
+    //
+    // `.has`, not `in`. The first version of this closure wrote `category in FAULT_EXPECTATION_KEYS`
+    // and the set is a `Set`, so `in` tested the object's *property keys* rather than its contents:
+    // it is a string index into an object with none, and it is false for every input. The branch
+    // therefore never fired, and every category -- including all eight real ones -- reported
+    // `unverifiable`. Nothing caught it, because the two fixtures that mirror this closure were
+    // written with the same operator, so the reading agreed with itself. Group U found it: the
+    // consumer documented as branching on the expectation table was not branching on anything.
+    outcome: (category) => (FAULT_EXPECTATION_KEYS.has(category) ? 'checked' : 'unverifiable'),
+  },
+  {
+    name: 'export/rcaeval.ts:148',
+    role: 'branches',
+    outcome: (category) => (category === 'code' ? 'kept' : 'skipped'),
+  },
+  { name: 'export/itbench.ts:119', role: 'projects', outcome: (category) => `label:${category}` },
+  {
+    name: 'export/cloudopsbench.ts:79',
+    role: 'projects',
+    outcome: (category) => `taxonomy:${category}`,
+  },
+  {
+    name: 'export/aiops2025.ts:76',
+    role: 'verified',
+    // The exporter's own table is keyed by *type* and falls back to the IR category. Simulated at
+    // the same granularity the other entries use: what this records is that the consumer holds a
+    // second opinion and admits when it has none, not what that opinion is for each slug. The
+    // per-slug reachability is a corpus measurement and lives in the test that makes it.
+    outcome: (category) => `table-or-ir:${category}`,
+  },
+];
 
 /** One sample, read under its label and under its derivation. */
 export interface DownstreamSampleReading {
@@ -649,8 +735,18 @@ export interface DownstreamSampleReading {
 
 /** Whether deriving the field away would change any downstream outcome. */
 export interface DownstreamReading {
-  /** The consumers compared, each named. */
-  consumers: { name: string; branches: boolean }[];
+  /** The consumers compared, each named and roled. */
+  consumers: { name: string; role: CategoryRole }[];
+  /**
+   * How many of those consumers could reject a wrong category -- `branches` plus `verified`.
+   *
+   * The figure a reader will quote, and the one this field exists to make checkable. It is not
+   * `consumers.length`: the `projects` entries interpolate the category into a label and cannot
+   * reject anything, so counting them as evidence reports a three-consumer result as a
+   * five-consumer result. That overstatement was made twice in this section's prose before it was
+   * made an assertion, which is why it now has a field and a test rather than a sentence.
+   */
+  evidence: number;
   /** Samples carrying both fields. The denominator. */
   graded: number;
   /** Samples no consumer moves on. */
@@ -705,9 +801,14 @@ export const DOWNSTREAM_FLOOR = 0.2;
  * a subject. It did not ask the question that decides whether that decision is even available:
  * **does anything downstream depend on the field being predicted rather than derived?**
  *
- * `category` is consumed in four places, two of which branch on its value. If the derivation
- * agreed with the label only mostly, deriving would move a sample's verifiability or drop it from
- * an RE3 export -- silently, because neither consumer is exercised by the extraction suite.
+ * `category` is consumed in five places, three of which can reject a wrong value. If the
+ * derivation agreed with the label only mostly, deriving would move a sample's verifiability,
+ * drop it from an RE3 export, or contradict the AIOps2025 exporter's own table -- silently, because
+ * none of the three is exercised by the extraction suite. The other two interpolate the category
+ * into a label and cannot reject anything, which is why the honest evidence count is 3 and not 5.
+ *
+ * `CATEGORY_CONSUMERS` above is that census. It used to live in the two probe scripts as two
+ * hand-written arrays of four, and the entry that was in neither was `export/aiops2025.ts:76`.
  *
  * ## The two readings it compares
  *
@@ -722,6 +823,13 @@ export const DOWNSTREAM_FLOOR = 0.2;
  * `feature-flag-misconfiguration` derives `middleware` where the label says `config`, which is a
  * different bucket in `validity.expectedSignalsFor`, so that consumer moves and the reading
  * demonstrably *can* separate.
+ *
+ * **Why that slug and not another:** the substring reading inherits its row order from
+ * `CATEGORY_TERMS`, and exactly two corpus slugs are matched by two rows. Putting `config` before
+ * `middleware` in that table would make the disagreement vanish without touching the matcher --
+ * which is how Finding 104 established that the disagreement is a *second* defect and not a
+ * restatement of finding 95's. The order is a dependency of this reading, and group R is what
+ * pins it.
  *
  * The honest part, recorded here rather than left for a reader to discover: the same alternative
  * does **not** move `rcaeval`'s RE3 filter, because `config` and `middleware` are both non-`code`
@@ -788,8 +896,11 @@ export function assessDownstreamAgreement(
   return {
     consumers: consumers.map((consumer) => ({
       name: consumer.name,
-      branches: consumer.branches,
+      role: consumer.role,
     })),
+    // The honest count, recomputed from the roles rather than passed in: a caller cannot make the
+    // evidence figure disagree with the census it was shown beside.
+    evidence: consumers.filter((consumer) => consumer.role !== 'projects').length,
     graded,
     inert: graded - moved.length,
     moved,
@@ -990,22 +1101,28 @@ export function buildCategoryDerivationReport(input: {
  */
 export function downstreamCaveat(downstream: DownstreamReading): string[] {
   const names = downstream.consumers.map((consumer) => consumer.name).join(', ');
-  const branching = downstream.consumers.filter((consumer) => consumer.branches);
+  const projections = downstream.consumers.filter((consumer) => consumer.role === 'projects');
+  const projectionNames = projections.map((consumer) => consumer.name).join(', ');
+  const branching = downstream.consumers.filter((consumer) => consumer.role === 'branches');
   const branchingNames = branching.map((consumer) => consumer.name).join(', ');
+  const verifying = downstream.consumers.filter((consumer) => consumer.role === 'verified');
+  const verifyingNames = verifying.map((consumer) => consumer.name).join(', ');
   const base =
     `Downstream agreement: ${downstream.inert} of ${downstream.graded} samples keep the same ` +
-    `treatment under the ${branching.length} consumer(s) that branch on the field ` +
-    `(${branchingNames}), out of ${downstream.consumers.length} that read it (${names}).`;
+    `treatment under the ${downstream.evidence} consumer(s) that can reject a wrong category ` +
+    `(${branchingNames}${verifying.length > 0 ? `, ${verifyingNames}` : ''}), out of ` +
+    `${downstream.consumers.length} that read it (${names}).`;
 
   if (downstream.lossless) {
     return [
       base +
         ` Deriving the field away would therefore change nothing observable for those ` +
         `consumers, so a derivation that passes their check has been tested against nothing.`,
-      `The consumers that do not branch are not evidence of agreement and are counted as such: ` +
-        `${downstream.consumers.length - branching.length} of ${downstream.consumers.length} ` +
-        `index a total map with no guard, so no category can change their output and they ` +
-        `cannot distinguish a right derivation from a wrong one.`,
+      `The consumers that cannot reject a wrong category are not evidence of agreement and are ` +
+        `counted as such: ${projections.length} of ${downstream.consumers.length} interpolate ` +
+        `the category into an emitted label with no guard (${projectionNames}), so no category ` +
+        `can change their control flow and they cannot distinguish a right derivation from a ` +
+        `wrong one.`,
     ];
   }
 

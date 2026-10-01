@@ -39,9 +39,11 @@ import {
   assessMissDerivability,
   assessMissStability,
   buildCategoryDerivationReport,
+  CATEGORY_CONSUMERS,
   downstreamCaveat,
   duplicateTypeDeclarations,
   type CategoryConsumer,
+  type CategoryRole,
   type DerivationSample,
   type DownstreamReading,
   type MissSample,
@@ -1251,7 +1253,7 @@ describe('N. the dataset states the rule it follows, and the whole file obeys it
 const REAL_CONSUMERS: CategoryConsumer[] = [
   {
     name: 'gates/validity.ts:148',
-    branches: true,
+    role: 'branches',
     outcome: (category) =>
       ['resource', 'network', 'runtime', 'middleware', 'code', 'config', 'dependency', 'unknown'].includes(
         category,
@@ -1259,9 +1261,9 @@ const REAL_CONSUMERS: CategoryConsumer[] = [
         ? 'checked'
         : 'unverifiable',
   },
-  { name: 'export/rcaeval.ts:148', branches: true, outcome: (c) => (c === 'code' ? 'kept' : 'skipped') },
-  { name: 'export/itbench.ts:119', branches: false, outcome: (c) => `label:${c}` },
-  { name: 'export/cloudopsbench.ts:79', branches: false, outcome: (c) => `taxonomy:${c}` },
+  { name: 'export/rcaeval.ts:148', role: 'branches', outcome: (c) => (c === 'code' ? 'kept' : 'skipped') },
+  { name: 'export/itbench.ts:119', role: 'projects', outcome: (c) => `label:${c}` },
+  { name: 'export/cloudopsbench.ts:79', role: 'projects', outcome: (c) => `taxonomy:${c}` },
 ];
 
 describe('O. downstream agreement measures what depends on the predicted field', () => {
@@ -1280,14 +1282,18 @@ describe('O. downstream agreement measures what depends on the predicted field',
     expect(reading.lossless).toBe(true);
   });
 
-  it('reports four consumers and says how many of them branch', () => {
-    // The count that must not be inflated. `consumers.length` is 4 and `branches` is true on two
-    // of them; a reader who takes the first number as the size of the evidence is wrong, and the
-    // per-consumer flag is what makes that checkable rather than a claim in a comment.
+  it('reports four consumers and says how many of them can reject a wrong category', () => {
+    // The count that must not be inflated. `consumers.length` is 4 and only the two branching
+    // entries can reject anything; a reader who takes the first number as the size of the
+    // evidence is wrong, and the per-consumer role is what makes that checkable rather than a
+    // claim in a comment. This fixture is the pre-Finding-104 census -- the four entries both
+    // probes used to hand-maintain -- so it carries a `projects` role where the module's own
+    // census now records a `verified` fifth consumer. Group Q measures that one.
     const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
     expect(reading.consumers).toHaveLength(4);
-    expect(reading.consumers.filter((c) => c.branches)).toHaveLength(2);
-    expect(reading.consumers.filter((c) => !c.branches).map((c) => c.name)).toEqual([
+    expect(reading.consumers.filter((c) => c.role === 'branches')).toHaveLength(2);
+    expect(reading.evidence).toBe(2);
+    expect(reading.consumers.filter((c) => c.role === 'projects').map((c) => c.name)).toEqual([
       'export/itbench.ts:119',
       'export/cloudopsbench.ts:79',
     ]);
@@ -1366,7 +1372,7 @@ describe('O. downstream agreement measures what depends on the predicted field',
     // moved -- a count alone would not tell a reader whether the fault was in `validity` or in
     // the RE3 filter.
     const sensitive: CategoryConsumer[] = [
-      { name: 'sensitive', branches: true, outcome: (c) => c },
+      { name: 'sensitive', role: 'branches', outcome: (c) => c },
     ];
     const reading = assessDownstreamAgreement(
       [{ sampleId: 'x', type: 'container-crash', category: 'middleware' }],
@@ -1412,11 +1418,12 @@ describe('O. downstream agreement measures what depends on the predicted field',
     // property of the consumer set rather than a finding about the derivation. This is the trap
     // the four-consumer count invites, stated as an input rather than as prose.
     const projectionsOnly: CategoryConsumer[] = [
-      { name: 'p1', branches: false, outcome: (c) => `x:${c}` },
-      { name: 'p2', branches: false, outcome: (c) => `y:${c}` },
+      { name: 'p1', role: 'projects', outcome: (c) => `x:${c}` },
+      { name: 'p2', role: 'projects', outcome: (c) => `y:${c}` },
     ];
     const reading = assessDownstreamAgreement(datasetSamples(), projectionsOnly);
     expect(reading.consumers).toHaveLength(2);
+    expect(reading.evidence).toBe(0);
     expect(reading.moved).toEqual([]);
     expect(reading.lossless).toBe(true);
   });
@@ -1464,9 +1471,12 @@ describe('P. the report carries the downstream reading beside its verdict', () =
 
   it('counts the non-branching consumers as the non-evidence they are', () => {
     // The correction that a two-consumer result is not a four-consumer result, stated where a
-    // reader of the report will meet it.
+    // reader of the report will meet it. The prose changed in Finding 104: "index a total map
+    // with no guard" described the mechanism, and the sentence now leads with the count a reader
+    // would otherwise get wrong.
     const honesty = report(REAL_CONSUMERS).honesty.join('\n');
-    expect(honesty).toContain('index a total map with no guard');
+    expect(honesty).toContain('cannot reject a wrong category');
+    expect(honesty).toContain('interpolate the category into an emitted label with no guard');
   });
 
   it('puts the downstream verdict in the caveat list, which is the field that is non-empty by construction', () => {
@@ -1484,9 +1494,10 @@ describe('P. the report carries the downstream reading beside its verdict', () =
     // the same defect group J exists to close, one level up.
     const reading: DownstreamReading = {
       consumers: [
-        { name: 'validity', branches: true },
-        { name: 'itbench', branches: false },
+        { name: 'validity', role: 'branches' },
+        { name: 'itbench', role: 'projects' },
       ],
+      evidence: 1,
       graded: 2,
       inert: 1,
       moved: [
@@ -1527,5 +1538,398 @@ describe('P. the report carries the downstream reading beside its verdict', () =
     expect(caveat).toContain('gates/validity.ts:148');
     expect(caveat).toContain('export/itbench.ts:119');
     expect(caveat).toContain('out of 4 that read it');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Q. The census is complete, and each consumer is roled by what it can do
+// ---------------------------------------------------------------------------
+
+/**
+ * The census the probes were feeding, reproduced. Kept as an explicit fixture rather than
+ * imported so these tests describe the input they measure: a test that read the module's own
+ * constant would pass whatever that constant said, which is the failure mode group Q exists to
+ * prevent.
+ *
+ * Five consumers, and the reason the three-way role exists. `validity` and `rcaeval` **branch**:
+ * the category selects different behaviour, so a wrong category is rejected. `itbench` and
+ * `cloudopsbench` **project**: they interpolate the category into an emitted label through a
+ * total `Record<FaultCategory, string>` with no guard, so any category -- including a wrong one
+ * -- produces a label and neither can reject anything. `aiops2025` **verifies**: it looks the
+ * fault *type* up in its own table and falls back to the IR category, so its table is an
+ * independent opinion about what the category should be and the fallback is an admission that
+ * the opinion is unknown.
+ */
+const FIVE_CONSUMERS: CategoryConsumer[] = [
+  {
+    name: 'gates/validity.ts:148',
+    role: 'branches',
+    outcome: (category) =>
+      ['resource', 'network', 'runtime', 'middleware', 'code', 'config', 'dependency', 'unknown'].includes(
+        category,
+      )
+        ? 'checked'
+        : 'unverifiable',
+  },
+  { name: 'export/rcaeval.ts:148', role: 'branches', outcome: (c) => (c === 'code' ? 'kept' : 'skipped') },
+  { name: 'export/itbench.ts:119', role: 'projects', outcome: (c) => `label:${c}` },
+  { name: 'export/cloudopsbench.ts:79', role: 'projects', outcome: (c) => `taxonomy:${c}` },
+  {
+    name: 'export/aiops2025.ts:76',
+    role: 'verified',
+    // The exporter's table is keyed by *type*, and this outcome is the fallback it applies. The
+    // simulation is deliberately coarse -- see group S for why the coarse form is the honest one.
+    outcome: (c) => `table-or-ir:${c}`,
+  },
+];
+
+describe('Q. the census is complete and every consumer is roled', () => {
+  it('carries all five consumers, not the four the probes used to hand-maintain', () => {
+    // The gap this pins. `export/aiops2025.ts:76` reads `fc.fault.category` through a `??`
+    // fallback and was absent from both probe copies of the census; the count was 4 where it
+    // should have been 5.
+    const reading = assessDownstreamAgreement(datasetSamples(), FIVE_CONSUMERS);
+    expect(reading.consumers).toHaveLength(5);
+    expect(reading.consumers.map((c) => c.name)).toContain('export/aiops2025.ts:76');
+  });
+
+  it('roles each consumer by what it can do, not by whether it reads the field', () => {
+    const reading = assessDownstreamAgreement(datasetSamples(), FIVE_CONSUMERS);
+    const byName = new Map(reading.consumers.map((c) => [c.name, c.role]));
+    expect(byName.get('gates/validity.ts:148')).toBe('branches');
+    expect(byName.get('export/rcaeval.ts:148')).toBe('branches');
+    expect(byName.get('export/itbench.ts:119')).toBe('projects');
+    expect(byName.get('export/cloudopsbench.ts:79')).toBe('projects');
+    expect(byName.get('export/aiops2025.ts:76')).toBe('verified');
+  });
+
+  it('counts three consumers as evidence, not five', () => {
+    // The figure a reader will quote. Two branch and one verifies, so three can reject a wrong
+    // category; the two that only interpolate cannot, and a count of five would report a
+    // three-consumer result as a five-consumer result -- the overstatement that `branches`
+    // existed to prevent, arriving one consumer later.
+    const reading = assessDownstreamAgreement(datasetSamples(), FIVE_CONSUMERS);
+    expect(reading.evidence).toBe(3);
+    expect(reading.evidence).toBeLessThan(reading.consumers.length);
+  });
+
+  it('treats a projections-only census as no evidence at all', () => {
+    // The control. With every consumer a projection, `evidence` must fall to 0 even though the
+    // list is non-empty -- otherwise `evidence` would be `consumers.length` under another name.
+    const projectionsOnly: CategoryConsumer[] = [
+      { name: 'p1', role: 'projects', outcome: (c) => `x:${c}` },
+      { name: 'p2', role: 'projects', outcome: (c) => `y:${c}` },
+    ];
+    const reading = assessDownstreamAgreement(datasetSamples(), projectionsOnly);
+    expect(reading.evidence).toBe(0);
+    expect(reading.consumers).toHaveLength(2);
+  });
+
+  it('counts a verifying consumer as evidence even though it does not branch', () => {
+    // The distinction the third role exists for, stated as an input. `verified` is not a synonym
+    // for `branches`: the mechanism differs (a fallback rather than a filter) but the power is
+    // the same -- the consumer holds an independent opinion and can disagree with the IR.
+    const verifyOnly: CategoryConsumer[] = [
+      { name: 'v1', role: 'verified', outcome: (c) => `t:${c}` },
+    ];
+    const reading = assessDownstreamAgreement(datasetSamples(), verifyOnly);
+    expect(reading.evidence).toBe(1);
+    expect(reading.moved).toEqual([]);
+    expect(reading.lossless).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R. The reading's row order is load-bearing, and was unchecked
+// ---------------------------------------------------------------------------
+
+describe('R. the row order the alternative reading depends on', () => {
+  function substringUnder(order: readonly string[], slug: string): string {
+    const normalized = slug.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '');
+    for (const category of order) {
+      if ((CATEGORY_TERMS[category] ?? []).some((term) => normalized.includes(term))) {
+        return category;
+      }
+    }
+    return 'unknown';
+  }
+
+  const AMBIGUOUS = {
+    'redis-latency': ['middleware', 'network'],
+    'feature-flag-misconfiguration': ['middleware', 'config'],
+  } as const;
+
+  it('names the two slugs whose verdict depends on the row order', () => {
+    // Both slugs are matched by two rows' term lists, so `substringReading`'s answer is decided
+    // by which row `Object.entries` reaches first. These are the only two in the corpus; a third
+    // appearing means the vocabulary gained a collision and this list must grow with it.
+    const order = Object.keys(CATEGORY_TERMS);
+    const ambiguous: string[] = [];
+    for (const sample of datasetSamples()) {
+      const normalized = sample.type.trim().toLowerCase().replace(/[\s_]+/g, '-');
+      const matching = order.filter((c) =>
+        (CATEGORY_TERMS[c] ?? []).some((t) => normalized.includes(t)),
+      );
+      if (matching.length > 1) ambiguous.push(sample.type);
+    }
+    expect(ambiguous.sort()).toEqual(Object.keys(AMBIGUOUS).sort());
+  });
+
+  it('changes its answer when the order changes, so the order is a real dependency', () => {
+    // The measurement that makes this a defect rather than a tidiness note. Each ambiguous slug is
+    // matched by exactly two rows, so putting the *other* one first flips its verdict. The
+    // permutations below are per-slug rather than one shared flip, because the two slugs have
+    // different second rows: `network` moves `redis-latency` and `config` moves
+    // `feature-flag-misconfiguration`. A single permutation that moved both would be a stronger
+    // claim than the data supports, and asserting one would have been a false test -- which is
+    // what the first draft of this test did.
+    const shipped = Object.keys(CATEGORY_TERMS);
+    const promote = (category: string): string[] => [
+      category,
+      ...shipped.filter((c) => c !== category),
+    ];
+    expect(substringUnder(shipped, 'redis-latency')).toBe('middleware');
+    expect(substringUnder(promote('network'), 'redis-latency')).toBe('network');
+    expect(substringUnder(shipped, 'feature-flag-misconfiguration')).toBe('middleware');
+    expect(substringUnder(promote('config'), 'feature-flag-misconfiguration')).toBe('config');
+    // And the shipped order is the one that leaves both slugs decided by the row the classifier
+    // also prefers for `redis-latency` and does not prefer for the config slug -- the asymmetry
+    // that makes the order a decision rather than a convenience.
+    expect(inferFaultCategory('redis-latency')).toBe(substringUnder(shipped, 'redis-latency'));
+  });
+
+  it('counts the corpus verdicts that a permutation can change', () => {
+    // Exhaustive rather than illustrative: all 5040 orders of the seven rows are evaluated and
+    // the distinct verdict vectors counted. A single permutation could agree with the shipped
+    // one by coincidence, so the figure is over the whole space.
+    const order = Object.keys(CATEGORY_TERMS);
+    const permutations: string[][] = [];
+    const permute = (rest: string[], acc: string[]): void => {
+      if (rest.length === 0) {
+        permutations.push([...acc]);
+        return;
+      }
+      for (let i = 0; i < rest.length; i += 1) {
+        permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...acc, rest[i]!]);
+      }
+    };
+    permute(order, []);
+    expect(permutations).toHaveLength(5040);
+    const vectors = new Set(
+      permutations.map((perm) =>
+        datasetSamples()
+          .map((s) => substringUnder(perm, s.type))
+          .join('|'),
+      ),
+    );
+    // Four distinct outcomes out of 5040 orders: the reading's answer is not a function of the
+    // data alone. Two of the four are the shipped and the fully-reversed-ish forms.
+    expect(vectors.size).toBe(4);
+    expect([...vectors].filter((v) => v.split('|')[8] === 'network')).toHaveLength(2);
+  });
+
+  it('records what the shipped order costs, so the trade is visible', () => {
+    // The shipped order tests `middleware` before `config`, and that ordering is what makes
+    // `feature-flag-misconfiguration` derive `middleware` -- the single disagreement that
+    // `assessDiscriminatingPower` reports as 1 of 19 and that `assessDownstreamAgreement`'s
+    // refutation leans on. This is stated rather than left to be rediscovered: the ordering is a
+    // decision with a consequence, and the consequence is a corpus figure.
+    const order = Object.keys(CATEGORY_TERMS);
+    expect(substringUnder(order, 'feature-flag-misconfiguration')).toBe('middleware');
+    expect(inferFaultCategory('feature-flag-misconfiguration')).toBe('config');
+    // The classifier gets it right; the reading does not. That gap is the whole disagreement.
+    expect(substringUnder(order, 'feature-flag-misconfiguration')).not.toBe(
+      inferFaultCategory('feature-flag-misconfiguration'),
+    );
+  });
+
+  it('is not finding 95s substring defect, which was about the matcher and not the order', () => {
+    // The attribution corrected here. Finding 95 replaced `String.includes` over the whole slug
+    // with a word-boundary matcher in `collector.ts`, and the reading kept the old matcher on
+    // purpose. The order sensitivity is a *second*, independent defect: it survives any matcher,
+    // because two rows whose term lists both match a slug are decided by iteration order whatever
+    // the matcher is. This test pins the independence by exhibiting an order fix that leaves the
+    // matcher untouched.
+    const order = Object.keys(CATEGORY_TERMS);
+    const reordered = ['config', ...order.filter((c) => c !== 'config')];
+    expect(substringUnder(reordered, 'feature-flag-misconfiguration')).toBe('config');
+    // Same matcher, same vocabulary, same slug -- only the iteration order differs.
+    expect(substringUnder(order, 'feature-flag-misconfiguration')).toBe('middleware');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S. The caveat prints the three counts, and does not promote a projection
+// ---------------------------------------------------------------------------
+
+describe('S. the downstream caveat counts evidence rather than readers', () => {
+  function caveatFor(consumers: CategoryConsumer[]): string {
+    return downstreamCaveat(assessDownstreamAgreement(datasetSamples(), consumers)).join('\n');
+  }
+
+  it('prints the evidence count separately from the reader count', () => {
+    // A reader who sees "3 of 5" and "5 read it" in one sentence has the honest picture: two of
+    // the five cannot reject anything. The previous prose said "4 that read it" and left the
+    // arithmetic for the reader to get wrong.
+    const caveat = caveatFor(FIVE_CONSUMERS);
+    expect(caveat).toContain('3 consumer(s) that can reject a wrong');
+    expect(caveat).toContain('out of 5 that read it');
+  });
+
+  it('names the projections as unable to distinguish rather than omitting them', () => {
+    // The two interpolations are not evidence, but they are not invisible either: they are the
+    // reason the reader count is larger than the evidence count, so they are named.
+    const caveat = caveatFor(FIVE_CONSUMERS);
+    expect(caveat).toContain('export/itbench.ts:119');
+    expect(caveat).toContain('export/cloudopsbench.ts:79');
+    expect(caveat).toContain('2 of 5');
+  });
+
+  it('does not claim a verifying consumer is a projection', () => {
+    // `aiops2025` is counted as evidence, so it must appear in the evidence list and not in the
+    // projections sentence. This is the boundary between the two new roles.
+    const caveat = caveatFor(FIVE_CONSUMERS);
+    expect(caveat).toContain('export/aiops2025.ts:76');
+    const projectionsSentence = caveat
+      .split('\n')
+      .find((line) => line.includes('2 of 5'));
+    expect(projectionsSentence).toBeDefined();
+    expect(projectionsSentence).not.toContain('aiops2025');
+  });
+
+  it('says no consumer can reject anything when the census is projections only', () => {
+    // The zero case, which the prose must not round up to a weaker claim.
+    const caveat = caveatFor([
+      { name: 'p1', role: 'projects', outcome: (c) => `x:${c}` },
+    ]);
+    expect(caveat).toContain('0 consumer(s) that can reject a wrong');
+    expect(caveat).toContain('tested against nothing');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T. The census is owned by the module, not restated by each caller
+// ---------------------------------------------------------------------------
+
+describe('T. one census, owned by the module', () => {
+  it('exports a census that covers every consumer the repository has', () => {
+    // The reason the constant moved here. Two probes carried hand-written copies of the same four
+    // entries, and the fifth consumer was in neither -- a list maintained twice is a list that
+    // can be right in one place and wrong in the other, and it was wrong in both.
+    expect(CATEGORY_CONSUMERS).toHaveLength(5);
+    expect(CATEGORY_CONSUMERS.map((c) => c.name).sort()).toEqual(
+      [...FIVE_CONSUMERS.map((c) => c.name)].sort(),
+    );
+  });
+
+  it('rols the census the same way the fixture does', () => {
+    // The exported census and the fixture are two spellings of one fact, so a change to either
+    // must be a change to both -- which is what makes the fixture a test rather than a copy.
+    const roles = Object.fromEntries(CATEGORY_CONSUMERS.map((c) => [c.name, c.role]));
+    for (const consumer of FIVE_CONSUMERS) {
+      expect(roles[consumer.name]).toBe(consumer.role);
+    }
+  });
+
+  it('is the census the shipped probes use, rather than one they restate', () => {
+    // A module constant is only load-bearing if its consumers read it. Each probe previously
+    // built its own array; this asserts they now import the shared one, the same repair
+    // `component-agreement.test.ts` applies to `CATEGORY_TERMS`.
+    for (const script of ['probe-category-derivation.mjs', 'probe-type-misses.mjs']) {
+      const source = readFileSync(resolve(REPO_ROOT, 'scripts', script), 'utf8');
+      expect(source, `${script} must import the shared census`).toMatch(
+        /CATEGORY_CONSUMERS/,
+      );
+      expect(source, `${script} must not restate it`).not.toMatch(
+        /(?:const|let)\s+(?:CATEGORY_)?CONSUMERS\s*=\s*\[/,
+      );
+    }
+  });
+
+  // The five `outcome` closures, which are the census's actual content rather than its shape.
+  //
+  // Group Q asserts the roles and the evidence count; this group asserts that each closure
+  // *does* what its role claims. The distinction Finding 104 rests on is that a branch can
+  // reject a wrong category and a projection cannot, and until these tests existed nothing
+  // called the closures at all -- the coverage run reported every `outcome` in the census as
+  // uninvoked, so the file sat at 70.59% functions while every role assertion passed.
+  //
+  // That is the same shape as the stale `branching` accessor the census change exposed: a
+  // figure published for a reader, with nothing checking that it means what it says. The
+  // closures were live data, so no test could be *wrong* about them without calling them --
+  // and none did.
+  describe('U. what each consumer closure does with a category', () => {
+    const outcomeOf = (name: string) => {
+      const consumer = CATEGORY_CONSUMERS.find((c) => c.name === name);
+      expect(consumer, `no consumer named ${name}`).toBeDefined();
+      return consumer!.outcome;
+    };
+
+    it('validity answers whether the category is in the expectation table', () => {
+      const outcome = outcomeOf('gates/validity.ts:148');
+      // The table is total over `FaultCategory`, so every real category is checked...
+      for (const category of FAULT_CATEGORIES) {
+        expect(outcome(category), `${category} must be checked`).toBe('checked');
+      }
+      // ...and a value outside the vocabulary is the case the branch exists for.
+      expect(outcome('not-a-category')).toBe('unverifiable');
+    });
+
+    it('rcaeval keeps only the code category and skips the rest', () => {
+      const outcome = outcomeOf('export/rcaeval.ts:148');
+      expect(outcome('code')).toBe('kept');
+      for (const category of FAULT_CATEGORIES.filter((c) => c !== 'code')) {
+        expect(outcome(category), `${category} must be skipped`).toBe('skipped');
+      }
+    });
+
+    it('itbench interpolates the category into a label and cannot reject one', () => {
+      const outcome = outcomeOf('export/itbench.ts:119');
+      // A projection is total: every input produces a label, including nonsense, which is
+      // exactly why it cannot reject a wrong category and is not evidence.
+      expect(outcome('code')).toBe('label:code');
+      expect(outcome('not-a-category')).toBe('label:not-a-category');
+    });
+
+    it('cloudopsbench interpolates the category into a taxonomy and cannot reject one', () => {
+      const outcome = outcomeOf('export/cloudopsbench.ts:79');
+      expect(outcome('resource')).toBe('taxonomy:resource');
+      expect(outcome('not-a-category')).toBe('taxonomy:not-a-category');
+    });
+
+    it('aiops2025 reports a table-or-IR reading, holding a second opinion', () => {
+      const outcome = outcomeOf('export/aiops2025.ts:76');
+      // The `verified` role, and the reason the two-valued flag could not express it: this
+      // closure neither branches on the category nor interpolates it -- it names the mechanism
+      // the exporter uses, which is that the value can come from a table *or* the IR.
+      expect(outcome('code')).toBe('table-or-ir:code');
+      expect(outcome('not-a-category')).toBe('table-or-ir:not-a-category');
+    });
+
+    it('every projections closure is total, and no branches closure is', () => {
+      // The general property the five tests above are instances of: a projection maps every
+      // input to a distinct label (so it never refuses), while a branch collapses inputs onto
+      // a small verdict set (so it can refuse). Stated once here so a sixth consumer added
+      // later is checked by the shape of its role rather than only by its own test.
+      const sentinel = 'definitely-not-a-category';
+      for (const consumer of CATEGORY_CONSUMERS) {
+        if (consumer.role === 'projects') {
+          expect(
+            consumer.outcome(sentinel),
+            `${consumer.name} projects and so must answer for an unknown category`,
+          ).toContain(sentinel);
+        }
+        if (consumer.role === 'branches') {
+          const answers = new Set(
+            FAULT_CATEGORIES.map((c) => consumer.outcome(c)).concat(consumer.outcome(sentinel)),
+          );
+          expect(
+            answers.size,
+            `${consumer.name} branches and so must have fewer answers than inputs`,
+          ).toBeLessThan(FAULT_CATEGORIES.length + 1);
+        }
+      }
+    });
   });
 });

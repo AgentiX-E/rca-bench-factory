@@ -86,6 +86,7 @@ import {
   assessDownstreamAgreement,
   assessDiscriminatingPower,
   duplicateTypeDeclarations,
+  CATEGORY_CONSUMERS,
 } from '../packages/core/dist/index.js';
 // And the table `validity.expectedSignalsFor` looks categories up in, imported rather than
 // copied so that the consumer mirror below cannot go stale: a category added to the table would
@@ -97,34 +98,15 @@ const REPO = resolve(HERE, '..');
 const DATASET = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
 
 /**
- * The four consumers of `expected.category`, each with the behaviour its source actually has.
+ * The consumers of `expected.category`, imported from the module that owns the census.
  *
- * The `branches` flag is the whole content of the downstream reading, and the honest value is
- * two rather than four: `gates/validity.ts:148` and `export/rcaeval.ts:148` select different
- * behaviour on the category, while `export/itbench.ts:119` and `export/cloudopsbench.ts:79`
- * index a total `Record<FaultCategory, string>` with no guard. A count of four would report a
- * two-consumer result as a four-consumer result, which is the overstatement this table's
- * `branches` column exists to make checkable.
+ * This list used to be written out here, and the same four entries were written out again in
+ * `probe-category-derivation.mjs`. Finding 104 moved the census into `category-derivation.ts`
+ * because two hand-maintained copies were both missing `export/aiops2025.ts:76` -- a consumer
+ * reached on 16 of the 19 corpus samples -- and because the two-valued `branches` flag had no way
+ * to record what that consumer does. The census now carries a three-way `role` and an `evidence`
+ * count, and this probe reads them.
  */
-const CATEGORY_CONSUMERS = [
-  {
-    name: 'gates/validity.ts:148',
-    branches: true,
-    outcome: (category) => (category in FAULT_EXPECTATIONS ? 'checked' : 'unverifiable'),
-  },
-  {
-    name: 'export/rcaeval.ts:148',
-    branches: true,
-    outcome: (category) => (category === 'code' ? 'kept' : 'skipped'),
-  },
-  { name: 'export/itbench.ts:119', branches: false, outcome: (category) => `label:${category}` },
-  {
-    name: 'export/cloudopsbench.ts:79',
-    branches: false,
-    outcome: (category) => `taxonomy:${category}`,
-  },
-];
-
 /**
  * The `type` misses of a recorded run, read from the recorded annotation.
  *
@@ -726,18 +708,24 @@ function derivationEvidence(rowsByRun) {
     ...report,
     declarations,
     // The size of the evidence, published beside the reading rather than left for a reader to
-    // count. `consumers.length` is four and this is two, and injection AR exists because the
-    // difference is the whole claim: two of the four index a total record with no guard, so they
-    // cannot disagree whatever the category is.
+    // count. `consumers.length` is five since finding 104 and this is three; the difference is the
+    // whole claim, and injections AT/AU/AX/AY exist because it is: two of the five interpolate the
+    // category into an emitted label with no guard, so they cannot disagree whatever the category
+    // is, and one of the three that can is a `verified` table lookup rather than a branch.
     //
-    // Derived from the report's own consumer flags rather than from `CATEGORY_CONSUMERS`, so a
-    // change to the mirror moves this figure through the module under test -- the property every
-    // other figure in this block has.
+    // Recomputed here from the report's own roles rather than copied, so a change to the census
+    // moves this figure through the module under test -- the property every other figure in this
+    // block has. The `branching` count is kept beside it because the two are no longer the same
+    // number: `branching` counts the filters, `evidence` counts the consumers that can reject.
     downstream: report.downstream === undefined
       ? undefined
       : {
           ...report.downstream,
-          branching: report.downstream.consumers.filter((consumer) => consumer.branches).length,
+          branching: report.downstream.consumers.filter((c) => c.role === 'branches').length,
+          verifying: report.downstream.consumers.filter((c) => c.role === 'verified').length,
+          projecting: report.downstream.consumers.filter((c) => c.role === 'projects').length,
+          evidenceRecomputed: report.downstream.consumers.filter((c) => c.role !== 'projects')
+            .length,
         },
     controls: {
       disagreement: {
@@ -1267,23 +1255,27 @@ function main() {
       );
       if (d.downstream !== undefined) {
         // The question that decides whether the decision is available at all, printed with its
-        // own verdict above its own figures. The consumer count is split by branch rather than
+        // own verdict above its own figures. The consumer count is split by role rather than
         // reported as a total, because the total is the number a reader would take as the size
-        // of the evidence and it is twice the honest one.
-        const branching = d.downstream.consumers.filter((c) => c.branches);
+        // of the evidence and, since finding 104, it is larger than the honest one -- three of
+        // the five can reject a wrong category and two only interpolate it into a label.
+        const evidence = d.downstream.consumers.filter((c) => c.role !== 'projects');
+        const projections = d.downstream.consumers.filter((c) => c.role === 'projects');
         console.log(
           `\n  and whether anything downstream depends on the field being *predicted*:`,
         );
         console.log(
           `    consumers of expected.category: ${d.downstream.consumers.length}, of which ` +
-            `${branching.length} branch on it -- ${branching.map((c) => c.name).join(', ')}`,
+            `${d.downstream.evidence} can reject a wrong category -- ` +
+            `${evidence.map((c) => c.name).join(', ')}`,
         );
         console.log(
-          `    the other ${d.downstream.consumers.length - branching.length} index a total map ` +
-            `with no guard, so no category can change their control flow`,
+          `    the other ${projections.length} interpolate the category into an emitted label ` +
+            `with no guard (${projections.map((c) => c.name).join(', ')}), so no category can ` +
+            `change their control flow and they cannot reject anything`,
         );
         console.log(
-          `    samples where no branching consumer moves: ${d.downstream.inert} of ` +
+          `    samples where no evidence consumer moves: ${d.downstream.inert} of ` +
             `${d.downstream.graded} (${d.downstream.share.toFixed(4)}), lossless ` +
             `${d.downstream.lossless}`,
         );
@@ -1296,7 +1288,7 @@ function main() {
           d.downstream.separates
             ? `      -> so the lossless figure is a result and not an artefact of a reading ` +
                 `with nothing to disagree with.`
-            : `      -> so the lossless figure is self-consistency: the consumers branch on the ` +
+            : `      -> so the lossless figure is self-consistency: the consumers read the ` +
                 `same label the derivation is checked against, and the dataset and the ` +
                 `classifier share an author. It is not evidence that the derivation is right.`,
         );

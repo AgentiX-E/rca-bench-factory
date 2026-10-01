@@ -9211,6 +9211,21 @@ are skipped. **On this corpus the RE3 consumer contributes zero discriminating p
 verdict rests on `validity` alone. A reader who assumed all four consumers were evidence would be
 counting two projections and one inert filter as three more chances to disagree.
 
+> **Corrected by finding 104.** Two claims above were too narrow, and neither correction changes the
+> verdict.
+>
+> The census is **five** consumers, not four: `export/aiops2025.ts:76` reads the field through a
+> `??` fallback the corpus reaches on 16 of 19 samples, and it was missing from both hand-written
+> copies of the list. It is an independent opinion about the category rather than a projection, so
+> the reading is over **three** chances to disagree, not two.
+>
+> And the single disagreement is not "the pre-finding-95 substring reading" alone. That matcher is
+> finding 95's subject; the *row order* is a second, independent defect — `substringReading`
+> iterates `Object.entries(CATEGORY_TERMS)`, and the shipped order happens to test `middleware`
+> before `config`, which is what produces the disagreement. Moving `config` above `middleware`
+> removes it without touching a matcher. The verdict is unmoved either way: the alternative still
+> moves 1 of 19 (0.0526), still below the floor.
+
 ### Three more unreachable branches, and the same repair a fourth time
 
 `assessDownstreamAgreement` adds a fourth reading with the same shape as the other three, and the
@@ -9346,3 +9361,216 @@ into or out of `code` would move it, and the reading would then have a second ch
 
 **And it does not upgrade the miss figure.** The 0-of-8 count remains below-floor and run-dependent,
 printed with both qualifiers wherever it appears.
+
+---
+
+## Finding 104: the consumer census was short by one, and the distinction it needed was not a boolean
+
+Finding 103 closed the category rule and left the downstream reading with a four-consumer census, a
+`lossless: true` verdict and a `separates: false` refutation. It also left a suggested next step —
+wire the reading into `auto-tune`'s signal weights — which this iteration **refuted before acting on
+it**: `grep -rn "autoTune\|auto-tune\|signalWeight" packages/core/src` returns nothing. There is no
+auto-tune and no signal-weight machinery for the reading to be wired into, so the proposal had no
+target module and was withdrawn. Auditing the premise first is cheaper than building against it.
+
+Reading the modules that do exist (`score/`, `evolution/`) turned up no integration surface either:
+`evolution/proposal.ts` is the HITL and red-line plumbing for self-evolution, not a weight
+optimiser, and its `computeRegression` compares two scores rather than tuning anything.
+
+So the reading was audited instead, and three defects came out of it.
+
+### Defect 1: the census was written down twice, and both copies were missing the same consumer
+
+`assessDownstreamAgreement` takes its consumers as an argument, and both probe scripts supplied
+their own hand-written array of four. Neither contained
+`packages/core/src/export/aiops2025.ts:76`:
+
+```ts
+const faultCategory = AIOPS2025_CATEGORY[normalizeFaultType(faultType)] ?? fc.fault.category;
+```
+
+This is a real consumer of the field, and it is not marginal. Measured on the corpus:
+
+| quantity | value |
+|---|---|
+| samples where the `??` fallback is reached | **16 of 19** |
+| samples where the emitted `fault_category` differs from `fc.fault.category` | **1 of 19** (`pod-kill`: emits `pod`, the IR says `runtime`) |
+| table values outside the IR category vocabulary | **16 of 19 rows** (`stress`, `node`, `jvm`, `dns`, `misconfiguration`, `erroneous-change`, `io`) |
+| samples whose emitted value moves if `fc.fault.category` changes | **14 of 19** |
+
+The last row is the one that matters. The table is keyed by *type*, not by *category*, and falls
+back to the category — so for 14 of 19 samples the category decides the emitted value. A consumer
+reached on 16 of 19 samples was reported as absent, and the reason is purely structural: **a list
+maintained in two places can be right in one and wrong in the other, and this one was wrong in
+both.**
+
+The repair is to own the census where the reading lives. `CATEGORY_CONSUMERS` is now exported from
+`category-derivation.ts` and both probes import it, which is the same repair
+`component-agreement.test.ts` already applies to `CATEGORY_TERMS`.
+
+### Defect 2: `branches: boolean` could not express the consumer that was missing
+
+`aiops2025` neither branches nor projects, and the two-valued flag had no way to say so:
+
+* it does not **branch** the way `validity` and `rcaeval` do — there is no filter, no early return;
+* it does not merely **project** the way `itbench` and `cloudopsbench` do — those index a total
+  `Record<FaultCategory, string>` and emit whatever they are given, so they can never disagree.
+
+`AIOPS2025_CATEGORY[type]` is an **independent opinion** about what the category should be, and the
+`??` is an admission that the opinion is unknown. That is a third relation, and recording it as
+either of the first two is wrong in a different direction — as `projects` it leaves the evidence
+set, as `branches` it claims a control-flow branch that is not there.
+
+So the flag is now a three-valued role:
+
+| role | meaning | can reject a wrong category |
+|---|---|---|
+| `branches` | the category selects different behaviour | yes |
+| `projects` | the category is interpolated into an emitted label | **no** |
+| `verified` | the category is compared to an independent opinion | yes |
+
+and the reading publishes `evidence` — the count of consumers that can reject — beside
+`consumers`. On this repository that is **3 of 5**, and the caveat now prints both numbers
+separately instead of describing the two interpolations as consumers that "read" the field.
+
+That wording was itself the second half of the defect. Finding 103's correction changed "four branch
+points" into "two of the four index a total map with no guard" — accurate about the *mechanism*, and
+still inviting a reader to take the length as the size of the evidence. **A count that a reader will
+quote has to be the honest one, in a field, where a test can move it.**
+
+### Defect 3: the reading's row order is a load-bearing dependency, and nothing checked it
+
+`category-terms.ts` is a deliberate copy of the classifier's table in `collector.ts`, with a real
+test asserting the two agree term-by-term. What that test does not check is **row order** — and
+`substringReading` iterates `Object.entries(CATEGORY_TERMS)`, so wherever two rows both match a slug
+the iteration order decides the answer.
+
+Measured exhaustively over all **5040** orders of the seven rows, on the 19 corpus types:
+
+* the reading produces **4 distinct verdict vectors**, so its answer is not a function of the data;
+* the shipped order is one of them; **3360 of 5040** permutations disagree with it;
+* exactly two slugs are matched by two rows — `redis-latency` (`middleware/redis` **and**
+  `network/latency`) and `feature-flag-misconfiguration` (`middleware/lag` **and** `config/config`).
+
+The shipped order tests `middleware` before `config`, and that single decision is what makes
+`substringReading('feature-flag-misconfiguration')` return `middleware` where the label says
+`config`. It is the **only** disagreement the reading has with the corpus, it is the 1 of 19 that
+`alternativeShare` is computed from, and it is what the `separates: false` refutation rests on.
+
+**This corrects Finding 103's attribution.** That entry called the disagreement "the pre-finding-95
+substring reading". The matcher is finding 95's subject; the *order* is not, and it is independent of
+it: two matching rows are decided by iteration whatever the matcher is. Putting `config` above
+`middleware` removes the disagreement without touching a single matcher, which is how the two
+defects were separated. Group R now pins the order, names both ambiguous slugs, counts the
+permutations that move and states the cost of the shipped one.
+
+### The eight new injections, and one of them found a third thing
+
+Six entries were planned (AT–AY) and the census edits also exposed a **stale accessor**: the probe's
+`derivation.downstream` block still read `consumer.branches`, which is `undefined` since the flag
+became a role, so `branching` was published as `0` for a census with two branching consumers. No
+test would have caught it — the figure is published for a reader, not asserted — and it was found by
+reading the probe's own output after the census changed. The block now publishes `branching`,
+`verifying`, `projecting` and a recomputed `evidenceRecomputed`, so the partition is visible in the
+published artefact rather than only inside the module.
+
+The battery is at **53 entries**, all in-package sources restored byte-for-byte.
+
+### What this does not establish
+
+**It does not establish that the AIOps2025 table is correct.** It establishes that the table is an
+independent opinion the census failed to count. Whether `pod-kill` should emit `pod` or `runtime` is
+a product question, and the fact that `fault_category` leaves the IR vocabulary for 16 of 19 rows is
+a separate finding with a separate subject — this iteration records it and does not act on it.
+
+**It does not make `separates` true.** Widening the census raises the *opportunity* to separate, not
+the measured separation. With `aiops2025` counted as evidence, the alternative derivation still
+moves a consumer on 1 of 19 (0.0526), below `DOWNSTREAM_FLOOR` of 0.2, and the verdict stays
+`false`. The reading is over three chances to disagree where it was over two — and it still does
+not.
+
+**It does not establish that the shipped row order is the right one.** It establishes that the order
+is now checked, that the check can fail, and what the shipped order costs.
+
+**And it does not close the deferred product decision.** The prompt may or may not state the
+derivation; that remains open, and `provenance.categoryRule` still records that it was not taken
+here.
+
+### The four things the battery found about itself
+
+Writing the six entries took **five battery runs**, and every non-green result was a defect in the
+*entry*, not in the code under test. That is the v1.43 rule holding for the fifth iteration: a
+SURVIVED is a bad test, not a bad claim. The four findings are recorded here because three of them
+are structural rather than clerical.
+
+**1. The entry contract has no shape check, so a transposed entry is indistinguishable from a no-op
+edit.** The first version of all six entries omitted the `None` mutate slot, which slid every later
+item one place left: the edit lambda landed where the description belongs and the target string
+landed in `also`. `main` then took the in-package branch, read `also` as the string `"derivation"`,
+compared `base` with `base` and printed *"the edit changed nothing"*. All six went INERT — against
+anchors that were, in fact, exactly right. A reader's natural next move after INERT is to check the
+anchor, and the anchor was fine, so the entry looked correct and fired at nothing. `INERT` collapses
+three distinct conditions (no edit, no-op edit, misrouted edit) into one word. This is the same class
+as the INERT misroute N produced in an earlier iteration, arriving again through a different door.
+
+**2. `TS1117`: a duplicate object key is a compile error, not a silent overwrite.** The AW mutation
+inserted a second `config` row above `middleware`, on the reasoning — written into the entry's own
+comment — that a duplicate key is a silent JS overwrite whose *first* occurrence wins for
+`Object.entries` order, which is the behaviour being mutated. `tsc` rejects it: *"An object literal
+cannot have multiple properties with the same name."* The mutation was a compile error, so it
+measured nothing, and `build_core` raised with the source still mutated. The repair is to **move** the
+row rather than duplicate it. The general form: **a mutation must be a different *valid* program, or
+it is not a measurement.** The same lesson arrived twice more, one slot over, in AY.
+
+**3. `TS2741` and `TS2367`: the type system already prevents two of the defects the census was
+written to guard against.** AY's first draft *deleted* the `role` lines, on the reasoning that a
+census which stops carrying a role cannot tell a projection from a branch. `role` is required by
+`CategoryConsumer`, so the edit is `TS2741` — **the boundary cannot be reached through the type at
+all**, which is a stronger statement than the entry could make. The second draft collapsed the union
+to `'branches' | 'branches' | 'verified'`; the narrowed type makes the accessor's
+`role !== 'projects'` comparison statically impossible, so `tsc` refuses the program that would
+misreport (`TS2367`). Both rejections *are* the finding: the roles are not merely checked by a test,
+they are load-bearing in the type. AY's final form is the mutation that does compile and does
+misreport — point the accessor at the wrong role — and it is caught.
+
+**4. The wrong-field trap fired a fourth time, in its least obvious form.** AW's first requirement
+read `discriminatingPower.differ`, the top-level figure. That figure is the **union across both
+alternative readings**, and the second of them (`row-shadowing`) differs on `redis-latency` for a
+reason an order change cannot repair. Moving `config` above `middleware` empties the *substring*
+reading's list and leaves the union at two, so the requirement SURVIVED while the mutation was
+working exactly as designed. The repair is to read the **named** reading rather than the union — the
+figure the order actually governs. AY repeated the shape: its requirement read the role partition,
+which an accessor edit does not move, so the requirement had to read `evidence` (3 → 2).
+
+### The `in` that was not a membership test
+
+The coverage-driven test group added for the five `outcome` closures found a **third defect in the
+module**, and it is the sharpest one of the three.
+
+```
+outcome: (category) => (category in FAULT_EXPECTATION_KEYS ? 'checked' : 'unverifiable'),
+```
+
+`FAULT_EXPECTATION_KEYS` is a `Set`. The `in` operator tests **object property keys**, so on a `Set`
+it is a string index into an object with none and is `false` for every input. The consumer
+documented as *branching on whether the category is in the expectation table* **never branched at
+all**: all eight real categories, and every nonsense value, reported `unverifiable`. The correct
+operator is `.has`.
+
+Nothing caught it, and the reason is worth recording. No test had ever asserted `'checked'` — the two
+fixtures that mirror this closure build their category list inline as an array literal and are
+therefore *correct*, so the reading agreed with itself while the shipped closure disagreed with both.
+Group Q asserted the consumer's **role** (`branches`) and the evidence count derived from it; both
+were true. Group U asserted what the closure **does**, and it failed immediately with
+`resource must be checked: expected 'unverifiable' to be 'checked'`.
+
+The defect's shape is the same as the stale `branching` accessor this iteration already recorded:
+**a figure published for a reader, with nothing checking that it means what it says.** The census had
+a `branches` lattice that could not fire. The module's own docstring asserted the totality of
+`FAULT_EXPECTATIONS` and the totality was true — the closure that *reads* it was the broken part,
+which is why the docstring being right was not protection.
+
+Coverage is what surfaced it: `category-derivation.ts` reported **70.59% functions** with all five
+`outcome` closures uninvoked. The gate is ≥95% per dimension, so the five closures required a test —
+and writing the test was enough to expose the bug. The repair raises functions to **100%** for the
+package and `src/fault` back to **100/100/100/100**.

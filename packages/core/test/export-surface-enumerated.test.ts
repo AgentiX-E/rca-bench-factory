@@ -577,6 +577,9 @@ const TESTED = [
   'assessMissStability',
   'assessDiscriminatingPower',
   'buildCategoryDerivationReport',
+  // Finding 104: the census of `category` consumers, owned here rather than restated by each
+  // probe. Two hand-written copies were both missing `export/aiops2025.ts:76`.
+  'CATEGORY_CONSUMERS',
   'downstreamCaveat',
   'duplicateTypeDeclarations',
   // --- promoted in P1-2: the ten directories that were exempted by module ---

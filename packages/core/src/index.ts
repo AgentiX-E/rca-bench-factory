@@ -615,6 +615,7 @@ export {
   assessMissStability,
   assessDiscriminatingPower,
   buildCategoryDerivationReport,
+  CATEGORY_CONSUMERS,
   downstreamCaveat,
   duplicateTypeDeclarations,
 } from './fault/category-derivation.js';
@@ -623,6 +624,7 @@ export type {
   AlternativeReadingName,
   CategoryConsumer,
   CategoryDerivationReport,
+  CategoryRole,
   ConformanceReading,
   DerivabilityReading,
   DownstreamReading,

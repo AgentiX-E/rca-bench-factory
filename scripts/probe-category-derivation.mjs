@@ -104,52 +104,24 @@ const {
 const { parseMissDetail } = await import(pathToFileURL(MISS_DETAIL).href);
 
 /**
- * The table `validity.expectedSignalsFor` looks categories up in, imported rather than copied.
+ * The consumers of `expected.category`, imported from the module that owns the census.
  *
- * The probe must not restate this key set: a category added to the table would otherwise leave
- * the probe asserting that the consumer misses, which is a wrong reading produced by a stale
- * copy. Importing it means the mirror of `validity` stays a mirror.
+ * This list used to be written out here, and the same four entries were written out again in
+ * `probe-type-misses.mjs`. Two hand-maintained copies of one fact is a list that can be right in
+ * one place and wrong in the other, and it was wrong in both: `export/aiops2025.ts:76` reads
+ * `fc.fault.category` through a `??` fallback, is reached on 16 of the 19 corpus samples, and was
+ * in neither copy. Finding 104 moved the census into `category-derivation.ts` as
+ * `CATEGORY_CONSUMERS`, where the `role` column (`branches` / `projects` / `verified`) records
+ * what each consumer can *do* rather than only whether it reads the field.
+ *
+ * The probe now reads it for the same reason it reads `FAULT_EXPECTATIONS` below: a mirror that
+ * restates its subject is a mirror that can go stale, and the reading it feeds would be the
+ * thing that went wrong without saying so.
  */
+const { CATEGORY_CONSUMERS: CONSUMERS } = await import(pathToFileURL(BUNDLE).href);
 const { FAULT_EXPECTATIONS } = await import(
   pathToFileURL(resolve(REPO, 'packages', 'core', 'dist', 'gates', 'validity.js')).href
 );
-
-/**
- * The four consumers of `expected.category`, each with the behaviour its source actually has.
- *
- * Read from the source rather than assumed, because the `branches` flag is the whole content of
- * the downstream reading: two of these four select different behaviour on the category and two
- * merely project it into a label. Counting four branch points where there are two is precisely
- * the overstatement this list exists to prevent, so each `outcome` mirrors the source:
- *
- *   - `gates/validity.ts:148-155` looks the category up in `FAULT_EXPECTATIONS` and returns
- *     `unverifiable` on a miss -- a branch.
- *   - `export/rcaeval.ts:148` skips an RE3 case unless the category is `code` -- a branch.
- *   - `export/itbench.ts:119` and `export/cloudopsbench.ts:79` index a total
- *     `Record<FaultCategory, string>` with no guard -- no branch, so no category can change
- *     their control flow and neither is evidence of agreement.
- */
-const CONSUMERS = [
-  {
-    name: 'gates/validity.ts:148',
-    branches: true,
-    outcome: (category) => (category in FAULT_EXPECTATIONS ? 'checked' : 'unverifiable'),
-  },  {
-    name: 'export/rcaeval.ts:148',
-    branches: true,
-    outcome: (category) => (category === 'code' ? 'kept' : 'skipped'),
-  },
-  {
-    name: 'export/itbench.ts:119',
-    branches: false,
-    outcome: (category) => `label:${category}`,
-  },
-  {
-    name: 'export/cloudopsbench.ts:79',
-    branches: false,
-    outcome: (category) => `taxonomy:${category}`,
-  },
-];
 
 const parsed = JSON.parse(readFileSync(DATASET, 'utf8'));
 const samples = parsed.samples.map((s) => ({
@@ -341,11 +313,12 @@ process.stdout.write(
   `${line}\n` +
     `THE DOWNSTREAM QUESTION -- does anything depend on the field being predicted?\n` +
     `  consumers of expected.category: ${downstream.consumers.length}\n` +
+    `  of which evidence (can reject a wrong category): ${downstream.evidence}\n` +
     downstream.consumers
-      .map((c) => `    ${c.branches ? 'BRANCHES' : 'projects'}  ${c.name}\n`)
+      .map((c) => `    ${c.role.toUpperCase().padEnd(8)}  ${c.name}\n`)
       .join('') +
-    `  samples where no BRANCHING consumer moves: ${downstream.inert} of ${downstream.graded} (${downstream.share.toFixed(4)})\n` +
-    `  lossless (deriving the field away changes no branching consumer): ${downstream.lossless}\n\n` +
+    `  samples where no evidence consumer moves: ${downstream.inert} of ${downstream.graded} (${downstream.share.toFixed(4)})\n` +
+    `  lossless (deriving the field away changes no evidence consumer): ${downstream.lossless}\n\n` +
     `  VERDICT -- can this reading separate a derived category from a mis-derived one?\n` +
     `    load-bearing: ${downstream.separates}\n` +
     `    floor: ${downstream.floor}\n` +
@@ -354,12 +327,13 @@ process.stdout.write(
       ? `    -> separating, so the lossless figure above is a result and not an artefact\n` +
         `       of a reading with nothing to disagree with.\n\n`
       : `    -> NOT separating. The lossless figure is self-consistency: the consumers\n` +
-        `       branch on the same label the derivation is checked against, and the\n` +
-        `       dataset and the classifier share an author. An agreement that cannot be\n` +
-        `       made to fail is not evidence that the derivation is right.\n\n`) +
-    `  -> and the count of two branching consumers is load-bearing: two of the four\n` +
-    `     index a total record with no guard, so they cannot disagree whatever the\n` +
-    `     category is. The reading is over two chances to disagree, not four.\n` +
+        `       read the same label the derivation is checked against, and the dataset\n` +
+        `       and the classifier share an author. An agreement that cannot be made to\n` +
+        `       fail is not evidence that the derivation is right.\n\n`) +
+    `  -> and the evidence count is load-bearing: of the ${downstream.consumers.length} consumers,\n` +
+    `     ${downstream.consumers.length - downstream.evidence} interpolate the category into an emitted label and cannot\n` +
+    `     reject anything, and ${downstream.evidence} can. The reading is over ${downstream.evidence} chances to\n` +
+    `     disagree, not ${downstream.consumers.length}.\n` +
     (downstream.moved.length === 0
       ? `     No sample moves under the actual derivation, which is why the figure is a\n` +
         `     denominator and not a numerator.\n\n`
@@ -389,6 +363,9 @@ process.stdout.write(
     `    - not that the dataset is wrong. It is self-consistent, and self-consistent is\n` +
     `      all the check establishes.\n` +
     `    - not that the 19-of-19 downstream agreement is a confirmation. The consumers\n` +
-    `      branch on the same label the derivation is checked against, and the reading\n` +
-    `      does not separate (see the verdict above), so it cannot be made to fail.\n`,
+    `      read the same label the derivation is checked against, and the reading does\n` +
+    `      not separate (see the verdict above), so it cannot be made to fail.\n` +
+    `    - not that the three-way role is a claim about the consumers' behaviour beyond\n` +
+    `      what each outcome mirrors: it records which consumer can reject a category,\n` +
+    `      not whether it rejects the right one.\n`,
 );

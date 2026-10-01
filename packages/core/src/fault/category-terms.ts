@@ -19,6 +19,29 @@
  * The duplication is therefore deliberate and it is **checked**: a test asserts that this table
  * and the classifier's agree on every category they share, so a change to one without the other
  * fails rather than drifts. That is the difference between a copy and a second opinion.
+ *
+ * ## And the part that test does not cover: row order
+ *
+ * Agreement on *terms* is not agreement on *rows*. `substringReading` iterates
+ * `Object.entries(CATEGORY_TERMS)`, so wherever two rows both match a slug the **iteration order**
+ * decides the answer -- and the order here is pinned for no reader at all. On the 19-sample corpus
+ * exactly two slugs are matched by two rows:
+ *
+ *   - `redis-latency` matches `middleware` (via `redis`) and `network` (via `latency`);
+ *   - `feature-flag-misconfiguration` matches `middleware` (via `lag`) and `config` (via `config`).
+ *
+ * Measured over all 5040 orders of the seven rows, the reading produces **4 distinct verdict
+ * vectors** for the corpus, so its answer is not a function of the data alone. The order below
+ * tests `middleware` before `config`, which is what makes `feature-flag-misconfiguration` derive
+ * `middleware` -- the single disagreement with the labels that `assessDiscriminatingPower` reports
+ * as 1 of 19 and that `assessDownstreamAgreement`'s refutation rests on.
+ *
+ * That is a **different defect from finding 95's**. Finding 95 was about the *matcher*
+ * (`String.includes` over the whole slug, replaced by a word-boundary matcher in `collector.ts`);
+ * this survives any matcher, because two matching rows are ordered by iteration whatever the
+ * matcher is. The cost is therefore stated here and pinned by group R rather than left to be
+ * rediscovered: the shipped order is a decision with a consequence, and the consequence is a
+ * corpus figure.
  */
 export const CATEGORY_TERMS: Readonly<Record<string, readonly string[]>> = {
   middleware: ['database', 'db', 'redis', 'kafka', 'mq', 'queue', 'cache', 'sql', 'mysql', 'postgres', 'lag'],
