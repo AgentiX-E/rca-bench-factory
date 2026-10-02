@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ingestFile } from '../src/ingest/file.js';
 import { parseFaultSpec } from '../src/fault/collector.js';
 import { checkAioPs2025Structure, AIOPS2025_INSTANCE_TYPES } from '../src/score/score.js';
+import { AIOPS2025_CATEGORIES } from '../src/export/aiops2025.js';
 import { EXPORTERS } from '../src/score/dispatch.js';
 import { formatCommandHelp, parseCliArgs, HELP_TOPICS } from '../src/cli/args.js';
 import {
@@ -88,6 +89,37 @@ const DOCUMENTED_ENTITY_KINDS = [
 
 /** `docs/targets/aiops2025.md` — the `instance_type` layers AIOps2025 scores. */
 const DOCUMENTED_AIOPS2025_INSTANCE_TYPES = ['service', 'pod', 'node'];
+
+/** The projection table's image, as published in `docs/targets/aiops2025.md`. */
+const DOCUMENTED_AIOPS2025_TABLE_VALUES = [
+  'network',
+  'stress',
+  'node',
+  'pod',
+  'jvm',
+  'dns',
+  'misconfiguration',
+  'erroneous-change',
+  'io',
+];
+
+/**
+ * `docs/targets/aiops2025.md` — the words `fault_category` can carry.
+ *
+ * The table's image first, then the IR categories the table falls back to, which
+ * is the order `AIOPS2025_CATEGORIES` composes them in: `Object.values` of the
+ * projection table, then `FAULT_CATEGORIES`. `network` sits in both halves and
+ * so appears once, which is why the tail is the IR categories *deduplicated*
+ * against the table image rather than the vocabulary verbatim.
+ *
+ * The anchor is a deliberate third copy of the *documented* domain — it is what
+ * makes a documentation edit that forgets the code, or a code edit that forgets
+ * the documentation, fail here.
+ */
+const DOCUMENTED_AIOPS2025_CATEGORIES = [
+  ...DOCUMENTED_AIOPS2025_TABLE_VALUES,
+  ...DOCUMENTED_FAULT_CATEGORIES.filter((c) => !DOCUMENTED_AIOPS2025_TABLE_VALUES.includes(c)),
+];
 
 /**
  * `docs/cli-reference.md` — the `--target` values `rca-bench export` lists, in
@@ -331,5 +363,29 @@ describe('help topics · declared once, admitted once', () => {
 
   it('has no topic beyond the documented commands', () => {
     expect(HELP_TOPICS.length).toBe(DOCUMENTED_HELP_TOPICS.length);
+  });
+});
+
+describe('AIOps2025 fault categories · a union of two sources, not a third list', () => {
+  it('is exactly the documented domain, in documented order', () => {
+    expect([...AIOPS2025_CATEGORIES]).toEqual(DOCUMENTED_AIOPS2025_CATEGORIES);
+  });
+
+  it('carries every category the IR can hand the fallback', () => {
+    // The IR half. Without it the vocabulary would describe only the projection
+    // table, and the values the emitter produces for the 16 corpus types the
+    // table does not hold would be rejected by the scorer that reads this list.
+    for (const category of FAULT_CATEGORIES) {
+      expect(AIOPS2025_CATEGORIES, `${category} is not admitted`).toContain(category);
+    }
+  });
+
+  it('carries the table image as a prefix, so the table half stays derived', () => {
+    // Order is the assertion: the union puts `Object.values(table)` first, so a
+    // row whose value changes moves this prefix and fails here, rather than
+    // silently disagreeing with the documentation.
+    expect([...AIOPS2025_CATEGORIES].slice(0, DOCUMENTED_AIOPS2025_TABLE_VALUES.length)).toEqual(
+      DOCUMENTED_AIOPS2025_TABLE_VALUES,
+    );
   });
 });

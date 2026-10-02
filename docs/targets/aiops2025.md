@@ -58,7 +58,7 @@ grounding score.
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
 | `uuid` | string | yes | `FaultCase.caseId` |  |
-| `fault_category` | string | yes | `AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fault.category` | network \| stress \| node \| pod \| jvm \| dns \| misconfiguration \| erroneous-change \| io. |
+| `fault_category` | string | yes | `AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fault.category` | The challenge vocabulary unioned with the IR FaultCategory, because an unmapped type carries the IR value through. Declared as AIOPS2025_CATEGORIES: network \| stress \| node \| pod \| jvm \| dns \| misconfiguration \| erroneous-change \| io \| resource \| runtime \| middleware \| code \| config \| dependency \| unknown. |
 | `fault_type` | string | yes | `FaultCase.fault.type` | Raw fault type. |
 | `instance_type` | string | yes | `instanceTypeOf(Entity.kind)` | service \| pod \| node; defaults to service when the entity is unknown. |
 | `service` | string | yes | `GroundTruth.rootCauseComponent` |  |
@@ -82,7 +82,15 @@ grounding score.
 ## Fault-category mapping
 
 `fault_category` is derived from the **normalised** fault type; an unmapped type falls back
-to the IR `fault.category` rather than to a guessed token.
+to the IR `fault.category` rather than to a guessed token. The emitted field therefore ranges
+over the union of this table's image and the eight IR categories — declared once as
+`AIOPS2025_CATEGORIES` and checked by `checkAioPs2025Structure`, the same way `instance_type`
+is checked.
+
+The table is a fault-*type* projection and a type table is partial by construction, so the
+fallback is not an edge case: on `golden-master/fault-extraction/samples.json` 16 of the 19
+samples reach it. That is why the field's domain is the union rather than the nine values
+below.
 
 | Normalised fault type | `fault_category` |
 | --- | --- |
@@ -117,7 +125,7 @@ rca-bench score --target aiops2025 --dir ./out
 | `groundtruth-present` | `groundtruth.jsonl` exists |
 | `entries-present` | both artefacts contain at least one entry and one line |
 | `input-shape` | every entry has `uuid`, `description`, `start_time`, `end_time` |
-| `groundtruth-shape` | every line has `uuid`, `fault_category`, `fault_type`, `instance_type`, `service`, `instance`, `key_observations`, `key_metrics` |
+| `groundtruth-shape` | every line has `uuid`, `fault_category`, `fault_type`, `instance_type`, `service`, `instance`, `key_observations`, `key_metrics`, and both `instance_type` and `fault_category` are in their vocabularies |
 | `key-observations-shape` | `key_observations` exposes the `log` / `metric` / `trace` arrays |
 | `uuid-alignment` | the uuid sets of both artefacts are identical — no case is labelled without an input, and vice versa |
 
@@ -139,7 +147,7 @@ inflating the agent trace length each lowers it.
 | --- | --- | --- |
 | `uuid-alignment` fails | a case was skipped or the two artefacts were exported from different bundles | re-export from one bundle |
 | `key_observations` all empty | `groundTruth.rootCauseIndicators` absent | author indicators with `type: metric \| log \| trace` |
-| `fault_category` is the raw IR category | the fault type is not in the mapping table | extend `AIOPS2025_CATEGORY`, or accept the documented fallback |
+| `fault_category` is the raw IR category | the fault type is not in the mapping table | expected — the table is a partial projection. Extend `AIOPS2025_CATEGORY` to project the type, or accept the fallback, which `AIOPS2025_CATEGORIES` admits. |
 
 ## Boundaries
 
@@ -147,4 +155,7 @@ inflating the agent trace length each lowers it.
   across cases.
 - `source` / `destination` appear only when `fault.parameters` carries those string keys —
   network faults in practice.
-- The category table is a best-effort projection of the challenge vocabulary.
+- The category table is a best-effort projection of the challenge vocabulary, and it is
+  deliberately partial: an unmapped type carries the IR category through unchanged. The emitted
+  field's domain is the table's image unioned with the IR vocabulary, declared as
+  `AIOPS2025_CATEGORIES` — not the table's image alone.

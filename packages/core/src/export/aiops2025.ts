@@ -1,5 +1,5 @@
 import { normalizeFaultType } from '../fault/collector.js';
-import type { Entity, EntityGraph, EntityKind, FaultCase, IrBundle, RootCauseIndicator } from '../ir/types.js';
+import { FAULT_CATEGORIES, type Entity, type EntityGraph, type EntityKind, type FaultCase, type IrBundle, type RootCauseIndicator } from '../ir/types.js';
 import type { ExportOutcome, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
 
@@ -20,7 +20,7 @@ export const AIOPS2025_TARGET_ID = 'aiops2025';
 export const AIOPS2025_CONTRACT_VERSION = 'ccf2025';
 
 /** AIOps2025 fault-type (normalised) → broad fault category. */
-const AIOPS2025_CATEGORY: Record<string, string> = {
+export const AIOPS2025_CATEGORY: Record<string, string> = {
   'network-delay': 'network',
   'network-loss': 'network',
   'network-corrupt': 'network',
@@ -41,6 +41,30 @@ const AIOPS2025_CATEGORY: Record<string, string> = {
   'erroneous-code': 'erroneous-change',
   'io-fault': 'io',
 };
+
+/**
+ * Every word a `groundtruth.jsonl` line can carry in `fault_category`.
+ *
+ * The emitted domain is the table's image **unioned with the IR vocabulary**,
+ * because `buildAioPs2025GroundTruth` falls back to `fc.fault.category` for a
+ * type this table does not hold. The table is a fault-*type* projection and a
+ * type table is partial by construction, so the fallback is not an edge case:
+ * on the golden corpus 16 of 19 samples reach it.
+ *
+ * Composed rather than written out, because a literal list would be a third
+ * source of truth beside the two it is supposed to describe. The table half
+ * follows `Object.values`, so adding a row that introduces a word needs no edit
+ * here; the IR half follows `FAULT_CATEGORIES`, which the compiler already keeps
+ * exhaustive. The image is provably a subset of this union: an emission is
+ * either a table value or a `FaultCategory`.
+ *
+ * This is what lets `checkAioPs2025Structure` check `fault_category` against a
+ * vocabulary instead of only against `typeof` -- the same treatment
+ * `instance_type` already receives.
+ */
+export const AIOPS2025_CATEGORIES: readonly string[] = [
+  ...new Set([...Object.values(AIOPS2025_CATEGORY), ...FAULT_CATEGORIES]),
+];
 
 function findEntity(graph: EntityGraph, entityId: string): Entity | undefined {
   return graph.entities.find((e) => e.entityId === entityId);

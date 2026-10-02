@@ -5,6 +5,7 @@ import { parseCsvObjects } from '../util/csv.js';
 import { parseOpenRcaScoringPoints } from './official.js';
 import type { ScoreTargetId } from './targets.js';
 import { OPENRCA_GROUNDTRUTH_HEADER } from '../export/openrca.js';
+import { AIOPS2025_CATEGORIES } from '../export/aiops2025.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
 
 /** Number of scoring criteria an OpenRCA `scoring_points` block declares. */
@@ -484,6 +485,15 @@ export function checkAioPs2025Structure(files: Record<string, string>): Structur
       if (!isVocabularyMember(AIOPS2025_INSTANCE_TYPES, obj.instance_type)) {
         gtShapeOk = false;
       }
+      // `fault_category` is checked against a vocabulary rather than against
+      // `typeof` alone, the same treatment `instance_type` receives immediately
+      // above. Its vocabulary is the exporter's own: the projection table's image
+      // unioned with the IR categories the table falls back to, so a word the
+      // emitter can produce is never rejected and a word outside the contract
+      // never passes.
+      if (!isVocabularyMember(AIOPS2025_CATEGORIES, obj.fault_category)) {
+        gtShapeOk = false;
+      }
       if (!Array.isArray(obj.key_metrics)) {
         gtShapeOk = false;
       }
@@ -499,7 +509,7 @@ export function checkAioPs2025Structure(files: Record<string, string>): Structur
       gtUuids.add(obj.uuid);
     }
   }
-  checks.push(check('groundtruth-shape', gtShapeOk, 'required string fields + instance_type + key_metrics'));
+  checks.push(check('groundtruth-shape', gtShapeOk, 'required string fields + instance_type + fault_category + key_metrics'));
   checks.push(check('key-observations-shape', observationsOk, 'key_observations.log/metric/trace arrays'));
 
   const aligned = inputUuids.size === gtUuids.size && [...inputUuids].every((u) => gtUuids.has(u));

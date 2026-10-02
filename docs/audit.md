@@ -9574,3 +9574,146 @@ Coverage is what surfaced it: `category-derivation.ts` reported **70.59% functio
 `outcome` closures uninvoked. The gate is ≥95% per dimension, so the five closures required a test —
 and writing the test was enough to expose the bug. The repair raises functions to **100%** for the
 package and `src/fault` back to **100/100/100/100**.
+
+## Finding 105: the deferred note was three facts, and only two of them had a subject
+
+Finding 104 closed with a deferral, recorded in its own words: *the fact that `fault_category`
+leaves the IR vocabulary for 16 of 19 rows is a separate finding with a separate subject — this
+iteration records it and does not act on it.* This iteration takes it up. The first thing it did was
+refuse to accept the sentence.
+
+### The premise audit, and the three facts it separated
+
+The recorded sentence names one fact. Measurement separates three, and they do not have the same
+subject.
+
+**Fact 1 — not a defect.** `AIOPS2025_CATEGORY` has 19 rows, and 16 of them emit a word outside
+`FAULT_CATEGORIES`: `stress`, `node`, `pod`, `jvm`, `dns`, `misconfiguration`, `erroneous-change`,
+`io`. The recorded sentence treats that as an anomaly. It is not one.
+`docs/targets/aiops2025.md:150` and `scripts/format-spec.mjs` both describe the table as *a
+best-effort projection of the challenge vocabulary*. A projection emits the **target's** words, not
+its input's. Demanding that the image of a fault-*type* to fault-*category* projection sit inside the
+IR `FaultCategory` vocabulary is a category error: the emitter's job is to say what the challenge
+says, and the challenge does not say `runtime` for a `pod-kill`. Nothing was changed for this fact.
+
+That the same figure reads as a defect and as correct behaviour depending on which vocabulary you
+measure it against is the iteration's first lesson: **a number is not a finding until its subject is
+named.**
+
+**Fact 2 — a real defect, and it is an asymmetry.** `checkAioPs2025Structure` scores two enumerated
+fields side by side. One is checked:
+
+```
+score.ts:484   isVocabularyMember(AIOPS2025_INSTANCE_TYPES, obj.instance_type)
+score.ts:472   typeof obj.fault_category !== 'string'
+```
+
+`instance_type` is validated against its declared vocabulary. `fault_category` is validated only for
+being a string. Two fields of the same kind, in the same function, one held to its contract and one
+not. The subject here is not the vocabulary — it is **the check that was never written**.
+
+**Fact 3 — a real defect, and it is a promise narrower than reality.** The contract declared
+`fault_category`'s domain as the 9 values in the table. The emitter's actual domain is 16. A consumer
+reading the contract would write a validator that rejects seven legal payloads.
+
+### The corpus measurement that decided which rows are reachable
+
+`golden-master/fault-extraction/samples.json` has 19 samples. Only **3** normalise to a table key —
+`network-delay`, `network-loss`, `pod-kill`. The other **16** take the `?? fc.fault.category`
+fallback. Of the 3 hits, only `pod-kill` emits off-IR (`pod`, where the IR category is `runtime`).
+The other 13 off-IR rows are **unreachable from this corpus**.
+
+This matters because it bounds the blast radius of fact 3: the wide domain is reachable, but most of
+its width is not exercised by the committed data. It also explains why the defect survived — the
+table looks like the domain only if you read the table and never measure the emitter.
+
+### The completeness argument, proved rather than asserted
+
+The repair could have been a 16-element literal. That would have created a **third source of truth**
+(the rule already recorded for `validity.test.ts`: a hard-coded vocabulary drifts silently). So the
+derivation is composed from the two single sources:
+
+```
+emission(t) = AIOPS2025_CATEGORY[t]   if t ∈ table
+              fc.fault.category        otherwise
+
+fc.fault.category : FaultCategory      (compiler-enforced)
+
+image(emission) ⊆ Object.values(AIOPS2025_CATEGORY) ∪ FAULT_CATEGORIES
+```
+
+and it is an **exact** image, not a superset — which is what makes the vocabulary checkable rather
+than heuristic. Measured on the committed corpus: 16 distinct words. `network` sits in both halves,
+so the IR tail is deduplicated against the table image; without that filter the composed list carries
+a duplicate, and one test asserts the absence.
+
+### The structural asymmetry, which explains why this file and no other
+
+`itbench.ts:45` and `cloudopsbench.ts:41` are total `Record<FaultCategory, string>` with no `??` —
+their domain is the IR vocabulary by construction. `rcaeval.ts:148` is a boolean. `aiops2025.ts:23`
+is the **only** exporter keyed on fault *type*, which is why it is partial, and why the `??` exists
+and is correct. The defect was in the check and the declaration, never in the emission; `:76` is
+untouched.
+
+### What was built
+
+| Layer | Change |
+| --- | --- |
+| `export/aiops2025.ts` | `AIOPS2025_CATEGORY` exported (so the probe can measure the image); new derived `AIOPS2025_CATEGORIES` = table image ∪ `FAULT_CATEGORIES`, deduplicated |
+| `score/score.ts` | `isVocabularyMember(AIOPS2025_CATEGORIES, obj.fault_category)` added; detail string names all four inputs |
+| `test/aiops2025.test.ts` | three new groups: the vocabulary admits both sources and nothing else; the projection row by row (with `PROBE_CATEGORY = 'config'` so a broken lookup surfaces instead of coinciding); the vocabulary versus the golden corpus, asserting the 3/16 covered/fallback split as a contrast |
+| `test/score.test.ts` | the ghost rejection **and** all 16 legal words accepted — both directions, the only new branch |
+| `test/vocabulary-single-source.test.ts` | the documented vocabulary anchor: exact order, carries every IR category, table image is a prefix |
+| battery | `categories` and `scorer` added as in-package targets; three entries (AZ drops the IR half, BA admits a ghost into the literal, BB unchecks the field) |
+| docs | `format-spec.mjs` notes, `docs/targets/aiops2025.md` at five sites |
+
+The two defects are covered by requirements that read **separate figures** — `admitted` for AZ and
+`stray` for BA — because the defects they detect are opposite. One figure would have made one of the
+two injections unobservable.
+
+### The three compiler rejections, which are the measurement working
+
+The battery took six runs. Every non-green result was a defect in the **entry**, not in the code
+under test, and three of the six were the compiler refusing the mutation outright. A mutation has to
+be a *different valid program* or it is not a measurement:
+
+- AZ first deleted the only use of `FAULT_CATEGORIES` → `TS6133`. Repaired with
+  `.filter(() => false)`, which keeps the reference live while removing its contribution.
+- BB inverted the guard as `if (false && !isVocabularyMember(...))` → `TS18046: 'obj' is of type
+  'unknown'`, because a constant condition makes the call dead and the type predicate stops narrowing
+  `obj`. Repaired by **inverting the test** rather than the constant.
+- Passing `[]` for the vocabulary → `TS6133` again, same class as the first.
+
+And the slid-slot defect recurred: three new entries were written with the **description string
+missing at slot 3**, so the edit lambda slid into `description` and the target string into `also`,
+producing `TypeError: 'str' object is not callable`. AST inspection showed
+`Constant, Constant, Lambda, Lambda, Constant` where the contract requires
+`Constant, Constant, Lambda, Constant, Lambda, Constant`. This is verbatim the defect Finding 104
+recorded. **It was recorded and not internalised** — the honest form of that lesson is that a
+documented failure mode is not a fixed one.
+
+### Verification
+
+| Gate | Result |
+| --- | --- |
+| `vitest run --root packages/core` | 2901 passed / 102 files |
+| coverage | `All files 99.96 / 99.94 / 100 / 99.96`; `aiops2025.ts` and `score.ts` both **100/100/100/100**; no file or dimension below 95% |
+| battery | **56 caught, 0 survived, 0 inert, 0 blind**; all 12 in-package sources restored byte-for-byte |
+| `pnpm typecheck` | clean (core + cli) |
+| `pnpm lint` | ALL PROPERTIES HOLD |
+| `pnpm docs:check` | PASSED (README sample, 11 commands / 13 documented) |
+| `pnpm examples:check` | up to date |
+| `pnpm official:check` | PASSED (8 targets scored, 1 skipped by contract) |
+
+### What this does not establish
+
+It does not establish that the wide domain is *right*. The challenge vocabulary is adopted as given,
+because it is the target's; whether `erroneous-change` and `misconfiguration` should be one category
+is a question about the challenge, not about this repository.
+
+It does not establish that the corpus exercises the domain. It exercises 3 of 19 rows and 1 off-IR
+emission. The other 13 off-IR rows are declared correct and measured by no sample.
+
+And it does not establish that no other enumerated field is unchecked. `instance_type` and
+`fault_category` were found by reading one function; the same reading has not been done for every
+structure check in `score.ts`, and that is the iteration this finding hands forward.

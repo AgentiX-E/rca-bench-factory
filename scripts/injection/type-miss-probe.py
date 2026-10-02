@@ -148,6 +148,8 @@ DERIVATION = REPO / "packages" / "core" / "src" / "fault" / "category-derivation
 # into this file therefore moves *both* readings, which is what makes it worth a target
 # rather than being folded into one of them.
 CATEGORY_TERMS = REPO / "packages" / "core" / "src" / "fault" / "category-terms.ts"
+AIOPS2025_EXPORT = REPO / "packages" / "core" / "src" / "export" / "aiops2025.ts"
+SCORER = REPO / "packages" / "core" / "src" / "score" / "score.ts"
 
 # Every in-package target, mapped to the source it edits. `run_probe` takes one of
 # these at a time; keeping them in a table rather than in a chain of `if`s is what
@@ -161,6 +163,11 @@ IN_PACKAGE_TARGETS = {
     "terms": CATEGORY_TERMS,
     "baseline": BASELINE,
     "derivation": DERIVATION,
+    # The exporter and the scorer joined the battery in v1.45. Before that the
+    # `fault_category` vocabulary had no injection aimed at it at all: the battery read
+    # the derivation block, which counts consumers, and a vocabulary is not a consumer.
+    "categories": AIOPS2025_EXPORT,
+    "scorer": SCORER,
 }
 
 
@@ -432,6 +439,48 @@ BASELINE_BASELINE: dict = {}
 # The category-derivation control's baseline, captured before any mutation. Seventh block.
 DERIVATION_BASELINE: dict = {}
 
+# The emitted-category-vocabulary reading's baseline, captured before any mutation. Eighth
+# block, and it reads an eighth object: the *declared domain* of the exported
+# `fault_category`, which is neither the derivation's downstream verdict nor the
+# classifier's partition. It gets its own dict for the standing reason -- the mutation that
+# moves the vocabulary's size must not be observable as movement in the derivation block,
+# or the separateness of the two readings would be untested.
+CATEGORIES_BASELINE: dict = {}
+
+# A ninth, for the scorer's own behaviour on an out-of-vocabulary category. The block above
+# describes the declared domain; this one describes what the check *does* with a word outside
+# it. Two dicts, because the edits that move them are in different files -- the exporter and
+# the scorer -- and one dict would make an exporter edit and a scorer edit indistinguishable.
+SCORER_CATEGORIES_BASELINE: dict = {}
+
+
+def categories(report: dict) -> dict:
+    """The emitted-category-vocabulary block, from the derivation reading's own report.
+
+    It lives *inside* `derivation` because that block is where the probe reads the category
+    field: the block counts the field's consumers, and these figures describe the field's
+    domain. Same object, two different questions about it.
+    """
+    return report["derivation"]["categories"]
+
+
+def scorer_categories(report: dict) -> dict:
+    """What the structure check does with an out-of-vocabulary `fault_category`.
+
+    A sibling of the block above. The two are not one reading: the first is about the
+    *declared* domain, the second about what the scorer does with a value outside it, and an
+    edit to the scorer moves only the second.
+    """
+    return report["derivation"]["scorerCategories"]
+
+
+def categories_baseline() -> dict:
+    return CATEGORIES_BASELINE
+
+
+def scorer_categories_baseline() -> dict:
+    return SCORER_CATEGORIES_BASELINE
+
 
 def cat(report: dict) -> dict:
     """The classifier probe's totals from a run's report.
@@ -574,6 +623,22 @@ def blind_anchor(result: dict | None, which: str) -> tuple:
             d["misses"]["consistent"],
             d["missStability"]["stableIds"],
         )
+
+    if which == 'categories':
+        # The emitted vocabulary, anchored on the two figures that mean different things:
+        # how many words are admitted, and how many of them no source can account for. An
+        # injection that shrinks the union moves `admitted`; one that widens it past its
+        # sources moves `stray`. Anchoring on both is what keeps an entry from being
+        # reported BLIND for moving a figure its own anchor does not read.
+        if result is None:
+            return (
+                CATEGORIES_BASELINE["admitted"],
+                CATEGORIES_BASELINE["distinct"],
+                CATEGORIES_BASELINE["outsideIrVocabulary"],
+                CATEGORIES_BASELINE["stray"],
+            )
+        c = categories(result)
+        return (c["admitted"], c["distinct"], c["outsideIrVocabulary"], c["stray"])
 
     raise AssertionError(f"unknown blind anchor {which!r}")
 
@@ -2245,6 +2310,88 @@ INJECTIONS: list[
         ),
         "derivation",
     ),
+    (
+        "AZ. categories: drop the IR half, so the vocabulary describes only the table",
+        None,
+        # `admitted`, which this mutation moves from sixteen to nine. The requirement reads the
+        # *size* of the declared domain rather than a membership test, because the defect is a
+        # missing word and a set that answers "no" for every word would pass a membership probe
+        # written the other way round.
+        lambda r: categories(r)["admitted"] == categories_baseline()["admitted"],
+        "the size of the declared category vocabulary, the figure this mutation shrinks",
+        # The IR half of the union, and the one clause that cannot be replaced by reading the
+        # table: the fallback carries a `FaultCategory` through for every type the table does
+        # not hold -- 16 of the 19 corpus samples -- so a vocabulary built from the table alone
+        # would reject what the emitter actually produces.
+        #
+        # Written as a `.filter` that discards the IR half rather than as a deletion, and the
+        # distinction is the whole entry. Deleting `...FAULT_CATEGORIES` from the array literal
+        # is TS6133 -- the import becomes unused, `tsc` refuses the program, and the battery
+        # reports a build failure where it should report a survivor. A mutation has to be a
+        # *valid* program that behaves wrongly, or nothing is being measured. The filter keeps
+        # every reference live and still produces a vocabulary with no IR half.
+        lambda t: rename(
+            t,
+            "  ...new Set([...Object.values(AIOPS2025_CATEGORY), ...FAULT_CATEGORIES]),",
+            "  ...new Set([...Object.values(AIOPS2025_CATEGORY), ...FAULT_CATEGORIES.filter(() => false)]),",
+        ),
+        "categories",
+    ),
+    (
+        "BA. categories: admit a word neither source can produce",
+        None,
+        # `stray`, which this mutation moves from zero to one -- and it moves *only* that: the
+        # shape of the union is otherwise untouched, so a requirement reading `admitted` would
+        # see a change it does not mean. This is the wrong-field trap stated arithmetically:
+        # `admitted` and `stray` both count words, and only one of them counts the ones that
+        # have no source.
+        lambda r: categories(r)["stray"] == categories_baseline()["stray"],
+        "the count of admitted words neither the table nor the IR can produce, the figure this mutation moves",
+        # The converse defect to AZ. A vocabulary wider than its sources is not harmless: it is
+        # exactly the hole the scorer check exists to close, since `checkAioPs2025Structure`
+        # admits whatever the vocabulary admits. A word no run can emit would be a category the
+        # scorer would accept and the emitter could never produce.
+        lambda t: rename(
+            t,
+            "export const AIOPS2025_CATEGORIES: readonly string[] = [",
+            "export const AIOPS2025_CATEGORIES: readonly string[] = [\n  'ghost-category',",
+        ),
+        "categories",
+    ),
+    (
+        "BB. scorer: stop checking fault_category, so a ghost passes again",
+        None,
+        # `rejected`, the figure the check exists to produce. Read from a run of the scorer over
+        # a payload carrying a word outside the vocabulary, so the requirement measures the
+        # behaviour rather than the presence of the clause.
+        lambda r: scorer_categories(r)["rejected"] == scorer_categories_baseline()["rejected"],
+        "the count of out-of-vocabulary categories the structure check refuses, the figure this mutation removes",
+        # The check v1.45 added. Before it, `fault_category` was validated by `typeof` alone --
+        # which accepts every string ever written -- while `instance_type` beside it was
+        # membership-checked. Emptifying the vocabulary argument returns the scorer to that
+        # state, because every word is then outside it and a non-empty membership test is what
+        # the clause is for.
+        #
+        # Written so that every name stays referenced, because both cheaper drafts were refused
+        # by the compiler and both refusals are the finding:
+        #
+        #  - Deleting the clause is TS6133: `AIOPS2025_CATEGORIES` would be imported and unused.
+        #  - `if (false && !isVocabularyMember(...))` is TS18046: the constant condition makes the
+        #    call dead, so the predicate stops narrowing `obj` and later reads fail on `unknown`.
+        #    The clause is load bearing for the *type checker*, not only for the behaviour.
+        #  - Passing an empty array is TS6133 again, for the same reason as the first.
+        #
+        # What is left is to keep the argument and invert what the clause does with it: negating
+        # the membership test means a word inside the vocabulary is reported as outside it, so
+        # the payload's legal category is refused. The check still runs, still uses both names,
+        # and no longer means what it says -- which is the defect this entry is about.
+        lambda t: rename(
+            t,
+            "if (!isVocabularyMember(AIOPS2025_CATEGORIES, obj.fault_category)) {",
+            "if (isVocabularyMember(AIOPS2025_CATEGORIES, obj.fault_category)) {",
+        ),
+        "scorer",
+    ),
 ]
 
 
@@ -2294,6 +2441,15 @@ def main() -> int:
     # gets its own dict for the same reason they do.
     DERIVATION_BASELINE.clear()
     DERIVATION_BASELINE.update(report["derivation"])
+    # And an eighth, from the derivation probe's `categories` block -- the declared domain of
+    # the *emitted* `fault_category`, which is the one reading in this battery that is about a
+    # vocabulary rather than about a verdict. It is a sub-object of the block above, but it
+    # reads a different thing (a word list, not a consumer count), so it gets its own dict:
+    # an AE-style vocabulary edit must be observable here and *not* in the derivation figures.
+    CATEGORIES_BASELINE.clear()
+    CATEGORIES_BASELINE.update(report["derivation"]["categories"])
+    SCORER_CATEGORIES_BASELINE.clear()
+    SCORER_CATEGORIES_BASELINE.update(report["derivation"]["scorerCategories"])
     print("type-miss probe battery\n")
     # The baseline control's own line, and it goes first because it is the one figure in this
     # battery that *refutes* another. Printed for the reason the other five are: an injection

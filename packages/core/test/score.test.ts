@@ -3,6 +3,7 @@ import { exportOpenRca } from '../src/export/openrca.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
+import { AIOPS2025_CATEGORIES } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
 import { exportOpenRca2 } from '../src/export/openrca2.js';
 import { exportItBench } from '../src/export/itbench.js';
@@ -383,6 +384,30 @@ describe('checkAioPs2025Structure', () => {
     files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
     const report = checkAioPs2025Structure(files);
     expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+  });
+
+  it('fails when fault_category is not in the vocabulary', () => {
+    // The symmetry case for `instance_type` above. A vocabulary is only a check
+    // if a value outside it is rejected -- the field used to be validated by
+    // `typeof` alone, which accepts every string ever written.
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.fault_category = 'ghost';
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(false);
+  });
+
+  it.each([...AIOPS2025_CATEGORIES])('passes the emitter vocabulary word %s', (category) => {
+    // And the other direction. A vocabulary that rejected a word the emitter
+    // actually produces would turn a legal export into a scored failure, so
+    // every admitted word is walked rather than a representative one.
+    const files = aiopsFiles();
+    const gt = JSON.parse(files['groundtruth.jsonl']!.trim()) as Record<string, unknown>;
+    gt.fault_category = category;
+    files['groundtruth.jsonl'] = JSON.stringify(gt) + '\n';
+    const report = checkAioPs2025Structure(files);
+    expect(report.checks.find((c) => c.id === 'groundtruth-shape')?.passed).toBe(true);
   });
 
   it('fails when key_metrics is not an array', () => {

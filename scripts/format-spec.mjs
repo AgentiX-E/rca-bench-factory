@@ -510,6 +510,7 @@ const aiops2025 = {
     'The bulk telemetry is day-based Parquet shared across cases and is not produced from a per-case IR.',
     '`source` / `destination` are emitted only when the fault carries those parameters (network faults).',
     'The fault-category map is a best-effort projection; an unmapped type falls back to `FaultCase.fault.category`.',
+    'The emitted `fault_category` domain is therefore the table image unioned with the IR vocabulary, declared once as `AIOPS2025_CATEGORIES` and checked by `checkAioPs2025Structure`.',
   ],
   files: [
     {
@@ -531,7 +532,7 @@ const aiops2025 = {
       emitter: 'buildAioPs2025GroundTruth',
       fields: [
         { name: 'uuid', type: T.str, required: true, source: 'FaultCase.caseId', notes: '' },
-        { name: 'fault_category', type: T.str, required: true, source: 'AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fault.category', notes: 'network | stress | node | pod | jvm | dns | misconfiguration | erroneous-change | io.' },
+        { name: 'fault_category', type: T.str, required: true, source: 'AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fault.category', notes: 'The challenge vocabulary unioned with the IR FaultCategory, because an unmapped type carries the IR value through. Declared as AIOPS2025_CATEGORIES: network | stress | node | pod | jvm | dns | misconfiguration | erroneous-change | io | resource | runtime | middleware | code | config | dependency | unknown.' },
         { name: 'fault_type', type: T.str, required: true, source: 'FaultCase.fault.type', notes: 'Raw fault type.' },
         { name: 'instance_type', type: T.str, required: true, source: 'instanceTypeOf(Entity.kind)', notes: 'service | pod | node; defaults to service when the entity is unknown.' },
         { name: 'service', type: T.str, required: true, source: 'GroundTruth.rootCauseComponent', notes: '' },

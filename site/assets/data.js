@@ -1623,7 +1623,8 @@ window.RBF_DATA = {
       "boundaries": [
         "The bulk telemetry is day-based Parquet shared across cases and is not produced from a per-case IR.",
         "`source` / `destination` are emitted only when the fault carries those parameters (network faults).",
-        "The fault-category map is a best-effort projection; an unmapped type falls back to `FaultCase.fault.category`."
+        "The fault-category map is a best-effort projection; an unmapped type falls back to `FaultCase.fault.category`.",
+        "The emitted `fault_category` domain is therefore the table image unioned with the IR vocabulary, declared once as `AIOPS2025_CATEGORIES` and checked by `checkAioPs2025Structure`."
       ],
       "files": [
         {
@@ -1680,7 +1681,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fault.category",
-              "notes": "network | stress | node | pod | jvm | dns | misconfiguration | erroneous-change | io."
+              "notes": "The challenge vocabulary unioned with the IR FaultCategory, because an unmapped type carries the IR value through. Declared as AIOPS2025_CATEGORIES: network | stress | node | pod | jvm | dns | misconfiguration | erroneous-change | io | resource | runtime | middleware | code | config | dependency | unknown."
             },
             {
               "name": "fault_type",
@@ -2381,7 +2382,7 @@ window.RBF_DATA = {
             {
               "id": "groundtruth-shape",
               "passed": true,
-              "detail": "required string fields + instance_type + key_metrics"
+              "detail": "required string fields + instance_type + fault_category + key_metrics"
             },
             {
               "id": "key-observations-shape",

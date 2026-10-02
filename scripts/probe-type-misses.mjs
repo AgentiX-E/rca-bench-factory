@@ -92,10 +92,88 @@ import {
 // copied so that the consumer mirror below cannot go stale: a category added to the table would
 // otherwise leave the probe asserting that the consumer misses.
 import { FAULT_EXPECTATIONS } from '../packages/core/dist/gates/validity.js';
+import {
+  AIOPS2025_CATEGORIES,
+  AIOPS2025_CATEGORY,
+  checkAioPs2025Structure,
+} from '../packages/core/dist/index.js';
+import { FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DATASET = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
+
+/**
+ * The emitted `fault_category` vocabulary, read as figures that move independently.
+ *
+ * `admitted` is the size of the declared domain and `stray` counts the words no source can
+ * account for. They are two figures rather than one because the two defects they detect are
+ * opposite: a union that lost its IR half shrinks `admitted` while leaving `stray` at zero,
+ * and a vocabulary widened past its sources leaves `admitted` unchanged and moves `stray`.
+ * A single count would let either defect mask the other.
+ *
+ * `outsideIrVocabulary` is published because it is the figure that says the table is doing
+ * work at all: if it were zero the vocabulary would be describable by `FAULT_CATEGORIES`
+ * alone, and the union would be a longer way of writing the IR's own list.
+ */
+function readEmittedCategoryVocabulary() {
+  const irWords = new Set(FAULT_CATEGORIES);
+  const tableImage = new Set(Object.values(AIOPS2025_CATEGORY));
+  const producible = new Set([...irWords, ...tableImage]);
+  return {
+    admitted: AIOPS2025_CATEGORIES.length,
+    distinct: new Set(AIOPS2025_CATEGORIES).size,
+    inIrVocabulary: AIOPS2025_CATEGORIES.filter((word) => irWords.has(word)).length,
+    outsideIrVocabulary: AIOPS2025_CATEGORIES.filter((word) => !irWords.has(word)).length,
+    stray: AIOPS2025_CATEGORIES.filter((word) => !producible.has(word)).length,
+  };
+}
+
+/**
+ * What `checkAioPs2025Structure` does with a `fault_category` outside the vocabulary.
+ *
+ * Two payloads that differ in one field: one carrying a word the emitter can produce, one
+ * carrying a word it cannot. Both figures are published because a check that rejected
+ * *everything* would satisfy a requirement that only read `rejected`, so `acceptedLegal` is
+ * the control that keeps the reading from being satisfiable by a broken check.
+ *
+ * The payload is assembled here rather than exported, because the example corpus carries no
+ * out-of-vocabulary category and therefore cannot reach the branch at all.
+ */
+function readScorerCategoryVerdict() {
+  const line = (faultCategory) => ({
+    uuid: 'case-001',
+    fault_category: faultCategory,
+    fault_type: 'network-delay',
+    instance_type: 'service',
+    service: 'order',
+    instance: 'order',
+    start_time: '2026-09-06T00:00:00.000Z',
+    end_time: '2026-09-06T00:20:00.000Z',
+    key_metrics: [],
+    key_observations: { log: [], metric: [], trace: [] },
+    fault_description: 'a probe payload',
+  });
+  const input = JSON.stringify([
+    {
+      uuid: 'case-001',
+      description: 'a probe payload',
+      start_time: '2026-09-06T00:00:00.000Z',
+      end_time: '2026-09-06T00:20:00.000Z',
+    },
+  ]);
+  const refuses = (faultCategory) => {
+    const report = checkAioPs2025Structure({
+      'input.json': input,
+      'groundtruth.jsonl': `${JSON.stringify(line(faultCategory))}\n`,
+    });
+    return report.checks.find((c) => c.id === 'groundtruth-shape')?.passed === false;
+  };
+  return {
+    rejected: refuses('ghost-category') ? 1 : 0,
+    acceptedLegal: refuses('network') ? 0 : 1,
+  };
+}
 
 /**
  * The consumers of `expected.category`, imported from the module that owns the census.
@@ -758,6 +836,20 @@ function derivationEvidence(rowsByRun) {
         reason: controls.downstreamSeparating.reason,
       },
     },
+    // The emitted `fault_category` vocabulary, and what the scorer does with a value outside it.
+    //
+    // The census above counts the *consumers* of the category field. Neither block below is a
+    // consumer, which is why they are here rather than folded into `downstream`: one describes
+    // the domain the exporter declares, the other what the structure check accepts. Finding 104
+    // widened the census to five consumers and left the field's *domain* unexamined; v1.45 is
+    // that examination, and its subject is a word list rather than a verdict.
+    //
+    // The two are separate objects on purpose. `admitted` moves if the composition loses a half
+    // of its union; `rejected` moves if the scorer's membership clause goes away. A single block
+    // would let an exporter edit and a scorer edit produce the same reading, which is the
+    // wrong-field trap in its structural form.
+    categories: readEmittedCategoryVocabulary(),
+    scorerCategories: readScorerCategoryVerdict(),
     readingsPerRun: runs.map(({ run, misses }) => ({ run, misses: misses.length })),
     adversarialWords,
   };

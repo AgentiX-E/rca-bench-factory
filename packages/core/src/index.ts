@@ -190,6 +190,8 @@ export {
 export type { EntityIndex, Rca100ModalityTable } from './export/rca100.js';
 
 export {
+  AIOPS2025_CATEGORIES,
+  AIOPS2025_CATEGORY,
   AIOPS2025_CONTRACT_VERSION,
   AIOPS2025_TARGET_ID,
   buildAioPs2025GroundTruth,

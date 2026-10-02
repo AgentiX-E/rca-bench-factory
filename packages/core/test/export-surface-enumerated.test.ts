@@ -443,6 +443,15 @@ const TESTED = [
   // export/aiops2025.ts
   'AIOPS2025_TARGET_ID',
   'AIOPS2025_CONTRACT_VERSION',
+  // The projection table itself. Not part of the public contract vocabulary --
+  // `AIOPS2025_CATEGORIES` below is -- but it is read by the battery probe
+  // (`scripts/probe-type-misses.mjs`), which measures the table's image to make
+  // the completeness argument in `docs/audit.md` checkable rather than asserted.
+  'AIOPS2025_CATEGORY',
+  // The emitted `fault_category` domain: the projection table's image unioned
+  // with the IR categories it falls back to, read by the scorer and by the
+  // documentation anchor in `vocabulary-single-source.test.ts`.
+  'AIOPS2025_CATEGORIES',
   'buildAioPs2025GroundTruth',
   'buildAioPs2025Input',
   // export/cloudopsbench.ts
