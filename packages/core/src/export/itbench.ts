@@ -1,6 +1,7 @@
 import type { FaultCase, FaultCategory, GroundTruth, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
+import { difficultyFor } from './difficulty.js';
 
 /**
  * ITBench exporter (SRE Diagnosis reasoning contract).
@@ -42,7 +43,7 @@ export const ITBENCH_SRE_DOMAIN = 'SRE';
  * best-effort projection, not a one-to-one equivalence; the precise fault type
  * is preserved verbatim inside `scenario_groundtruth`.
  */
-const CLASS_BY_CATEGORY: Record<FaultCategory, string> = {
+export const CLASS_BY_CATEGORY: Record<FaultCategory, string> = {
   resource: 'HighCPU',
   network: 'NetworkPartition',
   runtime: 'CrashLoopBackOff',
@@ -53,20 +54,23 @@ const CLASS_BY_CATEGORY: Record<FaultCategory, string> = {
   unknown: 'Unknown',
 };
 
-/** Map an IR difficulty level onto an ITBench scenario complexity token. */
-function complexityFor(level: FaultCase['difficulty']): string {
-  switch (level) {
-    case 'L1':
-      return 'easy';
-    case 'L2':
-      return 'medium';
-    case 'L3':
-    case 'L4':
-      return 'hard';
-    default:
-      return 'medium';
-  }
-}
+/**
+ * Every word `scenario_class` can carry.
+ *
+ * The emitted domain is this projection table's image, deduplicated. It is
+ * composed from `Object.values` rather than re-listed, so a row whose value
+ * changes moves this vocabulary without a second edit, and a row that
+ * introduces a new word needs no edit here at all. That is what lets
+ * `checkItBenchStructure` check `scenario_class` against a vocabulary instead of
+ * only against `typeof`, the same treatment AIOps2025's `fault_category`
+ * receives; a hand-written copy would be the third-source defect this avoids.
+ *
+ * This table has no two rows sharing a value, so the dedup is a no-op here. It
+ * is written anyway so the shape matches `CLOUD_OPSBENCH_TAXONOMIES`, where the
+ * dedup is load-bearing (`middleware` and `dependency` both map to
+ * `Service_Fault`), and so a future duplicate cannot quietly double a word.
+ */
+export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY))];
 
 /** Collect the unique entities in the fault-propagation chain, root cause first. */
 function diagnosisEntities(gt: GroundTruth): string[] {
@@ -117,7 +121,7 @@ export function buildItBenchScenarioSpec(fc: FaultCase): Record<string, unknown>
     scenario_description: fc.query ?? gt.rootCauseReason,
     scenario_domain: ITBENCH_SRE_DOMAIN,
     scenario_class: CLASS_BY_CATEGORY[fc.fault.category],
-    scenario_complexity: complexityFor(fc.difficulty),
+    scenario_complexity: difficultyFor(fc.difficulty),
     scenario_groundtruth: {
       diagnosis: {
         entities: diagnosisEntities(gt),

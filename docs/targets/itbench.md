@@ -30,9 +30,9 @@
 | --- | --- | --- | --- | --- |
 | `scenario_name` | string | yes | `FaultCase.caseId` |  |
 | `scenario_description` | string | yes | `FaultCase.query ?? GroundTruth.rootCauseReason` |  |
-| `scenario_domain` | string | yes | `constant "SRE"` | Only the SRE persona is targeted. |
-| `scenario_class` | string | yes | `CLASS_BY_CATEGORY[fault.category]` | HighCPU \| NetworkPartition \| CrashLoopBackOff \| ServiceDegradation \| CorruptImage \| Misconfiguration \| DependencyFailure \| Unknown. |
-| `scenario_complexity` | string | yes | `complexityFor(FaultCase.difficulty)` | easy \| medium \| hard. |
+| `scenario_domain` | string | yes | `constant "SRE"` | Only the SRE persona is targeted; CISO and FinOps are real ITBench personas this converter does not emit. Declared as ITBENCH_SCENARIO_DOMAINS. |
+| `scenario_class` | string | yes | `CLASS_BY_CATEGORY[fault.category]` | HighCPU \| NetworkPartition \| CrashLoopBackOff \| ServiceDegradation \| CorruptImage \| Misconfiguration \| DependencyFailure \| Unknown. Declared as ITBENCH_SCENARIO_CLASSES, the projection table's deduplicated image. |
+| `scenario_complexity` | string | yes | `difficultyFor(FaultCase.difficulty)` | easy \| medium \| hard. Declared as DIFFICULTIES, shared with cloud-opsbench's difficulty -- one rule, two field names. |
 | `scenario_groundtruth.diagnosis.entities[]` | string[] | yes | `rootCauseEntityId + chain endpoints` | Deduplicated, root cause first. |
 | `scenario_groundtruth.diagnosis.fault_propagation_chain[]` | array | yes | `GroundTruth.causalChain` |  |
 | `...chain[].step` | number | yes | `CausalStep.step` |  |
@@ -131,7 +131,7 @@ rca-bench score --target itbench --dir ./out
 | Check | What it proves |
 | --- | --- |
 | `case-present` | at least one `scenario.json` was emitted |
-| `scenario-shape` | `scenario_name`, `scenario_description`, `scenario_domain`, `scenario_class`, `scenario_complexity` and `scenario_groundtruth.diagnosis` are present |
+| `scenario-shape` | `scenario_name`, `scenario_description`, `scenario_domain`, `scenario_class`, `scenario_complexity` and `scenario_groundtruth.diagnosis` are present, and all three of `scenario_domain`, `scenario_class` and `scenario_complexity` are in their vocabularies |
 
 The structural check answers *is this well-formed*. Whether it is **scorable** is a
 different question, and a different command:

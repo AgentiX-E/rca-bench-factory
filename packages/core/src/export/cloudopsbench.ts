@@ -2,6 +2,7 @@ import { normalizeFaultType } from '../fault/collector.js';
 import type { FaultCase, FaultCategory, IrBundle } from '../ir/types.js';
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { assertExportableBundle } from './guard.js';
+import { difficultyFor } from './difficulty.js';
 
 /**
  * Cloud-OpsBench exporter (outcome ground-truth contract).
@@ -38,7 +39,7 @@ export const CLOUD_OPSBENCH_CONTRACT_VERSION = 'v1';
  * taxonomy. The two vocabularies are orthogonal, so this is a documented
  * best-effort mapping, not a one-to-one equivalence.
  */
-const TAXONOMY_BY_CATEGORY: Record<FaultCategory, string> = {
+export const TAXONOMY_BY_CATEGORY: Record<FaultCategory, string> = {
   resource: 'Performance_Fault',
   network: 'Infrastructure_Fault',
   runtime: 'Runtime_Fault',
@@ -49,20 +50,18 @@ const TAXONOMY_BY_CATEGORY: Record<FaultCategory, string> = {
   unknown: 'Runtime_Fault',
 };
 
-/** Map an IR difficulty level onto the Cloud-OpsBench easy/medium/hard vocabulary. */
-function difficultyFor(level: FaultCase['difficulty']): string {
-  switch (level) {
-    case 'L1':
-      return 'easy';
-    case 'L2':
-      return 'medium';
-    case 'L3':
-    case 'L4':
-      return 'hard';
-    default:
-      return 'medium';
-  }
-}
+/**
+ * Every word `result.fault_taxonomy` can carry.
+ *
+ * This projection table's image, deduplicated. The dedup is load-bearing here
+ * and not merely defensive: eight rows produce six words, because `middleware`
+ * and `dependency` both map to `Service_Fault`, and `runtime` and `unknown` both
+ * map to `Runtime_Fault`. Composed from `Object.values` rather than re-listed, so
+ * a row edit moves the vocabulary with it -- a hand-written copy would be the
+ * third-source defect `validity.test.ts` names, and would silently disagree the
+ * first time a row changed.
+ */
+export const CLOUD_OPSBENCH_TAXONOMIES: readonly string[] = [...new Set(Object.values(TAXONOMY_BY_CATEGORY))];
 
 /** Normalise the fault type to Cloud-OpsBench's snake_case root-cause token. */
 function rootCauseFor(faultType: string): string {

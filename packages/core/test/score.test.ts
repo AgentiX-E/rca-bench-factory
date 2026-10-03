@@ -4,10 +4,12 @@ import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { AIOPS2025_CATEGORIES } from '../src/export/aiops2025.js';
-import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
+import { exportCloudOpsBench, CLOUD_OPSBENCH_TAXONOMIES } from '../src/export/cloudopsbench.js';
+import { DIFFICULTIES } from '../src/export/difficulty.js';
 import { exportOpenRca2 } from '../src/export/openrca2.js';
-import { exportItBench } from '../src/export/itbench.js';
+import { exportItBench, ITBENCH_SCENARIO_CLASSES } from '../src/export/itbench.js';
 import {
+  AIOPS2025_INSTANCE_TYPES,
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkItBenchStructure,
@@ -15,6 +17,7 @@ import {
   checkOpenRca2Structure,
   checkRca100Structure,
   checkRcaEvalStructure,
+  ITBENCH_SCENARIO_DOMAINS,
   scoreExport,
   sha256,
   verifyChecksums,
@@ -503,6 +506,53 @@ describe('checkCloudOpsBenchStructure', () => {
     const report = checkCloudOpsBenchStructure(files);
     expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
   });
+
+  /**
+   * `difficulty` and `result.fault_taxonomy` are enumerated fields with a
+   * published domain, so each is checked against that domain rather than against
+   * `typeof` alone -- the treatment `instance_type` and `fault_category` receive
+   * in AIOps2025. Both directions are asserted: every word the exporter can
+   * produce passes, and a word outside the contract does not. One direction
+   * alone would not distinguish a check that works from one that rejects
+   * everything.
+   */
+  const cobFilesWith = (patch: Record<string, unknown>, resultPatch: Record<string, unknown> = {}): Record<string, string> => {
+    const files = cobFiles();
+    const meta = JSON.parse(files['cases/case-001/metadata.json']!) as Record<string, unknown>;
+    const result = meta.result as Record<string, unknown>;
+    files['cases/case-001/metadata.json'] = JSON.stringify({ ...meta, ...patch, result: { ...result, ...resultPatch } });
+    return files;
+  };
+
+  it.each(DIFFICULTIES)('accepts the emitted difficulty %s', (word) => {
+    const report = checkCloudOpsBenchStructure(cobFilesWith({ difficulty: word }));
+    expect(report.passed).toBe(true);
+  });
+
+  it('refuses a difficulty outside the vocabulary', () => {
+    const report = checkCloudOpsBenchStructure(cobFilesWith({ difficulty: 'trivial' }));
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
+
+  it.each(CLOUD_OPSBENCH_TAXONOMIES)('accepts the emitted fault_taxonomy %s', (word) => {
+    const report = checkCloudOpsBenchStructure(cobFilesWith({}, { fault_taxonomy: word }));
+    expect(report.passed).toBe(true);
+  });
+
+  it('refuses a fault_taxonomy outside the vocabulary', () => {
+    const report = checkCloudOpsBenchStructure(cobFilesWith({}, { fault_taxonomy: 'Ghost_Fault' }));
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
+
+  it('does not let a legal sibling field rescue an out-of-vocabulary one', () => {
+    // The two clauses are independent. A payload that satisfies `difficulty` must
+    // not be accepted while `fault_taxonomy` is a ghost, or the pair of checks
+    // would collapse into one.
+    const report = checkCloudOpsBenchStructure(
+      cobFilesWith({ difficulty: DIFFICULTIES[0] }, { fault_taxonomy: 'Ghost_Fault' }),
+    );
+    expect(report.checks.find((c) => c.id === 'metadata-shape')?.passed).toBe(false);
+  });
 });
 
 describe('checkOpenRca2Structure', () => {
@@ -618,6 +668,60 @@ describe('checkItBenchStructure', () => {
       expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
     },
   );
+
+  /**
+   * The three enumerated metadata fields carry a published domain, so each is
+   * checked against that domain rather than against `typeof` alone. Both
+   * directions are asserted for the same reason as Cloud-OpsBench's: accepting
+   * everything and rejecting everything both pass an accepts-only suite.
+   */
+  const itbFilesWith = (field: string, value: unknown): Record<string, string> => {
+    const files = itbFiles();
+    const obj = JSON.parse(files['scenarios/case-001/scenario.json']!) as Record<string, unknown>;
+    files['scenarios/case-001/scenario.json'] = JSON.stringify({ ...obj, [field]: value });
+    return files;
+  };
+
+  it.each(ITBENCH_SCENARIO_DOMAINS)('accepts the emitted scenario_domain %s', (word) => {
+    const report = checkItBenchStructure(itbFilesWith('scenario_domain', word));
+    expect(report.passed).toBe(true);
+  });
+
+  it('refuses a scenario_domain outside the vocabulary', () => {
+    // `CISO` and `FinOps` are real ITBench personas that this converter does not
+    // target, so they are the exact words a widened check must still refuse.
+    const report = checkItBenchStructure(itbFilesWith('scenario_domain', 'CISO'));
+    expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
+
+  it.each(ITBENCH_SCENARIO_CLASSES)('accepts the emitted scenario_class %s', (word) => {
+    const report = checkItBenchStructure(itbFilesWith('scenario_class', word));
+    expect(report.passed).toBe(true);
+  });
+
+  it('refuses a scenario_class outside the vocabulary', () => {
+    const report = checkItBenchStructure(itbFilesWith('scenario_class', 'GhostClass'));
+    expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
+
+  it.each(DIFFICULTIES)('accepts the emitted scenario_complexity %s', (word) => {
+    const report = checkItBenchStructure(itbFilesWith('scenario_complexity', word));
+    expect(report.passed).toBe(true);
+  });
+
+  it('refuses a scenario_complexity outside the vocabulary', () => {
+    const report = checkItBenchStructure(itbFilesWith('scenario_complexity', 'trivial'));
+    expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
+
+  it('does not let a legal sibling field rescue an out-of-vocabulary one', () => {
+    const files = itbFilesWith('scenario_domain', 'CISO');
+    const obj = JSON.parse(files['scenarios/case-001/scenario.json']!) as Record<string, unknown>;
+    obj.scenario_class = ITBENCH_SCENARIO_CLASSES[0];
+    files['scenarios/case-001/scenario.json'] = JSON.stringify(obj);
+    const report = checkItBenchStructure(files);
+    expect(report.checks.find((c) => c.id === 'scenario-shape')?.passed).toBe(false);
+  });
 });
 
 describe('scoreExport', () => {

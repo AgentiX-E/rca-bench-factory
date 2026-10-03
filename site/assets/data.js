@@ -1695,7 +1695,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "instanceTypeOf(Entity.kind)",
-              "notes": "service | pod | node; defaults to service when the entity is unknown."
+              "notes": "service | pod | node. Declared as AIOPS2025_INSTANCE_TYPES. The projection collapses nine IR entity kinds onto the three: pod and container emit pod, node and host emit node, and service, db, mq, cluster and external all emit service (the default arm of instanceTypeOf). A db therefore reaches the artefact as a service -- a lossy projection, stated here because the field alone does not show it."
             },
             {
               "name": "service",
@@ -1794,7 +1794,7 @@ window.RBF_DATA = {
       "tagline": "Agentic State-Snapshot benchmark with an outcome ground-truth triple.",
       "summary": "Each case is an agent-facing State Snapshot (tool cache, k8s states, logs, metrics, trimmed source). The scored artefact is `metadata.json`, whose `result` triple is ⟨Stage, Component, Root Cause⟩ = ⟨fault_taxonomy, fault_object, root_cause⟩.",
       "timezone": "Not applicable - metadata.json carries no timestamps.",
-      "scoringNote": "`checkCloudOpsBenchStructure` verifies at least one case exists and the metadata shape (namespace, query, difficulty, result triple).",
+      "scoringNote": "`checkCloudOpsBenchStructure` verifies at least one case exists and the metadata shape (namespace, query, difficulty, result triple). `difficulty` and `fault_taxonomy` are also checked against their vocabularies rather than against `typeof` alone.",
       "boundaries": [
         "`tool_cache.json`, `k8s_states.json` and `code/` require a live Kubernetes snapshot and are not produced from a static IR.",
         "`process-label/` and `golden-trajectory/` require expert annotation and are out of scope.",
@@ -1826,14 +1826,14 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "difficultyFor(FaultCase.difficulty)",
-              "notes": "L1->easy, L2->medium, L3/L4->hard, unset->medium."
+              "notes": "L1->easy, L2->medium, L3/L4->hard, unset->medium. Declared as DIFFICULTIES, shared with itbench's scenario_complexity."
             },
             {
               "name": "result.fault_taxonomy",
               "type": "string",
               "required": true,
               "source": "TAXONOMY_BY_CATEGORY[fault.category]",
-              "notes": "Performance_Fault | Infrastructure_Fault | Runtime_Fault | Service_Fault | Code_Fault | Startup_Fault."
+              "notes": "Performance_Fault | Infrastructure_Fault | Runtime_Fault | Service_Fault | Code_Fault | Startup_Fault. Declared as CLOUD_OPSBENCH_TAXONOMIES, the projection table's deduplicated image: eight rows produce six words, because middleware and dependency share Service_Fault and runtime and unknown share Runtime_Fault."
             },
             {
               "name": "result.fault_object",
@@ -1870,7 +1870,7 @@ window.RBF_DATA = {
       "tagline": "Scenario specification with a diagnosis ground truth: entities, propagation chain, fault conditions.",
       "summary": "ITBench evaluates agents on live IT automation tasks. For the SRE Diagnosis task the ground truth records the entities in the propagation chain, the chain itself and the fault conditions - a one-to-one match with the IR GroundTruth triple.",
       "timezone": "Not applicable - scenario.json carries no timestamps.",
-      "scoringNote": "`checkItBenchStructure` verifies at least one scenario exists and the scenario shape (name, description, domain, class, complexity, groundtruth).",
+      "scoringNote": "`checkItBenchStructure` verifies at least one scenario exists and the scenario shape (name, description, domain, class, complexity, groundtruth). `scenario_domain`, `scenario_class` and `scenario_complexity` are also checked against their vocabularies rather than against `typeof` alone.",
       "boundaries": [
         "Only the SRE persona is targeted (`scenario_domain = \"SRE\"`); CISO and FinOps are out of scope.",
         "The ITBench-Lite snapshot body (alerts/, metrics/, k8s_events_raw.tsv, otel_logs_raw.tsv, ...) is a frozen cluster snapshot and is not produced from a static IR.",
@@ -1902,21 +1902,21 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "constant \"SRE\"",
-              "notes": "Only the SRE persona is targeted."
+              "notes": "Only the SRE persona is targeted; CISO and FinOps are real ITBench personas this converter does not emit. Declared as ITBENCH_SCENARIO_DOMAINS."
             },
             {
               "name": "scenario_class",
               "type": "string",
               "required": true,
               "source": "CLASS_BY_CATEGORY[fault.category]",
-              "notes": "HighCPU | NetworkPartition | CrashLoopBackOff | ServiceDegradation | CorruptImage | Misconfiguration | DependencyFailure | Unknown."
+              "notes": "HighCPU | NetworkPartition | CrashLoopBackOff | ServiceDegradation | CorruptImage | Misconfiguration | DependencyFailure | Unknown. Declared as ITBENCH_SCENARIO_CLASSES, the projection table's deduplicated image."
             },
             {
               "name": "scenario_complexity",
               "type": "string",
               "required": true,
-              "source": "complexityFor(FaultCase.difficulty)",
-              "notes": "easy | medium | hard."
+              "source": "difficultyFor(FaultCase.difficulty)",
+              "notes": "easy | medium | hard. Declared as DIFFICULTIES, shared with cloud-opsbench's difficulty -- one rule, two field names."
             },
             {
               "name": "scenario_groundtruth.diagnosis.entities[]",
@@ -2420,7 +2420,7 @@ window.RBF_DATA = {
             {
               "id": "metadata-shape",
               "passed": true,
-              "detail": "namespace/query/difficulty + result triple strings"
+              "detail": "namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies"
             }
           ]
         }
@@ -2448,7 +2448,7 @@ window.RBF_DATA = {
             {
               "id": "scenario-shape",
               "passed": true,
-              "detail": "scenario metadata + diagnosis ground truth shape"
+              "detail": "scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies"
             }
           ]
         }

@@ -60,7 +60,7 @@ grounding score.
 | `uuid` | string | yes | `FaultCase.caseId` |  |
 | `fault_category` | string | yes | `AIOPS2025_CATEGORY[normalizeFaultType(type)] ?? fault.category` | The challenge vocabulary unioned with the IR FaultCategory, because an unmapped type carries the IR value through. Declared as AIOPS2025_CATEGORIES: network \| stress \| node \| pod \| jvm \| dns \| misconfiguration \| erroneous-change \| io \| resource \| runtime \| middleware \| code \| config \| dependency \| unknown. |
 | `fault_type` | string | yes | `FaultCase.fault.type` | Raw fault type. |
-| `instance_type` | string | yes | `instanceTypeOf(Entity.kind)` | service \| pod \| node; defaults to service when the entity is unknown. |
+| `instance_type` | string | yes | `instanceTypeOf(Entity.kind)` | service \| pod \| node. Declared as AIOPS2025_INSTANCE_TYPES. The projection collapses nine IR entity kinds onto the three: pod and container emit pod, node and host emit node, and service, db, mq, cluster and external all emit service (the default arm of instanceTypeOf). A db therefore reaches the artefact as a service -- a lossy projection, stated here because the field alone does not show it. |
 | `service` | string | yes | `GroundTruth.rootCauseComponent` |  |
 | `instance` | string | yes | `Entity.name ?? rootCauseComponent` |  |
 | `source` | string | no | `fault.parameters['source']` | Emitted only when present and a string. |
@@ -78,6 +78,27 @@ grounding score.
 ```json
 {"uuid":"case-001","fault_category":"resource","fault_type":"cpu","instance_type":"service","service":"order","instance":"order","start_time":"2026-09-06T00:00:00.000Z","end_time":"2026-09-06T00:20:00.000Z","key_observations":{"log":[],"metric":[{"ref":"order|cpu_usage","description":"cpu_usage above 90%"}],"trace":[]},"key_metrics":["order|cpu_usage"],"fault_description":"CPU saturation on the order service"}
 ```
+
+## Instance-type projection
+
+`instance_type` is a three-word image of a nine-member vocabulary. `instanceTypeOf` maps
+
+| IR `Entity.kind` | `instance_type` |
+| --- | --- |
+| `pod`, `container` | `pod` |
+| `node`, `host` | `node` |
+| `service`, `db`, `mq`, `cluster`, `external` | `service` |
+
+The last row is the one worth stating: it is not four special cases plus a default, it is the
+default arm. Everything the table does not name becomes `service`, so a `db` and an `mq` reach
+the artefact indistinguishable from each other and from a `service` — six of the nine kinds
+collide on one word.
+
+This was previously documented only as "defaults to service when the entity is unknown", which
+is true but reads as an edge case when it is in fact the majority path. The field is declared
+once as `AIOPS2025_INSTANCE_TYPES` and checked by `checkAioPs2025Structure`; the collapse is a
+property of the projection, not a defect in it, so it is recorded here rather than corrected in
+code.
 
 ## Fault-category mapping
 

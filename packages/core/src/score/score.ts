@@ -1,11 +1,14 @@
 import { sha256 } from '../util/hash.js';
 import { ENTITY_KINDS, isVocabularyMember, type EntityKind } from '../ir/types.js';
+import { AIOPS2025_CATEGORIES } from '../export/aiops2025.js';
+import { CLOUD_OPSBENCH_TAXONOMIES } from '../export/cloudopsbench.js';
+import { DIFFICULTIES } from '../export/difficulty.js';
+import { ITBENCH_SCENARIO_CLASSES, ITBENCH_SRE_DOMAIN } from '../export/itbench.js';
 import { isRecord, safeJson } from '../util/json.js';
 import { parseCsvObjects } from '../util/csv.js';
 import { parseOpenRcaScoringPoints } from './official.js';
 import type { ScoreTargetId } from './targets.js';
 import { OPENRCA_GROUNDTRUTH_HEADER } from '../export/openrca.js';
-import { AIOPS2025_CATEGORIES } from '../export/aiops2025.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
 
 /** Number of scoring criteria an OpenRCA `scoring_points` block declares. */
@@ -519,13 +522,28 @@ export function checkAioPs2025Structure(files: Record<string, string>): Structur
 }
 
 /**
+ * The only `scenario_domain` an ITBench scenario may carry.
+ *
+ * A one-member vocabulary rather than an equality test, so the field is checked
+ * the same way its siblings are and the check reads the exporter's own constant
+ * instead of restating `'SRE'` here. If a second persona were ever targeted,
+ * widening the exporter's constant would widen this with it -- and the docs
+ * anchor in `vocabulary-single-source.test.ts` would fail until the
+ * documentation followed.
+ */
+export const ITBENCH_SCENARIO_DOMAINS: readonly string[] = [ITBENCH_SRE_DOMAIN];
+
+/**
  * Verify a Cloud-OpsBench export against its `metadata.json` contract.
  *
  * The verifiable invariant is the outcome ground truth shape: every case must
  * carry a namespace, a natural-language query, an easy/medium/hard difficulty and
  * the ⟨fault_taxonomy, fault_object, root_cause⟩ result triple, all as strings.
- * The State Snapshot body (`tool_cache`, `k8s_states`, `code`) is intentionally
- * out of scope and is not asserted here.
+ * `difficulty` and `fault_taxonomy` are additionally checked against their
+ * published vocabularies rather than against `typeof` alone, so a word the
+ * exporter cannot produce is refused here rather than at scoring time. The State
+ * Snapshot body (`tool_cache`, `k8s_states`, `code`) is intentionally out of
+ * scope and is not asserted here.
  */
 export function checkCloudOpsBenchStructure(files: Record<string, string>): StructureReport {
   const checks: ScoreCheck[] = [];
@@ -550,9 +568,23 @@ export function checkCloudOpsBenchStructure(files: Record<string, string>): Stru
       typeof result.root_cause !== 'string'
     ) {
       metadataOk = false;
+      continue;
+    }
+    // `difficulty` and `fault_taxonomy` are checked against their vocabularies
+    // rather than against `typeof` alone, the same treatment AIOps2025's
+    // `instance_type` and `fault_category` receive. Both vocabularies are the
+    // exporter's own -- derived from its projection tables -- so a word the
+    // emitter can produce is never rejected, and a word the contract does not
+    // admit never passes. Without this an export carrying `difficulty: "trivial"`
+    // verified clean and failed only at scoring time.
+    if (!isVocabularyMember(DIFFICULTIES, meta.difficulty)) {
+      metadataOk = false;
+    }
+    if (!isVocabularyMember(CLOUD_OPSBENCH_TAXONOMIES, result.fault_taxonomy)) {
+      metadataOk = false;
     }
   }
-  checks.push(check('metadata-shape', metadataOk, 'namespace/query/difficulty + result triple strings'));
+  checks.push(check('metadata-shape', metadataOk, 'namespace/query/difficulty + result triple strings, difficulty and fault_taxonomy in their vocabularies'));
 
   return { target: 'cloud-opsbench', passed: checks.every((c) => c.passed), checks };
 }
@@ -588,6 +620,23 @@ export function checkItBenchStructure(files: Record<string, string>): StructureR
       shapeOk = false;
       continue;
     }
+    // The three enumerated metadata fields are checked against their
+    // vocabularies rather than against `typeof` alone, the same treatment
+    // AIOps2025's `instance_type` and `fault_category` receive. `scenario_domain`
+    // is a one-word contract (`SRE`) -- CISO and FinOps are real ITBench personas
+    // this converter does not target, so refusing them is the point. The other
+    // two are projection-table images derived in the exporter, so neither a word
+    // the emitter cannot produce nor a table edit that orphans a word passes
+    // unnoticed.
+    if (!isVocabularyMember(ITBENCH_SCENARIO_DOMAINS, obj.scenario_domain)) {
+      shapeOk = false;
+    }
+    if (!isVocabularyMember(ITBENCH_SCENARIO_CLASSES, obj.scenario_class)) {
+      shapeOk = false;
+    }
+    if (!isVocabularyMember(DIFFICULTIES, obj.scenario_complexity)) {
+      shapeOk = false;
+    }
     const diagnosis = (obj.scenario_groundtruth as Record<string, unknown>).diagnosis;
     if (
       !isRecord(diagnosis) ||
@@ -598,7 +647,7 @@ export function checkItBenchStructure(files: Record<string, string>): StructureR
       shapeOk = false;
     }
   }
-  checks.push(check('scenario-shape', shapeOk, 'scenario metadata + diagnosis ground truth shape'));
+  checks.push(check('scenario-shape', shapeOk, 'scenario metadata + diagnosis ground truth shape, with domain/class/complexity in their vocabularies'));
 
   return { target: 'itbench', passed: checks.every((c) => c.passed), checks };
 }

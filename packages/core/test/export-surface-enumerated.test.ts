@@ -115,6 +115,7 @@ const ENUMERATED_MODULES = [
   'score/targets.ts',
   'export/aiops2025.ts',
   'export/cloudopsbench.ts',
+  'export/difficulty.ts',
   'export/guard.ts',
   'export/itbench.ts',
   'export/openrca.ts',
@@ -427,6 +428,9 @@ const TESTED = [
   'checkRcaEvalStructure',
   'checkRca100Structure',
   'AIOPS2025_INSTANCE_TYPES',
+  // The one-word `scenario_domain` contract, derived from the exporter's
+  // `ITBENCH_SRE_DOMAIN` rather than restating `'SRE'`.
+  'ITBENCH_SCENARIO_DOMAINS',
   'checkAioPs2025Structure',
   'checkCloudOpsBenchStructure',
   'checkItBenchStructure',
@@ -457,11 +461,27 @@ const TESTED = [
   // export/cloudopsbench.ts
   'CLOUD_OPSBENCH_TARGET_ID',
   'CLOUD_OPSBENCH_CONTRACT_VERSION',
+  // The projection table and its deduplicated image. The image is what
+  // `checkCloudOpsBenchStructure` checks `result.fault_taxonomy` against; the
+  // table is exported because the image is derived from it and the battery
+  // measures the derivation.
+  'TAXONOMY_BY_CATEGORY',
+  'CLOUD_OPSBENCH_TAXONOMIES',
   'buildCloudOpsBenchMetadata',
+  // export/difficulty.ts
+  // The shared easy/medium/hard word set: `itbench` publishes it as
+  // `scenario_complexity`, `cloud-opsbench` as `difficulty`, and one rule
+  // produces both.
+  'DIFFICULTIES',
+  'difficultyFor',
   // export/itbench.ts
   'ITBENCH_TARGET_ID',
   'ITBENCH_CONTRACT_VERSION',
   'ITBENCH_SRE_DOMAIN',
+  // The projection table and its image, read by `checkItBenchStructure` and by
+  // the one-word `ITBENCH_SCENARIO_DOMAINS` vocabulary in `score/score.ts`.
+  'CLASS_BY_CATEGORY',
+  'ITBENCH_SCENARIO_CLASSES',
   'buildItBenchScenarioSpec',
   // export/openrca.ts
   'OPENRCA_TARGET_ID',

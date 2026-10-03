@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ingestFile } from '../src/ingest/file.js';
 import { parseFaultSpec } from '../src/fault/collector.js';
-import { checkAioPs2025Structure, AIOPS2025_INSTANCE_TYPES } from '../src/score/score.js';
+import { checkAioPs2025Structure, AIOPS2025_INSTANCE_TYPES, ITBENCH_SCENARIO_DOMAINS } from '../src/score/score.js';
 import { AIOPS2025_CATEGORIES } from '../src/export/aiops2025.js';
+import { CLOUD_OPSBENCH_TAXONOMIES, TAXONOMY_BY_CATEGORY } from '../src/export/cloudopsbench.js';
+import { DIFFICULTIES } from '../src/export/difficulty.js';
+import { ITBENCH_SCENARIO_CLASSES, ITBENCH_SRE_DOMAIN, CLASS_BY_CATEGORY } from '../src/export/itbench.js';
 import { EXPORTERS } from '../src/score/dispatch.js';
 import { formatCommandHelp, parseCliArgs, HELP_TOPICS } from '../src/cli/args.js';
 import {
@@ -120,6 +123,55 @@ const DOCUMENTED_AIOPS2025_CATEGORIES = [
   ...DOCUMENTED_AIOPS2025_TABLE_VALUES,
   ...DOCUMENTED_FAULT_CATEGORIES.filter((c) => !DOCUMENTED_AIOPS2025_TABLE_VALUES.includes(c)),
 ];
+
+/** `docs/targets/itbench.md` — the only `scenario_domain` an SRE scenario carries. */
+const DOCUMENTED_ITBENCH_SCENARIO_DOMAINS = ['SRE'];
+
+/**
+ * `docs/targets/itbench.md` — the `scenario_class` column, one row per IR category.
+ *
+ * The row order is the IR category order, which is what the exporter's
+ * `CLASS_BY_CATEGORY` record is keyed on, so this is the table as published
+ * rather than its image. The image is composed from it below.
+ */
+const DOCUMENTED_ITBENCH_CLASS_TABLE = [
+  'HighCPU', // resource
+  'NetworkPartition', // network
+  'CrashLoopBackOff', // runtime
+  'ServiceDegradation', // middleware
+  'CorruptImage', // code
+  'Misconfiguration', // config
+  'DependencyFailure', // dependency
+  'Unknown', // unknown
+];
+
+/** The `scenario_class` image: the published table, deduplicated. */
+const DOCUMENTED_ITBENCH_SCENARIO_CLASSES = [...new Set(DOCUMENTED_ITBENCH_CLASS_TABLE)];
+
+/** `docs/targets/itbench.md` and `docs/targets/cloud-opsbench.md` — the shared word set. */
+const DOCUMENTED_DIFFICULTIES = ['easy', 'medium', 'hard'];
+
+/**
+ * `docs/targets/cloud-opsbench.md` — the `result.fault_taxonomy` column, one row
+ * per IR category, before deduplication.
+ *
+ * Two collapses are load-bearing and both are visible here as repeated values:
+ * `middleware` and `dependency` share `Service_Fault`, and `runtime` and
+ * `unknown` share `Runtime_Fault`. Eight rows, six words.
+ */
+const DOCUMENTED_TAXONOMY_TABLE = [
+  'Performance_Fault', // resource
+  'Infrastructure_Fault', // network
+  'Runtime_Fault', // runtime
+  'Service_Fault', // middleware
+  'Code_Fault', // code
+  'Startup_Fault', // config
+  'Service_Fault', // dependency
+  'Runtime_Fault', // unknown
+];
+
+/** The `fault_taxonomy` image: the published table, deduplicated. */
+const DOCUMENTED_CLOUD_OPSBENCH_TAXONOMIES = [...new Set(DOCUMENTED_TAXONOMY_TABLE)];
 
 /**
  * `docs/cli-reference.md` — the `--target` values `rca-bench export` lists, in
@@ -387,5 +439,97 @@ describe('AIOps2025 fault categories · a union of two sources, not a third list
     expect([...AIOPS2025_CATEGORIES].slice(0, DOCUMENTED_AIOPS2025_TABLE_VALUES.length)).toEqual(
       DOCUMENTED_AIOPS2025_TABLE_VALUES,
     );
+  });
+});
+
+describe('ITBench scenario domain · a one-word contract', () => {
+  it('is exactly the documented domain', () => {
+    expect([...ITBENCH_SCENARIO_DOMAINS]).toEqual(DOCUMENTED_ITBENCH_SCENARIO_DOMAINS);
+  });
+
+  it('is derived from the exporter constant rather than restating it', () => {
+    // The vocabulary's single member must BE the exporter's constant, not an
+    // equal-looking literal. Widening the exporter to target a second persona
+    // then moves this vocabulary with it, and the documented anchor above fails
+    // until the documentation follows.
+    expect([...ITBENCH_SCENARIO_DOMAINS]).toEqual([ITBENCH_SRE_DOMAIN]);
+  });
+
+  it('refuses the personas this converter does not target', () => {
+    // The reason the contract is worth having: `CISO` and `FinOps` are real
+    // ITBench personas, so their absence is a decision, not an oversight.
+    expect(ITBENCH_SCENARIO_DOMAINS).not.toContain('CISO');
+    expect(ITBENCH_SCENARIO_DOMAINS).not.toContain('FinOps');
+  });
+});
+
+describe('ITBench scenario class · a map image, not a third list', () => {
+  it('is exactly the documented image, in documented order', () => {
+    expect([...ITBENCH_SCENARIO_CLASSES]).toEqual(DOCUMENTED_ITBENCH_SCENARIO_CLASSES);
+  });
+
+  it('carries every class the projection table can produce', () => {
+    for (const category of FAULT_CATEGORIES) {
+      expect(ITBENCH_SCENARIO_CLASSES, `${category} projects to an unlisted class`).toContain(
+        CLASS_BY_CATEGORY[category],
+      );
+    }
+  });
+
+  it('carries nothing the table cannot produce', () => {
+    // Containment in the other direction. A vocabulary wider than the image would
+    // admit words no export can carry, which is the failure mode the derivation
+    // exists to make impossible.
+    for (const word of ITBENCH_SCENARIO_CLASSES) {
+      expect(Object.values(CLASS_BY_CATEGORY), `${word} is not a table value`).toContain(word);
+    }
+  });
+
+  it('has no duplicate, so the dedup is a no-op that stays honest', () => {
+    expect(new Set(ITBENCH_SCENARIO_CLASSES).size).toBe(ITBENCH_SCENARIO_CLASSES.length);
+  });
+});
+
+describe('difficulty · one vocabulary, two fields', () => {
+  it('is exactly the documented word set, in documented order', () => {
+    expect([...DIFFICULTIES]).toEqual(DOCUMENTED_DIFFICULTIES);
+  });
+
+  it('is shared: both projection tables are reachable from one word set', () => {
+    // `itbench` publishes this as `scenario_complexity` and `cloud-opsbench` as
+    // `difficulty`. The vocabulary is one, so neither exporter can widen it
+    // alone -- an edit here moves both fields at once, which is the point of
+    // extracting the byte-identical pair.
+    expect(DIFFICULTIES.length).toBe(DOCUMENTED_DIFFICULTIES.length);
+    expect(new Set(DIFFICULTIES).size).toBe(DIFFICULTIES.length);
+  });
+});
+
+describe('Cloud-OpsBench fault taxonomy · a map image, not a third list', () => {
+  it('is exactly the documented image, in documented order', () => {
+    expect([...CLOUD_OPSBENCH_TAXONOMIES]).toEqual(DOCUMENTED_CLOUD_OPSBENCH_TAXONOMIES);
+  });
+
+  it('carries every taxonomy the projection table can produce', () => {
+    for (const category of FAULT_CATEGORIES) {
+      expect(CLOUD_OPSBENCH_TAXONOMIES, `${category} projects to an unlisted taxonomy`).toContain(
+        TAXONOMY_BY_CATEGORY[category],
+      );
+    }
+  });
+
+  it('carries nothing the table cannot produce', () => {
+    for (const word of CLOUD_OPSBENCH_TAXONOMIES) {
+      expect(Object.values(TAXONOMY_BY_CATEGORY), `${word} is not a table value`).toContain(word);
+    }
+  });
+
+  it('collapses eight rows to six words, and the collapse is the dedup', () => {
+    // The figure that makes the dedup load-bearing rather than defensive. Two
+    // rows share `Service_Fault` and two share `Runtime_Fault`; without the
+    // `new Set` the vocabulary would carry eight entries and admit nothing extra.
+    expect(Object.keys(TAXONOMY_BY_CATEGORY).length).toBe(8);
+    expect(CLOUD_OPSBENCH_TAXONOMIES.length).toBe(6);
+    expect(new Set(Object.values(TAXONOMY_BY_CATEGORY)).size).toBe(6);
   });
 });

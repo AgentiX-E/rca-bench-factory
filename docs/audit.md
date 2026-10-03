@@ -9717,3 +9717,179 @@ emission. The other 13 off-IR rows are declared correct and measured by no sampl
 And it does not establish that no other enumerated field is unchecked. `instance_type` and
 `fault_category` were found by reading one function; the same reading has not been done for every
 structure check in `score.ts`, and that is the iteration this finding hands forward.
+
+## Finding 106: the reading Finding 105 handed forward found a class, not an instance
+
+Finding 105 closed by saying that `instance_type` and `fault_category` were found by reading one
+function, that the same reading had not been done for the other structure checks in `score.ts`, and
+that this was the iteration it handed forward. This is that iteration. The reading was done. It found
+**five more enumerated fields checked with a bare `typeof`**, plus one duplicated rule, one
+undocumented collapse, and one arm that looks dead and is not.
+
+### The premise audit
+
+`score.ts` has nine structure-check functions. Reading all nine in full:
+
+| Check | Line | Enumerated fields it verifies | How |
+| --- | --- | --- | --- |
+| `checkOpenRcaStructure` | 102 | none | shape and cross-file alignment |
+| `checkRcaEvalStructure` | 229 | none | shape |
+| `checkRca100Structure` | 294 | none | shape |
+| `checkAioPs2025Structure` | 422 | `instance_type`, `fault_category` | `isVocabularyMember` (v1.44, v1.45) |
+| `checkCloudOpsBenchStructure` | 530 | `difficulty`, `result.fault_taxonomy` | **`typeof` only** |
+| `checkItBenchStructure` | 568 | `scenario_domain`, `scenario_class`, `scenario_complexity` | **`typeof` only** |
+| `checkOpenRca2Structure` | 614 | none | shape |
+| `verifyChecksums` | 675 | none | digest |
+
+Two of nine checks were doing the job. The two that were not are the two whose artefacts carry the
+most enumerations — five fields between them, each declared in a `const` table elsewhere in the
+package and each accepted by the scorer as any string at all.
+
+### The vocabulary inventory
+
+Every one of the five was already declared. None was reachable by a check.
+
+| Field | Vocabulary | Where declared | Enforced before |
+| --- | --- | --- | --- |
+| `itbench.scenario_domain` | `ITBENCH_SRE_DOMAIN` = `'SRE'` | `export/itbench.ts:34` | no |
+| `itbench.scenario_class` | image of `CLASS_BY_CATEGORY` | `export/itbench.ts:45` | no |
+| `itbench.scenario_complexity` | image of `complexityFor` | `export/itbench.ts:57` | no |
+| `cloud-opsbench.difficulty` | image of `difficultyFor` | `export/cloudopsbench.ts:53` | no |
+| `cloud-opsbench.result.fault_taxonomy` | image of `TAXONOMY_BY_CATEGORY` | `export/cloudopsbench.ts:41` | no |
+
+The measured images: `itbench.scenario_class` has **8 table rows and 8 distinct words** (no
+collisions); `cloudopsbench.fault_taxonomy` has **8 table rows and 6 distinct words**, because
+`middleware` and `dependency` both project to `Service_Fault`, and `runtime` and `unknown` both
+project to `Runtime_Fault`. An earlier draft of the plan assumed both images were collapses. Only
+one is, and the difference is now recorded rather than averaged away.
+
+### The three facts this reading produced
+
+**Fact C — an undocumented collapse, judged a documentation gap.** `instanceTypeOf`
+(`export/aiops2025.ts:74`) maps the **nine** members of `ENTITY_KINDS` onto **three** words:
+
+```
+pod | container                                   -> 'pod'
+node | host                                      -> 'node'
+service | db | mq | cluster | external (default)  -> 'service'
+```
+
+`docs/targets/aiops2025.md` and `scripts/format-spec.mjs` both said only "defaults to service when
+the entity is unknown". That is accurate and misleading at once: it presents as an edge case a path
+that six of nine kinds take. A `db` reaches the scored artefact as a `service` and the field alone
+does not show it. This is a lossy projection by construction, not a bug — so the fix is prose, not
+code. The code is untouched and a dedicated *Instance-type projection* table now states the full
+collapse.
+
+**Fact D — a byte-identical duplicate.** `complexityFor` (`itbench.ts:57`) and `difficultyFor`
+(`cloudopsbench.ts:53`) were character-for-character the same rule, each private, each mapping
+`L1->easy, L2->medium, L3/L4->hard, unset->medium`. Two copies of one rule is exactly the
+"third source of truth" defect `validity.test.ts` exists to name: they agree today by luck of
+editing, and there was nothing that would have made them agree tomorrow. Extracted to a new leaf
+module `src/export/difficulty.ts`:
+
+```ts
+export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+export type Difficulty = (typeof DIFFICULTIES)[number];
+
+export function difficultyFor(level: FaultCase['difficulty']): Difficulty {
+  switch (level) {
+    case 'L1': return 'easy';
+    case 'L2': return 'medium';
+    case 'L3':
+    case 'L4': return 'hard';
+    default: return 'medium';
+  }
+}
+```
+
+Both exporters now import it and both field names (`scenario_complexity`, `difficulty`) are two
+projections of one word list — which is what `difficulty.test.ts`'s *one vocabulary, two
+projections* case asserts directly.
+
+**Fact E — an arm that looks dead and is not.** `FaultCase['difficulty']` is
+`'L1' | 'L2' | 'L3' | 'L4' | undefined`. The `switch` has no `case undefined`, so the `default:` arm
+is the only reachable path for `undefined` — it is the documented "unset -> medium" row, not dead
+code. It is kept, and `undefined` appears explicitly in the `it.each` so the arm has measured
+coverage rather than an argument. Deleting it as "unreachable" would silently change behaviour for
+every case that omits the field.
+
+### What was built
+
+Five clauses across two checks, each reading a vocabulary derived from its own source table rather
+than re-listed:
+
+```ts
+// checkItBenchStructure
+if (!isVocabularyMember(ITBENCH_SCENARIO_DOMAINS, obj.scenario_domain)) { shapeOk = false; }
+if (!isVocabularyMember(ITBENCH_SCENARIO_CLASSES,  obj.scenario_class))  { shapeOk = false; }
+if (!isVocabularyMember(DIFFICULTIES,             obj.scenario_complexity)) { shapeOk = false; }
+
+// checkCloudOpsBenchStructure
+if (!isVocabularyMember(DIFFICULTIES,                    meta.difficulty))       { metadataOk = false; }
+if (!isVocabularyMember(CLOUD_OPSBENCH_TAXONOMIES,       result.fault_taxonomy)) { metadataOk = false; }
+```
+
+The derived images, so that a removed table row and a stale word list cannot part company:
+
+```ts
+export const ITBENCH_SCENARIO_CLASSES = [...new Set(Object.values(CLASS_BY_CATEGORY))];
+export const CLOUD_OPSBENCH_TAXONOMIES = [...new Set(Object.values(TAXONOMY_BY_CATEGORY))];
+export const ITBENCH_SCENARIO_DOMAINS = [ITBENCH_SRE_DOMAIN];
+```
+
+`DIFFICULTIES` is declared first and `Difficulty` derived from it, so removing a word from the tuple
+while an arm still returns it is a compile error rather than a silent widening.
+
+### The compiler rejected three drafts
+
+1. `const DIFFICULTIES = [...]` **and** `const DIFFICULTIES: readonly Difficulty[] = [...]` — both
+   make `Difficulty` and `DIFFICULTIES` mutually dependent. The order above is the only one that
+   resolves.
+2. `ITBENCH_SCENARIO_CLASSES: readonly string[]` typed as `Difficulty[]` — `CLASS_BY_CATEGORY`'s
+   image is scenario classes (`HighCPU`, ...), not difficulties. Caught by the annotation, which is
+   why the annotation is there.
+3. Re-declaring `AIOPS2025_CATEGORIES`' import at a second site produced
+   `TS2300: Duplicate identifier`. The check is the point: the import already existed.
+
+These are not incidental. Each is the type system refusing a version of this change that would have
+been wrong in a way review might not catch.
+
+### Verification
+
+| Property | Figure |
+| --- | --- |
+| Full suite | 2960 passed / 103 files (v1.45: 2901 / 102) |
+| `test/difficulty.test.ts` | 15 tests, new |
+| `test/score.test.ts` | 146 tests (+16) |
+| `test/vocabulary-single-source.test.ts` | 71 tests (+4 anchors, +4 describes) |
+| `test/export-surface-enumerated.test.ts` | 184 tests (+7 names, +1 module) |
+| TDD, by neutering | all five clauses rewritten to `false && ...` -> **exactly 7 failures** (5 ghosts + 2 wrong-field controls), then restored -> 146 passed |
+| `pnpm typecheck` | clean |
+| `pnpm lint` | ALL PROPERTIES HOLD |
+| Battery | **61 caught / 0 survived / 0 inert / 0 blind**, 15 in-package sources restored byte-for-byte |
+| Battery entries | 56 -> 61 (BC-BG) |
+| 6-slot contract | AST-verified **before** running: all five new entries are `Constant, Constant, Lambda, Constant, Lambda, Constant` |
+
+The battery's asymmetry is the finding's structural point. An exporter edit and a scorer edit fail
+in different places, so **each target carries two figures**: a word count (moved only by changing the
+projection table) and a ghost verdict (moved only by removing the check). One figure would let either
+defect mask the other. This was proven rather than asserted — applying BC's mutation moved
+`cloudOpsWords` 6 -> 1 and `cloudOpsDistinctWords` 6 -> 1 while `cloudOpsTaxonomyGhostRejected` stayed
+1, and `itbenchWords` stayed 8.
+
+### What this does not establish
+
+It does not establish that five was the last of them. It establishes that the nine structure checks
+in `score.ts` have now been read in full and that none of them still checks an enumerated field with
+`typeof` alone. A field whose vocabulary is declared somewhere other than this package — or one
+declared after this audit — is outside the reading.
+
+It does not establish that the five clauses are the only consumers the vocabularies need. The
+`vocabulary-single-source` anchors pin each vocabulary against its `format-spec` documentation
+string; a consumer that reads the field without going through `isVocabularyMember` is still only
+pinned by the emission census.
+
+And it does not establish that the `default:` arm of `difficultyFor` is unreachable in practice. It
+establishes the opposite: `undefined` reaches it, the arm is the documented behaviour, and it is now
+covered by a named case rather than by inference.

@@ -39,8 +39,8 @@ derivable from a static per-case IR, and the factory does not pretend otherwise.
 | --- | --- | --- | --- | --- |
 | `namespace` | string | yes | `FaultCase.system` | The k8s namespace / system under test. |
 | `query` | string | yes | `FaultCase.query ?? GroundTruth.rootCauseReason` |  |
-| `difficulty` | string | yes | `difficultyFor(FaultCase.difficulty)` | L1-&gt;easy, L2-&gt;medium, L3/L4-&gt;hard, unset-&gt;medium. |
-| `result.fault_taxonomy` | string | yes | `TAXONOMY_BY_CATEGORY[fault.category]` | Performance_Fault \| Infrastructure_Fault \| Runtime_Fault \| Service_Fault \| Code_Fault \| Startup_Fault. |
+| `difficulty` | string | yes | `difficultyFor(FaultCase.difficulty)` | L1-&gt;easy, L2-&gt;medium, L3/L4-&gt;hard, unset-&gt;medium. Declared as DIFFICULTIES, shared with itbench's scenario_complexity. |
+| `result.fault_taxonomy` | string | yes | `TAXONOMY_BY_CATEGORY[fault.category]` | Performance_Fault \| Infrastructure_Fault \| Runtime_Fault \| Service_Fault \| Code_Fault \| Startup_Fault. Declared as CLOUD_OPSBENCH_TAXONOMIES, the projection table's deduplicated image: eight rows produce six words, because middleware and dependency share Service_Fault and runtime and unknown share Runtime_Fault. |
 | `result.fault_object` | string | yes | `GroundTruth.rootCauseComponent` | The scored component. |
 | `result.root_cause` | string | yes | `normalizeFaultType(fault.type).replace(/-/g, "_")` | snake_case root-cause token, e.g. `cpu_stress`. |
 <!-- /fields -->
@@ -102,7 +102,7 @@ rca-bench score --target cloud-opsbench --dir ./out
 | Check | What it proves |
 | --- | --- |
 | `case-present` | at least one `metadata.json` was emitted |
-| `metadata-shape` | `namespace`, `query`, `difficulty` and the `result` triple are present and typed |
+| `metadata-shape` | `namespace`, `query`, `difficulty` and the `result` triple are present and typed, and both `difficulty` and `result.fault_taxonomy` are in their vocabularies |
 
 The structural check answers *is this well-formed*. Whether it is **scorable** is a
 different question, and a different command:

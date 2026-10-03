@@ -95,7 +95,15 @@ import { FAULT_EXPECTATIONS } from '../packages/core/dist/gates/validity.js';
 import {
   AIOPS2025_CATEGORIES,
   AIOPS2025_CATEGORY,
+  CLASS_BY_CATEGORY,
+  CLOUD_OPSBENCH_TAXONOMIES,
+  DIFFICULTIES,
+  ITBENCH_SCENARIO_CLASSES,
+  ITBENCH_SRE_DOMAIN,
+  TAXONOMY_BY_CATEGORY,
   checkAioPs2025Structure,
+  checkCloudOpsBenchStructure,
+  checkItBenchStructure,
 } from '../packages/core/dist/index.js';
 import { FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
 
@@ -172,6 +180,87 @@ function readScorerCategoryVerdict() {
   return {
     rejected: refuses('ghost-category') ? 1 : 0,
     acceptedLegal: refuses('network') ? 0 : 1,
+  };
+}
+
+/**
+ * The three outcome-contract vocabularies, and what their structure checks do with a stray.
+ *
+ * `itbench` publishes `scenario_domain` / `scenario_class` / `scenario_complexity`;
+ * `cloud-opsbench` publishes `difficulty` / `result.fault_taxonomy`. All five are enumerated
+ * fields with a published domain, and until v1.46 all five were validated with a bare `typeof`
+ * -- the defect v1.45 fixed for AIOps2025's `fault_category`, found five more times.
+ *
+ * Two figures per target, for the reason `categories`/`scorerCategories` already states: the
+ * two defects are *opposite*. An exporter edit -- a word dropped from the image -- moves the
+ * word count and leaves the ghost verdict alone; a scorer edit -- the membership clause
+ * removed -- moves the ghost verdict and leaves the word count alone. One figure would let
+ * either defect mask the other, which is the wrong-field trap in its structural form.
+ *
+ * `*Distinct` is published alongside `*Words` so a dedup that stopped deduplicating is
+ * visible as a gap between them rather than as an unchanged count. That matters for
+ * Cloud-OpsBench specifically: eight table rows produce six words because `middleware` and
+ * `dependency` share `Service_Fault`, and `runtime` and `unknown` share `Runtime_Fault`.
+ */
+function readOutcomeVocabulary() {
+  const itbenchWords = ITBENCH_SCENARIO_CLASSES.length;
+  const cloudOpsWords = CLOUD_OPSBENCH_TAXONOMIES.length;
+
+  /** Does `checkItBenchStructure` refuse a scenario carrying this metadata? */
+  const itbenchRefuses = (patch) => {
+    const base = {
+      scenario_name: 'case-001',
+      scenario_description: 'a probe payload',
+      scenario_domain: ITBENCH_SRE_DOMAIN,
+      scenario_class: CLASS_BY_CATEGORY.resource,
+      scenario_complexity: DIFFICULTIES[0],
+      scenario_groundtruth: { diagnosis: { entities: [], fault_propagation_chain: [], fault_conditions: [] } },
+    };
+    const report = checkItBenchStructure({
+      'scenarios/case-001/scenario.json': JSON.stringify({ ...base, ...patch }),
+    });
+    return report.checks.find((c) => c.id === 'scenario-shape')?.passed === false;
+  };
+
+  /** Does `checkCloudOpsBenchStructure` refuse a case carrying this metadata? */
+  const cloudOpsRefuses = (patch, resultPatch = {}) => {
+    const base = {
+      namespace: 'order-prod',
+      query: 'a probe query',
+      difficulty: DIFFICULTIES[0],
+      result: {
+        fault_taxonomy: TAXONOMY_BY_CATEGORY.resource,
+        fault_object: 'order',
+        root_cause: 'cpu',
+        ...resultPatch,
+      },
+    };
+    const report = checkCloudOpsBenchStructure({
+      'cases/case-001/metadata.json': JSON.stringify({ ...base, ...patch }),
+    });
+    return report.checks.find((c) => c.id === 'metadata-shape')?.passed === false;
+  };
+
+  return {
+    // The word counts, moved by an exporter edit.
+    itbenchWords,
+    itbenchDistinctWords: new Set(ITBENCH_SCENARIO_CLASSES).size,
+    cloudOpsWords,
+    cloudOpsDistinctWords: new Set(CLOUD_OPSBENCH_TAXONOMIES).size,
+    difficulties: DIFFICULTIES.length,
+    // The rows behind each image, so a table that lost a row is visible even when the
+    // image happens to be unchanged by it.
+    itbenchTableRows: Object.keys(CLASS_BY_CATEGORY).length,
+    cloudOpsTableRows: Object.keys(TAXONOMY_BY_CATEGORY).length,
+    // The scorer verdicts, moved by a scorer edit. Each carries its own legal control: a
+    // check that rejected everything would satisfy a bare `rejected` figure.
+    itbenchGhostRejected: itbenchRefuses({ scenario_class: 'GhostClass' }) ? 1 : 0,
+    itbenchDomainGhostRejected: itbenchRefuses({ scenario_domain: 'CISO' }) ? 1 : 0,
+    itbenchComplexityGhostRejected: itbenchRefuses({ scenario_complexity: 'trivial' }) ? 1 : 0,
+    itbenchLegalAccepted: itbenchRefuses({}) ? 0 : 1,
+    cloudOpsDifficultyGhostRejected: cloudOpsRefuses({ difficulty: 'trivial' }) ? 1 : 0,
+    cloudOpsTaxonomyGhostRejected: cloudOpsRefuses({}, { fault_taxonomy: 'Ghost_Fault' }) ? 1 : 0,
+    cloudOpsLegalAccepted: cloudOpsRefuses({}) ? 0 : 1,
   };
 }
 
@@ -850,6 +939,12 @@ function derivationEvidence(rowsByRun) {
     // wrong-field trap in its structural form.
     categories: readEmittedCategoryVocabulary(),
     scorerCategories: readScorerCategoryVerdict(),
+    // A tenth block, and it reads the five fields v1.45's closing note handed forward. The
+    // subject is the same kind of object -- a published word list and a check that reads it --
+    // but in the two outcome-contract exporters rather than in AIOps2025, so it gets its own
+    // block: a mutation in `itbench` must not be observable as movement in an AIOps2025
+    // figure, or the separateness of the two readings would be untested.
+    outcomeVocabulary: readOutcomeVocabulary(),
     readingsPerRun: runs.map(({ run, misses }) => ({ run, misses: misses.length })),
     adversarialWords,
   };

@@ -150,6 +150,9 @@ DERIVATION = REPO / "packages" / "core" / "src" / "fault" / "category-derivation
 CATEGORY_TERMS = REPO / "packages" / "core" / "src" / "fault" / "category-terms.ts"
 AIOPS2025_EXPORT = REPO / "packages" / "core" / "src" / "export" / "aiops2025.ts"
 SCORER = REPO / "packages" / "core" / "src" / "score" / "score.ts"
+ITBENCH_EXPORT = REPO / "packages" / "core" / "src" / "export" / "itbench.ts"
+CLOUDOPSBENCH_EXPORT = REPO / "packages" / "core" / "src" / "export" / "cloudopsbench.ts"
+DIFFICULTY = REPO / "packages" / "core" / "src" / "export" / "difficulty.ts"
 
 # Every in-package target, mapped to the source it edits. `run_probe` takes one of
 # these at a time; keeping them in a table rather than in a chain of `if`s is what
@@ -168,6 +171,12 @@ IN_PACKAGE_TARGETS = {
     # the derivation block, which counts consumers, and a vocabulary is not a consumer.
     "categories": AIOPS2025_EXPORT,
     "scorer": SCORER,
+    # v1.46 added the five remaining enumerated fields. `itbench` and `cloudopsbench` are the
+    # exporters that own the projection tables; `difficulty` is the shared module both of them
+    # and the scorer now read the word set from, so an edit there moves both targets at once.
+    "itbench": ITBENCH_EXPORT,
+    "cloudopsbench": CLOUDOPSBENCH_EXPORT,
+    "difficulty": DIFFICULTY,
 }
 
 
@@ -453,6 +462,28 @@ CATEGORIES_BASELINE: dict = {}
 # the scorer -- and one dict would make an exporter edit and a scorer edit indistinguishable.
 SCORER_CATEGORIES_BASELINE: dict = {}
 
+# A tenth block, for the five enumerated fields v1.45's closing note handed forward: `itbench`
+# publishes three of them (`scenario_domain`, `scenario_class`, `scenario_complexity`) and
+# `cloud-opsbench` two (`difficulty`, `result.fault_taxonomy`), and all five were validated
+# with a bare `typeof` until v1.46. Its own dict for the standing reason: a mutation in
+# `itbench` must not be observable as movement in an AIOps2025 figure, or the separateness of
+# the two readings would be untested.
+OUTCOME_VOCABULARY_BASELINE: dict = {}
+
+
+def outcome_vocabulary(report: dict) -> dict:
+    """The three outcome-contract vocabularies and their checks' behaviour on a stray.
+
+    A sibling of `categories`/`scorer_categories`, and it lives inside `derivation` for the
+    same reason: that block is where the probe reads the contract vocabulary, and these are
+    more contract vocabularies rather than a different kind of object.
+    """
+    return report["derivation"]["outcomeVocabulary"]
+
+
+def outcome_vocabulary_baseline() -> dict:
+    return OUTCOME_VOCABULARY_BASELINE
+
 
 def categories(report: dict) -> dict:
     """The emitted-category-vocabulary block, from the derivation reading's own report.
@@ -639,6 +670,26 @@ def blind_anchor(result: dict | None, which: str) -> tuple:
             )
         c = categories(result)
         return (c["admitted"], c["distinct"], c["outsideIrVocabulary"], c["stray"])
+
+    if which == 'outcomeVocabulary':
+        # Anchored on the figures that mean different things and move in different files: the
+        # word count an exporter edit changes, and the ghost verdict a scorer edit changes. An
+        # entry aimed at the exporter must not be rescued by the scorer's figure and vice
+        # versa, so both are read -- together with each check's legal control, without which a
+        # check that rejected everything would look like a working one.
+        keys = (
+            "itbenchWords",
+            "cloudOpsWords",
+            "difficulties",
+            "itbenchGhostRejected",
+            "cloudOpsTaxonomyGhostRejected",
+            "itbenchLegalAccepted",
+            "cloudOpsLegalAccepted",
+        )
+        if result is None:
+            return tuple(OUTCOME_VOCABULARY_BASELINE[k] for k in keys)
+        o = outcome_vocabulary(result)
+        return tuple(o[k] for k in keys)
 
     raise AssertionError(f"unknown blind anchor {which!r}")
 
@@ -2392,6 +2443,90 @@ INJECTIONS: list[
         ),
         "scorer",
     ),
+    # v1.46. Five entries for the five fields v1.45's closing note handed forward. The shape
+    # is the one v1.45 established and for the same reason: two figures per target, because
+    # the two defects are opposite. BC/BE/BG edit an exporter or the shared word set and move a
+    # *word count*; BD/BF edit the scorer and move a *ghost verdict*. A requirement reading the
+    # count would SURVIVE against a scorer edit, and vice versa -- the wrong-field trap.
+    (
+        "BC. itbench: drop a scenario class from the image, so the vocabulary loses a word",
+        None,
+        lambda r: outcome_vocabulary(r)["itbenchWords"]
+        == outcome_vocabulary_baseline()["itbenchWords"],
+        "the size of the itbench scenario-class vocabulary, the figure this mutation shrinks",
+        lambda t: rename(
+            t,
+            "export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY))];",
+            "export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY))].filter((c) => c !== 'Unknown');",
+        ),
+        "itbench",
+    ),
+    (
+        "BD. itbench: stop checking scenario_class, so a ghost class passes again",
+        None,
+        # Inverted the way `BB` inverts the AIOPS category clause, and for the reason recorded
+        # there: deleting the clause is TS6133 and a constant condition is TS18046, so the only
+        # mutation that both compiles and misbehaves is to negate what the clause does.
+        lambda r: outcome_vocabulary(r)["itbenchGhostRejected"]
+        == outcome_vocabulary_baseline()["itbenchGhostRejected"],
+        "the count of out-of-vocabulary scenario classes the structure check refuses, the figure this mutation removes",
+        lambda t: rename(
+            t,
+            "if (!isVocabularyMember(ITBENCH_SCENARIO_CLASSES, obj.scenario_class)) {",
+            "if (isVocabularyMember(ITBENCH_SCENARIO_CLASSES, obj.scenario_class)) {",
+        ),
+        "scorer",
+    ),
+    (
+        "BE. cloud-opsbench: collapse the taxonomy image to one word",
+        None,
+        lambda r: outcome_vocabulary(r)["cloudOpsWords"]
+        == outcome_vocabulary_baseline()["cloudOpsWords"],
+        "the size of the cloud-opsbench fault-taxonomy vocabulary, the figure this mutation shrinks",
+        # A literal standing in for `Object.values(TAXONOMY_BY_CATEGORY)`: the vocabulary keeps
+        # its listed type, keeps one legal word, and stops carrying the table's image. Six words
+        # became one, so `cloudOpsWords` moves 6 -> 1 while the ghost verdict does not move at
+        # all -- which is what makes BE and BF separate measurements rather than one.
+        lambda t: rename(
+            t,
+            "export const CLOUD_OPSBENCH_TAXONOMIES: readonly string[] = [...new Set(Object.values(TAXONOMY_BY_CATEGORY))];",
+            "export const CLOUD_OPSBENCH_TAXONOMIES: readonly string[] = ['Service_Fault'];",
+        ),
+        "cloudopsbench",
+    ),
+    (
+        "BF. cloud-opsbench: stop checking fault_taxonomy, so a ghost passes again",
+        None,
+        lambda r: outcome_vocabulary(r)["cloudOpsTaxonomyGhostRejected"]
+        == outcome_vocabulary_baseline()["cloudOpsTaxonomyGhostRejected"],
+        "the count of out-of-vocabulary taxonomies the structure check refuses, the figure this mutation removes",
+        lambda t: rename(
+            t,
+            "if (!isVocabularyMember(CLOUD_OPSBENCH_TAXONOMIES, result.fault_taxonomy)) {",
+            "if (isVocabularyMember(CLOUD_OPSBENCH_TAXONOMIES, result.fault_taxonomy)) {",
+        ),
+        "scorer",
+    ),
+    (
+        "BG. difficulty: widen the shared word set, so both fields admit a word no level produces",
+        None,
+        lambda r: outcome_vocabulary(r)["difficulties"]
+        == outcome_vocabulary_baseline()["difficulties"],
+        "the size of the shared difficulty vocabulary, the figure this mutation widens",
+        # The one mutation in the battery that *adds* a word rather than removing one, and the
+        # choice is forced rather than stylistic. `Difficulty` is derived from this tuple, so
+        # removing `hard` while `case 'L3'|'L4': return 'hard'` still stands is TS2322: the
+        # function would return a value outside its declared type, the mutation would not
+        # compile, and it would measure nothing. A word no arm returns has no such conflict.
+        # The word is one the emitter cannot produce, so the widened vocabulary admits a value
+        # no export can carry -- the defect, stated as a value.
+        lambda t: rename(
+            t,
+            "export const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;",
+            "export const DIFFICULTIES = ['easy', 'medium', 'hard', 'none'] as const;",
+        ),
+        "difficulty",
+    ),
 ]
 
 
@@ -2450,6 +2585,8 @@ def main() -> int:
     CATEGORIES_BASELINE.update(report["derivation"]["categories"])
     SCORER_CATEGORIES_BASELINE.clear()
     SCORER_CATEGORIES_BASELINE.update(report["derivation"]["scorerCategories"])
+    OUTCOME_VOCABULARY_BASELINE.clear()
+    OUTCOME_VOCABULARY_BASELINE.update(report["derivation"]["outcomeVocabulary"])
     print("type-miss probe battery\n")
     # The baseline control's own line, and it goes first because it is the one figure in this
     # battery that *refutes* another. Printed for the reason the other five are: an injection

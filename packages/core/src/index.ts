@@ -202,9 +202,17 @@ export {
 export {
   CLOUD_OPSBENCH_CONTRACT_VERSION,
   CLOUD_OPSBENCH_TARGET_ID,
+  CLOUD_OPSBENCH_TAXONOMIES,
+  TAXONOMY_BY_CATEGORY,
   buildCloudOpsBenchMetadata,
   exportCloudOpsBench,
 } from './export/cloudopsbench.js';
+
+export {
+  DIFFICULTIES,
+  difficultyFor,
+  type Difficulty,
+} from './export/difficulty.js';
 
 export {
   OPENRCA2_CONTRACT_VERSION,
@@ -214,7 +222,9 @@ export {
 } from './export/openrca2.js';
 
 export {
+  CLASS_BY_CATEGORY,
   ITBENCH_CONTRACT_VERSION,
+  ITBENCH_SCENARIO_CLASSES,
   ITBENCH_SRE_DOMAIN,
   ITBENCH_TARGET_ID,
   buildItBenchScenarioSpec,
@@ -287,6 +297,7 @@ export type {
 
 export {
   AIOPS2025_INSTANCE_TYPES,
+  ITBENCH_SCENARIO_DOMAINS,
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkItBenchStructure,
