@@ -393,3 +393,174 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
     }
   });
 });
+
+/**
+ * The probe's UModel figures, and the class of edit they cannot see.
+ *
+ * v1.48 added six figures for the `UMODEL_TYPE` table. This describe exists
+ * because two mutations were run against them and **none of the six moved**:
+ *
+ *   SWAP   pod <-> node            -- a permutation inside the vocabulary
+ *   FLAT   every kind -> apm.service -- the vocabulary collapses to one word
+ *
+ * Both keep every emitted word legal, so the three ghost verdicts stay at 1 and
+ * `rca100UmodelVocabularyWords` stays at 7. Both keep nine rows and nine answered
+ * kinds, so `umodelRows` and `umodelKindsAnswered` stay at 9. `FLAT` moves
+ * `umodelDistinctWords` from 7 to 1 -- but only `SWAP` is the harder case, and
+ * `SWAP` moves nothing at all.
+ *
+ * The figures measured the mapping's *shape* and were documented as if they
+ * measured the mapping. A figure that cannot move cannot report, and its presence
+ * makes the reading look covered -- the third-source defect `validity.test.ts`
+ * names. The three counts are kept (they are real statements about shape) and one
+ * content reading is added beside them.
+ */
+/**
+ * The probe's UModel figures, and the class of edit the counts cannot see.
+ *
+ * v1.48 added six figures for the `UMODEL_TYPE` table, and two mutations were run
+ * against them:
+ *
+ *   SWAP   pod <-> node                 -- a permutation inside the vocabulary
+ *   FLAT   every kind -> apm.service    -- the vocabulary collapses to one word
+ *
+ * **Neither moved any of the six.** Both keep every emitted word legal, so the
+ * three ghost verdicts stay at 1 and `rca100UmodelVocabularyWords` stays at 7.
+ * Both keep nine rows and nine answered kinds, so `umodelRows` and
+ * `umodelKindsAnswered` stay at 9. `FLAT` moves only `umodelDistinctWords`; `SWAP`
+ * moves nothing at all, and is the harder case for exactly that reason.
+ *
+ * The figures measured the mapping's *shape* and were documented as if they
+ * measured the mapping. A figure that cannot move cannot report, and its presence
+ * makes the reading look covered -- the third-source defect `validity.test.ts`
+ * names. The counts are kept (they are real statements about shape) and one
+ * content reading, `umodelMappingDigest`, is added beside them.
+ *
+ * ## Why the mutations are *not* driven from here
+ *
+ * The first version of this describe applied the two mutations in the test body,
+ * rebuilding `packages/core` each time. That is a defect and it was measured as
+ * one: `vocabulary-single-source.test.ts` reads `src/export/rca100.ts` **at module
+ * load**, and vitest runs test *files* in parallel, so this file mutated a file
+ * another file in the same run reads. Two full-suite runs failed with two
+ * different victims (`check-cli-reference` once, then `vocabulary-single-source`),
+ * both green in isolation. Routing the writes through an atomic helper -- the
+ * discipline `injection-write-discipline.test.ts` states -- was necessary but not
+ * sufficient: atomicity prevents a *partial* read, not a *complete but mutated*
+ * one, and the failure survived it at roughly one run in three.
+ *
+ * So the mutation proofs live in `scripts/injection/type-miss-probe.py` as entries
+ * `BS` and `BT`, which is the component that already owns source mutation along
+ * with the snapshot, restore-verification and rebuild machinery for it. What stays
+ * here is what can be asserted without touching shared state: that the figure
+ * exists, that it is a digest, and that it is *content* reading rather than a
+ * count.
+ */
+describe('the UModel figures separate shape from content', () => {
+  const readFigures = (): Record<string, unknown> => {
+    // The harness lives beside the probe: the probe resolves its own imports
+    // (`../packages/core/dist/...`) relative to its own path, so a harness
+    // anywhere else makes every one of them unresolvable. Written and removed per
+    // call so a crash cannot leave a stray module in `scripts/`.
+    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs');
+    const source = readFileSync(PROBE, 'utf8');
+    // Re-export exactly the one name that publishes the figures, so this reads the
+    // same figures the battery reads rather than a reimplementation of them.
+    writeFileSync(
+      harness,
+      source.replace(
+        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };',
+        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf, readOutcomeVocabulary };',
+      ),
+    );
+    try {
+      // The cache-buster belongs *inside* the specifier: `JSON.stringify(harness)`
+      // alone would put `?v=` outside the quotes and produce a syntax error.
+      const specifier = `${harness}?v=${Date.now()}`;
+      const script =
+        `import(${JSON.stringify(specifier)}).then((m) => ` +
+        `console.log(JSON.stringify(m.readOutcomeVocabulary())));`;
+      return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      }));
+    } finally {
+      rmSync(harness, { force: true });
+    }
+  };
+
+  it('carries a content reading beside the three counts, because the counts cannot move', () => {
+    const figures = readFigures();
+    // The three counts, which are real and stay: they are the shape statement, and
+    // their values are pinned here so a change to any of them is a deliberate edit.
+    expect(figures.umodelRows).toBe(9);
+    expect(figures.umodelDistinctWords).toBe(7);
+    expect(figures.umodelKindsAnswered).toBe(9);
+    // The content reading, which is what a permutation moves.
+    expect(typeof figures.umodelMappingDigest, 'umodelMappingDigest must be a string digest').toBe('string');
+    expect(figures.umodelMappingDigest).toMatch(/^[0-9a-f]{16,}$/);
+  });
+
+  it('the digest is not any of the counts, so it is a different reading and not a fourth aggregate', () => {
+    // A digest that happened to be a function of the three counts would move only
+    // when they move, which is the defect it exists to fix. Stated as a comparison
+    // against the counts' own composition rather than by reading the source.
+    const figures = readFigures();
+    const digest = String(figures.umodelMappingDigest);
+    for (const count of [figures.umodelRows, figures.umodelDistinctWords, figures.umodelKindsAnswered]) {
+      expect(digest).not.toBe(String(count));
+    }
+    // And it is a digest of nine pairs, so its length is consistent with that rather
+    // than with a constant: `sha256` is 64 hex characters.
+    expect(digest.length).toBe(64);
+  });
+
+  it('the digest is order-free, and the sort that makes it so is load-bearing', () => {
+    // The contrast that keeps the figure honest, asserted without touching a file.
+    //
+    // The property is that a *reordering* of the pairs must not move the figure, so a
+    // cosmetic edit to the source cannot read as a mapping change. The probes are fed
+    // to the exported pure function rather than to a mutated repository, which is what
+    // makes this test safe to run: the version that mutated `src/` raced
+    // `vocabulary-single-source.test.ts` and was moved out of the suite.
+    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs');
+    const source = readFileSync(PROBE, 'utf8');
+    writeFileSync(
+      harness,
+      source.replace(
+        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };',
+        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };',
+      ),
+    );
+    try {
+      const specifier = `${harness}?v=${Date.now()}`;
+      const script =
+        `import(${JSON.stringify(specifier)}).then((m) => {` +
+        `  const pairs = [['service','apm.service'],['pod','k8s.pod'],['node','k8s.node'],` +
+        `['host','k8s.node'],['container','k8s.pod'],['db','apm.external.database'],` +
+        `['mq','apm.external.message'],['cluster','k8s.cluster'],['external','apm.external']];` +
+        `  const reversed = pairs.slice().reverse();` +
+        `  const rotated = pairs.slice(4).concat(pairs.slice(0, 4));` +
+        `  console.log(JSON.stringify([` +
+        `    m.umodelMappingDigestOf(pairs),` +
+        `    m.umodelMappingDigestOf(reversed),` +
+        `    m.umodelMappingDigestOf(rotated),` +
+        `    m.umodelMappingDigestOf(pairs.map(([k, w]) => [k, w === 'k8s.pod' ? 'k8s.node' : w])),` +
+        `  ]));` +
+        `});`;
+      const [base, reversed, rotated, permuted] = JSON.parse(
+        execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+          cwd: REPO_ROOT,
+          encoding: 'utf8',
+        }),
+      ) as [string, string, string, string];
+      // Order-free: two different orderings give the same reading.
+      expect(reversed).toBe(base);
+      expect(rotated).toBe(base);
+      // Content-sensitive: an actual change to the mapping does not.
+      expect(permuted).not.toBe(base);
+    } finally {
+      rmSync(harness, { force: true });
+    }
+  });
+});

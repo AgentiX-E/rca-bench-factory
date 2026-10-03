@@ -109,6 +109,7 @@ import {
   checkRca100Structure,
 } from '../packages/core/dist/index.js';
 import { ENTITY_KINDS, FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
+import { sha256 } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -432,7 +433,56 @@ function readOutcomeVocabulary() {
     // The legal control, without which a check that rejected everything would satisfy all
     // three figures above and look like a working one.
     rca100TypesLegalAccepted: rca100Refuses({}) ? 0 : 1,
+    // v1.49. The content of the mapping, which the three counts above provably cannot see.
+    //
+    // Two mutations were run against the six figures v1.48 added, and **none of the six
+    // moved**. `SWAP` (pod <-> node) is a permutation inside the vocabulary: nine rows,
+    // seven distinct words, nine kinds answered, every word legal, so `umodelRows` stays 9,
+    // `umodelDistinctWords` stays 7, `umodelKindsAnswered` stays 9 and all three ghost
+    // verdicts stay 1. `FLAT` (every kind -> apm.service) moves only
+    // `umodelDistinctWords`, 7 -> 1, and moves nothing else.
+    //
+    // So the six were statements about the mapping's *shape*, and were documented as if they
+    // measured the mapping. A figure that cannot move cannot report, and its presence makes
+    // the reading look covered -- the third-source defect `validity.test.ts` names.
+    //
+    // This digest is the content reading. It is taken over the emitted pairs *sorted by
+    // kind*, so the order they arrive in is not part of the reading: a reordering must not
+    // move a figure, while a permutation of the mapping must. The pairs come from
+    // `umodelPairs`, which reads through `buildTopologyJson` -- the public surface -- so
+    // this figure moves when the exporter's mapping moves, however it moved.
+    //
+    // The sort is load-bearing and is asserted as such by a test against this function:
+    // measured, `digest` over `ENTITY_KINDS` (9 -> 7 -> 9 words) is `5a638382...` unsorted
+    // and `a678fbe7...` sorted. Extracting it to a function is what lets that be asserted
+    // without mutating any file -- see `umodelMappingDigestOf`.
+    umodelMappingDigest: umodelMappingDigestOf(umodelPairs),
   };
+}
+
+/**
+ * The digest of a kind->word mapping, independent of the order the pairs arrive in.
+ *
+ * Exported because it is the only part of the UModel reading that can be checked without
+ * mutating a file. The rest of the entries in this battery prove their properties by
+ * rewriting `src/` and restoring it, which is correct there and impossible in the suite:
+ * `vocabulary-single-source.test.ts` reads `src/export/rca100.ts` at module load and vitest
+ * runs files in parallel, so a test that mutates that file races another file in the same
+ * run. Measured: two full-suite runs failed with two *different* victims before the
+ * mutation was moved out of the suite entirely.
+ *
+ * So the order-invariance property -- a reordering must not move the figure -- is asserted
+ * here instead, by feeding this function a permutation of its own pairs. That needs no
+ * file write, so it cannot race.
+ */
+function umodelMappingDigestOf(pairs) {
+  return sha256(
+    pairs
+      .slice()
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([kind, word]) => `${kind}=${word}`)
+      .join(';'),
+  );
 }
 
 /**
@@ -1676,4 +1726,4 @@ if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].re
   process.exit(main());
 }
 
-export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom };
+export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };

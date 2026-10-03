@@ -10162,3 +10162,125 @@ every figure above.
 It does not establish that `entity_set` is checked everywhere it is declared. It is checked on the one
 table whose contract declares it, and the four that do not are asserted to be accepted without it — which
 is the fact my first, wrong clause is the evidence for.
+
+## Finding 109: the instrument was blind to the defect it was built to measure
+
+Finding 108 closed with three claims about what it did not establish. The second one was:
+
+> It does not establish that the vocabulary is correct. It establishes that no export can carry a word
+> outside the seven ... a table that mapped every kind to `k8s.pod` would satisfy every figure above.
+
+The claim was measured first, and it is false in one direction and far worse in the other.
+
+### The two mutations
+
+Both keep every emitted word inside the seven-word vocabulary, so both are *different valid programs*
+rather than errors.
+
+| Mutation | Full suite | The six UModel probe figures | `official:check` |
+| --- | --- | --- | --- |
+| `SWAP` — `pod`↔`node`, a permutation inside the vocabulary | 4 failed / 2980 passed | **all six unchanged** | PASSED |
+| `FLAT` — every kind → `apm.service` | 9 failed / 2975 passed | **all six unchanged** | PASSED |
+
+### What the first row refutes
+
+**The value direction was already guarded, and Finding 108 named a gap that does not exist.** Four tests
+catch `SWAP`, including `vocabulary-single-source.test.ts > each projection table matches its published
+rows, row by row > rca100: the UModel type column, one row per IR kind`, which compares every kind against
+`DOCUMENTED_UMODEL_TABLE` position by position. That test predates Finding 108. The sentence above should
+never have been written, and it is the second consecutive iteration whose closing paragraph asserted a
+gap that measurement dissolved — Finding 107's deferral had the same shape.
+
+### What the third column exposes
+
+**The probe is blind to both mutations.** Six figures, two mutations, zero movement — and
+`official:check` does not move either, because no project in the corpus exercises a permuted UModel type.
+
+The figures were built as aggregate counts: `umodelRows` 9, `umodelDistinctWords` 7,
+`umodelKindsAnswered` 9. Both mutations preserve every aggregate, because both preserve the row count,
+the word count and the answered-kind count. **The figures measured the mapping's *shape* and were
+documented as if they measured the mapping.** A figure that cannot move cannot report, and its presence
+makes the reading look *covered* — the third-source defect `validity.test.ts` names.
+
+### The fix
+
+One figure, content-sensitive and order-free:
+
+```js
+umodelMappingDigest: umodelMappingDigestOf(umodelPairs),
+```
+
+carried as a SHA-256 hex digest rather than a count, because a count is exactly what was blind. It is
+taken over the emitted pairs **sorted by kind**, so the order they arrive in is not part of the reading.
+
+### The iteration then found three defects in its own work
+
+**1. The sort was decorative, and my first order test proved nothing.** The first version of the
+order-free test reordered the **source literal** and asserted the digest held. It passed — and it would
+have passed *with the sort deleted*, because `umodelPairs` is built by `ENTITY_KINDS.map(...)`, so the
+literal's order can never reach it. The neutering run reported this as N4 `0 failed`: a clause asserting
+nothing.
+
+Measured, the order the digest actually depends on is `ENTITY_KINDS`':
+
+| digest | `ENTITY_KINDS` reversed | result |
+| --- | --- | --- |
+| sorted | `a678fbe7...` | unchanged |
+| unsorted | `2cdca22f...` | **moved** |
+
+So the sort *is* load-bearing, and the test was aimed at the wrong order. Rewritten against
+`ENTITY_KINDS`, all four neutering variants now fail (N1 constant, N2 wrong source, N3 sorted by word,
+N4 unsorted).
+
+**2. The two battery entries asserted the inverse of every other entry.** `BS` and `BT` were written
+`digest != baseline` — asserting the figure had moved — while this battery's convention is that the
+requirement states the figure that must **hold**, printing `SURVIVED` when it does. Both entries came
+back `SURVIVED` on the first run. **The battery was right and the requirement was backwards.** Recorded
+rather than quietly fixed, because an entry that can never be caught is exactly what the battery exists
+to make visible.
+
+**3. The mutation test raced the suite, and atomic writes did not fix it.** The first version drove the
+two mutations from the test body, rebuilding `packages/core` each time. `vocabulary-single-source.test.ts`
+reads `src/export/rca100.ts` **at module load**, and vitest runs test *files* in parallel. Two full-suite
+runs failed with two **different** victims (`check-cli-reference`, then `vocabulary-single-source`), both
+green in isolation — the signature of a race, not a flake.
+
+Routing the writes through an atomic helper — the discipline `injection-write-discipline.test.ts`
+already states — was necessary but **not sufficient**: atomicity prevents a *partial* read, not a
+*complete but mutated* one. The failure survived at roughly one run in three. The mutation proofs were
+therefore moved to the battery, which owns snapshot, restore-verification and rebuild for exactly this,
+and the suite keeps only what needs no shared state: the figure exists, it is a digest, it is not any of
+the counts, and — via the extracted pure function `umodelMappingDigestOf` — it is order-free under
+`reverse` and `rotate` while moving under a content change.
+
+**Verified by five consecutive full-suite runs and three after the final refactor, all green.**
+
+### Acceptance
+
+| Gate | Result |
+| --- | --- |
+| `vitest run` | **2987 passed / 103 files** |
+| Coverage, statements / branches / functions / lines | 99.96 / 99.91 / 100 / 99.96 |
+| Every touched file | no file changed under `src/` this iteration |
+| TDD, by neutering | 4 variants, each failing the intended assertion; sort removal fails exactly the order test; source restored byte-for-byte |
+| Battery | **74 caught / 0 survived / 0 inert / 0 blind**, 16 in-package sources restored byte-for-byte |
+| Battery entries | 72 -> **74** (BS, BT) |
+| 6-slot contract | AST-verified **before** running: both new entries are `Constant, Constant, Lambda, Constant, Lambda, Constant` |
+| `pnpm typecheck` / `lint` / `docs:check` / `examples:check` | clean |
+| `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
+| `python3 -m py_compile` | clean |
+
+### What this does not establish
+
+It does not establish that the digest is the last blind figure. It establishes that *this* class — a
+change preserving every aggregate — is now visible for the UModel table, and that the blindness was
+found by running the two mutations rather than by reading the figures.
+
+It does not establish that the digest's value is meaningful. It is an identity, not a checksum of
+correctness: it says *the mapping changed*, not *the mapping is right*, and the correctness claim lives
+in the row-by-row test that was already there.
+
+It does not establish that `official:check` is sensitive to this class of defect. Measured, it is not:
+both mutations left it at 8 scored / 1 skipped, because no corpus project exercises a permuted UModel
+type. That is a fact about the corpus, recorded here so the gate is not credited with a measurement it
+does not make.

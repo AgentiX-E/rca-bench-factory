@@ -725,6 +725,12 @@ def blind_anchor(result: dict | None, which: str) -> tuple:
             "rca100EntitySetGhostRejected",
             "rca100EdgeTypeGhostRejected",
             "rca100TypesLegalAccepted",
+            # v1.49. The content reading, anchored so that an entry aimed at it is BLIND
+            # when it misses. It is a separate member rather than folded into the counts
+            # above because it is the only one of the seven that a *permutation* moves:
+            # BS edits the table, and every other figure in this tuple is invariant under
+            # that edit. Leaving it out would make the anchor blind to BS's own subject.
+            "umodelMappingDigest",
         )
         if result is None:
             return tuple(OUTCOME_VOCABULARY_BASELINE[k] for k in keys)
@@ -2809,6 +2815,54 @@ INJECTIONS: list[
         # have reported SURVIVED here: the two figures are different claims about different
         # objects, which is why both exist.
         lambda t: rename(t, "  mq: 'apm.external.message',", "  mq: 'apm.external',"),
+        "rca100",
+    ),
+    (
+        "BS. rca100: swap two UModel words, so the mapping permutes inside the vocabulary",
+        None,
+        lambda r: outcome_vocabulary(r)["umodelMappingDigest"]
+        == outcome_vocabulary_baseline()["umodelMappingDigest"],
+        "the content digest, the one figure a permutation moves",
+        # v1.49's premise, as an entry. This is the mutation that exposed the whole
+        # iteration: measured against the six figures v1.48 added, it moved *nothing*.
+        # Nine rows, seven distinct words, nine kinds answered, every word legal, so
+        # `umodelRows` 9, `umodelDistinctWords` 7, `umodelKindsAnswered` 9,
+        # `rca100UmodelVocabularyWords` 7 and all three ghost verdicts 1 were unchanged.
+        #
+        # The requirement is an *equality*, matching every other entry in this battery: it
+        # states the figure that must HOLD, and the run prints SURVIVED when it holds. The
+        # first version of these two entries wrote `!=` -- asserting the digest had moved --
+        # and both came back SURVIVED. The battery was right and the requirement was
+        # backwards. Recorded rather than quietly fixed, because an entry that can never be
+        # caught is exactly what this battery exists to make visible.
+        #
+        # It is a *different valid program* -- `pod` emitting `k8s.node` is wrong, not
+        # malformed -- which is what makes it a measurement rather than an error. And it
+        # is the case the counts structurally cannot see: they read the mapping's shape,
+        # and a permutation preserves shape exactly.
+        lambda t: rename(t, "  pod: 'k8s.pod',\n  node: 'k8s.node',", "  pod: 'k8s.node',\n  node: 'k8s.pod',"),
+        "rca100",
+    ),
+    (
+        "BT. rca100: flatten the UModel mapping, so every kind emits one word",
+        None,
+        lambda r: outcome_vocabulary(r)["umodelMappingDigest"]
+        == outcome_vocabulary_baseline()["umodelMappingDigest"],
+        "the content digest, moved in the opposite direction from BS",
+        # BS and BT together state that the digest is read, not coincidentally unequal:
+        # BS permutes (shape preserved, content changed), BT collapses (shape *destroyed*,
+        # content changed). BT is the one that also moves `umodelDistinctWords`, 7 -> 1,
+        # so it is the case where an existing count fires -- which makes it the control
+        # that keeps BS from being credited to a shape figure.
+        lambda t: rename(
+            t,
+            "  pod: 'k8s.pod',\n  node: 'k8s.node',\n  host: 'k8s.node',\n  container: 'k8s.pod',\n"
+            "  db: 'apm.external.database',\n  mq: 'apm.external.message',\n  cluster: 'k8s.cluster',\n"
+            "  external: 'apm.external',",
+            "  pod: 'apm.service',\n  node: 'apm.service',\n  host: 'apm.service',\n  container: 'apm.service',\n"
+            "  db: 'apm.service',\n  mq: 'apm.service',\n  cluster: 'apm.service',\n"
+            "  external: 'apm.service',",
+        ),
         "rca100",
     ),
 ]
