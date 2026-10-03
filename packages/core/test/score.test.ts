@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { exportOpenRca } from '../src/export/openrca.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
-import { exportRca100 } from '../src/export/rca100.js';
+import { exportRca100, UMODEL_TYPES } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { AIOPS2025_CATEGORIES } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench, CLOUD_OPSBENCH_TAXONOMIES } from '../src/export/cloudopsbench.js';
@@ -18,6 +18,7 @@ import {
   checkRca100Structure,
   checkRcaEvalStructure,
   ITBENCH_SCENARIO_DOMAINS,
+  RCA100_UMODEL_TYPES,
   scoreExport,
   sha256,
   verifyChecksums,
@@ -286,6 +287,156 @@ describe('checkRca100Structure', () => {
     files['answer_key/case-001.gt.json'] = JSON.stringify({ task_id: 'case-001' });
     const report = checkRca100Structure(files);
     expect(report.checks.find((c) => c.id === 'gt-structure')?.passed).toBe(false);
+  });
+});
+
+describe('RCA100 projects one UModel table onto four fields', () => {
+  // `UMODEL_TYPE` is read at four sites in the exporter -- `entities[].type`,
+  // `metrics.entity_set`, `edges[].src_type` and `edges[].dst_type` -- and before
+  // this describe the structure check read *none* of them. It read `entities[].id`
+  // and `.name` and nothing else; every edge field was never even touched, and
+  // `entity_set` had its write site as its only occurrence in the whole package.
+  //
+  // Four fields, four ghosts, four legal controls. The controls are not padding:
+  // a check that rejected every export would satisfy a bare "the ghost is
+  // rejected" assertion, so each ghost is paired with the same export unedited.
+
+  const rca100Files = (): Record<string, string> => exportRca100(validBundle()).files;
+
+  /** Rewrite the first entity's `type`, leaving everything else intact. */
+  const withEntityType = (type: string): Record<string, string> => {
+    const files = rca100Files();
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    topo.entities[0].type = type;
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    return files;
+  };
+
+  /** Rewrite the first edge's `src_type`, `dst_type`, or both. */
+  const withEdgeType = (type: string | null, endpoint: 'src' | 'dst' | 'both' = 'both'): Record<string, string> => {
+    const files = rca100Files();
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    if (endpoint === 'src' || endpoint === 'both') topo.edges[0].src_type = type;
+    if (endpoint === 'dst' || endpoint === 'both') topo.edges[0].dst_type = type;
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    return files;
+  };
+
+  /** Rewrite the first row's `entity_set` (or delete it) in one modality table. */
+  const withEntitySet = (value: string | undefined, file = 'metrics.json'): Record<string, string> => {
+    const files = rca100Files();
+    const rows = JSON.parse(files[`cases/case-001/${file}`]!);
+    if (value === undefined) delete rows[0].entity_set;
+    else rows[0].entity_set = value;
+    files[`cases/case-001/${file}`] = JSON.stringify(rows);
+    return files;
+  };
+
+  const checkById = (files: Record<string, string>, id: string): boolean | undefined =>
+    checkRca100Structure(files).checks.find((c) => c.id === id)?.passed;
+
+  it('is the exporter image, deduplicated, and not a second list', () => {
+    // The composition claim, stated as a figure rather than trusted. Nine rows
+    // produce seven words; the two collisions are `pod`/`container` on `k8s.pod`
+    // and `node`/`host` on `k8s.node`. If this vocabulary were ever re-listed by
+    // hand it would still have seven entries -- which is why the assertion is on
+    // the *set* and on the dedup being load-bearing, not on the length alone.
+    expect(RCA100_UMODEL_TYPES.length).toBe(7);
+    expect(new Set(RCA100_UMODEL_TYPES).size).toBe(RCA100_UMODEL_TYPES.length);
+    expect([...UMODEL_TYPES]).toEqual([...RCA100_UMODEL_TYPES]);
+    expect(RCA100_UMODEL_TYPES).toContain('apm.service');
+    expect(RCA100_UMODEL_TYPES).toContain('k8s.pod');
+    expect(RCA100_UMODEL_TYPES).toContain('k8s.node');
+  });
+
+  it('accepts a well-formed export, so the checks are not rejecting everything', () => {
+    const files = rca100Files();
+    expect(checkById(files, 'entity-types-in-vocabulary')).toBe(true);
+    expect(checkById(files, 'edge-types-in-vocabulary')).toBe(true);
+    expect(checkById(files, 'entity-set-in-vocabulary')).toBe(true);
+    expect(checkRca100Structure(files).passed).toBe(true);
+  });
+
+  it('rejects an entities[].type outside the vocabulary', () => {
+    expect(checkById(withEntityType('GhostType'), 'entity-types-in-vocabulary')).toBe(false);
+    // The wrong-field control: a ghost in the entity type must not be reported by
+    // the edge check, or the two would be one check wearing two names.
+    expect(checkById(withEntityType('GhostType'), 'edge-types-in-vocabulary')).toBe(true);
+  });
+
+  it('rejects an edges[].src_type outside the vocabulary', () => {
+    // Only `src_type` moves, so this fails if and only if the src clause is real.
+    expect(checkById(withEdgeType('GhostType', 'src'), 'edge-types-in-vocabulary')).toBe(false);
+    expect(checkById(withEdgeType('GhostType', 'src'), 'entity-types-in-vocabulary')).toBe(true);
+  });
+
+  it('rejects an edges[].dst_type outside the vocabulary', () => {
+    // Only `dst_type` moves, stated separately for the reason above: the first
+    // version of this test moved both endpoints at once, and neutering either clause
+    // on its own produced zero failures -- a single test standing in for two claims,
+    // which is exactly the shape that reads as coverage without being any.
+    expect(checkById(withEdgeType('GhostType', 'dst'), 'edge-types-in-vocabulary')).toBe(false);
+    expect(checkById(withEdgeType('GhostType', 'dst'), 'entity-types-in-vocabulary')).toBe(true);
+  });
+
+  it('rejects a non-string edge type rather than coercing it', () => {
+    const files = withEdgeType('k8s.pod', 'src');
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    topo.edges[0].src_type = 42;
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    expect(checkById(files, 'edge-types-in-vocabulary')).toBe(false);
+  });
+
+  it('rejects an entity_set outside the vocabulary', () => {
+    // The field with no consumer at all. This is the assertion that did not exist.
+    expect(checkById(withEntitySet('GhostType'), 'entity-set-in-vocabulary')).toBe(false);
+  });
+
+  it('does not require entity_set on a table whose contract does not declare it', () => {
+    // The check is scoped to `metrics.json`, and this is why. `entity_set` is
+    // `required: true` for that one file and is *not declared at all* for
+    // `logs.json`/`traces.json`/`events.json`/`alerts.json`; the emitter declines to
+    // write it there and the contract agrees. The first version of the clause
+    // required it on every modality row, and its only effect was to reject four
+    // files whose contract never asked for the field.
+    //
+    // Asserted from both sides so this cannot drift into either failure: a table
+    // that does not declare the field is accepted without it, and the one that does
+    // is still checked.
+    for (const file of ['logs.json', 'traces.json', 'events.json', 'alerts.json']) {
+      const files = rca100Files();
+      const rows = JSON.parse(files[`cases/case-001/${file}`]!);
+      expect(rows.length, `${file} has rows to check`).toBeGreaterThan(0);
+      expect(Object.hasOwn(rows[0], 'entity_set'), `${file} does not carry entity_set`).toBe(false);
+      expect(checkById(files, 'entity-set-in-vocabulary'), file).toBe(true);
+    }
+    expect(checkById(withEntitySet('GhostType'), 'entity-set-in-vocabulary')).toBe(false);
+  });
+
+  it('requires entity_set on a row that carries an entity_id', () => {
+    // `entity_set` is `required: true` in the published contract, so an absent one
+    // is a defect rather than a skip. Without this case the check could be written
+    // as "if present, validate" and pass every test above -- which is the
+    // difference between validating a field and validating it when convenient.
+    expect(checkById(withEntitySet(undefined), 'entity-set-in-vocabulary')).toBe(false);
+  });
+
+  it('rejects a non-string entity type rather than coercing it', () => {
+    const files = withEntityType('k8s.pod');
+    const topo = JSON.parse(files['cases/case-001/topology.json']!);
+    topo.entities[0].type = 42;
+    files['cases/case-001/topology.json'] = JSON.stringify(topo);
+    expect(checkById(files, 'entity-types-in-vocabulary')).toBe(false);
+  });
+
+  it('still rejects a ghost while every other structure check stays green', () => {
+    // Isolation, measured: a vocabulary failure must be attributable to the
+    // vocabulary clause alone. If a ghost also broke `topology-shape`, a reader
+    // could not tell which defect they were looking at.
+    const files = withEntityType('GhostType');
+    const report = checkRca100Structure(files);
+    const failed = report.checks.filter((c) => !c.passed).map((c) => c.id);
+    expect(failed).toEqual(['entity-types-in-vocabulary']);
   });
 });
 

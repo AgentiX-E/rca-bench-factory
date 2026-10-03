@@ -62,6 +62,26 @@ const UMODEL_TYPE: Record<EntityKind, string> = {
   external: 'apm.external',
 };
 
+/**
+ * Every UModel word `UMODEL_TYPE` can emit.
+ *
+ * The table is read at four sites -- `entities[].type`, `metrics.entity_set`,
+ * `edges[].src_type` and `edges[].dst_type` -- and this is the one vocabulary all
+ * four are checked against, so a row edit moves every check at once.
+ *
+ * Composed from the table rather than re-listed, the same construction
+ * `ITBENCH_SCENARIO_CLASSES` and `CLOUD_OPSBENCH_TAXONOMIES` use, and for the same
+ * reason: a hand-written copy would be the third-source defect `validity.test.ts`
+ * names, and would silently disagree the first time a row changed. Nine rows
+ * produce seven words, because `pod`/`container` both map to `k8s.pod` and
+ * `node`/`host` both map to `k8s.node`.
+ *
+ * The record stays private. What this publishes is its *image*, not its keys, so a
+ * reader cannot index it -- and the key-set assertion lives in the test suite, which
+ * parses the declaration text for exactly that reason.
+ */
+export const UMODEL_TYPES: readonly string[] = [...new Set(Object.values(UMODEL_TYPE))];
+
 /** Resource attributes tried, most-specific first, when resolving a signal. */
 const RESOLUTION_KEYS = ['k8s.pod.name', 'k8s.node.name', 'host.name', 'service.name'] as const;
 

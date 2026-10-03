@@ -175,6 +175,7 @@ export type { RcaEvalSuite } from './export/rcaeval.js';
 export {
   RCA100_CONTRACT_VERSION,
   RCA100_TARGET_ID,
+  UMODEL_TYPES,
   buildEntityIndex,
   buildGroundTruthJson,
   buildRca100Alerts,
@@ -298,6 +299,7 @@ export type {
 export {
   AIOPS2025_INSTANCE_TYPES,
   ITBENCH_SCENARIO_DOMAINS,
+  RCA100_UMODEL_TYPES,
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkItBenchStructure,

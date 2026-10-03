@@ -428,6 +428,11 @@ const TESTED = [
   'checkRcaEvalStructure',
   'checkRca100Structure',
   'AIOPS2025_INSTANCE_TYPES',
+  // RCA100's own vocabulary list, published so that a caller can name the
+  // seven words `checkRca100Structure` holds every type field to. It is the
+  // image of the private `UMODEL_TYPE` table, so it stays derived rather than
+  // restated.
+  'RCA100_UMODEL_TYPES',
   // The one-word `scenario_domain` contract, derived from the exporter's
   // `ITBENCH_SRE_DOMAIN` rather than restating `'SRE'`.
   'ITBENCH_SCENARIO_DOMAINS',
@@ -506,6 +511,7 @@ const TESTED = [
   // export/rca100.ts
   'RCA100_TARGET_ID',
   'RCA100_CONTRACT_VERSION',
+  'UMODEL_TYPES',
   'buildEntityIndex',
   'resolveSignalEntity',
   'buildTopologyJson',

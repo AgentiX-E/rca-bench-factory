@@ -101,10 +101,12 @@ import {
   ITBENCH_SCENARIO_CLASSES,
   ITBENCH_SRE_DOMAIN,
   TAXONOMY_BY_CATEGORY,
+  UMODEL_TYPES,
   buildTopologyJson,
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkItBenchStructure,
+  checkRca100Structure,
 } from '../packages/core/dist/index.js';
 import { ENTITY_KINDS, FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
 
@@ -206,6 +208,53 @@ function readScorerCategoryVerdict() {
 function readOutcomeVocabulary() {
   const itbenchWords = ITBENCH_SCENARIO_CLASSES.length;
   const cloudOpsWords = CLOUD_OPSBENCH_TAXONOMIES.length;
+
+  // A UModel word no row can produce. Built as a string the vocabulary does not contain
+  // rather than written out, so adding a genuine word to the table can never silently turn
+  // one of the ghost figures below into a legal-value test that passes for the wrong reason.
+  const GHOST_UMODEL = `ghost.${UMODEL_TYPES.join('|').length}`;
+
+  /**
+   * Does `checkRca100Structure` refuse an export carrying this defect?
+   *
+   * A minimal but *complete* RCA100 export, because the check is a conjunction: a case
+   * directory, all five modality tables, a topology and a four-layer answer key. Anything
+   * less fails for absence rather than for the patched field, and that failure would be
+   * indistinguishable from the one being measured.
+   *
+   * Every word is taken from the exported vocabulary rather than written out, for the same
+   * reason `GHOST_UMODEL` is: a hard-coded `'k8s.pod'` would make this figure report on a
+   * literal in the probe instead of on the exporter's contract.
+   */
+  const rca100Refuses = ({ entityType, entitySet, edgeType } = {}) => {
+    const legal = UMODEL_TYPES[0];
+    const topology = {
+      entities: [{ id: 'e1', type: entityType ?? legal, name: 'probe', first_observed: null, last_observed: null, props: {} }],
+      edges: [{ src: 'e1', src_type: edgeType ?? legal, dst: 'e1', dst_type: edgeType ?? legal, relation: 'self' }],
+      stats: { entities_total: 1, edges_total: 1 },
+    };
+    const files = {
+      'cases/case-001/topology.json': JSON.stringify(topology),
+      'cases/case-001/task.json': JSON.stringify({ task_id: 'case-001' }),
+      // `entity_set` is declared for `metrics.json` only, and the check is scoped to it.
+      // The other four tables get a row without the field, which is what the contract says.
+      'cases/case-001/metrics.json': JSON.stringify([{ entity_id: 'e1', entity_set: entitySet ?? legal, metric: 'm', value: 1 }]),
+      'cases/case-001/logs.json': JSON.stringify([{ entity_id: 'e1', message: 'm' }]),
+      'cases/case-001/traces.json': JSON.stringify([{ entity_id: 'e1', operation: 'op' }]),
+      'cases/case-001/events.json': JSON.stringify([{ entity_id: 'e1', reason: 'r' }]),
+      'cases/case-001/alerts.json': JSON.stringify([{ entity_id: 'e1', message: 'm' }]),
+      'answer_key/case-001.gt.json': JSON.stringify({ root_cause_entities: ['probe'], root_cause_types: ['service'], raw_ground_truth: 'x' }),
+    };
+    const report = checkRca100Structure(files);
+    // A malformed input makes this helper throw rather than answer "refused". The two ids
+    // below are the vocabulary clauses; `topology-shape` is checked too, so a patch that
+    // broke the topology is reported rather than silently counted as a vocabulary refusal.
+    for (const id of ['topology-shape', 'entity-types-in-vocabulary', 'edge-types-in-vocabulary', 'entity-set-in-vocabulary']) {
+      const entry = report.checks.find((c) => c.id === id);
+      if (entry === undefined) throw new Error(`checkRca100Structure published no ${id} check`);
+    }
+    return report.checks.some((c) => !c.passed);
+  };
 
   /** Does `checkItBenchStructure` refuse a scenario carrying this metadata? */
   const itbenchRefuses = (patch) => {
@@ -368,6 +417,21 @@ function readOutcomeVocabulary() {
     cloudOpsDifficultyGhostRejected: cloudOpsRefuses({ difficulty: 'trivial' }) ? 1 : 0,
     cloudOpsTaxonomyGhostRejected: cloudOpsRefuses({}, { fault_taxonomy: 'Ghost_Fault' }) ? 1 : 0,
     cloudOpsLegalAccepted: cloudOpsRefuses({}) ? 0 : 1,
+    // v1.48. The RCA100 exporter reads one projection table at four sites, and until this
+    // iteration the structure check read none of them. Two figures, for the reason the pair
+    // above exists: an *exporter* edit moves the vocabulary size, a *scorer* edit moves a
+    // ghost verdict, and one figure would let either defect mask the other.
+    //
+    // The ghost word is built from the vocabulary rather than hard-coded, so this figure
+    // cannot drift into testing a word the exporter happens to have added. `GHOST_UMODEL`
+    // is a string no row can produce by construction.
+    rca100UmodelVocabularyWords: UMODEL_TYPES.length,
+    rca100EntityTypeGhostRejected: rca100Refuses({ entityType: GHOST_UMODEL }) ? 1 : 0,
+    rca100EntitySetGhostRejected: rca100Refuses({ entitySet: GHOST_UMODEL }) ? 1 : 0,
+    rca100EdgeTypeGhostRejected: rca100Refuses({ edgeType: GHOST_UMODEL }) ? 1 : 0,
+    // The legal control, without which a check that rejected everything would satisfy all
+    // three figures above and look like a working one.
+    rca100TypesLegalAccepted: rca100Refuses({}) ? 0 : 1,
   };
 }
 

@@ -716,6 +716,15 @@ def blind_anchor(result: dict | None, which: str) -> tuple:
             # requirement -- so that an entry aimed at them is BLIND when it misses.
             "umodelDeclaredRows",
             "umodelDeclaredKeySetMatchesIr",
+            # v1.48. The other half of the same story: the projection table is read at four
+            # sites, and the key set was not the only thing nobody checked. An *exporter*
+            # edit moves the vocabulary size; a *scorer* edit moves a ghost verdict. Both
+            # directions are anchored, for the reason the paragraph above gives.
+            "rca100UmodelVocabularyWords",
+            "rca100EntityTypeGhostRejected",
+            "rca100EntitySetGhostRejected",
+            "rca100EdgeTypeGhostRejected",
+            "rca100TypesLegalAccepted",
         )
         if result is None:
             return tuple(OUTCOME_VOCABULARY_BASELINE[k] for k in keys)
@@ -2702,6 +2711,103 @@ INJECTIONS: list[
         # mean a node is an APM service, which is a *wrong* program rather than a *different*
         # one; the rule from v1.46 is that a mutation has to stay a legal program whose only
         # difference is the one being measured.
+        lambda t: rename(t, "  mq: 'apm.external.message',", "  mq: 'apm.external',"),
+        "rca100",
+    ),
+    # --- v1.48: the four fields, and the three checks -----------------------------------
+    #
+    # The key-set entries above pinned *which kinds* the projection table answers for. They
+    # say nothing about whether the words it emits are ever checked, and the audit found they
+    # were not: `checkRca100Structure` read `entities[].id` and `.name` and nothing else, every
+    # edge field was never touched, and `entity_set` had its write site as its only occurrence
+    # in the package. These five entries are the assertion that the three new clauses are
+    # load-bearing, split by *direction* because an exporter edit and a scorer edit fail in
+    # different places and one figure would let either mask the other.
+    (
+        "BN. rca100: widen the UModel vocabulary with a word no row produces",
+        None,
+        lambda r: outcome_vocabulary(r)["rca100UmodelVocabularyWords"]
+        == outcome_vocabulary_baseline()["rca100UmodelVocabularyWords"],
+        "the size of the UModel word set, the figure this mutation widens",
+        # The exporter side, and the *additive* direction. `UMODEL_TYPES` is composed from the
+        # table, so this cannot be reached by editing a row -- a row edit moves the vocabulary
+        # in place. Appending to the composed list is what makes the vocabulary admit a word no
+        # row can produce, which is the defect the scorer's three clauses exist to catch: with
+        # the widened list, a ghost word would be a legal member.
+        lambda t: rename(
+            t,
+            "export const UMODEL_TYPES: readonly string[] = [...new Set(Object.values(UMODEL_TYPE))];",
+            "export const UMODEL_TYPES: readonly string[] = ["
+            "...new Set(Object.values(UMODEL_TYPE)), 'ghost.umodel'];",
+        ),
+        "rca100",
+    ),
+    (
+        "BO. scorer: stop checking entities[].type, so a ghost UModel type passes again",
+        None,
+        lambda r: outcome_vocabulary(r)["rca100EntityTypeGhostRejected"]
+        == outcome_vocabulary_baseline()["rca100EntityTypeGhostRejected"],
+        "whether a ghost UModel type in entities[].type is still refused",
+        # One clause at a time, which is the point. The three scorer entries below are three
+        # separate claims about three separate sites, and neutering one must leave the other
+        # two figures at 1 -- if a single clause covered all three fields, the audit's central
+        # finding (four sites, none checked) would not have been reachable by reading the code.
+        lambda t: rename(
+            t,
+            "if (typeof e.type !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, e.type)) {",
+            "if (false) {",
+        ),
+        "scorer",
+    ),
+    (
+        "BP. scorer: stop checking metrics entity_set, so a ghost set passes again",
+        None,
+        lambda r: outcome_vocabulary(r)["rca100EntitySetGhostRejected"]
+        == outcome_vocabulary_baseline()["rca100EntitySetGhostRejected"],
+        "whether a ghost UModel type in metrics entity_set is still refused",
+        # The field that had no consumer at all -- not in the scorer, not in official.ts, not
+        # anywhere in src/ outside its own write. Its own entry rather than sharing BO's,
+        # because "the structure check reads the type field" and "the structure check reads
+        # the entity_set field" were independently false and are now independently true.
+        lambda t: rename(
+            t,
+            "if (typeof row.entity_set !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, row.entity_set)) {",
+            "if (false) {",
+        ),
+        "scorer",
+    ),
+    (
+        "BQ. scorer: stop checking edge types, so a ghost src_type passes again",
+        None,
+        lambda r: outcome_vocabulary(r)["rca100EdgeTypeGhostRejected"]
+        == outcome_vocabulary_baseline()["rca100EdgeTypeGhostRejected"],
+        "whether a ghost UModel type on an edge is still refused",
+        # Both endpoints are replaced in one edit because the clause that reads them is one
+        # clause. Note the asymmetry with the *test* side: this battery entry is allowed to
+        # neuter both at once, because the figure it must move is "any ghost edge type is
+        # refused". The test suite is not allowed that shorthand, and v1.48's own neutering run
+        # proved it: a single test that moved both endpoints left the src clause and the dst
+        # clause each asserting nothing, and only splitting the test into two exposed it.
+        lambda t: rename(
+            t,
+            "if (typeof edge.src_type !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, edge.src_type)) {\n          edgeTypesOk = false;\n        }\n        if (typeof edge.dst_type !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, edge.dst_type)) {\n          edgeTypesOk = false;\n        }",
+            "if (false) {\n          edgeTypesOk = false;\n        }",
+        ),
+        "scorer",
+    ),
+    (
+        "BR. rca100: collapse two UModel words, so the vocabulary loses one",
+        None,
+        lambda r: outcome_vocabulary(r)["rca100UmodelVocabularyWords"]
+        == outcome_vocabulary_baseline()["rca100UmodelVocabularyWords"],
+        "the size of the UModel word set, the figure this mutation shrinks",
+        # The *subtractive* direction on the same figure BN widens, so the two together show
+        # the number is read rather than coincidentally equal. `mq` carries
+        # `apm.external.message` alone, so remapping it onto `apm.external` takes seven words to
+        # six -- and, unlike BM which moved `umodelDistinctWords` through the exporter's
+        # behaviour, this one moves the declared vocabulary the scorer checks against. BM would
+        # have reported SURVIVED here: the two figures are different claims about different
+        # objects, which is why both exist.
         lambda t: rename(t, "  mq: 'apm.external.message',", "  mq: 'apm.external',"),
         "rca100",
     ),

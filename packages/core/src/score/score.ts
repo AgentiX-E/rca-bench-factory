@@ -4,6 +4,7 @@ import { AIOPS2025_CATEGORIES } from '../export/aiops2025.js';
 import { CLOUD_OPSBENCH_TAXONOMIES } from '../export/cloudopsbench.js';
 import { DIFFICULTIES } from '../export/difficulty.js';
 import { ITBENCH_SCENARIO_CLASSES, ITBENCH_SRE_DOMAIN } from '../export/itbench.js';
+import { UMODEL_TYPES } from '../export/rca100.js';
 import { isRecord, safeJson } from '../util/json.js';
 import { parseCsvObjects } from '../util/csv.js';
 import { parseOpenRcaScoringPoints } from './official.js';
@@ -293,6 +294,14 @@ function rca100CaseId(topoPath: string): string {
  * `entity_id` in the modality tables and every root-cause entity name must
  * resolve into the task's `topology.json`. This check re-verifies that invariant
  * (not merely the file layout) so a dangling reference cannot slip through.
+ *
+ * It also re-verifies the UModel vocabulary, which is the second half of the
+ * pattern `checkAioPs2025Structure` established for `instance_type`. RCA100 reads
+ * one projection table at four sites -- `entities[].type`, `metrics.entity_set`,
+ * `edges[].src_type` and `edges[].dst_type` -- so one derived vocabulary covers
+ * all four. Before this, the check read `entities[].id` and `.name` and nothing
+ * else: every edge field was never touched, and `entity_set` had its write site as
+ * its only occurrence in the package.
  */
 export function checkRca100Structure(files: Record<string, string>): StructureReport {
   const checks: ScoreCheck[] = [];
@@ -320,6 +329,13 @@ export function checkRca100Structure(files: Record<string, string>): StructureRe
   let refsResolve = true;
   let rootsResolve = true;
   let gtOk = true;
+  // The UModel vocabulary, one flag per site the table is read at. Three flags
+  // rather than one because the four fields fail independently: a reader told only
+  // "the vocabulary is wrong" cannot tell whether the topology, the edges or the
+  // modality rows carried the bad word.
+  let entityTypesOk = true;
+  let edgeTypesOk = true;
+  let entitySetsOk = true;
 
   for (const path of topoPaths) {
     const id = rca100CaseId(path);
@@ -348,6 +364,28 @@ export function checkRca100Structure(files: Record<string, string>): StructureRe
         if (isRecord(e)) {
           if (typeof e.id === 'string') ids.add(e.id);
           if (typeof e.name === 'string') names.add(e.name);
+          // The emitted UModel type. A non-string is a failure rather than a skip,
+          // because "the field is absent" and "the field is fine" are different
+          // claims and only the second one is safe to treat as passing.
+          if (typeof e.type !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, e.type)) {
+            entityTypesOk = false;
+          }
+        }
+      }
+    }
+
+    // The edge type pair, which the check previously never touched: `edges` was
+    // only ever tested for being an array and for its length. Both endpoints are
+    // read, and both are read on every edge, so a bad `dst_type` on the second of
+    // three edges is as visible as one on the first.
+    if (Array.isArray(edges)) {
+      for (const edge of edges) {
+        if (!isRecord(edge)) continue;
+        if (typeof edge.src_type !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, edge.src_type)) {
+          edgeTypesOk = false;
+        }
+        if (typeof edge.dst_type !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, edge.dst_type)) {
+          edgeTypesOk = false;
         }
       }
     }
@@ -364,6 +402,30 @@ export function checkRca100Structure(files: Record<string, string>): StructureRe
       for (const row of rows) {
         if (isRecord(row) && typeof row.entity_id === 'string' && !ids.has(row.entity_id)) {
           refsResolve = false;
+        }
+        // `entity_set` is a *metrics-only* field. It is `required: true` in the
+        // published contract for `metrics.json`, and it is not declared at all for
+        // `logs.json`/`traces.json`/`events.json`/`alerts.json` -- the emitter
+        // declines to write it there, and the contract agrees. So the check is
+        // scoped to the one table that declares it, rather than applied to every
+        // modality.
+        //
+        // That scoping is the whole reason this clause is worth writing down. The
+        // first version of it required the field on every row of every table, and
+        // the only export the suite had ever built was rejected -- on four files
+        // whose contract never asked for the field. A check that invents a
+        // requirement is not a stricter check; it is a wrong one, and the four
+        // failures is how it announced itself.
+        //
+        // Within `metrics.json` a row that carries an `entity_id` and no valid
+        // `entity_set` is a defect rather than a skip, which is why this branch does
+        // not test for presence first: an absent value fails the same way a wrong one
+        // does. The condition is anchored on `entity_id` because a row without one is
+        // not part of the entity-aligned table at all.
+        if (name === 'metrics.json' && isRecord(row) && typeof row.entity_id === 'string') {
+          if (typeof row.entity_set !== 'string' || !isVocabularyMember(RCA100_UMODEL_TYPES, row.entity_set)) {
+            entitySetsOk = false;
+          }
         }
       }
     }
@@ -392,6 +454,14 @@ export function checkRca100Structure(files: Record<string, string>): StructureRe
   checks.push(check('entity-refs-resolve', refsResolve, 'every entity_id resolves into the topology'));
   checks.push(check('root-cause-resolves', rootsResolve, 'every root-cause entity name resolves into the topology'));
   checks.push(check('gt-structure', gtOk, 'four-layer answer key (root_cause_entities/types + raw_ground_truth)'));
+  // The UModel vocabulary, one check per field group. The descriptions carry the
+  // vocabulary size so a failure reads as a figure: a reader seeing "one of 7 UModel
+  // words" knows the domain without opening the exporter, and knows that a check
+  // reporting a different number is looking at a different vocabulary.
+  const umodelWords = RCA100_UMODEL_TYPES.length;
+  checks.push(check('entity-types-in-vocabulary', entityTypesOk, `every entities[].type is one of ${umodelWords} UModel words`));
+  checks.push(check('edge-types-in-vocabulary', edgeTypesOk, `every edges[].src_type and dst_type is one of ${umodelWords} UModel words`));
+  checks.push(check('entity-set-in-vocabulary', entitySetsOk, `every modality row with an entity_id carries one of ${umodelWords} UModel words in entity_set`));
 
   return { target: 'rca100', passed: checks.every((c) => c.passed), checks };
 }
@@ -411,6 +481,22 @@ export const AIOPS2025_INSTANCE_TYPES = ENTITY_KINDS.filter(
   (kind): kind is Extract<EntityKind, 'service' | 'pod' | 'node'> =>
     kind === 'service' || kind === 'pod' || kind === 'node',
 );
+
+/**
+ * The UModel words an RCA100 export may carry.
+ *
+ * One vocabulary for four fields, because all four are reads of one projection
+ * table: `entities[].type`, `metrics.entity_set`, `edges[].src_type` and
+ * `edges[].dst_type`. It is the exporter's own image rather than a second literal
+ * list, for the reason `AIOPS2025_INSTANCE_TYPES` states above: a copy here would
+ * silently disagree the first time a row changed, and the disagreement would be
+ * between two statements that both look authoritative.
+ *
+ * The exporter's record is private, so this is the *image* that reaches a reader --
+ * seven words from nine kinds. It cannot express which kind maps to which word;
+ * that claim is the exporter's, and the test suite asserts it row by row.
+ */
+export const RCA100_UMODEL_TYPES = UMODEL_TYPES;
 
 /**
  * Verify an AIOps2025 export against its field contract.

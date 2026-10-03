@@ -10055,3 +10055,110 @@ It does not establish that `literalRows` is a general-purpose declaration parser
 one narrow literal shape, used for exactly one private table, and the three self-tests state that
 narrowness rather than hiding it. A future table whose declaration does not match that shape will make
 the helper throw rather than return a wrong answer, which is the property the fix bought.
+
+## Finding 108: four fields project one table, and the structure check read none of them
+
+Finding 107 closed by handing forward the image→rows direction of the four projection tables. It was
+measured first, and the premise was false: all three image figures are `[...new Set(Object.values(TABLE))]`,
+composed from the table rather than written out beside it, so there is no direction in which the image can
+drift from its rows. That census would have been an assertion about a tautology.
+
+The audit that replaced it found something larger. `UMODEL_TYPE` is read at **four** sites in
+`export/rca100.ts`, and `checkRca100Structure` read **none** of them.
+
+### The four projection sites
+
+| Field | Site | Read by `checkRca100Structure` before this iteration |
+| --- | --- | --- |
+| `entities[].type` | `rca100.ts:113` | no — the check read `entities[].id` and `.name` and nothing else |
+| `metrics.entity_set` | `rca100.ts:153` | no — and this write site was the **only** occurrence of the string in the whole package |
+| `edges[].src_type` | `rca100.ts:128` | no — every edge field was untouched |
+| `edges[].dst_type` | `rca100.ts:130` | no — same |
+
+The table is the same in all four cases: `UMODEL_TYPE[Entity.kind]`, nine IR kinds projecting onto seven
+words. One table, four fields, zero checks.
+
+### Why this is a defect and not a design choice
+
+The sibling target answers the question directly. `AIOps2025`'s `instanceTypeOf` (`aiops2025.ts:74-85`)
+emits `instance_type` at `:109`, **and** `checkAioPs2025Structure` checks it — `score.ts:478` asserts the
+shape and `:488` asserts `isVocabularyMember(AIOPS2025_INSTANCE_TYPES, ...)`. RCA100 received the *emit*
+half of that pattern and none of the *check* half. A ghost `entities[].type`, a ghost `edges[].src_type`
+and a ghost `metrics.entity_set` were all accepted, and the only reason a widening of the table was ever
+caught was the key-set assertion Finding 107 added — which guards the table, not the four fields the
+table is projected onto.
+
+### The gap my own first check invented
+
+The first `entity_set` clause required the field on **every** modality row. Four pre-existing tests went
+red: `passes a well-formed RCA100 export`, `scoreExport > scores 100`, and two of the new ones. A
+temporary diagnostic showed why — `logs`/`traces`/`events`/`alerts` all emit `entity_set: null`, and
+`format-spec.mjs:362` declares the field **only for `metrics.json`**. The other four tables do not declare
+it and the emitter correctly omits it.
+
+> The emitter was right and my check was wrong. A check that invents a requirement is not a stricter
+> check; it is a wrong one.
+
+The clause is now scoped to `name === 'metrics.json' && typeof row.entity_id === 'string'`, and the test
+that replaced the failure asserts the positive fact the failure taught: the four tables that do not
+declare `entity_set` are accepted **without** it.
+
+### The second gap, found by neutering rather than by reading
+
+The `withEdgeType` helper moved `src_type` **and** `dst_type` together, so neutering either clause alone
+produced **zero** failures — one test standing in for two claims. Splitting it into `'src'`, `'dst'` and a
+non-string edge test moved the file from 155 to 157 tests, and the neutering run then produced **3 / 2 / 1 / 3**
+distinct failures per clause. Both defects were found by measurement, and are recorded here as the
+finding's substance rather than hidden as an implementation detail.
+
+### Figures
+
+| Figure | Value | Meaning |
+| --- | --- | --- |
+| `rca100UmodelVocabularyWords` | 7 | words in the published image |
+| `rca100EntityTypeGhostRejected` | 1 | a ghost `entities[].type` is refused |
+| `rca100EntitySetGhostRejected` | 1 | a ghost `metrics.entity_set` is refused |
+| `rca100EdgeTypeGhostRejected` | 1 | a ghost `edges[].src_type`/`dst_type` is refused |
+| `rca100TypesLegalAccepted` | 1 | the legal control, without which a check that rejected everything would satisfy the three above |
+
+The ghost word is built as `ghost.${UMODEL_TYPES.join('|').length}` rather than written out, so adding a
+genuine word to the table can never silently turn a ghost figure into a legal-value test that passes for
+the wrong reason.
+
+### Acceptance
+
+| Gate | Result |
+| --- | --- |
+| `vitest run` | **2984 passed / 103 files** |
+| Coverage, statements | 99.96% |
+| Coverage, branches | 99.91% |
+| Coverage, functions | 100% |
+| Coverage, lines | 99.96% |
+| every touched module | 100% on all four dimensions (`export/rca100.ts`, `score/score.ts`, `index.ts`) |
+| TDD, by neutering | 4 mutations, 3/2/1/3 failures, source restored byte-for-byte |
+| Battery | **72 caught / 0 survived / 0 inert / 0 blind**, 16 in-package sources restored byte-for-byte |
+| Battery entries | 67 -> **72** (BN–BR) |
+| 6-slot contract | AST-verified **before** running: all five new entries are `Constant, Constant, Lambda, Constant, Lambda, Constant` |
+| `pnpm typecheck` | clean |
+| `pnpm lint` | ALL PROPERTIES HOLD |
+| `pnpm docs:check` | README sample executed; CLI reference 11 commands / 13 documented |
+| `pnpm examples:gen` / `examples:check` | up to date |
+| `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
+| Export enumeration | `UMODEL_TYPES` / `RCA100_UMODEL_TYPES` added to `TESTED`, not exempted |
+
+The only sub-100% span remains `official.ts:1098-1100`, the `const unhandled: never` backstop, plus
+`score.ts:383` and `cli/args.ts:194`; all three predate this iteration.
+
+### What this does not establish
+
+It does not establish that four fields are all the projections of this table. It establishes that the
+four the exporter actually reads are now held to the vocabulary, and that the check reads the field rather
+than a string that happens to appear once.
+
+It does not establish that the vocabulary is correct. It establishes that no export can carry a word
+outside the seven, which is a different claim: a table that mapped every kind to `k8s.pod` would satisfy
+every figure above.
+
+It does not establish that `entity_set` is checked everywhere it is declared. It is checked on the one
+table whose contract declares it, and the four that do not are asserted to be accepted without it — which
+is the fact my first, wrong clause is the evidence for.

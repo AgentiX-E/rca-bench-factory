@@ -1064,7 +1064,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "UMODEL_TYPE[Entity.kind]",
-              "notes": "apm.service | k8s.pod | k8s.node | apm.external.database | ... The same seven-word image as `entities[].type`, read from the same table."
+              "notes": "apm.service | k8s.pod | k8s.node | apm.external.database | ... The same seven-word image as `entities[].type`, read from the same table, and checked against it by `checkRca100Structure`. This is the only modality table that declares the field."
             },
             {
               "name": "timestamp",
@@ -1371,7 +1371,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "UMODEL_TYPE[Entity.kind]",
-              "notes": "service->apm.service, pod/container->k8s.pod, node/host->k8s.node, db->apm.external.database, mq->apm.external.message, cluster->k8s.cluster, external->apm.external. Nine IR kinds project onto these seven words, so `host` and `container` collapse onto `k8s.node` and `k8s.pod` respectively; the source kind survives in `props.original_kind`, which is what makes the projection lossless. The table is total over `ENTITY_KINDS` and both directions are asserted."
+              "notes": "service->apm.service, pod/container->k8s.pod, node/host->k8s.node, db->apm.external.database, mq->apm.external.message, cluster->k8s.cluster, external->apm.external. Nine IR kinds project onto these seven words, so `host` and `container` collapse onto `k8s.node` and `k8s.pod` respectively; the source kind survives in `props.original_kind`, which is what makes the projection lossless. The table is total over `ENTITY_KINDS` and both directions are asserted. Every emitted word is checked against the same seven-word vocabulary as `edges[].src_type`, `edges[].dst_type` and `metrics.entity_set`."
             },
             {
               "name": "entities[].name",
@@ -1434,7 +1434,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "UMODEL_TYPE[from.kind]",
-              "notes": ""
+              "notes": "One of the same seven UModel words as `entities[].type`, checked against them by `checkRca100Structure`."
             },
             {
               "name": "edges[].dst",
@@ -1448,7 +1448,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "UMODEL_TYPE[to.kind]",
-              "notes": ""
+              "notes": "The other endpoint of the same pair, checked by the same clause. A dangling endpoint falls back to `external`, so the fallback is inside the vocabulary rather than an escape from it."
             },
             {
               "name": "edges[].relation",
@@ -2339,6 +2339,21 @@ window.RBF_DATA = {
               "id": "gt-structure",
               "passed": true,
               "detail": "four-layer answer key (root_cause_entities/types + raw_ground_truth)"
+            },
+            {
+              "id": "entity-types-in-vocabulary",
+              "passed": true,
+              "detail": "every entities[].type is one of 7 UModel words"
+            },
+            {
+              "id": "edge-types-in-vocabulary",
+              "passed": true,
+              "detail": "every edges[].src_type and dst_type is one of 7 UModel words"
+            },
+            {
+              "id": "entity-set-in-vocabulary",
+              "passed": true,
+              "detail": "every modality row with an entity_id carries one of 7 UModel words in entity_set"
             }
           ]
         }
