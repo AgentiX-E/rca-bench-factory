@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ingestFile } from '../src/ingest/file.js';
 import { parseFaultSpec } from '../src/fault/collector.js';
 import { checkAioPs2025Structure, AIOPS2025_INSTANCE_TYPES, ITBENCH_SCENARIO_DOMAINS } from '../src/score/score.js';
@@ -7,6 +10,7 @@ import { CLOUD_OPSBENCH_TAXONOMIES, TAXONOMY_BY_CATEGORY } from '../src/export/c
 import { DIFFICULTIES } from '../src/export/difficulty.js';
 import { ITBENCH_SCENARIO_CLASSES, ITBENCH_SRE_DOMAIN, CLASS_BY_CATEGORY } from '../src/export/itbench.js';
 import { EXPORTERS } from '../src/score/dispatch.js';
+import { FAULT_EXPECTATIONS } from '../src/gates/validity.js';
 import { formatCommandHelp, parseCliArgs, HELP_TOPICS } from '../src/cli/args.js';
 import {
   ENTITY_KINDS,
@@ -531,5 +535,256 @@ describe('Cloud-OpsBench fault taxonomy · a map image, not a third list', () =>
     expect(Object.keys(TAXONOMY_BY_CATEGORY).length).toBe(8);
     expect(CLOUD_OPSBENCH_TAXONOMIES.length).toBe(6);
     expect(new Set(Object.values(TAXONOMY_BY_CATEGORY)).size).toBe(6);
+  });
+});
+
+/**
+ * The key set of an exhaustive projection table, asserted in both directions.
+ *
+ * `validity.ts` states the property for `FAULT_EXPECTATIONS` in prose: "total
+ * over `FAULT_CATEGORIES` and both directions are asserted in the test suite, so
+ * adding a category to the IR without deciding what it moves is a red suite
+ * rather than a silent gap." That sentence describes four tables and was true of
+ * one. This helper is the sentence as a function.
+ *
+ * Two directions, because they fail differently:
+ *
+ *   - A table *missing* a row is caught by the `Record<IRenum, string>`
+ *     annotation at `tsc`. The loop re-states it at runtime so the guarantee
+ *     survives compilation to `dist` and reaches any consumer that reads the
+ *     compiled object rather than the source.
+ *   - A table *carrying a row the IR does not admit* is caught by nothing. An
+ *     excess key requires widening the annotation to make the program compile,
+ *     and widening the annotation is the edit that removes the only guard. The
+ *     sorted comparison is what makes that a red suite.
+ */
+function expectKeySetMatches(table: Record<string, unknown>, irEnum: readonly string[]): void {
+  for (const member of irEnum) {
+    expect(table[member], `${member} has no row in the projection table`).toBeDefined();
+  }
+  expect(Object.keys(table).sort()).toEqual([...irEnum].sort());
+}
+
+/**
+ * Read a `const NAME: Record<..., ...> = { ... }` literal from a source file as
+ * ordered rows, without importing it.
+ *
+ * `UMODEL_TYPE` is private to `rca100.ts`, so no test can name the object and
+ * `Object.keys` cannot see it. Reading the declaration text is the weaker
+ * mechanism and is stated as such: it establishes what the *source* declares,
+ * not what the module exports at runtime. It is used for exactly one table, and
+ * only because that table is the one the module deliberately keeps to itself --
+ * the two tables that produce scored vocabularies are exported and get the
+ * runtime assertion.
+ *
+ * The behavioural leg in `rca100.test.ts` (every `EntityKind` through
+ * `buildTopologyJson`) is the second, independent statement: it reads the emitted
+ * word, not the table.
+ *
+ * ## Why the declaration is matched with a boundary, and not `indexOf`
+ *
+ * The first version anchored with `source.indexOf(\`const ${name}\`)`. That is a
+ * *prefix* match, and it is defeated by a rename. Injection BL splits the binding:
+ * it renames the literal to `UMODEL_TYPE_TABLE` and rebinds `UMODEL_TYPE` to
+ * `Object.assign({}, UMODEL_TYPE_TABLE, { ghostkind: 'apm.service' })`. Since
+ * `const UMODEL_TYPE` is a prefix of `const UMODEL_TYPE_TABLE`, `indexOf` returns
+ * the position of the *renamed* declaration in both the original and the mutated
+ * source -- 2301 in each, measured -- so the helper silently read the one table the
+ * mutation had deliberately moved out of the way and reported a clean nine rows.
+ * Under that mutation the whole suite stayed green, all 118 tests, including this
+ * file's four UModel assertions.
+ *
+ * A declaration whose name is a prefix of another declaration's name is therefore
+ * matched, not by position, but by a name-boundary pattern: the identifier has to be
+ * followed by something that cannot continue it. That makes `const UMODEL_TYPE` stop
+ * matching `const UMODEL_TYPE_TABLE`, so the helper reads the binding it was asked
+ * for or fails loudly -- which is the behaviour `expect` below states.
+ */
+function literalRows(source: string, name: string): [string, string][] {
+  // `(?![\w$])` is the boundary: the next character must be one that cannot be part
+  // of an identifier, so a longer name sharing this prefix does not match.
+  const declaration = new RegExp(`\\bconst\\s+${name}(?![\\w$])`);
+  const match = declaration.exec(source);
+  expect(match, `${name} is not declared in the source`).not.toBeNull();
+  const open = match === null ? -1 : match.index;
+  const braceStart = source.indexOf('{', open);
+  const braceEnd = source.indexOf('\n};', braceStart);
+  expect(braceEnd, `${name} has no literal body`).toBeGreaterThan(braceStart);
+  const body = source.slice(braceStart + 1, braceEnd);
+
+  const rows: [string, string][] = [];
+  for (const line of body.split('\n')) {
+    // Strip the trailing comment first, so `key: 'value', // note, with comma`
+    // cannot contribute a spurious row.
+    const code = line.split('//')[0];
+    const match = /^\s*(?:'([^']+)'|([A-Za-z_$][\w$]*))\s*:\s*'([^']*)'\s*,?\s*$/.exec(code);
+    if (match) rows.push([match[1] ?? match[2], match[3]]);
+  }
+  return rows;
+}
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const RCA100_SOURCE = readFileSync(join(HERE, '../src/export/rca100.ts'), 'utf8');
+
+describe('the declaration reader itself, because a reader that reads the wrong table is silent', () => {
+  // `literalRows` is the only mechanism that can reach `UMODEL_TYPE`, which is
+  // private to the module, so its correctness is load-bearing in a way the other
+  // helpers' is not: if it resolves the wrong declaration it returns a *plausible*
+  // table and every assertion built on it passes. That is not hypothetical. The
+  // first version anchored on `indexOf('const UMODEL_TYPE')`, which also matches
+  // `const UMODEL_TYPE_TABLE` because one name is a prefix of the other, and a
+  // mutation that renames the literal out from under the binding therefore left
+  // all four UModel assertions green. These tests pin the boundary rule.
+
+  it('does not resolve a longer declaration that shares the name as a prefix', () => {
+    // The exact shape injection BL produces: the literal is renamed and the original
+    // name is rebound to an expression, so no literal body exists for the name asked for.
+    const rebinding = [
+      'const UMODEL_TYPE_TABLE: Record<EntityKind, string> = {',
+      "  service: 'apm.service',",
+      '};',
+      '',
+      'const UMODEL_TYPE: Record<EntityKind, string> = Object.assign({}, UMODEL_TYPE_TABLE);',
+    ].join('\n');
+
+    // The old `indexOf` anchor matched `const UMODEL_TYPE_TABLE` here and happily
+    // returned that table. The boundary-aware reader must not: it has to fail, because
+    // "the name I asked for has no literal" and "here is a different table" are
+    // different answers and only the first one tells the truth.
+    expect(() => literalRows(rebinding, 'UMODEL_TYPE')).toThrow(/UMODEL_TYPE has no literal body/);
+    // And the renamed declaration is still readable under its own name, so the failure
+    // is about the boundary rather than about the reader giving up on the file.
+    expect(literalRows(rebinding, 'UMODEL_TYPE_TABLE')).toEqual([['service', 'apm.service']]);
+  });
+
+  it('reads the real declaration when both names are present in the real source', () => {
+    // The other half of the rule: with the actual file, the boundary must not be so
+    // strict that it rejects the declaration it is there to read.
+    const rows = literalRows(RCA100_SOURCE, 'UMODEL_TYPE');
+    expect(rows.length).toBe(DOCUMENTED_UMODEL_TABLE.length);
+    expect(rows.map(([key]) => key)).toContain('external');
+  });
+
+  it('fails loudly when the name is absent rather than returning an empty table', () => {
+    // An empty table would satisfy "every IR kind has a row" vacuously in the other
+    // direction, so absence has to be a failure and not a zero.
+    expect(() => literalRows(RCA100_SOURCE, 'NO_SUCH_TABLE')).toThrow(/is not declared in the source/);
+  });
+});
+
+/**
+ * `docs/targets/rca100.md` — the UModel type mapping, one row per IR kind.
+ *
+ * Transcribed from the published table at `docs/targets/rca100.md:43-51`, in
+ * `ENTITY_KINDS` order so a lookup by kind is an index into this array. The
+ * source record happens to be written in a different order (`host` before
+ * `container`); that permutation is invisible in the output because every read is
+ * `UMODEL_TYPE[kind]`, which is why this array is keyed by the IR rather than by
+ * the literal.
+ */
+const DOCUMENTED_UMODEL_TABLE = [
+  'apm.service', // service
+  'k8s.pod', // pod
+  'k8s.node', // node
+  'k8s.pod', // container
+  'apm.external.database', // db
+  'apm.external.message', // mq
+  'k8s.node', // host
+  'k8s.cluster', // cluster
+  'apm.external', // external
+];
+
+describe('every exhaustive projection table states its key set', () => {
+  it('CLASS_BY_CATEGORY answers for every fault category, and no other', () => {
+    expectKeySetMatches(CLASS_BY_CATEGORY, FAULT_CATEGORIES);
+  });
+
+  it('TAXONOMY_BY_CATEGORY answers for every fault category, and no other', () => {
+    expectKeySetMatches(TAXONOMY_BY_CATEGORY, FAULT_CATEGORIES);
+  });
+
+  it('FAULT_EXPECTATIONS answers for every fault category, and no other', () => {
+    // The table whose docstring states the property. Re-stated here so all four
+    // tables are checked by one mechanism; `validity.test.ts` keeps its own
+    // assertion, so this is a second statement rather than a relocation.
+    expectKeySetMatches(FAULT_EXPECTATIONS, FAULT_CATEGORIES);
+  });
+
+  it('UMODEL_TYPE answers for every entity kind, and no other', () => {
+    const rows = literalRows(RCA100_SOURCE, 'UMODEL_TYPE');
+    expectKeySetMatches(Object.fromEntries(rows), ENTITY_KINDS);
+  });
+
+  it('the four tables agree on what "exhaustive" means, so no two can drift', () => {
+    // The claim is one property over four tables, so the property is asserted
+    // once over all four rather than trusted to four hand-written loops.
+    const tables: [string, Record<string, unknown>, readonly string[]][] = [
+      ['CLASS_BY_CATEGORY', CLASS_BY_CATEGORY, FAULT_CATEGORIES],
+      ['TAXONOMY_BY_CATEGORY', TAXONOMY_BY_CATEGORY, FAULT_CATEGORIES],
+      ['FAULT_EXPECTATIONS', FAULT_EXPECTATIONS, FAULT_CATEGORIES],
+      ['UMODEL_TYPE', Object.fromEntries(literalRows(RCA100_SOURCE, 'UMODEL_TYPE')), ENTITY_KINDS],
+    ];
+    for (const [name, table, irEnum] of tables) {
+      expect(Object.keys(table).length, `${name} row count`).toBe(irEnum.length);
+    }
+    // AIOPS2025_CATEGORY is the contrast and is deliberately absent: it is keyed
+    // on fault-type strings rather than an IR enum, so "total over the enum" is
+    // not a property it can have. Its own totality is asserted in the AIOps2025
+    // describe above, against the two sources it is composed from.
+    expect(AIOPS2025_CATEGORIES).toBeDefined();
+  });
+});
+
+describe('each projection table matches its published rows, row by row', () => {
+  // The image comparison above asks whether the *set* of emitted words is right.
+  // It cannot see which row maps to which word, so a swap of two rows that leaves
+  // the set unchanged passes it. These compare position by position, against the
+  // published table rather than against the deduplicated image.
+
+  it('itbench: the scenario_class column, one row per IR category, in order', () => {
+    expect(Object.values(CLASS_BY_CATEGORY)).toEqual(DOCUMENTED_ITBENCH_CLASS_TABLE);
+  });
+
+  it('cloud-opsbench: the fault_taxonomy column, one row per IR category, in order', () => {
+    expect(Object.values(TAXONOMY_BY_CATEGORY)).toEqual(DOCUMENTED_TAXONOMY_TABLE);
+  });
+
+  it('rca100: the UModel type column, one row per IR kind, keyed on the IR', () => {
+    const rows = literalRows(RCA100_SOURCE, 'UMODEL_TYPE');
+    // By key rather than by position, and deliberately so. `ENTITY_KINDS` order
+    // is load-bearing -- `DOCUMENTED_ENTITY_KINDS` pins it and
+    // `AIOPS2025_INSTANCE_TYPES` filters it -- but this record's order is not:
+    // nothing calls `Object.values(UMODEL_TYPE)`, every read is
+    // `UMODEL_TYPE[someKind]`, so a permutation emits identical output. Asserting
+    // position here would pin an artifact of how the literal happens to be
+    // written, which is the kind of assertion that gets relaxed rather than
+    // fixed the first time someone reorders a table for readability.
+    //
+    // The row *set* is the claim that carries meaning, and it is asserted in both
+    // directions: every IR kind has a row, and no row names a kind the IR does
+    // not have (the key-set test above).
+    expect(new Map(rows).size).toBe(rows.length);
+    expect([...new Map(rows).keys()].sort()).toEqual([...ENTITY_KINDS].sort());
+    for (const kind of ENTITY_KINDS) {
+      const documented = DOCUMENTED_UMODEL_TABLE[ENTITY_KINDS.indexOf(kind)];
+      expect(new Map(rows).get(kind), `${kind} maps to the wrong UModel type`).toBe(documented);
+    }
+  });
+
+  it('the image is the deduplicated rows, so the one composition is the only composition', () => {
+    // Ties the two comparisons together: the vocabulary each scorer checks
+    // against is provably the image of the published table, not a parallel list
+    // that happens to agree. It also names which tables collapse and which do
+    // not, instead of leaving that to the reader of two separate describes.
+    expect([...ITBENCH_SCENARIO_CLASSES]).toEqual([...new Set(DOCUMENTED_ITBENCH_CLASS_TABLE)]);
+    expect([...CLOUD_OPSBENCH_TAXONOMIES]).toEqual([...new Set(DOCUMENTED_TAXONOMY_TABLE)]);
+    expect(literalRows(RCA100_SOURCE, 'UMODEL_TYPE').length).toBe(DOCUMENTED_UMODEL_TABLE.length);
+    expect(new Set(DOCUMENTED_UMODEL_TABLE).size).toBe(7);
+
+    // The three cases, stated as figures rather than left implicit: itbench does
+    // not collapse, the other two do.
+    expect(new Set(DOCUMENTED_ITBENCH_CLASS_TABLE).size).toBe(DOCUMENTED_ITBENCH_CLASS_TABLE.length);
+    expect(new Set(DOCUMENTED_TAXONOMY_TABLE).size).toBeLessThan(DOCUMENTED_TAXONOMY_TABLE.length);
+    expect(new Set(DOCUMENTED_UMODEL_TABLE).size).toBeLessThan(DOCUMENTED_UMODEL_TABLE.length);
   });
 });

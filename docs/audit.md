@@ -9893,3 +9893,165 @@ pinned by the emission census.
 And it does not establish that the `default:` arm of `difficultyFor` is unreachable in practice. It
 establishes the opposite: `undefined` reaches it, the arm is the documented behaviour, and it is now
 covered by a named case rather than by inference.
+
+## Finding 107: the test that read the wrong table passed for two iterations
+
+Finding 106 closed by handing forward its own deferral: *"the same reading has not been done for every
+structure check in `score.ts`."* v1.41 through v1.46 had established that the emitted category
+vocabulary is single-sourced, that each projection table's image is the documented image, and that
+five enumerated fields are checked against their vocabularies rather than with a bare `typeof`. This
+iteration asked the next question in that series — does the *key set* of each exhaustive projection
+table still equal the IR enum it claims to be total over? — and the answer was no, in a way that no
+existing test could have reported.
+
+### The claim that was not being checked
+
+`validity.ts:88-91` states of `FAULT_EXPECTATIONS`:
+
+> "The table is total over `FAULT_CATEGORIES` and both directions are asserted in the test suite, so
+> adding a category to the IR without deciding what it moves is a red suite rather than a silent gap."
+
+That is a strong and correct promise. It was kept for **exactly one** of the four tables that make
+such a claim.
+
+| Table | Site | Rows | Key-set assertion before this iteration |
+| --- | --- | --- | --- |
+| `CLASS_BY_CATEGORY` | `itbench.ts:46` | 8 | none |
+| `TAXONOMY_BY_CATEGORY` | `cloudopsbench.ts:42` | 8 | `.length === 8` only (`vocabulary-single-source.test.ts:531`) |
+| `UMODEL_TYPE` | `rca100.ts:53` | 9 | none, and unreachable — the record is private |
+| `FAULT_EXPECTATIONS` | `validity.ts:93` | 8 | asserted (`validity.test.ts:266`) |
+
+The two directions fail differently, which is why a row count is not a substitute. A *missing* row is
+caught by `tsc` as `TS2741`. An *extra* row requires widening the annotation, and the only guard
+against that is the code review nobody performs on a one-line edit. A row count of eight is satisfied
+by eight wrong rows.
+
+### The four forms the type system refuses, each a measurement
+
+Adding a ghost row to a `Record<FaultCategory, string>` is not a thing one can do quietly. Each
+attempt was run, and each refused for a different reason:
+
+| Attempt | Result |
+| --- | --- |
+| delete the annotation | `TS2741` — the literal is missing members of `FaultCategory` |
+| rename a row key | `TS2353` — the literal cannot name a property the type lacks |
+| add a row key | `TS2353` — same rejection |
+| computed key `['ghostcategory']` | `TS2353` — a computed key does not evade it |
+| widen the annotation | `TS6196` — `FaultCategory` becomes an unused import, then `TS2352` |
+
+This is the type system working exactly as intended, and it is also why the defect survived: **the
+annotation is a perfect guard against the only edit that a test would have caught, and no guard at
+all against the edit it permits.** Every widening requires a deliberate change to the type, and the
+tests were silent about whether such a change was ever *made*. The working form, found by
+construction rather than by guess, splits the binding so the table stays total and the exported name
+is widened:
+
+```ts
+const CLASS_BY_CATEGORY_TABLE: Record<FaultCategory, string> = { /* ... */ };
+export const CLASS_BY_CATEGORY: Record<string, string> =
+  Object.assign({}, CLASS_BY_CATEGORY_TABLE, { ghostcategory: 'X' });
+```
+
+`UMODEL_TYPE` needed the mirror-image treatment. Exporting it as `Record<string, string>` makes
+indexing yield `string | undefined`, which is `TS2322` at `rca100.ts:154`; keeping the *exported*
+type total is what works:
+
+```ts
+const UMODEL_TYPE_TABLE: Record<EntityKind, string> = { /* ... */ };
+const UMODEL_TYPE: Record<EntityKind, string> =
+  Object.assign({}, UMODEL_TYPE_TABLE, { ghostkind: 'apm.service' });
+```
+
+### The measurement that forced the source read
+
+`UMODEL_TYPE` is private, so no test can name the object and `Object.keys` cannot see it. The
+obvious alternative was behavioural: build a one-entity graph per IR kind through `buildTopologyJson`
+and read the emitted `entities[].type`. That route was implemented, and then measured — and it
+**cannot see the defect at all**:
+
+> A ghost key added to `UMODEL_TYPE` changes **no emitted byte**, because every read is
+> `UMODEL_TYPE[someEntityKind]` and only `ENTITY_KINDS` values are ever looked up.
+
+Measured directly, with the ghost key present: `umodelRows` 9 (unchanged), `umodelDistinctWords` 7
+(unchanged), `umodelKindsAnswered` 9 (unchanged). Three figures, all blind. The behavioural leg was
+kept — it is a real second statement about the mapping's image — but it is *not* evidence about the
+key set, and saying otherwise would have been the finding's own defect. The source-text reading is
+the only mechanism that can reach this, which is why the test states it as the weaker of the two.
+
+### The defect in the reader, which is the actual bug
+
+Implementing that source read exposed a second bug, and it is the one worth recording.
+
+`literalRows` — the helper added this iteration to parse a declaration out of the source text —
+anchored on `source.indexOf('const UMODEL_TYPE')`. That is a **substring** match, and
+`const UMODEL_TYPE` is a *prefix* of `const UMODEL_TYPE_TABLE`. Injection BL renames the literal to
+`UMODEL_TYPE_TABLE` and rebinds `UMODEL_TYPE` to an `Object.assign` expression. Measured:
+
+| Source | `indexOf('const UMODEL_TYPE')` | resolves to | rows returned |
+| --- | --- | --- | --- |
+| original | 2301 | the real literal | 9 |
+| under BL's mutation | **2301** | `UMODEL_TYPE_TABLE` | 9 |
+
+The position is **identical in both**, because the first occurrence of `const UMODEL_TYPE` is inside
+`const UMODEL_TYPE_TABLE`. The helper therefore read the one table the mutation had deliberately
+moved out of the way, returned a clean nine rows, and every assertion built on it passed.
+
+The number that matters: **under BL's mutation the full suite was green — 118 of 118 tests in the two
+affected files, 80 of them in the very file whose purpose is to assert that the projection tables'
+key sets match the IR.** A test that reads the wrong table does not fail; it reports that the right
+table is fine.
+
+The probe's parser had the same defect in its other form — it re-resolved the name with a second
+`indexOf` after matching it, so it could land on a declaration other than the one it had just matched.
+Both were fixed the same way: match the name with a boundary (`(?![\w$])`) or use the matched offset
+directly, never re-look-up a substring. After the fix, BL fails **exactly four tests**, the four UModel
+assertions, with the message `UMODEL_TYPE has no literal body` — which is the truthful description of
+what the mutation did.
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `test/vocabulary-single-source.test.ts` | 71 -> 83 tests: key-set assertions on all four tables, row-by-row documented comparison for three, three self-tests for the reader's boundary rule |
+| `test/rca100.test.ts` | behavioural leg over `ENTITY_KINDS` through `buildTopologyJson` |
+| `scripts/probe-type-misses.mjs` | `umodelDeclaredKeys`, `umodelDeclaredRows`, `umodelDeclaredKeySetMatchesIr`; four table figures; boundary-aware declaration matching |
+| `scripts/injection/type-miss-probe.py` | 61 -> 67 entries (BH–BM); anchor tuple extended with ten figures |
+| `docs/targets/rca100.md` | states totality over `ENTITY_KINDS` and that both directions are asserted |
+| `scripts/format-spec.mjs` | names the seven-word image for `entities[].type` and `entity_set` |
+
+### Verification
+
+| Property | Figure |
+| --- | --- |
+| Full suite | 2973 passed / 103 files (v1.46: 2960 / 103) |
+| `test/vocabulary-single-source.test.ts` | 83 tests (+12) |
+| Coverage, lines | 99.96% |
+| Coverage, branches | 99.94% |
+| Coverage, functions | 100% |
+| Coverage, statements | 99.96% |
+| TDD, by neutering | 6 mutations, each confirmed to fail the intended assertion, source restored byte-for-byte |
+| Reader self-tests | the prefix collision is reproduced as a test, so the fix is guarded rather than trusted |
+| Battery | **67 caught / 0 survived / 0 inert / 0 blind**, 15 in-package sources restored byte-for-byte |
+| Battery entries | 61 -> 67 (BH–BM) |
+| 6-slot contract | AST-verified **before** running: all six new entries are `Constant, Constant, Lambda, Constant, Lambda, Constant` |
+| `pnpm typecheck` | clean |
+| `pnpm lint` | ALL PROPERTIES HOLD |
+
+The one uncovered span in the package remains `official.ts:1098-1100`, the `const unhandled: never`
+backstop, which is unreachable by construction and documented as such.
+
+### What this does not establish
+
+It does not establish that the four tables are the last of them. It establishes that the four
+`Record<IRenum, word>` tables in this package now state their key sets in both directions, and that
+the reader used to check the private one is tested against the rename that defeated it.
+
+It does not establish that a key-set assertion is sufficient for a table's correctness. It asserts
+which keys are present, not which word each key maps to; the row-by-row comparison against the
+published documentation is the separate statement that covers the values, and the two are deliberately
+not merged, because a swap of two values that leaves the key set intact is invisible to the first.
+
+It does not establish that `literalRows` is a general-purpose declaration parser. It is a reader for
+one narrow literal shape, used for exactly one private table, and the three self-tests state that
+narrowness rather than hiding it. A future table whose declaration does not match that shape will make
+the helper throw rather than return a wrong answer, which is the property the fix bought.

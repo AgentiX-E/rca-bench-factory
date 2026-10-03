@@ -153,6 +153,10 @@ SCORER = REPO / "packages" / "core" / "src" / "score" / "score.ts"
 ITBENCH_EXPORT = REPO / "packages" / "core" / "src" / "export" / "itbench.ts"
 CLOUDOPSBENCH_EXPORT = REPO / "packages" / "core" / "src" / "export" / "cloudopsbench.ts"
 DIFFICULTY = REPO / "packages" / "core" / "src" / "export" / "difficulty.ts"
+# v1.47's target. The UModel type mapping is the third exhaustive projection table and
+# the only one whose key set no test could reach, because the record is private. An
+# injection here is the only way to say the source-level reading is load-bearing.
+RCA100_EXPORT = REPO / "packages" / "core" / "src" / "export" / "rca100.ts"
 
 # Every in-package target, mapped to the source it edits. `run_probe` takes one of
 # these at a time; keeping them in a table rather than in a chain of `if`s is what
@@ -177,6 +181,10 @@ IN_PACKAGE_TARGETS = {
     "itbench": ITBENCH_EXPORT,
     "cloudopsbench": CLOUDOPSBENCH_EXPORT,
     "difficulty": DIFFICULTY,
+    # v1.47 added the third exhaustive projection table. It is a target for the same reason
+    # `categories` and `scorer` are: the property lives in the package, and the probe reads
+    # it through the exporter, so an injection has to land in the file that owns it.
+    "rca100": RCA100_EXPORT,
 }
 
 
@@ -685,6 +693,29 @@ def blind_anchor(result: dict | None, which: str) -> tuple:
             "cloudOpsTaxonomyGhostRejected",
             "itbenchLegalAccepted",
             "cloudOpsLegalAccepted",
+            # v1.47. A projection table can now fail in three distinct ways -- a row renamed
+            # so the key set drifts, a row added so the table admits a kind the IR does not
+            # have, and a row's value changed so two words collapse into one -- and the three
+            # are not distinguishable from a word count alone. The key-set equality is
+            # published beside the row count for exactly that reason: a rename leaves the
+            # count at 8 and moves only the equality.
+            "itbenchTableRows",
+            "cloudOpsTableRows",
+            "itbenchKeySetMatchesIr",
+            "cloudOpsKeySetMatchesIr",
+            "umodelRows",
+            "umodelDistinctWords",
+            "umodelKindsAnswered",
+            # BM showed the three figures above cannot see a *declared* key the IR does not
+            # have. Every read of the table is `UMODEL_TYPE[kind]`, so a ghost key changes no
+            # emitted byte. This was measured rather than argued: BL's mutation was applied,
+            # the probe re-run, and `umodelRows`, `umodelDistinctWords` and
+            # `umodelKindsAnswered` were all unchanged at 9/7/9. The two figures below are
+            # read from the source text precisely because the behavioural route provably
+            # cannot reach the defect, and they are anchored here -- not only named in the
+            # requirement -- so that an entry aimed at them is BLIND when it misses.
+            "umodelDeclaredRows",
+            "umodelDeclaredKeySetMatchesIr",
         )
         if result is None:
             return tuple(OUTCOME_VOCABULARY_BASELINE[k] for k in keys)
@@ -2526,6 +2557,153 @@ INJECTIONS: list[
             "export const DIFFICULTIES = ['easy', 'medium', 'hard', 'none'] as const;",
         ),
         "difficulty",
+    ),
+    # --- v1.47: the projection-table key set -------------------------------------------
+    #
+    # The four exhaustive projection tables were guarded by a `Record<IRenum, string>`
+    # annotation and nothing else. The annotation catches a *missing* row at `tsc`; it does
+    # not catch an *extra* one, because adding a key requires widening the annotation to
+    # make the program compile -- and widening the annotation is the edit that removes the
+    # only guard. These six entries are the assertion that the new key-set check is
+    # load-bearing, aimed at the two directions separately.
+    #
+    # Each pair reads a different figure, and the split is forced rather than chosen: a
+    # renamed row leaves the row *count* untouched and moves only the key-set equality,
+    # while a widened image leaves the key set untouched and moves only the word count. A
+    # single figure would let one direction mask the other.
+    (
+        "BH. itbench: rename a category key, so the table's key set drifts from the IR",
+        None,
+        lambda r: outcome_vocabulary(r)["itbenchKeySetMatchesIr"]
+        == outcome_vocabulary_baseline()["itbenchKeySetMatchesIr"],
+        "whether CLASS_BY_CATEGORY's key set still equals FAULT_CATEGORIES",
+        # The widened key set, stated as a program that compiles -- and getting there took
+        # four rejected attempts, each of which is a result in its own right.
+        #
+        # The annotation `Record<FaultCategory, string>` refuses the defect outright. Deleting
+        # a row is TS2741. Renaming one is TS2353. Adding a ninth key is TS2353. Adding it as
+        # a *computed* key is still TS2353. Even widening the annotation to `Record<string,
+        # string>` does not work, because that orphans the `FaultCategory` import (TS6196) and
+        # re-asserting totality over it fails TS2352 -- the compiler will not let a program
+        # both drop a required row and claim to be total.
+        #
+        # That is the type doing exactly its job, and it is why this entry splits the binding
+        # instead of editing the literal: the table keeps its total annotation, and the
+        # *exported* name is widened after it through `Object.assign`. The runtime object then
+        # carries a key the IR does not admit, in a program TypeScript accepts -- which is the
+        # defect, and the reminder that the annotation alone never made it unrepresentable.
+        lambda t: rename(
+            rename(
+                t,
+                "export const CLASS_BY_CATEGORY: Record<FaultCategory, string> = {",
+                "const CLASS_BY_CATEGORY_TABLE: Record<FaultCategory, string> = {",
+            ),
+            "  unknown: 'Unknown',\n};",
+            "  unknown: 'Unknown',\n};\n\n"
+            "export const CLASS_BY_CATEGORY: Record<string, string> = "
+            "Object.assign({}, CLASS_BY_CATEGORY_TABLE, { ghostcategory: 'HighCPU' });",
+        ),
+        "itbench",
+    ),
+    (
+        "BI. itbench: widen the class image with a word no row produces",
+        None,
+        lambda r: outcome_vocabulary(r)["itbenchWords"]
+        == outcome_vocabulary_baseline()["itbenchWords"],
+        "the size of the scenario-class vocabulary, the figure this mutation widens",
+        # The other direction: the key set is left alone and the *word* set grows, so the
+        # vocabulary admits a class no category can produce. This is the form the annotation
+        # cannot see at all -- the table still answers for every category -- which is why it
+        # needs its own figure rather than sharing BH's.
+        lambda t: rename(
+            t,
+            "export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY))];",
+            "export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY)), 'GhostClass'];",
+        ),
+        "itbench",
+    ),
+    (
+        "BJ. cloud-opsbench: rename a category key, so the table's key set drifts from the IR",
+        None,
+        lambda r: outcome_vocabulary(r)["cloudOpsKeySetMatchesIr"]
+        == outcome_vocabulary_baseline()["cloudOpsKeySetMatchesIr"],
+        "whether TAXONOMY_BY_CATEGORY's key set still equals FAULT_CATEGORIES",
+        # The same defect on the second table, stated the same way and for the same reason:
+        # the annotation refuses every direct form (TS2741 / TS2353 / TS6196 / TS2352), so the
+        # binding is split and the exported name widened. It is a separate entry rather than a
+        # loop because the two tables are separate files -- an injection lands in one target,
+        # and `IN_PACKAGE_TARGETS` records which. A shared entry would make the report unable
+        # to say which table was disturbed.
+        lambda t: rename(
+            rename(
+                t,
+                "export const TAXONOMY_BY_CATEGORY: Record<FaultCategory, string> = {",
+                "const TAXONOMY_BY_CATEGORY_TABLE: Record<FaultCategory, string> = {",
+            ),
+            "  unknown: 'Runtime_Fault',\n};",
+            "  unknown: 'Runtime_Fault',\n};\n\n"
+            "export const TAXONOMY_BY_CATEGORY: Record<string, string> = "
+            "Object.assign({}, TAXONOMY_BY_CATEGORY_TABLE, { ghostcategory: 'Code_Fault' });",
+        ),
+        "cloudopsbench",
+    ),
+    (
+        "BK. cloud-opsbench: merge a unique word onto another, so the image shrinks",
+        None,
+        lambda r: outcome_vocabulary(r)["cloudOpsDistinctWords"]
+        == outcome_vocabulary_baseline()["cloudOpsDistinctWords"],
+        "the number of distinct taxonomy words, the figure this mutation collapses",
+        # The collapse direction, and which row moves is forced by arithmetic rather than
+        # picked for convenience. The table has eight rows and six words, so two pairs already
+        # share. Remapping a row onto a word that is *already present* therefore changes
+        # nothing: `dependency -> 'Code_Fault'` was the first attempt, it left the count at
+        # six, and the battery correctly reported SURVIVED -- a mutation that changes nothing
+        # is not a measurement. To move the figure, a currently-unique word has to be merged
+        # onto another. `config` carries `Startup_Fault` alone, so remapping it to `Code_Fault`
+        # takes six distinct words to five. The replacement is a word the table already
+        # contains, so the mutation stays a legal program whose only difference is the one
+        # being measured.
+        lambda t: rename(t, "  config: 'Startup_Fault',", "  config: 'Code_Fault',"),
+        "cloudopsbench",
+    ),
+    (
+        "BL. rca100: widen the UModel key set with a kind the IR does not have",
+        None,
+        lambda r: outcome_vocabulary(r)["umodelDeclaredKeySetMatchesIr"]
+        == outcome_vocabulary_baseline()["umodelDeclaredKeySetMatchesIr"],
+        "whether UMODEL_TYPE's declared key set still equals ENTITY_KINDS",
+        # Two anchored edits in one mutation, and both are required. Adding `ghostkind:` to a
+        # `Record<EntityKind, string>` literal is TS2353 -- an object literal cannot name a
+        # property the type does not have -- so the annotation has to widen in the same
+        # program. The INERT guard checks that *both* anchors matched, so a rename helper
+        # that silently skipped the first edit cannot leave this entry firing at nothing.
+        lambda t: rename(
+            rename(
+                t,
+                "const UMODEL_TYPE: Record<EntityKind, string> = {",
+                "const UMODEL_TYPE_TABLE: Record<EntityKind, string> = {",
+            ),
+            "  external: 'apm.external',\n};",
+            "  external: 'apm.external',\n};\n\n"
+            "const UMODEL_TYPE: Record<EntityKind, string> = "
+            "Object.assign({}, UMODEL_TYPE_TABLE, { ghostkind: 'apm.service' });",
+        ),
+        "rca100",
+    ),
+    (
+        "BM. rca100: collapse two UModel words, so the mapping loses a distinction",
+        None,
+        lambda r: outcome_vocabulary(r)["umodelDistinctWords"]
+        == outcome_vocabulary_baseline()["umodelDistinctWords"],
+        "the number of distinct UModel types, the figure this mutation collapses",
+        # The collapse direction. `mq` is remapped onto the word `external` already carries,
+        # so the distinct count falls 7 -> 6 while every kind is still answered for and the
+        # key set is untouched. `node -> 'apm.service'` would also move the count but would
+        # mean a node is an APM service, which is a *wrong* program rather than a *different*
+        # one; the rule from v1.46 is that a mutation has to stay a legal program whose only
+        # difference is the one being measured.
+        lambda t: rename(t, "  mq: 'apm.external.message',", "  mq: 'apm.external',"),
+        "rca100",
     ),
 ]
 

@@ -1064,7 +1064,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "UMODEL_TYPE[Entity.kind]",
-              "notes": "apm.service | k8s.pod | k8s.node | apm.external.database | ..."
+              "notes": "apm.service | k8s.pod | k8s.node | apm.external.database | ... The same seven-word image as `entities[].type`, read from the same table."
             },
             {
               "name": "timestamp",
@@ -1371,7 +1371,7 @@ window.RBF_DATA = {
               "type": "string",
               "required": true,
               "source": "UMODEL_TYPE[Entity.kind]",
-              "notes": "service->apm.service, pod/container->k8s.pod, node/host->k8s.node, db->apm.external.database, mq->apm.external.message, cluster->k8s.cluster, external->apm.external."
+              "notes": "service->apm.service, pod/container->k8s.pod, node/host->k8s.node, db->apm.external.database, mq->apm.external.message, cluster->k8s.cluster, external->apm.external. Nine IR kinds project onto these seven words, so `host` and `container` collapse onto `k8s.node` and `k8s.pod` respectively; the source kind survives in `props.original_kind`, which is what makes the projection lossless. The table is total over `ENTITY_KINDS` and both directions are asserted."
             },
             {
               "name": "entities[].name",

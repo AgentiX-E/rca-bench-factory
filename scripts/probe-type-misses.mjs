@@ -101,11 +101,12 @@ import {
   ITBENCH_SCENARIO_CLASSES,
   ITBENCH_SRE_DOMAIN,
   TAXONOMY_BY_CATEGORY,
+  buildTopologyJson,
   checkAioPs2025Structure,
   checkCloudOpsBenchStructure,
   checkItBenchStructure,
 } from '../packages/core/dist/index.js';
-import { FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
+import { ENTITY_KINDS, FAULT_CATEGORIES } from '../packages/core/dist/ir/types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -241,6 +242,92 @@ function readOutcomeVocabulary() {
     return report.checks.find((c) => c.id === 'metadata-shape')?.passed === false;
   };
 
+  /**
+   * The UModel type mapping, read through the exporter rather than from the table.
+   *
+   * `UMODEL_TYPE` is private to `rca100.ts`, so the probe cannot import it and
+   * `Object.keys` cannot see it. `buildTopologyJson` is the public surface that
+   * consults it, so building a one-entity graph per `ENTITY_KINDS` member and
+   * reading the emitted `type` back gives the mapping without naming the table.
+   *
+   * That is a weaker reading than the others in this block and is stated as such:
+   * it establishes which *words a kind emits*, not which rows the table declares.
+   * The source-level assertion lives in `vocabulary-single-source.test.ts`, which
+   * parses the declaration text; neither leg subsumes the other.
+   */
+  const umodelTypeFor = (kind) => {
+    const graph = {
+      entities: [{ entityId: `probe-${kind}:default/probe`, kind, name: 'probe', namespace: 'default' }],
+      edges: [],
+    };
+    const parsed = JSON.parse(buildTopologyJson(graph));
+    return parsed.entities[0]?.type;
+  };
+  const umodelPairs = ENTITY_KINDS.map((kind) => [kind, umodelTypeFor(kind)]);
+
+  /**
+   * The UModel table's declared keys, read from the source rather than from a lookup.
+   *
+   * This figure exists because of a measured result: a ghost key added to
+   * `UMODEL_TYPE` is **invisible** through `buildTopologyJson`, since every read is
+   * `UMODEL_TYPE[someEntityKind]` and only `ENTITY_KINDS` values are ever looked
+   * up. Widening the table therefore changes no emitted byte. The behavioural
+   * route cannot see the defect at all, which is exactly why the source-text
+   * reading is the only mechanism that can -- and why BL has this figure.
+   *
+   * The first version of this function resolved a *binding name*: it looked for
+   * `const UMODEL_TYPE: Record<` and fell back to `const UMODEL_TYPE_TABLE: Record<`.
+   * BL defeated it, and the way it did is worth recording. BL's mutation leaves the
+   * literal in `UMODEL_TYPE_TABLE` and rebinds `UMODEL_TYPE` to
+   * `Object.assign({}, UMODEL_TYPE_TABLE, { ghostkind: 'apm.service' })`. The
+   * declaration `const UMODEL_TYPE: Record<...>` is then still present, so the
+   * `indexOf` matched, `indexOf('{')` found the brace belonging to `Object.assign(`,
+   * `indexOf('\n};')` returned -1, and the binding was skipped -- whereupon the
+   * fallback read the *unmodified* literal and reported a clean 9. The parser was
+   * reading the one table the mutation had deliberately left alone.
+   *
+   * So the fix is not a better binding name, it is to stop naming bindings: every
+   * `Record<EntityKind, string>` object literal in the file is read, and the key sets
+   * are unioned. A key the program declares anywhere is a key the program declares,
+   * which is the property actually under test. Two consequences follow, and both are
+   * the point. A widened table now shows up as a widened union regardless of which
+   * binding the literal ends up in; and a *removed* row cannot be hidden by an added
+   * one, because the counts are published alongside the equality.
+   */
+  const umodelDeclaredKeys = (() => {
+    const source = readFileSync(resolve(REPO, 'packages/core/src/export/rca100.ts'), 'utf8');
+    const keys = new Set();
+    // Every declaration whose annotation is the UModel row type. `UMODEL_TYPE` and
+    // `UMODEL_TYPE_TABLE` are the two that exist today; matching on the type rather than
+    // on the name means a future rename does not silently empty this figure.
+    const declaration = /const\s+([A-Za-z_$][\w$]*)\s*:\s*Record<EntityKind,\s*string>\s*=\s*\{/g;
+    for (const match of source.matchAll(declaration)) {
+      const binding = match[1];
+      // Anchored on the *matched* offset rather than on a fresh `indexOf`. The first
+      // version re-looked-up the name with `indexOf(\`const ${binding}: ...\`)`, which
+      // is the substring-collision defect in its other form: `const UMODEL_TYPE` is a
+      // prefix of `const UMODEL_TYPE_TABLE`, so the re-lookup could land on a different
+      // declaration than the one just matched. Using `match.index` cannot.
+      const braceStart = source.indexOf('{', match.index);
+      const braceEnd = source.indexOf('\n};', braceStart);
+      if (braceStart === -1 || braceEnd === -1) continue;
+      for (const line of source.slice(braceStart + 1, braceEnd).split('\n')) {
+        const row = /^\s*([A-Za-z_$][\w$]*)\s*:\s*'/.exec(line.split('//')[0]);
+        if (row) keys.add(row[1]);
+      }
+    }
+    // Keys the file hands to `Object.assign` as a *later* argument, i.e. the ones that
+    // override the literal rather than the ones the literal already carries. BL's ghost
+    // key lives here, and it is a declared key by any reading: the program spells it out.
+    for (const [, body] of source.matchAll(/Object\.assign\(\s*\{\}\s*,\s*[A-Za-z_$][\w$]*\s*,\s*\{([^}]*)\}/g)) {
+      for (const line of body.split('\n')) {
+        const row = /^\s*([A-Za-z_$][\w$]*)\s*:\s*'/.exec(line.split('//')[0]);
+        if (row) keys.add(row[1]);
+      }
+    }
+    return [...keys];
+  })();
+
   return {
     // The word counts, moved by an exporter edit.
     itbenchWords,
@@ -252,6 +339,26 @@ function readOutcomeVocabulary() {
     // image happens to be unchanged by it.
     itbenchTableRows: Object.keys(CLASS_BY_CATEGORY).length,
     cloudOpsTableRows: Object.keys(TAXONOMY_BY_CATEGORY).length,
+    // Whether the key set still equals the IR enum, in both directions at once. A row
+    // renamed to a ghost name leaves the count at 8 but breaks this equality, which is
+    // why it is published beside the count rather than instead of it.
+    itbenchKeySetMatchesIr:
+      JSON.stringify(Object.keys(CLASS_BY_CATEGORY).sort()) === JSON.stringify([...FAULT_CATEGORIES].sort()) ? 1 : 0,
+    cloudOpsKeySetMatchesIr:
+      JSON.stringify(Object.keys(TAXONOMY_BY_CATEGORY).sort()) === JSON.stringify([...FAULT_CATEGORIES].sort()) ? 1 : 0,
+    // The UModel mapping, through the exporter (see `umodelTypeFor`).
+    umodelRows: umodelPairs.length,
+    umodelDistinctWords: new Set(umodelPairs.map(([, word]) => word)).size,
+    umodelKindsAnswered: umodelPairs.filter(([, word]) => typeof word === 'string' && word !== '').length,
+    // The declared key set, which the behavioural figures above provably cannot see: a ghost
+    // key changes no emitted byte because only `ENTITY_KINDS` values are ever looked up. This
+    // is the figure that catches a widened table, and it is read from source for that reason.
+    umodelDeclaredRows: umodelDeclaredKeys.length,
+    umodelDeclaredKeySetMatchesIr:
+      umodelDeclaredKeys.length > 0 &&
+      JSON.stringify([...umodelDeclaredKeys].sort()) === JSON.stringify([...ENTITY_KINDS].sort())
+        ? 1
+        : 0,
     // The scorer verdicts, moved by a scorer edit. Each carries its own legal control: a
     // check that rejected everything would satisfy a bare `rejected` figure.
     itbenchGhostRejected: itbenchRefuses({ scenario_class: 'GhostClass' }) ? 1 : 0,

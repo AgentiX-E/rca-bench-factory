@@ -14,6 +14,7 @@ import {
   exportRca100,
   resolveSignalEntity,
 } from '../src/export/rca100.js';
+import { ENTITY_KINDS } from '../src/ir/types.js';
 import type { Entity, EntityGraph, FaultCase, IrBundle, TelemetrySignal } from '../src/ir/types.js';
 
 /**
@@ -169,6 +170,49 @@ describe('buildTopologyJson', () => {
     for (const t of ['apm.service', 'k8s.pod', 'k8s.node', 'apm.external.database', 'apm.external.message', 'k8s.cluster', 'apm.external']) {
       expect(types.has(t)).toBe(true);
     }
+  });
+
+  it('reads the UModel type off the emitted entity, one IR kind at a time', () => {
+    // The second, independent statement about the same mapping. The test above
+    // asks whether the seven expected words appear somewhere in one graph; it
+    // cannot tell which kind produced which word, so it would pass if two kinds
+    // exchanged their types. This one builds a graph with exactly one entity per
+    // `ENTITY_KINDS` member and reads the word back off the artefact, so each
+    // pair is asserted on its own.
+    //
+    // It is a different object from the source-level assertion in
+    // `vocabulary-single-source.test.ts`: that one reads the declaration text,
+    // this one reads the emitted JSON. Neither subsumes the other -- the text
+    // assertion sees a table the exporter never actually consults, and this one
+    // sees the export without seeing which row produced it.
+    const expected: Record<string, string> = {
+      service: 'apm.service',
+      pod: 'k8s.pod',
+      node: 'k8s.node',
+      container: 'k8s.pod',
+      db: 'apm.external.database',
+      mq: 'apm.external.message',
+      host: 'k8s.node',
+      cluster: 'k8s.cluster',
+      external: 'apm.external',
+    };
+
+    for (const kind of ENTITY_KINDS) {
+      const graph: EntityGraph = {
+        entities: [entity(kind, `probe-${kind}`, 'default')],
+        edges: [],
+      };
+      const parsed = JSON.parse(buildTopologyJson(graph));
+      expect(parsed.entities, `${kind} produced no entity`).toHaveLength(1);
+      expect(parsed.entities[0].type, `${kind} mapped to the wrong UModel type`).toBe(expected[kind]);
+      // The collapse is lossless: the source kind survives in props, which is what
+      // makes the many-to-one mapping acceptable rather than lossy.
+      expect(parsed.entities[0].props.original_kind).toBe(kind);
+    }
+
+    // Every kind the IR admits was exercised, so the loop above cannot silently
+    // shrink if `ENTITY_KINDS` grows.
+    expect(Object.keys(expected).sort()).toEqual([...ENTITY_KINDS].sort());
   });
 });
 
