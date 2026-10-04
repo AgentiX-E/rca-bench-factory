@@ -36,6 +36,43 @@ reference with verified examples.
 - **19.4% of RCA100 root causes are observable only in Events** — which is why the IR
   treats `event` as a first-class signal kind rather than a log sub-type.
 
+## Fourth anchor (L4) status per target
+
+The fourth anchor asks whether our export is scorable against data **we did not write**.
+It is the only anchor whose subject is a path rather than a fixture, and the only one
+where "the path runs" and "the number reproduced" must be kept apart.
+
+**Those are two questions, so this table has two columns.** A single cell cannot hold
+both, and when one did, the gap was filled with the stage a format had reached instead
+of a measurement -- which is how [OpenRCA 1.0](targets/openrca-1.0.md) came to be
+described as *already replayed* while the registry lists its telemetry as unreachable
+(see `docs/audit.md`, finding 112).
+
+| Format | L4 fetchability | L4 reading | Note |
+| --- | --- | --- | --- |
+| `openrca-1.0` | unfetchable | — | telemetry is behind Google Drive; no automated fetch can exist |
+| `openrca-2.0` | unfetchable | — | PAVE annotations are not published as a bulk archive |
+| `rcaeval-re1` | pending | — | three assets are fetchable and none is pinned yet |
+| `rcaeval-re2` | pinned | `official-data.yml` | the only target with a measured pin |
+| `rcaeval-re3` | pending | — | five assets are fetchable and none is pinned yet |
+| `rca100` | unfetchable | — | no verified bulk HTTPS endpoint |
+| `aiops2025` | unfetchable | — | no verified bulk HTTPS endpoint |
+| `cloud-opsbench` | unfetchable | — | no verified bulk HTTPS endpoint |
+| `itbench` | unfetchable | — | no verified bulk HTTPS endpoint |
+
+**Reading the table.** `unfetchable` means there is nothing to do: the channel does not
+exist, and three of those targets carry a documented alternative in
+`golden-master/official-assets.json`. `pending` means a download that has not been taken
+-- closing it requires running the fetch, **not** editing a file. Only a `pinned` target
+can carry a reading, because a measured `sha256` is the only thing that records one.
+
+> **One of nine targets can have a reading.** The other eight are all "no reading yet"
+> for two different reasons, which is exactly the distinction a single column erased.
+
+The fetch axis is not a claim maintained by hand: `scripts/check-l4-status.mjs` derives
+it from the registry and fails the build if this table disagrees, so a stale cell is a
+red build rather than a published error.
+
 ## Choosing a target
 
 | If you need… | Use | Why |

@@ -10578,3 +10578,160 @@ it makes visible what is waiting on it.
 It does not establish that no fourth state is needed. It establishes that a fourth state
 would have to be added to this guard's arithmetic and to the line it prints, rather than
 appearing as a residue that no term accounts for. That is the property the old line lacked.
+
+## Finding 112 — one column held two questions, and the answer it printed for six rows was impossible
+
+*2026-10-04. Iteration v1.52. Files: `scripts/check-l4-status.mjs` (new),
+`packages/core/test/check-l4-status.test.ts` (new), `docs/target-formats.md`, `package.json`.*
+
+### The premise I was carrying, and what measuring it did to it
+
+P0-4, verbatim from the tracker:
+
+> **P0-4** — put the L4 fourth anchor's status into `08`, distinguishing per-format.
+> Exit condition: `08` §3.1's L4 column has a status for each of the 9 formats.
+
+I opened `08-实测现状基线.md` §3.1 expecting to find the column sparse, and to fill it in. **The
+column is complete — all nine rows carry a value — and five of the nine values are false.**
+
+| row | `08` §3.1 L4 cell | registry | verdict |
+| --- | --- | --- | --- |
+| OpenRCA 1.0 | `✅ 已实测回放（本轮实跑）` | **unfetchable** | **false** |
+| OpenRCA 2.0 | `❌ 未测量` | unfetchable | **false** — "not measured yet" on a row that can never be measured |
+| RCAEval RE1 | `⚠️ 见 §3.2` | **pending** | **false** — §3.2 does not carry a status |
+| RCAEval RE2 | `⚠️ 见 §3.2` | **pinned** | **false** — a pinned anchor that has a reading, shown as indeterminate |
+| RCAEval RE3 | `⚠️ 见 §3.2` | pending | **false** — same as RE1 |
+| RCA100 | `❌ 无自动抓取` | unfetchable | ok |
+| AIOps2025 | `❌ 无自动抓取` | unfetchable | ok |
+| Cloud-OpsBench | `❌ 无自动抓取` | unfetchable | ok |
+| ITBench | `❌ 无自动抓取` | unfetchable | ok |
+
+**This is the fifth consecutive iteration where a carried-forward item dissolved under
+measurement** — finding 107's deferral, finding 108's "what this does not establish", finding
+109's closing paragraph, the P0-3 row in v1.51, and now P0-4. It is the **first where the
+dissolution is a false claim rather than a missing one.** The first four cost nothing to
+correct; this one means a document has been telling readers something untrue for fourteen days.
+
+### The worst cell, and the three measurements that close it
+
+OpenRCA 1.0 claimed `✅ 已实测回放（本轮实跑）` — *a replay was actually run this round*. The
+registry lists that anchor as **not fetchable at all**; its telemetry lives behind a Google
+Drive folder. A replay cannot have been run over data the pipeline has no way to obtain.
+
+Three independent measurements, none of which needs the network:
+
+| check | result |
+| --- | --- |
+| `.github/workflows/official-data.yml`'s `anchor` input | three options — `rcaeval-re1`, `rcaeval-re2`, `rcaeval-re3`. **`openrca-1.0` is not among them**, so no dispatch of that workflow can name it |
+| `scripts/fetch-official.mjs --anchor openrca-1.0` | would refuse: it selects from `assets`, and `openrca-1.0` appears only in `notFetchable` |
+| `/tmp/official` | does not exist — no fetch output on disk, and the workflow's own cache path is empty |
+
+`git log -S` traces the string to `7dbe0aa` (2026-09-20), the docs repository's **first
+commit**. It has never been re-derived, and no iteration after it has re-read the cell.
+
+### The structural defect, which is not staleness
+
+The L4 column was not out of date. **It fused two independent axes into one cell**, and a cell
+that answers two questions can only hold one answer:
+
+| axis | question | how many of the nine |
+| --- | --- | --- |
+| **can it ever be measured?** | does a fetchable asset exist? | 6 unfetchable → **never**; 3 fetchable → yes |
+| **has it been measured?** | is there a `sha256` pin? | **1 pinned**; 2 pending |
+
+Only a `pinned` target can have a reading — **one of nine.** The other eight are all "no
+reading yet" for two reasons that require opposite actions:
+
+- **unfetchable** (6): nothing to do. The channel does not exist, and three of them carry a
+  documented `alternative` in the registry.
+- **pending** (2): a 19 GB download that has not been taken. This is P0-1's work.
+
+Because one cell could not hold both, the author filled the second axis with what *stage* each
+format had reached — and that is precisely how `✅ 已实测回放` came to sit on a row that can
+never be fetched. **The column was never a measurement. It was a stage label wearing a
+measurement's clothes**, and a stage label has no reason to agree with a registry.
+
+This is the same defect shape the project has now named six times — **a reading that cannot
+report, whose presence makes the check look covered** — one layer up from findings 109–111: at
+the *document* layer, where the cell that cannot distinguish two questions is being read as
+though it answered both.
+
+### The internal document already knew
+
+`docs/progress.md` line 980 states the distinction correctly and rejects the wrong reading in
+as many words:
+
+> Anchor 4 is closed for the three RCAEval anchors only … the other six score targets … have no
+> automated fetch
+
+So the English internal doc got this right **before** the Chinese baseline did — and nothing
+tied the two together. That asymmetry is why the fix below is a **check**, not a rewrite: prose
+that is currently correct has no mechanism to stay correct, and the prose that was wrong was
+correct once.
+
+### The fix
+
+**1. The column is split into its two axes.** `docs/target-formats.md` gains a
+`## Fourth anchor (L4) status per target` table with `L4 可测性` (`pinned` / `pending` /
+`unfetchable`) and `L4 读数` (the pin, or `—`), for all nine targets. A reader can now see that
+OpenRCA 1.0's `—` means **never** while RE1's `—` means **not yet** — the distinction the single
+column erased.
+
+**2. The document's own rule is now enforced, not merely stated.** `08` declares "本文档只记录
+实测值 … 未实测的数字一律写 `未测量`"; nothing checked it. `scripts/check-l4-status.mjs` holds
+the published matrix to `golden-master/official-assets.json`, which is already the
+machine-readable source of truth for exactly this axis:
+
+- it finds its columns **by header name** (`/fetch|reachab|可测/i`, `/reading|number|读数/i`),
+  never by index, so reordering the table cannot make it check the wrong cell;
+- it refuses a table with no `reading` column at all, because **one column cannot hold both
+  questions** — the guard states its own reason for existing;
+- it derives the fetch state from the registry (an anchor in `notFetchable` is `unfetchable`;
+  otherwise pinned iff some anchored asset carries a `sha256`) and the reading state **from the
+  fetch state**, so there is no second source to drift;
+- it asserts every one of the nine score targets has a row.
+
+Live output:
+
+```
+check-l4-status: OK (9 row(s) agree with the registry; 1 pinned, 2 pending, 6 unfetchable -- 1 of 9 can have a reading)
+```
+
+**3. The claim is recorded as unsupported, not quietly relabelled.** The OpenRCA 1.0 row is
+corrected to `unfetchable` / `—`, and the supporting section says the replay claim had no
+execution behind it and names the three measurements. Relabelling it "未测量" would have
+suggested an attempt was made and failed; no attempt was possible.
+
+**4. The guard is wired into `pnpm docs:check`**, so the matrix is re-derived on every gate run
+and a drift between the Chinese baseline and the registry fails the build rather than sitting
+unread for fourteen days.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| Matrix | 9 of 9 rows carry both axes; every `L4 可测性` cell agrees with the registry |
+| Guard | `check-l4-status: OK (9 row(s) agree …)`; run inside `pnpm docs:check` |
+| Deliberate breaks | **D1** OpenRCA 1.0 claims a reading → red; **D2** RE2 called unfetchable → red; **D3** RE1 called pinned → red; **D4** the ITBench row deleted → red; **D5** the registry drops its `rcaeval-re3` assets → red |
+| Restore | `docs/target-formats.md`, `golden-master/official-assets.json` and `scripts/check-l4-status.mjs` byte-identical after every break |
+| Battery | **74 caught / 0 survived / 0 inert / 0 blind**; 16 sources byte-identical |
+| Suite | **3011 passed / 104 files** (v1.51: 2999 / 103, +12) |
+| Coverage | `All files 99.96 / 99.91 / 100 / 99.96`; no file×dimension below 95%; no `src/` file touched |
+| `typecheck` / `lint` / `docs:check` / `examples:check` | clean |
+| `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
+| `python3 -m py_compile` | clean |
+
+### What this does not establish
+
+It does not establish that the six unfetchable targets are permanently unreachable. It
+establishes that **as of this commit** no fetchable asset exists for them, and that if one is
+added to the registry the guard will require the matrix to change with it.
+
+It does not establish that the two RCAEval `pending` suites are nearly done. They need a 19 GB
+transfer; nothing in this iteration shortens it, and P0-1 remains blocked on data the sandbox
+cannot reach.
+
+It does not establish that `docs/target-formats.md` is the only place this two-axis confusion
+appeared. It establishes that **this** matrix now cannot drift silently, and that the guard
+refuses a table which tries to answer both questions in one column — which is the shape a
+future occurrence would have to take.
