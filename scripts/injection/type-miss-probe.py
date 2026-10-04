@@ -776,15 +776,42 @@ def body_of(text: str, signature: str) -> str:
 # `requirement(report)` returns True when the probe *still* reports the property
 # in `description` -- i.e. the mutation was not observed. A mutation is caught
 # exactly when that comes back False.
+#
+# ## Why the annotation is a union and not a six-tuple
+#
+# The first version of this annotation declared
+# `tuple[str, Callable | None, Callable, str, Callable | None, str]` -- a fixed
+# six slots. **Measured, the entries are not six slots.** The arity histogram is
+# `{5: 7, 6: 66, 7: 1}`, which is three shapes:
+#
+#   arity 5: (name, in_package_edit, requirement, description, target)
+#   arity 6: (name, mutation,      requirement, description, also, target)
+#   arity 7: (name, mutation,      requirement, description, also, target,
+#             blind_anchor)
+#
+# The loop in `main` handles all three -- `target = entry[5] if len(entry) > 5
+# else 'source'` and `anchor = entry[6] if len(entry) > 6 else 'classifier'` --
+# so nothing was broken at runtime. What was broken is that the declared type was
+# a **false statement about the data**, and a false type is how the next reader
+# gets it wrong: the annotation is the only place a contributor is told what an
+# entry looks like. A six-tuple annotation over a `{5, 6, 7}` population does not
+# merely omit information, it actively misleads, and the entry that exposed it
+# (`AD`, the lone seven-slot entry) is the one whose seventh slot carries the
+# blind anchor the whole BLIND mechanism depends on.
+#
+# So the annotation states the union, and `assert_entry_contract` below states it
+# again at runtime -- before any mutation runs, so a malformed entry fails loudly
+# instead of being silently misread.
+INJECTION_SHAPES = """
+arity 5: (name, in_package_edit, requirement, description, target)
+arity 6: (name, mutation,       requirement, description, also, target)
+arity 7: (name, mutation,       requirement, description, also, target, blind_anchor)
+"""
+
 INJECTIONS: list[
-    tuple[
-        str,
-        Callable[[str], str] | None,
-        Callable[[dict], bool],
-        str,
-        Callable[[str], str] | None,
-        str,
-    ]
+    tuple[str, Callable[[str], str] | None, Callable[[dict], bool], str, Callable[[str], str] | None, str]
+    | tuple[str, Callable[[str], str] | None, Callable[[dict], bool], str, Callable[[str], str] | None]
+    | tuple[str, Callable[[str], str] | None, Callable[[dict], bool], str, Callable[[str], str] | None, str, str]
 ] = [
     # --- the definition moves; the classification must move with it -----------
     (
@@ -1622,6 +1649,7 @@ INJECTIONS: list[
             "  return { terms: found, supports: true };",
         ),
         'baseline',
+        'baseline',
     ),
     (
         "AD. baseline: read the predicted side against the expected category, so it reads 1 of 7",
@@ -1696,6 +1724,7 @@ INJECTIONS: list[
         # returning by pinning the verdict rather than the arithmetic.
         lambda t: rename(t, "export const BASELINE_FLOOR = 0.2;", "export const BASELINE_FLOOR = 0;"),
         'baseline',
+        'baseline',
     ),
     # --- The category-derivation control, finding 102 --------------------------------
     #
@@ -1752,6 +1781,7 @@ INJECTIONS: list[
             "    } else {",
         ),
         'derivation',
+        'derivation',
     ),
     (
         "AG. derivation: treat `unknown` as a defined category, so the rule reads as total",
@@ -1778,6 +1808,7 @@ INJECTIONS: list[
             "    }",
         ),
         'derivation',
+        'derivation',
     ),
     (
         "AH. derivation: hardcode the verdict true, so the check claims a separation it did not measure",
@@ -1799,6 +1830,7 @@ INJECTIONS: list[
             "  const separates = share > ALT_READING_FLOOR;",
             "  const separates = true;",
         ),
+        'derivation',
         'derivation',
     ),
     (
@@ -1826,6 +1858,7 @@ INJECTIONS: list[
             "  const separates = share > ALT_READING_FLOOR;",
             "  const separates = false;",
         ),
+        'derivation',
         'derivation',
     ),
     (
@@ -1857,6 +1890,7 @@ INJECTIONS: list[
             "  const differ = [...differSet];",
             "  const differ = substringDiffer.concat(shadowingDiffer);",
         ),
+        'derivation',
         'derivation',
     ),
     (
@@ -1902,6 +1936,7 @@ INJECTIONS: list[
             "  };",
         ),
         'derivation',
+        'derivation',
     ),
     (
         "AL. derivation: declare MissReading twice again, so the published type is a merge",
@@ -1944,6 +1979,7 @@ INJECTIONS: list[
             "}\n\n"
             "export interface MissReading {",
         ),
+        'derivation',
         'derivation',
     ),
     (
@@ -2007,6 +2043,7 @@ INJECTIONS: list[
             "export type MissReading = MissReadingRenamed;\n\n/**",
         ),
         'derivation',
+        'derivation',
     ),
     (
         "AN. derivation: publish the record count instead of the duplicate list",
@@ -2063,6 +2100,8 @@ INJECTIONS: list[
         # the check is load-bearing against a hardcode, and AN alone would suggest it is
         # decorative.
         None,
+        'source',
+        'derivation',
     ),
     (
         "AO. derivation: agree with the label by construction, so nothing is left to check",
@@ -2093,6 +2132,7 @@ INJECTIONS: list[
             "    const consistent = true;",
         ),
         'derivation',
+        'derivation',
     ),
     (
         "AP. derivation: hardcode the downstream verdict true, so the reading cannot be refuted",
@@ -2112,6 +2152,7 @@ INJECTIONS: list[
             "  const separates = alternativeShare > DOWNSTREAM_FLOOR;",
             "  const separates = true;",
         ),
+        'derivation',
         'derivation',
     ),
     (
@@ -2143,6 +2184,7 @@ INJECTIONS: list[
             "  const separates = false;",
         ),
         'derivation',
+        'derivation',
     ),
     (
         "AR. derivation: count every consumer, so two chances to disagree read as four",
@@ -2172,6 +2214,7 @@ INJECTIONS: list[
             "  { name: 'export/itbench.ts:119', role: 'branches', outcome: (category) => `label:${category}` },",
         ),
         "derivation",
+        'derivation',
     ),
     (
         "AS. derivation: drop the consumer list, so the question is never asked",
@@ -2198,6 +2241,8 @@ INJECTIONS: list[
         # key-presence check while asserting an agreement nobody measured. A denominator of 0 is
         # the honest shape of "not asked" and it is what moves here.
         None,
+        'source',
+        'derivation',
     ),
     # ---------------------------------------------------------------------------------------
     # The six entries Finding 104 adds.
@@ -2256,6 +2301,7 @@ INJECTIONS: list[
             "",
         ),
         "derivation",
+        'derivation',
     ),
     (
         "AU. derivation: role the aiops2025 consumer as a projection",
@@ -2276,6 +2322,7 @@ INJECTIONS: list[
             "    name: 'export/aiops2025.ts:76',\n    role: 'projects',",
         ),
         "derivation",
+        'derivation',
     ),
     (
         "AV. derivation: inflate a projecting consumer into a branching one",
@@ -2295,6 +2342,7 @@ INJECTIONS: list[
             "  { name: 'export/itbench.ts:119', role: 'branches', outcome: (category) => `label:${category}` },",
         ),
         "derivation",
+        'derivation',
     ),
     (
         "AW. derivation: swap two rows of the reading table",
@@ -2348,6 +2396,7 @@ INJECTIONS: list[
             "  code: ['exception', 'error', 'bug', 'null', 'stack', 'throw', 'logic', 'regex', 'backtracking'],\n",
         ),
         "terms",
+        'derivation',
     ),
     (
         "AX. derivation: report the census size as the evidence count",
@@ -2369,6 +2418,7 @@ INJECTIONS: list[
             "    evidence: consumers.length,",
         ),
         "derivation",
+        'derivation',
     ),
     (
         "AY. derivation: point the evidence accessor at the branching roles",
@@ -2406,6 +2456,7 @@ INJECTIONS: list[
             "    evidence: consumers.filter((consumer) => consumer.role === 'branches').length,",
         ),
         "derivation",
+        'derivation',
     ),
     (
         "AZ. categories: drop the IR half, so the vocabulary describes only the table",
@@ -2433,6 +2484,7 @@ INJECTIONS: list[
             "  ...new Set([...Object.values(AIOPS2025_CATEGORY), ...FAULT_CATEGORIES.filter(() => false)]),",
         ),
         "categories",
+        'categories',
     ),
     (
         "BA. categories: admit a word neither source can produce",
@@ -2454,6 +2506,7 @@ INJECTIONS: list[
             "export const AIOPS2025_CATEGORIES: readonly string[] = [\n  'ghost-category',",
         ),
         "categories",
+        'categories',
     ),
     (
         "BB. scorer: stop checking fault_category, so a ghost passes again",
@@ -2506,6 +2559,7 @@ INJECTIONS: list[
             "export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY))].filter((c) => c !== 'Unknown');",
         ),
         "itbench",
+        'outcomeVocabulary',
     ),
     (
         "BD. itbench: stop checking scenario_class, so a ghost class passes again",
@@ -2522,6 +2576,7 @@ INJECTIONS: list[
             "if (isVocabularyMember(ITBENCH_SCENARIO_CLASSES, obj.scenario_class)) {",
         ),
         "scorer",
+        'outcomeVocabulary',
     ),
     (
         "BE. cloud-opsbench: collapse the taxonomy image to one word",
@@ -2539,6 +2594,7 @@ INJECTIONS: list[
             "export const CLOUD_OPSBENCH_TAXONOMIES: readonly string[] = ['Service_Fault'];",
         ),
         "cloudopsbench",
+        'outcomeVocabulary',
     ),
     (
         "BF. cloud-opsbench: stop checking fault_taxonomy, so a ghost passes again",
@@ -2552,6 +2608,7 @@ INJECTIONS: list[
             "if (isVocabularyMember(CLOUD_OPSBENCH_TAXONOMIES, result.fault_taxonomy)) {",
         ),
         "scorer",
+        'outcomeVocabulary',
     ),
     (
         "BG. difficulty: widen the shared word set, so both fields admit a word no level produces",
@@ -2572,6 +2629,7 @@ INJECTIONS: list[
             "export const DIFFICULTIES = ['easy', 'medium', 'hard', 'none'] as const;",
         ),
         "difficulty",
+        'outcomeVocabulary',
     ),
     # --- v1.47: the projection-table key set -------------------------------------------
     #
@@ -2619,6 +2677,7 @@ INJECTIONS: list[
             "Object.assign({}, CLASS_BY_CATEGORY_TABLE, { ghostcategory: 'HighCPU' });",
         ),
         "itbench",
+        'outcomeVocabulary',
     ),
     (
         "BI. itbench: widen the class image with a word no row produces",
@@ -2636,6 +2695,7 @@ INJECTIONS: list[
             "export const ITBENCH_SCENARIO_CLASSES: readonly string[] = [...new Set(Object.values(CLASS_BY_CATEGORY)), 'GhostClass'];",
         ),
         "itbench",
+        'outcomeVocabulary',
     ),
     (
         "BJ. cloud-opsbench: rename a category key, so the table's key set drifts from the IR",
@@ -2661,6 +2721,7 @@ INJECTIONS: list[
             "Object.assign({}, TAXONOMY_BY_CATEGORY_TABLE, { ghostcategory: 'Code_Fault' });",
         ),
         "cloudopsbench",
+        'outcomeVocabulary',
     ),
     (
         "BK. cloud-opsbench: merge a unique word onto another, so the image shrinks",
@@ -2680,6 +2741,7 @@ INJECTIONS: list[
         # being measured.
         lambda t: rename(t, "  config: 'Startup_Fault',", "  config: 'Code_Fault',"),
         "cloudopsbench",
+        'outcomeVocabulary',
     ),
     (
         "BL. rca100: widen the UModel key set with a kind the IR does not have",
@@ -2704,6 +2766,7 @@ INJECTIONS: list[
             "Object.assign({}, UMODEL_TYPE_TABLE, { ghostkind: 'apm.service' });",
         ),
         "rca100",
+        'outcomeVocabulary',
     ),
     (
         "BM. rca100: collapse two UModel words, so the mapping loses a distinction",
@@ -2719,6 +2782,7 @@ INJECTIONS: list[
         # difference is the one being measured.
         lambda t: rename(t, "  mq: 'apm.external.message',", "  mq: 'apm.external',"),
         "rca100",
+        'outcomeVocabulary',
     ),
     # --- v1.48: the four fields, and the three checks -----------------------------------
     #
@@ -2747,6 +2811,7 @@ INJECTIONS: list[
             "...new Set(Object.values(UMODEL_TYPE)), 'ghost.umodel'];",
         ),
         "rca100",
+        'outcomeVocabulary',
     ),
     (
         "BO. scorer: stop checking entities[].type, so a ghost UModel type passes again",
@@ -2764,6 +2829,7 @@ INJECTIONS: list[
             "if (false) {",
         ),
         "scorer",
+        'outcomeVocabulary',
     ),
     (
         "BP. scorer: stop checking metrics entity_set, so a ghost set passes again",
@@ -2781,6 +2847,7 @@ INJECTIONS: list[
             "if (false) {",
         ),
         "scorer",
+        'outcomeVocabulary',
     ),
     (
         "BQ. scorer: stop checking edge types, so a ghost src_type passes again",
@@ -2800,6 +2867,7 @@ INJECTIONS: list[
             "if (false) {\n          edgeTypesOk = false;\n        }",
         ),
         "scorer",
+        'outcomeVocabulary',
     ),
     (
         "BR. rca100: collapse two UModel words, so the vocabulary loses one",
@@ -2816,6 +2884,7 @@ INJECTIONS: list[
         # objects, which is why both exist.
         lambda t: rename(t, "  mq: 'apm.external.message',", "  mq: 'apm.external',"),
         "rca100",
+        'outcomeVocabulary',
     ),
     (
         "BS. rca100: swap two UModel words, so the mapping permutes inside the vocabulary",
@@ -2842,6 +2911,7 @@ INJECTIONS: list[
         # and a permutation preserves shape exactly.
         lambda t: rename(t, "  pod: 'k8s.pod',\n  node: 'k8s.node',", "  pod: 'k8s.node',\n  node: 'k8s.pod',"),
         "rca100",
+        'outcomeVocabulary',
     ),
     (
         "BT. rca100: flatten the UModel mapping, so every kind emits one word",
@@ -2864,11 +2934,158 @@ INJECTIONS: list[
             "  external: 'apm.service',",
         ),
         "rca100",
+        'outcomeVocabulary',
     ),
 ]
 
 
+def assert_entry_contract(entries: list) -> None:
+    """Refuse to run if any entry does not match one of the three declared shapes.
+
+    The loop in `main` reads entries positionally:
+
+        name, mutate, requirement, description, also = entry[:5]
+        target = entry[5] if len(entry) > 5 else 'source'
+        anchor = entry[6] if len(entry) > 6 else 'classifier'
+
+    Every one of those reads is a silent fallback. An entry that declares a
+    `target` in the wrong slot, or a seventh slot that is a description rather
+    than an anchor name, does not raise -- it gets a default that happens to be
+    valid, and the injection runs against a file it was not aimed at. That is the
+    failure mode this battery has spent its whole history discovering (N's
+    misroute, AD reported BLIND for the right behaviour, BL reading the one table
+    the mutation left alone): **an injection that lands somewhere else still
+    produces a plausible report.**
+
+    The check therefore runs *before* any mutation, and it fails the whole run
+    rather than one entry -- a malformed population is a statement about the
+    battery, not about a single injection.
+
+    The three shapes are in `INJECTION_SHAPES`. The rule is positional and exact:
+    slot 0 a str, slot 1 a callable or None, slot 2 a callable, slot 3 a str,
+    slot 4 a callable or None, slot 5 (arity 6+) a str, slot 6 (arity 7) a str.
+    The two shapes that differ from the six-slot type -- five and seven slots --
+    are checked explicitly rather than tolerated, because "the annotation is a
+    union" and "every member of the union is legal" are different claims and only
+    the second one is worth anything.
+    """
+    problems = []
+    for index, entry in enumerate(entries):
+        name = entry[0] if entry else f"<empty entry at {index}>"
+        arity = len(entry)
+        if arity not in (5, 6, 7):
+            problems.append(f"entry {index} ({name!r}) has arity {arity}, expected 5, 6 or 7")
+            continue
+        # Slot kinds, checked positionally. `callable` is the runtime expression of
+        # `Callable[...]`, which `isinstance` cannot see through -- a lambda and a
+        # named function are both callable and both legal there.
+        if not isinstance(entry[0], str):
+            problems.append(f"entry {index} ({name!r}) slot 0 is {type(entry[0]).__name__}, expected str")
+        if entry[1] is not None and not callable(entry[1]):
+            problems.append(f"entry {index} ({name!r}) slot 1 is not callable and not None")
+        if not callable(entry[2]):
+            problems.append(f"entry {index} ({name!r}) slot 2 is not callable")
+        if not isinstance(entry[3], str):
+            problems.append(f"entry {index} ({name!r}) slot 3 is not str")
+        if entry[4] is not None and not callable(entry[4]):
+            problems.append(f"entry {index} ({name!r}) slot 4 is not callable and not None")
+        if arity >= 6 and not isinstance(entry[5], str):
+            problems.append(f"entry {index} ({name!r}) slot 5 (target) is not str")
+        if arity == 7 and not isinstance(entry[6], str):
+            problems.append(f"entry {index} ({name!r}) slot 6 (blind anchor) is not str")
+        # An entry whose slot 4 is a string is the five-slot shape written one slot
+        # short: `also` was omitted and everything after it shifted left. Caught
+        # here rather than at runtime, where it would read the description as the
+        # target and silently default to 'source'.
+        if entry[4] is not None and isinstance(entry[4], str):
+            problems.append(
+                f"entry {index} ({name!r}) slot 4 is a str, which is the five-slot shape "
+                "written without its trailing target"
+            )
+
+    if problems:
+        raise AssertionError(
+            "battery entry contract violated (refusing to run):\n  " + "\n  ".join(problems)
+        )
+
+
+def assert_anchor_is_reachable(entries: list) -> None:
+    """Refuse to run if an entry's requirement reads a block its anchor cannot reach.
+
+    The BLIND verdict compares `blind_anchor(result, anchor)` against
+    `blind_anchor(None, anchor)`, and the check only fires for a *data-only* entry
+    whose partition did not move. `blind_anchor` raises on an unknown name, so a
+    typo is loud. What is **not** loud is a *valid but wrong* anchor.
+
+    Measured: 66 of 74 entries carry the default `'classifier'` anchor. That is
+    correct for the 62 entries whose requirement reads the classifier's partition,
+    and wrong for any entry whose requirement reads `outcome_vocabulary(...)`,
+    `categories(...)`, `derivation(...)` or `baseline(...)`: those figures live in
+    other blocks, and a `classifier` anchor cannot see them move. Such an entry is
+    not merely mis-anchored, it is **un-blindable** -- the BLIND branch can never
+    be taken, so the entry's anchor is decoration and a future injection that
+    misses a UModel figure would report CAUGHT on the strength of a partition
+    number that had nothing to do with the edit.
+
+    This is the same defect finding 109 named, one layer up: a reading that cannot
+    move cannot report, and its presence makes the check look covered.
+
+    The rule is mechanical. A requirement that calls one of the block accessors is
+    required to declare that block's anchor. The accessors and their anchors:
+
+        outcome_vocabulary -> 'outcomeVocabulary'
+        categories         -> 'categories'
+        derivation         -> 'derivation'
+        baseline           -> 'baseline'
+
+    `cat`, `dist`, `denial`, `agreement` and `scorer_categories` all read the
+    classifier partition's relatives and keep the default; they are deliberately
+    not in the table, so an entry that uses them is not forced to declare an
+    anchor that would be a no-op.
+
+    Only entries that declare a *requirements* lambda can be checked this way; the
+    accessor is found through the function's `__code__.co_names`, which is a real
+    read of what the lambda calls rather than a parse of its source text.
+    """
+    accessor_to_anchor = {
+        "outcome_vocabulary": "outcomeVocabulary",
+        "categories": "categories",
+        "derivation": "derivation",
+        "baseline": "baseline",
+    }
+    problems = []
+    for index, entry in enumerate(entries):
+        if len(entry) < 3 or not callable(entry[2]):
+            continue
+        anchor = entry[6] if len(entry) > 6 else "classifier"
+        called = getattr(getattr(entry[2], "__code__", None), "co_names", ())
+        for accessor, required in accessor_to_anchor.items():
+            if accessor not in called:
+                continue
+            if anchor != required:
+                problems.append(
+                    f"entry {index} ({entry[0]!r}) reads `{accessor}(...)` but declares "
+                    f"anchor {anchor!r}, which cannot see that block; expected {required!r}"
+                )
+
+    if problems:
+        raise AssertionError(
+            "battery anchor reachability violated (refusing to run):\n  " + "\n  ".join(problems)
+        )
+
+
 def main() -> int:
+    # Before anything is mutated: every entry must match a declared shape. The
+    # positional reads below all have silent fallbacks, so a malformed entry is
+    # not an error at the point it is misread -- it is a plausible report about
+    # the wrong file. This is the only place that can catch it.
+    assert_entry_contract(INJECTIONS)
+    print(f"entry contract: {len(INJECTIONS)} entries, all match a declared shape")
+    # And every entry must be able to reach the block its requirement reads, or
+    # the BLIND branch is unreachable and the entry's anchor is decoration.
+    assert_anchor_is_reachable(INJECTIONS)
+    print("anchor reachability: every entry's anchor reads the block its requirement reads\n")
+
     probe_text = PROBE.read_text()
     fixture_text = FIXTURE.read_text()
     # Every in-package target is snapshotted, not just the adjudication. The

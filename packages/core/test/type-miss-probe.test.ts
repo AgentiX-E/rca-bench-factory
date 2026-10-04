@@ -564,3 +564,198 @@ describe('the UModel figures separate shape from content', () => {
     }
   });
 });
+
+/**
+ * The injection battery's own entry contract, asserted from outside it.
+ *
+ * The battery refuses to run on a malformed population (it calls
+ * `assert_entry_contract` and `assert_anchor_is_reachable` at the top of `main`,
+ * before any file is mutated). That refusal is only useful if it is itself
+ * true -- a guard that never fires because its own predicate is wrong is the
+ * same defect as a figure that cannot move.
+ *
+ * These tests read the battery's `INJECTIONS` list through a subprocess and
+ * restate both properties here, independently of the battery's implementation.
+ * The duplication is deliberate and it is the same reason this file duplicates
+ * the classifier: a test that imports its subject's guard agrees with it by
+ * construction, and agreement by construction is not evidence.
+ *
+ * ## What the first version of the battery got wrong
+ *
+ * The declared type of `INJECTIONS` was
+ * `tuple[str, Callable | None, Callable, str, Callable | None, str]` -- a fixed
+ * six slots. Measured, the entries are `{5: 5, 6: 26, 7: 43}`. It was a false
+ * statement about the data, and the entry that exposed it (`AD`, the only
+ * seven-slot entry at the time) carries the blind anchor the whole BLIND
+ * mechanism depends on.
+ *
+ * The larger defect was in the anchors. 42 of 74 entries declared an anchor that
+ * **structurally cannot observe them**: an entry whose requirement reads
+ * `outcome_vocabulary(...)` was anchored on `'classifier'`, whose tuple is
+ * `(total, sorted counts)`. The BLIND branch is guarded by a comparison of the
+ * classifier partition, and then compares `blind_anchor(result, 'classifier')`
+ * against `blind_anchor(None, 'classifier')` -- which is *the same two values the
+ * guard just compared*. For a `classifier`-anchored entry the anchor conjunct is
+ * therefore a tautology: it is True exactly when the guard already passed. Such
+ * an entry can never be BLIND, so its anchor is decoration, and a future entry
+ * that missed its target would report CAUGHT on the strength of a partition
+ * number unrelated to its edit.
+ *
+ * That is finding 109's defect one layer up: a reading that cannot move cannot
+ * report, and its presence makes the check look covered.
+ */
+describe('the injection battery states its entry contract, and the contract is true', () => {
+  const readEntries = (): {
+    arities: number[];
+    anchors: string[];
+    subjects: (string | null)[];
+    contractError: string | null;
+    anchorError: string | null;
+  } => {
+    // The battery is a Python module with heavy imports at module scope, so its
+    // entry list is read by executing it and asking it directly, the same way the
+    // figures above are read. The summary is what crosses the boundary.
+    const script = `
+import importlib.util, collections, re, json
+spec = importlib.util.spec_from_file_location('battery', ${JSON.stringify(resolve(REPO_ROOT, 'scripts/injection/type-miss-probe.py'))})
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+
+contract_error = None
+try:
+    m.assert_entry_contract(m.INJECTIONS)
+except AssertionError as exc:
+    contract_error = str(exc)
+
+anchor_error = None
+try:
+    m.assert_anchor_is_reachable(m.INJECTIONS)
+except AssertionError as exc:
+    anchor_error = str(exc)
+
+# The block each requirement reads, decided the same way the battery decides it:
+# the accessor name in the requirement's own source text.
+accessors = ('outcome_vocabulary', 'categories', 'derivation', 'baseline')
+lines = open(${JSON.stringify(resolve(REPO_ROOT, 'scripts/injection/type-miss-probe.py'))}).read().splitlines(keepends=True)
+def offset(lineno, col):
+    return sum(len(l) for l in lines[:lineno - 1]) + col
+src = ''.join(lines)
+subjects = []
+import ast
+tree = ast.parse(src)
+inj = None
+for node in tree.body:
+    if isinstance(node, (ast.Assign, ast.AnnAssign)):
+        ts = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for t in ts:
+            if getattr(t, 'id', None) == 'INJECTIONS':
+                inj = node.value
+for e in inj.elts:
+    req = e.elts[2]
+    seg = src[offset(req.lineno, req.col_offset):offset(req.end_lineno, req.end_col_offset)]
+    hit = None
+    for a in accessors:
+        if re.search(r'\\b' + a + r'\\s*\\(', seg):
+            hit = a
+            break
+    subjects.append(hit)
+
+print(json.dumps({
+    'arities': [len(e) for e in m.INJECTIONS],
+    'anchors': [e[6] if len(e) > 6 else 'classifier' for e in m.INJECTIONS],
+    'subjects': subjects,
+    'contractError': contract_error,
+    'anchorError': anchor_error,
+}))
+`;
+    return JSON.parse(
+      execFileSync('python3', ['-c', script], { cwd: REPO_ROOT, encoding: 'utf8' }),
+    );
+  };
+
+  it('every entry matches one of the three declared shapes', () => {
+    const { arities, contractError } = readEntries();
+    expect(contractError, 'the battery refused its own population').toBeNull();
+    // The shapes are enumerated rather than merely bounded: a five-slot entry is
+    // the in-package form, six is the general form, seven adds the blind anchor.
+    // An eight-slot entry would mean a slot nothing reads, which is how the
+    // original six-tuple annotation went wrong.
+    expect(new Set(arities)).toEqual(new Set([5, 6, 7]));
+    expect(arities.length).toBeGreaterThan(70);
+  });
+
+  it('no entry is anchored on a block its own requirement cannot reach', () => {
+    const { anchors, subjects, anchorError } = readEntries();
+    expect(anchorError, 'the battery refused its own population').toBeNull();
+    // An entry reading one of the four block accessors must declare that block's
+    // anchor. The mapping is the battery's own; restated here so the property is
+    // asserted in two places.
+    const required: Record<string, string> = {
+      outcome_vocabulary: 'outcomeVocabulary',
+      categories: 'categories',
+      derivation: 'derivation',
+      baseline: 'baseline',
+    };
+    const wrong: string[] = [];
+    subjects.forEach((subject, index) => {
+      if (subject === null) return;
+      if (anchors[index] !== required[subject]) {
+        wrong.push(`entry ${index} reads ${subject}() but declares ${anchors[index]}`);
+      }
+    });
+    expect(wrong).toEqual([]);
+    // And the anchors are not all one value. A population that declared
+    // `'classifier'` everywhere would satisfy the rule above vacuously for the
+    // 31 entries that legitimately read the classifier, so the spread is stated.
+    expect(new Set(anchors).size).toBeGreaterThan(3);
+  });
+
+  it('the classifier anchor is a tautology for its own guard, which is why the rule exists', () => {
+    // The structural fact the rule rests on, stated as an executable claim rather
+    // than as prose. `blind_anchor(r, 'classifier')` is `(r.total, sorted(r.counts))`
+    // and the BLIND guard compares exactly those, so an entry anchored on
+    // `'classifier'` cannot be BLIND for any reason other than "the partition did
+    // not move" -- which is not a statement about a UModel figure.
+    //
+    // Only `blind_anchor(..., 'classifier')` is *called* here, because it reads
+    // its argument alone. The other anchors read module-level baselines that the
+    // battery's `main` fills at run time, so they are empty on import -- their
+    // width is read from the source instead, which is also a check that the
+    // vocabulary anchor really does name more figures than the classifier's.
+    const script = `
+import importlib.util, json, re
+spec = importlib.util.spec_from_file_location('battery', ${JSON.stringify(resolve(REPO_ROOT, 'scripts/injection/type-miss-probe.py'))})
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+counts = {'form-variant': 0, 'shares-token': 1, 'different-mechanism': 8}
+same = {'total': 9, 'counts': dict(counts)}
+source = open(${JSON.stringify(resolve(REPO_ROOT, 'scripts/injection/type-miss-probe.py'))}).read()
+block = re.search(r"if which == 'outcomeVocabulary':(.*?)\\n    raise AssertionError", source, re.S).group(1)
+keys = re.findall(r'\"([a-zA-Z0-9_]+)\",', block)
+print(json.dumps({
+  'classifierAnchor': list(m.blind_anchor(same, 'classifier')),
+  'vocabularyAnchorNames': keys,
+}))
+`;
+    const r = JSON.parse(
+      execFileSync('python3', ['-c', script], { cwd: REPO_ROOT, encoding: 'utf8' }),
+    ) as {
+      classifierAnchor: unknown[];
+      vocabularyAnchorNames: string[];
+    };
+    // The classifier anchor reads exactly the two figures the guard compares, so
+    // for a classifier-anchored entry the conjunct is the guard restated. That
+    // identity is the defect: the entry's anchor adds no information.
+    expect(r.classifierAnchor.length).toBe(2);
+    expect(r.classifierAnchor[0]).toBe(9);
+    // The vocabulary anchor names many more figures, and it names the UModel ones.
+    // A classifier anchor cannot reach any of them, which is why an entry that
+    // reads `outcome_vocabulary` must not declare it.
+    expect(r.vocabularyAnchorNames.length).toBeGreaterThan(10);
+    for (const figure of ['umodelRows', 'umodelMappingDigest', 'rca100UmodelVocabularyWords']) {
+      expect(r.vocabularyAnchorNames, `${figure} must be reachable from the vocabulary anchor`).toContain(
+        figure,
+      );
+    }
+  });
+});

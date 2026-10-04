@@ -10284,3 +10284,166 @@ It does not establish that `official:check` is sensitive to this class of defect
 both mutations left it at 8 scored / 1 skipped, because no corpus project exercises a permuted UModel
 type. That is a fact about the corpus, recorded here so the gate is not credited with a measurement it
 does not make.
+
+
+---
+
+## Finding 110 — the battery's entry contract was a false statement about its own data, and 42 of 74 entries declared an anchor that could not observe them
+
+*2026-10-04. Iteration v1.50. Files: `scripts/injection/type-miss-probe.py`,
+`packages/core/test/type-miss-probe.test.ts`.*
+
+### The premise I proposed, and what measuring it did to it
+
+v1.50 was proposed on finding 109's own closing paragraph: that `umodelMappingDigest` "cannot tell
+*mapping changed* from *mapping correct*", so nothing reported the correctness half. Two candidates were
+proposed — extend the corpus so `official:check` meets a permuted type, or upgrade
+`umodelMappingDigestOf` from an identity check to a content assertion against `DOCUMENTED_UMODEL_TABLE`.
+
+**Both premises are false, and the measurement is unambiguous.**
+
+`DOCUMENTED_UMODEL_TABLE` is not a mirror that agrees with the source. Editing one side only, then
+running `test/vocabulary-single-source.test.ts`:
+
+| state | result |
+| --- | --- |
+| M0 untouched | `rc=0`, 83 passed |
+| M1 documented `service` → `k8s.pod` only | **`rc=1`, 2 failed** |
+| M2 source `service` → `k8s.pod` only | **`rc=1`, 1 failed** |
+| M3 both sides agree | **`rc=1`, 1 failed** (the `new Set(...).size === 7` figure) |
+
+And the permutation is caught at suite level too. Full core suite, `service: 'apm.service'` →
+`'k8s.node'`:
+
+| state | result |
+| --- | --- |
+| S0 baseline | `rc=0`, 2987 passed |
+| S1 source permuted | **`rc=1`, 5 failed / 2982 passed** — victims `rca100 · score · vocabulary-single-source` |
+| S2 documented permuted | **`rc=1`, 3 failed / 2984 passed** — victims `fault-extraction-scripts · vocabulary-single-source` |
+
+`DOCUMENTED_UMODEL_TABLE[ENTITY_KINDS.indexOf(kind)]` is a **positional** read of a table transcribed in
+`ENTITY_KINDS` order, so it is sensitive to which kind maps to which word — the exact class v1.49 was
+built to detect. **The suite already held that property.** This is the third consecutive iteration where a
+closing paragraph named a gap that measurement dissolved (finding 107's deferral, finding 108's "what this
+does not establish", now finding 109's).
+
+The digest is nevertheless load-bearing — but **at the battery layer, not the suite layer**. It is read by
+exactly two requirements (BS, BT) and by four suite assertions, and every other figure in its anchor tuple
+is invariant under a permutation (`umodelRows` 9, `umodelDistinctWords` 7, `umodelKindsAnswered` 9,
+`rca100UmodelVocabularyWords` 7, three ghost verdicts 1). It is the only figure a battery entry can move.
+That is a different claim from the one finding 109 made.
+
+### The defect the audit found instead
+
+Chasing the above meant reading the battery's entry contract, and the contract was wrong in two ways.
+
+**1. The declared type did not describe the data.** `INJECTIONS` was annotated
+`list[tuple[str, Callable | None, Callable, str, Callable | None, str]]` — a fixed six slots. Measured,
+the population is `{5: 7, 6: 66, 7: 1}`: three shapes.
+
+| arity | shape | count |
+| --- | --- | --- |
+| 5 | `(name, in_package_edit, requirement, description, target)` | 7 |
+| 6 | `(name, mutation, requirement, description, also, target)` | 66 |
+| 7 | `(name, mutation, requirement, description, also, target, blind_anchor)` | 1 |
+
+Runtime handled all three — `target = entry[5] if len(entry) > 5 else 'source'`,
+`anchor = entry[6] if len(entry) > 6 else 'classifier'` — so nothing was broken. What was broken is that
+the annotation is **the only place a contributor is told what an entry looks like**, and it actively
+misled: the lone seven-slot entry `AD` carries the blind anchor the entire BLIND mechanism depends on.
+A false type is how the next reader gets it wrong.
+
+**2. Forty-two of seventy-four entries declared an anchor that structurally cannot observe them.** The
+BLIND branch is guarded by a comparison of the classifier partition, and then compares
+`blind_anchor(result, 'classifier')` against `blind_anchor(None, 'classifier')` — which is *the same two
+values the guard just compared*, since `blind_anchor(r, 'classifier')` **is** `(r['total'], sorted(r['counts'].items()))`.
+For a `classifier`-anchored entry the anchor conjunct is therefore a **tautology**: it is True exactly when
+the guard already passed, and adds no information.
+
+Measured distribution before the fix:
+
+| requirement reads | declares `classifier` | should declare |
+| --- | --- | --- |
+| `derivation(...)` | 20 | `derivation` |
+| `outcome_vocabulary(...)` | 18 | `outcomeVocabulary` |
+| `baseline(...)` | 2 | `baseline` |
+| `categories(...)` | 2 | `categories` |
+| classifier partition (correct) | 31 | `classifier` |
+
+So **42 entries were un-blindable**. Each could report CAUGHT on the strength of a partition number
+unrelated to its edit, and — worse in the other direction — a future entry that *missed* its target would
+report CAUGHT too, because the BLIND branch could never be reached. That is finding 109's defect one layer
+up: **a reading that cannot move cannot report, and its presence makes the check look covered.** The
+entries' own comments already asserted the opposite ("anchored here ... so that an entry aimed at them is
+BLIND when it misses") — the intent was written down and the mechanism did not implement it.
+
+### The fix
+
+- `assert_entry_contract(entries)` — runs at the top of `main`, **before any file is mutated**. Refuses
+  the whole run (not one entry) if any entry's arity is outside `{5, 6, 7}` or any slot's kind is wrong.
+  All positional reads in the loop have silent fallbacks, so a malformed entry is not an error where it is
+  misread — it is a plausible report about the wrong file. This is the only place that can catch it.
+- `assert_anchor_is_reachable(entries)` — a requirement that reads one of the four block accessors must
+  declare that block's anchor. The accessor is found by regex over the requirement lambda's own source
+  span; an `ast.Lambda` has no `__code__`, which is why the first version of this check crashed.
+- The annotation is now the real union, with the arity table in the docstring.
+- 42 entries corrected by appending the anchor the new guard requires.
+- `packages/core/test/type-miss-probe.test.ts` gained a describe restating both properties **independently
+  of the battery's implementation** — a test that imports its subject's guard agrees with it by
+  construction, and agreement by construction is not evidence.
+
+### Three defects in my own repair, all caught by measurement rather than review
+
+The automated edit was wrong three times, and each failure was found by running something rather than by
+reading the diff.
+
+**1. `AN` and `AS` were arity 5, not 6, and the automated edit fused `AO`'s opening line onto `AN`'s
+closing line.** The first form of the damage was a syntax-level corruption: `"AO. derivation: ...",        None,`
+on one line, which made `AO` lose its `mutate=None` slot and shift its `also` into slot 1. The battery ran
+with `AO`'s requirement reading a different figure than intended.
+
+**2. My repair for `AN`/`AS` put the anchor in the target slot.** I reasoned that arity 6 means
+`entry[5]` is the target, so I set both slots to `'derivation'`. Measured, that routes those two entries
+down the **in-package** path (`if target in IN_PACKAGE_TARGETS`), where `also` is applied to the *module* —
+which their `mutate` never touches, since both edit the **probe**. Both reported `INERT`, and the battery
+fell from `74 caught / 0 inert` to **`72 caught / 2 inert`**.
+
+**3. The `HEAD` comparison that finally resolved it was itself reading the wrong slot.** My shape checker
+compared `he.elts[5]` as the target, but `HEAD`'s arity-5 entries have no slot 5 at all — their last slot
+is 4 and holds `None`. The checker therefore reported a target change for two entries that had never
+declared a target. Dumping every slot of both entries against `HEAD` directly is what showed the truth:
+`AN` and `AS` are `(name, mutate, requirement, description, None)` with `target` defaulting to `'source'`,
+so the correct encoding is arity 7 with slot 5 = `'source'` and slot 6 = `'derivation'`.
+
+The lesson is the same one the battery teaches: **the guard would have caught all three, and did — it was
+the only thing that did.** `72 caught / 2 inert` was not a passing run and could not be reported as one.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| Entry contract | 74 entries, arities `{5: 5, 6: 26, 7: 43}`, all match a declared shape |
+| Anchor reachability | every entry's anchor reads the block its requirement reads |
+| Anchor distribution | `classifier` 31, `derivation` 20, `outcomeVocabulary` 18, `baseline` 3, `categories` 2 |
+| Shape equivalence vs `HEAD` | every entry's first five slots byte-shape-identical to `HEAD`; the only slot changes are the 42 intended anchor additions plus `AN`/`AS`'s explicit `target='source'` |
+| Deliberate breaks | **D1** arity → contract fires; **D2** wrong slot kind → contract fires; **D3** revert BS's anchor → reachability fires; **D4** new wrongly-anchored entry → reachability fires |
+| Restore | battery byte-identical after every break |
+| Battery | **74 caught / 0 survived / 0 inert / 0 blind**; 16 sources byte-identical |
+| Suite | **2990 passed / 103 files** (v1.49: 2987) |
+| Coverage | `All files 99.96 / 99.91 / 100 / 99.96` — unchanged, no `src/` touched |
+| `typecheck` / `lint` / `docs:check` / `examples:check` | clean |
+| `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
+| `python3 -m py_compile` | clean |
+
+### What this does not establish
+
+It does not establish that the remaining 31 `classifier` anchors are all correct. They are correct for the
+entries whose requirement reads the classifier partition, which is what the new guard tests — but the
+guard is a rule about *accessor names*, and an entry that reaches another block through a helper the
+accessor table does not list would still be missed. The table is deliberately closed at four entries and
+its incompleteness is the honest statement of its reach.
+
+It does not establish that the four shapes cover every future entry. A shape that needed an eighth slot
+would fail `assert_entry_contract` loudly rather than being silently misread, which is the intended
+behaviour, but it means the three-shape enumeration is a statement about today's battery rather than a
+bound on what a battery may be.
