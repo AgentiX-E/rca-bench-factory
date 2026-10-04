@@ -21,8 +21,36 @@ name: Official data
 #
 # Because the runner has general internet access. The corpora are on Zenodo,
 # which is a plain HTTPS host; nothing about this needs a licensed download or an
-# interactive step. (The OpenRCA corpora are a different matter and are handled
-# by the `official-openrca.yml` workflow through the cached shard repositories.)
+# interactive step.
+#
+# ## What this workflow does not fetch, and what that costs
+#
+# Three anchors, `rcaeval-re1|re2|re3`. Nothing else. The other six score targets
+# are `notFetchable` in `golden-master/official-assets.json`, and that file is the
+# authority on each one's reason and its alternative -- this comment does not
+# restate them, because a second copy of a fact is a second thing to drift.
+#
+# The OpenRCA entries are worth one line here, because this header used to get
+# them wrong. It said the OpenRCA corpora "are handled by the
+# `official-openrca.yml` workflow through the cached shard repositories". Both
+# halves were false:
+#
+#   - `official-openrca.yml` does not exist and never has. `git log --all` for
+#     that path returns nothing: it was not created and deleted, it was never
+#     written.
+#   - The shard caches are empty (`total_count: 0` on all six, last successful
+#     `cache-dataset.yml` run 2026-08-02, Actions caches expire after 30 days),
+#     and they would be unreadable even if populated, because an Actions cache is
+#     scoped to the repository that wrote it. Finding 34 measured both halves.
+#
+# The sentence entered on 2026-09-19 and finding 34 corrected the registry on
+# 2026-09-20. The registry was repaired; this comment was not, and it has been
+# read as "OpenRCA is handled" ever since. A handler named but never written is
+# how a gap comes to look closed, which is the defect the last three rounds of
+# this project have each found one layer further out.
+#
+# `packages/core/test/workflow-claims.test.ts` now fails when a workflow here
+# cites a workflow that is not on disk, so this cannot recur silently.
 #
 # ## What is fetched, and what is kept
 #

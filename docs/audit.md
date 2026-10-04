@@ -10782,3 +10782,127 @@ It does not establish that `docs/target-formats.md` is the only place this two-a
 appeared. It establishes that **this** matrix now cannot drift silently, and that the guard
 refuses a table which tries to answer both questions in one column — which is the shape a
 future occurrence would have to take.
+
+## Finding 113 — the anchor workflow cited a helper that does not exist, and that citation was the stated reason the anchor is considered handled
+
+*2026-10-04. Iteration v1.53. Files: `.github/workflows/official-data.yml`,
+`docs/audit.md`, `packages/core/test/workflow-claims.test.ts` (new).*
+
+### How this was found, and why my previous statement was wrong
+
+I had been closing every round with some form of "P0-1 is blocked because **the sandbox
+cannot reach `zenodo.org`**". That is true and it is also beside the point, and the user
+pushed on exactly that:
+
+> Why the sandbox? Can't a GitHub runner and cache be used? **Did you actually look at this
+> project's workflows?**
+
+Two of those three were fair. `official-data.yml` fetches the corpora on `ubuntu-latest` and
+its own header says why, in as many words:
+
+> Because the runner has general internet access. The corpora are on Zenodo, which is a plain
+> HTTPS host; nothing about this needs a licensed download or an interactive step.
+
+So the fetch has never been blocked by my sandbox, and framing it that way made an
+orchestration problem look like an infrastructure wall. The third part — *did you look* — is
+the one that found something.
+
+### What looking at the workflow found
+
+`official-data.yml`'s header continues:
+
+> (The OpenRCA corpora are a different matter and are handled by the `official-openrca.yml`
+> workflow through the cached shard repositories.)
+
+**`official-openrca.yml` does not exist.** Measured:
+
+| check | result |
+| --- | --- |
+| `ls .github/workflows/` | `anchor-roundtrip.yml`, `ci.yml`, `fault-extraction-accuracy.yml`, `official-data.yml`, `pages.yml` — five files |
+| `git log --all -- .github/workflows/official-openrca.yml` | **no output** — the path has never existed in any branch |
+| `git log --all --diff-filter=D --name-only -- .github/workflows/` filtered for `openrca` | **no output** — it was not created and deleted, it was never created |
+| `grep -rn official-openrca` across both repositories | **one hit**, the comment above |
+
+### And the route it names was measured and disproved a day after the comment was written
+
+The comment says OpenRCA is handled "through the cached shard repositories". That is the
+*second* half of the sentence, and it is the half that used to be a plan.
+
+Finding 34 measured it on 2026-09-20 and the registry entry was corrected to say what was
+found. Both halves were false:
+
+```
+$ for r in openrca-{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2}; do
+    gh api /repos/AgentiX-E/$r/actions/caches --jq .total_count
+  done
+0 0 0 0 0 0
+```
+
+- **The caches do not exist.** All six shards report `total_count: 0`; the last successful
+  `cache-dataset.yml` run was 2026-08-02 and Actions caches expire after 30 days of no access.
+- **And they could not have been read even if they did.** An Actions cache is scoped to the
+  repository that wrote it, so a cache written by `openrca-telecom-dates-early` is invisible
+  to `rca-bench-factory`. The mechanism was wrong, not merely empty.
+
+The timeline is the part worth recording. The comment entered in `98fdf60` on **2026-09-19**;
+finding 34 measured and corrected the registry on **2026-09-20**, one day later. **The registry
+was repaired and the workflow comment that pointed at the same broken route was not**, and it
+has now been carried for fourteen days.
+
+### Why this is worse than a stale comment
+
+A comment that is out of date is ordinary. This one is load-bearing in a specific way: **it is
+where a reader is told that OpenRCA is handled.** Everything else in `official-data.yml` is
+scrupulous about the anchor's limits — the header, the three named exit statuses, the pin
+comparison, the `--check`-writes-nothing rule, the note that the pins are a reviewed commit.
+The single sentence that says what happens to the anchors this workflow *cannot* fetch is the
+one that is wrong, and it is wrong in the direction that makes the gap look closed.
+
+That is the same shape as findings 111, 112 and 113's immediate predecessor: **a channel whose
+presence makes the check look covered.** Finding 111 was a summary line that summarised away
+its own third term; finding 112 was a cell that could not hold two questions; this is a
+citation that closes a gap by naming a handler that was never written. In all three the
+computation was correct and the *reporting surface* was not.
+
+### The fix
+
+**1. The comment now states the measured facts** rather than citing a workflow that does not
+exist. It says that no OpenRCA fetch route is wired up in this repository, names finding 34,
+records that the shard caches are empty **and cross-repository-invisible**, and points at the
+registry entry as the authority.
+
+**2. The registry entry and the comment are now asserted to agree.** Both are prose, and prose
+is what drifted. `packages/core/test/workflow-claims.test.ts` reads the workflow file and the
+registry and fails when the workflow names an `official-*.yml` that is not on disk, when it
+cites a `cache-dataset.yml` route the registry has already recorded as broken, or when the
+OpenRCA anchors that the registry declares unfetchable are described as handled.
+
+**3. A second check for the class, not the instance.** The same test asserts that **every**
+`*.yml` filename cited anywhere in the workflows exists. The OpenRCA citation is the instance;
+the class is "a workflow citing a workflow", and there is no reason to discover the next one
+one at a time.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| Citation rule | every `*.yml` cited as a handler exists; ran clean across all 5 workflows |
+| Non-vacuity | the scanner is driven with the original defective sentence and returns `official-openrca.yml` |
+| Deliberate breaks | **D1** the original citation restored → red; **D2** a different nonexistent handler cited → red; **D3** the scoping fact dropped → red; **D4** the three anchors read as the whole set → red; **D5** the never-existed fact weakened → red |
+| Restore | both workflows byte-identical after every break |
+| Battery | **74 caught / 0 survived / 0 inert / 0 blind**; 16 sources byte-identical |
+| Suite | **3031 passed / 106 files** (v1.52: 3018 / 105, +13) |
+| Coverage | `All files 99.96 / 99.91 / 100 / 99.96`; no file×dimension below 95%; no `src/` file touched |
+| `typecheck` / `lint` / `docs:check` / `examples:check` | clean; YAML parses for all 5 workflows |
+| `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
+| `python3 -m py_compile` | clean |
+
+### What this does not do
+
+- It does **not** fetch anything. What it establishes is that the *reason* I had been giving
+  for the fetch not happening was wrong, and that a gap was being closed by prose.
+- It does **not** claim the fetch is now unblocked. Making the shards publish an artifact is a
+  change in six other repositories, and P0-1 remains the work of actually taking the download.
+- It does **not** treat the missing workflow as an error to be corrected by creating it. A
+  workflow file written to satisfy a comment would be a handler that exists on paper — the same
+  defect, one layer down.
