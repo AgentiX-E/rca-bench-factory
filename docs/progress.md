@@ -554,7 +554,7 @@ Four anchors, each strictly stronger than the one before:
 | 1 | Golden Master — exporters byte-stable against committed anchors | **met** (`pnpm golden-master` / 6 OpenRCA + 4 RCAEval files) |
 | 2 | Mutation suite — declared facets sensitive, undeclared inert | **met** (`pnpm mutation`, 26 cases) |
 | 3 | Official-metric regression — `oraclePerfect ∧ mutationsDegrade ∧ unscoredFacetsInert` | **met** (`pnpm official:check`, 8 targets scored, 1 skipped by contract) |
-| 4 | Official-data round trip — ingest → export → official, label-blind | **path executable; the real run fails at the fetch, for a cause now fixed and a consequence not yet observed** (`official-data.yml`; the path is exercised on a synthetic corpus by `anchor-roundtrip.yml`; see findings 45 and 52) |
+| 4 | Official-data round trip — ingest → export → official, label-blind | **the fetch, the derivation and the round trip all run on a real runner; the score is not yet reproduced** (`official-data.yml`; RE2 passes 270/270 and RE1 reads its `data.csv` after finding 115; see findings 45, 52 and 115) |
 
 Anchor 4 is the one that would detect a misunderstanding shared by our exporter
 and our scorer. Anchors 1–3 all begin from a bundle this repository authored, so
@@ -562,9 +562,19 @@ agreement between them proves internal consistency, not correctness against the
 upstream rule.
 
 The path is built, the wiring is gated on every push, and the number has **not**
-been reproduced on real telemetry: the corpus is 19 GB and this session's
-sandbox has no route to Zenodo. Say so plainly rather than implying the anchor is
-closed.
+been reproduced on real telemetry. Say so plainly rather than implying the anchor
+is closed.
+
+The reason given for that, in this paragraph until finding 114, was that "the
+corpus is 19 GB and this session's sandbox has no route to Zenodo." **That was the
+wrong reason, and the paragraph below already refuted it.** The fetch does not run
+in this session: it runs on `ubuntu-latest`, and this file's own next section
+describes eleven dispatches of it, three of which successfully transferred 4.24 GB
+from Zenodo. So the sandbox's egress was never the constraint and was never
+measured as one — finding 55 measured which hosts *this machine* reaches, which is
+a fact about the instrument, not about the anchor. What was actually untried was
+the dispatch call itself; finding 114 records that it returns `HTTP 204`, and run
+`37192624818` is the dispatch that tried it.
 
 **Where the fourth anchor actually stands.** The fetch, the pin comparison and the
 descriptor derivation all succeed on a real runner; the round trip then dies on its
@@ -669,8 +679,11 @@ CI uses:
 corpus: the numbers above are a memory bound and a verdict on synthetic telemetry,
 not RCAEval's own scores. Anchor 4 stays *executable, not reproduced* until a run
 of `official-data.yml` against the real download reports its own
-`ROUNDTRIP PASSED`, and that run has not been made since this fix. What the fix
-buys is that the next run reaches the round trip instead of aborting at it.
+`ROUNDTRIP PASSED`. Run `37192624818` is the first dispatch made since finding 45's
+fix and the first made since this project stopped attributing the gap to the
+sandbox (finding 114); its outcome is recorded in the next section rather than
+predicted here. What finding 45's fix buys is that the run reaches the round trip
+instead of aborting at it.
 
 `golden-master/fetch-and-verify.sh` is superseded by `scripts/fetch-official.mjs`
 and is kept only because the Golden Master verifies it byte-for-byte; every
@@ -2431,3 +2444,106 @@ now share, because it is what made four green properties green:
 
 That is now a CI step in its own right, so the gate's green is only meaningful while something
 independent keeps trying to break it. The pass raised no measured accuracy and claims none.
+
+## Pass 29 -- Dispatch the anchor instead of describing it as blocked, and read the CSV as CSV
+
+Pass 28 ended by putting a coverage claim under a battery. This pass was prompted from
+outside: the instruction to stop treating the sandbox as a blocker turned out to be right, the
+dispatch turned out to be possible, and the run it produced turned up a reader defect that every
+in-repo fixture had been shaped to miss.
+
+### The blocker that was not one
+
+Three iterations closed by saying P0-1 could not be advanced from here because the sandbox
+cannot reach Zenodo. The egress measurement behind that (finding 55) was real and was answering
+a different question. `official-data.yml` runs on `ubuntu-latest`, and its own header has said
+so since it was written. The question was never whether *this machine* reaches Zenodo; it was
+whether the runner can and whether anything here can start it. The first was answered and
+reported as the second, and the second was never tried.
+
+It is one call:
+
+```
+POST /repos/AgentiX-E/rca-bench-factory/actions/workflows/official-data.yml/dispatches
+  {"ref":"master","inputs":{"anchor":"rcaeval-re1"}}   ->   HTTP 204
+```
+
+Run `37192624818` was created fifteen seconds later. The permission probe is a single header,
+`x-accepted-github-permissions: actions=read`, returned on every Actions response including the
+ones already being read to enumerate the workflow files.
+
+### What the fetch produced
+
+```
+UNPINNED  rcaeval-re1-ob: bytes=30966778  sha256=4a709297e0a829f0f2ee8a7792a6d74da32d663c600565b7fffc860963b840c4
+UNPINNED  rcaeval-re1-ss: bytes=79089075  sha256=b4424b0b3863b7397712caa0f305ef59964b03784dfcb23e23e0a95a2e746f99
+UNPINNED  rcaeval-re1-tt: bytes=279663965 sha256=2b33b7ab07198e0d69f229e697bfcef794a656e8db73a1d732142effde17c595
+REPORT    /tmp/pins.json: 3 pin(s) measured
+```
+
+Three assets, ~390 MB, digest-verified. The descriptor derivation then found **375 cases** --
+RE1's real case count, against RE2's 270 -- and the round trip failed on **all 375**.
+
+### The defect
+
+```
+ROUNDTRIP declared 375 case(s), found 1000 file(s), 453 directory(ies)
+ROUNDTRIP FAIL 1/375 RE1-OB/adservice_cpu/1
+  reason=data.csv is not valid JSON: Unexpected token 'i', "time,adserv"... is not valid JSON
+ROUNDTRIP 0 of 375 declared case(s) round-tripped; 375 finding(s)
+```
+
+375 of 375, one uniform reason. That is not a corpus problem; it is a dispatch bug, and the
+message names it in its first token: the reader has a file called `data.csv` and is parsing it as
+JSON.
+
+The lookup list was right -- finding 46 put `data.csv` in it, because the corpus ships
+`metrics.json` for RE2 and `data.csv` for RE1. Where it broke is the step after the lookup:
+
+```javascript
+const metrics = assertRcaevalMetrics(bytes.toString('utf8'), entry, found.name);
+```
+
+`found.name` reached the JSON converter's error message and was used for nothing else. The name
+decided what the failure was *called* and never what the reader *did*.
+
+### Why every in-repo check passed
+
+Every fixture in this repository is ours, and our exporter writes `metrics.json`. So the JSON
+path is the only path any fixture had ever taken, and the CSV path had never been exercised. One
+test appeared to cover it -- and overwrote its own CSV with JSON four lines after writing it, so
+it passed on the JSON reader while asserting the CSV one.
+
+### What changed
+
+| item | before | after |
+| --- | --- | --- |
+| `check-official.mjs` payload dispatch | name reached the message only | content decides the reader |
+| delimited payloads | `JSON.parse` on a CSV | `parseDelimited` from the ingest module |
+| `data.csv` in the CI corpus | absent | RE1 case, every push |
+| per-shape verdict in CI | none | both shapes must print `PASS` against their own target |
+| reader guards | untested | 7 tests, one per refusal rule |
+| vacuous `data.csv` test | wrote CSV, then JSON | separated into a CSV case and a JSON-in-`.csv` case |
+| `writeCaseWithoutMetrics` | held a valid CSV | renamed `writeCsvCase`; a real `writeUnreadableCase` added |
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| RE1 shape, before | `data.csv is not valid JSON` -- reverting the one line reproduces it |
+| RE1 shape, after | `ROUNDTRIP PASS oracle=1.00 signals=3` |
+| CI corpus, both shapes | `RE1 ... oracle=1.00 signals=80` / `RE2 ... oracle=1.00 signals=80` |
+| Deliberate breaks | **8 of 8 fired**, restore byte-identical |
+| core tests | **3045 passed / 107 files** (v1.53: 3031 / 106) |
+| core coverage | `All files 99.96 / 99.91 / 100 / 99.96`; no file x dimension below 95% |
+| `typecheck` / `lint` / `docs:check` / `examples:check` / `official:check` | clean |
+| workflows | all 5 parse; the 8 corpus steps of `anchor-roundtrip.yml` run green by their own shell |
+
+### What this does not do
+
+- It does **not** pin the three RE1 assets. The digests are measured; the pins are a reviewed
+  commit and nothing has merged them.
+- It does **not** claim the RE1 anchor is reproduced. The round trip over real telemetry is the
+  ingest-export-official path; whether the score matches upstream is the anchor's own claim.
+- It does **not** explain RE2. RE2 passed 270/270 in an earlier dispatch, which is what made this
+  look like a corpus difference -- and is why the defect needed the *other* anchor to surface.

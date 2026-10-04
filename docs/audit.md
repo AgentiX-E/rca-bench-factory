@@ -10906,3 +10906,238 @@ one at a time.
 - It does **not** treat the missing workflow as an error to be corrected by creating it. A
   workflow file written to satisfy a comment would be a handler that exists on paper — the same
   defect, one layer down.
+
+## Finding 114 — three iterations called P0-1 blocked by the sandbox, and the dispatch call returns 204
+
+### The claim
+
+For three consecutive iterations (v1.51, v1.52, v1.53) each closing section of this project stated
+that P0-1 — pinning the two remaining pinned-anchor candidates, `rcaeval-re1` and `rcaeval-re3` —
+**could not be advanced from here**, and gave the same reason: the sandbox's egress is
+allow-listed and `zenodo.org` is not on the list.
+
+The reason was not invented. Finding 55 measured the egress directly: `api.deepseek.com` → 401,
+`ollama.com` → 200, `api.github.com` → 200, and `api.openai.com`, `api.anthropic.com`,
+`generativelanguage.googleapis.com`, `registry.npmjs.org`, `pypi.org` → `000`. Zenodo was never
+in that list because it never needed to be: the fetch does not run here.
+
+### What was wrong with the claim
+
+**The fetch never needed the sandbox.** `official-data.yml` runs on `ubuntu-latest`, and its own
+header says why in a sentence that has been in the file since it was written:
+
+> Because the runner has general internet access. The corpora are on Zenodo, which is a plain
+> HTTPS host; nothing about this needs a licensed download or an interactive step.
+
+So the wall I was reporting was **the wrong wall**. The question was never whether *this machine*
+can reach Zenodo. It was whether the *runner* can, and whether anything here can start the run.
+Those are different questions, and I answered the first one and reported it as the answer to the
+second.
+
+### The part that is an actual defect
+
+I never tested the second question. I asserted a blocker for three iterations **without trying
+the one call that decides it**, on the strength of a general belief that the token was
+read-only — a belief that came from the token being a fine-grained PAT whose *cache* read had
+401'd months earlier, not from anything measured about `actions:write`.
+
+Measured, it was wrong:
+
+```
+$ curl -X POST -H "Authorization: Bearer $TOKEN" \
+    https://api.github.com/repos/AgentiX-E/rca-bench-factory/actions/workflows/official-data.yml/dispatches \
+    -d '{"ref":"master","inputs":{"anchor":"rcaeval-re1"}}'
+HTTP 204
+```
+
+HTTP 204 is the success code for a workflow dispatch. The run was created 15 seconds later:
+
+```
+id=37192624818  Official data  in_progress  head=ece5b3964
+```
+
+The permission probe that would have told me is one header:
+
+```
+x-accepted-github-permissions: actions=read
+```
+
+That header is returned on **every** Actions API response, including the ones I had already been
+reading. It was in the response to the very request that listed the five workflows. I read
+`GET /actions/workflows` to enumerate the workflow files — the answer to the citation question in
+finding 113 — and did not read the header on it.
+
+### Why this is the same defect as the last four
+
+Findings 111 through 113 were each **a reporting surface that made a gap look closed**: a summary
+line that summarised away its term, a cell that could not hold two questions, a citation pointing
+at a workflow never written. This one is the same shape turned on myself: **"P0-1 is blocked" was
+a reporting surface that made an unexamined call look examined.** The computation — "can this
+machine reach Zenodo?" — was correct, and it was not the question.
+
+The distinguishing mark is identical in all five cases. Each was cheap to check and the cheap
+check was available at the moment the claim was made:
+
+| finding | the claim | the check that was available | what it would have shown |
+| --- | --- | --- | --- |
+| 111 | "every target has a status" | read the third term of the line that was printed | six rows had no status |
+| 112 | "L4 is at level X" | ask which of two questions the column holds | 5 of 9 cells contradicted the registry |
+| 113 | "OpenRCA is handled by a workflow" | `ls .github/workflows` | the file was never written |
+| **114** | **"P0-1 is sandbox-blocked"** | **a single POST, or one response header** | **the dispatch returns 204** |
+
+### The fix
+
+**1. The claim is withdrawn in the document where it was made.** `09-推进进度追踪.md`'s P0-1 row
+and the closing sections of v1.51–v1.53 are corrected to say that the sandbox was never the
+obstacle, and that what remained was an untried call rather than an unavailable capability.
+
+**2. The dispatch is now actually made**, and its outcome is recorded as data rather than as an
+expectation. It is running against `ece5b3964`. Whatever it measures — a pin, a pin mismatch, or
+an unreachable asset — replaces the sentence "P0-1 is blocked" with a number.
+
+**3. A guard against the class, not the instance.** The failure was not that I mis-assessed the
+egress; it was that I stated an *externally caused* blocker without a measurement. That is now
+asserted against the tracking document itself: `packages/core/test/blocker-claims.test.ts` fails
+when the progress tracker or the audit states a blocker without naming the observation that
+established it. The rule is deliberately narrow — it fires on the phrasing this project used
+("cannot be advanced from here", "blocked by the sandbox", "no channel") and demands an adjacent
+measurement reference (a finding number, a command, or an HTTP status). Prose that merely
+describes an upstream limitation is untouched, because a rule strong enough to forbid *all*
+blocker language would forbid writing down finding 34.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| The dispatches that were claimed impossible | **HTTP 204**, run `37192624818` created |
+| Attribution of the blocker | the three prior iterations' text corrected; no remaining claim that the sandbox causes it |
+| The real external dependency | tested at dispatch time, not asserted — see "What this does not do" |
+| New guard | `blocker-claims.test.ts`; fires on the phrasing used in v1.51–v1.53 and passes on measurement-backed blockers |
+| Non-vacuity | driven with the verbatim v1.52 closing sentence, which it must flag |
+
+### What this does not do
+
+- It does **not** establish that the fetch will succeed. Zenodo's reachability *from the runner*
+  is the one fact in this finding that is still being measured, and the run in flight is how. If
+  the job ends `Unreachable`, that is a real result and a different one from "blocked here": it
+  would be a fact about the runner's egress, measured, and the next step would be `--report-pins`
+  from a machine with egress rather than a re-reading of finding 55.
+- It does **not** claim the token can do everything. What is now measured is `actions:write` for
+  **workflow dispatch**, which is the one capability P0-1 needed. Whether it can merge a PR or
+  write to `ci-reports` remains untested, and this finding asserts nothing about it.
+
+## Finding 115 — the reader found `data.csv`, named it correctly, and then parsed it as JSON
+
+### What the fourth anchor's first successful fetch produced
+
+Dispatch `official-data.yml` against `rcaeval-re1` and the fetch now works. Three assets,
+digest-verified, from Zenodo:
+
+```
+UNPINNED  rcaeval-re1-ob: bytes=30966778  sha256=4a709297e0a829f0f2ee8a7792a6d74da32d663c600565b7fffc860963b840c4
+UNPINNED  rcaeval-re1-ss: bytes=79089075  sha256=b4424b0b3863b7397712caa0f305ef59964b03784dfcb23e23e0a95a2e746f99
+UNPINNED  rcaeval-re1-tt: bytes=279663965 sha256=2b33b7ab07198e0d69f229e697bfcef794a656e8db73a1d732142effde17c595
+REPORT    /tmp/pins.json: 3 pin(s) measured
+```
+
+So finding 114's correction is confirmed by the run itself, not by argument: **the fetch was
+never sandbox-blocked.** The runner reaches Zenodo, as its own header always said, and three
+assets totaling ~390 MB came back and verified.
+
+The descriptor derivation then found **375 cases** — the first real-corpus case count for RE1,
+against RE2's 270. And the round trip failed on all of them:
+
+```
+ROUNDTRIP declared 375 case(s), found 1000 file(s), 453 directory(ies)
+ROUNDTRIP FAIL   1/375 RE1-OB/adservice_cpu/1  reason=data.csv is not valid JSON: Unexpected token 'i', "time,adserv"... is not valid JSON
+...
+ROUNDTRIP 0 of 375 declared case(s) round-tripped; 375 finding(s)
+```
+
+### The bug
+
+**375 of 375 failed, every one with the same reason.** A 100% failure rate with a single uniform
+cause is not a corpus problem; it is a dispatch bug. And the message names the bug in its own
+first token: the reader has a file called `data.csv` and is parsing it as JSON.
+
+`check-official.mjs` locates a case's payload by trying a list of names, and finding 46 built
+that list correctly:
+
+```javascript
+const CASE_PAYLOAD_NAMES = ['metrics.json', 'data.csv'];
+```
+
+The list is right. The corpus publishes `metrics.json` for RE2 and `data.csv` for RE1 — stated in
+the file's own comment, which cites upstream's `main.py` globbing `**/data.csv`. Where it breaks
+is the step after the lookup:
+
+```javascript
+const metrics = assertRcaevalMetrics(bytes.toString('utf8'), entry, found.name);
+```
+
+`assertRcaevalMetrics` converts RCAEval's `{"metric": [v0, v1, ...]}` shape and begins:
+
+```javascript
+try {
+  doc = JSON.parse(raw);
+} catch (error) {
+  return { ok: false, reason: `${payloadName} is not valid JSON: ${error.message}` };
+}
+```
+
+So `found.name` is threaded through **for the error message** and used for nothing else. The
+function is handed a CSV, refuses it as JSON, and reports which file it refused. The name is used
+for *reporting* and never for *dispatch* — which is why the failure reads as an accurate
+diagnosis of the wrong question.
+
+### Why every in-repo check passed
+
+The synthetic corpus that `anchor-roundtrip.yml` exercises on every push is **ours**, and our
+exporter writes `metrics.json`. So the JSON path is the only path any in-repo fixture has ever
+taken. `locatePayload`'s fallback to `data.csv` was exercised — there is a test for it — but
+only to the point of *finding* the file. What happened after it was found was never asserted,
+because no fixture had ever been named `data.csv` and read.
+
+This is the same shape as findings 46, 111–114: **a check that runs where the data is shaped the
+way the check expects.** Finding 46 found that the corpus does not guarantee `metrics.json` and
+added the name to the lookup list. It did not follow the name far enough to ask what the reader
+does with a file that is not JSON, because the only corpus it had was shaped like the answer.
+
+### The fix
+
+**1. The payload's name decides the reader, not just the message.** The format is derived from the
+file that was found, and a non-JSON payload takes the delimited path. The ingest layer already
+supports it — `FILE_FORMATS` is `['csv', 'tsv', 'jsonl', 'json']` and `parseByFormat` has a `csv`
+arm — so this is a routing fix, not a parser to be written. Writing a second CSV parser here
+would have been the wrong repair: it would put two implementations of one format in the tree and
+give the corpus a reader the rest of the pipeline does not share.
+
+**2. The reason strings stay true.** The CSV arm reports in CSV terms — a header with no numeric
+column, an uneven row — rather than reusing the JSON vocabulary, so a future failure of this path
+does not read as a JSON defect.
+
+**3. A fixture that is not shaped like the answer.** The real defect here is that every fixture
+was ours. A `data.csv` case in the synthetic corpus now goes through `anchor-roundtrip.yml`, so
+the path RE1 actually takes is exercised on every push rather than on a ninety-minute dispatch.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| The corpus that failed | 375/375 cases now round-trip; recorded against the RE1 descriptor set |
+| The path that was never taken | a `data.csv` fixture in the synthetic corpus, in CI |
+| Both formats | `metrics.json` and `data.csv` cases round-trip through the same adapter |
+| Reason vocabulary | a malformed CSV reports in CSV terms; asserted by test |
+| No new parser | the fix routes to `FILE_FORMATS`' existing `csv` arm; asserted by test |
+| Regression | RE2's 270 cases still round-trip, unchanged |
+
+### What this does not do
+
+- It does **not** pin the three RE1 assets. The digests above are measured and the pins are a
+  reviewed commit; `apply-pins.mjs` writes exactly those two fields and nothing has merged them.
+- It does **not** establish that the RE1 round trip scores. The round trip is the ingest → export
+  → official path over real telemetry; whether the score matches upstream is the anchor's actual
+  claim and it is a separate measurement.
+- It does **not** explain RE2's `metrics.json`. RE2 passed 270/270 in an earlier dispatch, which
+  is what made this look like a corpus difference rather than a reader defect — and is why the
+  failure had to be found by running the *other* anchor.

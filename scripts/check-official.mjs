@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import {
   exportForScoreTarget,
   ingestPrimeDataset,
+  parseDelimited,
   runAllOfficialRegressions,
   SCORE_TARGET_IDS,
 } from '../packages/core/dist/index.js';
@@ -72,6 +73,122 @@ const SKIPPED = { 'rcaeval-re3': 'the example is a resource fault and RE3 admits
  * through -- there is no second layout contract to keep in step.
  */
 const ADAPTED_COLUMNS = ['timestamp', 'service', 'metric', 'value'];
+
+/**
+ * The metric-column name a delimited RCAEval payload is normalised under.
+ *
+ * `metrics.json` carries the metric as a *key* -- `{"cpu_usage": [...]}` -- so the
+ * name is in the document. A `data.csv` carries it as a *column header* -- the
+ * upstream files open `time,adservice_cpu` or `time,ts-admin-service_mem` -- so a
+ * delimited payload is one metric per file and the header is where its name
+ * lives. Both then reach the ingest as a `metric` column, because that is what
+ * `ADAPTED_COLUMNS` declares and what the rest of the pipeline reads.
+ *
+ * The header is not used verbatim: it carries the service as well as the metric
+ * (`adservice_cpu` is the service `adservice` under the fault's metric `cpu`),
+ * and the descriptor already knows which case this is. Splitting it here would
+ * invent a service name from a file name, which is the mistake finding 42 was.
+ */
+const DELIMITED_METRIC_COLUMN = 'metric';
+
+/**
+ * A delimited payload's records, as the same record shape `metrics.json` yields.
+ *
+ * ## Why this exists, and why it is not a second CSV parser
+ *
+ * The fourth anchor's first successful fetch ingested 375 RE1 cases and failed
+ * every one of them with the same sentence:
+ *
+ *     ROUNDTRIP FAIL 1/375 RE1-OB/adservice_cpu/1
+ *       reason=data.csv is not valid JSON: Unexpected token 'i', "time,adserv"...
+ *
+ * The reader had *found* `data.csv` -- finding 46 put it in the lookup list for
+ * exactly this reason -- and then handed it to `assertRcaevalMetrics`, whose first
+ * act is `JSON.parse`. `found.name` was threaded through the call for the error
+ * message and used for nothing else, so the name decided what the failure was
+ * *called* and never what the reader *did*. The result was a message that
+ * accurately diagnoses the wrong question: it reports a JSON defect in a file
+ * that was never JSON, on all 375 cases, and reads as a corpus problem rather than
+ * a dispatch bug.
+ *
+ * This function does not parse CSV. `parseDelimited` in the ingest module already
+ * does, correctly, including quoting and embedded newlines, and it is what every
+ * other dataset in this project goes through. Writing a second one here would put
+ * two implementations of one format in the tree and would give the corpus a reader
+ * the rest of the pipeline does not share -- so the one thing this is allowed to
+ * do is turn the rows into the record shape and hand them on.
+ *
+ * ## What it refuses
+ *
+ * The same standard `assertRcaevalMetrics` holds: rather than contributing the
+ * points that happened to parse, a payload this cannot read in full makes the case
+ * fail by name. A partly-read payload is one whose fault the round trip cannot
+ * claim to have reproduced, and silently scoring the readable half would be a
+ * green round trip that established nothing.
+ */
+function adaptDelimitedMetrics(raw, entry, payloadName) {
+  const { rows, errors } = parseDelimited(raw, ',');
+  if (errors.length > 0) {
+    const first = errors[0];
+    return {
+      ok: false,
+      reason: `${payloadName} is not readable as CSV: line ${first.line} ${first.reason}`,
+    };
+  }
+  const header = rows[0];
+  if (header === undefined) return { ok: false, reason: `${payloadName} is empty` };
+
+  // The timestamp column, by name, case-insensitively. Upstream's own files call
+  // it `time`; being tolerant of the casing is not a guess about the layout, it is
+  // the same tolerance `detectFileLayout`'s aliases already carry.
+  const timeIndex = header.findIndex((h) => h.trim().toLowerCase() === 'time');
+  if (timeIndex === -1) {
+    return {
+      ok: false,
+      reason: `${payloadName} has no 'time' column; its columns are ${header.join(', ')}`,
+    };
+  }
+
+  const injectSeconds = Date.parse(entry.injectTime) / 1000;
+  const out = [ADAPTED_COLUMNS.join(',')];
+  for (let r = 1; r < rows.length; r += 1) {
+    const row = rows[r];
+    const cell = row[timeIndex];
+    if (cell === undefined) continue;
+    const seconds = Number(cell.trim());
+    if (!Number.isFinite(seconds)) {
+      return {
+        ok: false,
+        reason: `${payloadName} line ${r + 1} has a non-numeric time '${cell}'`,
+      };
+    }
+    // The corpus's own clock is real -- unlike `metrics.json`, whose array carries
+    // ordering and no instants -- so it is used as given rather than synthesised
+    // from the injection time. `injectSeconds` is read anyway, so a descriptor
+    // whose `injectTime` did not parse is refused here instead of being carried
+    // into a window that never selects the fault.
+    if (!Number.isFinite(injectSeconds)) {
+      return { ok: false, reason: `case '${entry.caseId}' has an unparseable injectTime` };
+    }
+    const ts = new Date(seconds * 1000).toISOString();
+    for (let c = 0; c < header.length; c += 1) {
+      if (c === timeIndex) continue;
+      const name = header[c];
+      const value = row[c];
+      if (name === undefined || value === undefined || value.trim() === '') continue;
+      const numeric = Number(value.trim());
+      if (!Number.isFinite(numeric)) {
+        return {
+          ok: false,
+          reason: `${payloadName} line ${r + 1} column '${name}' is not a finite number: '${value}'`,
+        };
+      }
+      out.push(`${ts},${entry.component},${name},${numeric}`);
+    }
+  }
+  if (out.length === 1) return { ok: false, reason: `${payloadName} holds no samples` };
+  return { ok: true, csv: out.join('\n') + '\n' };
+}
 
 /**
  * The sampling interval RCAEval uses, in seconds.
@@ -291,7 +408,25 @@ function adaptCase(root, entry) {
   if (bytes.includes(0)) {
     return { ok: false, reason: `${found.name} is binary, not telemetry` };
   }
-  const metrics = assertRcaevalMetrics(bytes.toString('utf8'), entry, found.name);
+  // The *content* chooses the reader, not the name.
+  //
+  // This line used to be `assertRcaevalMetrics(bytes, entry, found.name)`
+  // unconditionally, and that is finding 115. `found.name` reached the JSON
+  // converter's error message and nothing else, so a `data.csv` -- which finding
+  // 46 deliberately added to the lookup list, because the RE1 corpus ships it --
+  // was JSON-parsed and rejected on all 375 of RE1's cases with the sentence
+  // `data.csv is not valid JSON`. The name was reported correctly and never acted
+  // on.
+  //
+  // Dispatching on the name would be the other half of the same mistake: finding
+  // 46's own test built a `data.csv` holding JSON, and a corpus that names a JSON
+  // payload `data.csv` is a real thing to have to read. So the decision is made on
+  // the bytes -- a payload whose first non-space character is `{` is the
+  // `{metric: [values]}` document, and anything else is the delimited shape.
+  const text = bytes.toString('utf8');
+  const metrics = /^\s*\{/.test(text)
+    ? assertRcaevalMetrics(text, entry, found.name)
+    : adaptDelimitedMetrics(text, entry, found.name);
   if (!metrics.ok) return metrics;
   return {
     ok: true,

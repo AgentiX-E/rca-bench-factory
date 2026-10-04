@@ -89,11 +89,71 @@ jobs:
             writeFileSync("/tmp/synthetic/RE2-TT/ts-order-service_cpu/1/metrics.json", JSON.stringify(metrics));
           '
 
+          # A second case, RE1, carrying its payload as *delimited* text.
+          #
+          # ## Why this fixture exists, and why it was absent
+          #
+          # The corpus ships `metrics.json` for RE2 and RE3 and `data.csv` for RE1.
+          # Finding 46 added `data.csv` to the reader's lookup list for exactly that
+          # reason -- and the reader then handed the file it had found to the JSON
+          # converter, because the name reached the error message and never the
+          # dispatch. On the real download that made all 375 RE1 cases fail with
+          # `data.csv is not valid JSON`: an accurate diagnosis of the wrong question.
+          #
+          # Every fixture in this repository is ours, and our exporter writes JSON,
+          # so the CSV path had never been taken here. That is the whole reason the
+          # defect survived to a 90-minute dispatch -- and the reason it is now in a
+          # workflow that runs on every push. A fixture set that only contains the
+          # shape we emit cannot find a bug in reading the shape we do not.
+          #
+          # The `time` column is real here, unlike `metrics.json`: a delimited
+          # payload carries its own clock, so the instants come from the file and
+          # not from the injection time. Both metrics step at the midpoint for the
+          # same reason the JSON case does -- the adapter must not fail for a
+          # reason unrelated to what is under test.
+          RE1_CASE=/tmp/synthetic/RE1-OB/adservice_cpu/1
+          mkdir -p "$RE1_CASE"
+          printf '1700000000\n' > "$RE1_CASE/inject_time.txt"
+          node -e '
+            const { writeFileSync } = require("node:fs");
+            const rows = ["time,adservice_cpu,adservice_mem"];
+            const samples = 40;
+            const half = Math.floor(samples / 2);
+            for (let i = 0; i < samples; i += 1) {
+              const t = 1700000000 + i * 60;
+              rows.push(`${t},${i < half ? 0.2 : 0.95},0.5`);
+            }
+            writeFileSync("/tmp/synthetic/RE1-OB/adservice_cpu/1/data.csv", rows.join("\n") + "\n");
+          '
+
       - name: Derive the descriptors from the corpus
         run: |
           set -eu
           node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/synthetic --out /tmp/synthetic-cases.json
           cat /tmp/synthetic-cases.json
+
+      # Both payload shapes have to reach the round trip, and the assertion is on
+      # the *count* per suite so a fixture that silently stopped being derived --
+      # or one shape that stopped being recognised as a case at all -- shows up as
+      # a number rather than as a smaller green run.
+      - name: Both payload shapes are derived, one per suite
+        run: |
+          set -eu
+          node -e '
+            const doc = require("/tmp/synthetic-cases.json");
+            const counts = doc.counts;
+            if (counts.RE1 !== 1 || counts.RE2 !== 1 || counts.RE3 !== 0) {
+              throw new Error(`expected RE1=1 RE2=1 RE3=0, got ${JSON.stringify(counts)}`);
+            }
+            const byId = Object.fromEntries(doc.cases.map((c) => [c.caseId, c]));
+            const re1 = byId["RE1-OB/adservice_cpu/1"];
+            const re2 = byId["RE2-TT/ts-order-service_cpu/1"];
+            if (re1 === undefined) throw new Error("the data.csv case was not derived");
+            if (re2 === undefined) throw new Error("the metrics.json case was not derived");
+            if (re1.suite !== "RE1" || re2.suite !== "RE2") {
+              throw new Error(`suites are misrouted: ${re1.suite} and ${re2.suite}`);
+            }
+          '
 
       # The service name is the one place the exporter and the corpus reader have
       # to agree, and it is the one the layout makes easy to get wrong. The case
@@ -110,15 +170,17 @@ jobs:
           set -eu
           node -e '
             const cases = require("/tmp/synthetic-cases.json").cases;
-            if (cases.length !== 1) throw new Error(`expected 1 case, got ${cases.length}`);
-            if (cases[0].component !== "ts-order-service") {
-              throw new Error(`expected component ts-order-service, got ${cases[0].component}`);
+            // Looked up by id rather than by index: there are two cases now, one
+            // per payload shape, and an index would make this assertion depend on
+            // the generator'"'"'s ordering rather than on the parse under test.
+            const found = cases.filter((c) => c.caseId === "RE2-TT/ts-order-service_cpu/1");
+            if (found.length !== 1) throw new Error(`expected the RE2 case once, got ${found.length}`);
+            const c = found[0];
+            if (c.component !== "ts-order-service") {
+              throw new Error(`expected component ts-order-service, got ${c.component}`);
             }
-            if (cases[0].faultType !== "cpu") {
-              throw new Error(`expected fault cpu, got ${cases[0].faultType}`);
-            }
-            if (cases[0].caseId !== "RE2-TT/ts-order-service_cpu/1") {
-              throw new Error(`expected the corpus path as the id, got ${cases[0].caseId}`);
+            if (c.faultType !== "cpu") {
+              throw new Error(`expected fault cpu, got ${c.faultType}`);
             }
           '
 
@@ -126,6 +188,41 @@ jobs:
         run: |
           set -eu
           node scripts/check-official.mjs --official-dir /tmp/synthetic --cases /tmp/synthetic-cases.json
+
+      # The assertion that would have caught finding 115 in CI rather than in a
+      # ninety-minute dispatch: both payload shapes have to *pass*, not merely be
+      # found. Before the fix this run reported
+      #
+      #   ROUNDTRIP FAIL 1/2 RE1-OB/adservice_cpu/1
+      #     reason=data.csv is not valid JSON: Unexpected token 'i', "time,adse"...
+      #
+      # and the per-case line is what names which shape broke, which is why the
+      # check reads the verdict lines rather than the aggregate.
+      - name: Both payload shapes round-trip, not just the one we emit
+        run: |
+          set -eu
+          OUT=/tmp/roundtrip.out
+          node scripts/check-official.mjs --official-dir /tmp/synthetic --cases /tmp/synthetic-cases.json > "$OUT" 2>&1
+          cat "$OUT"
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const text = readFileSync("/tmp/roundtrip.out", "utf8");
+            if (!/ROUNDTRIP PASSED \(2 case\(s\)/.test(text)) {
+              throw new Error("the run did not round-trip both cases");
+            }
+            for (const [id, target] of [
+              ["RE1-OB/adservice_cpu/1", "rcaeval-re1"],
+              ["RE2-TT/ts-order-service_cpu/1", "rcaeval-re2"],
+            ]) {
+              const line = new RegExp(`ROUNDTRIP PASS\\s+\\d+/2 ${id.replace(/[/.]/g, "\\$&")}\\s+target=${target}`);
+              if (!line.test(text)) {
+                throw new Error(`no PASS verdict line for ${id} against ${target}`);
+              }
+            }
+            if (/is not valid JSON/.test(text)) {
+              throw new Error("a payload was handed to the JSON reader that is not JSON");
+            }
+          '
 
       - name: The round trip refuses an empty corpus
         run: |

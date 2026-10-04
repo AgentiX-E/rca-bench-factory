@@ -541,8 +541,25 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
  * from `openSync`.
  */
 describe('scripts/check-official.mjs · a declared case with no readable payload', () => {
-  /** A case directory with an `inject_time.txt` and a payload named `data.csv`. */
-  function writeCaseWithoutMetrics(root: string, caseId: string): void {
+  /**
+   * A case directory with an `inject_time.txt` and a *readable* `data.csv`.
+   *
+   * ## This helper used to be named for a property its data did not have
+   *
+   * It was `writeCaseWithoutMetrics`, and it wrote
+   * `time,cpu_usage\n0,0.2\n1,0.95\n` -- a perfectly well-formed one-metric CSV,
+   * which is exactly the payload `main.py` globs for. Two tests below use it and
+   * assert that the run *fails*, and they passed for two iterations because the
+   * reader could not parse CSV at all. The helper's name described the reader's
+   * defect, not the fixture's contents, and the tests inherited the mistake:
+   * `does not report the crash as a scorer failure` was reading a corpus that was
+   * fine and calling it a crash.
+   *
+   * So it is renamed to say what it writes. A helper named after the failure it
+   * was written to provoke is how a test comes to assert the bug rather than the
+   * contract -- and the bug it was accidentally asserting is finding 115.
+   */
+  function writeCsvCase(root: string, caseId: string): void {
     const dir = join(root, caseId);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
@@ -552,18 +569,67 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     writeFileSync(join(dir, 'data.csv'), 'time,cpu_usage\n0,0.2\n1,0.95\n');
   }
 
+  /**
+   * A case directory whose payload is present under a known name and unreadable.
+   *
+   * This is the shape the two failure tests below actually need: a payload the
+   * reader *tries* and must refuse by name, rather than one it never finds. A
+   * missing file and a corrupt file are different findings and the reader
+   * distinguishes them, so the fixtures have to as well.
+   */
+  function writeUnreadableCase(root: string, caseId: string): void {
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    // Named `data.csv` -- a known payload name -- and holding bytes that are
+    // neither JSON nor delimited telemetry. The reader must reach it, try both
+    // readers, and report the case by name.
+    writeFileSync(join(dir, 'data.csv'), 'this is not telemetry at all\n');
+  }
+
   it('reads a payload the corpus named data.csv, which is what upstream writes', () => {
     // The accepting half of the same fact. `main.py` globs `**\/data.csv`, so a
     // reader that only knew `metrics.json` would call a perfectly good corpus
     // unreadable -- and a reader that only knew `data.csv` would call this
     // repository's own example bundle unreadable. Both names are in the set.
+    //
+    // ## This test used to be vacuous, and the way it was vacuous is the finding
+    //
+    // It wrote a CSV at `data.csv` and then overwrote it with JSON four lines
+    // later, so the run only ever took the JSON path. The name of the test
+    // described a format the test never produced, and it passed for two
+    // iterations -- including the iteration that added `data.csv` to the reader's
+    // lookup list. Meanwhile the real RE1 corpus ships `data.csv`, and the reader
+    // handed it to `assertRcaevalMetrics`, whose first act is `JSON.parse`. Every
+    // one of RE1's 375 cases failed with `data.csv is not valid JSON`, which is
+    // the reader announcing that it had found a CSV and read it as JSON.
+    //
+    // So the fixture now writes the format the name promises, and the two cases
+    // below are separated: this one is genuinely CSV, and the JSON-named-file
+    // case follows it.
     const root = freshRoot();
-    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeCsvCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    const cases = join(scratch, 'datacsv.json');
+    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+  });
+
+  it('reads a payload named data.csv that holds JSON, because the name is not the format', () => {
+    // The other half, kept because it is what the old fixture actually built and
+    // it is a real possibility: the reader's job is the file's *content*, and a
+    // corpus that names a JSON payload `data.csv` must still read. Asserting both
+    // means the fix cannot be "dispatch on the filename" in the other direction.
+    const root = freshRoot();
+    writeCsvCase(root, 'RE2-OB/checkoutservice_cpu/1');
     writeFileSync(
       join(root, 'RE2-OB/checkoutservice_cpu/1/data.csv'),
       JSON.stringify({ cpu_usage: [0.2, 0.2, 0.95, 0.95], mem_usage: [0.5, 0.5, 0.5, 0.5] }),
     );
-    const cases = join(scratch, 'datacsv.json');
+    const cases = join(scratch, 'datacsv-json.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
     const result = run(['--official-dir', root, '--cases', cases]);
@@ -604,8 +670,15 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     // The distinction the anchor depends on. A corpus that cannot be read and an
     // export that scores 0.0 are different findings, and reporting the first as
     // the second would make a broken download look like a solved corpus.
+    //
+    // This test used to reach that verdict with a *valid* one-metric CSV, and
+    // passed only while the reader could not parse CSV. It was asserting the
+    // defect: finding 115. The fixture below is a payload that is genuinely
+    // unreadable -- present, non-empty, binary-free, and neither JSON nor
+    // delimited telemetry -- so the assertion is about the reader's verdict
+    // rather than about a broken parser.
     const root = freshRoot();
-    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeUnreadableCase(root, 'RE2-OB/checkoutservice_cpu/1');
     const cases = join(scratch, 'noscore.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
@@ -625,9 +698,9 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     // would take one 90-minute dispatch per case to enumerate. Reporting all of
     // them turns N runs into one.
     const root = freshRoot();
-    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/1');
-    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/2');
-    writeCaseWithoutMetrics(root, 'RE2-OB/checkoutservice_cpu/3');
+    writeUnreadableCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeUnreadableCase(root, 'RE2-OB/checkoutservice_cpu/2');
+    writeUnreadableCase(root, 'RE2-OB/checkoutservice_cpu/3');
     const cases = join(scratch, 'allthree.json');
     writeCases(cases, [
       'RE2-OB/checkoutservice_cpu/1',
@@ -675,6 +748,114 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     expect(result.stderr).not.toMatch(/openSync|readFileSync/);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/RE2-OB\/checkoutservice_cpu\/1/);
+  });
+});
+
+/**
+ * The delimited payload path, asserted directly rather than only in aggregate.
+ *
+ * ## Why this block exists
+ *
+ * The fix for finding 115 added a second reader, and the first version of the fix
+ * left three of its branches untested: the run that proves the fix works
+ * (`/tmp/re1sim`, and the CI fixture) carries only well-formed numeric cells, so
+ * every guard inside `adaptDelimitedMetrics` was reachable code that nothing
+ * reached. A deliberate break that *deleted* the non-numeric-cell guard survived,
+ * which is how the gap was found -- by measurement rather than by reading.
+ *
+ * That is the same defect this finding is about, one layer in: the guard that
+ * refuses a bad cell exists to stop a partly-read payload from being scored as if
+ * it were whole, and nothing demonstrated it firing. Each case below drives the
+ * reader with a payload that violates exactly one of its rules, so the rule is
+ * shown to be a rule and not a comment.
+ */
+describe('scripts/check-official.mjs · a delimited payload that must be refused', () => {
+  /** Write a case whose `data.csv` holds `body`, plus a valid `inject_time.txt`. */
+  function writeCsvBody(root: string, caseId: string, body: string): void {
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    writeFileSync(join(dir, 'data.csv'), body);
+  }
+
+  /** Run one RE1-shaped case and return the outcome. */
+  function runOneCsv(body: string, tag: string): Outcome {
+    const root = freshRoot();
+    writeCsvBody(root, 'RE1-OB/adservice_cpu/1', body);
+    const cases = join(scratch, `${tag}.json`);
+    writeCases(cases, ['RE1-OB/adservice_cpu/1']);
+    return run(['--official-dir', root, '--cases', cases]);
+  }
+
+  it('round-trips a well-formed delimited payload, so the refusals below are not a reader that always fails', () => {
+    // The negative control. Without it every assertion in this block would pass
+    // against a reader that rejected all CSV.
+    const result = runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,0.95\n', 'csv-ok');
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+    expect(result.stdout).toMatch(/signals=2/);
+  });
+
+  it('refuses a non-numeric cell rather than dropping the point', () => {
+    // The guard whose removal survived an earlier break. A partly-read payload is
+    // one whose fault the round trip cannot claim to have reproduced, so the case
+    // has to fail by name -- and the reason has to name the column and the line,
+    // because "the CSV is bad" does not tell an operator where.
+    const result = runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,oops\n', 'csv-badcell');
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/not a finite number/);
+    expect(result.stderr).toMatch(/adservice_cpu/);
+    expect(result.stderr).toMatch(/line 3/);
+  });
+
+  it('refuses a payload with no time column, and names the columns it has', () => {
+    const result = runOneCsv('secs,adservice_cpu\n1700000000,0.21\n', 'csv-notime');
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/no 'time' column/);
+    // The columns it found, so the reader says what the corpus carried instead of
+    // only what it wanted.
+    expect(result.stderr).toMatch(/secs, adservice_cpu/);
+  });
+
+  it('refuses a non-numeric time rather than inventing an instant', () => {
+    const result = runOneCsv('time,adservice_cpu\nnot-a-time,0.21\n', 'csv-badtime');
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/non-numeric time/);
+  });
+
+  it('refuses a header-only payload, because zero samples is not a case', () => {
+    const result = runOneCsv('time,adservice_cpu\n', 'csv-empty');
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/holds no samples/);
+  });
+
+  it('accepts a time column under any casing, which the corpus does not guarantee', () => {
+    // Upstream's own files spell it `time`. The tolerance is the one
+    // `detectFileLayout`'s aliases already carry, and this pins it so the
+    // case-insensitivity cannot be dropped as dead-looking code.
+    const result = runOneCsv('Time,adservice_cpu\n1700000000,0.21\n', 'csv-timecase');
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+  });
+
+  it('reads several metric columns from one delimited payload', () => {
+    // `metrics.json` carries many metrics under keys; a CSV carries them as
+    // columns. A reader that took only the first column would score a subset of
+    // the telemetry and call it a round trip.
+    const result = runOneCsv(
+      'time,adservice_cpu,adservice_mem\n1700000000,0.21,0.5\n1700000060,0.95,0.5\n',
+      'csv-twometrics',
+    );
+
+    expect(result.status).toBe(0);
+    // Two instants x two metrics.
+    expect(result.stdout).toMatch(/signals=4/);
   });
 });
 
