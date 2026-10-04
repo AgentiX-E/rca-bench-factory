@@ -198,11 +198,15 @@ jobs:
       - name: Examples and site data are up to date
         run: pnpm examples:check
 
-      - name: README usage sample runs against the built package
-        run: node scripts/check-readme-sample.mjs
-
-      - name: CLI reference matches the built binary
-        run: node scripts/check-cli-reference.mjs
+      # `pnpm docs:check` rather than the guards named one at a time. The job
+      # used to list them by hand, which made the aggregate script a local-only
+      # channel: a guard added to `docs:check` ran on every developer machine and
+      # in no pipeline. That is this project's recurring mistake again -- a
+      # check that is present, green, and absent from the place it matters.
+      # Routing through the script means the next guard added there is wired in
+      # by construction instead of by remembering this file.
+      - name: Documentation guards are satisfied
+        run: pnpm docs:check
 
       - name: Example pack is up to date
         run: pnpm examples:bundle:check

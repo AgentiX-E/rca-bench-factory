@@ -10711,15 +10711,62 @@ unread for fourteen days.
 | gate | result |
 | --- | --- |
 | Matrix | 9 of 9 rows carry both axes; every `L4 可测性` cell agrees with the registry |
-| Guard | `check-l4-status: OK (9 row(s) agree …)`; run inside `pnpm docs:check` |
-| Deliberate breaks | **D1** OpenRCA 1.0 claims a reading → red; **D2** RE2 called unfetchable → red; **D3** RE1 called pinned → red; **D4** the ITBench row deleted → red; **D5** the registry drops its `rcaeval-re3` assets → red |
+| Guard | `check-l4-status: OK (9 row(s) agree …)`; run inside `pnpm docs:check`, which the CI job now calls |
+| Deliberate breaks | **D1** OpenRCA 1.0 claims a reading → red; **D2** RE2 called unfetchable → red; **D3** RE1 called pinned → red; **D4** the ITBench row deleted → red; **D5** the registry drops its `rcaeval-re3` assets → red ; plus **D6–D10** on the CI wiring in the section below — all ten fire, byte-identical restore |
 | Restore | `docs/target-formats.md`, `golden-master/official-assets.json` and `scripts/check-l4-status.mjs` byte-identical after every break |
 | Battery | **74 caught / 0 survived / 0 inert / 0 blind**; 16 sources byte-identical |
-| Suite | **3011 passed / 104 files** (v1.51: 2999 / 103, +12) |
+| Suite | **3018 passed / 105 files** (v1.51: 2999 / 103, +19) |
 | Coverage | `All files 99.96 / 99.91 / 100 / 99.96`; no file×dimension below 95%; no `src/` file touched |
 | `typecheck` / `lint` / `docs:check` / `examples:check` | clean |
 | `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
 | `python3 -m py_compile` | clean |
+
+### The guard was not in the pipeline, and the way it got there is the same defect again
+
+The check above was green locally and **absent from CI**. Read the CI job: it invoked
+`node scripts/check-readme-sample.mjs` and `node scripts/check-cli-reference.mjs` **by name**,
+so `pnpm docs:check` was a local-only aggregate. Adding `check-l4-status.mjs` to that script ran
+it on every developer machine and in no pipeline.
+
+This is the defect shape of this iteration once more, now at the level of the pipeline itself: a
+check that is present, green, tested, enforced locally, and **absent from the one place where a
+merge is decided**. It is finding 111's summary line and finding 110's battery anchors, one layer
+out -- a channel whose presence makes the check look covered.
+
+The fix is one line: the job runs `pnpm docs:check` instead of listing its members. But a
+one-line fix has the lifetime of the next edit, so the rule is asserted in
+`packages/core/test/ci-reaches-doc-guards.test.ts`, which reads **both** sides -- the script list
+out of `package.json` and the workflow body out of `.github/workflows/ci.yml`. Adding a guard to
+the aggregate without routing it into the pipeline turns that file red.
+
+**Five more deliberate breaks, and two of them survived the first version of the test.**
+
+| break | first version | final version |
+| --- | --- | --- |
+| D1 the workflow re-lists its guards by hand | fired | fired |
+| D2 the workflow duplicates the aggregate's list | fired | fired |
+| D3 **the aggregate call is deleted outright** | **survived** | fired |
+| D4 the L4 guard is dropped from `docs:check` | fired | fired |
+| D5 **a guard is added where the workflow lists by hand** | **survived** | fired |
+
+Two defects in my own test, both found by measurement rather than review:
+
+**1. A disjunction over two routes cannot see which one is load-bearing.** The first version asked,
+per guard, "is it reachable through the aggregate *or* named directly?" With the aggregate call
+deleted and the guards still named by hand, every guard was reachable -- so the test said yes
+while the pipeline had become exactly the hand-maintained list this iteration removed. Only one
+route survives the next edit, and only that one is accepted now.
+
+**2. A textual assertion can be satisfied by prose.** Even after narrowing to one route, D3 still
+survived: `workflow.includes('pnpm docs:check')` was matching **the comment I had just written
+above the step**. Deleting the step left its own explanation in place and the assertion passed.
+The match is anchored to a `run:` line now -- the only place a command is executed. An assertion a
+comment can satisfy is an assertion about prose.
+
+D5 also had to be restated, and the restatement is the point: adding a guard to `docs:check` **is**
+the wiring, because the aggregate carries it. What breaks is a guard added while the workflow has
+gone back to listing by hand -- so the break applies both halves, which is what a contributor would
+actually do.
 
 ### What this does not establish
 
