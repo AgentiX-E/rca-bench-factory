@@ -49,6 +49,16 @@ interface NotFetchable {
 interface Registry {
   schema: string;
   note: string;
+  /**
+   * The three states an asset can be in, defined in the registry rather than
+   * only in the guard that reads it.
+   *
+   * `pinned` and `unfetchable` each have a field; `pending` has none, which is
+   * what made it invisible. A state expressible only as the absence of the other
+   * two is a state a contributor will not know they can be in -- and it is the
+   * only one with an action attached to it.
+   */
+  stateVocabulary: Record<string, string>;
   assets: Asset[];
   notFetchable: NotFetchable[];
 }
@@ -124,5 +134,62 @@ describe('golden-master/official-assets.json · the registry contract', () => {
   it('stays metadata-sized, so no corpus was pasted into it', () => {
     const raw = readFileSync(REGISTRY, 'utf8');
     expect(raw.length).toBeLessThan(20_000);
+  });
+
+  // Every asset is in exactly one of three states, and the third one has no
+  // field: it is what an asset is when it is neither pinned nor declared
+  // unfetchable. That made it invisible -- the guard's summary line used to read
+  // `11 asset(s), 3 pinned, 7 declared unfetchable`, and three plus seven is ten.
+  //
+  // The state is `pending`, it is now named in the registry's own
+  // `stateVocabulary`, and the point of asserting it here is that `pending` is
+  // the only state with an action attached to it. A reader who cannot tell
+  // *pending* from *forgotten* cannot act on either.
+  describe('every asset is pinned, unfetchable, or pending, and pending is named', () => {
+    it('declares the three states in the registry itself, not only in a guard', () => {
+      for (const state of ['pinned', 'unfetchable', 'pending']) {
+        expect(registry.stateVocabulary[state], `the state '${state}' is not defined`).toBeTruthy();
+      }
+    });
+
+    it('partitions the asset list into pinned and pending, with nothing left over', () => {
+      const pinned = registry.assets.filter((a) => a.sha256 !== null);
+      const pending = registry.assets.filter((a) => a.sha256 === null);
+      expect(pinned.length + pending.length).toBe(registry.assets.length);
+      // `fetchable: false` belongs in `notFetchable`, so no asset here is both
+      // unpinned and unfetchable -- that entry could never be pinned, and the
+      // pending state would be carrying a download nothing will ever take.
+      for (const a of pending) {
+        expect(a.fetchable, `'${a.id}' is unpinned and unfetchable, so it can never be pinned`).toBe(true);
+      }
+    });
+
+    it('names every pending asset, so the state is a list and not a residue', () => {
+      // Named rather than counted. This is the assertion that would have failed
+      // before v1.51: the state existed, and nothing said so.
+      const pending = registry.assets.filter((a) => a.sha256 === null).map((a) => a.id);
+      expect(pending.length).toBeGreaterThan(0);
+      for (const id of pending) {
+        expect(id.length, 'a pending asset is unnamed').toBeGreaterThan(0);
+      }
+      // The residues are disjoint: an asset is pending or unfetchable, never both.
+      const unfetchable = new Set(registry.notFetchable.map((n) => n.id));
+      for (const id of pending) {
+        expect(unfetchable.has(id), `'${id}' is both pending and declared unfetchable`).toBe(false);
+      }
+    });
+
+    // The pin is the only field that can move an asset out of `pending`, and it
+    // is only ever set from a measured download. A state that could be closed by
+    // editing a description instead of running the fetch would be a state that
+    // reports progress the project did not make.
+    it('is closed only by a measured pin, so no state is reachable by editing prose', () => {
+      const pendingDefinition = registry.stateVocabulary.pending;
+      expect(pendingDefinition).toMatch(/measured/i);
+      expect(pendingDefinition).toMatch(/sha256/i);
+      // And the pinned state says where the digest came from, so a hand-typed
+      // value is a contradiction of the definition rather than a shortcut.
+      expect(registry.stateVocabulary.pinned).toMatch(/measured/i);
+    });
   });
 });

@@ -183,8 +183,65 @@ if (problems.length > 0) {
   fail(problems);
 }
 
-const pinned = registry.assets.filter((a) => a.sha256 !== null && a.sha256 !== undefined).length;
+/**
+ * The three states every asset is in, and the partition they form.
+ *
+ * `pinned` and `declared unfetchable` each have a field; `pending` has none, so
+ * it is whichever assets are left. That made it invisible in the summary line
+ * this guard used to print:
+ *
+ *   check-official-registry: OK (11 asset(s), 3 pinned, 7 declared unfetchable)
+ *
+ * Three plus seven is ten. The eleventh asset was accounted for by neither term
+ * and named by neither, and it is the only state with an action attached to it
+ * -- "a download that has not been taken yet" is closed by running the fetch,
+ * while "we may not fetch this" is closed by doing nothing.
+ *
+ * `pending` is therefore computed here, asserted to partition the list, and
+ * printed by name. A reader who cannot tell *pending* from *forgotten* is a
+ * reader who cannot act on either.
+ */
+const pinnedAssets = registry.assets.filter((a) => a.sha256 !== null && a.sha256 !== undefined);
+const pendingAssets = registry.assets.filter((a) => a.sha256 === null || a.sha256 === undefined);
+const unfetchableEntries = registry.notFetchable;
+
+// The partition is an identity, not a description. If a fourth state is ever
+// added, this sum stops closing and the guard says so rather than printing a
+// line whose meaning quietly changed.
+const accounted = pinnedAssets.length + pendingAssets.length;
+if (accounted !== registry.assets.length) {
+  fail([
+    `the asset partition does not close: ${pinnedAssets.length} pinned + ` +
+      `${pendingAssets.length} pending = ${accounted}, but the registry lists ` +
+      `${registry.assets.length} asset(s). Every asset is pinned or pending; a third ` +
+      `category needs to be added to this guard and to the line below.`,
+  ]);
+}
+
+// A pending asset is a future download. A *non-fetchable* pending asset is a
+// contradiction: nothing will ever pin it, so it would sit in this state
+// forever while reading as work in progress.
+const stranded = pendingAssets.filter((a) => a.fetchable !== true);
+if (stranded.length > 0) {
+  fail(
+    stranded.map(
+      (a) =>
+        `asset '${a.id}' is unpinned and not fetchable, so it can never be pinned. ` +
+        `A corpus we may not fetch belongs in 'notFetchable' with a reason, not in ` +
+        `'assets' as a pending download.`,
+    ),
+  );
+}
+
 console.log(
-  `check-official-registry: OK (${registry.assets.length} asset(s), ${pinned} pinned, ` +
-    `${registry.notFetchable.length} declared unfetchable)`,
+  `check-official-registry: OK (${registry.assets.length} asset(s): ` +
+    `${pinnedAssets.length} pinned, ${pendingAssets.length} pending, ` +
+    `${unfetchableEntries.length} declared unfetchable)`,
 );
+if (pendingAssets.length > 0) {
+  // Named rather than counted. The count is what made this state invisible.
+  console.log(
+    `check-official-registry: pending (fetchable, no measured pin): ` +
+      `${pendingAssets.map((a) => a.id).join(', ')}`,
+  );
+}

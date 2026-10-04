@@ -205,4 +205,73 @@ describe('scripts/check-official-registry.mjs · the registry is self-consistent
     ) as { assets: unknown[] };
     expect(raw.assets.length).toBeGreaterThan(0);
   });
+
+  // The summary line used to read `11 asset(s), 3 pinned, 7 declared unfetchable`.
+  // Three plus seven is ten. The eleventh asset was in no term of the line and
+  // named by none, and it is the state with an action attached to it: a download
+  // that has not been taken yet. A reader could not tell *pending* from
+  // *forgotten*, because the line did not have a word for either.
+  it('accounts for every asset, and names the ones that are pending', () => {
+    const result = run([
+      '--registry',
+      writeRegistry([
+        asset({ extractsTo: 'A' }),
+        asset({ id: 'b', extractsTo: 'B', sha256: 'c'.repeat(64), bytes: 7 }),
+      ]),
+    ]);
+    expect(result.status).toBe(0);
+    // The identity closes: 1 pinned + 1 pending = the 2 assets listed.
+    expect(result.stdout).toMatch(/2 asset\(s\): 1 pinned, 1 pending/);
+    // And the pending one is named. A count is what made this state invisible.
+    expect(result.stdout).toMatch(/pending .*: a\b/);
+  });
+
+  it('names every pending asset, so the count can be acted on', () => {
+    const result = run([
+      '--registry',
+      writeRegistry([
+        asset({ id: 'unpinned-one', extractsTo: 'ONE' }),
+        asset({ id: 'unpinned-two', extractsTo: 'TWO' }),
+      ]),
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('unpinned-one');
+    expect(result.stdout).toContain('unpinned-two');
+  });
+
+  // An unpinned asset that is also not fetchable can never become pinned. It
+  // would sit in the pending state forever while reading as work in progress,
+  // and the state that means "there is a download left to take" would be
+  // carrying an entry no download will ever close.
+  it('fails when an unpinned asset is not fetchable, because it can never be pinned', () => {
+    const result = run(['--registry', writeRegistry([asset({ fetchable: false, url: undefined })])]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/can never be pinned/i);
+    expect(result.stderr).toMatch(/notFetchable/);
+  });
+
+  it('accepts a fetchable unpinned asset, which is what pending means', () => {
+    expect(run(['--registry', writeRegistry([asset({ fetchable: true })])]).status).toBe(0);
+  });
+
+  // The partition is an identity rather than a description: if a fourth state is
+  // ever added, the arithmetic has to stop closing rather than the line quietly
+  // changing its meaning.
+  it('the three states partition the asset list, with nothing left over', () => {
+    const raw = JSON.parse(
+      readFileSync(resolve(ROOT, 'golden-master', 'official-assets.json'), 'utf8'),
+    ) as { assets: { sha256: string | null }[]; notFetchable: unknown[] };
+    const result = run();
+    expect(result.status).toBe(0);
+    const pinned = raw.assets.filter((a) => a.sha256 !== null).length;
+    const pending = raw.assets.filter((a) => a.sha256 === null).length;
+    expect(pinned + pending).toBe(raw.assets.length);
+    // The guard's own numbers are the same partition, read off its output rather
+    // than recomputed from the file -- otherwise this test would only be
+    // asserting its own arithmetic.
+    expect(result.stdout).toContain(
+      `${raw.assets.length} asset(s): ${pinned} pinned, ${pending} pending, ` +
+        `${raw.notFetchable.length} declared unfetchable`,
+    );
+  });
 });

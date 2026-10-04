@@ -1,6 +1,12 @@
 {
   "schema": "rca-bench-official-assets/1",
   "note": "Metadata only. This file records where each upstream corpus lives and what may be fetched automatically. It contains no upstream data and must never contain any: the whole point of shipping an anchor registry instead of a dataset is that the licences travel with the data, not with us. URLs are transcribed verbatim from the upstream download helpers (RCAEval/utility/__init__.py) rather than composed, so a typo here cannot invent a source that does not exist.",
+  "stateVocabulary": {
+    "note": "Every score target is in exactly one of three states, and the third one has no field of its own: it is what an asset is when it is neither pinned nor declared unfetchable. Naming it here is the point -- a state expressible only as the absence of the other two is a state a contributor will not know they can be in, and it is the state with an action attached to it.",
+    "pinned": "The asset is in `assets`, fetchable, and carries a measured sha256 and byte count. The pin was taken from a real download; a digest nothing measured is worse than null, because it reads as verified.",
+    "unfetchable": "The asset is in `notFetchable`, which requires a licence and a reason over 40 characters. Absence of a url is not the same statement: 'we may not fetch this' has to be said out loud or it is indistinguishable from 'nobody looked'.",
+    "pending": "The asset is in `assets` and fetchable but carries no sha256. Nothing is wrong with it -- it is a download that has not been taken yet. Pinning requires a measured transfer, so this state is closed by running the fetch, not by editing this file."
+  },
   "assets": [
     {
       "id": "rcaeval-re1-ob",

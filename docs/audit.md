@@ -10447,3 +10447,134 @@ It does not establish that the four shapes cover every future entry. A shape tha
 would fail `assert_entry_contract` loudly rather than being silently misread, which is the intended
 behaviour, but it means the three-shape enumeration is a statement about today's battery rather than a
 bound on what a battery may be.
+
+---
+
+## Finding 111 — every target had a clear status, and the guard's own summary line could not say so
+
+*2026-10-04. Iteration v1.51. Files: `golden-master/official-assets.json`,
+`scripts/check-official-registry.mjs`, `packages/core/test/official-assets.test.ts`,
+`packages/core/test/check-official-registry.test.ts`.*
+
+### The premise I was carrying, and what measuring it did to it
+
+With P0-1 blocked on data I do not hold, I took the next item I could act on. P0-3 reads:
+
+> **P0-3** — for each of the remaining 6 formats, either determine how to get the official
+> data or explicitly declare it unfetchable. Exit condition: every format has a clear status
+> in `official-assets.json`: `pinned` / `declared unfetchable` / `pending`.
+
+**The premise is false. All nine targets already have a clear status**, and the split is
+exactly the three states P0-3 asked for. Measured, reading `SCORE_TARGET_IDS` out of
+`packages/core/src/score/targets.ts` the same way the guards read it:
+
+| target | assets | pinned | notFetchable | status |
+| --- | --- | --- | --- | --- |
+| `openrca-1.0` | 0 | 0 | 1 | declared unfetchable |
+| `openrca-2.0` | 0 | 0 | 1 | declared unfetchable |
+| `rcaeval-re1` | 3 | 0 | 0 | pending |
+| `rcaeval-re2` | 3 | **3** | 0 | pinned |
+| `rcaeval-re3` | 5 | 0 | 0 | pending |
+| `rca100` | 0 | 0 | 1 | declared unfetchable |
+| `aiops2025` | 0 | 0 | 1 | declared unfetchable |
+| `cloud-opsbench` | 0 | 0 | 1 | declared unfetchable |
+| `itbench` | 0 | 0 | 1 | declared unfetchable |
+
+All six targets P0-3 names as outstanding carry a `notFetchable` entry with a licence and a
+reason over 40 characters. **This is the fourth consecutive iteration where a carried-forward
+gap dissolved under measurement** — finding 107's deferral, finding 108's "what this does not
+establish", finding 109's closing paragraph, and now a tracker item rather than a finding.
+
+The reason is worth stating, because it is not an accident. P0-3 was written against a *plan*,
+and the plan's work was done by a later iteration that closed a different item. The tracker
+line kept its `—` dependency column empty and was never reread.
+
+### The defect the audit found instead
+
+**The registry states its status. The guard stated a count, and the count was not the claim.**
+
+```
+check-official-registry: OK (11 asset(s), 3 pinned, 7 declared unfetchable)
+```
+
+Three plus seven is ten. **The identity does not close**, and the missing term is the one
+P0-3 cared about most.
+
+| state | expressed in the schema | reported by the guard | nameable by a reader |
+| --- | --- | --- | --- |
+| pinned | `sha256 != null` | **counted** (3) | yes |
+| declared unfetchable | its own list | **counted** (7) | yes |
+| **pending** | **nothing** | **nothing** | **no** |
+
+Measured: the string `pending` appeared **nowhere** — not in `official-assets.json`, not in
+`check-official-registry.mjs`, not in `official-assets.test.ts`. (`pinned` was also absent
+from the registry file; it existed only as a local variable in the guard.)
+
+The eight fetchable-but-unpinned assets are `rcaeval-re1-{ob,ss,tt}`,
+`rcaeval-re3-{ob,ss,tt}`, `rcaeval-baro-simple` and `rcaeval-multi-source`. From the guard's
+line a reader could not tell *pending* from *forgotten* — and pending is the only one of the
+three states with an action attached to it.
+
+**This is the same defect shape the project has now named five times: a reading that cannot
+report, whose presence makes the check look covered.** Finding 109 recorded it for a probe
+figure, finding 110 for a battery anchor, and this is the same thing one layer up — in the
+line a human reads, printed by a guard that had the information and summarised it away.
+
+### The fix
+
+**1. The summary line is now an identity that closes.** It names all three terms:
+
+```
+check-official-registry: OK (11 asset(s): 3 pinned, 8 pending, 7 declared unfetchable)
+check-official-registry: pending (fetchable, no measured pin): rcaeval-re1-ob, rcaeval-re1-ss, rcaeval-re1-tt, rcaeval-re3-ob, rcaeval-re3-ss, rcaeval-re3-tt, rcaeval-baro-simple, rcaeval-multi-source
+```
+
+The pending assets are **named rather than counted**, because the count is what made the state
+invisible.
+
+**2. The partition is asserted, not described.** `pinnedAssets.length + pendingAssets.length`
+must equal `registry.assets.length` or the guard fails with a message saying a fourth category
+needs a home. If a future edit adds a state, the arithmetic stops closing rather than the line
+quietly changing its meaning. And the two residues are asserted disjoint.
+
+**3. A stranded pending asset is refused.** An asset that is unpinned *and* `fetchable: false`
+can never be pinned: nothing will ever take that download, so it would sit in the state that
+means "there is work left" while reading as work in progress. Measured, this is a real gap —
+both fields existed and nothing compared them.
+
+**4. The three states are declared in the registry's own `stateVocabulary`**, beside the
+`note` that already explained what the file is. `pending` exists only as "the absence of the
+other two", and a state a contributor cannot name is a state they will not know they can be
+in. The definition also records **how the state closes**: `pending` is closed by a measured
+`sha256`, not by editing prose, and a test asserts that the definition says so — a state
+closable by editing a description would report progress the project did not make.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| Registry states | 9 of 9 targets classified; `3 pinned + 8 pending = 11 assets`, identity closes |
+| Guard line | names all three terms and lists the pending ids |
+| Deliberate breaks | **D1** remove `stateVocabulary` → `official-assets.test.ts` red; **D2** an unpinned+unfetchable asset → guard red with `can never be pinned`; **D3** partition test green at baseline; **D4** revert the summary line to the lossy one → guard test red; **D5** emit the pending count instead of the names → guard test red |
+| Restore | all four files byte-identical after every break |
+| Battery | **74 caught / 0 survived / 0 inert / 0 blind**; 16 sources byte-identical |
+| Suite | **2999 passed / 103 files** (v1.50: 2990, +9) |
+| Coverage | `All files 99.96 / 99.91 / 100 / 99.96`; no file×dimension below 95% |
+| `typecheck` / `lint` / `docs:check` / `examples:check` | clean; `check-official-registry: OK (11 asset(s): 3 pinned, 8 pending, 7 declared unfetchable)` |
+| `pnpm official:check` | **8 scored / 1 skipped**, no metric movement |
+| `python3 -m py_compile` | clean |
+
+### What this does not establish
+
+It does not establish that the eight pending assets are fetchable from here. The sandbox
+cannot reach `zenodo.org`, so `pending` is a statement about **the pin**, not a claim that a
+fetch would succeed. That distinction is why the state is called `pending` and not
+`fetchable`: the registry knows a URL exists; it does not know the URL works today.
+
+It does not establish that pinning is the right way to close the remaining two RCAEval
+suites. P0-1 is still blocked on a real download, and this finding changes nothing about it —
+it makes visible what is waiting on it.
+
+It does not establish that no fourth state is needed. It establishes that a fourth state
+would have to be added to this guard's arithmetic and to the line it prints, rather than
+appearing as a residue that no term accounts for. That is the property the old line lacked.
