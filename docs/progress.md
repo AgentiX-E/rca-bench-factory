@@ -2824,3 +2824,171 @@ and reported its own bug as a mismatch.
   cells, which still reject the row with its line and column named.
 - It does **not** pin the RE1 digests, and does **not** claim RE1's anchor is
   reproduced.
+
+## Pass 33 -- Five real RE1-TT cases instead of one, and the layer the fix actually belongs to
+
+Pass 32 ended with a fix, one case measured end to end, and this admission:
+
+> It does **not** claim all 122 failures have this shape. It measures one case in
+> full and the shape it found; the remaining 121 are counted, not inspected.
+
+This pass narrows that from one case to five, and measures which layer the fix is
+load-bearing for -- which is not the layer Pass 32 credited.
+
+### Getting five members instead of one
+
+The archive is 279,663,965 bytes at ~13 KB/s, so the whole thing is out of reach.
+What makes a member reachable is the central directory at the end, which records
+every local header offset and size, plus two facts learned the hard way:
+
+- **the local header must be parsed before the payload is fetched.** The header
+  carries the name *and* a variable-length extra field. The first extractor left
+  the extra field out, so every chunk was shifted by **28 bytes**. The symptom is
+  the dangerous kind: HTTP 206, the exact expected byte count, the right file
+  length, and a DEFLATE stream that will not decompress. The extractor now parses
+  the header it fetched, asserts name and sizes against the central directory, and
+  **verifies crc32**;
+- the host serves a **short range in seconds** and throttles a long one hard, so
+  the payload is pulled in 64 KB chunks rather than one resuming request.
+
+Five members, `cpu/1` of each faulted component, 12.8 MB apiece, all crc32-clean.
+
+### Why one per component is the sample that answers it
+
+RE1-TT scores five components -- `ts-auth-service`, `ts-order-service`,
+`ts-route-service`, `ts-train-service`, `ts-travel-service` -- 25 cases each.
+Finding 120's affected service is a **neighbour** of the faulted component, so one
+case cannot separate two worlds: the gap is a property of the **fleet at that
+timestamp**, or of **particular services**.
+
+| case | `NaN` columns | services carrying a gap |
+| --- | --- | --- |
+| `ts-auth-service_cpu/1` | 16 | `ts-payment-service`, `ts-preserve-other-service` |
+| `ts-order-service_cpu/1` | 8 | `ts-preserve-other-service` |
+| `ts-route-service_cpu/1` | 16 | `ts-preserve-other-service`, `ts-preserve-service` |
+| `ts-train-service_cpu/1` | 16 | `ts-payment-service`, `ts-preserve-other-service` |
+| `ts-travel-service_cpu/1` | 8 | `ts-preserve-other-service` |
+
+It is the second world. `ts-preserve-other-service` carries a gap in **all five**
+and is the faulted component in **none**; `ts-payment-service` in three;
+`ts-preserve-service` in one. And finding 120's single observation -- "onset row
+193, suffix to the end" -- turns out to be the endpoint case of intermittent
+dropout: the runs here are interior, of 3 to 49 rows, and they **resume**.
+
+`NaN` is the file's only non-numeric token in all five files, every row is the
+header's width, and no other anomaly appears.
+
+### The `NaN`'s cause, measured and partly disconfirmed
+
+"No traffic, so no percentile" is mostly right. For
+`ts-preserve-other-service` in the auth member all 52 `NaN` rows have
+`istio-request-total = 0`. For `ts-payment-service` **39 of 42** do, and **three
+carry 2, 2 and 1** -- traffic served, percentile still absent. On that service's
+live rows `request-total = 0` is the majority (797 of 961) and the percentile is
+present. So zero traffic is the usual cause and not a sufficient one, and the
+finding says so rather than rounding it off.
+
+The service is up during the gap regardless: all 13 of its `container-*` columns
+carry live readings at every row, and `istio-latency-50` goes
+`0.0175 -> NaN x6 -> 0.0175`.
+
+### The round trip, over five
+
+```
+ROUNDTRIP PASS   1/5 RE1-TT/ts-auth-service_cpu/1    target=rcaeval-re1 oracle=1.00 signals=1191849
+ROUNDTRIP PASS   2/5 RE1-TT/ts-order-service_cpu/1   target=rcaeval-re1 oracle=1.00 signals=1191560
+ROUNDTRIP PASS   3/5 RE1-TT/ts-route-service_cpu/1   target=rcaeval-re1 oracle=1.00 signals=1192345
+ROUNDTRIP PASS   4/5 RE1-TT/ts-train-service_cpu/1   target=rcaeval-re1 oracle=1.00 signals=1194331
+ROUNDTRIP PASS   5/5 RE1-TT/ts-travel-service_cpu/1  target=rcaeval-re1 oracle=1.00 signals=1197382
+ROUNDTRIP PASSED (5 case(s) round-tripped through the official layout)
+```
+
+### The correction, and how it was found
+
+The obvious reading of that output is "the Pass 32 fix did this". The battery says
+otherwise. Removing the reader's missing-value branch from the built package
+leaves **all five passing**:
+
+```
+Layer A -- the reader's own branch (packages/core/dist/ingest/file.js)
+  M1 the reader stops treating the token as an absence
+    6 pass line(s), 0 fail line(s)  exit=0
+```
+
+`check-official.mjs` skips a declared absence in its delimited path *before*
+building the row's signal map, so the reader's branch is unreachable there.
+Removing the **adapter's** skip refuses all five and names the cell:
+
+```
+Layer B -- the official adapter's skip (scripts/check-official.mjs)
+  M2 the adapter stops skipping a declared absence
+    0 pass line(s), 6 fail line(s)  exit=1
+    ROUNDTRIP FAIL  1/5 RE1-TT/ts-auth-service_cpu/1  reason=data.csv line 568
+      column 'ts-payment-service_istio-latency-50' is not a finite number: 'NaN'
+```
+
+The reader's branch is not dead -- it is on the `ingestFile` path, which the
+reader's own test establishes, since a corpus that never reaches it cannot:
+
+```
+  ingestFile reaches buildSignal: True
+  without the reader branch, 'keeps a row whose cell says NaN': fires
+  restored, the same test: passes
+```
+
+| change | load-bearing for | evidence |
+| --- | --- | --- |
+| adapter skips a declared absence | the official round trip | removing it refuses 5/5 real cases |
+| reader returns `missing` | `ingestFile` and its unit tests | removing it fails the reader's test; the round trip is unaffected |
+
+A corpus-only battery would have called the reader's change unnecessary; a
+test-only battery would have credited it for the round trip. Both statements are
+wrong alone, which is why the battery now runs both and asserts each layer's
+answer.
+
+### The RE1 digests are pinned
+
+Run `37283049425` fetched all three RE1 assets and wrote `/tmp/pins.json`; nothing
+had merged it, so the registry still said `pending` and the next fetch would have
+re-measured instead of verifying.
+
+| asset | bytes | sha256 |
+| --- | --- | --- |
+| `rcaeval-re1-ob` | 30966778 | `4a709297e0a829f0f2ee8a7792a6d74da32d663c600565b7fffc860963b840c4` |
+| `rcaeval-re1-ss` | 79089075 | `b4424b0b3863b7397712caa0f305ef59964b03784dfcb23e23e0a95a2e746f99` |
+| `rcaeval-re1-tt` | 279663965 | `2b33b7ab07198e0d69f229e697bfcef794a656e8db73a1d732142effde17c595` |
+
+`apply-pins.mjs` wrote only `sha256` and `bytes`; the diff confirms six changed
+fields and the other five untouched. The registry now reads **6 pinned, 5
+pending, 7 declared unfetchable** and the partition closes.
+
+`pnpm docs:check` failed the instant the pin landed -- `check-l4-status.mjs`
+derives the fetch axis from the registry, so the published `pending` cell became a
+red build rather than a published error. That failure also exposed six assertions
+in `check-l4-status.test.ts` **coupled to the pin ledger**: the fixture hard-coded
+`rcaeval-re1` as pending and addressed rows by index, so "fails when a row calls a
+pending anchor pinned" started setting a pinned anchor to pinned -- the correct
+state -- and failed on its own premise. The fixture now classifies the registry.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| five real cases, one per faulted component | **5/5 PASS at `oracle=1.00`**, ~1.19M signals each |
+| the layer battery | reader branch not needed for the round trip; adapter skip needed for all five; control passes |
+| the reader branch's reachability | fails the reader's own test when removed, so it is live on `ingestFile` |
+| test suite | **108 files, 3059 tests passed** (one more than Pass 32) |
+| coverage | **217 file x dimension pairs, 0 below 95%**, lowest `99.58%` (`score.ts` branches) |
+| gates | `typecheck`, `lint`, `docs:check`, `examples:check` all clean |
+
+### What this does not do
+
+- It does **not** claim all 122 failures share this shape. Five are measured in
+  full; the rest are counted. The five establish the gap is per-service rather
+  than per-component, which makes the remaining 120 plausible, not proven.
+- It does **not** re-run RE1, so the pass count is still Pass 31's 253 of 375.
+- It does **not** claim RE1's anchor is reproduced. A pin says the bytes are the
+  bytes; the score's agreement with upstream is unmeasured.
+- It does **not** explain every `NaN` -- zero traffic accounts for most and
+  demonstrably not all.
+- It does **not** read the two RE1-SS failures individually.

@@ -360,6 +360,23 @@ number — it is a green run that established nothing.
   telemetry; that requires `official-data.yml`, which downloads the corpora on a
   runner. The two claims are kept apart in [`progress.md`](./progress.md) and this
   anchor is recorded as *executable, not reproduced* until the second has run.
+- **A real corpus can also be read directly, and the result is a different claim
+  again.** Audit finding 121 fetched five members of `RE1-TT.zip` — one per faulted
+  component — read each one's local header before its payload and verified the
+  decompressed member's crc32, and round-tripped all five at `oracle=1.00`. That is
+  stronger than the synthetic corpus and weaker than the anchor: it shows the path
+  handles real upstream telemetry, and it says nothing about whether our score agrees
+  with upstream's. Three distinct claims live here and none substitutes for another —
+  *the wiring runs*, *the path consumes real telemetry*, and *the number matches
+  upstream* — and only the last is the anchor's.
+- **A fix is credited to the layer that carries it, and that is measured.** The
+  adapter's skip of a declared absence and the reader's three-state outcome are two
+  changes on two paths. Removing the reader's branch leaves the five real cases
+  passing, because the adapter strips the token before the reader sees the row;
+  removing the adapter's skip refuses all five. A battery that ran only the corpus
+  would call the reader's change unnecessary, and one that ran only the unit tests
+  would credit it for the round trip, so the battery runs both and names each layer's
+  caller (audit finding 121).
 
 ## L5 — End-to-end scenarios and HITL budget
 
