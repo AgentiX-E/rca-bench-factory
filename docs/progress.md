@@ -2802,7 +2802,7 @@ against and accepting the family would be a guess dressed as tolerance.
 | --- | --- |
 | the real case, end to end | `ROUNDTRIP PASS 1/1 RE1-TT/ts-route-service_disk/4 target=rcaeval-re1 oracle=1.00 signals=1037517` |
 | same case before the fix | `FAIL` -- `column '..._istio-latency-50' is not a finite number: 'NaN'`, 0 signals |
-| test suite | **111 files, 3231 tests passed** |
+| repo test suite | **111 files, 3232 tests passed** (`pnpm test`, every workspace; retaken as 112 / 3245 by Pass 35) |
 | coverage | **217 file x dimension pairs, 0 below 95%**, lowest `99.58%` (`score.ts` branches); `All files 99.96 / 99.91 / 100 / 99.96` |
 | break battery | `break-v120.py` **6/6** mutations behave as required, byte-identical restore |
 | gates | `typecheck`, `lint`, `docs:check`, `examples:check`, `official:check` (8 scored / 1 skipped) all clean |
@@ -2977,7 +2977,7 @@ state -- and failed on its own premise. The fixture now classifies the registry.
 | five real cases, one per faulted component | **5/5 PASS at `oracle=1.00`**, ~1.19M signals each |
 | the layer battery | reader branch not needed for the round trip; adapter skip needed for all five; control passes |
 | the reader branch's reachability | fails the reader's own test when removed, so it is live on `ingestFile` |
-| test suite | **108 files, 3059 tests passed** (one more than Pass 32) |
+| core test suite | **108 files, 3059 tests passed** (one more than Pass 32) |
 | coverage | **217 file x dimension pairs, 0 below 95%**, lowest `99.58%` (`score.ts` branches) |
 | gates | `typecheck`, `lint`, `docs:check`, `examples:check` all clean |
 
@@ -3056,7 +3056,7 @@ restating made it checkable.
 | `NaN` counts and service sets | reproduce exactly, five files |
 | run lengths under the shift | unchanged: 3, 3, 3, 4, 6, 6, 10, 11, 16, 16, 36, 49 |
 | the corrected table | matches the re-derivation in all eight groups |
-| test suite | **108 files, 3059 tests passed**, unchanged (docs only) |
+| core test suite | **108 files, 3059 tests passed**, unchanged (docs only) |
 | gates | `typecheck`, `lint`, `docs:check`, `examples:check` all clean |
 
 ### What this does not do
@@ -3067,3 +3067,70 @@ restating made it checkable.
 - It does **not** re-fetch anything. It re-reads five files already verified.
 - It does **not** clear the rest of this audit. Other findings that name a row
   were not re-derived, so their numbers are unmeasured here, not confirmed.
+
+---
+
+## Pass 35 -- the counts in this file are now checked by a gate, and the gate's own central assertion was undetectable
+
+### What was wrong
+
+This file publishes file/test counts and says of itself that they are
+measurements which decay. Nothing read them, and read by hand they disagreed.
+Two rows carried one label, two scopes, and no scope word between them; one was
+the whole repository and the other `packages/core` alone, and the first was one
+test stale besides. Recorded as finding 123. This is the recurring shape: a
+published fact whose only reader is a human who happens to look.
+
+### What was built
+
+- `scripts/check-doc-counts.mjs` -- the gate. Three rules: every count names its
+  scope from a closed vocabulary (`core`, `cli`, `repo`); counts are internally
+  consistent and monotone per scope; a row marked as the current state must
+  **equal** the live measurement.
+- `scripts/measure-doc-counts.mjs` -- takes the measurement and writes
+  `golden-master/doc-counts.json`. Deliberately separate: the gate runs both in
+  `docs:check` and inside the test suite, so measuring there recursed into vitest.
+  The first version did, and the symptom was the gate's own failure output
+  appearing inside vitest's report.
+- `packages/core/test/check-doc-counts.test.ts` -- 14 tests, driving the gate
+  against fixtures with `--doc` and a handed-in `--measured`, so the suite stays
+  fast and the file does not go red every time a test is added.
+- `docs:counts` / `docs:counts:check` scripts; the gate is wired into
+  `docs:check`, so `ci-reaches-doc-guards.test.ts` carries it into the pipeline.
+
+### The defect in the gate itself
+
+The first version tested only `row > live`, reasoning that a suite which grew
+since a measurement is normal. The mutation battery caught the cost: widening
+`CURRENT_MARKERS` so a stale count was read as current changed nothing, because a
+stale count satisfies `< live` either way. The gate's central assertion could be
+disabled without a test going red.
+
+Fixed by making current-marked rows an equality. Rows *not* marked current may be
+smaller -- that is what makes them dated records.
+
+The battery also found a vacuous test: the case pinning that `unchanged (docs
+only)` is not a current-state claim used counts that happened to match the live
+measurement, so it passed either way. It now uses deliberately stale counts.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **109 files, 3073 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **112 files, 3246 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
+| `check-doc-counts` tests | 14 passed |
+| `ci-reaches-doc-guards` tests | 7 passed |
+| `pnpm docs:check` | all four guards clean |
+| `pnpm docs:counts:check` | committed measurement matches the suite |
+
+### What this does not do
+
+- It does **not** establish the counts are correct, only that they name a scope
+  and do not contradict the current-state measurement.
+- It does **not** cross-check the Chinese documentation repository, which is not
+  present in CI. Same asymmetry as finding 112.
+- It does **not** cover count shapes outside the three patterns `readCounts`
+  recognises. A fourth shape would be found by nothing.

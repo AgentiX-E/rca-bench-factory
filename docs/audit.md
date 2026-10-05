@@ -11995,3 +11995,122 @@ the only mechanism in this repository that re-reads a committed measurement.
 - It does **not** claim row numbers elsewhere in this audit are correct. It
   establishes that this table's are not, and that the convention is the physical
   line; other findings that name a row were not re-derived here.
+
+## Finding 123 — `progress.md` published two different counts under one label, and the check written to catch that was itself undetectable
+
+### The published defect
+
+`docs/progress.md` publishes file/test counts in its `### Verified` tables, and it
+says of itself that those numbers are measurements which decay. Read by hand,
+two rows in it disagreed in a way no reader could see, because both carried the
+same label and neither named a scope:
+
+```
+| test suite | **111 files, 3231 tests passed** |
+| test suite | **108 files, 3059 tests passed** |
+```
+
+The first is the whole repository; the second is `packages/core` alone. Nothing
+in either row says so. Moreover the first was one test stale, measured:
+`pnpm test` reported **111 files / 3232 tests** at the same commit. Every gate
+was green throughout, because no gate read these numbers.
+
+Scope, measured directly rather than inferred:
+
+| scope | command | files | tests |
+| --- | --- | --- | --- |
+| `core` | `pnpm --filter @rca-bench-factory/core test` | 109 | 3072 |
+| `cli` | `pnpm --filter @rca-bench-factory/cli test` | 3 | 173 |
+| `repo` | `pnpm test` | 112 | 3245 |
+
+This is the same class as findings 104-112: a fact published in one place and
+read by nothing. `108 files, 3059 tests` is true of core and false of the repo,
+so a reader could not tell which of the two rows described what.
+
+### The check, and why it is split in two
+
+`scripts/check-doc-counts.mjs` holds the file to three rules: every count names
+its scope from a closed vocabulary; counts are internally consistent
+(`files <= tests`) and monotone per scope; and a row marked as describing the
+current state must **equal** the live measurement for its scope.
+
+Measurement is a separate script, `scripts/measure-doc-counts.mjs`, which writes
+`golden-master/doc-counts.json`. The split is not tidiness. The guard runs as the
+last step of `docs:check` *and* inside the test suite, so taking the measurement
+in it meant `execFileSync('pnpm', ['test'])` inside vitest -- the first version
+did exactly that, and the symptom was the guard's own failure output appearing
+inside vitest's report. `pnpm docs:counts:check` fails when the committed
+measurement is stale.
+
+### The defect in the check itself
+
+The guard's first version tested only `row > live` for current-marked rows,
+reasoning that a suite which grew since a measurement is normal. A mutation
+battery (`break-doc-counts.py`) caught what that reasoning costs: widening
+`CURRENT_MARKERS` so that a *stale* count was read as current changed no outcome
+at all, because a stale count satisfies `< live` whichever branch is taken. The
+rule was undetectable in the direction that matters, which is to say the guard's
+central assertion could be disabled without any test going red.
+
+The fix is equality for current-marked rows, which is also the honest reading:
+a row that marks itself as the state at this commit has exactly one correct
+value. Rows that are *not* marked current may be smaller than the live count --
+that is what makes them dated records -- and that case is pinned by its own test.
+
+Measured after the fix: **9 of 9** mutations caught, file restored byte for byte
+(`sha256 b380bb647e82251c` before and after).
+
+The battery also found a vacuous test. The case pinning that a pass-comparison
+such as `unchanged (docs only)` is *not* a current-state claim originally used
+the counts that happen to match the live measurement, so it passed whether or
+not the marker was recognised. It now uses deliberately stale counts.
+
+### What this does not establish
+
+- It does not establish that the counts in `progress.md` are *correct*, only that
+  they name a scope and do not contradict the current-state measurement.
+- It does not cross-check the Chinese documentation repository. That repository
+  is not present in CI, and `check-l4-status.mjs` records the same asymmetry as
+  finding 112: the cross-language copy is checked at the point it is edited.
+- It does not cover counts written in shapes outside the three patterns
+  `readCounts` recognises. A fourth shape would be found by nothing.
+
+### Addendum to finding 123 — two more copies of the same number, and the test that pins them
+
+Making rule 3 an equality had a consequence the first draft did not anticipate:
+the counts stopped being decorative. Three separate places in the test file held
+a copy of "core is 109 files / 3072 tests", and the shipped document held a
+fourth. Measured, the full suite went red twice in a row on the next runs:
+
+```
+FAIL  test/check-doc-counts.test.ts > accepts a current-state claim that matches the live suite
+Test Files  1 failed | 108 passed (109)
+```
+
+Both failures were the same cause: a test was added, the real counts moved to
+109/3073, and the copies did not. The first failure was the `MEASURED` constant;
+the second was an inline literal in a test body, which the constant's own
+consistency test could not see because it only reads the constant.
+
+Two fixes, both structural rather than another edit to a number:
+
+1. **The inline literal is derived from `MEASURED`** rather than written out.
+   There is now one copy of the count in the test file, and the assertion stops
+   being about today's number: a row matching the live count passes.
+2. **A test asserts the copy matches the document.** It reads
+   `docs/progress.md`, extracts the rows marked as the current state, and
+   requires each to equal `MEASURED`. Scoped by the marker rather than by row
+   order, because the document also carries dated records under the same
+   `N files, M tests passed` shape -- an earlier draft of that test matched one
+   of them and reported a disagreement that was not one.
+
+That test does not check the counts are current; `golden-master/doc-counts.json`
+and `pnpm docs:counts:check` do that. It checks the two copies agree, which is
+the failure the equality rule turned from harmless into a red suite.
+
+Battery now **9 of 9** mutations caught, byte-identical restore
+(`sha256 b380bb647e82251c`). The added mutation M7 makes the fixture disagree
+with the document, which is the drift above.
+
+Measured after all of it: core **109 files / 3073 tests**, cli **3 / 173**,
+repo **112 files / 3246 tests**.
