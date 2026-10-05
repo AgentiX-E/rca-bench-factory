@@ -2547,3 +2547,99 @@ it passed on the JSON reader while asserting the CSV one.
   ingest-export-official path; whether the score matches upstream is the anchor's own claim.
 - It does **not** explain RE2. RE2 passed 270/270 in an earlier dispatch, which is what made this
   look like a corpus difference -- and is why the defect needed the *other* anchor to surface.
+
+## Pass 30 -- Dispatch RE1 again, and find the accumulator that could not hold a run
+
+Pass 29 ended on the reader fix and left the obvious next action: dispatch the RE1
+fetch again, because the reader was now correct and the three RE1 digests were
+already measured. That dispatch ran.
+
+Before it, though, this pass had to close something of its own. The v1.54 commits
+were reported as delivered while they existed only in this working copy -- finding
+116. The report had read `git log`, which cannot distinguish "committed" from
+"pushed", and the arrow `ece5b3964 -> cfd35dc` described a transition that had
+happened in one place only: the local reflog. The remote refs said otherwise:
+
+```
+GET /repos/AgentiX-E/rca-bench-factory/branches/master       -> ece5b3964
+GET /repos/AgentiX-E/rca-bench-factory-docs/branches/master  -> 8f9bba124
+```
+
+Both were pushed and both landed, which is also what produced the first pipeline
+evidence for v1.54's new workflow steps:
+
+```
+== Anchor round trip / Round-trip a synthetic corpus in the official layout: success
+   [ok] Both payload shapes are derived, one per suite
+   [ok] Both payload shapes round-trip, not just the one we emit
+```
+
+### The dispatch, and what it measured
+
+`POST .../actions/workflows/official-data.yml/dispatches` returned **HTTP 204**
+with `x-accepted-github-permissions: actions=write`, creating run `37196522469`
+on sha `cfd35dccd`. The fetch, the digest comparison and the descriptor derivation
+all passed. Then:
+
+```
+ROUNDTRIP declared 375 case(s), found 1000 file(s), 453 directory(ies)
+RangeError: Maximum call stack size exceeded
+    at ingestPrimeDataset (.../dist/ingest/prime.js:498:21)
+            signals.push(...ingested.signals);
+```
+
+**375 cases declared, 1000 files found, zero scored.** The reader fix was working
+-- the CSV payloads were being read, and all 375 declarations were accepted --
+and the run then died in the accumulator that collects the results.
+
+### The cause
+
+`signals.push(...ingested.signals)` passes every element as a function argument.
+The ceiling was probed rather than assumed:
+
+```
+[].push(...new Array(100000).fill(0))   -> ok
+[].push(...new Array(125000).fill(0))   -> RangeError
+```
+
+One RE1 `data.csv` holds a whole run, which is past that. The synthetic fixture
+holds a handful of rows, which is nowhere near it -- and **every fixture in this
+project is ours and small**, so no test had ever fed a realistic size through this
+path. The line had passed review, type checking and 3045 tests for the life of the
+file.
+
+This is finding 115's shape one layer in. There the reader was right for every
+fixture and wrong for the corpus's *shape*; here the accumulator was right for
+every fixture and wrong for the corpus's *scale*. Both were reachable only by
+running the real thing.
+
+### The fix, and the part that generalises
+
+A loop replaces the spread. A behavioural test covers the calls it makes, and
+this defect was in a call nobody made, so it is paired with a **source-level
+guard**: `spread-append-guard.test.ts` walks `src` and fails on any `push(...x)`
+not on an explicit known-bounded list. Four sites are exempt, each with the
+property that bounds it; `ingest/prime.ts` deliberately is not.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| the defect reproduces locally | `RangeError` at `prime.ts:660` on a 130,000-row payload |
+| the fix resolves it | same payload, `signals = 130000`, zero quarantine |
+| breakout size | probed, not guessed: between 100,000 and 125,000 |
+| deliberate breaks | **6 of 6 fired**, restore byte-identical |
+| core tests | **3050 passed / 108 files** (v1.54: 3045 / 107) |
+| core coverage | `All files 99.96 / 99.91 / 100 / 99.96`; **217 file x dimension pairs, 0 below 95%**, lowest 99.58% |
+| `typecheck` / `lint` / `docs:check` / `examples:check` / `official:check` | clean |
+
+### What this does not do
+
+- It does **not** pin the three RE1 assets. The digests are measured; the pins are a reviewed
+  commit and nothing has merged them.
+- It does **not** claim the RE1 anchor is reproduced. This run died before scoring, so whether
+  the 375 cases round-trip at `oracle=1.00` is the next dispatch's measurement.
+- It does **not** explain RE2. RE2's per-case payloads are smaller, which is consistent with the
+  size hypothesis, but that was not measured and is not offered as the explanation.
+- It does **not** close the class. The guard covers `push(...x)` in `src`; a spread inside a call
+  (`f(...arr)`) at the same scale is uncovered until checked.

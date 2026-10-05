@@ -163,3 +163,65 @@ describe('ingestPrimeDataset · a faithful ingest is unchanged', () => {
     expect(validBundle().cases).toHaveLength(1);
   });
 });
+
+describe('ingestPrimeDataset · a source larger than the argument limit', () => {
+  /**
+   * A single file carrying more rows than `push(...)` can spread.
+   *
+   * ## Why this is a test and not a stress case
+   *
+   * The real RE1 corpus ships one `data.csv` per case holding a whole run of
+   * telemetry. At 375 cases the round trip died with
+   * `RangeError: Maximum call stack size exceeded` raised at
+   * `signals.push(...ingested.signals)` -- the spread operator passes every
+   * element as a function argument, and V8's argument limit is far below the
+   * row count of a real run.
+   *
+   * Every fixture in this repository is synthetic and small, so the limit was
+   * never reached and the defect was invisible for the whole life of the file.
+   * That is the shape this test closes: the accumulator must not care how many
+   * rows arrive, so the row count is measured against the real ceiling rather
+   * than guessed at.
+   *
+   * The ceiling was probed on this runtime and lies between 100,000 and 125,000
+   * elements -- `[].push(...new Array(100000).fill(0))` succeeds and 125,000
+   * raises. 130,000 is therefore past it with margin, and not so far past that
+   * the fixture costs seconds it does not earn. The timeout is raised because
+   * building and parsing a payload of that size is the work under test, not
+   * slow setup.
+   */
+  const ROWS = 130_000;
+  const ROWS_TIMEOUT_MS = 30_000;
+
+  /** A metric payload with `rows` data rows, all of them valid. */
+  function metricBody(rows: number): string {
+    const lines = [METRIC_HEADER];
+    for (let i = 0; i < rows; i += 1) {
+      lines.push(`2026-09-06T00:10:00Z,order-pod-1,cpu_usage,${i % 97}`);
+    }
+    return lines.join('\n') + '\n';
+  }
+
+  it('ingests a file with more rows than can be spread into a call', () => {
+    const result = ingestOne({ 'telemetry/metric/cpu.csv': metricBody(ROWS) });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const report = result.report.find((r) => r.caseId === 'case-001');
+    expect(report?.signals).toBe(ROWS);
+    expect(report?.quarantine).toHaveLength(0);
+  }, ROWS_TIMEOUT_MS);
+
+  it('keeps every row when several files each exceed the limit', () => {
+    const body = metricBody(ROWS);
+    const result = ingestOne({
+      'telemetry/metric/cpu.csv': body,
+      'telemetry/metric/mem.csv': body,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const report = result.report.find((r) => r.caseId === 'case-001');
+    expect(report?.signals).toBe(ROWS * 2);
+  }, ROWS_TIMEOUT_MS);
+});

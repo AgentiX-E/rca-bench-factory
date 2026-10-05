@@ -657,7 +657,19 @@ export function ingestPrimeDataset(
         continue;
       }
       const ingested = ingestFile(normalizeText(files[path] as string), resolved.options);
-      signals.push(...ingested.signals);
+      // Appended one at a time, not spread.
+      //
+      // `signals.push(...ingested.signals)` passes every element as a function
+      // argument, and V8 caps argument count far below the row count of a real
+      // telemetry file. A single RE1 `data.csv` carries a whole run, so the
+      // spread raised `RangeError: Maximum call stack size exceeded` on the
+      // first real corpus the round trip was pointed at -- 375 cases, none of
+      // which got past its own first file.
+      //
+      // The synthetic fixtures are small enough that the limit is never reached,
+      // which is why this survived. Appending in a loop has no such ceiling and
+      // costs nothing measurable at these sizes.
+      for (const s of ingested.signals) signals.push(s);
       for (const q of ingested.quarantine) {
         quarantine.push({ file: path, line: q.line, reason: q.reason, record: q.record });
       }

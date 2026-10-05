@@ -11141,3 +11141,246 @@ the path RE1 actually takes is exercised on every push rather than on a ninety-m
 - It does **not** explain RE2's `metrics.json`. RE2 passed 270/270 in an earlier dispatch, which
   is what made this look like a corpus difference rather than a reader defect — and is why the
   failure had to be found by running the *other* anchor.
+
+## Finding 116 — "committed in both repos" was reported as delivery, and the remote refutes it
+
+**Found** 2026-10-04, immediately after v1.54 closed, while polling its CI.
+
+### What was claimed
+
+v1.54's closing report said, in the same sentence as its verification table:
+
+> Both commits authored `Lambertyan <lambertyan@users.noreply.github.com>`: factory
+> `ece5b3964 → cfd35dc`, docs `8f9bba124 → 1ae3383`.
+
+The arrow reads as a transition of the branch. `git log` and `git show --stat` were run
+against both repositories and both printed the v1.54 commit as `HEAD`, with the correct
+author line and the correct file list. The report then moved on to the next item.
+
+### What was true
+
+`GET /repos/AgentiX-E/rca-bench-factory/branches/master` returned `ece5b3964` — the
+**previous** commit. `…/rca-bench-factory-docs/branches/master` returned `8f9bba124` —
+also the previous commit. Both repositories' `pushed_at` showed the times of the *earlier*
+pushes, not of v1.54's work.
+
+The arrow `ece5b3964 → cfd35dc` described a transition that had happened in one place
+only: inside this working copy's reflog. On the remote, no transition existed.
+
+### Why it happened, mechanically
+
+The push in this project does not run through `git push`. It runs through
+`push_commit.py`, which rebuilds blobs → tree → commit → ref over the Git Data API,
+because the sandbox has no route to `github.com` over git's transport. That script is a
+**separate step** from `git commit`, and it prints its own line on success:
+
+```
+refs/heads/master: ece5b3964 -> cfd35dccd
+```
+
+No such line exists for v1.54. The commits were created locally and the push was never
+invoked. The report was written from `git log`, which cannot distinguish "committed and
+pushed" from "committed".
+
+### Why it is the same defect as findings 114 and 115
+
+The shape has not changed across all six instances now recorded:
+
+| Finding | The computation | The reporting surface | What was checked instead |
+|---|---|---|---|
+| 114 | was correct | the claim that the sandbox gated the fetch | the sandbox's egress, not the runner's |
+| 115 | was correct | `data.csv is not valid JSON` | the filename, not the bytes |
+| **116** | **the commit was real, and so was the push script** | **`A → B` on the branch** | **the local reflog, not the ref** |
+
+In each case the thing asserted and the thing measured were one step apart, and the
+measurement that would have closed the gap was **already in hand or one call away**:
+for 114 it was a response header on a request already being made; for 115 it was the
+payload's first byte, already in a variable; for 116 it was `GET /branches/master`, the
+same call `push_commit.py` itself makes as its final precondition.
+
+### The distinguishing mark, restated
+
+Not "the claim was wrong". Wrong claims are ordinary. The mark is that **the check was
+cheap, it was available at the moment the claim was made, and nothing in the workflow
+required it before the claim could be reported.**
+
+That is why the fix below is not "be more careful". Care is not a mechanism. The
+mechanism is that a delivery claim must be read from the delivery channel.
+
+### What this cost
+
+An entire iteration's verification was, for a time, about a commit that no pipeline could
+see. Local verification of v1.54 was real — 3045 tests, 8 of 8 breaks, `All files
+99.96 / 99.91 / 100 / 99.96` — and it remains real. But the two things v1.54's own table
+explicitly could **not** cover were exactly the two things that needed a runner:
+
+- `| workflows | all 5 parse; the 8 corpus steps of anchor-roundtrip.yml run green by their own shell |`
+
+"their own shell" is this machine. The claim that they run green **in a pipeline** had no
+evidence until the push happened.
+
+### The fix
+
+The two commits are pushed and the remote ref now reads:
+
+```
+refs/heads/master: ece5b3964 -> cfd35dccd    (factory)
+refs/heads/master: 8f9bba124 -> 1ae338306    (docs)
+```
+
+The CI run for `cfd35dccda` shows `Anchor round trip` **success**, with both v1.54 steps
+present and green:
+
+```
+== Anchor round trip / Round-trip a synthetic corpus in the official layout: success
+   [ok] Both payload shapes are derived, one per suite
+   [ok] Both payload shapes round-trip, not just the one we emit
+```
+
+which is the first pipeline evidence that the delimited reader works under a runner.
+
+### The guard
+
+A test that reads the claim is not enough — the claim here was prose in a chat message, and
+prose is not in the repository. What *is* in the repository is the push script's success
+line and the run list. So the guard is a check the delivery workflow has to satisfy, and
+its first form is the one already used for finding 114's class: **the closing claim must
+name the artifact that carries it.** For a delivery claim that artifact is a run id or a
+`refs/heads/…` transition line, and it is checkable three ways — by the ref itself, by the
+run list filtered on the head sha, and by `check-runs` on that sha.
+
+Recorded here rather than silently corrected, because the class is now six instances deep
+and the value of the record is the pattern, not the individual slip.
+
+## Finding 117 — a spread append could not hold a real telemetry file, so every RE1 case died before producing a signal
+
+**Found** 2026-10-04, by the first RE1 dispatch that got past the reader.
+
+### The measurement
+
+Dispatch run `37196522469` (v1.54, sha `cfd35dccd`) fetched the three RE1 assets,
+compared their digests against the registry, derived the descriptors, and reached
+the round trip. The step's own output:
+
+```
+ROUNDTRIP corpus /tmp/official
+ROUNDTRIP declared 375 case(s), found 1000 file(s), 453 directory(ies)
+file:///home/runner/work/rca-bench-factory/rca-bench-factory/packages/core/dist/ingest/prime.js:498
+            signals.push(...ingested.signals);
+                    ^
+RangeError: Maximum call stack size exceeded
+    at ingestPrimeDataset (…/packages/core/dist/ingest/prime.js:498:21)
+    at …/scripts/check-official.mjs:617:20
+```
+
+**375 cases declared, 1000 files found, zero cases scored.** Every case reached
+the same line and stopped. The failure is uniform and has one cause, which by the
+rule established in finding 115 means it is a defect in the path rather than in
+the corpus.
+
+`ingestPrimeDataset` accepted all 375 declarations — so the v1.54 reader fix was
+doing its job and the CSV payloads were being read — and then died inside the
+accumulator that was supposed to collect the results.
+
+### The cause
+
+```javascript
+signals.push(...ingested.signals);
+```
+
+The spread operator passes every element as a **function argument**, and V8 caps
+argument count. The ceiling was probed on this runtime and lies between 100,000
+and 125,000 elements:
+
+```
+[].push(...new Array(100000).fill(0))   -> ok
+[].push(...new Array(125000).fill(0))   -> RangeError: Maximum call stack size exceeded
+```
+
+One RE1 `data.csv` holds a whole run of telemetry, which is comfortably past
+that. The synthetic fixture holds a handful of rows, which is nowhere near it.
+
+### Why nothing in the repository could see it
+
+**Every fixture in this project is ours and every one is small.** The defect is a
+function of input *size*, and no test in the suite had ever fed a payload of
+realistic size through this path. The line had passed review, passed type
+checking, and passed 3045 tests for the whole life of the file.
+
+This is finding 115's shape one layer further in. There, the reader was correct
+for every fixture and wrong for the corpus, because no fixture had the corpus's
+*shape*. Here, the accumulator was correct for every fixture and wrong for the
+corpus, because no fixture had the corpus's *scale*.
+
+Both were found by running the real thing, and neither was reachable any other
+way. A test suite built only from synthetic inputs cannot, by construction, tell
+you what happens at a size it never reaches.
+
+### The fix
+
+```javascript
+// Appended one at a time, not spread.
+//
+// `signals.push(...ingested.signals)` passes every element as a function
+// argument, and V8 caps argument count far below the row count of a real
+// telemetry file. A single RE1 `data.csv` carries a whole run, so the
+// spread raised `RangeError: Maximum call stack size exceeded` on the
+// first real corpus the round trip was pointed at -- 375 cases, none of
+// which got past its own first file.
+for (const s of ingested.signals) signals.push(s);
+```
+
+A loop has no ceiling and costs nothing measurable at these sizes.
+
+### Guarding it, which is the part that generalises
+
+A behavioural test covers the calls it makes. The defect was in a call nobody
+made. So the fix is paired with a **source-level guard**,
+`packages/core/test/spread-append-guard.test.ts`, which walks every `src`
+directory and fails on any `push(...x)` that is not on an explicit
+known-bounded list.
+
+The distinction the guard encodes is not syntactic but semantic: *is the array's
+length a function of the input's row count?* That is not decidable by reading one
+line, so the guard takes the honest route — it names each bounded site **with its
+reason** and fails on any new one. Four sites are exempt, each with the property
+that makes it bounded:
+
+| Site | Why bounded |
+|---|---|
+| `fault/denial-inventory.ts` | filters a fixed literal marker list |
+| `score/official.ts` | at most one entry per bit in a fixed facet list |
+| `scripts/verify-example-pack.mjs` | one per directory in the pack manifest |
+| `scripts/gen-rcaeval-cases.mjs` | one per skipped case directory |
+
+None is a function of telemetry row count. `ingest/prime.ts` is deliberately
+**not** exempt, so a reintroduction there is a violation.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| the defect reproduces locally | `RangeError` at `prime.ts:660` on a 130,000-row payload |
+| the fix resolves it | same payload, `signals = 130000`, zero quarantine |
+| breakout size probed, not guessed | between 100,000 and 125,000; fixture is 130,000 |
+| deliberate breaks | **6 of 6 fired**, byte-identical restore |
+| suite | 3050 passed / 108 files |
+| coverage | `All files 99.96 / 99.91 / 100 / 99.96`; **217 file × dimension pairs, 0 below 95%**, lowest 99.58% |
+
+The break battery is `rca-work/break-v117.py`. Two of its entries are the
+negative controls that make the guard non-inert: removing the guard's self-check
+while leaving the defect present must still fail (it does, via the first layer),
+and removing *both* layers must go green (it does) — which is what proves the two
+layers are independent rather than one check written twice.
+
+### What this does not do
+
+- It does not show RE1's round trip produces the upstream score. That run died
+  before scoring; whether 375 cases round-trip at `oracle=1.00` is the next
+  dispatch's measurement, and it is the anchor's actual claim.
+- It does not explain why RE2 passed. RE2's `metrics.json` files are smaller per
+  case, which is consistent with the size hypothesis but was not measured, and is
+  not offered as an explanation.
+- It does not close the class. The guard covers `push(...x)` in `src`; a spread
+  inside a call (`f(...arr)`) at the same scale is not covered and should be
+  checked before it is assumed safe.
