@@ -52,7 +52,7 @@ described as *already replayed* while the registry lists its telemetry as unreac
 | --- | --- | --- | --- |
 | `openrca-1.0` | unfetchable | — | telemetry is behind Google Drive; no automated fetch can exist |
 | `openrca-2.0` | unfetchable | — | PAVE annotations are not published as a bulk archive |
-| `rcaeval-re1` | pinned | `official-data.yml` | 253 of 375 at `oracle=1.00`; the other 122 were one `NaN` family, fixed and measured on one case |
+| `rcaeval-re1` | pinned | `official-data.yml` | 253 of 375 at `oracle=1.00`; the other 122 were one `NaN` family, fixed and measured on five cases, one per faulted component |
 | `rcaeval-re2` | pinned | `official-data.yml` | the first target with a measured pin |
 | `rcaeval-re3` | pending | — | five assets are fetchable and none is pinned yet |
 | `rca100` | unfetchable | — | no verified bulk HTTPS endpoint |
