@@ -2643,3 +2643,85 @@ property that bounds it; `ingest/prime.ts` deliberately is not.
   size hypothesis, but that was not measured and is not offered as the explanation.
 - It does **not** close the class. The guard covers `push(...x)` in `src`; a spread inside a call
   (`f(...arr)`) at the same scale is uncovered until checked.
+
+## Pass 31 -- Dispatch RE1 on the fixed code, and get 253 of 375
+
+Pass 30 ended with the accumulator fixed and the dispatch call measured to work.
+This pass ran it. `POST .../workflows/official-data.yml/dispatches` returned **HTTP
+204**, creating run `37283049425` on sha `92df8c6ec`.
+
+Everything before the round trip passed. The round trip then ran for **23 minutes**
+-- against 2 minutes when it was dying on the first file -- and printed:
+
+```
+ROUNDTRIP declared 375 case(s), found 1000 file(s), 453 directory(ies)
+ROUNDTRIP PASS   1/375 RE1-OB/adservice_cpu/1  target=rcaeval-re1  oracle=1.00 signals=210050
+...
+ROUNDTRIP PASS 253/375 ...
+ROUNDTRIP FAIL 314/375 RE1-TT/ts-route-service_disk/4  reason=data.csv line 195 column '..._istio-latency-50' is not a finite number: 'NaN'
+```
+
+**PASS 253, FAIL 122.** The RangeError is gone, and cases now process at
+**~210,000 signals each** -- the real per-case scale of an RE1 run, which is the
+number that explains why the spread could never have held one.
+
+### The distribution is the result
+
+| System | PASS | FAIL | Pass rate |
+| --- | --- | --- | --- |
+| RE1-OB | 125 | 0 | **100%** |
+| RE1-SS | 123 | 2 | 98.4% |
+| RE1-TT | 5 | 120 | **4.0%** |
+
+One failure reason, 122 occurrences:
+
+```
+data.csv column '<service>_istio-latency-50' is not a finite number: 'NaN'
+```
+
+**This is the opposite of the pattern that identified findings 115 and 117.** There,
+a uniform reason across *every* case meant a defect in the path. Here the failures
+are confined to a recognisable subset -- one of three systems, and within it one
+family of columns -- which is the signature of a property of that subset. Two of the
+three systems round-trip essentially perfectly; a reader defect cannot do that.
+
+The `NaN` is literal text in TrainTicket's shipped telemetry. The reader **refuses**
+it rather than dropping the point, naming the line and column, which is v1.54's own
+rule (`refuses a non-numeric cell rather than dropping the point`) behaving as
+designed. **The design question it exposes is separate:** a corpus that ships `NaN`
+in a latency percentile column is not malformed, and refusing the whole case over it
+is a choice that was never justified against real data -- because until this run, no
+real data had reached it.
+
+### Why this pass matters more than its predecessors
+
+Findings 115, 116, 117 and 118 were all defects. This is not. It is the first
+measurement here that distinguishes **"our code is wrong"** from **"the corpus says
+something we had not decided how to handle"**, and it distinguishes them **by
+distribution rather than by inspection**.
+
+That distinction was unavailable earlier for a structural reason: every earlier
+fixture was ours, so every earlier result could only report on our own assumptions.
+This is the first output where the corpus is the author.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| dispatch | `HTTP 204`, `x-accepted-github-permissions: actions=write`, run `37283049425` |
+| RE1 round trip | **253 / 375 PASS at `oracle=1.00`**, one failure reason across the other 122 |
+| per-case scale | ~210,000 signals, which is past the argument ceiling finding 117 measured |
+| CI on the same sha | run `37282447866` **success**; log shows `108 passed` files and `All files 99.96 / 99.91 / 100 / 99.96`, identical to local |
+| both repos pushed | factory `cfd35dccd -> 92df8c6ec`, docs `1ae338306 -> ffd983731`; both confirmed by run creation on the new sha |
+
+### What this does not do
+
+- It does **not** claim RE1's anchor is reproduced. The round trip is the
+  ingest-export-official path; whether the score matches upstream is the anchor's own
+  claim and has not been measured.
+- It does **not** decide what `NaN` should mean. Dropping, zeroing or interpolating
+  is a decision, not a measurement, and it is not made here.
+- It does **not** read the two RE1-SS failures individually, so it does not claim they
+  share TT's cause.
+- It does **not** pin the three RE1 digests. They are measured; the pin is a reviewed
+  commit and nothing has merged it.

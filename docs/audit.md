@@ -11384,3 +11384,116 @@ layers are independent rather than one check written twice.
 - It does not close the class. The guard covers `push(...x)` in `src`; a spread
   inside a call (`f(...arr)`) at the same scale is not covered and should be
   checked before it is assumed safe.
+
+## Finding 119 — the RE1 corpus round-trips at oracle=1.00 for 253 of 375 cases, and the 122 that do not are one system's `NaN` cells
+
+**Found** 2026-10-05, by the first RE1 dispatch with both reader and accumulator
+fixes in place.
+
+### The run
+
+`POST .../workflows/official-data.yml/dispatches` returned **HTTP 204**, creating
+run `37283049425` on sha `92df8c6ec`. Every stage before the round trip passed;
+the round trip then ran for **23 minutes** (against 2 minutes when it was dying on
+the first file) and produced this:
+
+```
+ROUNDTRIP declared 375 case(s), found 1000 file(s), 453 directory(ies)
+ROUNDTRIP PASS   1/375 RE1-OB/adservice_cpu/1  target=rcaeval-re1  oracle=1.00 signals=210050
+...
+ROUNDTRIP PASS 253/375 ...
+ROUNDTRIP FAIL 314/375 RE1-TT/ts-route-service_disk/4  reason=data.csv line 195 column 'ts-preserve-other-service_istio-latency-50' is not a finite number: 'NaN'
+```
+
+**PASS 253, FAIL 122.** The RangeError is gone: cases now process at
+**~210,000 signals each**, which is the real per-case scale of an RE1 run.
+
+### The distribution is the finding
+
+| System | PASS | FAIL | Pass rate |
+|---|---|---|---|
+| RE1-OB | 125 | 0 | **100%** |
+| RE1-SS | 123 | 2 | 98.4% |
+| RE1-TT | 5 | 120 | **4.0%** |
+
+One failure reason, **122 occurrences, all identical in kind**:
+
+```
+data.csv column '<service>_istio-latency-50' is not a finite number: 'NaN'
+```
+
+This is the opposite of the pattern that identified findings 115 and 117. There,
+a uniform reason across *every* case meant a defect in the path. Here the failures
+are confined to a **recognisable subset** — one of the three systems, and within it
+one family of columns — which is the signature of a property of that subset.
+
+**Two of the three systems round-trip essentially perfectly.** RE1-OB completes
+125/125 and RE1-SS 123/125. A reader defect cannot produce that: it would fail
+uniformly, as finding 115 did at 375/375.
+
+### What the failures actually are
+
+The `_istio-latency-50` columns hold literal `NaN` text in TrainTicket's shipped
+telemetry. The delimited reader **refuses** a non-finite cell rather than dropping
+the point, with the line and column named:
+
+```
+line 195 column 'ts-preserve-other-service_istio-latency-50' is not a finite number: 'NaN'
+```
+
+That refusal is v1.54's own rule, added deliberately and covered by a test —
+`refuses a non-numeric cell rather than dropping the point`. It is behaving
+exactly as designed. **The design question it exposes is separate:** a corpus that
+ships `NaN` in a latency percentile column is not malformed, and a reader that
+refuses the whole case over it is making a choice that was never justified against
+real data — because until this run, no real data had reached it.
+
+### Why this is the most useful result in the line
+
+Findings 115, 117, 118 and 116 were all defects. This is not. It is the first
+measurement in this project that distinguishes **"our code is wrong"** from
+**"the corpus says something we had not decided how to handle"**, and it
+distinguishes them by distribution rather than by inspection.
+
+That distinction was unavailable before this run, and unavailable for a structural
+reason: every earlier fixture was ours, so every earlier result could only report
+on our assumptions. This is the first output where the corpus is the author.
+
+### What is and is not claimed
+
+**Claimed, with the run as evidence:**
+
+- 253 of 375 RE1 cases round-trip through the official layout at `oracle=1.00`.
+- The 122 failures have one reason, and it is `NaN` in `_istio-latency-50` columns.
+- RE1-OB passes 125/125.
+- The accumulator fix is confirmed at real scale (~210,000 signals per case).
+
+**Not claimed:**
+
+- That RE1's **anchor** is reproduced. The round trip is the ingest–export–official
+  path; whether the score matches upstream on these cases is the anchor's own
+  claim and has not been measured.
+- That `NaN` should be dropped, zeroed, or interpolated. That is a decision, not a
+  measurement, and it is not made here.
+- That the two RE1-SS failures share the TT cause. They were not read
+  individually.
+- That the three RE1 digests are pinned. They are measured; the pin is a reviewed
+  commit and nothing has merged it.
+
+### The decision this creates
+
+Three options, none of them chosen here:
+
+1. **Refuse the case** (today's behaviour). Loud, loses 122 of 375.
+2. **Drop the column** for that record. Keeps the case, discards a signal the
+   corpus chose to ship.
+3. **Treat `NaN` as a declared missing value**, carried in the quarantine report
+   with the count, so nothing is silent.
+
+Option 3 is the only one consistent with this project's zero-silent-loss
+invariant, and it is the option the existing quarantine machinery was built for:
+v1.53's report already records file, line, reason and record for every rejected
+row, and RE1 already routes through it. The work is to decide whether a
+non-finite *cell* produces a quarantine entry (row kept, cell noted) or a
+rejected *row* (as now), and that is a corpus-semantics decision that should be
+made with the upstream scoring rule in hand rather than guessed.
