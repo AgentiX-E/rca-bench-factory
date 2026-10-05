@@ -2725,3 +2725,102 @@ This is the first output where the corpus is the author.
   share TT's cause.
 - It does **not** pin the three RE1 digests. They are measured; the pin is a reviewed
   commit and nothing has merged it.
+
+## Pass 32 -- Read one RE1-TT case out of the archive, and decide what `NaN` means
+
+Pass 31 ended on a question it refused to answer: 122 of RE1's 375 cases fail
+because a `_istio-latency-50` column carries the literal text `NaN`, and whether
+that should be refused, dropped, or read as a declared absence depends on a fact
+nobody had looked at -- the *shape* of the `NaN` in the file.
+
+This pass looks, then acts.
+
+### Getting the corpus open
+
+`RE1-TT.zip` is 279,663,965 bytes and the sandbox reaches `zenodo.org` at about
+**17 KB/s**, so the archive is not fetchable in a useful time. Two observations
+made one member reachable anyway:
+
+- the **central directory is at the end** and records each member's offset and
+  size, so two range requests (13,965 + 57,719 bytes) brought back all 526 entries
+  and the exact byte range of any one `data.csv`;
+- one range request of 2,094,646 bytes then carried
+  `RE1-TT/ts-route-service_disk/4/data.csv` whole.
+
+### A correction to Pass 31
+
+Pass 31 recorded that RE1-TT.zip stores its members uncompressed. It does not:
+the archive is **DEFLATE** (`method 8`), and the payload needed `zlib` to become
+CSV. The claim came from reading the first local file header, which belongs to the
+directory entry `RE1-TT/` and has `csize=0` -- an entry that cannot exhibit either
+compression method. One member's zero-length header was generalised into a fact
+about the archive. It is recorded rather than quietly edited because an
+unsupported claim that reads like a measurement is the failure mode this audit
+keeps finding.
+
+### What the `NaN` is
+
+One real case, decompressed to 12,806,155 bytes: 1,446 columns, 721 rows, one
+second per sample.
+
+| Service | Columns | istio columns | `NaN` onset | Distinct onsets |
+| --- | --- | --- | --- | --- |
+| `ts-preserve-other-service` | 26 | 9 | row 193 | **1** |
+| every other service (71) | -- | -- | none | -- |
+
+Of that service's 26 columns, 18 (all `container-*`, plus `istio-request-total`)
+carry 528 live readings *after* row 193, and 8 (`istio-latency-50/90/95/99`,
+`istio-bytes-50/90/95/99`) hold `NaN` from row 193 to the end -- one shared onset,
+one suffix, no holes. `NaN` is the file's only non-numeric token; the time axis is
+unbroken across the onset (row 193 is `1702396847`, row 194 is `1702396848`).
+
+That is instrumentation reporting "no reading from here on" while the service
+itself keeps running, not a file we failed to read. It is also not the fault
+being scored: the case's root cause is `ts-route-service`, and the affected
+service is a different one.
+
+### The fix
+
+The reader distinguished "unreadable" from "absent" nowhere: `Number.isFinite`
+decided both, so a corpus stating an absence was refused as a parse failure.
+`buildSignal` now returns three outcomes -- `ok`, `missing`, `reject` -- and the
+union makes the third a type error to ignore rather than a branch an `if/else` can
+collapse. `MISSING_VALUE_TOKENS` in `ir/types.ts` is the single definition of the
+spelling, imported by the official adapter so the two layers cannot drift; the
+adapter skips a `NaN` cell exactly as it already skipped a blank one. Absent rows
+are counted in a new `missing` field on both the file result and the per-case
+report, so `signals + quarantine + missing` still equals the source row count.
+
+Acceptance is on the **exact token**, not on non-finiteness: `nan`, `NAN`,
+`nan.0`, `Infinity`, `-Infinity`, `NA`, `inf`, `null` and `oops` are each pinned
+to a refusal, because only one spelling has been measured in a corpus we score
+against and accepting the family would be a guess dressed as tolerance.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| the real case, end to end | `ROUNDTRIP PASS 1/1 RE1-TT/ts-route-service_disk/4 target=rcaeval-re1 oracle=1.00 signals=1037517` |
+| same case before the fix | `FAIL` -- `column '..._istio-latency-50' is not a finite number: 'NaN'`, 0 signals |
+| test suite | **111 files, 3231 tests passed** |
+| coverage | **217 file x dimension pairs, 0 below 95%**, lowest `99.58%` (`score.ts` branches); `All files 99.96 / 99.91 / 100 / 99.96` |
+| break battery | `break-v120.py` **6/6** mutations behave as required, byte-identical restore |
+| gates | `typecheck`, `lint`, `docs:check`, `examples:check`, `official:check` (8 scored / 1 skipped) all clean |
+
+The break battery's two controls are the point of it: emptying the vocabulary
+must keep the exact-spelling refusals firing, and removing the adapter's skip must
+leave the all-`NaN` boundary refusing. Both do. The first run of the battery also
+caught a defect in the battery itself -- its restore used `replace(new, old)`,
+which is a no-op when the mutation is a deletion, so it left one mutation applied
+and reported its own bug as a mismatch.
+
+### What this does not do
+
+- It does **not** claim all 122 failures share this cause. One case is measured in
+  full; the other 121 are counted, not inspected.
+- It does **not** re-run RE1. The full corpus is 279 MB at ~17 KB/s, so the 122
+  are not re-measured here; one of them is measured passing.
+- It does **not** touch the reader's quarantine semantics for genuinely unreadable
+  cells, which still reject the row with its line and column named.
+- It does **not** pin the RE1 digests, and does **not** claim RE1's anchor is
+  reproduced.

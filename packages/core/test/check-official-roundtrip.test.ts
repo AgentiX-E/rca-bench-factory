@@ -810,6 +810,53 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     expect(result.stderr).toMatch(/line 3/);
   });
 
+  it('accepts a NaN cell as a declared absence, and keeps the readings around it', () => {
+    // The corpus's own spelling. RE1-TT ships `NaN` in eight `_istio-*` columns
+    // of one service from a single onset to the end of the file, while that
+    // service's other eighteen columns stay populated -- a collection gap, not a
+    // damaged payload (finding 120). The two readings that did arrive have to
+    // survive it.
+    const result = runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,NaN\n1700000120,0.95\n', 'csv-nan');
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
+    expect(result.stdout).toMatch(/signals=2/);
+  });
+
+  it('refuses a payload whose every cell is a declared absence', () => {
+    // The boundary the acceptance must not cross: skipping every cell leaves the
+    // payload with nothing, and a wholly absent payload must not become a green
+    // round trip that scored zero readings.
+    //
+    // Asserted as "the case did not pass" rather than against a specific sentence,
+    // because two refusals are correct here and which one fires depends on the
+    // skip: with it, every cell is dropped and the payload "holds no samples";
+    // without it, the first cell is a non-finite number. Pinning the sentence
+    // would make the test assert a mechanism rather than the outcome, and an
+    // earlier version of this test did exactly that -- it read `holds no samples`
+    // and so failed the moment the skip was removed, reporting a defect where the
+    // behaviour was right.
+    const result = runOneCsv(
+      'time,adservice_cpu\n1700000000,NaN\n1700000060,NaN\n1700000120,NaN\n',
+      'csv-allnan',
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toMatch(/ROUNDTRIP PASSED/);
+    expect(result.stderr).toMatch(/holds no samples|not a finite number/);
+  });
+
+  it('still refuses a near-miss token, so the acceptance is the exact spelling', () => {
+    // `inf` is not the corpus's spelling of absence, and neither is `nan` in
+    // lower case. Only the measured token is accepted; the rest remain a file we
+    // failed to read, which is a different statement about the payload.
+    for (const token of ['nan', 'NAN', 'inf', 'null']) {
+      const result = runOneCsv(`time,adservice_cpu\n1700000000,0.21\n1700000060,${token}\n`, `csv-miss-${token}`);
+      expect(result.status, `token ${token}`).toBe(1);
+      expect(result.stderr, `token ${token}`).toMatch(/not a finite number/);
+    }
+  });
+
   it('refuses a payload with no time column, and names the columns it has', () => {
     const result = runOneCsv('secs,adservice_cpu\n1700000000,0.21\n', 'csv-notime');
 

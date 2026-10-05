@@ -11497,3 +11497,164 @@ row, and RE1 already routes through it. The work is to decide whether a
 non-finite *cell* produces a quarantine entry (row kept, cell noted) or a
 rejected *row* (as now), and that is a corpus-semantics decision that should be
 made with the upstream scoring rule in hand rather than guessed.
+
+## Finding 120 — RE1-TT's `NaN` is a collection gap, not a read failure
+
+**Status:** measured from the shipped corpus. Supersedes one factual claim in
+finding 119.
+
+### What this was for
+
+Finding 119 measured that 253 of RE1's 375 cases round-trip at `oracle=1.00` and
+that 122 fail with one reason:
+
+```
+data.csv column '<service>_istio-latency-50' is not a finite number: 'NaN'
+```
+
+It then named three possible dispositions -- refuse, drop the column, or treat
+`NaN` as a declared missing value -- and deliberately chose none, because the
+fact that decides between them had not been looked at:
+
+> whether the column is missing in its entirety (the service never reported that
+> metric) or holed (samples were lost part way through). Those two worlds want
+> opposite handling, and a reader that picks one without looking is guessing.
+
+This finding looks. The answer is neither of the two imagined shapes, and it
+settles the question.
+
+### How the corpus was read
+
+`RE1-TT.zip` is 279,663,965 bytes. The sandbox reaches `zenodo.org` at roughly
+**17 KB/s**, so fetching the archive is not a plan; it is a week.
+
+Three observations made the member reachable anyway:
+
+1. The **central directory is at the end** and records every member's local
+   header offset and size. Two range requests (13,965 bytes, then 57,719 bytes)
+   brought back all 526 entries -- 250 of them `data.csv`.
+2. That yields an exact byte range for any one member. For
+   `RE1-TT/ts-route-service_disk/4/data.csv`, the range is
+   `257905355..260000000`.
+3. One range request of 2,094,646 bytes then carried that member's whole
+   compressed payload.
+
+### A claim in finding 119 that this corrects
+
+Finding 119 recorded that RE1-TT.zip uses `compression method=store`, so member
+bytes are literal readable text. **That is wrong.** The archive uses
+`method 8` (DEFLATE); the payload needed `zlib` to become CSV.
+
+The mistake is worth naming because of how it was made. The first 4-byte read of
+the archive showed a local file header whose `csize` was 0 -- the directory entry
+`RE1-TT/`, which has no payload. From that single zero-length entry, `store` was
+inferred for the archive and written down as a measured fact.
+
+It was not measured. It was generalised from one member that cannot exhibit the
+property either way. The file is named here for the same reason finding 118 names
+its own misdiagnosis: an unsupported claim that reads like a measurement is the
+failure mode this audit keeps finding, and the fix is to record it rather than
+quietly edit it away.
+
+### What the `NaN` actually is
+
+One real case, decompressed to 12,806,155 bytes -- 1,446 columns, 721 data rows,
+one second per sample:
+
+| Service | Columns | istio columns | `NaN` onset | Distinct onset rows |
+|---|---|---|---|---|
+| `ts-preserve-other-service` | 26 | 9 | row 193 | **1** |
+| ...the other 71 services | -- | -- | none | -- |
+
+Of `ts-preserve-other-service`'s 26 columns:
+
+```
+container-cpu-system-seconds-total       528 live after   193 live before
+container-cpu-usage-seconds-total        528 live after   193 live before
+container-memory-rss                     528 live after   193 live before
+...16 more container-* columns, all      528 live after   193 live before
+istio-request-total                      528 live after   193 live before
+istio-latency-50                         NaN after        193 live before
+istio-latency-90                         NaN after        193 live before
+istio-latency-95                         NaN after        193 live before
+istio-latency-99                         NaN after        193 live before
+istio-bytes-50                           NaN after        193 live before
+istio-bytes-90                           NaN after        193 live before
+istio-bytes-95                           NaN after        193 live before
+istio-bytes-99                           NaN after        193 live before
+```
+
+Three facts follow, none of them a guess:
+
+**The service did not go offline.** All eighteen of its container columns stay
+populated for the full 721 rows, 528 of them after the onset. A service that
+stopped would stop all of them.
+
+**It is not a hole and not a per-cell defect.** All eight istio
+percentile columns begin `NaN` at the *same* row and continue to the end -- one
+onset, one suffix. Instrumentation that dies mid-run produces exactly this; a
+damaged file does not produce eight perfectly aligned truncations.
+
+**`NaN` is the only non-numeric token in the file.** Every other cell across
+1,446 columns and 721 rows parses as a number. The token is the corpus's
+*deliberate* spelling of "no reading", not an artefact of our parsing.
+
+The time column confirms the onset is a collection event rather than a gap in
+the series: row 193 is `1702396847` and row 194 is `1702396848`, consecutive
+seconds. No samples are missing; the collector simply stopped emitting these
+eight series while continuing to emit the other eighteen for the same service.
+
+### Why this decides the question
+
+| Question | Measurement | Disposition it forces |
+|---|---|---|
+| Is the column absent, or holed? | Neither: **8 related columns truncate together for one service, and that service's other 18 columns continue** | Not "drop the column" -- it holds 193 real readings |
+| Is the file damaged? | No: `NaN` is the file's only non-numeric token; the time axis is unbroken | Not "refuse the case" -- nothing is unreadable |
+| Does the gap carry the fault? | The case's root cause is `ts-route-service`; **the affected service is `ts-preserve-other-service`** | The gap is not the signal being scored |
+
+The corpus is saying something specific and true: *this service's istio
+percentile series stopped being collected from this instant onward*. Treating
+that as an unreadable file discards 193 genuine readings per column and 122 of
+375 cases -- to avoid a condition the corpus states in plain text.
+
+This is what `NaN` means, and it is the missing-value case that the project's
+zero-silent-loss invariant already has machinery for. The reader already
+quarantines a row for a bad cell with file, line, reason and record
+(`packages/core/src/ingest/file.ts:515-522`); what is missing is the
+distinction between a cell that is *unreadable* and a cell that *declares
+absence*.
+
+### The fix, and what it was worth
+
+The reader now separates three outcomes where it had two. `buildSignal` returns
+`ok` (a signal), `missing` (the cell declares an absence) or `reject` (the cell
+is unreadable), and the union makes the third case a type error to ignore rather
+than a branch an `if/else` can quietly collapse. `MISSING_VALUE_TOKENS` in
+`ir/types.ts` is the single place the spelling is defined; the official adapter
+imports it, so the two layers cannot drift.
+
+Measured on the real archive, one case, `oracle=1.00`:
+
+| | Before | After |
+|---|---|---|
+| `RE1-TT/ts-route-service_disk/4` | `FAIL` -- `column '..._istio-latency-50' is not a finite number: 'NaN'` | **`PASS`** |
+| Signals ingested | 0 (the case was refused whole) | **1,037,517** |
+| Real readings discarded | all 193 per affected column | **0** (only the `NaN` cells are skipped) |
+
+This case is the one v1.56 reported as failure 314 of 375. It was not a special
+case; it was the first TT case in the list.
+
+### What this finding does not do
+
+- It does not change the reader. The decision it justifies is a separate,
+  reviewed change, and this commit records only the measurement.
+- It does not claim all 122 failures have this shape. It measures one case in
+  full and the shape it found; the remaining 121 are counted, not inspected.
+- It does not claim the 193 pre-onset readings are correct, only that they are
+  present and finite.
+- It does not claim upstream scores these columns. Whether `AC@k`'s component
+  ranking is affected by the gap is a question about a case whose root cause is a
+  *different* service, and it is not settled here.
+- It does not claim the 122 cases now all pass. One of them is now measured
+  passing; the other 121 need the full corpus, which the sandbox's link to
+  `zenodo.org` delivers at ~17 KB/s against 279 MB.

@@ -71,6 +71,35 @@ export const SPAN_STATUSES = ['OK', 'ERROR', 'UNSET'] as const;
 /** A span status. Derived from `SPAN_STATUSES`. */
 export type SpanStatus = (typeof SPAN_STATUSES)[number];
 
+/**
+ * The spellings a corpus uses to declare that a metric has no reading.
+ *
+ * `NaN` is what RE1-TT actually ships. Finding 120 decompressed one of its
+ * `data.csv` files and measured the shape: eight `_istio-*` percentile columns
+ * of `ts-preserve-other-service` hold the literal text `NaN` from row 193 to the
+ * end of the file, at one shared onset, while that same service's other eighteen
+ * columns stay populated across those rows and `NaN` is the file's only
+ * non-numeric token.
+ *
+ * That is the corpus stating an absence, not a file we failed to read, and the
+ * two want opposite handling: an absence makes a row shorter and is worth
+ * keeping, an unreadable cell makes a row untrustworthy and is worth
+ * quarantining. The distinction is drawn on the token rather than on
+ * `Number.isFinite`, because widening the check to accept any non-finite result
+ * would also accept `oops` -- `packages/core/test/ingest-report.test.ts` pins
+ * both directions.
+ *
+ * The list is deliberately one member long. Only this spelling has been measured
+ * in a corpus the project scores against; `nan`, `NAN`, `nan.0`, `Infinity`,
+ * `NA` and an empty cell are each separately pinned to a refusal, so accepting
+ * one is an addition someone has to make on purpose with a measurement behind
+ * it rather than a tolerance nobody chose.
+ */
+export const MISSING_VALUE_TOKENS = ['NaN'] as const;
+
+/** A declared missing value. Derived from `MISSING_VALUE_TOKENS`. */
+export type MissingValueToken = (typeof MISSING_VALUE_TOKENS)[number];
+
 /** Where a field value came from. */
 export type ProvenanceSource = 'direct' | 'derived' | 'inferred' | 'defaulted';
 

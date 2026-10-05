@@ -1,6 +1,7 @@
 import {
   IR_VERSION,
   LOG_SEVERITIES,
+  MISSING_VALUE_TOKENS,
   SPAN_STATUSES,
   isVocabularyMember,
   type LogSeverity,
@@ -102,6 +103,20 @@ export interface FileQuarantineRecord {
 export interface FileIngestResult {
   signals: TelemetrySignal[];
   quarantine: FileQuarantineRecord[];
+  /**
+   * Records that were read and carried a declared absence instead of a reading.
+   *
+   * Counted rather than listed because there is nothing to report: the row was
+   * understood, its timestamp parsed, its other columns were fine, and one cell
+   * said "no reading". Naming them would duplicate the source file, and dropping
+   * them into `quarantine` would report a parse failure that did not happen.
+   *
+   * The count exists so the arithmetic still closes: every non-blank record
+   * becomes a signal, a quarantine entry, or one of these. Without it the
+   * invariant would read "nothing is lost" while a third of a file's rows left
+   * no trace at all.
+   */
+  missing: number;
 }
 
 export interface DelimitedParseResult {
@@ -370,7 +385,26 @@ function summarize(record: Record<string, unknown>): string {
   return s.length > 200 ? `${s.slice(0, 200)}...` : s;
 }
 
-type BuildResult = { ok: true; signal: TelemetrySignal } | { ok: false; reason: string };
+/**
+ * What building a signal out of one record decided.
+ *
+ * Three outcomes, not two, because a record can be *unreadable* or it can
+ * *declare an absence* and those are not the same thing. A `reject` is a cell
+ * this reader could not interpret; a `missing` is a cell that says, in the
+ * corpus's own vocabulary, that it holds no reading. The first makes the record
+ * untrustworthy and it is quarantined with its reason; the second makes the
+ * record shorter and it is counted, because dropping it into quarantine would
+ * report a parse failure that never happened -- and silently emitting it would
+ * put a fabricated number into a series.
+ *
+ * `missing` is a third outcome rather than a flavour of `reject` so that the
+ * distinct handling cannot be lost by an `if (result.ok) ... else ...` written
+ * later: the union makes the third case a type error to ignore.
+ */
+type BuildResult =
+  | { ok: true; signal: TelemetrySignal }
+  | { ok: false; kind: 'missing' }
+  | { ok: false; kind: 'reject'; reason: string };
 
 function asText(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
@@ -384,7 +418,7 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
 
   const rawTs = asText(get(layout.timestamp));
   if (rawTs === undefined) {
-    return { ok: false, reason: `missing required column '${layout.timestamp ?? '(none)'}' (timestamp)` };
+    return { ok: false, kind: 'reject', reason: `missing required column '${layout.timestamp ?? '(none)'}' (timestamp)` };
   }
   let parsed: ParsedTime;
   try {
@@ -392,7 +426,7 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
   } catch (e) {
     // `parseTimestamp` throws `TimeParseError` exclusively (see its contract),
     // so the cast below is safe and avoids an unreachable `instanceof` branch.
-    return { ok: false, reason: `timestamp parse failed: ${(e as TimeParseError).message}` };
+    return { ok: false, kind: 'reject', reason: `timestamp parse failed: ${(e as TimeParseError).message}` };
   }
 
   const rawService = asText(get(layout.service));
@@ -400,6 +434,7 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
   if (serviceName === undefined || serviceName === '') {
     return {
       ok: false,
+      kind: 'reject',
       reason: `missing service name (column '${layout.service ?? '(none)'}' or options.serviceName)`,
     };
   }
@@ -408,15 +443,23 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
   if (signalKind === 'metric') {
     const name = asText(get(layout.metricName));
     if (name === undefined) {
-      return { ok: false, reason: `missing required column '${layout.metricName ?? '(none)'}' (metric name)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.metricName ?? '(none)'}' (metric name)` };
     }
     const rawValue = asText(get(layout.metricValue));
     if (rawValue === undefined) {
-      return { ok: false, reason: `missing required column '${layout.metricValue ?? '(none)'}' (metric value)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.metricValue ?? '(none)'}' (metric value)` };
+    }
+    // A declared absence is a statement about the corpus, not a cell we failed to
+    // read, so it is separated from the rejection below by the token rather than
+    // by `Number.isFinite`. Widening to "anything non-finite" would accept `oops`
+    // as well, which is why the vocabulary is consulted first and the numeric
+    // check second -- see `MISSING_VALUE_TOKENS`.
+    if (isVocabularyMember(MISSING_VALUE_TOKENS, rawValue)) {
+      return { ok: false, kind: 'missing' };
     }
     const value = Number(rawValue);
     if (!Number.isFinite(value)) {
-      return { ok: false, reason: `metric value '${rawValue}' is not a finite number` };
+      return { ok: false, kind: 'reject', reason: `metric value '${rawValue}' is not a finite number` };
     }
     const unit = asText(get(layout.metricUnit));
     const metric: MetricPayload = {
@@ -430,14 +473,14 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
   } else if (signalKind === 'log') {
     const body = asText(get(layout.logBody));
     if (body === undefined) {
-      return { ok: false, reason: `missing required column '${layout.logBody ?? '(none)'}' (log body)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.logBody ?? '(none)'}' (log body)` };
     }
     const rawSeverity = asText(get(layout.severity));
     let severityText: LogSeverity | undefined;
     if (rawSeverity !== undefined) {
       const upper = rawSeverity.toUpperCase();
       if (!isVocabularyMember(LOG_SEVERITIES, upper)) {
-        return { ok: false, reason: `invalid severity '${rawSeverity}'` };
+        return { ok: false, kind: 'reject', reason: `invalid severity '${rawSeverity}'` };
       }
       severityText = upper;
     }
@@ -445,23 +488,23 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
   } else {
     const traceId = asText(get(layout.traceId));
     if (traceId === undefined) {
-      return { ok: false, reason: `missing required column '${layout.traceId ?? '(none)'}' (trace id)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.traceId ?? '(none)'}' (trace id)` };
     }
     const spanId = asText(get(layout.spanId));
     if (spanId === undefined) {
-      return { ok: false, reason: `missing required column '${layout.spanId ?? '(none)'}' (span id)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.spanId ?? '(none)'}' (span id)` };
     }
     const spanName = asText(get(layout.spanName));
     if (spanName === undefined) {
-      return { ok: false, reason: `missing required column '${layout.spanName ?? '(none)'}' (span name)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.spanName ?? '(none)'}' (span name)` };
     }
     const rawDuration = asText(get(layout.durationMs));
     if (rawDuration === undefined) {
-      return { ok: false, reason: `missing required column '${layout.durationMs ?? '(none)'}' (span duration)` };
+      return { ok: false, kind: 'reject', reason: `missing required column '${layout.durationMs ?? '(none)'}' (span duration)` };
     }
     const durationMs = Number(rawDuration);
     if (!Number.isFinite(durationMs) || durationMs < 0) {
-      return { ok: false, reason: `span duration '${rawDuration}' is not a non-negative number` };
+      return { ok: false, kind: 'reject', reason: `span duration '${rawDuration}' is not a non-negative number` };
     }
     const parentSpanId = asText(get(layout.parentSpanId));
     const rawStatus = asText(get(layout.status));
@@ -469,7 +512,7 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     if (rawStatus !== undefined) {
       const upper = rawStatus.toUpperCase();
       if (!isVocabularyMember(SPAN_STATUSES, upper)) {
-        return { ok: false, reason: `invalid span status '${rawStatus}'` };
+        return { ok: false, kind: 'reject', reason: `invalid span status '${rawStatus}'` };
       }
       status = upper;
     }
@@ -498,7 +541,7 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     // A failed zod parse always carries at least one issue, so the non-null
     // assertion is guaranteed by the zod contract.
     const issue = check.error.issues[0]!;
-    return { ok: false, reason: `schema validation failed: ${issue.message}` };
+    return { ok: false, kind: 'reject', reason: `schema validation failed: ${issue.message}` };
   }
   return { ok: true, signal };
 }
@@ -508,6 +551,7 @@ export function ingestFile(text: string, options: FileIngestOptions): FileIngest
   const { records, errors } = parseByFormat(text, options);
   const signals: TelemetrySignal[] = [];
   const quarantine: FileQuarantineRecord[] = [];
+  let missing = 0;
 
   for (const e of errors) {
     quarantine.push({ line: e.line, reason: e.reason, record: '' });
@@ -516,10 +560,15 @@ export function ingestFile(text: string, options: FileIngestOptions): FileIngest
     const result = buildSignal(rec.data, options);
     if (result.ok) {
       signals.push(result.signal);
+    } else if (result.kind === 'missing') {
+      // Counted, not quarantined. See `FileIngestResult.missing`: the record was
+      // read successfully and one cell declared an absence, so reporting it as a
+      // rejection would be a false statement about the corpus.
+      missing += 1;
     } else {
       quarantine.push({ line: rec.line, reason: result.reason, record: summarize(rec.data) });
     }
   }
 
-  return { signals, quarantine };
+  return { signals, quarantine, missing };
 }

@@ -39,8 +39,7 @@ function ingestOne(files: Record<string, string>) {
   });
 }
 
-describe('ingestPrimeDataset · every rejected row is accounted for', () => {
-  it('reports a rejected row with its file, line and reason', () => {
+describe('ingestPrimeDataset · every rejected row is accounted for', () => {  it('reports a rejected row with its file, line and reason', () => {
     // The ordinary partial-loss case: one row is fine, one is not. The bundle
     // keeps one signal — and the report must carry the other row, because that
     // is the only place it still exists.
@@ -224,4 +223,130 @@ describe('ingestPrimeDataset · a source larger than the argument limit', () => 
     const report = result.report.find((r) => r.caseId === 'case-001');
     expect(report?.signals).toBe(ROWS * 2);
   }, ROWS_TIMEOUT_MS);
+});
+
+describe('ingestPrimeDataset · a declared missing value is not an unreadable one', () => {
+  /**
+   * RE1-TT ships the literal text `NaN` in eight `_istio-*` percentile columns
+   * of one service, from one row to the end. Finding 120 measured the shape from
+   * the archive: the service's other eighteen columns stay populated across the
+   * same rows, the eight go missing at a single shared onset, and `NaN` is the
+   * file's only non-numeric token.
+   *
+   * That is the corpus stating "no reading from here on", not a file we cannot
+   * read. The reader has to tell the two apart, because they want opposite
+   * handling: a cell that declares absence makes the row *shorter* and is worth
+   * keeping; a cell we cannot parse makes the row *untrustworthy* and is worth
+   * quarantining.
+   *
+   * The distinction is drawn on the token, not on `Number.isFinite`. Widening the
+   * check to accept any non-finite result would also accept `oops`, and the two
+   * tests immediately below pin that it does not.
+   */
+  const MISSING = 'NaN';
+
+  it('keeps a row whose cell says NaN, and counts the reading as missing', () => {
+    const result = ingestOne(
+      metricFile(
+        '2026-09-06T00:10:00Z,ts-preserve-other-service,istio-latency-50,3.75',
+        `2026-09-06T00:11:00Z,ts-preserve-other-service,istio-latency-50,${MISSING}`,
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const report = result.report.find((r) => r.caseId === 'case-001');
+    // One reading reaches the bundle; the second row is *counted*, not
+    // quarantined. The absent row produces no signal on purpose -- emitting one
+    // would require a number to put in it, and every candidate is a fabrication
+    // (0 is a real minimum, the previous value is an interpolation). What it
+    // must not do is disappear from the accounting.
+    expect(report?.signals).toBe(1);
+    expect(report?.missing).toBe(1);
+    // Nothing was rejected, because nothing was unreadable.
+    expect(report?.quarantine).toHaveLength(0);
+  });
+
+  it('still closes the row arithmetic once absences are counted', () => {
+    // The invariant as arithmetic, extended to three outcomes. Four data rows
+    // in; every one is a signal, a quarantine entry, or a count of absence, so
+    // the three must reach four. Before the third counter existed this test
+    // could not be written: two rows would leave no trace in the report at all.
+    const result = ingestOne(
+      metricFile(
+        GOOD_ROW,
+        `2026-09-06T00:11:00Z,order-pod-1,cpu_usage,${MISSING}`,
+        `2026-09-06T00:12:00Z,order-pod-1,cpu_usage,${MISSING}`,
+        '2026-09-06T00:13:00Z,order-pod-1,cpu_usage,NOT_A_NUMBER',
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const report = result.report.find((r) => r.caseId === 'case-001');
+    expect((report?.signals ?? 0) + (report?.quarantine.length ?? 0) + (report?.missing ?? 0)).toBe(4);
+    expect(report?.signals).toBe(1);
+    expect(report?.missing).toBe(2);
+    expect(report?.quarantine).toHaveLength(1);
+  });
+
+  it('records the absent reading as missing rather than as a zero', () => {
+    // The load-bearing half. Keeping the row is only correct if the absent cell
+    // does not become a number on the way in -- a `NaN` silently read as `0`
+    // would put a fabricated minimum into a latency series, which is a worse
+    // outcome than refusing the row.
+    //
+    // Asserted on the emitted signal rather than on an exported bundle: the
+    // export path runs the gate battery, and a two-row fixture is not a bundle
+    // the gates accept. What is under test here is the value that reaches the
+    // signal, so the signal is what is read.
+    const result = ingestOne(
+      metricFile(
+        '2026-09-06T00:10:00Z,ts-preserve-other-service,istio-latency-50,3.75',
+        `2026-09-06T00:11:00Z,ts-preserve-other-service,istio-latency-50,${MISSING}`,
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const values = result.bundle.signals['case-001']!.map((s) => s.payload.value);
+    // Only the real reading is emitted. That is the assertion, and it is the
+    // point: the absent row must not reach the bundle carrying a number that was
+    // never measured. A `NaN` read as `0` would satisfy "two signals" while
+    // putting a fabricated minimum into a latency series.
+    expect(values).toHaveLength(1);
+    expect(Number.isFinite(values[0])).toBe(true);
+    expect(values[0]).toBeCloseTo(3.75, 5);
+  });
+
+  it('still refuses a cell that is neither a number nor a declared missing value', () => {
+    // The negative control, and the reason the check is on the token: `oops` is
+    // not a statement about the corpus, it is a file we failed to read.
+    const result = ingestOne(
+      metricFile(GOOD_ROW, '2026-09-06T00:11:00Z,order-pod-1,cpu_usage,oops'),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const report = result.report.find((r) => r.caseId === 'case-001');
+    expect(report?.signals).toBe(1);
+    expect(report?.quarantine).toHaveLength(1);
+    expect(report?.quarantine[0]?.reason).toMatch(/not a finite number/);
+  });
+
+  it('refuses a near-miss token, so the acceptance is the exact spelling', () => {
+    // `nan`, `NAN`, `nan.0`, `null`, `-` and an empty cell are all things a
+    // corpus might or might not mean, and only one spelling has been measured in
+    // the corpus we score against. Accepting the family would be a guess dressed
+    // as tolerance, so each near miss is pinned to the refusal it gets.
+    for (const token of ['nan', 'NAN', 'nan.0', 'Infinity', '-Infinity', 'NA']) {
+      const result = ingestOne(
+        metricFile(GOOD_ROW, `2026-09-06T00:11:00Z,order-pod-1,cpu_usage,${token}`),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const report = result.report.find((r) => r.caseId === 'case-001');
+      expect(report?.quarantine, `token ${token}`).toHaveLength(1);
+    }
+  });
 });

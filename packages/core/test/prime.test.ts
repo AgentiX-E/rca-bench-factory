@@ -522,8 +522,11 @@ describe('ingestPrimeDataset · signal extraction', () => {
   it('reports the per-case signal and quarantine counts', () => {
     const result = ingestPrimeDataset(METRIC_FILE, options());
     if (!result.ok) throw new Error(result.error);
+    // `missing` is asserted rather than omitted: a report that grew a counter
+    // has to be checked against a source with none, or the field could be
+    // populated by accident on a file whose every row is a reading.
     expect(result.report).toEqual([
-      { caseId: BASE_CASE.caseId, signals: 3, quarantine: [], files: ['metrics.csv'] },
+      { caseId: BASE_CASE.caseId, signals: 3, quarantine: [], missing: 0, files: ['metrics.csv'] },
     ]);
   });
 

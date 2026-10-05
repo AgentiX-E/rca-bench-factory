@@ -148,6 +148,15 @@ export interface PrimeCaseReport {
   caseId: string;
   signals: number;
   quarantine: PrimeQuarantineRecord[];
+  /**
+   * Records that were read and carried a declared absence instead of a reading.
+   *
+   * Carried through from the file reader so the per-case arithmetic closes:
+   * `signals + quarantine + missing` is the source row count, and a report with
+   * only the first two would let absent rows vanish from the accounting that
+   * exists to prove they did not vanish from the data.
+   */
+  missing: number;
   /** Files routed to this case, sorted. */
   files: string[];
 }
@@ -649,6 +658,7 @@ export function ingestPrimeDataset(
     const byPath = new Map((spec.files ?? []).map((f) => [f.path, f]));
     const quarantine: PrimeQuarantineRecord[] = [];
     const signals: TelemetrySignal[] = [];
+    let missing = 0;
 
     for (const path of filesForCase) {
       const resolved = resolveFileOptions(path, files[path] as string, byPath.get(path), options.defaults);
@@ -670,6 +680,7 @@ export function ingestPrimeDataset(
       // which is why this survived. Appending in a loop has no such ceiling and
       // costs nothing measurable at these sizes.
       for (const s of ingested.signals) signals.push(s);
+      missing += ingested.missing;
       for (const q of ingested.quarantine) {
         quarantine.push({ file: path, line: q.line, reason: q.reason, record: q.record });
       }
@@ -684,7 +695,7 @@ export function ingestPrimeDataset(
     if (vouchedNames.has(spec.component)) addEntity(serviceEntity(options.system, spec.component));
 
     signalsByCase[spec.caseId] = signals;
-    report.push({ caseId: spec.caseId, signals: signals.length, quarantine, files: filesForCase });
+    report.push({ caseId: spec.caseId, signals: signals.length, quarantine, missing, files: filesForCase });
     cases.push({
       caseId: spec.caseId,
       system: options.system,

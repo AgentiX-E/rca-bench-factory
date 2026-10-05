@@ -53,6 +53,8 @@ import { fileURLToPath } from 'node:url';
 import {
   exportForScoreTarget,
   ingestPrimeDataset,
+  isVocabularyMember,
+  MISSING_VALUE_TOKENS,
   parseDelimited,
   runAllOfficialRegressions,
   SCORE_TARGET_IDS,
@@ -118,13 +120,21 @@ const DELIMITED_METRIC_COLUMN = 'metric';
  * the rest of the pipeline does not share -- so the one thing this is allowed to
  * do is turn the rows into the record shape and hand them on.
  *
- * ## What it refuses
+ * ## What it refuses, and what it does not
  *
  * The same standard `assertRcaevalMetrics` holds: rather than contributing the
  * points that happened to parse, a payload this cannot read in full makes the case
  * fail by name. A partly-read payload is one whose fault the round trip cannot
  * claim to have reproduced, and silently scoring the readable half would be a
  * green round trip that established nothing.
+ *
+ * "Cannot read" is drawn on the token, not on `Number.isFinite`, because the two
+ * are not the same question and treating them as one refused 122 of 375 RE1 cases
+ * for a condition the corpus states in plain text. A cell carrying `NaN` is a
+ * series declaring it has no reading; a cell carrying `oops` is a file we failed
+ * to read. The first is skipped like a blank cell, the second still fails the
+ * case. `MISSING_VALUE_TOKENS` is imported from the ingest module so this layer
+ * and the reader cannot drift apart on which spellings mean absence.
  */
 function adaptDelimitedMetrics(raw, entry, payloadName) {
   const { rows, errors } = parseDelimited(raw, ',');
@@ -176,6 +186,20 @@ function adaptDelimitedMetrics(raw, entry, payloadName) {
       const name = header[c];
       const value = row[c];
       if (name === undefined || value === undefined || value.trim() === '') continue;
+      // A declared missing value is skipped, exactly as a blank cell is, and for
+      // the same reason: the corpus is stating that this series has no reading
+      // here, which is a fact about the data rather than a failure to read it.
+      // The vocabulary comes from the ingest module so the two layers cannot
+      // disagree about which spellings mean this.
+      //
+      // Measured before it was believed: RE1-TT ships the literal text `NaN` in
+      // eight `_istio-*` columns of `ts-preserve-other-service` from row 193 to
+      // the end, at one shared onset, while that service's other eighteen
+      // columns stay populated across the same rows -- a collection gap, not a
+      // damaged file (finding 120). Refusing 122 of 375 cases over it was
+      // discarding 193 real readings per column to avoid a condition the corpus
+      // states in plain text.
+      if (isVocabularyMember(MISSING_VALUE_TOKENS, value.trim())) continue;
       const numeric = Number(value.trim());
       if (!Number.isFinite(numeric)) {
         return {
@@ -260,6 +284,13 @@ function assertRcaevalMetrics(raw, entry, payloadName = 'metrics.json') {
     const ts = at.toISOString();
     for (const name of names) {
       const value = doc[name][index];
+      // JSON has no `NaN` literal, so a declared absence in this payload shape
+      // can only arrive as the string. Accepted for the same reason the delimited
+      // path accepts it, and skipped for the same reason a blank cell is: the
+      // series says it has no reading here. Anything else non-finite is still
+      // refused, because a value that is neither a number nor the corpus's
+      // spelling of absence is a payload this cannot fully read.
+      if (typeof value === 'string' && isVocabularyMember(MISSING_VALUE_TOKENS, value.trim())) continue;
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         return { ok: false, reason: `metric '${name}' sample ${index} is not a finite number` };
       }
