@@ -52,8 +52,8 @@ described as *already replayed* while the registry lists its telemetry as unreac
 | --- | --- | --- | --- |
 | `openrca-1.0` | unfetchable | — | telemetry is behind Google Drive; no automated fetch can exist |
 | `openrca-2.0` | unfetchable | — | PAVE annotations are not published as a bulk archive |
-| `rcaeval-re1` | pending | — | three assets are fetchable and none is pinned yet |
-| `rcaeval-re2` | pinned | `official-data.yml` | the only target with a measured pin |
+| `rcaeval-re1` | pinned | `official-data.yml` | 253 of 375 at `oracle=1.00`; the other 122 were one `NaN` family, fixed and measured on one case |
+| `rcaeval-re2` | pinned | `official-data.yml` | the first target with a measured pin |
 | `rcaeval-re3` | pending | — | five assets are fetchable and none is pinned yet |
 | `rca100` | unfetchable | — | no verified bulk HTTPS endpoint |
 | `aiops2025` | unfetchable | — | no verified bulk HTTPS endpoint |
@@ -66,8 +66,15 @@ exist, and three of those targets carry a documented alternative in
 -- closing it requires running the fetch, **not** editing a file. Only a `pinned` target
 can carry a reading, because a measured `sha256` is the only thing that records one.
 
-> **One of nine targets can have a reading.** The other eight are all "no reading yet"
+> **Two of nine targets can have a reading.** The other seven are all "no reading yet"
 > for two different reasons, which is exactly the distinction a single column erased.
+
+A reading here is a *path* measurement, not an anchor reproduction. RE2's row names the
+workflow that ran; RE1's adds the count that run produced, and that count is not all of
+RE1 -- 122 of its 375 cases were refused over a `NaN` the corpus ships deliberately, a
+family since fixed in the reader and measured on one case out of the archive. Whether
+either target's score matches upstream is the anchor's own claim and is separately
+stated; a pin says the bytes are the bytes, and nothing more.
 
 The fetch axis is not a claim maintained by hand: `scripts/check-l4-status.mjs` derives
 it from the registry and fails the build if this table disagrees, so a stale cell is a
