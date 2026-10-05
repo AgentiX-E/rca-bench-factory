@@ -2992,3 +2992,78 @@ state -- and failed on its own premise. The fixture now classifies the registry.
 - It does **not** explain every `NaN` -- zero traffic accounts for most and
   demonstrably not all.
 - It does **not** read the two RE1-SS failures individually.
+
+## Pass 34 -- re-deriving finding 121's numbers to publish them in a second language
+
+The pass before this one wrote the Chinese documentation for finding 121. Doing
+that means restating its numbers, and a number restated is a number that can be
+checked -- so this pass checked them instead of copying them. Five of finding
+121's members were still on disk.
+
+### What reproduced, and what did not
+
+Everything substantive reproduced, to the unit:
+
+| claim | finding 121 | re-derived |
+|---|---|---|
+| `NaN` cells | 752 / 80 / 256 / 192 / 24 | identical |
+| `NaN` columns | 16 / 8 / 16 / 16 / 8 | identical |
+| affected services | as published, per case | identical |
+| run lengths | 3 to 49 rows | identical, 12 runs |
+
+The run **positions** did not. All eight interval groups are exactly two lower
+than the file:
+
+| case | service | finding 121 | actual physical line |
+|---|---|---|---|
+| auth | `ts-preserve-other-service` | `820-868`, `958-960` | `822-870`, `960-962` |
+| auth | `ts-payment-service` | `566-571`, `881-916` | `568-573`, `883-918` |
+| order | `ts-preserve-other-service` | `319-322`, `812-817` | `321-324`, `814-819` |
+| route | `ts-preserve-other-service` | `600-615` | `602-617` |
+| route | `ts-preserve-service` | `111-126` | `113-128` |
+| train | `ts-preserve-other-service` | `349-358`, `489-499` | `351-360`, `491-501` |
+| train | `ts-payment-service` | `839-841` | `841-843` |
+| travel | `ts-preserve-other-service` | `137-139` | `139-141` |
+
+### The convention, decided by the code rather than chosen
+
+The reader's refusal message already fixes it. Finding 121's battery recorded:
+
+```
+reason=data.csv line 195 column 'ts-preserve-other-service_istio-latency-50' is not a finite number
+```
+
+On the member that message came from, the first `NaN` in that column is on
+physical line 195 -- so the reader counts the header, and finding 121's table,
+at `physical - 2`, matches neither coherent convention. Finding 120 made the same
+slip ("row 193" for a cell its own message called line 195); finding 121 fixed
+the shape of that observation and inherited the numbering.
+
+### Why it is recorded rather than quietly corrected
+
+Because nothing in this repository reads a row number out of `audit.md`. The
+table could have stayed wrong indefinitely and every gate would have been green,
+which makes it the same class the audit has now named five times: a published
+number with nothing re-reading it. What caught it is only that the number had to
+**cross into a second language**, and that forced it to be restated, and
+restating made it checkable.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| the five members | still present, 12.8 MB each, same bytes the round trip used |
+| `NaN` counts and service sets | reproduce exactly, five files |
+| run lengths under the shift | unchanged: 3, 3, 3, 4, 6, 6, 10, 11, 16, 16, 36, 49 |
+| the corrected table | matches the re-derivation in all eight groups |
+| test suite | **108 files, 3059 tests passed**, unchanged (docs only) |
+| gates | `typecheck`, `lint`, `docs:check`, `examples:check` all clean |
+
+### What this does not do
+
+- It does **not** change a single count, length, service set or round-trip
+  result. Those all re-derived exactly, which is what makes the defect a label
+  rather than a measurement.
+- It does **not** re-fetch anything. It re-reads five files already verified.
+- It does **not** clear the rest of this audit. Other findings that name a row
+  were not re-derived, so their numbers are unmeasured here, not confirmed.

@@ -11750,15 +11750,22 @@ Three properties hold in all five files:
 
   | case | `ts-preserve-other-service` | other service |
   |---|---|---|
-  | auth | `820-868`, `958-960` | `ts-payment-service` `566-571`, `881-916` |
-  | order | `319-322`, `812-817` | -- |
-  | route | `600-615` | `ts-preserve-service` `111-126` |
-  | train | `349-358`, `489-499` | `ts-payment-service` `839-841` |
-  | travel | `137-139` | -- |
+  | auth | `822-870`, `960-962` | `ts-payment-service` `568-573`, `883-918` |
+  | order | `321-324`, `814-819` | -- |
+  | route | `602-617` | `ts-preserve-service` `113-128` |
+  | train | `351-360`, `491-501` | `ts-payment-service` `841-843` |
+  | travel | `139-141` | -- |
 
   Runs of 3 to 49 rows, at different rows in every file, and **the series
   resumes**. Finding 120's suffix was the endpoint case of intermittent dropout,
   not the general shape.
+
+  Rows are **physical file lines**, header included, which is the convention the
+  reader's own refusal message uses (`reason=data.csv line 195` on the member
+  finding 120 read, where the first `NaN` is on physical line 195). This table
+  originally carried `physical - 2`; finding 122 re-derived all eight interval
+  groups against the cached members and corrected them. Every run **length** was
+  already right, so the shape claim above is unaffected.
 
 ## Why the `NaN` is there, measured rather than assumed
 
@@ -11893,3 +11900,98 @@ asks the same question the guard does.
   counter-example rather than a footnote.
 - It does **not** claim the two RE1-SS failures share this cause. They remain
   unread individually.
+
+## Finding 122 — the run table in finding 121 is off by two lines, and every run length in it is right
+
+**Status:** re-derived from the five members finding 121 cached, all still on
+disk. Corrects the row labels in that finding's run table. The substantive claim
+is unaffected.
+
+## How this was found
+
+Not by auditing finding 121. By checking whether the pass that wrote the Chinese
+documentation had published numbers that reproduce. Finding 121's five members
+are still at `/tmp/t-{auth,order,route,train,travel}.csv` -- 12.8 MB each, the
+same bytes the round trip consumed -- so the table's intervals can be re-derived
+rather than trusted, and `verify-v121-rows.py` does that.
+
+It reproduces every `NaN` count exactly (752 / 80 / 256 / 192 / 24 cells; 16 / 8
+/ 16 / 16 / 8 columns) and every affected-service set. Then it reaches the run
+table and finds **all eight interval groups shifted**.
+
+| case | service | finding 121 | re-measured (physical line) |
+|---|---|---|---|
+| auth | `ts-preserve-other-service` | `820-868`, `958-960` | `822-870`, `960-962` |
+| auth | `ts-payment-service` | `566-571`, `881-916` | `568-573`, `883-918` |
+| order | `ts-preserve-other-service` | `319-322`, `812-817` | `321-324`, `814-819` |
+| route | `ts-preserve-other-service` | `600-615` | `602-617` |
+| route | `ts-preserve-service` | `111-126` | `113-128` |
+| train | `ts-preserve-other-service` | `349-358`, `489-499` | `351-360`, `491-501` |
+| train | `ts-payment-service` | `839-841` | `841-843` |
+| travel | `ts-preserve-other-service` | `137-139` | `139-141` |
+
+Every published pair is **exactly two lower** than the file. Uniformly, across
+five files and eight groups, including runs in different services at different
+rows -- so it is a convention error, not a transcription slip in one cell.
+
+## Which convention is right, and how that was decided
+
+Three numberings are in play on the same file, and one of them is already
+pinned by a measurement taken earlier:
+
+| convention | first `NaN` in auth's `ts-preserve-other-service_istio-latency-50` |
+|---|---|
+| physical file line (header = line 1) | **822** |
+| data row (1-based, header excluded) | 821 |
+| finding 121's table | 820 |
+
+The reader settles it. In finding 121's own battery output the refusal names its
+position:
+
+```
+ROUNDTRIP FAIL 314/375 RE1-TT/ts-route-service_disk/4  reason=data.csv line 195
+  column 'ts-preserve-other-service_istio-latency-50' is not a finite number: 'NaN'
+```
+
+Finding 120 read that same member, so its `data.csv line 195` can be checked
+against the bytes: on `/tmp/route4.csv` the first `NaN` in that column is on
+physical line **195**. The reader's "line" therefore counts the header, and
+finding 121's table is `physical - 2`, which is neither of the two coherent
+conventions. **The physical line is what the shipped code reports**, so it is
+what a table read out of that code should carry.
+
+This is the same defect finding 120 already carries and finding 121 repeated: its
+prose recorded the onset as "row 193" while its own error message for the same
+cell said line 195. Finding 121 corrected the *shape* of that observation --
+suffix to interior run -- and inherited the numbering without re-deriving it.
+
+## What is not affected
+
+**Every run length is right, to the row.** 49 / 3 / 6 / 36 / 4 / 6 / 16 / 16 /
+10 / 11 / 3 / 3, unchanged under the shift, minimum 3 and maximum 49. So the
+claim the pass actually rests on -- *the gaps are interior runs that resume,
+3 to 49 rows, not finding 120's suffix* -- survives intact. What moved is only
+where the runs are labelled as sitting, and a reader who wanted to look at one
+in the file would have landed two lines early.
+
+That distinction is the point of recording this rather than quietly fixing it. A
+label that is wrong is cheaper than a measurement that is wrong, and both are
+invisible to every guard here: no test reads a row number out of `audit.md`, so
+a wrong one is a claim with nothing checking it -- the shape this audit has now
+named at finding 104 (a published number nothing re-reads), 107 (a test reading
+the wrong table), 120 (a `store` inferred from a zero-length member) and 121 (a
+fix credited to the layer that does not carry it).
+
+The difference from those four: this one was caught **by the next pass needing
+the number to be true** in order to publish it in a second language, which is
+the only mechanism in this repository that re-reads a committed measurement.
+
+## What this does not do
+
+- It does **not** change any count, length, service set or round-trip result from
+  finding 121. Those all re-derived exactly.
+- It does **not** re-measure anything from the archive. It re-reads five files
+  that were already fetched and crc32-verified.
+- It does **not** claim row numbers elsewhere in this audit are correct. It
+  establishes that this table's are not, and that the convention is the physical
+  line; other findings that name a row were not re-derived here.
