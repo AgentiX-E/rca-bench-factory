@@ -176,5 +176,14 @@ describe('ci · every aggregate doc guard reaches the pipeline', () => {
     // Pinned by name so the specific omission this file was written for cannot
     // return through a general mechanism that happens to be satisfied.
     expect(scriptsIn(docsCheck!)).toContain('scripts/check-l4-status.mjs');
+
+    // The inventory guard, pinned by name.
+    //
+    // The generic rule above proves that everything *in* `docs:check` reaches CI.
+    // It says nothing about what is in the aggregate, so deleting a guard from
+    // `docs:check` -- which removes it from CI and from the local aggregate in
+    // one edit -- passes all seven tests. This assertion is that missing half:
+    // the site inventory is checked on every run or the test says so.
+    expect(scriptsIn(docsCheck!)).toContain('scripts/derive-gate-sites.mjs');
   });
 });

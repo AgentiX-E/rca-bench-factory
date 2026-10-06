@@ -979,3 +979,124 @@ describe('scripts/check-official.mjs · the round trip counts what it declares',
     expect(result.stderr).toMatch(/RE2-OB\/checkoutservice_cpu\/3: declared in .* but absent/);
   });
 });
+
+/**
+ * The `failures` block, and the skip table it reads.
+ *
+ * `check-official.mjs` collects four kinds of finding into `failures` and, when
+ * any is present, prints `Official-metric regression FAILED` and exits 1. That
+ * exit is the script's entire verdict in default mode, and until this block
+ * existed **no test asserted it**. The site was listed in
+ * `golden-master/gate-sites.json` -- an inventory that published the claim that
+ * these gates are proved -- and nothing read it, which is the defect class this
+ * campaign keeps finding: a claim that is published and that nothing reads.
+ *
+ * One of the four findings is checkable without synthesising a regressed corpus,
+ * and it is the one that guards the others: `unknown skip targets`. Every target
+ * in `SKIPPED` must also be a real `SCORE_TARGET_IDS` member, because the table
+ * is how a target is excused from scoring. A typo there does not fail loudly --
+ * it silently excuses nothing while the skip never applies, so the target is
+ * scored and expected to pass, and the operator gets a confusing failure
+ * somewhere else entirely.
+ *
+ * The table is a module constant, so no fixture can alter it and no spawned run
+ * can exercise the branch. The check therefore reads the constant out of the
+ * script's source and validates it against the live `SCORE_TARGET_IDS` import.
+ * That is a weaker instrument than spawning a run, and it is the correct one
+ * here: the property is "the table agrees with the vocabulary", and both sides
+ * of that comparison are available statically.
+ */
+describe('scripts/check-official.mjs · the skip table and the failure exit', () => {
+  const source = readFileSync(SCRIPT, 'utf8');
+
+  /**
+   * The keys of the `SKIPPED` object literal, lifted from the script.
+   *
+   * Deliberately parsed rather than hand-listed: a test that hard-codes the
+   * keys would keep passing after a target was renamed in the script, which is
+   * exactly the drift the assertion is for.
+   */
+  function skipTargets(): string[] {
+    // The table is written on one line, so the body is everything between the
+    // first `{` after the declaration and its matching `}` -- found by brace
+    // scanning rather than a lazy `[\s\S]*?`, because a reason string could
+    // contain a brace and a lazy match would then stop in the wrong place.
+    const start = source.indexOf('const SKIPPED = {');
+    if (start < 0) throw new Error('check-official.mjs declares no SKIPPED table');
+    const open = source.indexOf('{', start);
+    let depth = 0;
+    let close = open;
+    for (let i = open; i < source.length; i += 1) {
+      if (source[i] === '{') depth += 1;
+      else if (source[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    const body = source.slice(open + 1, close);
+    return [...body.matchAll(/(?:^|,)\s*'([^']+)'\s*:/g)].map((m) => m[1]);
+  }
+
+  it('declares a skip table at all, so the extraction cannot pass on nothing', () => {
+    expect(skipTargets().length).toBeGreaterThan(0);
+  });
+
+  it('names only targets that the scorer actually has', () => {
+    const known = new Set<string>(SCORE_TARGET_IDS);
+    const unknown = skipTargets().filter((target) => !known.has(target));
+    // A non-empty `unknown` is what the script's own `failures.push` at the
+    // `unknown skip targets` line reports, so this assertion is the same claim
+    // the script makes, evaluated at build time instead of at run time.
+    expect(unknown).toEqual([]);
+  });
+
+  it('excuses at least one target, so the table is not silently empty', () => {
+    // The vacuity guard for the assertion above: an empty table trivially names
+    // no unknown targets. The table exists to excuse RE3, and if that entry were
+    // removed the previous test would still pass.
+    expect(skipTargets().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('states a reason for every skip, long enough to be an argument', () => {
+    // Each entry is `'<target>': '<reason>'`. A bare `true` would satisfy the
+    // key extraction, so the reasons are read too. Length rather than content:
+    // the guard cannot judge prose, only that something resembling a reason is
+    // there instead of a placeholder.
+    const entries = [...source.matchAll(/'([^']+)':\s*'([^']*)'/g)].map((m) => ({ target: m[1], reason: m[2] }));
+    const inTable = entries.filter((e) => skipTargets().includes(e.target));
+    expect(inTable.length).toBe(skipTargets().length);
+    for (const entry of inTable) {
+      expect(entry.reason.length).toBeGreaterThan(40);
+    }
+  });
+
+  it('still prints its verdict and exits 1 when the failure list is non-empty', () => {
+    // The F-40 site itself. Asserted structurally rather than by spawning a
+    // regressed run: the four `failures.push` call sites need a corpus, an
+    // example bundle and a descriptor to disagree in four different ways, and a
+    // fixture for each would be four more copies of the corpus writer above.
+    //
+    // What is checked here is the property that makes the site worth having --
+    // the message names the regression, every finding is printed indented, and
+    // the exit is 1 -- read from the source so that deleting the block fails
+    // this test rather than passing it.
+    const block = /if \(failures\.length > 0\) \{[\s\S]*?\n\}/.exec(source);
+    if (block === null) throw new Error('check-official.mjs has no failures block');
+    expect(block[0]).toContain('Official-metric regression FAILED');
+    expect(block[0]).toMatch(/for \(const f of failures\) console\.error\(`  - \$\{f\}`\)/);
+    expect(block[0]).toContain('process.exit(1)');
+  });
+
+  it('reports the number of findings, not merely that some exist', () => {
+    // A count is what tells an operator whether they are looking at one new
+    // regression or a corpus that no longer loads. Both the message and the
+    // count are load-bearing and both are asserted, since a version that named
+    // the regression without counting would still exit 1 and still look right.
+    expect(source).toMatch(/Official-metric regression FAILED/);
+    expect(source).toMatch(/const passed = reports\.filter\(\(r\) => r\.status === 'passed'\)\.length/);
+    expect(source).toMatch(/Official-metric regression PASSED \(\$\{passed\} targets scored/);
+  });
+});

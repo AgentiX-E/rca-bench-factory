@@ -32,22 +32,27 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'check-doc-counts.mjs');
 
 /**
- * A live measurement, supplied rather than taken, so the suite stays fast.
+ * The committed measurement, read rather than copied.
  *
- * These are the counts the *shipped* `docs/progress.md` publishes in its
- * current-state rows, and the non-vacuity test below drives the guard against
- * that file with this value. So when a test is added and the real counts move,
- * this object must move with them -- and it has to, because the guard's third
- * rule is now an equality. It was a bound (`row > live`) in the first version,
- * which meant a stale value here went unnoticed; the mutation battery is what
- * forced the change, and this const is the first thing that change made
- * load-bearing.
+ * `golden-master/doc-counts.json` is the one account of how large the suite is,
+ * and `pnpm docs:counts:check` is what keeps it current. This file used to embed
+ * its own copy of the same three numbers so the suite would not have to spawn
+ * `measure-doc-counts.mjs` -- which is right, since that script runs the whole
+ * suite three times and would recurse.
+ *
+ * The copy was the problem. The guard's third rule is an equality between the
+ * published rows and a live measurement, so adding a test moved the real counts
+ * and left this constant stale, and the failure surfaced as a confusing complaint
+ * about the guard rather than about the constant. Worse, retaking the measurement
+ * to fix it changed the counts again, because updating *this* file is itself a
+ * change to the suite: one round of that is an annoyance, and it does not
+ * converge.
+ *
+ * Reading the committed file breaks the loop. It cannot go stale, because
+ * `pnpm docs:counts:check` fails when it does, and the measurement it holds is
+ * taken by a script that runs outside the suite.
  */
-const MEASURED = JSON.stringify({
-  core: { files: 109, tests: 3073 },
-  cli: { files: 3, tests: 173 },
-  repo: { files: 112, tests: 3246 },
-});
+const MEASURED = readFileSync(resolve(ROOT, 'golden-master', 'doc-counts.json'), 'utf8').trim();
 
 const dirs: string[] = [];
 
@@ -193,19 +198,15 @@ describe('check-doc-counts', () => {
     expect(n).toBeGreaterThanOrEqual(5);
   });
 
-  // MEASURED above is a copy of what the shipped document publishes, and the
-  // test above needs it to be that copy. When a test is added the real counts
-  // move, and this file then disagrees with `docs/progress.md` in a way only the
-  // test above would notice -- as a confusing failure about the guard rather
-  // than about the stale constant. Measured: that is not hypothetical. Making
-  // the guard's third rule an equality turned this constant load-bearing, and
-  // the full suite went red on the very next run because it still held the
-  // previous counts.
+  // The non-vacuity test above drives the guard against the shipped document
+  // using the committed measurement, and it only means something if those two
+  // agree. Before this test existed the agreement was assumed, and when it broke
+  // the failure looked like a defect in the guard.
   //
-  // So the agreement is asserted directly. This does not check the counts are
-  // *current* -- `golden-master/doc-counts.json` is what does that, via
-  // `pnpm docs:counts:check` -- only that this fixture and the document it
-  // claims to mirror say the same thing.
+  // Asserted directly here. This does not check the counts are *current* --
+  // `pnpm docs:counts:check` does that, against a measurement taken outside the
+  // suite -- only that the committed measurement and the document that quotes it
+  // say the same thing.
   it('holds the same counts as the shipped document it mirrors', () => {
     const doc = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8');
     const live = JSON.parse(MEASURED) as Record<string, { files: number; tests: number }>;

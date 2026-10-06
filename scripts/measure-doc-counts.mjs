@@ -37,6 +37,11 @@
  *   node scripts/measure-doc-counts.mjs
  *   node scripts/measure-doc-counts.mjs --out /tmp/doc-counts.json
  *   node scripts/measure-doc-counts.mjs --check   # fail if the committed file is stale
+ *
+ * `--check` against a missing `--out` fails before measuring anything. The
+ * comparison could not have succeeded, so the three suites are not worth
+ * spawning to find that out, and the short circuit is what lets the test suite
+ * prove this failure path without recursing.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -120,13 +125,31 @@ function serialise(counts) {
 
 function main() {
   const out = argValue('--out') ?? DEFAULT_OUT;
+  const checking = process.argv.includes('--check');
+
+  /**
+   * The existence precondition is checked *before* the measurement.
+   *
+   * It used to run after, which meant `--check` against a tree with no
+   * committed measurement spawned all three suites -- roughly a minute of work
+   * -- and then reported that the file it was comparing against was not there.
+   * The comparison could never have happened, so every one of those child
+   * processes was wasted. Checking first makes the failure immediate, and it is
+   * also what makes this branch affordable to test: the guard site is reached
+   * without running a suite, so a unit test can assert its message without
+   * recursing into vitest from vitest.
+   */
+  if (checking && !existsSync(out)) {
+    fail([
+      `no committed measurement at ${out}.`,
+      'Run `node scripts/measure-doc-counts.mjs` to take one.',
+    ]);
+  }
+
   const measured = measure();
   const text = serialise(measured);
 
-  if (process.argv.includes('--check')) {
-    if (!existsSync(out)) {
-      fail([`no committed measurement at ${out}.`, 'Run `node scripts/measure-doc-counts.mjs` to take one.']);
-    }
+  if (checking) {
     const committed = readFileSync(out, 'utf8');
     if (committed !== text) {
       fail([

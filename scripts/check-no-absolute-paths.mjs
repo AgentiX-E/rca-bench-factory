@@ -29,6 +29,11 @@
  *     or the absolute checkout path of this repository as a literal;
  *   - `/tmp` in a string literal that a script then reads back, which is fragile
  *     across containers even when it resolves.
+ *
+ * ## Usage
+ *
+ *   node scripts/check-no-absolute-paths.mjs
+ *   node scripts/check-no-absolute-paths.mjs --root <dir>   # scan just this tree
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -38,12 +43,37 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 /** Every place executable code lives, excluding build output and dependencies. */
-const SCAN_ROOTS = [
+const DEFAULT_SCAN_ROOTS = [
   resolve(ROOT, 'scripts'),
   resolve(ROOT, 'packages/core/src'),
   resolve(ROOT, 'packages/cli/src'),
   resolve(ROOT, 'golden-master'),
 ];
+
+/**
+ * Where to scan.
+ *
+ * `--root <dir>` replaces the default list, which is what makes this gate
+ * falsifiable at all. Until it existed the gate had **no test**: every other
+ * gate in this tree accepts a path or a fixture root, so a test could point it
+ * at a tree it had synthesised, and this one only ever scanned the shipped
+ * checkout -- which is clean, so the only observable outcome was green. A gate
+ * that can only be run against a passing input is a gate nobody has seen fail,
+ * which is the state the roadmap's P1-6 item was written about.
+ *
+ * The flag is additive on purpose: with no argument the behaviour is exactly as
+ * before, so `pnpm lint` is unaffected.
+ */
+function scanRoots() {
+  const roots = [];
+  for (let i = 2; i < process.argv.length; i += 1) {
+    if (process.argv[i] === '--root' && process.argv[i + 1] !== undefined) {
+      roots.push(resolve(process.argv[i + 1]));
+      i += 1;
+    }
+  }
+  return roots.length > 0 ? roots : DEFAULT_SCAN_ROOTS;
+}
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.git', '.turbo']);
 
@@ -80,7 +110,7 @@ function walk(dir) {
 
 const failures = [];
 
-for (const root of SCAN_ROOTS) {
+for (const root of scanRoots()) {
   for (const file of walk(root)) {
     if (!/\.(mjs|cjs|js|ts|json|sh|py)$/.test(file)) continue;
     const text = readFileSync(file, 'utf8');

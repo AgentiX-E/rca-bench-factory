@@ -3117,9 +3117,9 @@ measurement, so it passed either way. It now uses deliberately stale counts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **109 files, 3073 tests passed** (as of this commit) |
+| `core` test suite | **114 files, 3161 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **112 files, 3246 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| repo test suite | **117 files, 3334 tests passed** (`pnpm test`, every workspace; as of this commit) |
 | break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
 | `check-doc-counts` tests | 14 passed |
 | `ci-reaches-doc-guards` tests | 7 passed |
@@ -3166,3 +3166,61 @@ Seven commits were required to bring the remote up to date (`41db68f9` was the
 previous remote tip). Each was pushed through the Git Data API and the ref was
 moved one commit at a time, because the API rejects a commit whose parent it does
 not already have.
+
+## Finding 124 — the gate inventory
+
+The P1-6 item asked for an account of every failure site in `scripts/` and which
+test proves each. That is now `golden-master/gate-sites.json`, derived rather than
+hand-written, with three annotations per site.
+
+| item | before | after |
+| --- | --- | --- |
+| failure sites recorded | 25 (hand-counted) | **38** (derived, `--check` in `docs:check`) |
+| sites proved by a named test | 5 | **38** |
+| gates in `lint` with no test of their own | 1 (`check-no-absolute-paths.mjs`) | **0** |
+| scripts classified in a register | 0 of 32 | **32 of 32** |
+
+### The three annotations
+
+Each site carries `status` (`proved` or `exempt`), `provedBy` (the test file) and
+`reason` (an argument, for exemptions). They are hand-authored, and
+`packages/core/test/gate-sites-are-proven.test.ts` reads them: the pointer must
+resolve *and* the file it names must mention the script it proves, so a real path
+pointing at an unrelated test fails.
+
+### What the enumeration found
+
+Six sites had no test. Four are built-module guards in three probes, one is the
+`fail()` helper in `measure-doc-counts.mjs`, and one is `check-official.mjs`'s
+regression verdict. All six were correct and none was guarded -- the `dist/` tree
+always exists after a build, so the guards never fired.
+
+Proving them exposed two real bugs: `measure-doc-counts.mjs` checked a cheap
+precondition *after* spawning three test suites (65s of child processes to report
+that the file it needed was absent, now 0.02s), and the `probe-category-derivation`
+guard pair was only half proved because a fixture with no `dist/` lets the second
+guard stand in for the first.
+
+### The register
+
+`packages/core/test/scripts-are-classified.test.ts` classifies all 32 scripts as
+`gate`, `probe`, `computed-probe`, `harness`, `tool` or `data`, and three
+consistency rules hold the register to the inventory. Writing it immediately
+found two scripts no test names and three probes whose exit argument is computed
+(`process.exit(main())`), which is why the deriver reports `excluded.computed` as
+6 -- an exclusion that was previously an omission rather than a decision.
+
+### Also in this pass
+
+- The `functions` coverage threshold was raised from 95 to **100** in both
+  packages. The CI step name advertised 100 and the configs said 95, and the
+  measured value was 100 by luck rather than by construction.
+- `check-no-absolute-paths.mjs` gained `--root <dir>` and **27 tests**, closing
+  the last untested gate in the `lint` chain.
+- `check-official.mjs`'s `failures` block and its `SKIPPED` table gained 6 tests.
+- `check-doc-counts.test.ts` no longer embeds a copy of the suite counts; it reads
+  `golden-master/doc-counts.json`. The copy made the file part of what it
+  measured, so retaking a measurement changed the measurement.
+
+Every claim above was verified by mutation: the gate was disabled, the intended
+test observed to fail, and the file restored byte-identically.

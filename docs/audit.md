@@ -12114,3 +12114,151 @@ with the document, which is the drift above.
 
 Measured after all of it: core **109 files / 3073 tests**, cli **3 / 173**,
 repo **112 files / 3246 tests**.
+
+---
+
+## Finding 124 — the site inventory published 38 failure sites, and the four nobody had tested were found by enumerating them rather than by reading the code
+
+`docs/progress.md`'s P1-6 item asked for an account of every `process.exit(1)` in
+`scripts/` and which test proves each one. Two passes earlier that table listed
+25 sites and admitted the covered count was 5. The number was wrong in both
+directions: there were 37, and the covered count was 30.
+
+### The measurement
+
+A deriver walks `scripts/`, keeps the calls in statement position, and writes a
+fingerprint for each: the enclosing `if` condition and the diagnostic printed
+immediately before the exit. `golden-master/gate-sites.json` is the result.
+
+| shape | count | why excluded |
+| --- | --- | --- |
+| `process.exit(1)` in statement position | **37** | the sites |
+| `process.exit(1)` in the deriver itself | 1 | it is also a site, and lists itself |
+| `process.exit(0)` | 6 | success, not failure |
+| another numeric status | 1 | not the failure constant |
+| a computed argument, `process.exit(main())` | 6 | no literal to fingerprint |
+
+The four wrong counts before this finding are all the same root cause: the first
+draft matched `process.exit(1)` anywhere on a line. That counted the deriver's own
+matching code as sites, and it counted `process.exit(1)` inside comments and
+strings. Requiring statement position fixed the over-count, and requiring the
+argument to be a literal fixed `excluded.numeric_other`, which had reported 38 --
+every site -- because the tally never subtracted the failure sites from the set it
+was supposed to be complementing.
+
+### The four sites no test could reach
+
+Cross-referencing the 38 against the suite found four with no test at all:
+
+| site | what it guards |
+| --- | --- |
+| `probe-category-derivation.mjs:80` | `packages/core/dist/fault/category-derivation.js` is missing |
+| `probe-category-derivation.mjs:90` | `packages/core/dist/fault/miss-detail.js` is missing |
+| `probe-agreement-baseline.mjs:61` | `packages/core/dist/fault/agreement-baseline.js` is missing |
+| `probe-denial-inventory.mjs:63` | `packages/core/dist/fault/denial-inventory.js` is missing |
+| `measure-doc-counts.mjs` `fail()` | no committed measurement, and a stale one |
+| `check-official.mjs:564` | the official-metric regression verdict |
+
+All six were correct. None was guarded. They were unguarded for a specific
+reason, and it is the reason this campaign keeps finding: the `dist/` tree always
+exists once anything has been built, so the guards never fired in any run and
+appeared covered by accident. `check-official.mjs:564` was worse -- the entire
+`failures` block was unreachable without a regressed corpus, and the `SKIPPED`
+table it reads had no test at all.
+
+### The reachability problem, and the two bugs fixing it exposed
+
+Each probe derives its repository root from its own location, so copying one into
+a throwaway tree with a `scripts/` directory and no `packages/` makes the guard
+fire. That is how the four probe sites are proved. Two things came out of doing
+it:
+
+1. **`measure-doc-counts.mjs` checked its existence precondition *after*
+   measuring.** `--check <missing>` therefore spawned three test suites -- one of
+   which is this one -- and then reported that the file it was going to compare
+   against was not there. The comparison could never have happened, so the child
+   processes were pure waste, and the branch was unreachable from the suite it
+   protects because reaching it recursed. Moving the check in front of `measure()`
+   fixed both: the run is 0.02s instead of 65s, and the site is provable.
+2. **`probe-category-derivation.mjs` has two guards, not one.** The first draft of
+   the test listed only the `BUNDLE` guard of each probe, and mutation testing
+   caught it: neutering the *first* `process.exit(1)` left the file green, because
+   the scratch tree has no `dist/` and the *second* guard fired in its place. The
+   fixture now supplies the downstream bundle so the first guard's absence is
+   observable, and the two are proved independently.
+
+### The gates
+
+Two new test files, TDD throughout, every assertion paired with the gate's reason
+text and the anti-crash clauses (`Cannot find module`, `node:internal` stack
+frames).
+
+`check-no-absolute-paths.mjs` was the last gate in `lint` with **no test of its
+own**. Every other gate accepts a fixture root, so a test can point it at a
+synthesised tree; this one scanned only the checked-out repository, which is
+clean, so its only reachable outcome was green. `--root <dir>` was added
+additively -- with no argument the scan list is byte-identical to what `pnpm lint`
+always ran -- and 27 tests now drive it. Measured: four mutations, each caught by
+the intended tests. Neutering the failure branch fails 15. Removing the comment
+stripping fails the two exemption tests. Narrowing the extension allowlist fails
+2. Emptying `SKIP_DIRS` fails 1.
+
+`golden-master/gate-sites.json` carries three hand-authored columns -- `status`,
+`provedBy`, `reason` -- and `packages/core/test/gate-sites-are-proven.test.ts`
+reads them under six rules: the file matches a fresh derivation, every site is
+proved or exempt, `provedBy` names a test that exists *and mentions the script*,
+exemptions carry distinct reasons over 40 characters, the inventory holds at least
+30 sites, and the rules can fail. Rule 6 is what found a defect in the guard
+itself: the `provedBy` check in the exempt branch sat after a `continue`, so an
+exempt site that also named a test passed the check written to catch it.
+
+### The register
+
+`gates-are-testable.test.ts` proves four gates with four hand-written `describe`
+blocks, and nothing asked whether the list was complete. Adding a gate to
+`scripts/` therefore added an unproved one and no test noticed.
+`packages/core/test/scripts-are-classified.test.ts` closes it: all 32 `scripts/*.mjs`
+are classified as `gate`, `probe`, `computed-probe`, `harness`, `tool` or `data`,
+and three consistency rules hold the register to the inventory -- gates and probes
+are exactly the scripts with a literal failure exit, every one of them appears in
+`gate-sites.json`, and nothing filed as `tool` or `harness` may appear there.
+
+Writing the register immediately found two scripts no test names
+(`serve-site.mjs`, `probe-category-inference.mjs`) and three probes whose exit
+argument is computed (`probe-m1-ceiling.mjs`, `probe-type-misses.mjs`,
+`probe-category-inference.mjs`). The second group is why the deriver reports
+`excluded.computed` as 6: a computed status has no literal threshold to
+fingerprint, so those sites are excluded by design -- and until the register
+existed that exclusion was an omission rather than a decision.
+
+Both new files hit the self-reference trap the repository documents: an
+enumeration gate is only worth its name when its list is independent of the thing
+it enumerates. The register names every script, so it had to be excluded from its
+own corpus before the "which scripts does no test name?" question could be asked.
+
+### Verified
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **114 files, 3161 tests passed** |
+| `cli` test suite | **3 files, 173 tests passed** |
+| repo test suite | **117 files, 3334 tests passed** |
+| core coverage | `99.96 / 99.91 / 100 / 99.96` |
+| cli coverage | `100 / 100 / 100 / 100` |
+| `functions` threshold | raised to **100** in both packages, with a guard test |
+| site inventory | **38 sites, 38 proved, 0 exempt** |
+| `check-no-absolute-paths` tests | **27 passed**, 4 mutations caught |
+| built-module guard tests | **17 passed**, 4 mutations caught |
+| site-inventory guard tests | **22 passed** |
+| script-register guard tests | **10 passed**, 4 mutations caught |
+| F-40 (`check-official.mjs:564`) | 6 new tests, 3 mutations caught |
+| `pnpm lint` / `docs:check` / `typecheck` | all clean |
+
+### A defect found in the harness, not the code
+
+`check-doc-counts.test.ts` embedded its own copy of the suite counts. Because the
+guard's third rule is an *equality*, adding a test moved the real counts and left
+that copy stale, and retaking the measurement to fix it changed the counts again --
+the file was part of the thing it measured. One round is an annoyance; it does not
+converge. The copy is gone and the test now reads `golden-master/doc-counts.json`,
+which a script outside the suite is responsible for.
