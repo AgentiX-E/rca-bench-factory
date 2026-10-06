@@ -146,6 +146,26 @@ interface Inventory {
 const committed: Inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
 
 /**
+ * The time a rule-checking test is allowed.
+ *
+ * Stated rather than inherited, because the inherited default was wrong. These
+ * tests read every proving file and scan it for spawns, so their cost scales with
+ * the size of the test corpus -- which grows by design. The first CI run after
+ * this file's corpus grew reported `Test timed out in 5000ms` on
+ * `accepts the shipped tree` while the same test passed locally in 5.3s: vitest's
+ * default is five seconds, so the verdict was about scheduling and not about the
+ * rule.
+ *
+ * This repository has recorded that shape before and rejected the obvious
+ * non-fixes. Raising the number is not the fix on its own -- the repeated file
+ * reads are cached above, which removes most of the work rather than granting
+ * more time to repeat it. What remains is genuinely proportional to the corpus,
+ * and a corpus-proportional test needs a budget that is stated and generous
+ * rather than a default that happens to have held until now.
+ */
+const RULE_TIMEOUT_MS = 60_000;
+
+/**
  * The reasons a site may be exempt, each a full sentence.
  *
  * Kept as a list rather than free text so that adding an exemption is a visible
@@ -316,6 +336,35 @@ function inferredDrives(body: string): string[] {
 }
 
 /**
+ * The body of a proving file, read once per file per run.
+ *
+ * `violationsOf` is called by every rule below and reads each proving file to
+ * search it for the script's name and for the spawn that reaches it. With 40
+ * sites across 26 scripts that is ~40 reads and ~40 brace-scans of the same
+ * growing test corpus, and the work is identical for every call -- the files do
+ * not change mid-run.
+ *
+ * The cache is not a micro-optimisation. On CI this test crossed vitest's 5000ms
+ * default and failed with `Test timed out in 5000ms` while passing locally at
+ * 5.3s, which is the "green when run alone" shape this repository has already
+ * recorded as a coincidence about scheduling rather than a test. Caching removes
+ * the repeated work instead of granting more time to repeat it, and the explicit
+ * budget below states what remains.
+ *
+ * Keyed by resolved path, so two fixtures with the same relative name cannot
+ * share an entry.
+ */
+const bodyCache = new Map<string, string>();
+
+function provingBody(path: string): string {
+  const cached = bodyCache.get(path);
+  if (cached !== undefined) return cached;
+  const body = readFileSync(path, 'utf8');
+  bodyCache.set(path, body);
+  return body;
+}
+
+/**
  * Check every rule except rule 1, so the same function can be run against a
  * corrupted inventory below. Returns the list of violations; empty means valid.
  *
@@ -343,7 +392,7 @@ function violationsOf(inventory: Inventory, root: string): string[] {
       const target = resolve(root, site.provedBy);
       let body: string;
       try {
-        body = readFileSync(target, 'utf8');
+        body = provingBody(target);
       } catch {
         problems.push(`${where} names ${site.provedBy}, which does not exist`);
         continue;
@@ -461,8 +510,10 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
 
   describe('rule 2 and 3 · every site names its proof or its exemption', () => {
     it('has no rule violations against the shipped tree', () => {
+      // Reads every proving file in the corpus, so it carries the stated budget
+      // rather than vitest's five-second default -- see `RULE_TIMEOUT_MS`.
       expect(violationsOf(committed, ROOT)).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it('proves at least one site, so the file is not entirely exemptions', () => {
       expect(committed.sites.filter((s) => s.status === 'proved').length).toBeGreaterThan(0);
@@ -603,17 +654,20 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // above and accepts the real file. Without this, a function that rejected
       // everything would satisfy every test in this block.
       expect(violationsOf(committed, pointerRoot())).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
   });
 
   describe('rule 7 · a proof that only spells the script is not a proof', () => {
     it('accepts the shipped tree, so the rule is not merely strict', () => {
-      // The negative control. Every one of the 38 sites' proving files declares
-      // what it drives and does so consistently, which is what makes the
-      // rejections below meaningful rather than a sign the rule rejects all.
+      // The negative control. Every one of the sites' proving files declares what
+      // it drives and does so consistently, which is what makes the rejections
+      // below meaningful rather than a sign the rule rejects all.
+      //
+      // This is the test that first reported `Test timed out in 5000ms` on CI
+      // while passing locally, which is why the budget below is stated.
       const problems = violationsOf(committed, pointerRoot());
       expect(problems.filter((p) => p.includes('DRIVES') || p.includes('disagree'))).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it('rejects a proved file that names the script but never reaches a spawn', () => {
       // The defect rule 7 was written for, reproduced as a fixture. The file
