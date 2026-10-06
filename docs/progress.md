@@ -3134,3 +3134,35 @@ measurement, so it passed either way. It now uses deliberately stale counts.
   present in CI. Same asymmetry as finding 112.
 - It does **not** cover count shapes outside the three patterns `readCounts`
   recognises. A fourth shape would be found by nothing.
+
+
+### CI confirmation for Pass 35
+
+The push was verified against the remote ref rather than trusted, as finding 116
+requires. Remote `master` equals local HEAD on both repositories, and both are
+authored `Lambertyan`:
+
+| repository | remote `master` | local HEAD | author |
+| --- | --- | --- | --- |
+| `rca-bench-factory` | `6d4497179` | `6d4497179` | Lambertyan |
+| `rca-bench-factory-docs` | `65423825d` | `65423825d` | Lambertyan |
+
+CI ran on `6d4497179` (run `37394835054`) and completed **success**. The two
+steps that matter for this pass both passed:
+
+```
+Test with coverage (core + cli, >=95% per dimension, 100% functions) -> success
+Mutation suite (gate + export, 100% interception)                    -> success
+Documentation guards are satisfied                                   -> success
+```
+
+`Documentation guards are satisfied` is the aggregate `pnpm docs:check`, and it
+is the step that runs `check-doc-counts.mjs`. So the new gate is not merely
+present in the repository and green locally -- it executes in the pipeline, which
+is the fact `ci-reaches-doc-guards.test.ts` was written to make structural rather
+than remembered.
+
+Seven commits were required to bring the remote up to date (`41db68f9` was the
+previous remote tip). Each was pushed through the Git Data API and the ref was
+moved one commit at a time, because the API rejects a commit whose parent it does
+not already have.
