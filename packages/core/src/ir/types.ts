@@ -100,8 +100,19 @@ export const MISSING_VALUE_TOKENS = ['NaN'] as const;
 /** A declared missing value. Derived from `MISSING_VALUE_TOKENS`. */
 export type MissingValueToken = (typeof MISSING_VALUE_TOKENS)[number];
 
-/** Where a field value came from. */
-export type ProvenanceSource = 'direct' | 'derived' | 'inferred' | 'defaulted';
+/**
+ * Where a field value came from, declared once.
+ *
+ * Published in `docs/data-model.md`, so it is a tuple rather than a bare union
+ * for the same reason the payload vocabularies are: the schema that *admits* a
+ * provenance record must read this list rather than restate it. It was a bare
+ * union while `ir/schema.ts` carried its own copy of the four literals -- the
+ * union and the admission list, stated twice, agreeing only by luck.
+ */
+export const PROVENANCE_SOURCES = ['direct', 'derived', 'inferred', 'defaulted'] as const;
+
+/** Where a field value came from. Derived from `PROVENANCE_SOURCES`. */
+export type ProvenanceSource = (typeof PROVENANCE_SOURCES)[number];
 
 export interface FieldProvenance {
   source: ProvenanceSource;

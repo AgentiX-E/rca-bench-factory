@@ -18,3 +18,17 @@ __pycache__/
 # and a committed copy would be one run's verdicts read as if they were the
 # current ones.
 gate-tests-battery-report.json
+
+# `docs/user-guide.md` is a walkthrough a reader runs from the repository root,
+# and these are the three paths it writes: `bundle.json` (step 3), `out/` (step 5)
+# and `report.html` (step 7). `scripts/check-user-guide.mjs` runs that walkthrough
+# on every `docs:check`, so they appear in any tree that has run the gates.
+#
+# Ignoring them is not cosmetic. `typecheck-entrypoint.test.ts` copies every
+# untracked, non-ignored file into a worktree to typecheck them, so an output left
+# behind by one test was being collected by another test as if it were source --
+# and, because the guide gate deletes them before it runs, the two could race.
+# Output a guide produces by being followed is not part of the tree.
+bundle.json
+report.html
+out/

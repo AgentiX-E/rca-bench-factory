@@ -6,6 +6,23 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
 /**
+ * The scripts this file executes.
+ *
+ * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this declaration against
+ * the scripts the spawn calls below actually reach, and reports a disagreement
+ * in either direction: declaring one that is never spawned is as much a
+ * violation as spawning one that is not declared. The declaration is needed
+ * because several of these files drive a gate through a local `run(script)`
+ * helper or a data table, so the script name never appears in a spawn's own
+ * argument list and cannot be inferred from one.
+ */
+const DRIVES = [
+  'scripts/check-no-mock.mjs',
+  'scripts/check-no-secrets.mjs',
+];
+
+
+/**
  * Every gate must be *provably able to fail*.
  *
  * This file exists because one was not. Finding 45 added an enumeration gate to

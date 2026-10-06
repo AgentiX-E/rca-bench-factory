@@ -399,6 +399,7 @@ const TESTED = [
   'MISSING_VALUE_TOKENS',
   'ENTITY_KINDS',
   'FAULT_CATEGORIES',
+  'PROVENANCE_SOURCES',
   'METRIC_SEMANTIC_TYPES',
   'isVocabularyMember',
   // score/dispatch.ts

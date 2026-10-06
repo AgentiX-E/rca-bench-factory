@@ -37,12 +37,14 @@ interface TelemetrySignal {
 Two payload fields are closed sets, and both are **declared once** — as a tuple in
 `ir/types.ts`, with the type derived from it. Anything that admits a value (the
 `source` and `ingest` file readers) reads the same tuple, so the union and the
-admission list cannot disagree.
+admission list cannot disagree. Each row names its tuple, and
+`scripts/check-data-model-vocabularies.mjs` compares the row against that tuple in
+both directions and in order.
 
-| Field | Values |
-|---|---|
-| `LogPayload.severityText` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
-| `TracePayload.status` | `OK`, `ERROR`, `UNSET` |
+| Field | Tuple | Values |
+|---|---|---|
+| `LogPayload.severityText` | `LOG_SEVERITIES` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
+| `TracePayload.status` | `SPAN_STATUSES` | `OK`, `ERROR`, `UNSET` |
 
 ## Layer 2 — `EntityGraph`
 

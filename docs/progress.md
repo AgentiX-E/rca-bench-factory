@@ -3224,3 +3224,104 @@ found two scripts no test names and three probes whose exit argument is computed
 
 Every claim above was verified by mutation: the gate was disabled, the intended
 test observed to fail, and the file restored byte-identically.
+
+## Iteration — F-41 / F-42 / F-43: two more published claims gain a reader, and the guard finds a race in the suite
+
+Three items, all instances of the repository's recurring defect: **a claim that is
+published and that nothing reads.** Findings 125 and 126 in `docs/audit.md` carry
+the arguments; this is the operational summary.
+
+### F-41 — `check-official.mjs`'s failure verdict was published as proved on the strength of a source-text match
+
+The site at the regression verdict was recorded in `golden-master/gate-sites.json`
+as proved, but the only input the script accepted was the shipped example, which
+passes by construction — so the `failures.length > 0` branch was **unreachable**,
+and no test *executed* it. What the test did was regex-match the block's source
+text. A site whose guard cannot fire is not proved by asserting that it is spelled
+correctly.
+
+- `check-official.mjs` gained `--bundle <path>`, additively: with no flag the
+  resolved path is byte-identical to the constant it replaced, proven by `diff` of
+  stdout **and** stderr against the pre-change code (RC=0, 8 targets scored, 1
+  skipped).
+- The structural-only assertion was replaced with a real execution test: a
+  `cases: []` / `signals: {}` bundle must exit 1 with `Official-metric regression
+  FAILED` and indented bullets, and the shipped example must still exit 0.
+
+### F-42 — the user guide's ten blocks were never executed by anything
+
+`docs/user-guide.md` claimed every command was real and runnable verbatim from the
+repository root, and `docs:check` read four guards, none of them this file.
+
+`scripts/check-user-guide.mjs` extracts every ` ```bash ` fence, concatenates them
+in document order under `set -e`, and runs them from the repository root. Two
+fences turned out **not** to be runnable — the round-trip illustration and a
+flag-shape snippet — and one was **invisible** to the extractor because it was
+indented inside a numbered list. The tag is now the contract: `bash` must run,
+`text` is the honest tag for an illustration, and the gate prints a census
+(`bash=9 json=5 text=2 ts=1`) so a re-tagged fence cannot shrink coverage in
+silence.
+
+### F-43 — `data-model.md` published five vocabularies as "declared once", and the schema re-spelled all five
+
+The document states that the enumerated vocabularies are declared once as tuples
+and that "the union and the admission list cannot disagree". The tuples existed
+and the types were derived from them — but `ir/schema.ts`, which is what *admits*
+a payload, imported nothing from `types.ts` and re-spelled every vocabulary as
+string literals. Adding a member to `LOG_SEVERITIES` would have widened the
+TypeScript union while admission went on rejecting it: the disagreement the
+document says is impossible.
+
+`scripts/check-data-model-vocabularies.mjs` checks both halves — the document
+against the tuples, in order, **and** that each vocabulary is *referenced* by the
+schema rather than repeated in it. The second half is the one that matters: at the
+time of the finding the document and the tuples agreed perfectly, which is exactly
+why nothing noticed the third copy.
+
+### The race, which was the most valuable find
+
+The first full-suite run after wiring both gates in gave **11 failures**. Nine were
+registries doing their job. Two were the guide tests, and they passed when the file
+ran alone — the shape that usually gets called flake.
+
+It was not flake. `bundle.json`, `report.html` and `out/` are what the guide
+*writes*, and they were **not in `.gitignore`**. `typecheck-entrypoint.test.ts`
+copies every untracked, non-ignored file into a worktree to typecheck it, so the
+guide's output was being collected as if it were source — while the guide gate,
+which deletes those exact paths before running, was deleting them underneath. Two
+tests were sharing one directory.
+
+Fixed structurally, not by widening a timeout: the three paths are ignored, and the
+guide tests spawn the gate **once** and share the result across three assertions
+instead of spawning it three times.
+
+### Coverage
+
+| gate | before | after |
+| --- | --- | --- |
+| user-guide `bash` fences executed | 0 | **9** |
+| fences read by the counters | 0 | **17 of 17** |
+| vocabularies published **and** single-sourced | 0 of 5 | **5 of 5** |
+| literal `z.enum` copies of a published vocabulary | 5 | **0** |
+| failure sites in the inventory | 38 | **40** |
+| scripts classified | 31 | **33** |
+| core test files / tests | 114 / 3168 | **119 / 3359** |
+| docs guards in `docs:check` | 5 | **7** |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| core suite | **119 files, 3359 tests passed** |
+| cli suite | **3 files, 173 tests passed** |
+| core coverage | `99.96 / 99.91 / 100 / 99.96` |
+| cli coverage | `100 / 100 / 100 / 100` |
+| `pnpm typecheck` | clean |
+| `pnpm lint` | clean |
+| `pnpm docs:check` | clean, all seven guards |
+| `pnpm examples:check` / `examples:bundle:check` | clean |
+| `pnpm official:check` | PASSED (8 targets scored, 1 skipped by contract) |
+
+Every claim above was verified by mutation: the gate was disabled, the *intended*
+test observed to fail, and the file restored byte-identically (`diff` → no
+output). For F-41 one mutation, for F-42 two, for F-43 one.

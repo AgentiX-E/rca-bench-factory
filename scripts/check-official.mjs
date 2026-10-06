@@ -63,7 +63,6 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 const BUNDLE_PATH = resolve(ROOT, 'examples/order-prod/bundle.json');
-
 /** The one target the shipped example cannot exercise, and why. */
 const SKIPPED = { 'rcaeval-re3': 'the example is a resource fault and RE3 admits code-level faults only' };
 
@@ -522,7 +521,24 @@ function argValue(flag) {
   return value;
 }
 
-const bundle = JSON.parse(readFileSync(BUNDLE_PATH, 'utf8'));
+/**
+ * The bundle the regression verdict is taken on.
+ *
+ * `--bundle` exists so the failure verdict can be reached. Without it the only
+ * input was the shipped example, which passes by construction, so the
+ * `failures.length > 0` branch was unreachable and no test *executed* it -- yet
+ * `golden-master/gate-sites.json` published it as proved, on the strength of a
+ * test that regex-matched this block's source text. A site whose guard cannot
+ * fire is not proved by asserting that it is spelled correctly.
+ *
+ * Additive: with no `--bundle` the resolved path is byte-identical to the
+ * constant it replaced, so CI's verdict is unchanged. This mirrors how
+ * `check-no-absolute-paths.mjs` gained `--root` for the same reason.
+ *
+ * `argValue` is a hoisted function declaration, so calling it here -- above its
+ * textual definition -- is fine, and it already refuses a flag with no value.
+ */
+const bundle = JSON.parse(readFileSync(resolve(argValue('--bundle') ?? BUNDLE_PATH), 'utf8'));
 
 // Iterated over `SCORE_TARGET_IDS` and dispatched through the shared mapping, so
 // a new target reaches this check the moment the scorer declares it. A hand-

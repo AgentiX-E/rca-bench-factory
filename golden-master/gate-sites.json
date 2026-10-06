@@ -1,6 +1,6 @@
 {
   "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
-  "scanned": 32,
+  "scanned": 34,
   "excluded": {
     "zero": 6,
     "numeric_other": 1,
@@ -45,6 +45,13 @@
       "diagnostic": "- ${failure}",
       "status": "proved",
       "provedBy": "packages/core/test/check-cli-reference.test.ts"
+    },
+    {
+      "script": "scripts/check-data-model-vocabularies.mjs",
+      "line": 76,
+      "diagnostic": "check-data-model-vocabularies: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/data-model-vocabularies.test.ts"
     },
     {
       "script": "scripts/check-doc-counts.mjs",
@@ -101,7 +108,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 520,
+      "line": 519,
       "condition": "value === undefined || value.startsWith('--')",
       "diagnostic": "error: ${flag} requires a value",
       "status": "proved",
@@ -109,7 +116,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 564,
+      "line": 580,
       "condition": "failures.length > 0",
       "diagnostic": "- ${f}",
       "status": "proved",
@@ -117,7 +124,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 582,
+      "line": 598,
       "condition": "!existsSync(officialDir)",
       "diagnostic": "Fetch the corpus first: node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official",
       "status": "proved",
@@ -125,7 +132,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 587,
+      "line": 603,
       "condition": "!existsSync(casesPath)",
       "diagnostic": "Generate it first: node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official",
       "status": "proved",
@@ -133,7 +140,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 747,
+      "line": 763,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -141,7 +148,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 764,
+      "line": 780,
       "condition": "declared.length > 0 && roundTripped !== declared.length",
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${declared.length} case(s) declared but ${roundTripped} round-tripped,",
       "status": "proved",
@@ -162,6 +169,13 @@
       "diagnostic": "README sample check FAILED (${failures} of ${blocks.length})",
       "status": "proved",
       "provedBy": "packages/core/test/check-readme-sample.test.ts"
+    },
+    {
+      "script": "scripts/check-user-guide.mjs",
+      "line": 114,
+      "diagnostic": "check-user-guide: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-user-guide.test.ts"
     },
     {
       "script": "scripts/derive-fault-golden.mjs",

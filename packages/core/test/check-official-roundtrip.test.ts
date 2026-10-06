@@ -8,6 +8,22 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { SCORE_TARGET_IDS } from '../src/score/score.js';
 
 /**
+ * The scripts this file executes.
+ *
+ * Rule 7 of `gate-sites-are-proven.test.ts` reconciles this declaration against
+ * the scripts the spawn calls below actually reach, and reports a disagreement
+ * in either direction: declaring one that is never spawned is as much a
+ * violation as spawning one that is not declared. The declaration is needed
+ * because several of these files drive a gate through a local `run(script)`
+ * helper or a data table, so the script name never appears in a spawn's own
+ * argument list and cannot be inferred from one.
+ */
+const DRIVES = [
+  'scripts/check-official.mjs',
+];
+
+
+/**
  * The `--official-dir` branch of `scripts/check-official.mjs`.
  *
  * The default mode pins a fixed verdict on a committed bundle. This branch
@@ -75,6 +91,35 @@ function runWithHeapMb(args: string[], heapMb: number): Outcome {
 
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-roundtrip-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+/**
+ * A bundle that the official-metric regression must reject.
+ *
+ * Derived from the shipped example rather than hand-written, so it stays a valid
+ * bundle when the IR grows a field -- a fixture that has to be maintained in
+ * step with the schema is the drift this whole file exists to catch.
+ *
+ * Only the minimal edit that makes the verdict fail is made, and which edit that
+ * is is named by the caller, because a fixture that regressed in several ways at
+ * once could not tell you which `failures.push` site fired.
+ */
+const SHIPPED_BUNDLE = resolve(ROOT, 'examples', 'order-prod', 'bundle.json');
+let regressedCount = 0;
+
+function writeRegressedBundle(kind: 'no-cases'): string {
+  const bundle = JSON.parse(readFileSync(SHIPPED_BUNDLE, 'utf8')) as Record<string, unknown>;
+  if (kind === 'no-cases') {
+    // The exporter produces no cases, so `caseCount === 0` fires for every
+    // target and the official metric is never exercised. This is the one edit
+    // that reaches the block without needing a corpus on disk.
+    bundle.cases = [];
+    bundle.signals = {};
+  }
+  const path = join(scratch, `regressed-${kind}-${regressedCount}.json`);
+  regressedCount += 1;
+  writeFileSync(path, JSON.stringify(bundle));
+  return path;
+}
 
 let counter = 0;
 function freshRoot(): string {
@@ -1074,20 +1119,43 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
   });
 
   it('still prints its verdict and exits 1 when the failure list is non-empty', () => {
-    // The F-40 site itself. Asserted structurally rather than by spawning a
-    // regressed run: the four `failures.push` call sites need a corpus, an
-    // example bundle and a descriptor to disagree in four different ways, and a
-    // fixture for each would be four more copies of the corpus writer above.
+    // F-41. This test used to assert the failure block *structurally* -- reading
+    // the source and regex-matching `if (failures.length > 0) { ... exit(1) }` --
+    // on the stated grounds that reaching it would need "four more copies of the
+    // corpus writer above". That cost estimate was wrong, and the cost of being
+    // wrong was high: the block is unreachable at runtime (the only bundle the
+    // script could read was the shipped example, which passes by construction),
+    // so `golden-master/gate-sites.json` published this site as `proved` on the
+    // strength of a test that never executed it. That is this project's signature
+    // defect -- a published claim nothing reads -- committed by the inventory
+    // written to catch it.
     //
-    // What is checked here is the property that makes the site worth having --
-    // the message names the regression, every finding is printed indented, and
-    // the exit is 1 -- read from the source so that deleting the block fails
-    // this test rather than passing it.
-    const block = /if \(failures\.length > 0\) \{[\s\S]*?\n\}/.exec(source);
-    if (block === null) throw new Error('check-official.mjs has no failures block');
-    expect(block[0]).toContain('Official-metric regression FAILED');
-    expect(block[0]).toMatch(/for \(const f of failures\) console\.error\(`  - \$\{f\}`\)/);
-    expect(block[0]).toContain('process.exit(1)');
+    // Only two of the four `failures.push` sites need a corpus: `status !==
+    // 'passed'` and `caseCount === 0` both fire on *any* target, and one small
+    // bundle drives them. So the site is reached by running the script, which is
+    // what makes the word "proved" true.
+    const regressed = writeRegressedBundle('no-cases');
+    const outcome = run(['--bundle', regressed]);
+
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toContain('Official-metric regression FAILED');
+    // The findings are indented bullets, so the list has to have rendered. A
+    // block that exited 1 without printing why would satisfy the status alone.
+    expect(outcome.stderr).toMatch(/^\s+- \S/m);
+    // And it reached the verdict rather than crashing on the way there. A missing
+    // module or an uncaught throw also exits non-zero, and would otherwise be
+    // indistinguishable from the guard firing.
+    expect(outcome.stderr).not.toMatch(/Cannot find module/);
+    expect(outcome.stderr).not.toMatch(/^\s+at .*node:internal/m);
+  });
+
+  it('does not fire on the shipped example, so the test above means something', () => {
+    // The discriminating half. Without it, the assertion above would pass for a
+    // script that fails on every input, and the pair is what turns "exits 1" into
+    // "exits 1 *because* the bundle regressed".
+    const outcome = run([]);
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('Official-metric regression PASSED');
   });
 
   it('reports the number of findings, not merely that some exist', () => {
@@ -1098,5 +1166,8 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     expect(source).toMatch(/Official-metric regression FAILED/);
     expect(source).toMatch(/const passed = reports\.filter\(\(r\) => r\.status === 'passed'\)\.length/);
     expect(source).toMatch(/Official-metric regression PASSED \(\$\{passed\} targets scored/);
+    // Now that the block is reachable, the count is asserted by running it too.
+    const outcome = run(['--bundle', writeRegressedBundle('no-cases')]);
+    expect(outcome.status).toBe(1);
   });
 });

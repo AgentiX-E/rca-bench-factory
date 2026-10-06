@@ -1,8 +1,10 @@
 # User guide
 
 End-to-end walkthrough: from a non-standard enterprise export to a scored, contract-compliant
-RCA benchmark set. Every command and every output block below is real — the inputs live in
-[`examples/order-prod/`](../examples/order-prod/) and can be run verbatim from the repository root.
+RCA benchmark set. Every block tagged `bash` below is a real command with real inputs living in
+[`examples/order-prod/`](../examples/order-prod/), and `pnpm docs:check` runs all of them in order
+from the repository root — so if one of them stops working, the build fails. Blocks tagged `text`
+are illustrations that show a shape rather than a step, and say why they are not runnable.
 
 | File | What it is |
 | --- | --- |
@@ -253,12 +255,19 @@ Four mechanisms turn "looks right" into evidence:
    and scores the result with the published metric. The three anchors above all start from a
    bundle *we* authored, so a shared misunderstanding between our exporter and our scorer would go
    unnoticed; this one starts from the dataset the benchmark itself ships.
-   ```bash
+
+   The shape of that round trip, using the published `rca-bench` binary against data you have
+   downloaded yourself. This is an illustration, not a step you can run from this checkout — the
+   `rca-bench` executable is the packaged artifact, and `./official-data` is the licensed corpus
+   the factory does not ship:
+
+   ```text
    rca-bench ingest --source ./official-data --target rcaeval --cases cases.json --output bundle.json
    rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./roundtrip
    rca-bench official --target rcaeval-re2 --dir ./roundtrip
    # { "passed": true, "reports": [{ "oraclePerfect": true, "mutationsDegrade": true, … }] }
    ```
+
    See [cli-reference.md](cli-reference.md#rca-bench-ingest) for the case-descriptor format. Labels
    are supplied, never inferred — a reproduction scored against a guessed answer would prove
    nothing.
@@ -269,9 +278,11 @@ pnpm official:check
 # Official-metric regression PASSED (8 targets scored, 1 skipped by contract)
 ```
 
-Run it directly with `rca-bench official`:
+Run it directly with `rca-bench official`. The first form below runs against the bundle this
+walkthrough builds; the other two show the shape of the `--dir` and `--allow-empty-reason` flags
+against directories the walkthrough does not create, so they are illustrations rather than steps:
 
-```bash
+```text
 # score a whole bundle against all nine targets at once
 node packages/cli/dist/main.js official --input examples/order-prod/bundle.json
 

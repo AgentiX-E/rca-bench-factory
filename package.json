@@ -21,7 +21,7 @@
     "official:check": "node scripts/check-official.mjs",
     "official:pins": "node scripts/apply-pins.mjs",
     "site:serve": "node scripts/serve-site.mjs",
-    "docs:check": "node scripts/check-readme-sample.mjs && node scripts/check-cli-reference.mjs && node scripts/check-l4-status.mjs && node scripts/check-doc-counts.mjs && node scripts/derive-gate-sites.mjs --check",
+    "docs:check": "node scripts/check-readme-sample.mjs && node scripts/check-cli-reference.mjs && node scripts/check-l4-status.mjs && node scripts/check-doc-counts.mjs && node scripts/check-user-guide.mjs && node scripts/check-data-model-vocabularies.mjs && node scripts/derive-gate-sites.mjs --check",
     "docs:counts": "node scripts/measure-doc-counts.mjs",
     "docs:counts:check": "node scripts/measure-doc-counts.mjs --check",
     "examples:verify": "node scripts/verify-example-pack.mjs",

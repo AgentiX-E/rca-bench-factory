@@ -1,15 +1,42 @@
 import { z } from 'zod';
 
+import {
+  ENTITY_KINDS,
+  FAULT_CATEGORIES,
+  LOG_SEVERITIES,
+  PROVENANCE_SOURCES,
+  SPAN_STATUSES,
+} from './types.js';
+
 /**
  * Runtime schemas for the IR.
  *
  * These exist because the IR crosses process boundaries (CLI -> worker -> exporter)
  * and because LLM-generated rules can emit structurally valid but semantically
  * wrong objects. Static types alone cannot catch that.
+ *
+ * ## Why the vocabularies below read tuples instead of listing literals
+ *
+ * `docs/data-model.md` states that the enumerated payload vocabularies are
+ * "declared once ... as a tuple in `ir/types.ts`", and that "anything that admits
+ * a value reads the same tuple, so the union and the admission list cannot
+ * disagree". This file is the thing that admits values -- `parseSignal` runs
+ * these schemas -- and every one of its `z.enum` calls used to re-spell its
+ * members as literals beside the tuple.
+ *
+ * That copy was silent in both directions. Adding a member to `LOG_SEVERITIES`
+ * widened the TypeScript union while this schema went on rejecting the value, so
+ * the union and the admission list *did* disagree -- exactly the outcome the
+ * document says is impossible. `scripts/check-data-model-vocabularies.mjs` now
+ * reads the document, reads these calls, and fails if any documented vocabulary
+ * is restated here rather than referenced.
+ *
+ * The `z.enum(tuple)` form is what makes the reference structural rather than a
+ * promise: the schema cannot hold a value list that the tuple does not.
  */
 
 export const fieldProvenanceSchema = z.object({
-  source: z.enum(['direct', 'derived', 'inferred', 'defaulted']),
+  source: z.enum(PROVENANCE_SOURCES),
   ruleId: z.string().optional(),
   modelId: z.string().optional(),
   promptVersion: z.string().optional(),
@@ -41,7 +68,7 @@ export const metricPayloadSchema = z.object({
 export const logPayloadSchema = z.object({
   kind: z.literal('log'),
   body: z.string(),
-  severityText: z.enum(['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']).optional(),
+  severityText: z.enum(LOG_SEVERITIES).optional(),
   templateId: z.string().optional(),
   params: z.record(z.string()).optional(),
 });
@@ -53,7 +80,7 @@ export const tracePayloadSchema = z.object({
   parentSpanId: z.string().min(1).optional(),
   spanName: z.string().min(1),
   durationMs: z.number().nonnegative().finite(),
-  status: z.enum(['OK', 'ERROR', 'UNSET']).optional(),
+  status: z.enum(SPAN_STATUSES).optional(),
   attributes: z.record(z.string()).optional(),
 });
 
@@ -135,17 +162,7 @@ const nonBlank = z.string().trim().min(1);
 
 export const entitySchema = z.object({
   entityId: nonBlank,
-  kind: z.enum([
-    'service',
-    'pod',
-    'node',
-    'container',
-    'db',
-    'mq',
-    'host',
-    'cluster',
-    'external',
-  ]),
+  kind: z.enum(ENTITY_KINDS),
   name: nonBlank,
   namespace: z.string().optional(),
   aliases: z.array(nonBlank),
@@ -216,16 +233,7 @@ export const faultCaseSchema = z.object({
   window: z.object({ start: z.string().min(1), end: z.string().min(1) }),
   fault: z.object({
     type: z.string().min(1),
-    category: z.enum([
-      'resource',
-      'network',
-      'runtime',
-      'middleware',
-      'code',
-      'config',
-      'dependency',
-      'unknown',
-    ]),
+    category: z.enum(FAULT_CATEGORIES),
     injectionMethod: z
       .enum(['chaos-mesh', 'litmus', 'chaosblade', 'historical', 'manual'])
       .optional(),

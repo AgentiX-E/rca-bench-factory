@@ -12262,3 +12262,247 @@ that copy stale, and retaking the measurement to fix it changed the counts again
 the file was part of the thing it measured. One round is an annoyance; it does not
 converge. The copy is gone and the test now reads `golden-master/doc-counts.json`,
 which a script outside the suite is responsible for.
+
+## Finding 125 — `data-model.md` said five vocabularies were "declared once", and the schema that admits them re-spelled all five
+
+### The claim
+
+`docs/data-model.md` makes a structural promise about the IR's enumerated
+vocabularies, in as many words. For the payload fields:
+
+> Two payload fields are closed sets, and both are **declared once** — as a tuple
+> in `ir/types.ts`, with the type derived from it. Anything that admits a value
+> (the `source` and `ingest` file readers) reads the same tuple, so the union and
+> the admission list cannot disagree.
+
+And for `EntityKind`:
+
+> `EntityKind` is declared once, as a tuple ... Formats that accept only some of
+> them narrow that tuple by filtering it, so dropping a kind from the IR narrows
+> the subset too rather than leaving a stale list behind.
+
+The document publishes five vocabularies in total: `LOG_SEVERITIES`,
+`SPAN_STATUSES`, `ENTITY_KINDS`, `FAULT_CATEGORIES` and the `ProvenanceSource`
+union. Nothing read that claim. There was no test on it and no gate on it, which
+makes it the same shape as findings 104–124: **a published claim that nothing
+reads**.
+
+### What was measured
+
+Half the claim was true. The tuples existed, the types were derived from them
+(`export type LogSeverity = (typeof LOG_SEVERITIES)[number]`), and
+`AIOPS2025_INSTANCE_TYPES = ENTITY_KINDS.filter(...)` really does narrow rather
+than copy — that last one is the sentence the document writes and it holds.
+
+The other half was false. `packages/core/src/ir/schema.ts` is the file that
+*admits* values — `parseSignal` runs its schemas — and it imported **nothing** from
+`types.ts`. Every one of its `z.enum` calls re-spelled its members as string
+literals:
+
+| line | call | tuple it duplicates |
+| --- | --- | --- |
+| 12 | `z.enum(['direct', 'derived', 'inferred', 'defaulted'])` | `PROVENANCE_SOURCES` (did not exist yet) |
+| 44 | `z.enum(['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'])` | `LOG_SEVERITIES` |
+| 56 | `z.enum(['OK', 'ERROR', 'UNSET'])` | `SPAN_STATUSES` |
+| 138 | `z.enum(['service', …, 'external'])` | `ENTITY_KINDS` |
+| 219 | `z.enum(['resource', …, 'unknown'])` | `FAULT_CATEGORIES` |
+
+Twenty-two `z.enum` calls existed in the file; fifteen were literal lists. Five of
+those fifteen were vocabularies the document publishes as single-sourced.
+
+The consequence is not cosmetic and not hypothetical. Adding a member to
+`LOG_SEVERITIES` would widen the TypeScript union — every consumer that switches
+on `LogSeverity` would be told the new member is possible — while this schema went
+on rejecting it at runtime. The union and the admission list *would* disagree,
+which is the exact outcome the document states is impossible.
+
+### The gate, and why it has two halves
+
+`scripts/check-data-model-vocabularies.mjs` reads the document and reads the code
+and compares them. It deliberately does **two** things rather than one, because
+either alone is satisfiable while the defect stands:
+
+1. **The document and the tuples agree, in order.** The gate parses the table rows
+   and the prose sentences out of `data-model.md` and compares each against its
+   tuple. `FAULT_CATEGORIES` publishes order as contractual ("in the order they
+   are published in `docs/data-model.md`"), so the comparison is positional: a set
+   comparison would accept a shuffled document and leave the code's own comment
+   unreferenced.
+2. **Each vocabulary is *referenced* by the schema, not repeated in it.** This is
+   the structural half, and it is the one that would have caught the incident. At
+   the time the defect was found the document and the *tuples* agreed perfectly —
+   that agreement is precisely why nothing noticed the third copy in the schema. A
+   gate that only compared the document to the tuple would have reported OK on the
+   unfixed tree.
+
+The gate reports the remaining inline `z.enum` calls as a census line, so the ten
+vocabularies that are enumerated inline and *not* published stay visible as an
+explicit omission rather than an implicit one.
+
+To make the mapping document-owned rather than gate-owned, the payload table gained
+a `Tuple` column. The gate reads it. A hard-coded field→tuple map inside the gate
+would have been a second list to keep in step with the document — the same
+duplication this gate exists to remove, one level up.
+
+### The fix
+
+`PROVENANCE_SOURCES` was added to `types.ts` as a tuple (it was a bare union, with
+the schema carrying the only copy of its members), and the five sites in
+`schema.ts` now read their tuple. `schema.ts` gained a module comment stating what
+the document promises and why `z.enum(TUPLE)` is what makes the promise
+structural: a schema cannot hold a value list the tuple does not.
+
+### Coverage
+
+| gate | before | after |
+| --- | --- | --- |
+| vocabularies published **and** single-sourced | 0 of 5 | **5 of 5** |
+| literal `z.enum` copies of a published vocabulary | 5 | **0** |
+| tests in `data-model-vocabularies.test.ts` | — | **7** |
+| failure sites in the inventory | 38 | **40** |
+| scripts classified | 31 | **33** |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `check-data-model-vocabularies.mjs` | OK (5 vocabularies: LOG_SEVERITIES, SPAN_STATUSES, ENTITY_KINDS, FAULT_CATEGORIES, PROVENANCE_SOURCES) |
+| mutation: revert `severityText` to literals | **2 tests fail** (the two that read the real tree), **restore byte-identical** |
+| mutation: add `NOTICE` to `LOG_SEVERITIES` only | gate fails, naming `NOTICE` |
+| mutation: reorder the `FaultCategory` sentence | gate fails |
+| `pnpm typecheck` | clean |
+| `pnpm lint` | clean |
+| `pnpm docs:check` | clean, all seven guards |
+| `pnpm official:check` | PASSED (8 scored, 1 skipped by contract) |
+| core suite | **119 files, 3359 tests passed** |
+
+### Two defects found in the guard while writing it
+
+Both are recorded because they are the same class as the guard's subject: a check
+that reports confidently about the wrong thing.
+
+1. **The identifier scan read the literals as identifiers.** The first version
+   classified a `z.enum` call as "reads a tuple" if its argument contained an
+   uppercase identifier — but `LOG_SEVERITIES`'s members *are* uppercase, so the
+   scan found `'TRACE'` and `'UNSET'` **inside the quoted copies** and reported
+   those two vocabularies as properly referenced. The gate was wrong about exactly
+   the two the document singles out, and wrong in the direction that would have let
+   the defect stand. Fixed by stripping quoted runs before looking for identifiers.
+2. **The gate's own table parser was reading a format that no longer existed.**
+   Adding the `Tuple` column to the document updated the gate and left three tests
+   asserting the old three-cell shape. They failed on the next run, which is the
+   correct outcome — the tests are the reason the format change was visible at all.
+
+## Finding 126 — the user guide's opening sentence promised ten runnable blocks, and two of them were not runnable and one was invisible
+
+### The claim
+
+`docs/user-guide.md` opened by saying:
+
+> Every command and every output block below is real — the inputs live in
+> [`examples/order-prod/`](../examples/order-prod/) and can be run verbatim from
+> the repository root.
+
+`pnpm docs:check` ran four documentation guards and **none of them read this
+file**. The README had the same shape once and gained `check-readme-sample.mjs`
+after its sample drifted; the guide was the sibling nobody covered. Same class as
+findings 104–125: a published claim with no reader.
+
+### What was measured
+
+The first gate extracted every column-zero ` ```bash ` fence and ran them in
+document order with `set -e`, sharing state because the walkthrough is a sequence
+(step 5 exports into `./out`, step 6 scores what step 5 wrote). It passed. **That
+pass was not evidence.** Three separate problems were behind it:
+
+1. **A fence that lied about being runnable.** The round-trip section is prose: it
+   spells `rca-bench ingest ...`, names the packaged binary rather than
+   `packages/cli/dist/main.js`, and ends with a commented-out sample of expected
+   JSON. It was tagged ` ```bash `, so the gate concatenated it into the
+   walkthrough — and it happened to run. The tag was a claim nothing checked.
+2. **A fence that documents a shape, not a step of this walkthrough.**
+   `official --target openrca-1.0 --dir ./out/openrca-1.0` names a directory the
+   walkthrough never creates — step 5 exports `rca100`. It passed only when some
+   *earlier, unrelated* run had left one behind. That is ordering contamination
+   being read as correctness.
+3. **A fence that was invisible.** The extractor anchored on `^` with no
+   indentation allowance, so the round-trip fence — nested inside a numbered list,
+   indented three spaces — matched nothing at all. It was neither executed nor
+   counted, so it did not appear even in the census written to expose omissions.
+
+The third is the worst of the three and the easiest to miss: the gate reported "10
+blocks executed" on a document carrying 11.
+
+### The gate
+
+`scripts/check-user-guide.mjs` treats the fence tag as the contract in **both**
+directions:
+
+- A ` ```bash ` fence must be executable and *is* executed.
+- An illustrative fence must not be tagged `bash`. The round-trip and flag-shape
+  snippets are now ` ```text `, which is the honest tag, and the prose around them
+  says why they are not runnable.
+- The gate prints a **census** of every fence language and its count
+  (`bash=9 json=5 text=2 ts=1`), so re-tagging a runnable fence shows up as a
+  changed line rather than as silence. Without it, moving a fence from `bash` to
+  anything else removes it from execution *and* from the count while the gate still
+  prints OK — the enumeration-gate trap this repository documents elsewhere.
+- It **resets the outputs the guide itself creates** (`out/`, `bundle.json`,
+  `report.html`) before running, so its verdict is about the document rather than
+  about the machine's history. This was not theoretical: the gate was first
+  observed failing on a tree where a previous partial run had left `out/` behind,
+  and passing from a clean tree.
+
+### The document
+
+The opening sentence was rewritten to state what is now enforced: every `bash`
+block is real and `pnpm docs:check` runs them in order, and `text` blocks are
+illustrations that say why. Two fences changed tag; no command changed.
+
+### The race, and why it was a design defect rather than flake
+
+The first full-suite run after wiring the gate in produced **11 failures**. Nine
+were registries doing their job (see below). Two were the guide tests, and they
+passed when the file ran alone — the shape that usually gets written off as flake.
+
+It was not flake. `bundle.json`, `report.html` and `out/` are the paths the guide
+*writes*, and they were **not in `.gitignore`**. `typecheck-entrypoint.test.ts`
+copies every untracked, non-ignored file into a `git worktree` to typecheck it, so
+the guide's output was being collected by another test as if it were source — while
+the guide gate, which deletes those same paths before it runs, was deleting them
+underneath. Two tests were reading and writing one shared directory.
+
+Two fixes, both structural:
+
+1. The three paths are now in `.gitignore`. Output a guide produces by being
+   followed is not part of the tree, and the copy step should never have seen it.
+2. The guide tests spawn the gate **once** and share the result across three
+   assertions. They were spawning it three times, each deleting and recreating
+   `out/`. The subject is shared — there is one guide and one repository root — so
+   a second identical run tells the caller nothing the first did not.
+
+Widening a timeout was available and would have been wrong: it would have hidden a
+correctness problem behind a scheduling change.
+
+### Coverage
+
+| gate | before | after |
+| --- | --- | --- |
+| user-guide `bash` fences executed | 0 | **9** |
+| fences read by the guard | 0 | **17 of 17** |
+| fence languages censused | 0 | **4** |
+| tests in `check-user-guide.test.ts` | — | **11** |
+| scripts classified | 31 | **33** |
+| failure sites in the inventory | 38 | **40** |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `check-user-guide.mjs` | OK (9 bash block(s) executed in order); fences bash=9 json=5 text=2 ts=1 |
+| mutation: revert the indentation allowance | **2 tests fail** (indented-fence regression, census), **restore byte-identical** |
+| mutation: remove `resetGuideOutputs()` | **1 test fails** (the reset test), **restore byte-identical** |
+| drifted flag (`--assume-offset`) | gate fails, naming the step and the unknown option |
+| vacuous document | gate fails rather than passing on zero blocks |
+| `pnpm docs:check` | clean, all seven guards |
+| core suite | **119 files, 3359 tests passed** |
