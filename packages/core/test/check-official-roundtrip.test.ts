@@ -93,6 +93,36 @@ const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-roundtrip-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 /**
+ * The time the two bulk-corpus assertions below are allowed.
+ *
+ * Both write hundreds of megabytes and then spawn a child that reads them, so
+ * their wall time is a function of the filesystem and of what else is running,
+ * not of the code under test. Measured on one machine, on one revision, with no
+ * change to the test:
+ *
+ *     8811 ms   <- failed, against vitest's 5000 ms default
+ *     2804 ms
+ *     2435 ms
+ *
+ * A 3.6x spread. The cold pass is 3.4x the default, so the test's verdict was a
+ * function of machine load -- and it failed roughly one run in five, with a
+ * *different* file reported as the victim each time, because whichever
+ * spawn-heavy test was slowest that run crossed the line first. That signature
+ * -- varying victims, vanishing under `--no-file-parallelism` -- is what made it
+ * look like a race rather than a budget.
+ *
+ * This is the same omission F-43 fixed in `gate-sites-are-proven.test.ts`, where
+ * the rule-7 corpus check timed out on CI and was given `RULE_TIMEOUT_MS`. The
+ * rule is now stated once and enumerated by `timeout-budget.test.ts`, so a new
+ * spawn-heavy test cannot repeat it silently.
+ *
+ * The number is 60 s for the same reason as that one: an order of magnitude over
+ * the observed cost is a budget, and twice the observed cost is the flake again
+ * wearing a larger number.
+ */
+const BULK_TIMEOUT_MS = 60_000;
+
+/**
  * A bundle that the official-metric regression must reject.
  *
  * Derived from the shipped example rather than hand-written, so it stays a valid
@@ -524,7 +554,7 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     // space separates the per-case verdict from the `ROUNDTRIP PASSED` summary,
     // which would otherwise be counted as a twenty-first.
     expect(result.stdout.match(/ROUNDTRIP PASS /g)).toHaveLength(20);
-  });
+  }, BULK_TIMEOUT_MS);
 
   it('still counts what it walked, so the operator line keeps its meaning', () => {
     // The corpus-wide map was also the only thing backing the "found N file(s)"
@@ -659,7 +689,17 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
 
     const result = run(['--official-dir', root, '--cases', cases]);
 
-    expect(result.status).toBe(0);
+    // The child's own words, attached to the assertion. This test failed
+    // intermittently under full-suite load while passing 40/40 in isolation, and
+    // the assertion said only `expected 1 to be 0` -- a verdict with its evidence
+    // discarded. A failure that prints why it reached its conclusion is
+    // diagnosable from the log; one that prints only a status starts a second
+    // investigation.
+    expect(
+      result.status,
+      `the round trip rejected a corpus it accepts in isolation\n` +
+        `--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`,
+    ).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
   });
 

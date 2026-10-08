@@ -3117,9 +3117,9 @@ measurement, so it passed either way. It now uses deliberately stale counts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **114 files, 3161 tests passed** (as of this commit) |
+| `core` test suite | **121 files, 3239 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **117 files, 3334 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| repo test suite | **124 files, 3412 tests passed** (`pnpm test`, every workspace; as of this commit) |
 | break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
 | `check-doc-counts` tests | 14 passed |
 | `ci-reaches-doc-guards` tests | 7 passed |
@@ -3305,14 +3305,14 @@ instead of spawning it three times.
 | literal `z.enum` copies of a published vocabulary | 5 | **0** |
 | failure sites in the inventory | 38 | **40** |
 | scripts classified | 31 | **33** |
-| core test files / tests | 114 / 3168 | **119 / 3359** |
+| core test files / tests | 114 / 3168 | **121 / 3239** |
 | docs guards in `docs:check` | 5 | **7** |
 
 ### Verified
 
 | check | result |
 | --- | --- |
-| core suite | **119 files, 3359 tests passed** |
+| core suite | **121 files, 3239 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3325,3 +3325,123 @@ instead of spawning it three times.
 Every claim above was verified by mutation: the gate was disabled, the *intended*
 test observed to fail, and the file restored byte-identically (`diff` → no
 output). For F-41 one mutation, for F-42 two, for F-43 one.
+
+## Pass 36 — two flakes that were mine, and the guard that makes the cause visible
+
+This pass changed no product code. Its whole result is that two failures I had
+been treating as defects in the suite turned out to be manufactured by my own
+clean-up, and that the rule which prevents it is now an assertion rather than a
+note in a scratch file.
+
+### What was open
+
+Finding 127 closed with one failure unresolved: `check-official-roundtrip.test.ts`
+reporting `expected 1 to be 0` roughly one run in six under a full suite while
+passing 40 of 40 in isolation. The diagnostic attached to the assertion was
+supposed to name the cause on its next occurrence. It did not get the chance —
+the failure that showed up next was in `typecheck-entrypoint.test.ts`, and it
+named a third file entirely:
+
+    src/export/aiops2025.ts(4,40): error TS2306: File '.../guard.ts' is not a module
+
+Seven times, once per exporter, which is what a real defect in the export guard
+looks like. It was not one.
+
+### The measurement that settled it
+
+    wc -c packages/core/src/export/guard.ts    # 4950, unchanged
+
+The repository copy was intact for the whole run. The tree the compiler was
+reading was a **cold worktree the test had created under
+`/tmp/rca-bench-typecheck-<rand>`**, and I had deleted it. The clean-up command
+went out at 03:29 to remove 64 orphaned worktrees left by earlier killed runs
+(`rm -rf /tmp/rca-bench-typecheck-*` followed by `git worktree prune`); the suite
+run that failed started at 03:29.
+
+The pressure that made the clean-up feel urgent was real and is worth recording,
+because it is the reason the mistake was easy to make:
+
+| measurement | value |
+| --- | --- |
+| cgroup hard limit | 8192 MiB |
+| cgroup usage at the time | **8149.8 MiB** |
+| headroom | **42.1 MiB** |
+| `memory.events` `max` hits | 280851 |
+| `memory.events` `oom` / `oom_kill` | 513 / 2 |
+
+A suite of 32 vitest workers against a ceiling with 42 MiB left is a suite whose
+failures are not all about the code. That does not make deleting a live worktree
+correct; it makes it comprehensible.
+
+### The second flake, re-read
+
+Finding 127's `scanned` 35↔36 flake had been attributed to a race in
+`derive-gate-sites.mjs`. The deriver fix stands on its own merits — a dotfile is
+not a gate site, and `gate-sites-are-proven.test.ts` now proves that with a
+mutation that fails it — but the *flake* was the `git worktree prune` half of the
+same command. Two fixes had been written against a flake that neither of them
+caused.
+
+### Verified by removing the interference
+
+With the clean-up moved outside the run, and a 20 Hz poller watching every cold
+worktree for a `guard.ts` that is not 4950 bytes:
+
+| check | result |
+| --- | --- |
+| full-suite passes | **4 of 4**, 3234 tests each |
+| suspect observations | **0** |
+| product files changed to remove the flake | **0** |
+
+### The guard that was built instead of a note
+
+`scratch-prefixes-are-disjoint.test.ts`, 5 tests, all reading the suite's own
+source with comments blanked:
+
+| assertion | why it is a gate and not a comment |
+| --- | --- |
+| the scan finds > 20 fixtures and contains a known prefix | otherwise the rules below are green over an empty list |
+| no two files share a `mkdtempSync` prefix | a wildcard clean-up is only destructive when a prefix names a category |
+| exactly one fixture creates git worktrees, named | a stray `git worktree prune` can deregister it; a second one should be a decision |
+| no prefix is the bare `rca-bench-` category | that is the prefix every other tree is collateral of |
+| every worktree-creating fixture also removes one | a fixture that never cleans up leaks on every run, not only on a kill |
+
+**4 of 4 mutations caught, 0 survived, all files restored byte-identically.**
+M1 shared a prefix between two fixtures; M2 replaced a prefix with the category;
+M3 added a new worktree fixture; M4 deleted the `worktree remove` call.
+
+The guard found a defect in itself on its first run: it reported **3** worktree
+fixtures where there is 1, because the doc comment describing the hazard quotes
+the spelling the scanner searches for. The scanner now blanks comments, which is
+the same defect as finding 127's shape rule and finding 125's vocabulary scan —
+reading prose as if it were code.
+
+### Coverage
+
+| quantity | before | after |
+| --- | --- | --- |
+| core test files / tests | 116 / 3186 | **121 / 3239** |
+| scratch-prefix assertions | 0 | **5** |
+| fixtures the prefix scan sees | — | **35** |
+| mutations caught by the new guard | — | **4 of 4** |
+| orphaned `/tmp` worktrees held before clean-up | 64 | **0** |
+| `derive-gate-sites` scanned / sites | 34 / 40 | **35 / 41** |
+
+The site count rose because `check-no-unsafe-shell.mjs`, added earlier this
+session, is now registered in `gate-sites.json` with a `provedBy` entry.
+
+### Verified
+
+| check | result |
+| --- | --- |
+| core suite | **121 files, 3239 tests passed** |
+| cli suite | **3 files, 173 tests passed** |
+| core coverage | `99.96 / 99.91 / 100 / 99.96` |
+| cli coverage | `100 / 100 / 100 / 100` |
+| `pnpm typecheck` | clean |
+| `pnpm lint` | clean |
+| `pnpm docs:check` | clean — 7 guards, 41 sites across 27 scripts |
+| `pnpm examples:check` / `examples:bundle:check` | clean |
+| `pnpm official:check` | PASSED (8 targets scored, 1 skipped by contract) |
+| `git worktree list` | **1 entry**, the primary tree |
+| files restored after the mutation battery | **byte-identical** (`sha256`) |

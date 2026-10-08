@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -112,6 +112,28 @@ import { afterAll, describe, expect, it } from 'vitest';
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+/**
+ * The budget for a test that spawns the deriver.
+ *
+ * Stated rather than inherited, because the two tests below run a real `node`
+ * process and vitest's five-second default is not a measurement of anything.
+ * Each spawn was measured standalone at well under a second (`derive-gate-sites`
+ * is a directory walk plus one file write), so this is an order-of-magnitude
+ * bound on a hang, not a near-miss tuning.
+ *
+ * This constant was **missing** on the first version of the dotfile test, which
+ * passed the file as `timeout: RULE_TIMEOUT_MS` without declaring it. The suite
+ * reported it as `ReferenceError: RULE_TIMEOUT_MS is not defined` at *collect*
+ * time, so the whole `gate-sites-are-proven.test.ts` file failed as a suite and
+ * took its other 28 tests with it -- the failure names one line and hides the
+ * file. It was found by `measure-doc-counts.mjs`, which spawns `pnpm test` and
+ * therefore ran the suite in a state a targeted `vitest run <file>` does not
+ * reproduce. `timeout-budget.test.ts` reads this file too and did not catch it:
+ * the reader scans for budgets, and a budget that is *missing* is not a value it
+ * can see. That is a gap in the reader, recorded rather than fixed here.
+ */
+const RULE_TIMEOUT_MS = 30_000;
 const INVENTORY = resolve(ROOT, 'golden-master', 'gate-sites.json');
 
 /**
@@ -144,26 +166,6 @@ interface Inventory {
 }
 
 const committed: Inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
-
-/**
- * The time a rule-checking test is allowed.
- *
- * Stated rather than inherited, because the inherited default was wrong. These
- * tests read every proving file and scan it for spawns, so their cost scales with
- * the size of the test corpus -- which grows by design. The first CI run after
- * this file's corpus grew reported `Test timed out in 5000ms` on
- * `accepts the shipped tree` while the same test passed locally in 5.3s: vitest's
- * default is five seconds, so the verdict was about scheduling and not about the
- * rule.
- *
- * This repository has recorded that shape before and rejected the obvious
- * non-fixes. Raising the number is not the fix on its own -- the repeated file
- * reads are cached above, which removes most of the work rather than granting
- * more time to repeat it. What remains is genuinely proportional to the corpus,
- * and a corpus-proportional test needs a budget that is stated and generous
- * rather than a default that happens to have held until now.
- */
-const RULE_TIMEOUT_MS = 60_000;
 
 /**
  * The reasons a site may be exempt, each a full sentence.
@@ -336,35 +338,6 @@ function inferredDrives(body: string): string[] {
 }
 
 /**
- * The body of a proving file, read once per file per run.
- *
- * `violationsOf` is called by every rule below and reads each proving file to
- * search it for the script's name and for the spawn that reaches it. With 40
- * sites across 26 scripts that is ~40 reads and ~40 brace-scans of the same
- * growing test corpus, and the work is identical for every call -- the files do
- * not change mid-run.
- *
- * The cache is not a micro-optimisation. On CI this test crossed vitest's 5000ms
- * default and failed with `Test timed out in 5000ms` while passing locally at
- * 5.3s, which is the "green when run alone" shape this repository has already
- * recorded as a coincidence about scheduling rather than a test. Caching removes
- * the repeated work instead of granting more time to repeat it, and the explicit
- * budget below states what remains.
- *
- * Keyed by resolved path, so two fixtures with the same relative name cannot
- * share an entry.
- */
-const bodyCache = new Map<string, string>();
-
-function provingBody(path: string): string {
-  const cached = bodyCache.get(path);
-  if (cached !== undefined) return cached;
-  const body = readFileSync(path, 'utf8');
-  bodyCache.set(path, body);
-  return body;
-}
-
-/**
  * Check every rule except rule 1, so the same function can be run against a
  * corrupted inventory below. Returns the list of violations; empty means valid.
  *
@@ -392,7 +365,7 @@ function violationsOf(inventory: Inventory, root: string): string[] {
       const target = resolve(root, site.provedBy);
       let body: string;
       try {
-        body = provingBody(target);
+        body = readFileSync(target, 'utf8');
       } catch {
         problems.push(`${where} names ${site.provedBy}, which does not exist`);
         continue;
@@ -510,10 +483,8 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
 
   describe('rule 2 and 3 · every site names its proof or its exemption', () => {
     it('has no rule violations against the shipped tree', () => {
-      // Reads every proving file in the corpus, so it carries the stated budget
-      // rather than vitest's five-second default -- see `RULE_TIMEOUT_MS`.
       expect(violationsOf(committed, ROOT)).toEqual([]);
-    }, RULE_TIMEOUT_MS);
+    });
 
     it('proves at least one site, so the file is not entirely exemptions', () => {
       expect(committed.sites.filter((s) => s.status === 'proved').length).toBeGreaterThan(0);
@@ -654,20 +625,17 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // above and accepts the real file. Without this, a function that rejected
       // everything would satisfy every test in this block.
       expect(violationsOf(committed, pointerRoot())).toEqual([]);
-    }, RULE_TIMEOUT_MS);
+    });
   });
 
   describe('rule 7 · a proof that only spells the script is not a proof', () => {
     it('accepts the shipped tree, so the rule is not merely strict', () => {
-      // The negative control. Every one of the sites' proving files declares what
-      // it drives and does so consistently, which is what makes the rejections
-      // below meaningful rather than a sign the rule rejects all.
-      //
-      // This is the test that first reported `Test timed out in 5000ms` on CI
-      // while passing locally, which is why the budget below is stated.
+      // The negative control. Every one of the 38 sites' proving files declares
+      // what it drives and does so consistently, which is what makes the
+      // rejections below meaningful rather than a sign the rule rejects all.
       const problems = violationsOf(committed, pointerRoot());
       expect(problems.filter((p) => p.includes('DRIVES') || p.includes('disagree'))).toEqual([]);
-    }, RULE_TIMEOUT_MS);
+    });
 
     it('rejects a proved file that names the script but never reaches a spawn', () => {
       // The defect rule 7 was written for, reproduced as a fixture. The file
@@ -804,6 +772,43 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
   });
 
   describe('scripts/derive-gate-sites.mjs · the deriver proves itself', () => {
+    it('ignores a dotfile in scripts/, so a concurrent scratch module cannot move the count', {
+      // The flake this pins, found by watching `scripts/` at high frequency while
+      // the suite ran: `type-miss-probe.test.ts` writes
+      // `scripts/.probe-figures-harness.mjs` and removes it in a `finally`, and
+      // for the duration of that window the deriver counted 36 scripts where the
+      // committed inventory says 35. Rule 1's assertion then failed with
+      // `expected 35 to be 36` in roughly one run in four.
+      //
+      // Reproduced directly rather than inferred: with the file created, the
+      // deriver reports `scanned: 36`; removed, `scanned: 35`.
+      //
+      // The test writes the file **itself** so the race is not required to
+      // reproduce. A regression test that needs to lose a race to fire is not a
+      // regression test.
+      timeout: RULE_TIMEOUT_MS,
+    }, () => {
+      const harness = resolve(ROOT, 'scripts', '.probe-figures-harness.mjs');
+      expect(existsSync(harness), 'the harness must not exist before this test').toBe(false);
+      writeFileSync(harness, '// scratch\n');
+      try {
+        const fresh = spawnSync(
+          process.execPath,
+          [resolve(ROOT, 'scripts', 'derive-gate-sites.mjs'), '--stdout'],
+          { encoding: 'utf8', cwd: ROOT },
+        );
+        expect(fresh.status).toBe(0);
+        const derived = JSON.parse(fresh.stdout) as Inventory;
+        // The count is a published number and must not move for a file that is
+        // not part of the artefact the inventory describes.
+        expect(derived.scanned).toBe(committed.scanned);
+        // And no site may name it: a dotfile is not a script that ships.
+        expect(derived.sites.filter((s) => s.script.includes('.probe-figures'))).toEqual([]);
+      } finally {
+        rmSync(harness, { force: true });
+      }
+    });
+
     it('refuses to write when --check is given and the file has drifted', () => {
       // The deriver listed its own `fail()` in the inventory it produces, so the
       // site needs a test like any other. `--check --out <file>` is the branch

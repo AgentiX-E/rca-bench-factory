@@ -462,6 +462,19 @@ describe('the UModel figures separate shape from content', () => {
     // (`../packages/core/dist/...`) relative to its own path, so a harness
     // anywhere else makes every one of them unresolvable. Written and removed per
     // call so a crash cannot leave a stray module in `scripts/`.
+    //
+    // Writing into `scripts/` is a shared-state hazard and it caused one: for the
+    // duration of the window below, `derive-gate-sites.mjs` counted this file as a
+    // published script, so `gate-sites-are-proven.test.ts`'s rule 1 failed with
+    // `expected 35 to be 36` in roughly one full-suite run in four.
+    //
+    // The repair is in the deriver rather than here -- it now ignores dotfiles,
+    // because a file that is not committed, not named by `pnpm lint` and never
+    // resolved by an operator is not part of the artefact the inventory describes.
+    // That is where the false statement was. This window is still a hazard for any
+    // *future* reader of `scripts/`, which is why the dotfile prefix is
+    // load-bearing rather than cosmetic: it is the signal that says "not part of
+    // the tree", and it is now the thing the deriver trusts.
     const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs');
     const source = readFileSync(PROBE, 'utf8');
     // Re-export exactly the one name that publishes the figures, so this reads the

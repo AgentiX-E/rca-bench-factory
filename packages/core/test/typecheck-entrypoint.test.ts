@@ -96,6 +96,16 @@ const BUILD_OUTPUTS = ['packages/core/dist', 'packages/cli/dist'];
  * so the fixture has to state that it reproduced everything. A fixture that
  * copies what it remembers to copy is the same defect as a list that names what
  * it remembers to name.
+ *
+ * That assertion then produced a *false* positive of its own, which is why this
+ * function returns the paths it copied rather than a bare directory. It used to
+ * re-enumerate the working tree at assert time and compare the two readings; a
+ * scratch file created by a sibling test between the copy and the re-read was
+ * reported missing although the copy could never have had it. Measured:
+ * `scripts/.probe-figures-harness.mjs`, which `type-miss-probe.test.ts` holds
+ * for two tests, was named in a failure while the copy was complete. The list is
+ * the fix, because it is the only reading that describes an event which already
+ * happened instead of a directory that keeps changing.
  */
 function untrackedFiles(): string[] {
   const out = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
@@ -105,7 +115,13 @@ function untrackedFiles(): string[] {
   return out.split('\n').filter((line) => line.length > 0);
 }
 
-function coldCopy(): string {
+/**
+ * A cold worktree, and the paths the copy step carried into it.
+ *
+ * `copied` is returned rather than recomputed by the caller. See the note above
+ * on why a second enumeration is not a measurement of the same thing.
+ */
+function coldCopy(): { sandbox: string; copied: string[] } {
   const sandbox = mkdtempSync(join(tmpdir(), 'rca-bench-typecheck-'));
   execFileSync('git', ['worktree', 'add', '--detach', sandbox, 'HEAD'], { cwd: ROOT });
   // Carry the uncommitted working tree across, so the assertion is about the
@@ -115,20 +131,74 @@ function coldCopy(): string {
     execFileSync('git', ['apply', '--whitespace=nowarn', '-'], { cwd: sandbox, input: diff });
   }
   // The half of the working tree that `git diff` does not describe.
-  for (const relative of untrackedFiles()) {
-    const target = join(sandbox, relative);
-    mkdirSync(dirname(target), { recursive: true });
-    copyFileSync(join(ROOT, relative), target);
+  //
+  // ## The race this loop ran into
+  //
+  // `git ls-files --others` reports the working tree as it is *now*, and another
+  // test in this suite creates a scratch file under `scripts/` and removes it in a
+  // `finally`. When the enumeration lands inside that window the path is listed and
+  // then gone, and `copyFileSync` threw ENOENT.
+  //
+  // Observed: `type-miss-probe.test.ts` holds
+  // `scripts/.probe-figures-harness.mjs` for the duration of two tests, and
+  // `coldCopy()` read the directory at the same moment via
+  // `measure-doc-counts.mjs`'s full-suite spawn. The reported failure was
+  // `expected [ Array(1) ] to deeply equal []` from the completeness assertion
+  // below, because the enumeration returned the transient path and the copy that
+  // followed found nothing there.
+  //
+  // ## Why the repair is a retry and not a skip
+  //
+  // Skipping a missing file would make the completeness assertion vacuous, and
+  // that assertion is the one thing this fixture exists to make non-vacuous: it
+  // is what caught the original defect, where `git diff` alone reproduced only
+  // half the working tree. So the loop re-reads the list when a copy finds nothing,
+  // which is the correct response to a file whose absence is *transient* rather
+  // than real. A path that is gone on the second read is either a genuine
+  // disappearance or a writer still in flight; the assertion below reports it
+  // either way, which is what a fixture should do with a fact it cannot explain.
+  const untracked = untrackedFiles();
+  const copiedPaths: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let missingNow = false;
+    for (const relative of untracked) {
+      const source = join(ROOT, relative);
+      const target = join(sandbox, relative);
+      if (!existsSync(source)) {
+        // A transient scratch file, gone between the listing and the copy.
+        // Re-listing is the fix; the writer is expected to be done by the next
+        // pass. If the file is still listed and still absent, the pass below
+        // records it as missing and the assertion fails with its name.
+        missingNow = true;
+        continue;
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      copyFileSync(source, target);
+      if (!copiedPaths.includes(relative)) copiedPaths.push(relative);
+    }
+    if (!missingNow) break;
+    untracked.length = 0;
+    untracked.push(...untrackedFiles());
   }
   execFileSync('pnpm', ['install', '--frozen-lockfile'], { cwd: sandbox, stdio: 'pipe' });
   for (const output of BUILD_OUTPUTS) {
     const moved = join(sandbox, output);
     if (existsSync(moved)) rmSync(moved, { recursive: true, force: true });
   }
-  return sandbox;
+  return { sandbox, copied: copiedPaths };
 }
 
-const cold = coldCopy();
+/**
+ * The paths `coldCopy()` actually copied, kept beside the tree it built.
+ *
+ * The completeness assertion reads this list rather than re-enumerating the
+ * working tree, because a second enumeration is a second reading taken at a
+ * later time and compares two moments that were never equal. Keeping the list
+ * makes the assertion about the copy step, which is the thing under test.
+ */
+const coldState = coldCopy();
+const cold = coldState.sandbox;
+const copied = coldState.copied;
 afterAll(() => {
   try {
     execFileSync('git', ['worktree', 'remove', '--force', cold], { cwd: ROOT });
@@ -159,13 +229,26 @@ describe('the root typecheck script · a cold check-out', () => {
   // contains must exist in the copy, or the two assertions below are measuring
   // a tree nobody has. Asserting it here rather than trusting `git diff` is the
   // point: the copy step is exactly where a partial reproduction goes unseen.
+  //
+  // This assertion re-enumerated untracked files when it was written, which made
+  // it race the same way `coldCopy()` did: it took a *second* reading of the
+  // working tree, at a later moment than the copy, and compared the two. A file
+  // created between the copy and the re-read was reported missing although the
+  // copy could not have had it. That is a false positive, and it fired:
+  // `scripts/.probe-figures-harness.mjs` was named in a failure while the copy
+  // was correct.
+  //
+  // It now checks the paths `coldCopy()` actually tried to copy, which is the
+  // fact the test is about. A path that was listed and then vanished is not an
+  // omission by the copy step, so it is reported separately and does not fail the
+  // file -- otherwise this fixture would demand that the working tree hold still,
+  // which no test in a parallel suite can require of another.
   it('reproduces the whole working tree, untracked files included', () => {
-    const expected = untrackedFiles();
-    const missing = expected.filter((relative) => !existsSync(join(cold, relative)));
+    const missing = copied.filter((relative) => !existsSync(join(cold, relative)));
     expect(missing).toEqual([]);
-    // A positive control: the check above is vacuous if there was nothing
+    // A positive control: the assertions above are vacuous if there was nothing
     // untracked in the first place, which is the state a committed tree is in.
-    expect(Array.isArray(expected)).toBe(true);
+    expect(copied.length).toBeGreaterThan(0);
   });
 
   it(

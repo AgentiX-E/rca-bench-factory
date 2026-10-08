@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * The scripts this file executes.
@@ -166,6 +166,30 @@ function expectFailedForOwnReason(outcome: Outcome): void {
 }
 
 /**
+ * The time the shared gate run below is allowed.
+ *
+ * This is the file's stated budget, and it is a budget for a **hook** rather than
+ * for a test, which is why it is not a third argument to an `it`.
+ *
+ * The run used to happen at module load, as a top-level IIFE. Measured, that put
+ * **3.5 s of the file's 4.9 s into collection**: the spawn executed while the
+ * module graph was still being evaluated, so vitest's per-test timeout never
+ * applied to it. A probe confirms the mechanism rather than assuming it -- a
+ * 7-second `spawnSync` at module load reports `collect 7.04s, tests 2ms`, and a
+ * `{ timeout: 200 }` on the test beside it does not fire. The cost was real and
+ * completely unbounded.
+ *
+ * A `beforeAll` is where a one-time setup cost belongs, and `hookTimeout` is the
+ * number that governs it, so the work is now both measured and capped. The value
+ * is 60 s for the same reason as `BULK_TIMEOUT_MS` in
+ * `check-official-roundtrip.test.ts`: an order of magnitude over the observed
+ * cost is a budget, and twice the observed cost is the flake again wearing a
+ * larger number. The guide is a walkthrough of the real CLI, so its cost tracks
+ * the machine; the bound exists to catch a hang, not to be approached.
+ */
+const GUIDE_RUN_TIMEOUT_MS = 60_000;
+
+/**
  * The gate's verdict on the real tree, computed **once** for the whole file.
  *
  * Three assertions below read this one run rather than each spawning the gate.
@@ -180,18 +204,24 @@ function expectFailedForOwnReason(outcome: Outcome): void {
  * it. The run is shared because the *subject* is shared -- there is one guide and
  * one repository root, so a second identical run tells the caller nothing the
  * first did not.
+ *
+ * `let` rather than `const` because the spawn moved into `beforeAll`; it is still
+ * exactly one run per file.
  */
-const liveRun = ((): Outcome => {
+let liveRun: Outcome;
+
+beforeAll(() => {
   const result = spawnSync(process.execPath, [resolve(ROOT, 'scripts', SCRIPT)], {
     encoding: 'utf8',
     cwd: ROOT,
-    timeout: 600_000,
+    timeout: GUIDE_RUN_TIMEOUT_MS,
   });
   if (result.error !== undefined) {
-    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
+    liveRun = { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
+    return;
   }
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
-})();
+  liveRun = { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}, GUIDE_RUN_TIMEOUT_MS);
 
 describe('scripts/check-user-guide.mjs · the walkthrough is executed', () => {
   it('runs every bash block in the shipped guide, and the guide passes', () => {

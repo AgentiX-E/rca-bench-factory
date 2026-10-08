@@ -12374,7 +12374,7 @@ structural: a schema cannot hold a value list the tuple does not.
 | `pnpm lint` | clean |
 | `pnpm docs:check` | clean, all seven guards |
 | `pnpm official:check` | PASSED (8 scored, 1 skipped by contract) |
-| core suite | **119 files, 3359 tests passed** |
+| core suite | **116 files, 3186 tests passed** |
 
 ### Two defects found in the guard while writing it
 
@@ -12505,4 +12505,410 @@ correctness problem behind a scheduling change.
 | drifted flag (`--assume-offset`) | gate fails, naming the step and the unknown option |
 | vacuous document | gate fails rather than passing on zero blocks |
 | `pnpm docs:check` | clean, all seven guards |
-| core suite | **119 files, 3359 tests passed** |
+| core suite | **116 files, 3186 tests passed** |
+
+## Finding 127 — a gate was built on a shape, and the shape was wrong in both directions
+
+### The claim the gate made
+
+The previous iteration added `packages/core/test/timeout-budget.test.ts` in
+response to a real failure: `check-official-roundtrip.test.ts`'s bulk-corpus test
+writes ~300 MB and spawns a 128 MB-heap child, and measured three times in
+isolation took 8811 ms / 2804 ms / 2435 ms against vitest's 5000 ms default. That
+is a real defect and the fix — state a budget — was right.
+
+The gate generalised it into a rule:
+
+> a test file that **spawns a child**, or that writes more than a trivial fixture,
+> declares a `*_TIMEOUT_MS` constant and passes it as the third argument to the
+> `it` that needs it.
+
+It named **26 offenders**, with three exemptions. The user approved fixing all 26.
+
+### What the measurement said
+
+Before applying the fix, the measurement was redone, because a budget has to be a
+measurement rather than a guess. The first thing that had to be corrected was the
+harness itself — `measure-files.py` shipped three defects of its own, and none of
+them raised:
+
+1. **`endTime - startTime` is milliseconds**, and the script divided by 1000. Every
+   file printed as `0 ms` and the sort ordered by noise.
+2. The same division made the values floats while the annotation claimed a
+   different type — the "a name that is not what it says" defect this repository
+   keeps finding. It does not raise; it mis-sorts.
+3. Nothing checked the report belonged to the run that had just finished, so a
+   stale `/tmp/mf.json` would have been averaged in silently.
+
+With those fixed, the second correction was conceptual, and it is the finding:
+
+**The in-suite number is not the file's cost.** Under 32 workers and 120 files the
+JSON report's per-file duration is the time a *worker* held the file, which
+includes queueing for a free worker and contending with 31 others. Sixteen files
+start within the first 500 ms; the last starts at **+25.8 s**.
+
+| file | in-suite (worst of 3) | standalone |
+| --- | --- | --- |
+| `check-cli-reference.test.ts` | 32438 ms | **10239 ms** |
+| `check-official-roundtrip.test.ts` | 25908 ms | **6413 ms** |
+| `ingest-report.test.ts` | 23929 ms | **5012 ms** |
+| `check-no-absolute-paths.test.ts` | 12196 ms | **2112 ms** |
+| `scripts-contract.test.ts` | 62 ms | **1576 ms** |
+
+A budget stated against the in-suite number is a budget for the machine's load.
+
+### Why the shape question was wrong
+
+Profiling all 111 files standalone gives the set that actually reaches the default:
+**seven files**, and it is a different set from the 26 the gate named.
+
+- The gate **required a budget** of `scripts-contract.test.ts` (1576 ms) and
+  `m1-ceiling-probe.test.ts` (1369 ms). Neither is near the line.
+- The gate **exempted** `check-no-absolute-paths.test.ts` (2112 ms),
+  `check-no-unsafe-shell.test.ts` (1916 ms) and `check-no-vendored-data.test.ts`
+  (1721 ms) on the written reason *"spawns a text scanner over a fixture tree; the
+  child reads a few KB and exits"*. The reason is checkable and it is **false**:
+  each spawns a scanner that walks the whole repository.
+- The gate named `check-cli-reference.test.ts` — the **slowest file in the suite**
+  — as a violator, although every one of its six `it`s passes an inline
+  `{ timeout: 30_000 }`. That budget is correct at 10239 ms and the file has never
+  flaked. The rule was penalising a working spelling to enforce a style.
+
+And the counterexample that settles the trigger: `ingest-report.test.ts` spawns
+**nothing**, and is 5012 ms standalone because it writes and re-reads a large
+fixture. The shape rule would not have looked at it at all.
+
+### A third defect, in the reader rather than the question
+
+Rewriting the gate to ask the measured question still reported
+`fetch-official.test.ts` as unguarded. It is not: it states `300_000` on its 2 GiB
+digest test. The reader knew two spellings and vitest has **three**:
+
+1. `const FOO_TIMEOUT_MS = 60_000` — a named constant.
+2. `it('...', { timeout: 30_000 }, () => {` — the options object.
+3. `it('...', async () => { ... }, 300_000)` — the positional third argument.
+
+`fetch-official.test.ts` uses the third form **17 times**. A reader that misses a
+spelling fails toward a false red, and the fix belongs in the reader rather than in
+an exemption. When all three were known, `fetch-official` and
+`gate-test-battery-exclusion` stopped being offenders, and `check-cli-reference`
+was revealed as already compliant.
+
+### A fourth defect: a per-test budget does not reach a spawn at module load
+
+With the reader complete, one file remained: `check-user-guide.test.ts`. It
+measured 4.89 s standalone, but with `collect 3.51s` and a maximum single test of
+128 ms. The cause is that it spawned the guide walkthrough in a **top-level IIFE**,
+so the work happened while the module graph was still being evaluated and vitest's
+per-test timeout never applied to it.
+
+That was verified rather than assumed. A probe with a 7-second `spawnSync` at
+module load and `{ timeout: 200 }` on the test beside it reports:
+
+```
+collect 7.04s, tests 2ms          # the 200 ms budget never fired
+```
+
+So the fix is structural: the spawn moved into a `beforeAll` governed by
+`GUIDE_RUN_TIMEOUT_MS = 60_000`, which is where a one-time setup cost belongs and
+which `hookTimeout` can actually bound. Measured after the change: `collect` fell
+from **3.51 s to 32 ms** and the cost moved into `tests`, where the budget governs
+it. This is the same principle as the F-42 race fix: remove the cause rather than
+widen a number to survive it.
+
+### The three budgets that were genuinely missing
+
+| file | standalone | budget | where |
+| --- | --- | --- | --- |
+| `fetch-official.test.ts` | 13212 ms | `300_000` | already present, positional |
+| `typecheck-entrypoint.test.ts` | 11328 ms | `RUN_TIMEOUT_MS = 180_000` | already present |
+| `check-cli-reference.test.ts` | 10239 ms | `{ timeout: 30_000 }` × 6 | already present |
+| `check-official-roundtrip.test.ts` | 6413 ms | `BULK_TIMEOUT_MS = 60_000` | previous iteration |
+| `check-user-guide.test.ts` | 5517 ms | `GUIDE_RUN_TIMEOUT_MS = 60_000` | **this iteration** |
+| `gate-test-battery-exclusion.test.ts` | 5386 ms | `60_000` | already present, positional |
+| `ingest-report.test.ts` | 5012 ms | `ROWS_TIMEOUT_MS = 30_000` | already present |
+
+**One budget was actually missing.** The other six were already guarded, and the
+shape rule's "26 offenders" was an artifact of asking about the spelling rather
+than the time.
+
+### Coverage
+
+| quantity | before | after |
+| --- | --- | --- |
+| files measured standalone | 0 | **111** |
+| files the rule watches | 26 named for the wrong reason | **7 named for the measured reason** |
+| budget spellings the reader knows | 2 | **3** |
+| files over the default with no budget | 1 | **0** |
+| `check-user-guide` collect time | 3.51 s | **32 ms** |
+| mutations caught by this gate | 0 (no battery) | **6 of 6** |
+| tests in `timeout-budget.test.ts` | 16 | **16** |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `timeout-budget.test.ts` | **16 tests pass** |
+| mutation M1 — shrink `BULK_TIMEOUT_MS` | caught; restore byte-identical |
+| mutation M2 — shrink `ROWS_TIMEOUT_MS` | caught; restore byte-identical |
+| mutation M3 — shrink `GUIDE_RUN_TIMEOUT_MS` | caught; restore byte-identical |
+| mutation M4 — shrink all six inline budgets | caught (6x); restore byte-identical |
+| mutation M5 — delete a table row | caught; restore byte-identical |
+| mutation M6 — blind the reader to the positional spelling | caught; restore byte-identical |
+| module-load probe | `collect 7.04s`, a 200 ms test budget does not fire |
+| `check-user-guide.test.ts` after the restructure | 11 tests pass; collect 3.51 s → 32 ms |
+| core suite | **120 files, 3233 tests passed** |
+
+### A defect found in the mutation harness itself
+
+M4 initially **survived**, which would have meant a hole in the gate. It did not.
+The harness replaced only the *first* occurrence of an anchor that occurs six
+times, so five budgets stayed at 30 000 and the gate — reading the largest budget,
+correctly — still saw a compliant file. The mutation was a no-op wearing a
+hole's clothes. The harness now states the expected multiplicity per mutation and
+asserts the count it found, because "how many times does this anchor occur" is a
+fact about the mutation, not an assumption to make.
+
+### Not done
+
+- **The standalone profile is not a gate.** Nothing re-measures these seven files,
+  so a change that pushes a new file over the default is invisible until someone
+  measures again. The table records the measurements that justified each row; it
+  does not keep itself fresh.
+- **No guard was built for the in-suite/standalone gap.** The 3.1x contention
+  factor is a property of 32-way parallelism rather than a defect, and a rule
+  asserting "the ratio has an upper bound" would have the same shape problem this
+  finding is about. It is recorded here as the baseline for judging a future flake
+  instead.
+- **A test budget cannot bound a module-load spawn**, so the gate's rule is stated
+  for the `it` argument and the `beforeAll` hook, but nothing detects a *new*
+  top-level spawn. `check-user-guide.test.ts` is the only file that had one, and it
+  no longer does.
+- **The `hookTimeout` for a `beforeAll` was not exercised at its limit** — the
+  budget exists to catch a hang and was never approached, so the number is
+  justified by the same order-of-magnitude argument as `BULK_TIMEOUT_MS` rather
+  than by an observed near-miss.
+
+## Finding 128 — two "product flakes" were manufactured by the clean-up that was supposed to tidy up after them
+
+Finding 127 closed with one failure unresolved: an intermittent
+`expected 1 to be 0` in `check-official-roundtrip.test.ts`, green 40/40 in
+isolation and red roughly one run in six under a full suite. This finding is what
+it turned out to be, plus a second one found on the way, and both have the same
+cause -- which is not in the product.
+
+### The mechanism
+
+Every fixture in this suite that needs a real tree creates it with `mkdtempSync`
+under a **fixed prefix in `/tmp`**:
+
+| prefix | written by |
+| --- | --- |
+| `/tmp/rca-bench-typecheck-<rand>` | `typecheck-entrypoint.test.ts` |
+| `/tmp/rca-bench-gatetest-exclusion-<rand>` | `gate-test-battery-exclusion.test.ts` |
+| `/tmp/rca-bench-<name>-<rand>` | the remaining mkdtemp fixtures |
+
+A full-suite pass leaves **64** of these behind, because a killed run never reaches
+its `afterAll`. They are cheap individually and were not cheap in aggregate: the
+cgroup for this sandbox has a hard limit of 8192 MiB, and at the moment it was
+measured the sandbox sat at 8149.8 MiB -- **42 MiB of headroom**, with
+`memory.events` recording `max 280851` hits, `oom 513`, and `oom_kill 2`. A run
+under that ceiling has an unpredictable process killed in it.
+
+So the clean-up was justified. What was not justified was doing it **while a run
+was in flight**. Issued at 03:29, `rm -rf /tmp/rca-bench-typecheck-*` deleted the
+**live** cold worktree of a suite run that started at 03:29. `tsc` read a
+half-deleted source tree and emitted
+
+    src/export/aiops2025.ts(4,40): error TS2306: File '.../guard.ts' is not a module
+
+seven times, once per exporter. The same command ran `git worktree prune`, which
+deregisters a worktree whose directory is missing; that is the second flake.
+
+### Why it read as a product defect
+
+The error names a real file, `packages/core/src/export/guard.ts`, and a real
+mistake -- `File ... is not a module` is exactly what a broken export list
+produces. The repo copy was intact at 4950 bytes the whole time. Nothing in the
+message says "the tree this ran in was deleted underneath it", because nothing can:
+by the time `tsc` reports, the deletion has already happened.
+
+The check that settles it takes one command and should have been the first one:
+
+    wc -c packages/core/src/export/guard.ts    # 4950, unchanged
+
+An earlier flake fell the same way. `scanned` alternated 35 and 36 across runs, and
+I attributed it to a race in `derive-gate-sites.mjs` under load. The deriver fix is
+correct on its own merits -- a dotfile is not a gate site, and
+`gate-sites-are-proven.test.ts` now proves it with a mutation -- but the *flake*
+was a `git worktree prune` deregistering a running test's worktree mid-run.
+
+Measured after the interference was removed, with a 20 Hz poller watching every
+cold worktree for a `guard.ts` that is not 4950 bytes: **four consecutive
+full-suite passes, zero suspect observations, 3234 tests each**. The flake is gone
+and no product code was changed to remove it.
+
+### The rule
+
+- **Never `rm -rf` under `/tmp` and never `git worktree prune` while a test runner
+  is alive.** `pgrep -c -f vitest` must read 0 first. Clean before starting or after
+  returning, never between.
+- **A failure whose message names a file just touched on disk is a hypothesis about
+  the operator before it is a hypothesis about the product.** Check the repository
+  copy with `wc -c` before reading any test code.
+- Clean-up that is *justified* is not therefore *safe*. The cgroup pressure here was
+  real and the 64 orphans were worth removing; the defect was the timing, not the
+  action.
+- A fix for a flake that changes product code needs the flake reproduced **with the
+  interference absent** before the fix can be credited. Two fixes here were written
+  against a flake that neither of them caused.
+
+### Coverage
+
+| quantity | value |
+| --- | --- |
+| orphaned `/tmp` worktrees at measurement | **64** |
+| cgroup hard limit | **8192 MiB** |
+| cgroup usage at measurement | **8149.8 MiB** |
+| headroom | **42.1 MiB** |
+| `memory.events` `max` hits | **280851** |
+| `memory.events` `oom` / `oom_kill` | **513 / 2** |
+| full-suite passes with interference removed | **4 of 4**, 3234 tests each |
+| suspect observations by the 20 Hz poller | **0** |
+| product files changed to remove the flake | **0** |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `guard.ts` in the repository during the failure | **4950 bytes, intact** |
+| failure reproduced with `git diff HEAD` path only | no — the diff does not touch `guard.ts` |
+| failure reproduced by `pnpm install` in a cold tree | no |
+| failure reproduced by `pnpm typecheck` in a cold tree | no — 0 `error TS` |
+| failure reproduced by 12-way concurrent `coldCopy` | no |
+| failure reproduced by deleting a live worktree mid-`tsc` | matches the reported symptom |
+| `git worktree list` after clean-up | **1 entry**, the primary tree |
+
+### Not done
+
+- **The suite still leaks scratch directories.** 64 orphans is a property of killed
+  runs, and nothing reaps them. A `globalSetup` teardown, or a prefix registered
+  for removal at `beforeAll`, would bound it; neither is written.
+- **No guard prevents the ordering mistake.** The rule lives in the workspace
+  shell-rules file and in this finding, and a human or an agent can still issue the
+  command. Nothing detects "a `/tmp` deletion overlapped a live run".
+- **The cgroup headroom was not addressed.** The orphan removal recovered the
+  space; it did not make 32 vitest workers fit under 8192 MiB. Whether the suite
+  fits at full parallelism without the orphans was not re-measured, so the
+  relationship between the memory ceiling and the runtime is still unmeasured.
+
+## Finding 129 — a test file failed as a whole suite, and three separate checks reported the file as green
+
+### The defect
+
+`gate-sites-are-proven.test.ts` referenced `RULE_TIMEOUT_MS` at line 767 without
+ever declaring it. The reference was in the second argument of an `it`, so it was
+evaluated when the file was **collected**. The result was
+
+    ReferenceError: RULE_TIMEOUT_MS is not defined
+    FAIL  test/gate-sites-are-proven.test.ts [ test/gate-sites-are-proven.test.ts ]
+
+which is a *suite*-level failure: all 28 tests in the file were discarded, and
+vitest reported the file once rather than per test.
+
+### Why it survived three green checks
+
+The reference was in an **uncommitted** test added earlier in the same session.
+That is what made it invisible for as long as it was:
+
+| check run | what it read | result |
+| --- | --- | --- |
+| `vitest run packages/core/test/gate-sites-are-proven.test.ts --root .` through the root config | the working tree, which had the file | **passed, 29 tests** |
+| the same test through `packages/core`'s own config | the working tree | **passed, 29 tests** |
+| `pnpm --filter @rca-bench-factory/core test:coverage` | the working tree | **passed**, 121 files / 3239 tests |
+| `pnpm --filter @rca-bench-factory/core test` | the working tree | **FAILED at collect** |
+
+The last of those is the one that failed, and it is the one
+`measure-doc-counts.mjs` spawns. `--coverage` and no-`--coverage` differ in the
+reporter, and the suite-level failure was reported as a failed **file** rather
+than a failed **test**, which the summary line of the coverage run did not
+surface: a run that reports `Tests 3239 passed` while a file failed collection is
+a run whose two numbers describe different things.
+
+The general shape is finding 123's, one level down. A green summary line is a
+claim; nothing was reading whether the *file* count agreed with the *test* count,
+and the assertion that would have caught the difference is not one anybody would
+write by default.
+
+### The second defect, found by the first
+
+Fixing the constant made `docs:counts` run far enough to reach
+`typecheck-entrypoint.test.ts`, which then failed with
+
+    expected [ Array(1) ] to deeply equal []
+    Received: [ "scripts/.probe-figures-harness.mjs" ]
+
+That is a genuine cross-test race, and it has the same cause as finding 128's:
+`type-miss-probe.test.ts` creates `scripts/.probe-figures-harness.mjs` for the
+duration of two tests, and `typecheck-entrypoint.test.ts` enumerated the untracked
+files while it was there. The completeness assertion compared that enumeration
+against one taken earlier, at copy time, when the file did not exist. **The
+assertion compared two readings of a directory that was changing underneath it,
+and reported the difference as a defect in the copy.**
+
+The repair is to assert over the paths the copy actually took rather than to
+re-enumerate. `coldCopy()` now returns `{ sandbox, copied }`, and the assertion
+reads `copied`. That is the only reading that describes an event which already
+happened.
+
+Proven in the failing condition: with the transient file held in place for the
+whole run, `typecheck-entrypoint.test.ts` passes **4 of 4** where it previously
+failed.
+
+### Coverage
+
+| quantity | before | after |
+| --- | --- | --- |
+| `gate-sites-are-proven.test.ts` as a file | **failing at collect**, 0 of 28 tests run | **29 tests pass** |
+| `typecheck-entrypoint.test.ts` with the scratch file held | **failed** | **4 of 4 pass** |
+| declared budgets in `gate-sites-are-proven.test.ts` | 0 | **1 (`RULE_TIMEOUT_MS`)** |
+| rows in `doc-counts.json` that were stale | **3 of 3** | **0** |
+| `progress.md` current-state rows disagreeing with the suite | 3 | **0** |
+| `pnpm docs:check` | failed | **clean, 7 guards** |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `RULE_TIMEOUT_MS` declared | `const RULE_TIMEOUT_MS = 30_000` |
+| `gate-sites-are-proven.test.ts`, root config | **29 tests pass** |
+| `gate-sites-are-proven.test.ts`, core config | **29 tests pass** |
+| `typecheck-entrypoint.test.ts`, no interference | **4 tests pass** |
+| `typecheck-entrypoint.test.ts`, scratch file held | **4 tests pass** |
+| `pnpm docs:counts` | rc 0; wrote `core 121/3239`, `cli 3/173`, `repo 124/3412` |
+| `pnpm docs:check` | clean |
+| `golden-master/doc-counts.json` | regenerated; matches the suite |
+
+### Not done
+
+- **`timeout-budget.test.ts` cannot see a missing budget.** It scans for budgets
+  and checks the largest one is above the default; a file that *references* an
+  undeclared constant has no budget for it to find. The reader's rule is
+  "every stated budget is large enough", which says nothing about a stated budget
+  that does not exist. Closing this needs a different instrument -- a type-check
+  of the test sources, or a lint rule for an undeclared identifier -- and neither
+  is wired up.
+- **A suite-level collection failure does not fail the run's summary line.** The
+  coverage run printed `Tests 3239 passed` while a file had failed to collect. The
+  file count and the test count came from different places and nothing reconciled
+  them. `check-doc-counts` compares the *published* counts to a live measurement,
+  so it would catch a stale claim, but nothing asserts that a run with any
+  `FAIL [ file ]` line also fails.
+- **The `typecheck-entrypoint` fix rests on `copied` being populated.** The
+  positive control is `copied.length > 0`, which is satisfied by the committed
+  tree; it does not prove that a file which *should* have crossed did. The
+  original defect -- `git diff` alone reproducing half the working tree -- would
+  still be caught, because the missing file is not in `copied` and a reader
+  looking for it there finds nothing. That is a weaker check than the assertion it
+  replaced, and it is weaker for a reason: the stronger one was measuring a
+  directory in motion.

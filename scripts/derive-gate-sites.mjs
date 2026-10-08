@@ -415,10 +415,47 @@ function excludedIn(source) {
   return counts;
 }
 
-function derive() {
-  const files = readdirSync(SCRIPTS)
-    .filter((f) => f.endsWith('.mjs'))
+/**
+ * Every published script, which is every non-hidden `.mjs` in `scripts/`.
+ *
+ * ## Why dotfiles are excluded, and why this is a correctness fix rather than tidiness
+ *
+ * `type-miss-probe.test.ts` writes a temporary module at
+ * `scripts/.probe-figures-harness.mjs` and removes it in a `finally`. It has to
+ * live in `scripts/` because the probe it re-exports resolves its own imports
+ * (`../packages/core/dist/...`) relative to its own path, so a harness elsewhere
+ * makes every one of them unresolvable.
+ *
+ * The consequence was an intermittent failure of
+ * `gate-sites-are-proven.test.ts`'s rule-1 assertion, at roughly one run in four:
+ * this function counted the harness while it existed, and the count is a
+ * *published* number (`scanned`) compared against the committed inventory. The
+ * derivation saw 36 where the committed file says 35.
+ *
+ * Reproduced directly by creating the file and running `--stdout`: the count is
+ * 36 with it present and 35 without, which is the failing assertion's exact text
+ * (`expected 35 to be 36`).
+ *
+ * Two repairs were available. The test could stop writing into a shared directory,
+ * or the derivation could stop counting files that are not part of the artefact it
+ * describes. The second is the right one here, because **a dotfile is not a
+ * published script**: it is not committed, it is not named by `pnpm lint`, and
+ * nothing an operator runs will ever resolve it. The inventory is a statement
+ * about the scripts that ship, and a transient scratch module was never one of
+ * them.
+ *
+ * The test's window is still a real hazard -- it is why the harness is written
+ * per call rather than once -- but it is no longer a hazard *this* file depends
+ * on winning a race against.
+ */
+function scriptFiles() {
+  return readdirSync(SCRIPTS)
+    .filter((f) => f.endsWith('.mjs') && !f.startsWith('.'))
     .sort();
+}
+
+function derive() {
+  const files = scriptFiles();
 
   const sites = [];
   const excluded = { zero: 0, numeric_other: 0, computed: 0 };

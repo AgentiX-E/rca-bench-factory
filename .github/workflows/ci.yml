@@ -223,3 +223,97 @@ jobs:
 
       - name: Example pack verifies against its own manifest
         run: node scripts/verify-example-pack.mjs
+
+  # The job that starts where a reader starts.
+  #
+  # ## Why this exists
+  #
+  # `typecheck` was green for months because the `verify` job above runs `Build`
+  # before `Type-check`, so the step was satisfied by the step above it. That was
+  # fixed with a `pretypecheck` hook, and the fix was real -- but the defect was
+  # never "one script is missing a hook". It was **the job's step order acting as
+  # a precondition nobody wrote down**, and repairing the single script that had
+  # been observed to break left the rest of the chain resting on it.
+  #
+  # Measured on a worktree with `pnpm install` and no `pnpm build`, before the
+  # hooks were added: `docs:check` failed on its first guard
+  # (`Cannot find module '.../packages/core/dist/index.js'`), `lint` failed in
+  # `verify-scorer-stability`, and `test`, `test:coverage`, `examples:check` and
+  # `official:check` all failed. Three of the seven doc guards read a build
+  # artefact -- one imports core's `dist/index.js`, two drive cli's
+  # `dist/main.js` -- and a single `pnpm build` made every one of them pass.
+  #
+  # ## Why it does not build
+  #
+  # A `pnpm build` step here would make this job green and measure nothing: it
+  # would restore exactly the property that hid the defect. So the job installs
+  # and runs the chain, and every script it calls has to satisfy its own
+  # precondition through the hooks in `package.json`. `cold-tree-job.test.ts`
+  # asserts the absence of a build step here, because "make the red job green"
+  # is a temptation the next person will feel and a build is the obvious way.
+  #
+  # ## Why it is a job and not a step
+  #
+  # As a step inside `verify` it would inherit the build above it and observe
+  # nothing. It also runs fewer things on purpose: the mutation batteries and the
+  # example-pack round trip answer questions about a built artefact, not about
+  # whether a script can find its own inputs, so duplicating them here would cost
+  # minutes and add no signal.
+  cold-tree:
+    name: cold tree / no build / every precondition declared
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # `contents: read` is the default and it is all this job needs. Stated rather
+    # than inherited because the sibling job above grants `contents: write` for
+    # one step, and a reader comparing the two should not have to work out
+    # whether this one inherited it.
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No build step, here or anywhere below. See the job comment.
+
+      - name: Documentation guards, from a tree that has never been built
+        run: pnpm docs:check
+
+      - name: Lint chain, from a tree that has never been built
+        run: pnpm lint
+
+      - name: Test, from a tree that has never been built
+        run: pnpm test
+
+      - name: Examples are up to date, from a tree that has never been built
+        run: pnpm examples:check
+
+      - name: Example pack verifies against its own manifest, from a tree that has never been built
+        # Added because it is build-dependent and was missing from the list of
+        # such scripts. `build-example-bundle.mjs` imports core's built
+        # `index.js`, so on a cold tree it dies with ERR_MODULE_NOT_FOUND -- and
+        # the assumption that it did not had been recorded as a measurement. The
+        # reconciliation in `cold-tree-preconditions.test.ts` is what caught it,
+        # and this step is the behavioural half: the claim is now exercised by
+        # the job that exists to exercise it.
+        run: pnpm examples:bundle:check
+
+      - name: The file that proves the preconditions are declared
+        # Named explicitly rather than left to `pnpm test` above, so that
+        # deleting the rule fails this job by name instead of showing up as a
+        # suite that merely got shorter. The cold tree is the one place this
+        # file's subject matter is real, which is why it belongs here as well as
+        # in the main job.
+        run: pnpm exec vitest run --root packages/core cold-tree-preconditions.test.ts cold-tree-job.test.ts

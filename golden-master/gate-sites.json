@@ -1,6 +1,6 @@
 {
   "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
-  "scanned": 34,
+  "scanned": 35,
   "excluded": {
     "zero": 6,
     "numeric_other": 1,
@@ -90,6 +90,14 @@
       "diagnostic": "Potential credential detected (never commit API keys):",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable.test.ts"
+    },
+    {
+      "script": "scripts/check-no-unsafe-shell.mjs",
+      "line": 438,
+      "condition": "failures.length > 0",
+      "diagnostic": "${failures.length} occurrence(s) across ${new Set(failures.map((f) => f.file)).size} file(s).",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-no-unsafe-shell.test.ts"
     },
     {
       "script": "scripts/check-no-vendored-data.mjs",

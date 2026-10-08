@@ -98,6 +98,7 @@ const REGISTER: Record<string, Entry> = {
   'check-no-absolute-paths.mjs': { class: 'gate' },
   'check-no-mock.mjs': { class: 'gate' },
   'check-no-secrets.mjs': { class: 'gate' },
+  'check-no-unsafe-shell.mjs': { class: 'gate' },
   'check-no-vendored-data.mjs': { class: 'gate' },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },
