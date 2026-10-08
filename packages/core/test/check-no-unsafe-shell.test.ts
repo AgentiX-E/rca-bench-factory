@@ -208,9 +208,41 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
      */
     const PROBE = 'a=x; b=y; r=HOME; arr=(1 2); ';
 
-    /** Does this shell reject the expansion as a syntax error? */
-    function shellRejects(shell: string, expansion: string): boolean {
+    /**
+     * Whether this shell is installed at all.
+     *
+     * This guard is the one place in the tree whose acceptance criterion is a
+     * *second program*, and a missing `zsh` used to be indistinguishable from a
+     * `zsh` that rejects a construct. `spawnSync` returns `status: null` with
+     * `error.code === 'ENOENT'` when the binary is absent, and the original
+     * `r.status !== 0` read that as a rejection -- so on a runner without `zsh`
+     * the gate reported `zsh rejected ${a}`, naming the simplest legal expansion
+     * in the language as malformed.
+     *
+     * Measured on `ubuntu-24.04` (run 37837481091): both jobs failed with
+     * `zsh rejected ${a}: expected true to be false`, on the *first* entry of the
+     * well-formed list, which is what an absent binary looks like -- every entry
+     * would fail the same way and the first is the one reported. It passed here
+     * because this sandbox has zsh 5.9.
+     *
+     * The distinction is now stated: a verdict is only a verdict if the shell
+     * ran.
+     */
+    function shellAvailable(shell: string): boolean {
+      const r = spawnSync(shell, ['-c', 'exit 0'], { encoding: 'utf8' });
+      return r.status === 0;
+    }
+
+    /**
+     * Does this shell reject the expansion as a syntax error?
+     *
+     * Returns `null` when the shell is not installed, rather than `true`. The
+     * caller asserts availability first, so a missing shell fails the file with
+     * a message that says so instead of producing a verdict out of an ENOENT.
+     */
+    function shellRejects(shell: string, expansion: string): boolean | null {
       const r = spawnSync(shell, ['-c', `${PROBE}echo "${expansion}"`], { encoding: 'utf8' });
+      if (r.error !== undefined && r.status === null) return null;
       return r.status !== 0;
     }
 
@@ -254,6 +286,14 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       '${arr[@]}',
       '${BASH_SOURCE[0]}',
     ];
+
+    it('both shells are installed, so the cross-check below has something to compare against', () => {
+      // Stated before the two comparisons, and not folded into them. A missing
+      // shell is a fact about the runner, and the failure it used to produce --
+      // `zsh rejected ${a}` -- was a fact about neither the gate nor the shell.
+      expect(shellAvailable('zsh'), 'zsh is not installed on this runner').toBe(true);
+      expect(shellAvailable('bash'), 'bash is not installed on this runner').toBe(true);
+    });
 
     it('both shells reject every malformed expansion, so the fixture list is real', () => {
       // Without this, the assertion below could pass by testing a list the

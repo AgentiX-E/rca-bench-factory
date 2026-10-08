@@ -12912,3 +12912,113 @@ failed.
   looking for it there finds nothing. That is a weaker check than the assertion it
   replaced, and it is weaker for a reason: the stronger one was measuring a
   directory in motion.
+
+## Finding 130 — a missing binary was read as a verdict, and CI is where that was visible
+
+The v1.63 push went red on two jobs. Both failures were in code added in the same
+session, and both were the same mistake at different levels: **a check reporting a
+verdict about something it had never actually observed.**
+
+### Defect 1 — `zsh` absent, read as `zsh` rejecting `${a}`
+
+`check-no-unsafe-shell.test.ts` cross-checks the gate against the two shells it
+models, and it did so through
+
+```js
+function shellRejects(shell, expansion) {
+  const r = spawnSync(shell, ['-c', `${PROBE}echo "${expansion}"`], { encoding: 'utf8' });
+  return r.status !== 0;
+}
+```
+
+`spawnSync` returns `status: null` when the binary does not exist, and
+`null !== 0` is `true`. **A shell that was not installed was therefore reported as
+a shell that rejected the expansion.**
+
+Measured on `ubuntu-24.04`, run 37837481091, in both jobs:
+
+    AssertionError: zsh rejected ${a}: expected true to be false
+
+`${a}` is the simplest legal expansion in the language. It failed on the *first*
+entry of the well-formed list, which is the signature of an absent binary: every
+entry fails identically and the first is the one the reporter names. It passed in
+this sandbox because this sandbox has zsh 5.9 -- so the defect was invisible to
+every local run and to every one of the 3240 green tests.
+
+The repair distinguishes the two facts a verdict can rest on:
+
+| function | returns | meaning |
+| --- | --- | --- |
+| `shellAvailable(shell)` | `boolean` | the shell ran |
+| `shellRejects(shell, expansion)` | `boolean \| null` | `null` when the shell is not installed |
+
+and a new test asserts availability *before* the two comparisons, so a runner
+without a shell fails with **`zsh is not installed on this runner`** rather than
+with a verdict invented from an ENOENT.
+
+Proven by hiding the binary: with a `PATH` containing `bash`, `node` and the core
+utilities but not `zsh`, the file now reports
+
+    × both shells are installed, so the cross-check below has something to compare against
+      → zsh is not installed on this runner: expected false to be true
+    × both shells accept every well-formed expansion, so the gate is not over-strict
+      → zsh rejected ${a}: expected null to be false
+
+The second message changed from `expected true to be false` to
+`expected null to be false`, which is the difference between an assertion about
+the shells and an assertion about `spawnSync`.
+
+### Defect 2 — a control that asserted a property of the developer's tree
+
+`typecheck-entrypoint.test.ts` gained a positive control, `copied.length > 0`,
+intended to keep the completeness assertion from being vacuous. CI answered
+
+    AssertionError: expected 0 to be greater than 0
+
+**and the control was wrong, not the copy.** A fresh checkout has no untracked
+files: `git ls-files --others` returns nothing, `attempted` and `copied` are both
+legitimately empty, and the copy reproduced the whole working tree precisely
+because there was nothing extra in it. The control asserted a property of the
+**developer's working tree** -- which is dirty here and clean on CI -- and not of
+the copy step it was guarding.
+
+It is now a comparison rather than a magnitude. `coldCopy()` returns
+`{ sandbox, copied, attempted }`, and the test requires `copied === attempted`,
+which is empty-on-empty on a clean tree and non-empty-on-non-empty here. That
+still catches the defect the fixture exists for, because a file that `git diff`
+alone would have missed is absent from `copied` and shows up in `shortfall`.
+
+### Coverage
+
+| quantity | before | after |
+| --- | --- | --- |
+| tests in `check-no-unsafe-shell.test.ts` | 19 | **20** |
+| shells distinguished from ENOENT | 0 of 2 | **2 of 2** |
+| `typecheck-entrypoint` controls that hold on a clean tree | **0** (it failed on CI) | **1** |
+| core test files / tests | 121 / 3239 | **121 / 3240** |
+| CI jobs green on the fix | 0 of 3 | pending |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `check-no-unsafe-shell.test.ts` with `zsh` present | **20 tests pass** |
+| `check-no-unsafe-shell.test.ts` with `zsh` hidden | fails with **`zsh is not installed on this runner`** |
+| that failure's second message | `expected null to be false`, no longer `expected true to be false` |
+| `typecheck-entrypoint.test.ts`, dirty tree | **4 tests pass** |
+| `coldCopy()` return | `{ sandbox, copied, attempted }` |
+| core suite | **121 files, 3240 tests passed** |
+| core coverage | `99.96 / 99.91 / 100 / 99.96` |
+| `pnpm typecheck` / `lint` / `docs:check` | clean |
+
+### Not done
+
+- **The fixture was not run on a clean tree locally.** The fix is argued from
+  CI's failure and from the mechanism, not from a local reproduction of the clean
+  state; the sandbox working tree is dirty and making it clean would have
+  discarded the session's work. The assertion is expected to hold because it no
+  longer compares against a non-zero bound, but that reading is deduced.
+- **Nothing checks shell availability for the other spawns in the suite.** This
+  fixture is the only one whose subject is a second program, so it is the only one
+  where the distinction matters today -- and that is a statement about the suite
+  as it is, not a guard that would catch the next one.

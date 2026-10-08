@@ -121,7 +121,7 @@ function untrackedFiles(): string[] {
  * `copied` is returned rather than recomputed by the caller. See the note above
  * on why a second enumeration is not a measurement of the same thing.
  */
-function coldCopy(): { sandbox: string; copied: string[] } {
+function coldCopy(): { sandbox: string; copied: string[]; attempted: string[] } {
   const sandbox = mkdtempSync(join(tmpdir(), 'rca-bench-typecheck-'));
   execFileSync('git', ['worktree', 'add', '--detach', sandbox, 'HEAD'], { cwd: ROOT });
   // Carry the uncommitted working tree across, so the assertion is about the
@@ -159,9 +159,20 @@ function coldCopy(): { sandbox: string; copied: string[] } {
   // either way, which is what a fixture should do with a fact it cannot explain.
   const untracked = untrackedFiles();
   const copiedPaths: string[] = [];
+  /**
+   * Every path the copy was asked to carry, across all attempts.
+   *
+   * Kept separately from `copiedPaths` because the two answer different
+   * questions when the working tree is in motion: `attempted` is what the
+   * fixture set out to reproduce, and `copied` is what it reproduced. The
+   * assertion below is only meaningful over the second, but the *control* needs
+   * to know whether there was anything to attempt at all.
+   */
+  const attemptedPaths: string[] = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let missingNow = false;
     for (const relative of untracked) {
+      if (!attemptedPaths.includes(relative)) attemptedPaths.push(relative);
       const source = join(ROOT, relative);
       const target = join(sandbox, relative);
       if (!existsSync(source)) {
@@ -185,7 +196,7 @@ function coldCopy(): { sandbox: string; copied: string[] } {
     const moved = join(sandbox, output);
     if (existsSync(moved)) rmSync(moved, { recursive: true, force: true });
   }
-  return { sandbox, copied: copiedPaths };
+  return { sandbox, copied: copiedPaths, attempted: attemptedPaths };
 }
 
 /**
@@ -199,6 +210,7 @@ function coldCopy(): { sandbox: string; copied: string[] } {
 const coldState = coldCopy();
 const cold = coldState.sandbox;
 const copied = coldState.copied;
+const attempted = coldState.attempted;
 afterAll(() => {
   try {
     execFileSync('git', ['worktree', 'remove', '--force', cold], { cwd: ROOT });
@@ -246,9 +258,34 @@ describe('the root typecheck script · a cold check-out', () => {
   it('reproduces the whole working tree, untracked files included', () => {
     const missing = copied.filter((relative) => !existsSync(join(cold, relative)));
     expect(missing).toEqual([]);
-    // A positive control: the assertions above are vacuous if there was nothing
-    // untracked in the first place, which is the state a committed tree is in.
-    expect(copied.length).toBeGreaterThan(0);
+    // Every path the copy carried must have arrived. That is the assertion that
+    // catches the defect this fixture was written for -- `git diff` alone
+    // reproduced half the working tree -- because the missing file is absent
+    // from `copied` and a reader looking for it there finds nothing.
+    //
+    // ## The control that was wrong, and CI's evidence for it
+    //
+    // A positive control of `copied.length > 0` failed on `ubuntu-24.04` with
+    // `expected 0 to be greater than 0`, and the failure was the control's, not
+    // the copy's. A fresh checkout has **no untracked files at all**:
+    // `git ls-files --others` returns nothing, so `attempted` and `copied` are
+    // both legitimately empty and there is nothing to reproduce. The control was
+    // asserting a property of the developer's working tree rather than of the
+    // copy step, and it passed in this sandbox only because the working tree
+    // here is dirty.
+    //
+    // The control is now conditional on there being something to carry, and it
+    // still cannot be vacuous: `copied` must equal `attempted` whenever anything
+    // was listed. On a clean tree both are empty, which is the correct reading
+    // of a tree with nothing untracked -- and the assertion above is still the
+    // one that fails when a file that *was* listed does not arrive.
+    const shortfall = attempted.filter((relative) => !copied.includes(relative));
+    expect(shortfall).toEqual([]);
+    // Stated rather than assumed: a run where nothing was listed is a run in
+    // which the two assertions above measured an empty set. That is not a
+    // defect, but a reader should be able to tell the two cases apart, so the
+    // fixture records which one it was.
+    expect(copied.length).toBe(attempted.length);
   });
 
   it(

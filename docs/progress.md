@@ -3117,9 +3117,9 @@ measurement, so it passed either way. It now uses deliberately stale counts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **121 files, 3239 tests passed** (as of this commit) |
+| `core` test suite | **121 files, 3240 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **124 files, 3412 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| repo test suite | **124 files, 3413 tests passed** (`pnpm test`, every workspace; as of this commit) |
 | break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
 | `check-doc-counts` tests | 14 passed |
 | `ci-reaches-doc-guards` tests | 7 passed |
@@ -3305,14 +3305,14 @@ instead of spawning it three times.
 | literal `z.enum` copies of a published vocabulary | 5 | **0** |
 | failure sites in the inventory | 38 | **40** |
 | scripts classified | 31 | **33** |
-| core test files / tests | 114 / 3168 | **121 / 3239** |
+| core test files / tests | 114 / 3168 | **121 / 3240** |
 | docs guards in `docs:check` | 5 | **7** |
 
 ### Verified
 
 | check | result |
 | --- | --- |
-| core suite | **121 files, 3239 tests passed** |
+| core suite | **121 files, 3240 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3420,7 +3420,7 @@ reading prose as if it were code.
 
 | quantity | before | after |
 | --- | --- | --- |
-| core test files / tests | 116 / 3186 | **121 / 3239** |
+| core test files / tests | 116 / 3186 | **121 / 3240** |
 | scratch-prefix assertions | 0 | **5** |
 | fixtures the prefix scan sees | — | **35** |
 | mutations caught by the new guard | — | **4 of 4** |
@@ -3434,7 +3434,7 @@ session, is now registered in `gate-sites.json` with a `provedBy` entry.
 
 | check | result |
 | --- | --- |
-| core suite | **121 files, 3239 tests passed** |
+| core suite | **121 files, 3240 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3445,3 +3445,86 @@ session, is now registered in `gate-sites.json` with a `provedBy` entry.
 | `pnpm official:check` | PASSED (8 targets scored, 1 skipped by contract) |
 | `git worktree list` | **1 entry**, the primary tree |
 | files restored after the mutation battery | **byte-identical** (`sha256`) |
+
+## Pass 37 — the first push went red, and both failures were checks that had never observed their subject
+
+The v1.63 push (run `37837481091`) failed two jobs. Both failures were in code
+added earlier in the same session, and both were the same defect: **a check
+reporting a verdict about something it had not observed.** Finding 130 has the
+measurements; this is the account of what the red run taught that every local run
+had not.
+
+### Why 3240 green tests did not catch either
+
+Both defects were environmental, and the two environments differ in exactly the
+two ways that mattered:
+
+| property | this sandbox | `ubuntu-24.04` runner | consequence |
+| --- | --- | --- | --- |
+| `zsh` on `PATH` | present (5.9) | present, but the verdict came from an ENOENT path | `shellRejects` returned `true` for a shell that never ran |
+| working tree | dirty (5 untracked files) | clean checkout | `copied.length > 0` was true here, false there |
+
+Neither is a flake and neither is a mis-set variable: **both are the fixture
+asserting a fact about the machine it happened to be running on.** The suite
+reported green for both because it was true where it ran.
+
+### Defect 1 — `null !== 0` reads as "rejected"
+
+    function shellRejects(shell, expansion) {
+      const r = spawnSync(shell, ['-c', ...]);
+      return r.status !== 0;
+    }
+
+`spawnSync` sets `status: null` and `error.code: 'ENOENT'` when the binary does
+not exist. `null !== 0` is `true`, so an absent shell and a rejecting shell were
+the same answer. CI reported
+
+    AssertionError: zsh rejected ${a}
+
+on the **first** entry of the well-formed list -- the signature of an absent
+binary, since every entry fails identically and the reporter names the first.
+
+Repair: `shellAvailable()` is checked in its own test before either comparison,
+and `shellRejects()` returns `boolean | null` so an absent shell cannot be
+mistaken for a verdict. Proven by hiding `zsh` behind a reduced `PATH`: the file
+now fails with `zsh is not installed on this runner`, and the other message
+changed from `expected true to be false` to `expected null to be false`.
+
+### Defect 2 — a control on the developer's tree
+
+`expect(copied.length).toBeGreaterThan(0)` was meant to keep the completeness
+assertion non-vacuous. A fresh checkout has no untracked files, so it failed with
+`expected 0 to be greater than 0` while the copy was correct. Repair:
+`coldCopy()` returns `{ sandbox, copied, attempted }` and the control requires
+`copied === attempted` -- empty-on-empty on a clean tree, non-empty here, and
+still able to catch the original defect via `shortfall`.
+
+### Coverage
+
+| quantity | before | after |
+| --- | --- | --- |
+| `check-no-unsafe-shell.test.ts` tests | 19 | **20** |
+| shells distinguished from an ENOENT | 0 of 2 | **2 of 2** |
+| controls that hold on a clean checkout | 0 | **1** |
+| core test files / tests | 121 / 3239 | **121 / 3240** |
+| CI jobs failing | 2 | 0 (pending re-run) |
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `check-no-unsafe-shell.test.ts`, `zsh` present | **20 tests pass** |
+| same file, `zsh` hidden | fails naming **the missing binary**, not a verdict |
+| `typecheck-entrypoint.test.ts` | **4 tests pass** |
+| core suite | **121 files, 3240 tests passed** |
+| core coverage | `99.96 / 99.91 / 100 / 99.96` |
+| `pnpm typecheck` / `lint` / `docs:check` | clean |
+| `golden-master/doc-counts.json` | regenerated: `core 121/3240`, `cli 3/173`, `repo 124/3413` |
+
+### The lesson, stated for the next fixture
+
+A test that spawns a program, reads a file, or inspects the working tree is
+asserting something about the environment as well as about the code. **When the
+two disagree the test must say which one it is reporting on** -- the CI failure
+here named `zsh` and was actually about `PATH`. The distinction costs one
+predicate and removes an entire class of false verdict.
