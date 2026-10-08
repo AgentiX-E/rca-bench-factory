@@ -3117,9 +3117,9 @@ measurement, so it passed either way. It now uses deliberately stale counts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **121 files, 3240 tests passed** (as of this commit) |
+| `core` test suite | **121 files, 3242 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **124 files, 3413 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| repo test suite | **124 files, 3415 tests passed** (`pnpm test`, every workspace; as of this commit) |
 | break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
 | `check-doc-counts` tests | 14 passed |
 | `ci-reaches-doc-guards` tests | 7 passed |
@@ -3305,14 +3305,14 @@ instead of spawning it three times.
 | literal `z.enum` copies of a published vocabulary | 5 | **0** |
 | failure sites in the inventory | 38 | **40** |
 | scripts classified | 31 | **33** |
-| core test files / tests | 114 / 3168 | **121 / 3240** |
+| core test files / tests | 114 / 3168 | **121 / 3242** |
 | docs guards in `docs:check` | 5 | **7** |
 
 ### Verified
 
 | check | result |
 | --- | --- |
-| core suite | **121 files, 3240 tests passed** |
+| core suite | **121 files, 3242 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3420,7 +3420,7 @@ reading prose as if it were code.
 
 | quantity | before | after |
 | --- | --- | --- |
-| core test files / tests | 116 / 3186 | **121 / 3240** |
+| core test files / tests | 116 / 3186 | **121 / 3242** |
 | scratch-prefix assertions | 0 | **5** |
 | fixtures the prefix scan sees | — | **35** |
 | mutations caught by the new guard | — | **4 of 4** |
@@ -3434,7 +3434,7 @@ session, is now registered in `gate-sites.json` with a `provedBy` entry.
 
 | check | result |
 | --- | --- |
-| core suite | **121 files, 3240 tests passed** |
+| core suite | **121 files, 3242 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3506,7 +3506,7 @@ still able to catch the original defect via `shortfall`.
 | `check-no-unsafe-shell.test.ts` tests | 19 | **20** |
 | shells distinguished from an ENOENT | 0 of 2 | **2 of 2** |
 | controls that hold on a clean checkout | 0 | **1** |
-| core test files / tests | 121 / 3239 | **121 / 3240** |
+| core test files / tests | 121 / 3239 | **121 / 3242** |
 | CI jobs failing | 2 | 0 (pending re-run) |
 
 ### Verified
@@ -3516,7 +3516,7 @@ still able to catch the original defect via `shortfall`.
 | `check-no-unsafe-shell.test.ts`, `zsh` present | **20 tests pass** |
 | same file, `zsh` hidden | fails naming **the missing binary**, not a verdict |
 | `typecheck-entrypoint.test.ts` | **4 tests pass** |
-| core suite | **121 files, 3240 tests passed** |
+| core suite | **121 files, 3242 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | `pnpm typecheck` / `lint` / `docs:check` | clean |
 | `golden-master/doc-counts.json` | regenerated: `core 121/3240`, `cli 3/173`, `repo 124/3413` |

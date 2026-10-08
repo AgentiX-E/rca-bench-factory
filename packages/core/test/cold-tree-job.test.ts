@@ -119,6 +119,28 @@ function runCommands(body: string): string[] {
 
 const JOB = 'cold-tree';
 
+/**
+ * Every job id in the workflow's `jobs:` map, in file order.
+ *
+ * A job id is the key directly under `jobs:`, indented two spaces. Read
+ * structurally rather than by regex over the whole file, so a comment quoting a
+ * job name cannot be mistaken for a job.
+ */
+function jobIds(): string[] {
+  const raw = workflow();
+  const lines = raw.split('\n');
+  const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  if (start === -1) return [];
+  const ids: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    // The `jobs:` map ends at the first line with no indentation.
+    if (/^\S/.test(line)) break;
+    const m = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line);
+    if (m !== null) ids.push(m[1]!);
+  }
+  return ids;
+}
+
 describe('ci · the cold-tree job starts where a reader starts', () => {
   const body = jobBody(JOB);
 
@@ -181,5 +203,88 @@ describe('ci · the cold-tree job starts where a reader starts', () => {
     // green and the rule is gone.
     const commands = runCommands(body).join('\n');
     expect(commands).toContain('cold-tree-preconditions.test.ts');
+  });
+});
+
+/**
+ * Every shell the suite cross-checks against must be installed by every job that
+ * runs the suite.
+ *
+ * ## The defect
+ *
+ * `check-no-unsafe-shell.test.ts` compares the gate's rule against what `zsh` and
+ * `bash` do with the same string. It passed here and failed on `ubuntu-24.04`
+ * (finding 130) for a reason that had nothing to do with the rule: **`zsh` is not
+ * installed on the runner**, and the workflow never installed it.
+ *
+ * The failure it produced was worse than a missing-dependency error. `spawnSync`
+ * sets `status: null` when the binary does not exist, and the original predicate
+ * `status !== 0` read that as *the shell rejected the expansion*, so CI reported
+ * `zsh rejected ${a}` -- naming the simplest legal expansion in the language as
+ * malformed. The fixture now distinguishes an absent shell from a rejecting one,
+ * which is why this can be a guard about installation rather than a tolerance for
+ * a missing binary.
+ *
+ * ## Why it is asserted in both directions
+ *
+ * A workflow step is only a dependency if it is in the job that needs it. The two
+ * jobs here run the same suite by different routes -- one builds first, one must
+ * not -- so an install in one of them is not an install. Asserting the set of
+ * jobs that carry the step, rather than that the step exists, is what makes a
+ * third job added later fail this file instead of failing on the runner.
+ */
+describe('ci · the shells the suite cross-checks against are installed', () => {
+  /**
+   * The jobs that run any vitest suite, by their **job id**.
+   *
+   * Job id, not the `name:` display string. `jobBody()` addresses a job by id, and
+   * the `name:` value is free text that a comment can quote -- which is how the
+   * first version of this test came to match prose. The id is the key in the
+   * `jobs:` map and is unique by construction.
+   */
+  const SUITE_JOB_IDS = ['verify', 'cold-tree'];
+
+  /** The binaries `check-no-unsafe-shell.test.ts` spawns by name. */
+  const SHELLS = ['zsh', 'bash'];
+
+  it('every job that runs the suite installs every shell the suite spawns', () => {
+    const missing: string[] = [];
+    for (const job of SUITE_JOB_IDS) {
+      const commands = runCommands(jobBody(job)).join('\n');
+      for (const shell of SHELLS) {
+        // `bash` ships with the runner, and the fixture asserts availability
+        // itself; this guard is about the shells a runner does *not* provide.
+        if (shell === 'bash') continue;
+        if (!commands.includes(shell)) missing.push(`${job} does not install ${shell}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('names every job that runs vitest, so a new one cannot be added without a shell', () => {
+    // The list above is a claim about the workflow. Reading the workflow back and
+    // requiring every job whose body runs `vitest` to appear in it is what stops
+    // the claim from going stale -- the same shape as `scripts-are-classified`,
+    // where the register is checked against the directory rather than trusted.
+    //
+    // The enumeration is structural rather than a regex over the whole file. A
+    // first attempt matched `name:` followed by anything up to the next `vitest`,
+    // which swept up job comments that mention the word -- the same defect as
+    // finding 127's shape rule and finding 129's scanner: a pattern that reads
+    // prose as if it were code.
+    const jobs = jobIds();
+    const withVitest = jobs.filter((id) => jobBody(id).includes('vitest'));
+    const registered = withVitest.filter((id) => SUITE_JOB_IDS.includes(id));
+    // Every job that runs the suite must be registered, and every registered job
+    // must exist -- an equality, not a subset, in both directions.
+    expect(
+      withVitest.filter((id) => !SUITE_JOB_IDS.includes(id)),
+      'these jobs run vitest and are not registered, so their shells are unchecked',
+    ).toEqual([]);
+    expect(
+      SUITE_JOB_IDS.filter((id) => !jobs.includes(id)),
+      'these registered jobs no longer exist in the workflow',
+    ).toEqual([]);
+    expect(registered.length).toBe(SUITE_JOB_IDS.length);
   });
 });

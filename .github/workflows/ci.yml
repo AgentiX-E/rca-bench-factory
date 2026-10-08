@@ -40,6 +40,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install the shells the suite cross-checks against
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
       - name: Build (core then cli; cli resolves core's dist)
         run: pnpm build
 
@@ -285,6 +300,21 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install the shells the suite cross-checks against
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       # No build step, here or anywhere below. See the job comment.
 
