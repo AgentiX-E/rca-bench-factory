@@ -114,6 +114,35 @@ function runStdin(command: string, label?: string): Outcome {
 }
 
 /**
+ * Assert the gate refuses for its own stated reason.
+ *
+ * A refusal is not a finding: the argument guard and the pipeline guard both
+ * exit 1 because the gate declined to answer, and asserting only the status
+ * would let a crash satisfy them. The reason text is what distinguishes
+ * "I will not" from "I broke".
+ */
+function expectRefusedForOwnReason(outcome: Outcome, reason: string): void {
+  expect(outcome.status, `expected a refusal, got ${outcome.status}\n${outcome.stderr}`).toBe(1);
+  expect(outcome.stderr).toContain(reason);
+  expect(outcome.stderr).not.toContain('Cannot find module');
+  expect(outcome.stderr).not.toMatch(/node:internal/);
+}
+
+/**
+ * Run the gate with an arbitrary argument vector.
+ *
+ * The positional-argument finding is about *which* spellings the gate accepts,
+ * so the fixtures have to be able to pass a spelling the gate does not support.
+ */
+function runArgs(args: string[]): Outcome {
+  const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', cwd: ROOT });
+  if (result.error !== undefined) {
+    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
+  }
+  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+/**
  * Assert the gate failed *for its own stated reason*, not by crashing.
  *
  * The two anti-crash clauses are what make `status === 1` mean something.
@@ -127,6 +156,31 @@ function expectFailedForOwnReason(outcome: Outcome): void {
   expect(outcome.stderr).not.toMatch(/Cannot find module/);
   expect(outcome.stderr).not.toMatch(/^\s+at .*node:internal/m);
 }
+
+/**
+ * The budget for the tests that spawn the gate once per construct.
+ *
+ * This file's assertions are mostly *process spawns* -- every check runs the
+ * gate as a child -- so their wall time is a function of how many children the
+ * machine can start, not of the code under test.
+ *
+ * Measured, one revision, no change to the test:
+ *
+ *     830 ms   standalone, three runs: 820 / 854 / 825
+ *     >5000 ms in the full 32-worker suite (vitest's default), which is a
+ *              *timeout*, and it made `measure-doc-counts` fail outright
+ *
+ * A 6x spread, and the failure surfaced in the one place that runs the suite
+ * without `--coverage` -- the same route finding 129 took. This is the budget
+ * omission `timeout-budget.test.ts` describes, and it is a good illustration of
+ * that reader's stated limit: it enumerates the budgets a file *states*, so a
+ * spawn-heavy test with no budget at all is exactly what it cannot see.
+ *
+ * 30 s is an order of magnitude over the standalone cost and well under the
+ * suite's worst case, which is the same reasoning `BULK_TIMEOUT_MS` records in
+ * `check-official-roundtrip.test.ts`.
+ */
+const PER_CONSTRUCT_TIMEOUT_MS = 30_000;
 
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-shell-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -146,7 +200,7 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
     it('passes against the repository as committed', () => {
       const outcome = run();
       expect(outcome.status).toBe(0);
-      expect(outcome.stdout).toContain('check-no-unsafe-shell: OK');
+      expect(outcome.status, outcome.stderr).toBe(0);
       expect(outcome.stderr).toBe('');
     });
 
@@ -223,7 +277,16 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
      * of grammar -- which is how the first run of this cross-check reported two
      * mismatches that were not gate defects.
      */
-    const PROBE = 'a=x; b=y; r=HOME; arr=(1 2); ';
+    // The variables every probe starts from, so a construct that *reads* a
+    // variable is measured against one that is set.
+    //
+    // `ref=HOME` exists for `${!ref}`: bash's indirect expansion needs its
+    // operand bound, and without it bash reports `invalid indirect expansion`
+    // at *runtime* while accepting the syntax -- a verdict about the probe's
+    // environment rather than about the construct. That is the same
+    // "asserting a property of the machine rather than of the subject" defect
+    // as findings 124/130, caught here by the assertion it broke.
+    const PROBE = 'a=x; b=y; r=HOME; ref=HOME; arr=(1 2); ';
 
     /**
      * Whether this shell is installed at all.
@@ -268,9 +331,25 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
      *
      * A table rather than two hard-coded lists, because the interesting content
      * is *which* constructs sit on which side and why: `${a-b}` is legal
-     * (`-` is a special parameter), `${}` differs between the two shells and is
-     * therefore excluded from the comparison, and `${a.b}` / `${a(b)}` /
-     * `${a b}` / `${ a}` / `${1.2}` are the five spellings both shells reject.
+     * (`-` is a special parameter), and `${a.b}` / `${a(b)}` / `${a b}` /
+     * `${ a}` / `${1.2}` are the spellings both shells reject.
+     *
+     * `${}` used to be excluded here on the grounds that "the two shells differ
+     * and it is therefore excluded from the comparison". That was wrong twice
+     * over, and finding 132 is about both halves:
+     *
+     *   - The difference is *how* they reject it, not *whether*. `zsh` prints
+     *     an empty value and `bash` raises `bad substitution`; the gate's own
+     *     source comment had recorded `zsh: empty  bash: bad substitution` all
+     *     along. `bash` -- the shell the repository's shebangs name and the one
+     *     CI runs -- refuses it outright.
+     *   - More importantly, "the shells disagree" is not a reason to exempt a
+     *     construct from a gate whose whole purpose is to refuse anything an
+     *     author cannot rely on. A construct one shell rejects and another
+     *     silently empties is the *strongest* case for flagging, not an
+     *     exception to it.
+     *
+     * It is now on the malformed side, which is where the shells put it.
      */
     const MALFORMED = [
       '${a.b}',
@@ -280,6 +359,17 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       '${ a}',
       '${1.2}',
       '${a.b:-c}',
+      '${}',
+      // A leading operator character with a name after it. Each is rejected by
+      // bash -- measured, `echo "v=${+a}"` prints `bad substitution` -- and
+      // each was covered by no test before finding 132. The gate's
+      // leading-character branch is what refuses them, and disabling that
+      // branch left the whole suite green, which is how the gap was found.
+      '${ }',
+      '${+a}',
+      '${.a}',
+      '${(a)}',
+      '${/a}',
     ];
     const WELL_FORMED = [
       '${a}',
@@ -302,6 +392,17 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       '${a[0]}',
       '${arr[@]}',
       '${BASH_SOURCE[0]}',
+      // A bash-only construct, listed here so the gate's decision not to flag it
+      // is asserted rather than incidental. `${!ref}` is bash's indirect
+      // expansion and works there (`ref=HOME` prints `/root`); `zsh` rejects it
+      // outright. It is legal in the shell this repository's shebangs name, so
+      // the gate allows it -- the same disjunction finding 132 settled for
+      // `${}`, applied in the other direction. A construct legal in *one* of
+      // the two shells is refused only when the shell that refuses it is the
+      // one the code is written for.
+      '${!ref}',
+      '${#}',
+      '${!}',
     ];
 
     it('both shells are installed, so the cross-check below has something to compare against', () => {
@@ -312,31 +413,79 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       expect(shellAvailable('bash'), 'bash is not installed on this runner').toBe(true);
     });
 
-    it('both shells reject every malformed expansion, so the fixture list is real', () => {
-      // Without this, the assertion below could pass by testing a list the
-      // shells happen not to care about.
+    it('rejects everything at least one shell rejects, and nothing both accept', () => {
+      // The assertion that was wrong before finding 132 stated it as "both
+      // shells reject every malformed expansion". A construct only *one* shell
+      // rejects is still a construct an author cannot rely on -- the file may
+      // be run by either, and this repository's shebangs name `bash` while the
+      // sandbox's interactive shell is `zsh` -- so the requirement is a
+      // disjunction, not a conjunction.
+      //
+      // The strictness must also be bounded: nothing both shells accept may be
+      // flagged, or the fixture list would be satisfied by a gate that flags
+      // everything.
       for (const expansion of MALFORMED) {
-        expect(shellRejects('zsh', expansion), `zsh accepted ${expansion}`).toBe(true);
-        expect(shellRejects('bash', expansion), `bash accepted ${expansion}`).toBe(true);
+        const zsh = shellRejects('zsh', expansion);
+        const bash = shellRejects('bash', expansion);
+        expect(
+          zsh !== false || bash !== false,
+          `both shells accepted ${expansion}, so it does not belong in this list`,
+        ).toBe(true);
       }
     });
 
-    it('both shells accept every well-formed expansion, so the gate is not over-strict', () => {
+    it('`${}` is rejected by bash, which is the shell the gate must model', () => {
+      // The construct finding 132 found unguarded, pinned by measurement rather
+      // than by a list membership. `zsh` prints an empty value for it; `bash`
+      // raises `bad substitution`. Both facts are asserted, because a future
+      // fix that made the two shells agree would change the premise and this
+      // test should then fail rather than silently keep passing.
+      expect(shellRejects('zsh', '${}'), 'zsh no longer accepts ${}').toBe(false);
+      expect(shellRejects('bash', '${}'), 'bash no longer rejects ${}').toBe(true);
+    });
+
+    it('the gate does not flag anything the shell it models accepts', () => {
+      // The over-strictness bound, stated against `bash` alone.
+      //
+      // The previous wording was "both shells accept every well-formed
+      // expansion", and finding 132 is the story of what that conflation cost:
+      // `${}` was left out of the comparison because the shells disagreed, and
+      // the construct bash outright rejects went unguarded for two iterations.
+      //
+      // The correct bound is asymmetric. A construct bash accepts is one the
+      // repository's own scripts may use, so flagging it is a false positive
+      // that would get the gate switched off. A construct *only* zsh rejects is
+      // not the gate's subject at all: the gate models bash, and `${!ref}` in
+      // this list is bash's indirect expansion, which works there.
       for (const expansion of WELL_FORMED) {
-        expect(shellRejects('zsh', expansion), `zsh rejected ${expansion}`).toBe(false);
         expect(shellRejects('bash', expansion), `bash rejected ${expansion}`).toBe(false);
       }
     });
 
-    it('rejects exactly what the shells reject, in both directions', () => {
-      const rejected = shellFile(
-        ['#!/bin/bash', ...MALFORMED.map((e) => `echo "${e}"`), ''].join('\n'),
-      );
-      const accepted = shellFile(
-        ['#!/bin/bash', ...WELL_FORMED.map((e) => `echo "${e}"`), ''].join('\n'),
-      );
-      expectFailedForOwnReason(run(rejected));
-      expect(run(accepted).status).toBe(0);
+    it('rejects each malformed construct on its own, and accepts each well-formed one', { timeout: PER_CONSTRUCT_TIMEOUT_MS }, () => {
+      // Per construct, not as one batch. This test used to build a single file
+      // from the whole `MALFORMED` list and assert that file failed -- which was
+      // satisfied by whichever construct the gate *did* catch, so a construct
+      // that slipped through was invisible as long as it kept company with one
+      // that did not.
+      //
+      // Finding 132 proved that with the hole in place: `${}` alone returns 0,
+      // while the batched file still fails, because `${a.b}` is on the next
+      // line. An assertion satisfied by its neighbours is a claim about the
+      // neighbours. Each construct now gets its own file and its own verdict,
+      // and the failure names the construct rather than the batch.
+      for (const expansion of MALFORMED) {
+        const rejected = shellFile(`#!/bin/bash\necho "${expansion}"\n`);
+        expectFailedForOwnReason(run(rejected));
+      }
+      for (const expansion of WELL_FORMED) {
+        const accepted = shellFile(`#!/bin/bash\necho "${expansion}"\n`);
+        const outcome = run(accepted);
+        expect(
+          outcome.status,
+          `the gate flagged the legal ${expansion}\n--- stderr ---\n${outcome.stderr}`,
+        ).toBe(0);
+      }
     });
   });
 
@@ -378,7 +527,7 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       );
       const outcome = run(file);
       expect(outcome.status).toBe(0);
-      expect(outcome.stdout).toContain('check-no-unsafe-shell: OK');
+      expect(outcome.status, outcome.stderr).toBe(0);
     });
 
     it('does not flag a command substitution, which is the correct spelling', () => {
@@ -463,9 +612,18 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
         readFileSync(join(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'),
       ) as { sites: { script: string; status?: string; provedBy?: string }[] };
       const sites = inventory.sites.filter((s) => s.script === 'scripts/check-no-unsafe-shell.mjs');
-      expect(sites).toHaveLength(1);
-      expect(sites[0]!.status).toBe('proved');
-      expect(sites[0]!.provedBy).toBe('packages/core/test/check-no-unsafe-shell.test.ts');
+      // This asserted `toHaveLength(1)` until findings 134 and 135 added two
+      // more exit sites to the same script, at which point it failed for the
+      // right reason: the claim is "every exit site of this gate is proved by
+      // this file", not "this gate has one exit site". The count was a proxy
+      // for the claim and the proxy broke while the claim held.
+      expect(sites.length).toBeGreaterThanOrEqual(1);
+      for (const site of sites) {
+        expect(site.status, JSON.stringify(site)).toBe('proved');
+        expect(site.provedBy).toBe('packages/core/test/check-no-unsafe-shell.test.ts');
+      }
+      // Non-vacuity: an empty list would satisfy the loop above.
+      expect(sites.length).toBe(inventory.sites.filter((s) => s.provedBy === 'packages/core/test/check-no-unsafe-shell.test.ts').length);
     });
   });
 
@@ -548,7 +706,7 @@ describe('scripts/check-no-unsafe-shell.mjs --stdin', () => {
     // beside it -- and this is the spelling the gate tells the reader to use.
     const outcome = runStdin("node -e 'console.log(Math.floor(1.5))'\n");
     expect(outcome.status).toBe(0);
-    expect(outcome.stdout).toContain('check-no-unsafe-shell: OK');
+    expect(outcome.status, outcome.stderr).toBe(0);
   });
 
   it('reads the command it was given, rather than reporting a verdict about nothing', () => {
@@ -599,7 +757,7 @@ describe('scripts/check-no-unsafe-shell.mjs --stdin', () => {
     // be a crash reported as a finding.
     const outcome = runStdin('');
     expect(outcome.status).toBe(0);
-    expect(outcome.stdout).toContain('check-no-unsafe-shell: OK');
+    expect(outcome.status, outcome.stderr).toBe(0);
   });
 
   it('does not scan the repository when asked about a command', () => {
@@ -609,5 +767,140 @@ describe('scripts/check-no-unsafe-shell.mjs --stdin', () => {
     const outcome = runStdin('echo "${a}"\n');
     expect(outcome.status).toBe(0);
     expect(outcome.stderr).not.toContain('scripts/');
+  });
+});
+
+/**
+ * Findings 134 and 135: the two ways a caller destroys this gate's verdict.
+ *
+ * These are not tests of the shell rule. They are tests of the boundary: the
+ * gate's rule was correct and fully covered, and the verdict was still lost --
+ * once because a positional path selected nothing and the gate scanned the tree
+ * instead, and once because a pipe replaced the exit status with `head`'s.
+ *
+ * Both are the same finding at a different layer: a check whose answer nothing
+ * reads. The suite had 30 tests about the *rule* and none about the *contract*,
+ * which is why neither was caught.
+ */
+describe('scripts/check-no-unsafe-shell.mjs · the invocation contract', () => {
+  it('rejects a positional argument instead of silently scanning the tree', () => {
+    // The reproducer, verbatim: this printed `OK` before the fix, because a
+    // positional argument matched no flag and the scan fell through to the
+    // default roots -- a correct verdict about the tree, and a false one about
+    // the file the caller named.
+    const outcome = runArgs(['t1.sh']);
+    expectRefusedForOwnReason(outcome, 'unrecognised argument: t1.sh');
+  });
+
+  it('rejects a positional argument even when it names a real defective file', () => {
+    // The dangerous form. With the defect present, a silent fall-through does
+    // not merely answer the wrong question -- it answers `OK` about a file that
+    // the supported spelling rejects, so the caller concludes there is no defect.
+    const file = shellFile('#!/bin/bash\necho "${a.b}"\n');
+    expectFailedForOwnReason(run(file));
+
+    const outcome = runArgs([file]);
+    expectRefusedForOwnReason(outcome, `unrecognised argument: ${file}`);
+    expect(outcome.stdout).not.toContain('OK');
+  });
+
+  it('rejects a dangling --root with no value', () => {
+    // `--root` at the end of the line consumed nothing and scanned the default
+    // roots: the same silent `OK` as a positional path, spelled with a flag the
+    // gate *does* document.
+    const outcome = runArgs(['--root']);
+    expectRefusedForOwnReason(outcome, '--root was given no value');
+  });
+
+  it('rejects a dangling --file with no value', () => {
+    const outcome = runArgs(['--file']);
+    expectRefusedForOwnReason(outcome, '--file was given no value');
+  });
+
+  it('rejects a dangling --label with no value', () => {
+    const outcome = runArgs(['--label']);
+    expectRefusedForOwnReason(outcome, '--label was given no value');
+  });
+
+  it('treats a flag-looking token after --file as a missing value, not as a path', () => {
+    // `--file --stdin` would otherwise resolve to a path named `--stdin` and
+    // report a read error as if the tree contained a broken file.
+    const outcome = runArgs(['--file', '--stdin']);
+    expectRefusedForOwnReason(outcome, '--file was given no value');
+    expect(outcome.stderr).not.toContain('ENOENT');
+  });
+
+  it('still scans the committed tree when given no arguments at all', () => {
+    // The positive control for the whole block. `pnpm lint` invokes the gate
+    // with no arguments, so a fix that rejected arguments it did not understand
+    // too aggressively would pass every test above and break the pipeline.
+    const outcome = runArgs([]);
+    expect(outcome.status, outcome.stderr).toBe(0);
+    expect(outcome.status, outcome.stderr).toBe(0);
+  });
+
+  it('composes with `&&`, so a caller can check a command and then run it', () => {
+    // ## The fourth occurrence, and the property that had to be built for it
+    //
+    // `Bad substitution: new` interrupted a tool call while this file was being
+    // written up. The remedy had existed for three findings and could not have
+    // fired, for one reason: **the remedy was always composed inside the command
+    // it was meant to check.** `--stdin` requires
+    // `printf '%s' "$cmd" | gate --stdin && eval "$cmd"`, and that composition
+    // is itself a shell string that nothing checks.
+    //
+    // So the gate has to be usable as a component, which means a pass must print
+    // nothing on stdout: `gate ... && run-the-thing` then works, `$(gate ...)`
+    // compares clean, and a failure still stops the chain through the status.
+    const file = shellFile('#!/bin/bash\necho ok\n');
+    const composed = spawnSync(
+      '/bin/sh',
+      ['-c', `"${process.execPath}" "${SCRIPT}" --file "${file}" && echo RAN`],
+      { encoding: 'utf8', cwd: ROOT },
+    );
+    expect(composed.status, composed.stderr).toBe(0);
+    expect(composed.stdout.trim()).toBe('RAN');
+  });
+
+  it('prints nothing on stdout when composed, so the caller sees only their own output', () => {
+    // The measured shape of stdout: `other` when run directly in this sandbox
+    // (the harness captures it), `fifo` under a pipe, `file` under redirection.
+    // A pass line would be prefixed onto every capture and every transcript
+    // comparison, which is why the line follows the terminal rather than being
+    // printed unconditionally.
+    const file = shellFile('#!/bin/bash\necho ok\n');
+    const captured = spawnSync(process.execPath, [SCRIPT, '--file', file], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    });
+    expect(captured.status, captured.stderr).toBe(0);
+    expect(captured.stdout).toBe('');
+    // Non-vacuity: the failure report still reaches stderr when there is one, so
+    // "silent" cannot be satisfied by a gate that never speaks at all.
+    const defective = shellFile('#!/bin/bash\necho "${a.b}"\n');
+    const failed = spawnSync(process.execPath, [SCRIPT, '--file', defective], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    });
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain('bad-substitution');
+  });
+
+  it('allows --stdin to be fed by a pipe, which is the mode’s documented invocation', () => {
+    // `printf ... | gate --stdin` pipes *into* the gate; the gate is not the
+    // last command and nothing of its verdict is lost. Rejecting this would
+    // make the one mode added for exactly this problem unusable.
+    const outcome = runStdin('echo "ok"\n');
+    expect(outcome.status, outcome.stderr).toBe(0);
+    expect(outcome.status, outcome.stderr).toBe(0);
+  });
+
+  it('allows output redirection to a file, which preserves the status', () => {
+    const file = shellFile('#!/bin/bash\necho "ok"\n');
+    const piped = spawnSync('/bin/sh', ['-c', `"${process.execPath}" "${SCRIPT}" --file "${file}" > /dev/null`], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    });
+    expect(piped.status).toBe(0);
   });
 });

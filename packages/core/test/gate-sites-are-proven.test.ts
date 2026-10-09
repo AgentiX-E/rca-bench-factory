@@ -774,21 +774,41 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
   describe('scripts/derive-gate-sites.mjs · the deriver proves itself', () => {
     it('ignores a dotfile in scripts/, so a concurrent scratch module cannot move the count', {
       // The flake this pins, found by watching `scripts/` at high frequency while
-      // the suite ran: `type-miss-probe.test.ts` writes
-      // `scripts/.probe-figures-harness.mjs` and removes it in a `finally`, and
-      // for the duration of that window the deriver counted 36 scripts where the
-      // committed inventory says 35. Rule 1's assertion then failed with
-      // `expected 35 to be 36` in roughly one run in four.
+      // the suite ran: a test writes a dotfile there and removes it in a
+      // `finally`, and for the duration of that window the deriver counted 36
+      // scripts where the committed inventory says 35. Rule 1's assertion then
+      // failed with `expected 35 to be 36` in roughly one run in four.
       //
-      // Reproduced directly rather than inferred: with the file created, the
+      // Reproduced directly rather than inferred: with such a file created, the
       // deriver reports `scanned: 36`; removed, `scanned: 35`.
       //
       // The test writes the file **itself** so the race is not required to
       // reproduce. A regression test that needs to lose a race to fire is not a
       // regression test.
+      //
+      // The name is this file's alone (finding 133). Sharing one path with
+      // `type-miss-probe.test.ts` meant this test's setup asserted a property of
+      // that file's progress, and it failed on its own premise when the two
+      // overlapped under full-suite scheduling.
       timeout: RULE_TIMEOUT_MS,
     }, () => {
-      const harness = resolve(ROOT, 'scripts', '.probe-figures-harness.mjs');
+      // This file's own scratch module, with a name no other file uses.
+      //
+      // Finding 133. The precondition below -- "the harness must not exist" --
+      // used to be a claim about *another test file's* progress, because
+      // `type-miss-probe.test.ts` held the identical path
+      // `scripts/.probe-figures-harness.mjs` for the duration of two of its
+      // tests. vitest runs files in parallel, so when the two overlapped this
+      // test failed on its own premise with `the harness must not exist before
+      // this test: expected true to be false`. Zero races in 8 paired runs and
+      // one in a full-suite run is the signature of a scheduling window rather
+      // than a logic error, which is why it survived until now.
+      //
+      // The repair is not a wider assertion. A test whose setup asserts a
+      // property of a file another test owns is measuring the scheduler; the
+      // path is now exclusive to this file, which is why the precondition is
+      // true by construction.
+      const harness = resolve(ROOT, 'scripts', '.probe-figures-harness-gate-sites.mjs');
       expect(existsSync(harness), 'the harness must not exist before this test').toBe(false);
       writeFileSync(harness, '// scratch\n');
       try {

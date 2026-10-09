@@ -3117,9 +3117,9 @@ measurement, so it passed either way. It now uses deliberately stale counts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **121 files, 3251 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **124 files, 3424 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| `core` test suite | **121 files, 3251 tests passed** (Pass 35, `49da3a61e`; the gate reads this row as a dated record, and Pass 39 retakes it) |
+| `cli` test suite | **3 files, 173 tests passed** (Pass 35, `49da3a61e`) |
+| repo test suite | **124 files, 3424 tests passed** (`pnpm test`, every workspace; Pass 35, `49da3a61e`) |
 | break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
 | `check-doc-counts` tests | 14 passed |
 | `ci-reaches-doc-guards` tests | 7 passed |
@@ -3577,10 +3577,114 @@ the diff; six of the nine new tests fail against it.
 | restore | byte-identical, `sha256 4ed6766f9bbc038d` |
 | `typecheck` / `lint` / `docs:check` / `docs:counts:check` | clean |
 | `examples:check` / `examples:bundle:check` / `official:check` | clean |
-| core / repo suite | **121 files, 3251 tests** / **124 files, 3424 tests** |
+| core suite | **121 files, 3251 tests** (Pass 38, `49da3a61e`) |
+| repo suite | **124 files, 3424 tests** (Pass 38, `49da3a61e`) |
 
 `derive-gate-sites` caught the moved exit site on its own (438 -> 497) and
 refused to pass while the new one had no `status`, which is the guard behaving
 exactly as specified. The recorded limits: nothing invokes `--stdin`
 automatically, and a caller that does not use it is as exposed as before -- that
 is the honest ceiling of a fix at this layer.
+
+## Pass 39 — the rule was covered and the verdict was still lost, three different ways
+
+Writing up finding 133 turned into finding 134 and then finding 135, and all
+three are the same statement at three removes from the rule: *a check whose
+answer nothing reads*. After finding 131 the shell rule had 30 tests and was not
+the problem. The problem had already left the rule behind, and none of the three
+was reachable by adding a construct to `MALFORMED`.
+
+| # | what happened to the verdict | found by |
+| --- | --- | --- |
+| 131 | the gate was never shown the command -- it reads files, and a tool call is not a file | the third recurrence of `Bad substitution` |
+| 134 | the gate was shown a **positional path**, matched no flag, and scanned the committed tree instead | a diagnostic command run while writing up 133 |
+| 135 | the gate answered correctly and the **caller's pipeline** replaced its status with `head`'s | the same diagnostic, one line later |
+
+### 134 — a plausible spelling with no reader
+
+    node scripts/check-no-unsafe-shell.mjs t1.sh                       -> OK  rc=0
+    node scripts/check-no-unsafe-shell.mjs --file /tmp/bs-probe/z.sh   -> FAILED rc=1
+
+Same file, same gate, same second. `targets()` reads `--root`, `--file`,
+`--stdin`, `--label`; a positional argument matches none, so `files` and `roots`
+are both empty and the scan falls through to `DEFAULT_SCAN_ROOTS`. The gate
+scanned the tree, the tree was clean, and it printed `OK`: a correct verdict
+about the subject it chose and a false one about the subject the caller named,
+with nothing at the call site to tell them apart.
+
+The uncomfortable part is not the missing flag -- it is that the first two
+commands were read as evidence about the *file* rather than about the *scan set*.
+An unrecognised argument is now an error, and so is a flag with no value:
+
+| command | before | after |
+| --- | --- | --- |
+| `... --file <defective>` | FAILED rc=1 | FAILED rc=1 |
+| `... <defective>` (positional) | **OK rc=0** | **FAILED rc=1** |
+| `... --root` (no value) | OK rc=0 | FAILED rc=1 |
+| `...` (no arguments) | OK rc=0, tree scanned | OK rc=0, unchanged |
+| `... --stdin <defective>` | FAILED rc=1 | FAILED rc=1 |
+
+### 135 — the gate refuses to be a pipeline member
+
+    $ gate --file <defective>             ; echo $?   ->  1
+    $ gate --file <defective> | head -5   ; echo $?   ->  0
+
+A pipeline reports the status of its **last** command. The gate was correct, its
+status was correct, and the verdict was destroyed by the caller's own command
+line. Since the exit status is the gate's only verdict, it now checks
+`/proc/self/fd/1` before doing any work and prints `REFUSED` rather than a
+verdict it cannot stand behind. `--stdin` is exempt, because
+`printf ... | gate --stdin` pipes *into* the gate and loses nothing.
+
+The refusal is not conditioned on bad news: a gate that refused only when it had
+a finding would be a gate whose good news means nothing, since the caller cannot
+tell which of the two was masked. The suite asserts the refusal for a clean file
+too.
+
+### The correction this pass owed
+
+Finding 131's "Not done" note recorded that `arr[${i}]` "is flagged by the gate
+and accepted by `zsh -n`", and that `zsh` is the stricter parser. Both halves
+were measured and both were backwards: the gate returns `OK` for `arr[${i}]`, and
+`zsh` rejects `${a.b}` at runtime exactly as `bash` does. A claim written one
+commit earlier, in this repository's own audit, with no reader -- this file's own
+subject matter arriving in its own text. Corrected in place rather than deleted.
+
+| check | result |
+| --- | --- |
+| `check-no-unsafe-shell.test.ts` | **41 passed** (was 30; +11 contract tests) |
+| M4 drop `unknownArguments` | **caught** -- 2 fail |
+| M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
+| M6 `refusesToBePiped()` always true | **caught** -- 28 fail (over-reach detected) |
+| M7 drop `missingValues.push` | **caught** -- 4 fail |
+| restore | byte-identical, `sha256 61660cab764fae48` |
+| no-argument invocation | rc=0, unchanged -- the positive control for the block |
+
+### Not done
+
+- **The pipeline check is `/proc`-specific**, so it is a no-op on macOS. `lsof`
+  would work there and was not added: a guard that silently does nothing on one
+  of the two platforms in use is worse than one that is honestly absent.
+- **The other five gates in `pnpm lint` were not audited for the same argument
+  spelling.** All five are invoked with no arguments, so the question does not
+  arise for the invocations in use -- and none of the five was measured.
+- **`--stdin` still has no automatic invoker** (unchanged from 131).
+
+### Verified (Pass 39)
+
+| gate | result |
+| --- | --- |
+| full suite (`repo` scope) | **124 files, 3438 tests passed** (as of this commit) |
+| `core` test suite | **121 files, 3265 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **124 files, 3438 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
+| M4 drop `unknownArguments` | **caught** -- 2 fail |
+| M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
+| M6 `refusesToBePiped()` always true | **caught** -- 28 fail (over-reach detected) |
+| M7 drop `missingValues.push` | **caught** -- 4 fail |
+| M8 print `OK` unconditionally | **caught** -- 2 fail |
+| M9 `stdoutIsTerminal()` always true | **caught** -- 2 fail |
+| restore | byte-identical, `sha256 4b678ed456703838` |
+| `derive-gate-sites --check` | OK, 42 sites, exit sites 526 and 575 both `proved` |
+| `check-doc-counts` | OK, 15 published counts across 3 scopes |

@@ -93,7 +93,15 @@
     },
     {
       "script": "scripts/check-no-unsafe-shell.mjs",
-      "line": 497,
+      "line": 526,
+      "condition": "missingValues.length > 0 || unknownArguments.length > 0",
+      "diagnostic": "subject the caller did not ask about.",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-no-unsafe-shell.test.ts"
+    },
+    {
+      "script": "scripts/check-no-unsafe-shell.mjs",
+      "line": 575,
       "condition": "failures.length > 0",
       "diagnostic": "${failures.length} occurrence(s) across ${new Set(failures.map((f) => f.file)).size} file(s).",
       "status": "proved",

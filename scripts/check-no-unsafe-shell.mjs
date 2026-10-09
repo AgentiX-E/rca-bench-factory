@@ -108,21 +108,54 @@ let stdinLabel = '<stdin>';
  * item asks of every gate. Additive by construction -- with no argument the
  * behaviour is exactly `pnpm lint`'s.
  */
+/**
+ * Arguments the parser does not understand, and values it was promised.
+ *
+ * ## Why an unrecognised argument is an error rather than a no-op
+ *
+ * This function used to ignore anything it did not recognise, which made
+ *
+ *     node scripts/check-no-unsafe-shell.mjs t1.sh
+ *
+ * fall through to the default scan roots -- `[scripts, .github/workflows]`.
+ * The gate scanned the committed tree, the committed tree was clean, and it
+ * printed `OK`. A **correct** verdict about the subject the gate chose, and a
+ * **false** verdict about the subject the caller named, with no way for the
+ * caller to tell the two apart. The supported spelling is `--file`, and a
+ * positional path is what every other checker in this repository accepts, so
+ * the mistake is one anybody types.
+ *
+ * This is finding 104's pattern -- a spelling with no reader -- reached from the
+ * caller's side: the reader for `--file` is real and tested, the positional
+ * spelling has no reader at all, and the failure mode of a spelling with no
+ * reader is not an error but silence. It was found in this file, by accident,
+ * while diagnosing something else (finding 134).
+ */
+const unknownArguments = [];
+const missingValues = [];
+
 function targets() {
   const roots = [];
   const files = [];
   for (let i = 2; i < process.argv.length; i += 1) {
-    if (process.argv[i] === '--root' && process.argv[i + 1] !== undefined) {
-      roots.push(resolve(process.argv[i + 1]));
+    const arg = process.argv[i];
+    if (arg === '--root' || arg === '--file' || arg === '--label') {
+      const value = process.argv[i + 1];
+      // A flag at the end of the line used to consume nothing and scan the
+      // default roots, so `--root` alone was the same silent `OK` as a
+      // positional path.
+      if (value === undefined || value.startsWith('--')) {
+        missingValues.push(arg);
+        continue;
+      }
+      if (arg === '--root') roots.push(resolve(value));
+      else if (arg === '--file') files.push(resolve(value));
+      else stdinLabel = value;
       i += 1;
-    } else if (process.argv[i] === '--file' && process.argv[i + 1] !== undefined) {
-      files.push(resolve(process.argv[i + 1]));
-      i += 1;
-    } else if (process.argv[i] === '--stdin') {
+    } else if (arg === '--stdin') {
       stdinMode = true;
-    } else if (process.argv[i] === '--label' && process.argv[i + 1] !== undefined) {
-      stdinLabel = process.argv[i + 1];
-      i += 1;
+    } else if (arg !== undefined) {
+      unknownArguments.push(arg);
     }
   }
   if (stdinMode) return [];
@@ -274,6 +307,26 @@ const NESTED_INTERPRETERS = new Set(['-e', '-c', '--eval', '--expr']);
  * a rule; it is the same defect one level down, in the gate.
  */
 function bracedGroupIsInvalid(inner) {
+  // A braced group with no name at all -- `${}` -- is the construct below.
+  //
+  // This was the one hole in the rule, and finding 132 is about it. The line
+  // read `return stripped.length > 0`, whose comment says "no name at all:
+  // `${}`, `${ a}`" -- so the intent was to report it and the expression
+  // returned the opposite for the empty case, because `stripped` for `${}` is
+  // the empty string and `''.length > 0` is false. `${ a}` was caught only
+  // incidentally, by the leading-space branch above.
+  //
+  // Measured, both shells, `echo "v=${}"`:
+  //
+  //     zsh:  prints `v=`            (accepts it)
+  //     bash: bad substitution       (rejects it)
+  //
+  // `bash` is the shell this repository's shebangs name and the one CI runs, so
+  // the gate must refuse it. A construct one shell rejects and another silently
+  // replaces with the empty string is the strongest case for flagging rather
+  // than an exemption: the author wrote a name, and neither shell will tell
+  // them the name went missing.
+  if (inner.length === 0) return true;
   // `#`, `!` and `##` are *prefix* operators on a name (`${#a}`, `${!ref}`,
   // `${#@}`), and `%`/`#` are also suffixes. Strip a leading prefix operator
   // before reading the name, so `${#a}` is not read as the name `#`.
@@ -283,7 +336,13 @@ function bracedGroupIsInvalid(inner) {
   // the single-character special parameters and are legal.
   if (stripped.length > 0 && /^[^A-Za-z0-9_@*?$\-]/.test(stripped)) return true;
   const m = stripped.match(/^([A-Za-z_][A-Za-z0-9_]*|\d|[@*?$\-])/);
-  if (m === null) return stripped.length > 0; // no name at all: `${}`, `${ a}`
+  // An empty `stripped` means the whole group was a prefix operator, and both
+  // operators have a bare form that is legal: `${#}` is `$#` and `${!}` is
+  // `$!`, and both run in each shell (`zsh` and `bash` both print `0` for the
+  // first). Flagging them would be a false positive, and a gate with false
+  // positives gets switched off -- so the empty case is handled above, where
+  // only a group with nothing in it at all reaches it.
+  if (m === null) return false;
   const after = stripped.slice(m[0].length);
   if (after.length === 0) return false; // `${a}` -- a complete expansion
   const first = after[0];
@@ -448,6 +507,25 @@ function checkLine(file, lineNo, line) {
 // once, here, and both branches consume its result.
 const selected = targets();
 
+// Argument errors are reported before any scanning, because their whole point is
+// that the scan the caller asked for did not happen.
+if (missingValues.length > 0 || unknownArguments.length > 0) {
+  console.error('check-no-unsafe-shell: FAILED');
+  console.error('');
+  for (const a of missingValues) {
+    console.error(`  ${a} was given no value`);
+  }
+  for (const a of unknownArguments) {
+    console.error(`  unrecognised argument: ${a}`);
+  }
+  console.error('');
+  console.error('A file or directory is named with --file / --root; a command is piped');
+  console.error('with --stdin; --label names the source. A positional path selects nothing');
+  console.error('and the gate would scan the committed tree instead, reporting OK about a');
+  console.error('subject the caller did not ask about.');
+  process.exit(1);
+}
+
 if (stdinMode) {
   checkStdin();
 }
@@ -497,4 +575,41 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log('check-no-unsafe-shell: OK');
+/**
+ * Say `OK` only to a terminal; be silent when composed into a pipeline.
+ *
+ * ## Why the pass line was the thing keeping the remedy unusable
+ *
+ * The remedy for findings 131/134/135 has to be composable -- that is the lesson
+ * of the fourth occurrence, which happened because checking a command required
+ * writing a *second* command, and the second one was checked by nothing. Two
+ * properties are needed for that, and the gate had neither:
+ *
+ *   1. a pass must print **nothing** on stdout, or `gate ... && run-the-thing`
+ *      still works but `$(gate ...)` and every log-comparison carries a stray
+ *      line, and a gate whose output changes when it is piped is a gate nobody
+ *      composes;
+ *   2. the pass line must not be mistaken for the *subject's* output, which is
+ *      exactly what happens when the gate and the thing it checks write to the
+ *      same stream.
+ *
+ * A terminal is a human reading the result, and a human wants the line. A pipe
+ * or a file is a program reading it, or a transcript a program will compare, and
+ * a program wants quiet. So the pass line follows the terminal, and the failure
+ * report does not: a failure is stderr either way.
+ *
+ * The default when `/proc` is absent is to print, because an unreadable
+ * environment must leave the tool behaving as it always did rather than
+ * silently changing shape.
+ */
+function stdoutIsTerminal() {
+  try {
+    return statSync('/proc/self/fd/1').isCharacterDevice();
+  } catch {
+    return true;
+  }
+}
+
+if (stdoutIsTerminal()) {
+  console.log('check-no-unsafe-shell: OK');
+}

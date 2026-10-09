@@ -13121,7 +13121,7 @@ reading the diff. Six of the nine tests added for the mode fail against it;
 | M3 — check only the first line of a command | **caught**, 2 tests fail |
 | restore | byte-identical, `sha256 4ed6766f9bbc038d` |
 | `typecheck` / `lint` / `docs:check` | clean |
-| `docs:counts:check` | clean, core **121 / 3251**, cli 3 / 173, repo **124 / 3424** |
+| `docs:counts:check` | clean, core **121 / 3265**, cli 3 / 173, repo **124 / 3438** |
 | `derive-gate-sites` | 41 sites, exit site moved 438 -> 497, `status` restored |
 | `examples:check` / `examples:bundle:check` / `official:check` | clean |
 
@@ -13135,10 +13135,275 @@ reading the diff. Six of the nine tests added for the mode fail against it;
 - **The gate cannot see a command it was not shown.** `--stdin` closes the
   channel for a caller that uses it; it does not close the channel for a caller
   that does not. That is the honest limit of a fix at this layer.
-- **`zsh` is the stricter parser and the gate models `bash` more closely.** The
-  `arr[${i}]` construct is flagged by the gate and accepted by `zsh -n`, and it
-  expands to empty in *both* shells rather than failing. The gate is therefore
-  conservative here -- it reports a real defect (the author's intent does not
-  survive the shell) under a name (`bad-substitution`) that is not the one `zsh`
-  would use, because `zsh` raises no error at all. Whether that naming is worth
-  a third `kind` was not resolved.
+
+### Correction, added while writing up finding 134: the `arr[${i}]` paragraph was wrong
+
+This section used to say that `arr[${i}]` "is flagged by the gate and accepted
+by `zsh -n`", and that "`zsh` is the stricter parser". Both halves were measured
+afterwards and both were wrong the way round they were stated:
+
+    node scripts/check-no-unsafe-shell.mjs --file <'echo "${arr[${i}]}"'>   -> OK   rc=0
+    node scripts/check-no-unsafe-shell.mjs --file <'echo "${a.b}"'>         -> FAILED rc=1, bad-substitution
+    zsh -c 'echo "${a.b}"'                                                  -> bad substitution
+    bash -c 'echo "${a.b}"'                                                 -> bad substitution
+
+The gate does **not** flag `arr[${i}]` -- the inner `${i}` is a legal expansion,
+and the outer group's operator is `[`, which the rule allows -- and `zsh` is not
+more permissive here: `zsh` rejects `${a.b}` at *runtime* exactly as `bash` does.
+The claim had been in this file for one commit and had no reader, which is this
+file's own subject matter arriving in its own text.
+
+The paragraph's conclusion -- that a third `kind` for "accepted by the parser,
+silently empty at runtime" might be worth adding -- is therefore about a case the
+gate does not currently report at all. It is recorded as open rather than
+resolved: a construct that a shell accepts and then expands to the empty string
+is the quietest failure in the family, and nothing in this gate looks for it.
+
+## Finding 134 — the caller passed a positional path and selected nothing, and the gate said OK
+
+A diagnostic pass while writing up finding 133 ran, in this order:
+
+    node scripts/check-no-unsafe-shell.mjs t1.sh                       -> OK  rc=0
+    node scripts/check-no-unsafe-shell.mjs /tmp/bs-probe/z.sh          -> OK  rc=0
+    node scripts/check-no-unsafe-shell.mjs --file /tmp/bs-probe/z.sh   -> FAILED  rc=1
+
+The first two lines were read as *the gate does not flag `${a.b}`*. That reading
+was wrong, and the third line is what refuted it: the same file, the same gate,
+the same second, two different verdicts, and the only difference is the flag.
+
+### What the gate does with a positional argument
+
+    node scripts/check-no-unsafe-shell.mjs t1.sh
+
+`targets()` reads only `--root`, `--file`, `--stdin` and `--label`. A positional
+argument matches none of them, so `files` is empty, `roots` is empty, and the
+scan falls through to
+
+    const scan = roots.length > 0 ? roots : DEFAULT_SCAN_ROOTS;
+
+which is `[scripts, .github/workflows]` -- the committed tree. The gate scans the
+tree, the tree is clean, and it prints `OK`. It is a **correct** verdict about the
+subject the gate chose, and a **false** verdict about the subject the caller
+named. The command is plausible enough to be typed by anyone: the gate's own
+documented invocation for a single file is `--file`, and a positional path is what
+`eslint`, `tsc` and every other checker in the repository accept.
+
+This is the finding of this file again -- *a claim that is published and that
+nothing reads* -- reached from the **caller's** side instead of the callee's. The
+gate's reader for `--file` is real and tested; the caller used a spelling that has
+no reader at all, and the failure mode of a spelling with no reader is not an
+error but silence.
+
+### Why it took a second measurement to see
+
+The verdict was refuted immediately by running the *supported* spelling. The
+uncomfortable part is that the first two commands were not compared against a
+positive control before the conclusion was drawn from them: an `OK` was read as
+evidence about the file rather than about the scan set. The repair is not "be more
+careful". A gate whose silent mode is *scan everything else* has no way to tell
+the two apart at the point where it matters, so the caller cannot tell either.
+
+### The fix
+
+An unrecognised argument is now an error rather than a no-op:
+
+    } else if (process.argv[i] !== undefined) {
+      unknownArguments.push(process.argv[i]);
+    }
+
+reported before any scanning happens, and the same for an argument-shaped value
+missing after `--root` / `--file` / `--label` (the previous `--root` followed by
+nothing consumed the empty remainder and scanned the default roots silently).
+A caller who typed a path now gets
+
+    check-no-unsafe-shell: FAILED
+      unrecognised argument: t1.sh
+      a file or directory is named with --file / --root; a command is piped with --stdin
+
+which names the mistake and the supported spellings. Measured after the fix:
+
+| command | before | after |
+| --- | --- | --- |
+| `... --file <defective>` | FAILED rc=1 | FAILED rc=1 (unchanged) |
+| `... t1.sh` (positional) | **OK rc=0** | **FAILED rc=1, `unrecognised argument`** |
+| `... <defective>` (positional) | **OK rc=0** | **FAILED rc=1** |
+| `... --root` (no value) | OK rc=0 | FAILED rc=1 |
+| `... --file` (no value) | OK rc=0 | FAILED rc=1 |
+| `...` (no arguments) | OK rc=0, tree scanned | OK rc=0 (scan unchanged) |
+| `... --stdin <defective>` | FAILED rc=1 | FAILED rc=1 (unchanged) |
+
+The last row is the one that had to stay: the default no-argument invocation is
+what `pnpm lint` uses, and it must keep scanning the tree.
+
+### The guard, and the mutation that proves it reads
+
+Five tests were added to `check-no-unsafe-shell.test.ts`, one per rejected
+argument shape plus the no-argument control. The mutation is the revert of the
+`unknownArguments` branch:
+
+    M — restore the silent fall-through (drop `unknownArguments.push`)
+      × rejects a positional argument instead of silently scanning the tree
+      × rejects a positional argument even when it names a real defective file
+      × rejects a dangling --root with no value
+      × rejects a dangling --file with no value
+      Tests  4 failed | 31 passed (35)
+
+The no-argument control passes under the mutation, which is the point: it is the
+positive control that says the fix did not break the supported invocation, and it
+is the assertion that would have caught over-reach -- a fix that rejects
+everything would fail it.
+
+### Not done
+
+- **`--stdin` still has no automatic invoker**, unchanged from finding 131. This
+  finding is adjacent but distinct: 131 was "the gate was never shown the
+  command", 134 is "the gate was shown a path and scanned the tree instead".
+- **The other five gates in `pnpm lint` were not audited for the same spelling.**
+  `check-no-mock.mjs`, `check-no-secrets.mjs`, `check-no-vendored-data.mjs`,
+  `check-no-absolute-paths.mjs` and `check-official-registry.mjs` are all invoked
+  with no arguments, so the question does not arise for the invocations this
+  repository uses -- but it is exactly the question `dnf`'s "did you mean" and
+  `eslint`'s "no files matching" exist to answer, and none of the five was
+  measured.
+
+## Finding 135 — the gate answered, and the caller's own command line deleted the answer
+
+Running the gate once as
+
+    node scripts/check-no-unsafe-shell.mjs --file /tmp/bs-probe/z.sh | head -5
+
+printed `OK` for a file that the identical command **without** the pipe rejected
+with `bad-substitution`. Nothing in the gate was involved. A pipeline's exit
+status is the status of its **last** command, and `head -5` exits 0, so the
+pipeline exits 0 and every reader downstream -- a shell, an agent, a CI step under
+`set -e` -- sees success.
+
+    $ gate --file <defective>            ; echo $?   ->  1
+    $ gate --file <defective> | head -5  ; echo $?   ->  0
+    $ gate --file <defective> > /dev/null; echo $?   ->  1
+    $ set -o pipefail; gate ... | head   ; echo $?   ->  1
+
+### The three-part chain this completes
+
+| # | what happened to the verdict | finding |
+| --- | --- | --- |
+| 1 | the gate was never shown the command -- it reads files, and a tool call is not a file | 131 |
+| 2 | the gate was shown a path, matched no flag, and scanned the committed tree instead | 134 |
+| 3 | the gate answered correctly and the **caller's pipeline** replaced its status with `head`'s | 135 |
+
+Each was found by the previous one's investigation, and each is the same
+statement -- *a check whose answer nothing reads* -- at one further remove from
+the rule. After 131 the rule had 30 tests and was not the problem. The problem
+had already left the rule behind, and none of the three was reachable by adding
+a construct to `MALFORMED`.
+
+### The fourth occurrence, and the guard that was designed and then deleted
+
+`Bad substitution: new` interrupted a tool call while this finding was being
+written up. The construct was in a heredoc, and the design that came out of it
+was a pipeline guard: refuse when stdout is a pipe, so a caller cannot discard
+the status into `head`.
+
+**It was implemented, and then removed, because the measurement refuted it.**
+`/proc/self/fd/1` cannot distinguish the cases:
+
+| invocation | `/proc/self/fd/1` | distinguishable? |
+| --- | --- | --- |
+| run directly (captured by this harness) | `other` | -- |
+| `\| head -5` | `fifo` | **no** -- identical to the two below |
+| `\| cat` | `fifo` | **no** |
+| `\| tee log` | `fifo` | **no** |
+| `> file` | `file` | yes |
+| `$(gate ...)` | `fifo` | **no** |
+
+`head` is indistinguishable from `cat` and `tee` at the fd level. A second
+design read `-c` from `process.argv` to recover the pipeline text, and was also
+refuted by measurement: when a shell runs `gate ... | head`, the shell parses the
+pipeline itself and `argv` is `[".../check-no-unsafe-shell.mjs", "--file", "..."]`
+-- there is no `-c`, and the pipeline is not visible to the process in any way.
+
+A guard that fires on `| cat` and `| tee` would break deliberate inspection; a
+guard that fires on nothing is this finding one level deeper. **It was deleted
+rather than shipped**, and the deletion is recorded here because a guard written,
+tested against an idea of the behaviour, and kept would have been worse than no
+guard: it would have been a claim with no reader, in the file about claims with
+no reader.
+
+### What was kept: the property that made the remedy composable
+
+The reflex may be to reach for `PIPESTATUS`, or to conclude that POSIX
+pipelines are unsolvable. Neither is the right lesson. The productive question
+is the one this pass had never asked:
+
+> **Does the remedy compose?**
+
+The remedy had existed for three findings and could not have fired for one
+reason that covers all three -- **it was always composed inside the command it
+was meant to check.** `--stdin` requires
+
+    printf '%s' "$cmd" | node scripts/check-no-unsafe-shell.mjs --stdin && eval "$cmd"
+
+and that composition is itself a shell string that nothing checks. `--stdin`
+mode was exempted from the pipeline guard precisely because it *is* a pipeline
+member, so the invocation was allowed -- and it still had to survive the shell
+that ran it.
+
+So the one change that was kept is the one that makes the remedy usable as a
+component: **a pass prints nothing on stdout when stdout is not a terminal.** A
+terminal is a human, who wants the line; a pipe or a file is a program, or a
+transcript a program will compare, and a program wants quiet.
+
+| case | before | after |
+| --- | --- | --- |
+| run at a terminal | `check-no-unsafe-shell: OK` | unchanged |
+| stdout piped or captured | `check-no-unsafe-shell: OK` | **silent**, exit status only |
+| stdout redirected to a file | `check-no-unsafe-shell: OK` | **silent** |
+| a failure | report on stderr, rc=1 | unchanged |
+
+Measured after the change:
+
+    $ gate --file <clean> && echo RAN          -> RAN, rc=0
+    $ gate --file <defective> && echo RAN      -> no RAN, rc=1
+    $ OUT=$(gate --file <clean>)               -> OUT empty, rc=0
+    $ gate --file <defective> >/dev/null       -> rc=1, report on stderr
+
+This is the change that should have been made after finding 131. It is small, it
+is not about the shell rule at all, and it is the difference between a gate that
+exists and a gate that is *used*: `gate ... && run-the-thing` is now a single
+line a caller can write without thinking about pipelines.
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `check-no-unsafe-shell.test.ts` | **41 passed** |
+| M8 -- print `OK` unconditionally | **caught** -- 2 tests fail |
+| M9 -- `stdoutIsTerminal()` always `true` | **caught** -- 2 tests fail |
+| restore | byte-identical, `sha256 4b678ed456703838` |
+| positional path | rc=1, `unrecognised argument` |
+| dangling `--file` / `--root` / `--label` | rc=1 for each |
+| no arguments | rc=0, tree scanned |
+| `--stdin` fed by a pipe | rc=0, unchanged |
+
+### Not done
+
+- **A pipeline guard was designed, implemented and deleted.** The deletion is
+  the finding, not an omission: `/proc/self/fd/1` and `process.argv` were both
+  measured and neither can see the pipeline. A caller who writes
+  `gate ... | head` still discards the status; what changed is that the caller
+  no longer needs to write that, because `gate ... && cmd` is now quiet.
+- **`PIPESTATUS` is a caller-side remedy and is not enforceable here.** No test
+  can assert something about a command the repository never runs, which is
+  finding 131 stated once more.
+
+### Not done
+
+- **The pass-line rule is `/proc`-specific.** `stdoutIsTerminal()` falls back to
+  `true` where `/proc` is absent, so on macOS the pass line prints even when piped
+  and the composability property is lost there. The fallback is deliberate -- an
+  unreadable environment must leave the tool behaving as it always did rather than
+  silently changing shape -- but it does mean the property is only *tested* on
+  Linux, which is where CI runs.
+- **No test asserts the fallback branch.** It cannot be reached on Linux, and
+  reaching it would require a mock -- which `check-no-mock.mjs` forbids in this
+  repository, for the same reason this file exists.

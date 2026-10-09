@@ -109,6 +109,77 @@ function sites(): Site[] {
 
 const SITES = sites();
 
+/**
+ * Every scratch file the suite writes *inside the repository*, read from source.
+ *
+ * `/tmp` is not the only place a fixture leaves something behind. A module that
+ * has to be `import`ed rather than spawned is written next to the code that reads
+ * it, so it is named by a path in the tree -- and that path is shared state
+ * between every test file that uses it, because vitest runs files in parallel.
+ *
+ * Finding 133 is the first defect of this kind: `type-miss-probe.test.ts` and
+ * `gate-sites-are-proven.test.ts` both held
+ * `scripts/.probe-figures-harness.mjs`, and the second one's *setup* asserted
+ * that the path did not exist. That is an assertion about the first file's
+ * progress, so it failed on its own premise when the two overlapped:
+ *
+ *     the harness must not exist before this test: expected true to be false
+ *
+ * The dotfile convention makes such a file invisible to `derive-gate-sites`, and
+ * that is deliberate -- but invisibility to the deriver is not exclusivity, and
+ * the two were conflated. This scan states the property that was missing.
+ */
+function inTreeScratch(): Map<string, string[]> {
+  const byPath = new Map<string, string[]>();
+  for (const file of readdirSync(TEST_DIR).filter((f) => f.endsWith('.test.ts')).sort()) {
+    const source = stripComments(readFileSync(resolve(TEST_DIR, file), 'utf8'));
+    // Both spellings the suite uses, because the first cut of this scan knew
+    // only one of them and therefore passed while the shared path it was written
+    // to catch was restored -- a guard that reads one shape as "no defect" is the
+    // finding it exists for, one level in.
+    //
+    //   resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs')   -- joined
+    //   resolve(ROOT, 'scripts', '.probe-figures-harness.mjs')     -- segmented
+    const found: string[] = [];
+    for (const m of source.matchAll(
+      /resolve\(\s*(?:REPO_ROOT|ROOT)\s*,\s*'([^']*)'\s*(?:,\s*'([^']+)'\s*)?\)/g,
+    )) {
+      const path = m[2] === undefined ? m[1]! : `${m[1]}/${m[2]}`;
+      // Only a dot-prefixed *filename* is scratch. `scripts/` alone is not.
+      if (path.split('/').pop()?.startsWith('.') === true) found.push(path);
+    }
+    for (const path of found) {
+      const files = byPath.get(path) ?? [];
+      if (!files.includes(file)) files.push(file);
+      byPath.set(path, files);
+    }
+  }
+  return byPath;
+}
+
+const IN_TREE = inTreeScratch();
+
+describe('the suite’s in-tree scratch files', () => {
+  it('finds them, so the rule below is not vacuously true', () => {
+    // Two at the time of writing -- one per writer. The positive control is on a
+    // path known to exist rather than on the count alone, because a regex that
+    // drifted would otherwise leave the rule below green over an empty map.
+    expect(IN_TREE.size).toBeGreaterThan(0);
+    expect([...IN_TREE.keys()].some((p) => p.includes('.probe-figures-harness'))).toBe(true);
+  });
+
+  it('gives each scratch path exactly one owning test file, so no two can race', () => {
+    // The exclusivity rule. A path named by two files means one file's fixture
+    // lifetime overlaps another's, and any assertion either makes about that
+    // path -- absent before, present during, content equal -- is a statement
+    // about the scheduler rather than about the code under test.
+    const shared = [...IN_TREE.entries()]
+      .filter(([, files]) => files.length > 1)
+      .map(([path, files]) => `${path} is written by ${files.join(' and ')}`);
+    expect(shared).toEqual([]);
+  });
+});
+
 describe('the suite’s scratch prefixes', () => {
   it('finds the fixtures, so the rules below are not vacuously true', () => {
     expect(SITES.length).toBeGreaterThan(20);

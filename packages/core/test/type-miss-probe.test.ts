@@ -475,7 +475,7 @@ describe('the UModel figures separate shape from content', () => {
     // *future* reader of `scripts/`, which is why the dotfile prefix is
     // load-bearing rather than cosmetic: it is the signal that says "not part of
     // the tree", and it is now the thing the deriver trusts.
-    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs');
+    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs');
     const source = readFileSync(PROBE, 'utf8');
     // Re-export exactly the one name that publishes the figures, so this reads the
     // same figures the battery reads rather than a reimplementation of them.
@@ -536,7 +536,7 @@ describe('the UModel figures separate shape from content', () => {
     // to the exported pure function rather than to a mutated repository, which is what
     // makes this test safe to run: the version that mutated `src/` raced
     // `vocabulary-single-source.test.ts` and was moved out of the suite.
-    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs');
+    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs');
     const source = readFileSync(PROBE, 'utf8');
     writeFileSync(
       harness,
