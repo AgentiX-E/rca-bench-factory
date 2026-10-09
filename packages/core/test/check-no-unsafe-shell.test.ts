@@ -97,6 +97,23 @@ function run(file?: string): Outcome {
 }
 
 /**
+ * Run the gate over a *command*, the way an agent would before executing it.
+ *
+ * `spawnSync`'s `input` option rather than a shell pipe, so the fixture does not
+ * itself depend on quoting -- a test for a quoting defect that is itself quoted
+ * would be the finding this file is about, one level up.
+ */
+function runStdin(command: string, label?: string): Outcome {
+  const args = [SCRIPT, '--stdin'];
+  if (label !== undefined) args.push('--label', label);
+  const result = spawnSync(process.execPath, args, { encoding: 'utf8', cwd: ROOT, input: command });
+  if (result.error !== undefined) {
+    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
+  }
+  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+/**
  * Assert the gate failed *for its own stated reason*, not by crashing.
  *
  * The two anti-crash clauses are what make `status === 1` mean something.
@@ -498,5 +515,99 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       const outcome = run(file);
       expect(outcome.status).toBe(0);
     });
+  });
+});
+
+/**
+ * `--stdin`: the gate applied to a command that is not yet a file.
+ *
+ * ## The finding that produced these tests
+ *
+ * The gate's rule was correct and this file already proved it against both real
+ * shells. The driving agent still interrupted three tool calls with
+ * `Bad substitution`, and both facts are true because they are about different
+ * objects: the gate reads the *repository*, and the failure was in a *command*.
+ * A tool call is a shell string that is never committed, so it was never an
+ * input to anything and no test could fail.
+ *
+ * `--stdin` makes that string an input. The rule is deliberately unchanged --
+ * a second, laxer predicate for "a command a human typed" would be the
+ * two-readers-of-one-claim defect this whole file hunts.
+ */
+describe('scripts/check-no-unsafe-shell.mjs --stdin', () => {
+  it('catches the construct that actually interrupted a tool call', () => {
+    // Verbatim from the reported failure. The program's own text is inside a
+    // double-quoted shell string, so `zsh` parses `${Math.floor(1.5)}` as a
+    // substitution, fails, and reports `Bad substitution` against itself.
+    expectFailedForOwnReason(runStdin('node -e "console.log(${Math.floor(1.5)})"\n'));
+  });
+
+  it('accepts the same program written the safe way', () => {
+    // The negative control. A mode that flagged every `$` would catch the line
+    // above and make the gate useless, so the corrected spelling is asserted
+    // beside it -- and this is the spelling the gate tells the reader to use.
+    const outcome = runStdin("node -e 'console.log(Math.floor(1.5))'\n");
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('check-no-unsafe-shell: OK');
+  });
+
+  it('reads the command it was given, rather than reporting a verdict about nothing', () => {
+    // The regression test for the defect this mode's *first draft* had.
+    //
+    // It parsed `--stdin` inside `targets()` and tested the flag above the call,
+    // so the flag was still false, the scan selected no files, and the gate
+    // printed OK for every input including the failing one. That is the same
+    // "reports a verdict about something it never read" shape as findings
+    // 123-130 -- reintroduced *inside the fix for it*, which is why the
+    // assertion is a pair: one input that must fail and one that must pass.
+    // A mode that reads nothing cannot satisfy both.
+    expectFailedForOwnReason(runStdin('echo "${a.b}"\n'));
+    expect(runStdin('echo "${a}"\n').status).toBe(0);
+  });
+
+  it('names the source it was given, so a failure points at the tool call', () => {
+    const outcome = runStdin('echo "${a.b}"\n', 'tool-call-42');
+    expectFailedForOwnReason(outcome);
+    expect(outcome.stderr).toContain('tool-call-42:1:');
+  });
+
+  it('falls back to a placeholder name rather than reporting an empty path', () => {
+    const outcome = runStdin('echo "${a.b}"\n');
+    expectFailedForOwnReason(outcome);
+    expect(outcome.stderr).toContain('<stdin>:1:');
+  });
+
+  it('checks every line of a multi-line command, not only the first', () => {
+    // A tool call is frequently several commands. Checking line 1 and stopping
+    // would report OK for a script whose last line is the broken one.
+    const outcome = runStdin('set -eu\necho fine\nnode -e "console.log(${a.b})"\n');
+    expectFailedForOwnReason(outcome);
+    expect(outcome.stderr).toContain('<stdin>:3:');
+  });
+
+  it('finds a defect on a later line even when an earlier line is quoted', () => {
+    // The naive implementation of "skip comments" truncates at a `#` anywhere,
+    // including inside a quoted string, and would then miss a defect after it.
+    const outcome = runStdin('echo "a # b"\necho "${a.b}"\n');
+    expectFailedForOwnReason(outcome);
+    expect(outcome.stderr).toContain('<stdin>:2:');
+  });
+
+  it('reads nothing and stays silent when the input is empty', () => {
+    // An empty command has no defect, but the mode must still be *reached* and
+    // terminate -- a `readFileSync(0)` on a closed stdin throws, and that would
+    // be a crash reported as a finding.
+    const outcome = runStdin('');
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('check-no-unsafe-shell: OK');
+  });
+
+  it('does not scan the repository when asked about a command', () => {
+    // `--stdin` selects one input. If it also walked the default roots, a defect
+    // anywhere in the tree would be reported against a tool call that does not
+    // contain it -- and the reader would fix the wrong file.
+    const outcome = runStdin('echo "${a}"\n');
+    expect(outcome.status).toBe(0);
+    expect(outcome.stderr).not.toContain('scripts/');
   });
 });

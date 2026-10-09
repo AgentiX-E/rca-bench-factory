@@ -13022,3 +13022,123 @@ alone would have missed is absent from `copied` and shows up in `shortfall`.
   fixture is the only one whose subject is a second program, so it is the only one
   where the distinction matters today -- and that is a statement about the suite
   as it is, not a guard that would catch the next one.
+
+## Finding 131 — the gate had the rule right, and the error it was written to prevent happened anyway, because the gate reads files and the error was in a command
+
+### The defect
+
+The third recurrence of the same interruption, reported verbatim:
+
+> Failed to run function tools: Error: Bad substitution: Math.floor
+
+`check-no-unsafe-shell.mjs` already existed for exactly this error. It was wired
+into `pnpm lint`, it had 20 tests, and its rule had been cross-checked against
+`zsh` and `bash` on 28 constructs with 0 mismatches. So the obvious reading --
+"the gate does not catch this one" -- is wrong, and it was wrong twice in this
+session before it was measured.
+
+The gate is not a reader of commands. It is a reader of **files**:
+
+    DEFAULT_SCAN_ROOTS = [resolve(ROOT, 'scripts'), resolve(ROOT, '.github', 'workflows')]
+
+A tool call is a shell string that is *never committed*. It is not a script, it
+is not a workflow step, and it is not an input to anything. The path a command
+actually takes is
+
+    intent -> shell string -> shell -> program
+
+and every gate in this repository reads at most the second step, and only for
+material that reached the tree. The failing command was one step to the left of
+everything the repository could observe. This is the class of findings 104-130
+-- *a claim with no reader* -- reached by walking outward past the repository
+boundary, where the reader was never installed because there was nothing to
+install it into.
+
+### The measurement that located it
+
+Before changing anything, three candidate explanations were tested against the
+real gate rather than reasoned about:
+
+| hypothesis | measurement | verdict |
+| --- | --- | --- |
+| the rule does not recognise `${Math.floor(1.5)}` | gate on a file holding it: **exit 1**, `bad-substitution` | refuted |
+| the gate misses it because it is inside a nested interpreter | gate flags **both** `bad-substitution` and `nested-interpreter-expansion` | refuted |
+| the 39 `bash` fenced blocks in the Markdown are unguarded | extracted all **231** shell-tagged blocks across the 19 `.md` files and ran the gate over each: **0 flagged** | refuted, and usefully so |
+
+The third row is the one that mattered. It would have been easy to "fix" this by
+extending the scan roots to Markdown, and that gate would have been a check that
+catches nothing -- the same shape as the defect. `check-user-guide.mjs` already
+*executes* every `bash` fence in the user guide in document order and enforces
+the tag contract in both directions, so the docs were covered by a stronger
+instrument than the one being proposed.
+
+What was left, after two refutations and one null result, was the position in
+the pipeline: the gate had no way to read a command *before* it ran.
+
+### The fix
+
+`--stdin` mode. The same rule, applied to a command that is not yet a file:
+
+    printf '%s' "$cmd" | node scripts/check-no-unsafe-shell.mjs --stdin --label 'tool-call'
+
+Verified on the reported string:
+
+    node -e "console.log(${Math.floor(1.5)})"
+      tool-call:1:22  bad-substitution
+      tool-call:1:21  nested-interpreter-expansion
+
+and on the corrected spelling, which passes. The rule is deliberately *not*
+relaxed for this mode. A second, laxer predicate for "a command a human typed"
+would be two readers of one claim disagreeing, which is the finding this file
+has spent thirty entries describing.
+
+### The defect the fix had first, which is the same finding one level in
+
+The first draft of `--stdin` printed `OK` for the failing command. The
+mechanism:
+
+    function targets() { ...; if (process.argv[i] === '--stdin') stdinMode = true; ... }
+    ...
+    if (stdinMode) { checkStdin(); }      // line 441 -- stdinMode is still false
+    for (const file of targets()) { ... } // line 445 -- only here does it become true
+
+The flag was read **before** the only call that set it. `--stdin` therefore
+selected no files and checked no input, and the gate reported a verdict about
+something it had never read -- findings 123-130's exact shape, reintroduced
+*inside the fix for it*, by the same author, in the same hour.
+
+It was found by running the mode on the input it was written for instead of
+reading the diff. Six of the nine tests added for the mode fail against it;
+`--stdin` is now parsed into `selected` before either branch consumes it.
+
+### Verified
+
+| check | result |
+| --- | --- |
+| `check-no-unsafe-shell.test.ts` | **29 passed** (was 20; +9 for `--stdin`) |
+| M1 — read the flag before `targets()` sets it | **caught**, 6 of 9 new tests fail |
+| M2 — drop `--label` assignment | **caught**, 1 test fails |
+| M3 — check only the first line of a command | **caught**, 2 tests fail |
+| restore | byte-identical, `sha256 4ed6766f9bbc038d` |
+| `typecheck` / `lint` / `docs:check` | clean |
+| `docs:counts:check` | clean, core **121 / 3251**, cli 3 / 173, repo **124 / 3424** |
+| `derive-gate-sites` | 41 sites, exit site moved 438 -> 497, `status` restored |
+| `examples:check` / `examples:bundle:check` / `official:check` | clean |
+
+### Not done
+
+- **Nothing runs `--stdin` automatically.** It is a capability, and using it is
+  a discipline: an agent that does not pipe its command through the gate is
+  exactly as exposed as before. There is no hook between "a command is composed"
+  and "the command runs" that this repository controls, so the mode cannot be
+  made mandatory from inside the repository.
+- **The gate cannot see a command it was not shown.** `--stdin` closes the
+  channel for a caller that uses it; it does not close the channel for a caller
+  that does not. That is the honest limit of a fix at this layer.
+- **`zsh` is the stricter parser and the gate models `bash` more closely.** The
+  `arr[${i}]` construct is flagged by the gate and accepted by `zsh -n`, and it
+  expands to empty in *both* shells rather than failing. The gate is therefore
+  conservative here -- it reports a real defect (the author's intent does not
+  survive the shell) under a name (`bad-substitution`) that is not the one `zsh`
+  would use, because `zsh` raises no error at all. Whether that naming is worth
+  a third `kind` was not resolved.

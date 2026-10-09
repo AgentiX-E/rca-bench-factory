@@ -3117,9 +3117,9 @@ measurement, so it passed either way. It now uses deliberately stale counts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **121 files, 3242 tests passed** (as of this commit) |
+| `core` test suite | **121 files, 3251 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **124 files, 3415 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| repo test suite | **124 files, 3424 tests passed** (`pnpm test`, every workspace; as of this commit) |
 | break battery | `break-doc-counts.py` **9/9** mutations caught, byte-identical restore (`sha256 b380bb647e82251c`) |
 | `check-doc-counts` tests | 14 passed |
 | `ci-reaches-doc-guards` tests | 7 passed |
@@ -3305,14 +3305,14 @@ instead of spawning it three times.
 | literal `z.enum` copies of a published vocabulary | 5 | **0** |
 | failure sites in the inventory | 38 | **40** |
 | scripts classified | 31 | **33** |
-| core test files / tests | 114 / 3168 | **121 / 3242** |
+| core test files / tests | 114 / 3168 | **121 / 3251** |
 | docs guards in `docs:check` | 5 | **7** |
 
 ### Verified
 
 | check | result |
 | --- | --- |
-| core suite | **121 files, 3242 tests passed** |
+| core suite | **121 files, 3251 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3420,7 +3420,7 @@ reading prose as if it were code.
 
 | quantity | before | after |
 | --- | --- | --- |
-| core test files / tests | 116 / 3186 | **121 / 3242** |
+| core test files / tests | 116 / 3186 | **121 / 3251** |
 | scratch-prefix assertions | 0 | **5** |
 | fixtures the prefix scan sees | — | **35** |
 | mutations caught by the new guard | — | **4 of 4** |
@@ -3434,7 +3434,7 @@ session, is now registered in `gate-sites.json` with a `provedBy` entry.
 
 | check | result |
 | --- | --- |
-| core suite | **121 files, 3242 tests passed** |
+| core suite | **121 files, 3251 tests passed** |
 | cli suite | **3 files, 173 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | cli coverage | `100 / 100 / 100 / 100` |
@@ -3506,7 +3506,7 @@ still able to catch the original defect via `shortfall`.
 | `check-no-unsafe-shell.test.ts` tests | 19 | **20** |
 | shells distinguished from an ENOENT | 0 of 2 | **2 of 2** |
 | controls that hold on a clean checkout | 0 | **1** |
-| core test files / tests | 121 / 3239 | **121 / 3242** |
+| core test files / tests | 121 / 3239 | **121 / 3251** |
 | CI jobs failing | 2 | 0 (pending re-run) |
 
 ### Verified
@@ -3516,7 +3516,7 @@ still able to catch the original defect via `shortfall`.
 | `check-no-unsafe-shell.test.ts`, `zsh` present | **20 tests pass** |
 | same file, `zsh` hidden | fails naming **the missing binary**, not a verdict |
 | `typecheck-entrypoint.test.ts` | **4 tests pass** |
-| core suite | **121 files, 3242 tests passed** |
+| core suite | **121 files, 3251 tests passed** |
 | core coverage | `99.96 / 99.91 / 100 / 99.96` |
 | `pnpm typecheck` / `lint` / `docs:check` | clean |
 | `golden-master/doc-counts.json` | regenerated: `core 121/3240`, `cli 3/173`, `repo 124/3413` |
@@ -3528,3 +3528,59 @@ asserting something about the environment as well as about the code. **When the
 two disagree the test must say which one it is reporting on** -- the CI failure
 here named `zsh` and was actually about `PATH`. The distinction costs one
 predicate and removes an entire class of false verdict.
+
+## Pass 38 — the gate was right, the error recurred, and the reason was one step to the left of the repository
+
+The same interruption for the third time, now naming a different construct:
+`Bad substitution: Math.floor`. The gate written for exactly this error was
+already in `pnpm lint` with 20 passing tests and a 28-construct cross-check
+against both shells. Both statements are true; they are about different objects.
+
+**The gate reads files. A tool call is not a file.** It is never committed, so
+it is never an input, so no test can fail and no gate can fire. Findings
+104-130 were *a claim with no reader*; this is the same class reached by walking
+past the repository boundary, where there was no artifact to attach a reader to.
+
+Three explanations were measured before anything was changed, and two were
+refuted by the gate's own behaviour:
+
+| hypothesis | measurement | verdict |
+| --- | --- | --- |
+| the rule misses `${Math.floor(1.5)}` | gate on a file containing it: exit 1, `bad-substitution` | refuted |
+| it misses it because of the nested interpreter | flags both `bad-substitution` and `nested-interpreter-expansion` | refuted |
+| the 39 `bash` fences in the docs are unguarded | extracted all **231** shell blocks from the 19 `.md` files, ran the gate on each: **0 flagged** | refuted |
+
+The third is the one that changed the plan. Extending the scan roots to Markdown
+was the obvious move, and it would have added a gate that catches nothing --
+`check-user-guide.mjs` already *executes* every `bash` fence in order and owns
+the tag contract. The remaining explanation was position in the pipeline.
+
+| change | detail |
+| --- | --- |
+| `--stdin` mode | the same rule, applied to a command before it runs; `--label` names the source |
+| parses before branching | `targets()` now runs once into `selected`, before either branch reads a flag |
+| +9 tests | 29 total in `check-no-unsafe-shell.test.ts` (was 20) |
+| `SHELL-RULES.md` | the agent-facing rule now names the pre-flight check |
+
+The fix had the finding inside it on the first attempt. `--stdin` was parsed
+inside `targets()` while the flag was read five lines *above* the only call to
+it, so the mode selected nothing, read nothing, and printed `OK` for the command
+that had just failed. Found by running it on that command rather than reading
+the diff; six of the nine new tests fail against it.
+
+| check | result |
+| --- | --- |
+| `check-no-unsafe-shell.test.ts` | **29 passed** |
+| M1 read the flag before it is set | **caught** — 6 of 9 new tests fail |
+| M2 drop the `--label` assignment | **caught** — 1 test fails |
+| M3 check only the first line | **caught** — 2 tests fail |
+| restore | byte-identical, `sha256 4ed6766f9bbc038d` |
+| `typecheck` / `lint` / `docs:check` / `docs:counts:check` | clean |
+| `examples:check` / `examples:bundle:check` / `official:check` | clean |
+| core / repo suite | **121 files, 3251 tests** / **124 files, 3424 tests** |
+
+`derive-gate-sites` caught the moved exit site on its own (438 -> 497) and
+refused to pass while the new one had no `status`, which is the guard behaving
+exactly as specified. The recorded limits: nothing invokes `--stdin`
+automatically, and a caller that does not use it is as exposed as before -- that
+is the honest ceiling of a fix at this layer.

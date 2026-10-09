@@ -95,6 +95,10 @@ const SHELLISH = /\.(sh|bash|zsh|yml|yaml)$/;
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.git', '.turbo', '__pycache__']);
 
+/** Set by `--stdin`; the label `--label` gives the report, and `false` otherwise. */
+let stdinMode = false;
+let stdinLabel = '<stdin>';
+
 /**
  * Gather the scan targets.
  *
@@ -114,11 +118,52 @@ function targets() {
     } else if (process.argv[i] === '--file' && process.argv[i + 1] !== undefined) {
       files.push(resolve(process.argv[i + 1]));
       i += 1;
+    } else if (process.argv[i] === '--stdin') {
+      stdinMode = true;
+    } else if (process.argv[i] === '--label' && process.argv[i + 1] !== undefined) {
+      stdinLabel = process.argv[i + 1];
+      i += 1;
     }
   }
+  if (stdinMode) return [];
   if (files.length > 0) return files;
   const scan = roots.length > 0 ? roots : DEFAULT_SCAN_ROOTS;
   return scan.flatMap(walk);
+}
+
+/**
+ * Read one command from stdin and check it as if it were a line of a shell file.
+ *
+ * ## Why this mode exists, and what it is for
+ *
+ * The gate's rule was correct and its own fixtures proved it, and the agent
+ * driving this repository still interrupted three tool calls with
+ * `Bad substitution`. Both statements are true because they are about different
+ * objects: the gate checks the repository, and the failure was in a **command
+ * that was never in the repository**. The path a tool call takes is
+ *
+ *     intent -> shell string -> shell -> program
+ *
+ * and the gate only ever saw the first two steps for files that were *committed*.
+ * A command the agent typed at the tool boundary was never an input to anything,
+ * so no test could fail and no gate could fire -- the same "published check with
+ * no reader" shape as findings 123-130, one scope further out.
+ *
+ * `--stdin` makes the command itself checkable before it runs:
+ *
+ *     printf '%s' "$cmd" | node scripts/check-no-unsafe-shell.mjs --stdin
+ *
+ * `--label` names the source in the report, so an operator reading a failure
+ * sees the tool call rather than `<stdin>`.
+ *
+ * The rule is deliberately the same one. A second, weaker predicate for "a
+ * command a human typed" would be the shape defect this whole finding is about:
+ * two readers of one claim, disagreeing.
+ */
+function checkStdin() {
+  const source = readFileSync(0, 'utf8');
+  const lines = source.split('\n');
+  lines.forEach((line, i) => checkLine(stdinLabel, i + 1, line));
 }
 
 function walk(dir) {
@@ -393,7 +438,21 @@ function checkLine(file, lineNo, line) {
   }
 }
 
-for (const file of targets()) {
+// Parse the arguments *before* branching on them.
+//
+// The first cut of this called `targets()` only inside the file loop and tested
+// `stdinMode` above it, so the flag was still `false` when it was read and
+// `--stdin` silently scanned nothing and printed OK. That is the same defect as
+// the four findings before this one -- a check that reports a verdict about
+// input it never read -- reintroduced inside the fix for it. `targets()` runs
+// once, here, and both branches consume its result.
+const selected = targets();
+
+if (stdinMode) {
+  checkStdin();
+}
+
+for (const file of selected) {
   if (!SHELLISH.test(file)) continue;
   const isWorkflow = /\.(yml|yaml)$/.test(file);
   const lines = readFileSync(file, 'utf8').split('\n');
