@@ -14398,3 +14398,40 @@ lines named -- `line 3681: declares the current state of 'core' as 121 files /
 corrected; the dated `Pass 39` rows beside them were deliberately left alone,
 because a row that records a past run is a record and not a claim. A gate that
 names the line is what made that distinction cheap to keep.
+
+### The fix confirms against CI, not only against this sandbox
+
+The commit before this one had a red CI run, and the failing step is the one this
+work was about:
+
+```
+job  typecheck / lint / test / coverage / mutation / golden-master / build  -> failure
+step `Test with coverage (core + cli, >=95% per dimension, 100% functions)` -> failure
+```
+
+Its log carries the signature of mode (b), from the same file the sandbox found:
+
+```
+ FAIL  test/gen-rcaeval-cases.test.ts > scripts/gen-rcaeval-cases.mjs · --check > skips a non-directory entry ...
+AssertionError: expected 1 to be +0 // Object.is equality
+##[error]AssertionError: expected 1 to be +0 // Object.is equality
+```
+
+`gen-rcaeval-cases.mjs` imports `../packages/core/dist/index.js`, which is exactly
+the module the guide gate was rebuilding underneath it. So the defect was not an
+artefact of this sandbox's load: it reproduced on a CI runner, on the same file,
+with the same assertion, and the diagnosis -- a torn `dist` read rather than a
+broken generator -- is the only one that covers both.
+
+After this commit, that step and the cold-tree job are both green:
+
+```
+Anchor round trip  ->  success
+CI                 ->  success
+  cold tree / no build / every precondition declared                     success
+  typecheck / lint / test / coverage / mutation / golden-master / build  success
+```
+
+This is recorded because it is the difference between "the suite passes here now"
+and "the cause was identified". A local green run after an intermittent failure is
+what the four earlier attempts at this had, and it was wrong each time.
