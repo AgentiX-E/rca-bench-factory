@@ -13121,7 +13121,7 @@ reading the diff. Six of the nine tests added for the mode fail against it;
 | M3 — check only the first line of a command | **caught**, 2 tests fail |
 | restore | byte-identical, `sha256 4ed6766f9bbc038d` |
 | `typecheck` / `lint` / `docs:check` | clean |
-| `docs:counts:check` | clean, core **121 / 3265**, cli 3 / 173, repo **124 / 3438** |
+| `docs:counts:check` | clean, core **121 / 3265**, cli 3 / 173, repo **124 / 3438** (Pass 39, `16f3499a9`) |
 | `derive-gate-sites` | 41 sites, exit site moved 438 -> 497, `status` restored |
 | `examples:check` / `examples:bundle:check` / `official:check` | clean |
 
@@ -13407,3 +13407,275 @@ line a caller can write without thinking about pipelines.
 - **No test asserts the fallback branch.** It cannot be reached on Linux, and
   reaching it would require a mock -- which `check-no-mock.mjs` forbids in this
   repository, for the same reason this file exists.
+
+## Finding 136 — the job named "no build" builds, and its flake is the build racing its own tests
+
+`test/fault-extraction-scripts.test.ts` failed in CI on the push for finding 135:
+
+    expected 'fatal: The requested module './cli/a…' to match /read here and nowhere else/
+
+and passed on re-run. Before any theory, the run history was checked, because a
+single failure is not evidence of a mechanism:
+
+- the same assertion is present in **6 of the last 7 failing runs** on this
+  repository;
+- in run #174 it appeared **five times in one job**, alongside four *different*
+  module-link errors:
+
+```
+fatal: The requested module '../export/itbench.js' does not provide an export named 'ITBENCH_SCENARIO_CLASSES'
+fatal: The requested module './cli/args.js' does not provide an export named 'CLI_VERSION'
+fatal: The requested module './score/score.js' does not provide an export named 'SCORE_TARGET_IDS'
+fatal: The requested module './official.js' does not provide an export named 'parseOpenRcaScoringPoints'
+```
+
+Four modules, four names, one job, intermittent. That is not a defect in any of
+the four modules.
+
+### The mechanism
+
+The workflow's `cold-tree` job is documented at length as *"a `pnpm build` step
+here would make this job green and measure nothing"*, and it does not contain
+one. It contains
+
+```yaml
+- name: Test, from a tree that has never been built
+  run: pnpm test
+```
+
+and `pnpm test` has a `pretest` hook:
+
+```json
+"pretest": "pnpm build",
+"test": "pnpm --filter @rca-bench-factory/core test && pnpm --filter @rca-bench-factory/cli test"
+```
+
+Read from the job's own log, the count of `tsc -p tsconfig.json` invocations is
+**6**. The tree is built before it is tested, by the hook, in the job whose
+entire stated purpose is that the tree is not built.
+
+So the job is not testing what it says it tests, and the failures come from the
+thing the job claims not to do: `tsc` writes `dist/` incrementally, the suite
+spawns scripts that import `dist/`, and a script that starts during that window
+dies at link time on whichever module `tsc` has not reached yet. Which module
+that is varies per run, which is why #174 shows four different ones.
+
+The "no build" claim is not merely imprecise. `cold-tree-job.test.ts` asserts the
+*absence of a build step in the YAML*, a check that reads the file and confirms
+what it was written to confirm -- the finding this repository keeps producing,
+here in the guard for the job that measures preconditions.
+
+### What was established and what was not
+
+| statement | status |
+| --- | --- |
+| the failure is intermittent, not deterministic | **established** -- 6 of 7 failing runs, and a clean re-run |
+| it affects several modules at once, so it is not a module defect | **established** -- run #174 |
+| `cold-tree` invokes `tsc` 6 times | **established** -- the job's own log |
+| a tree with no `dist` fails 168 tests, not 4 | **established** -- measured on a fresh `git archive` checkout |
+| the window between `tsc` start and a complete `dist` is what the 4 tests hit | **not established** -- inferred from the shape, not reproduced |
+
+### Four wrong measurements I made before the history was checked
+
+Recorded because it is this file's subject matter, and because a reader should
+know which of the numbers above to trust.
+
+| claim | what the measurement actually showed |
+| --- | --- |
+| "a ~700 ms window where `dist/index.js` loads but is missing exports, 8 of 8 polls" | the probe asserted `runCli` and `parseArgs` -- **two names that exist nowhere in the source or in `dist`**. It reported `PARTIAL` for a complete, correct build. Re-measured against the real export list: **0 partial readings in 3 trials** |
+| "the window reproduces on every trial" | every trial used the same non-existent names |
+| "`rename(2)` makes the swap atomic" | measured after implementing it: `rename` onto an existing non-empty directory fails with `ENOTEMPTY`, so the "atomic" swap was a `rmSync` followed by a rename -- the same window, renamed |
+| "the guard in the assertion improves the diagnosis" | measured: the report is byte-identical with and without it, because the matcher fails on the same line either way. Deleted rather than kept |
+
+The build-staging script written on the strength of the first three claims was
+**reverted**. After the probe was corrected it had no measured effect, and a
+change that cannot be shown to do anything is not a fix.
+
+The lesson is the one this repository applies everywhere else and which was not
+applied here: a probe must be validated against a **known-good input** before its
+output is read as evidence. The four claims above were reported to the user
+before that check was made.
+
+### Not done
+
+- **Six other scripts in `cold-tree` were observed failing in the same run #174**
+  and were not examined individually. The job no longer runs a suite at all (see
+  finding 139), so the exposure is gone, but the individual readings were never
+  taken and the count stands as the evidence.
+
+### Resolved by findings 137-139
+
+- **The flake is fixed at the source.** `--config.enable-pre-post-scripts=false`
+  on every step that could reach a hook (finding 137), so `pretest` cannot build
+  the tree out from under the job that exists to run without one.
+- **`cold-tree-job.test.ts` no longer reads the YAML for the word `build`.** It
+  resolves each command through the hooks that command would actually trigger,
+  compares the suppression flag as an exact string, reconciles the cold aggregates
+  against the measured set, and is caught by 11 of 11 mutations (finding 138).
+- **The job's content was impossible and is now true.** Three of the seven
+  `docs:check` members and one of the seven `lint` members import `dist`, so the
+  aggregates could never pass cold; the job now calls `docs:check:cold` and
+  `lint:cold`, which are first-class aggregates holding only the measured members
+  (finding 139).
+
+## Finding 137 — the flag the fix was built on suppresses a different class of script, and the choice was reported before it was measured
+
+Finding 136 left the fix as an open decision and named three candidates. The
+decision taken was to disable the `pre*` hooks inside the container, implemented
+as `pnpm --ignore-scripts <script>` on the five `cold-tree` steps. It was
+implemented, and it was reported to the user as working.
+
+It does not work. Measured against a two-script probe package:
+
+```json
+{ "scripts": {
+    "prehello": "node -e \"...appendFileSync('/tmp/ign/log','HOOK\\n')\"",
+    "hello":    "node -e \"...appendFileSync('/tmp/ign/log','MAIN\\n')\"" } }
+```
+
+| invocation | `/tmp/ign/log` |
+| --- | --- |
+| `pnpm hello` | `HOOK`, `MAIN` |
+| `pnpm --ignore-scripts hello` | `HOOK`, `MAIN` |
+
+The hook ran in both. Measured again against this repository, on a tree with
+`packages/*/dist` removed:
+
+```
+$ pnpm --ignore-scripts typecheck
+> rca-bench-factory@0.1.0 pretypecheck .../rca-bench-factory
+> pnpm --filter @rca-bench-factory/core build
+> @rca-bench-factory/core@0.1.0 build .../packages/core
+> tsc -p tsconfig.json
+...
+$ ls packages/core/dist | wc -l
+18
+```
+
+`--ignore-scripts` suppresses `install` and `prepare` scripts. `pre<name>` and
+`post<name>` are not in that class, and the name invites the opposite reading,
+which is presumably why it was reached for and why the reading was not checked.
+
+The flag that does suppress them, established by the same method:
+
+```
+$ rm -rf packages/core/dist packages/cli/dist
+$ pnpm --config.enable-pre-post-scripts=false typecheck
+> rca-bench-factory@0.1.0 typecheck .../rca-bench-factory
+> pnpm --filter @rca-bench-factory/core typecheck && ...
+$ ls packages/core/dist | wc -l
+0
+```
+
+`pretypecheck` is absent from the output; no process ran it. This is the flag the
+workflow now uses, and it is asserted in `cold-tree-job.test.ts` as an exact
+string rather than as the presence of a flag -- because mutation M1b replaced
+`=false` with `=true` and a substring check on the flag's *name* passed while the
+job built.
+
+### The mistake, stated plainly
+
+The user was told "`--ignore-scripts` does not work; `--config.…=false` does"
+**before either had been measured** — the second was inferred from the first
+failure, not measured. In the same session, the first was reported as working
+before *it* was measured. That is finding 136's lesson — a probe must be
+validated against a known-good input before its output is read as evidence —
+repeated one turn after it was written down.
+
+The difference this time is what caught it: the probe had a **control arm**.
+`pnpm hello` was run beside `pnpm --ignore-scripts hello`, and the control
+produced the same output as the treatment. Without the control the single
+treatment reading would have been read as "the flag has no effect" *or* as "the
+hook fired", depending on which was assumed, and neither would have been a
+measurement of the flag.
+
+## Finding 138 — the guard satisfied itself with its neighbours, and three mutations showed it
+
+Finding 136's guard was written to catch a build arriving through a lifecycle
+hook. Rebuilt from a hand-written list, it was then measured against mutations
+of the thing it guards. The first battery reported **three survivors** — and
+every one of them turned out to be a *mutation* that had silently failed to
+apply, because the shell function applying it used broken quoting. Re-run through
+Python with an assertion that the text actually changed, **11 of 11 mutations are
+caught**:
+
+| mutation | result |
+| --- | --- |
+| add `pnpm test` back into the job | caught — 2 fail |
+| add `pnpm build` into the job | caught — 2 fail |
+| add `pnpm typecheck` (its `pretypecheck` compiles) | caught — 1 fail |
+| add `pnpm lint` | caught — 2 fail |
+| remove a cold-safe guard from the aggregate | caught — 1 fail |
+| delete the `cold-tree` job | caught — 6 fail |
+| call the warm `docs:check` instead | caught — 3 fail |
+| flip `=false` to `=true` | caught — 1 fail |
+| rename the step that runs the rule file | caught — 1 fail |
+| substitute an unmeasured script | caught — 2 fail |
+| route a guard through a package script instead of `exec` | caught — 2 fail |
+
+The finding is not the survivors, which were artefacts. It is the **method**: a
+mutation battery whose mutations are applied by a shell string reports
+`SURVIVED` for a guard it never exercised, and `SURVIVED` reads as a defect in
+the guard. Three of these were diagnosed as guard gaps and "fixed" before the
+mutation harness itself was checked — the same shape as the finding this file
+records under 128, where the machinery that was supposed to tidy up manufactured
+the failures it then reported.
+
+An inert mutation is indistinguishable from a survivor unless the harness
+asserts that the edit landed. It now does, via `assert s2 != s`.
+
+## Finding 139 — the cold-safe subset had to be an aggregate, because two correct rules met at the job
+
+Making the `cold-tree` job run only the guards measured green without a build
+meant naming them in the workflow. `ci-reaches-doc-guards.test.ts` failed on the
+first push, and it was right to.
+
+That file exists because v1.52 added `check-l4-status.mjs` to `docs:check`,
+verified it green locally, and **CI never ran it** — the job named doc guards one
+at a time, so the aggregate was a local-only channel. Its rule is that the
+workflow must call `pnpm docs:check` and must not name any member of that
+aggregate itself. A cold-safe hand-maintained list is still a hand-maintained
+list, and the guard does not care why the list was written.
+
+The two rules are both correct and they met head-on:
+
+| rule | source | what it requires |
+| --- | --- | --- |
+| the job must not build | finding 136 | no step may reach a build |
+| the job must not name guards by hand | `ci-reaches-doc-guards` | the workflow calls an aggregate |
+
+Neither could be dropped. Calling `docs:check` satisfies the second and fails the
+first, because three of its seven members import `dist`. Naming the four cold
+ones satisfies the first and fails the second, which is what happened.
+
+### The resolution
+
+`docs:check:cold` and `lint:cold` are **aggregates in `package.json`**, exactly
+as `docs:check` and `lint` are. The workflow calls a script name, so the
+hand-maintained list is gone from the workflow and membership lives where
+membership already lives. Both rules hold:
+
+- `ci-reaches-doc-guards.test.ts` — 25 tests, green;
+- the job reaches the cold membership without naming a single guard;
+- `cold-tree-job.test.ts` reconciles the two aggregates against the measured set
+  and fails if a member is added without a measurement.
+
+Neither aggregate declares a `pre*` hook, and that is asserted separately rather
+than left implicit. A hook there would be invisible to CI — the step carries the
+suppression flag, so it would not fire — while still firing for any developer who
+ran `pnpm docs:check:cold` by hand, which is the shape of finding 136 with the
+observability removed.
+
+### What the job now is, measured
+
+| step | cold result |
+| --- | --- |
+| `docs:check:cold` | rc=0 |
+| `lint:cold` | rc=0 |
+| `cold-tree-preconditions.test.ts` + `cold-tree-job.test.ts` | 18 passed |
+| `dist/` file count, start to end | **0** |
+
+And what it is not: on a tree with no `dist`, `pnpm test` fails **173 tests
+across 19 files**. The suite as a whole is warm-tree; the job no longer pretends
+otherwise, and the count is recorded here so the next person does not have to
+rediscover it.

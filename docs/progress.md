@@ -3674,10 +3674,13 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 
 | gate | result |
 | --- | --- |
-| full suite (`repo` scope) | **124 files, 3438 tests passed** (as of this commit) |
-| `core` test suite | **121 files, 3265 tests passed** (as of this commit) |
+| full suite (`repo` scope) | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`) |
+| `core` test suite | **121 files, 3265 tests passed** (Pass 39, `16f3499a9`) |
+| `cli` test suite | **3 files, 173 tests passed** (Pass 39, `16f3499a9`) |
+| repo test suite | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`, `pnpm test`, every workspace) |
+| `core` test suite | **121 files, 3269 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **124 files, 3438 tests passed** (`pnpm test`, every workspace; as of this commit) |
+| repo test suite | **124 files, 3442 tests passed** (as of this commit) |
 | `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
 | M4 drop `unknownArguments` | **caught** -- 2 fail |
 | M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
@@ -3688,3 +3691,117 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 | restore | byte-identical, `sha256 4b678ed456703838` |
 | `derive-gate-sites --check` | OK, 42 sites, exit sites 526 and 575 both `proved` |
 | `check-doc-counts` | OK, 15 published counts across 3 scopes |
+
+## Pass 40 — the fix did not work, the guard passed on a no-op, and two correct rules met at the job
+
+Three findings, one pass, and the shape of all three is the same: something
+reported success while doing nothing.
+
+### 1. The chosen fix was measured before it was trusted, and it failed
+
+Pass 39 left the `cold-tree` fix as an open decision with three candidates. The
+one selected was to disable the `pre*` hooks in the container, first implemented
+as `pnpm --ignore-scripts`. **It does not work**, and the control arm is what
+showed it:
+
+| invocation | hook ran? |
+| --- | --- |
+| `pnpm hello` (control) | yes |
+| `pnpm --ignore-scripts hello` | **yes** |
+
+Against this repository, `pnpm --ignore-scripts typecheck` on a cold tree still
+printed `pretypecheck`, still ran `tsc -p tsconfig.json`, and left **18 files** in
+`packages/core/dist`. `--ignore-scripts` suppresses `install`/`prepare`, not
+`pre`/`post`. The flag that works is
+`--config.enable-pre-post-scripts=false`: measured, the hook is absent from the
+output and `dist` stays at **0**.
+
+This was reported to the user as working before it was measured, one turn after
+the lesson "a probe must be validated against a known-good input" was written
+into the audit. What caught it was running the control beside the treatment.
+
+### 2. The job's content was impossible, not merely misconfigured
+
+Turning the hooks off exposed the larger fact. Measured cold, guard by guard:
+
+| needs no build (rc=0) | needs a build (rc=1, `ERR_MODULE_NOT_FOUND`) |
+| --- | --- |
+| `check-no-mock`, `check-no-secrets`, `check-no-vendored-data`, `check-official-registry`, `check-no-absolute-paths`, `check-no-unsafe-shell` | `check-readme-sample` (`core/dist/index.js`) |
+| `check-l4-status`, `check-doc-counts`, `check-data-model-vocabularies`, `derive-gate-sites` | `check-cli-reference`, `check-user-guide` (`cli/dist/main.js`) |
+| | `verify-scorer-stability` (`core/dist/fault/extraction-scoring.js`) |
+| | `gen-examples`, `build-example-bundle`, `check-official` (`core/dist/index.js`) |
+
+Three of the seven members of `docs:check` and one of the seven of `lint` import
+`dist`. Neither aggregate can pass on a cold tree, so the job calling them could
+only ever have meant "build first" — which is the finding it was written to
+prevent. And with the hooks off, `pnpm test` fails **173 tests across 19 files**:
+the suite is warm-tree as a whole.
+
+### 3. Two correct rules met head-on at the job
+
+Naming the cold-safe guards individually in the workflow turned
+`ci-reaches-doc-guards.test.ts` red, correctly. That file exists because a guard
+added to `docs:check` ran everywhere except CI, since the job named guards by
+hand. A cold-safe hand-maintained list is still a hand-maintained list.
+
+| rule | requires |
+| --- | --- |
+| the job must not build (finding 136) | no step may reach a build |
+| the job must not name aggregate members (v1.52) | the workflow calls an aggregate |
+
+The resolution is that the cold subset is **itself an aggregate**:
+`docs:check:cold` and `lint:cold` in `package.json`. The workflow calls a script
+name; membership lives where membership already lives; neither rule is weakened.
+
+### Mutation battery
+
+Eleven mutations of the workflow, all caught:
+
+| # | mutation | result |
+| --- | --- | --- |
+| 1 | add `pnpm test` back | caught — 2 fail |
+| 2 | add `pnpm build` | caught — 2 fail |
+| 3 | add `pnpm typecheck` (hook compiles) | caught — 1 fail |
+| 4 | add `pnpm lint` | caught — 2 fail |
+| 5 | remove a cold-safe guard | caught — 1 fail |
+| 6 | delete the `cold-tree` job | caught — 6 fail |
+| 7 | call warm `docs:check` | caught — 3 fail |
+| 8 | flip `=false` to `=true` | caught — 1 fail |
+| 9 | rename the rule step | caught — 1 fail |
+| 10 | substitute an unmeasured script | caught — 2 fail |
+| 11 | route a guard through a package script | caught — 2 fail |
+
+The first battery reported three survivors. All three were mutations that had
+**silently failed to apply** — the shell function applying them had broken
+quoting. Re-run through Python asserting the text actually changed: 11 of 11
+caught. Three guard "gaps" had already been diagnosed and rewritten on the
+strength of those artefacts.
+
+### Verified (Pass 40)
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **121 files, 3269 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **124 files, 3442 tests passed** (as of this commit) |
+| coverage — core | **99.96 / 99.91 / 100 / 99.96** (stmts / branch / funcs / lines) |
+| coverage — cli | **100 / 100 / 100 / 100** |
+| `typecheck` / `lint` / `docs:check` | clean |
+| `docs:counts:check` | clean, 22 published counts across 3 scopes |
+| `examples:check` / `examples:bundle:check` / `official:check` | clean |
+| `derive-gate-sites --check` | OK, 42 sites |
+| golden master | PASSED, 6 OpenRCA + 4 RCAEval files byte-stable |
+| mutation suite | **26 passed** |
+| `cold-tree` job on a cold tree | `docs:check:cold` rc=0, `lint:cold` rc=0, 18 tests passed, `dist/` **0 files throughout** |
+| `cold-tree-job.test.ts` | 12 tests, 11/11 workflow mutations caught |
+| `ci-reaches-doc-guards.test.ts` | 7 tests, green under the new aggregates |
+
+### Open
+
+- The `cold-tree` job no longer runs a vitest aggregate beyond the two rule
+  files, because the suite is not cold-safe. If a cold-safe subset of the suite is
+  wanted, it has to be established by measurement the way the guards were, not by
+  assuming the unit tests are host-independent.
+- `--stdin` still has no automatic invoker (unchanged from 131).
+- The six other scripts that failed in run #174 were never examined
+  individually.

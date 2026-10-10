@@ -317,33 +317,70 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       # No build step, here or anywhere below. See the job comment.
+      #
+      # ## Why the steps are what they are
+      #
+      # This job used to call `pnpm docs:check`, `lint`, `test`, `examples:check`
+      # and `examples:bundle:check`. Combined with the `pre*` hooks in
+      # `package.json`, that made the job **build six times** -- measured as six
+      # `tsc -p tsconfig.json` invocations in run #174's own log -- because every
+      # one of those scripts carries `"pre<script>": "pnpm build"`. A job whose
+      # stated purpose is that it has never been built was building on its first
+      # step, and the flake it produced (a script spawning mid-`tsc`, dying at
+      # link time on whichever module the compiler had not reached yet) was
+      # attributed to four different modules across four runs.
+      #
+      # So the job now runs the scripts that were **measured green with
+      # `packages/*/dist` absent**, and nothing else. `cold-tree-job.test.ts`
+      # derives that set from the measurements rather than trusting this list --
+      # a hand-written list of what is cold-safe is where the next omission will
+      # be, which is exactly how `examples:bundle:check` came to be assumed
+      # cold-safe when it is not.
+      #
+      # `--ignore-scripts` is deliberately **not** used. It suppresses `install`
+      # and `prepare` scripts and does **not** suppress `pre`/`post` lifecycle
+      # hooks -- measured: `pnpm --ignore-scripts typecheck` on a cold tree still
+      # ran `pretypecheck`, still ran `tsc`, and still wrote 18 files into
+      # `dist/`. The flag that does suppress them is
+      # `--config.enable-pre-post-scripts=false`, and the steps below use it, so
+      # "no build" is a property of the step rather than of a reader's belief.
 
-      - name: Documentation guards, from a tree that has never been built
-        run: pnpm docs:check
+      - name: Documentation guards that read no build artefact
+        # `docs:check:cold` is an aggregate in `package.json`, for the same
+        # reason `docs:check` is one: naming guards individually here makes the
+        # list hand-maintained, and a guard added to the cold-safe set later
+        # would be wired in by memory. `ci-reaches-doc-guards.test.ts` forbids
+        # that shape, and it is right to -- so the cold subset is a first-class
+        # aggregate and this step calls it.
+        #
+        # The four members are the ones measured green with no `dist/`. The other
+        # three members of `docs:check` -- `check-readme-sample`,
+        # `check-cli-reference`, `check-user-guide` -- import core's
+        # `dist/index.js` or drive cli's `dist/main.js` and belong to the warm
+        # job, which runs the full aggregate.
+        #
+        # `--config.enable-pre-post-scripts=false` because `docs:check:cold`
+        # deliberately has no `pre*` hook -- that is what makes it cold-safe --
+        # and the flag guarantees no hook is added later without this step
+        # failing `cold-tree-job.test.ts`.
+        run: pnpm --config.enable-pre-post-scripts=false docs:check:cold
 
-      - name: Lint chain, from a tree that has never been built
-        run: pnpm lint
+      - name: Lint guards that read no build artefact
+        # Six of the seven members of `lint`, as a first-class aggregate for the
+        # same reason. The seventh, `verify-scorer-stability.mjs`, imports core's
+        # built `dist/fault/extraction-scoring.js` and runs in the warm job.
+        run: pnpm --config.enable-pre-post-scripts=false lint:cold
 
-      - name: Test, from a tree that has never been built
-        run: pnpm test
-
-      - name: Examples are up to date, from a tree that has never been built
-        run: pnpm examples:check
-
-      - name: Example pack verifies against its own manifest, from a tree that has never been built
-        # Added because it is build-dependent and was missing from the list of
-        # such scripts. `build-example-bundle.mjs` imports core's built
-        # `index.js`, so on a cold tree it dies with ERR_MODULE_NOT_FOUND -- and
-        # the assumption that it did not had been recorded as a measurement. The
-        # reconciliation in `cold-tree-preconditions.test.ts` is what caught it,
-        # and this step is the behavioural half: the claim is now exercised by
-        # the job that exists to exercise it.
-        run: pnpm examples:bundle:check
-
-      - name: The file that proves the preconditions are declared
-        # Named explicitly rather than left to `pnpm test` above, so that
-        # deleting the rule fails this job by name instead of showing up as a
-        # suite that merely got shorter. The cold tree is the one place this
-        # file's subject matter is real, which is why it belongs here as well as
-        # in the main job.
-        run: pnpm exec vitest run --root packages/core cold-tree-preconditions.test.ts cold-tree-job.test.ts
+      - name: The rule that decides which scripts may run here
+        # The behavioural half of the cold-tree rule, run first.
+        #
+        # It was measured that the suite as a whole is not cold-safe: on a tree
+        # with `packages/*/dist` absent, `pnpm test` fails **173 tests across 19
+        # files**, and the failing set is exactly the tests that drive the
+        # build-dependent scripts plus everything downstream of them. So the job
+        # does not run the suite; it runs the scripts that were measured
+        # cold-safe, and this file is what keeps "measured" honest.
+        #
+        # `--config.enable-pre-post-scripts=false` so a future `pretest` cannot
+        # build the tree out from under the step that exists to run without one.
+        run: pnpm --config.enable-pre-post-scripts=false exec vitest run --root packages/core cold-tree-preconditions.test.ts cold-tree-job.test.ts
