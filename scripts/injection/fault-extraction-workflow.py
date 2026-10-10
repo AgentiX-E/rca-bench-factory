@@ -165,6 +165,47 @@ def run_suite() -> tuple[int, int]:
     return (int(match.group(1)) if match.group(1) else 0, int(match.group(2)))
 
 
+def assert_workflow_restored(pristine: str) -> int:
+    """The workflow must be back to its original bytes, and the suite must be green.
+
+    ## Why this is a status and not a printed line
+
+    The restore happened, and the negative control was printed, but neither
+    decided anything: the exit status was computed from `uncaught` alone. A run
+    that left `.github/workflows/fault-extraction-accuracy.yml` mutated therefore
+    exited 0, and the mutation would be read as the real workflow by every
+    command that followed -- including CI, which runs the workflow file's own
+    subject matter.
+
+    ## Why the negative control is part of the assertion
+
+    `pristine (negative control) ... BROKEN` was printed and ignored, and it is
+    the fact that makes every `CAUGHT` row above mean anything. A suite that is
+    already failing produces `CAUGHT` for every injection while proving nothing
+    about any of them, because the red it observes was there before the mutation.
+
+    `packages/core/test/batteries-verify-their-restore.test.ts` asserts that every
+    battery in this repository gates its exit status on its restore, which is why
+    this returns a status rather than printing one.
+    """
+    status = 0
+    current = WORKFLOW.read_text()
+    if current != pristine:
+        print()
+        print('the battery did not restore its own mutation:')
+        print(f'  {WORKFLOW.relative_to(REPO)} differs from the captured original')
+        status = 2
+    else:
+        print('source restored: identical to the captured original')
+
+    failed, passed = run_suite()
+    if failed != 0:
+        print(f'pristine (negative control): {failed} test(s) failing, so every CAUGHT above is unproven')
+        return 3 if status == 0 else status
+    print(f'\n{"pristine (negative control)":64} {failed:>4} {passed:>4}  OK')
+    return status
+
+
 def main() -> int:
     pristine = WORKFLOW.read_text()
     write_atomically(PRISTINE, pristine)
@@ -184,10 +225,9 @@ def main() -> int:
         print(f'{description:64} {failed:>4} {passed:>4}  {verdict}')
         write_atomically(WORKFLOW, pristine)
 
+    # Restore before the negative control, so the control measures the pristine
+    # revision rather than whatever the last injection left behind.
     write_atomically(WORKFLOW, pristine)
-    failed, passed = run_suite()
-    control = 'OK' if failed == 0 else 'BROKEN'
-    print(f'\n{"pristine (negative control)":64} {failed:>4} {passed:>4}  {control}')
 
     # Restore from the on-disk copy too, so a crash mid-loop cannot leave the
     # workflow mutated in the working tree.
@@ -198,14 +238,23 @@ def main() -> int:
     # zero-byte observations in 18 reads, against zero in 13 for `os.replace`.
     # Leaving one non-atomic write behind would have made the fix look complete
     # while a reader could still see an empty workflow, so this is the last site.
+    #
+    # Two restores rather than one, and the second is not redundant: the first
+    # restores from the string this run started with, and the second from
+    # whatever the on-disk snapshot holds. A process killed between them is
+    # recovered by the snapshot; a snapshot that was never written is covered by
+    # the string. `injection-write-discipline.test.ts` asserts both sites by
+    # count, because a total cannot say which one went missing.
     write_atomically(WORKFLOW, PRISTINE.read_text())
+
+    restore_status = assert_workflow_restored(pristine)
 
     if uncaught:
         print(f'\n{len(uncaught)} injection(s) not caught:')
         for description in uncaught:
             print(f'  - {description}')
         return 1
-    return 0
+    return restore_status
 
 
 if __name__ == '__main__':

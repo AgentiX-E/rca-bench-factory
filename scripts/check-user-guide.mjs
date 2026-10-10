@@ -239,6 +239,61 @@ const result = spawnSync('bash', [scriptPath], {
   // score, so the ceiling is generous; a timeout that fires on a slow machine
   // would be the flaky-test excuse this project does not accept.
   timeout: 600_000,
+  // `pre`/`post` hooks are suppressed, and the reason is a defect this guard
+  // caused rather than a preference about output.
+  //
+  // ## What the guide's own command did to the tree under test
+  //
+  // `docs/user-guide.md` documents `pnpm official:check`, and this guard runs
+  // the document's commands verbatim with `cwd: ROOT`. The root manifest gives
+  // that script a hook:
+  //
+  //     "preofficial:check": "pnpm build"
+  //
+  // so executing the guide ran `pnpm --filter core build && pnpm --filter cli
+  // build` -- `tsc` over both packages -- **inside the repository, in the middle
+  // of the test suite that was reading it**.
+  //
+  // Measured, not inferred. `packages/core/dist/index.js` and
+  // `packages/cli/dist/main.js` were observed being rewritten exactly once per
+  // full-suite run and never while the machine was idle. Polling the process
+  // table during a run caught the writer and its ancestry:
+  //
+  //     pnpm official:check
+  //      └ bash /tmp/rca-bench-guide-*/steps.sh
+  //         └ node scripts/check-user-guide.mjs
+  //            └ node (vitest 5)
+  //
+  // ## Why that was a test failure and not merely untidy
+  //
+  // Roughly a hundred test files read `packages/core/dist/index.js` or spawn
+  // `packages/cli/dist/main.js`, and a `tsc` build is not atomic across the
+  // files it emits. A concurrent importer could therefore read `dist/index.js`
+  // after it was rewritten but before the module it re-exports from was, and the
+  // observed failure was exactly that torn state:
+  //
+  //     SyntaxError: The requested module './fault/category-derivation.js' does
+  //     not provide an export named 'ALT_READING_FLOOR'
+  //
+  // surfacing as `expected 1 to be +0` from whichever test happened to spawn a
+  // reader at that instant -- a different file each run, which is why four
+  // separate "flaky tests" turned out to be one condition.
+  //
+  // ## Why suppressing the hook is the right repair and not a weakening
+  //
+  // The hook is a *precondition* of the script, not the thing the script
+  // asserts, and the guide's step is about what a reader types -- which is still
+  // executed exactly as written. The precondition keeps its own proof in two
+  // places that do not share this hazard: `cold-tree-preconditions.test.ts`
+  // holds the declaration (`pre<script>` exists and names a build), and the
+  // `cold-tree` CI job exercises the behaviour on a machine that has never been
+  // built. What is dropped is only the *side effect* of re-running the build in
+  // a tree that is already built and is being read by other tests.
+  //
+  // Verified by experiment: with the variable set, `pnpm official:check` exits 0,
+  // emits no build, and leaves both build outputs' mtimes untouched; without it,
+  // it rewrites them.
+  env: { ...process.env, npm_config_enable_pre_post_scripts: 'false' },
 });
 
 rmSync(dir, { recursive: true, force: true });

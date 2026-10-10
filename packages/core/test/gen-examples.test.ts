@@ -176,7 +176,17 @@ describe('scripts/gen-examples.mjs · the payload it generates', () => {
   it('passes --check against the file it has just written', () => {
     // The other half of the contrast for the staleness case below.
     const tree = treeWith();
-    expect(run(tree).status).toBe(0);
+    // The child's stderr is the assertion message, not a discarded field.
+    //
+    // This test has failed under a full suite with `expected 1 to be +0` and no
+    // other information -- the run was fast (225 ms against a 387-399 ms normal)
+    // so the generator exited early, and the assertion threw away the one thing
+    // that would have said why. A red run that reports only an exit code sends
+    // the next reader to re-derive the cause from scratch; the gate's own
+    // standard elsewhere in this repository is that a diagnostic carries the
+    // repair, and that applies to assertions as much as to scripts.
+    const wrote = run(tree);
+    expect(wrote.status, wrote.stderr).toBe(0);
 
     const result = run(tree, ['--check']);
 

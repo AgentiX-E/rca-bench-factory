@@ -127,6 +127,45 @@ def run_suite():
     return failed, out
 
 
+def assert_source_restored() -> int:
+    """Every mutated file must be back to its original bytes.
+
+    Restoring in a loop is not the same as *verifying* the restore, and the
+    difference matters here: this battery rewrites a tracked source file, so a
+    run whose last `shutil.copy` silently failed leaves the repository holding a
+    mutation that every later command -- including CI -- reads as the real
+    source. The verdict was printed before this function existed and the exit
+    status was computed only from the injection count, so the printed line was
+    the only consumer of it and a bad restore exited 0.
+
+    `packages/core/test/batteries-verify-their-restore.test.ts` asserts that
+    every battery in this repository gates its exit status on its restore, which
+    is why this returns a status rather than printing one.
+    """
+    current = SRC.read_text()
+    original = PRISTINE.read_text()
+    if current != original:
+        print()
+        print("the battery did not restore its own mutation:")
+        print(f"  {SRC.relative_to(REPO)} differs from the pristine capture")
+        return 2
+    print("source restored: identical to the pristine capture")
+
+    # The pristine source must be *green*, which is the negative control and was
+    # printed before without deciding anything. Two facts have to hold for a
+    # "caught" row above to mean what it says: the source was mutated (checked by
+    # the anchor test), and the source is green without the mutation. A suite that
+    # was already failing would produce a "caught" verdict for every injection
+    # while proving nothing, and the printed control-line would not have stopped
+    # it.
+    failed, _ = run_suite()
+    if failed != 0:
+        print(f"the pristine source is not green: {failed} test(s) failing before any injection")
+        return 3
+    print("pristine source: GREEN")
+    return 0
+
+
 def main():
     shutil.copy(SRC, PRISTINE)
     uncaught = []
@@ -147,9 +186,7 @@ def main():
 
         shutil.copy(PRISTINE, SRC)
 
-    # The pristine source must be green.
-    failed, _ = run_suite()
-    print(f"\npristine source: {'GREEN' if failed == 0 else f'{failed} FAILING'}")
+    restore_status = assert_source_restored()
 
     if uncaught:
         print(f"\n{len(uncaught)} injection(s) survived the suite:")
@@ -157,7 +194,7 @@ def main():
             print(f"  - {name}")
         return 1
     print(f"\nall {len(INJECTIONS)} injection(s) caught")
-    return 0
+    return restore_status
 
 
 if __name__ == "__main__":

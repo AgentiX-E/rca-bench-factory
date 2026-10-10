@@ -13679,3 +13679,722 @@ And what it is not: on a tree with no `dist`, `pnpm test` fails **173 tests
 across 19 files**. The suite as a whole is warm-tree; the job no longer pretends
 otherwise, and the count is recorded here so the next person does not have to
 rediscover it.
+
+## Finding 140. A worktree registration leaked, and the suite failed in bursts
+
+### What was seen
+
+`pnpm test:coverage` on the full 121-file suite failed intermittently with
+
+```
+ FAIL  test/check-official-roundtrip.test.ts > scripts/check-official.mjs · a declared case with no readable payload > reads a payload the corpus named data.csv, which is what upstream writes
+AssertionError: the round trip rejected a corpus it accepts in isolation
+```
+
+and, on other runs, with a *different* file and a *different* test:
+
+```
+ FAIL  test/check-official-roundtrip.test.ts · still counts what it walked, so the operator line keeps its meaning
+ FAIL  test/aiops2025.test.ts · exports input.json and groundtruth.jsonl
+ FAIL  test/cloudopsbench.test.ts · exports one metadata.json per case
+ FAIL  test/dispatch.test.ts · answers openrca-1.0 with an export result
+```
+
+The assertion was always the same shape -- `expected 1 to be +0` -- and the child
+process had **run and exited 1**, so it was not a fork failure and not a
+timeout. CI reported the same failure against a different victim again:
+`gen-rcaeval-cases.test.ts · --check · skips a non-directory entry at every
+level`.
+
+A varying victim is the signature of a shared resource, so each candidate was
+measured rather than argued:
+
+| hypothesis | measurement | verdict |
+| --- | --- | --- |
+| scratch-prefix collision | every `mkdtempSync` prefix in the suite is distinct | excluded |
+| the 5 s vitest timeout | the failing tests cost **80 ms** standalone | excluded |
+| the temp filesystem | 229 GB free, inodes unlimited | excluded |
+| CPU contention | 6 spinners saturating every core, **8 of 8 runs green** | excluded |
+| `dist` stale against `src` | `tsc --noEmit` rc=0, `git status` clean | excluded |
+| `process.env` written by a test | no test in the suite writes it | excluded |
+| file-level parallelism between two files | the pair run together **12 of 12 green** | excluded |
+
+### What was actually wrong
+
+`typecheck-entrypoint.test.ts` builds a cold worktree and tore it down with
+
+```ts
+try {
+  execFileSync('git', ['worktree', 'remove', '--force', cold], { cwd: ROOT });
+} catch {
+  rmSync(cold, { recursive: true, force: true });
+}
+```
+
+`git worktree remove` deletes the directory **and** deregisters it. When it fails
+-- and it fails whenever a child still holds the tree, which is the normal state
+of a suite at `afterAll` -- the handler removes the directory while leaving the
+registration in `.git/worktrees/`. Measured, after a handful of runs on one
+revision:
+
+```
+$ git worktree list
+/…/rca-bench-factory             f1e0cd7 [master]
+/tmp/rca-bench-typecheck-fqBOCy  f1e0cd7 (detached HEAD)   <- leaked
+
+$ ls /tmp/rca-bench-typecheck-*
+/tmp/rca-bench-typecheck-fqBOCy    directory present, registered
+/tmp/rca-bench-typecheck-p0jVPV    directory present, NOT registered
+```
+
+Two half-states from one defect, in opposite directions: a registration with no
+directory, and a directory with no registration.
+
+The leaked registration is a **second working tree of this repository**, and the
+next run's `coldCopy()` enumerates the working tree with `git ls-files --others`.
+This is finding 128 recurring -- the defect class where the clean-up is the
+defect -- and it is why the failure came in bursts.
+
+### Why the burst is the evidence
+
+Load produces a *spread*; it does not produce a *streak*. Measured over one
+session:
+
+```
+run 1  green      run 6  red        run 11 green
+run 2  green      run 7  red        run 12 green
+run 3  green      run 8  green      run 13 green
+run 4  green      run 9  green      run 14 green
+run 5  red        run 10 green      run 15 green
+```
+
+and later, on the same revision with no change, **10 of 10 green**. A streak that
+clears on its own is a side effect of the previous run rather than a property of
+this one, and it is the one signature that points at the worktree rather than at
+the machine.
+
+### The repair
+
+The registration is now pruned unconditionally, outside the handler, before the
+directory is removed, so a failure of `worktree remove` cannot skip it:
+
+```ts
+try { execFileSync('git', ['worktree', 'remove', '--force', cold], { cwd: ROOT, stdio: 'pipe' }); }
+catch { /* expected whenever a child still holds the tree */ }
+try { execFileSync('git', ['worktree', 'prune'], { cwd: ROOT, stdio: 'pipe' }); }
+catch { /* the directory removal below is the last resort */ }
+rmSync(cold, { recursive: true, force: true });
+```
+
+Measured after the repair: **5 of 5 runs left `git worktree list` at one entry
+and zero `/tmp/rca-bench-typecheck-*` directories.**
+
+### The second half: the file was the suite's most expensive
+
+The same file ran the identical `pnpm typecheck` **twice**, once per assertion,
+against the identical worktree. Measured in-suite at **26128 ms** against
+**11328 ms** standalone, it was also the reason `collect` took 130 s on a run
+that failed. In-suite, `pnpm install` and two `tsc` processes ran alongside
+thirty-one other workers while `check-official-roundtrip.test.ts` held roughly
+300 MB of corpus, and `/sys/fs/cgroup/memory.events` recorded **max 9279** --
+the cgroup at its 8 GiB ceiling 9279 times -- with `oom_kill` rising from 0 to 1
+under a controlled allocation pressure applied for confirmation.
+
+Both assertions read the same result, so the compile is now memoised and runs
+once. The file went from **26128 ms to 6.28 s** in-suite, with both assertions
+intact: the second one reads at 0 ms.
+
+### The guard
+
+`packages/core/test/heavy-fixtures-do-not-contend.test.ts` makes the properties
+assertable rather than leaving them as prose. It reads the suite's own source
+with comments and string literals blanked, so a fixture added tomorrow is visible
+to it, and its six assertions are:
+
+| assertion | what it prevents |
+| --- | --- |
+| the positive control finds the heavy fixture | a scan that has drifted and is green over an empty set |
+| exactly one file runs a package manager | a second one moving the suite's whole memory ceiling |
+| the package manager runs with `cwd: sandbox` | a `pnpm install` rewriting this tree's `node_modules` under 31 workers |
+| the worktree registration is pruned, not only the directory | this finding |
+| the compiler is invoked exactly once, and both assertions read the memo | a return to two `tsc` processes |
+| the bulk corpus reaches 100 MB and its child is heap-capped | a fixture that stops being the fixture this file is about |
+
+**10 mutations, 10 caught, 0 survived.** Two of them survived the first battery
+and both were real gaps in the guard rather than in the subject: `cwd: sandbox`
+was satisfied by an unrelated `git worktree` call on the same line, and
+"at least two `writeBulkCorpus` calls" was still true after the 300 MB fixture
+was replaced with an empty corpus. Measuring the mutation is what found both.
+
+---
+
+## Finding 141 — finding 140's repair did nothing, and was reported as working
+
+**What was seen.** Finding 140 recorded a leaked `git worktree` registration in
+`typecheck-entrypoint.test.ts` and a repair whose teardown pruned the
+registration after attempting `git worktree remove`. It was reported fixed on the
+strength of twelve green suite runs. A later run leaked again:
+
+```
+$ git worktree list
+/root/…/rca-bench-factory          f1e0cd7 [master]
+/tmp/rca-bench-typecheck-gshGgu    f1e0cd7 (detached HEAD)   <- leaked, directory present
+$ ls .git/worktrees/
+rca-bench-typecheck-gshGgu
+```
+
+**What was actually wrong.** `git worktree prune` deregisters a worktree whose
+**directory is already gone**. At `afterAll` time the child processes have not
+exited, so the directory is still there and `prune` declines:
+
+```
+$ git worktree prune --dry-run -v      # directory still present
+(no output)
+```
+
+The teardown ordered the two steps the wrong way round:
+
+```python
+try { worktree remove --force } catch {}
+try { worktree prune } catch {}          # no-op: the directory still exists
+rmSync(cold, recursive)                  # deletes it *after* the prune declined
+```
+
+Deleting the directory first and pruning second is the order that holds, and the
+end state was confirmed by hand before being written into the file:
+
+```
+$ rm -rf /tmp/rca-bench-typecheck-gshGgu
+$ git worktree prune
+$ ls .git/worktrees/
+(empty)
+```
+
+**Why the first report was wrong.** The twelve green runs were real, and they were
+not evidence: the leak is a *side effect of the previous run*, so a window of runs
+taken immediately after a manual clean-up is the one window guaranteed to be
+clean. The claim "fixed" was supported by the absence of a symptom whose
+mechanism had not been checked. Reading `prune --dry-run` takes one command and
+would have refuted the repair before it was written.
+
+**The repair, and the guard on its order.** The teardown now deletes, prunes,
+deletes again -- the third step because a child that outlives the first deletion
+can recreate the tree between steps one and two -- and then reads
+`git worktree list --porcelain` back and names any leaked path on stderr, so a
+leak is a line in the suite output rather than an inference from a later burst of
+unrelated failures.
+
+`heavy-fixtures-do-not-contend.test.ts` asserts the **order** rather than the
+presence of the calls, because presence was what the previous guard checked and
+presence was satisfied by the broken version:
+
+```ts
+expect(deleteAt, 'the directory must be deleted before the prune, because prune
+  only deregisters worktrees whose directory is already gone').toBeLessThan(pruneAt);
+expect(teardown.slice(pruneAt), 'the directory must be removed again after the
+  prune').toContain('rmSync(cold');
+```
+
+---
+
+## Finding 142 — a guard that named seven batteries and was wrong about five
+
+**What was seen.** `batteries-verify-their-restore.test.ts` was written to assert
+that every mutation battery in `scripts/` verifies its restore rather than only
+performing one. Its first version reported six batteries that do not:
+
+```
+scripts/injection/fault-extraction-scoring.py
+scripts/injection/fault-extraction-workflow.py
+scripts/injection/fetch-official-retry.py
+scripts/injection/m1-ceiling-probe.py
+scripts/injection/scorer-stability-probe.py
+scripts/injection/type-miss-probe.py
+```
+
+**What was actually wrong.** Two separate defects, and the guard's was the
+larger one. The guard matched a *name* against the spellings
+`assert_source_restored|assertRestored|assert_source_intact|verifyRestore`. Three
+of the six it named compute a verdict under a different name
+(`restore_recorded()`, `restored`) and return
+`0 if caught == len(INJECTIONS) and restored else 1` -- which is an assertion, and
+a stronger one than a printed line. The guard was reading a name where the
+property is a data flow, which is the third time this repository has written a
+scanner that cannot tell one thing from another (findings 127, 133, and the
+`cwd: sandbox` substring in finding 140).
+
+Three batteries genuinely do not act on their restore verdict, and one of them
+had no verdict at all:
+
+| battery | restore | verdict printed | reaches the exit status |
+|---|---|---|---|
+| `fault-extraction-scoring.py` | `shutil.copy(PRISTINE, SRC)` | yes | **no** -- `return 1`/`return 0` from `uncaught` only |
+| `fetch-official-retry.py` | `shutil.copy(PRISTINE, SRC)` | yes | **no** -- same shape |
+| `fault-extraction-workflow.py` | `write_atomically(WORKFLOW, pristine)` | negative control only | **no** -- `return 1`/`return 0` from `uncaught` only |
+
+`gate-tests-battery.py` had already named this in its own docstring: *"The other
+batteries in this repository print this check; this one asserts it."* The
+sentence was true, was written down, and nothing read it.
+
+**The repair.** All three now compute a restore verdict by comparing the subject
+against its capture, return a nonzero status when it differs, and gate the
+negative control on the same return. Proven rather than read: each assertion
+function was extracted and run against a restored and a corrupted pair in
+isolation, giving `0` and `2` respectively, and the three batteries were re-run
+end to end with all injections still caught.
+
+**The guard was rewritten to measure the property, and then the guard itself was
+mutated.** Four formulations of the detector were wrong before the fifth held.
+Each was caught by running a mutation battery against the guard, not by reading
+it:
+
+| reading | what defeated it |
+|---|---|
+| `return\b[^\n]*(?:\n\s+[^\n]*)*` | greedy -- one match spanned from a `return` into an unrelated function |
+| name match on `assert_*` | three false positives, above |
+| bracket-joining into statements | counted brackets **inside string literals**, collapsing a 200-line file into 19 "statements" |
+| "contains a comparison **and** a restore-ish word" | matched a `print` message I had myself added that morning |
+| "comparison with restore operands, within 5 lines of a nonzero return" | rejected the *unmutated* file and accepted the mutated one |
+
+The final reading: a restore verdict must be **produced by a comparison over
+restored content**, and that verdict must appear in a statement that returns a
+nonzero status. Six mutations were run against it and **6/6 were caught**,
+including two that disable the guard itself.
+
+**One mutation it still cannot see, recorded rather than papered over.** Replacing
+`if current != pristine:` with `if False:` inside
+`assert_workflow_restored()` survives, because that function retains a second,
+unrelated comparison (`status == 0`) that a text reading cannot distinguish from
+the check. The direction of the residual gap is the safe one -- the rule cannot
+report an *unasserted* battery as asserted -- and the limitation is written into
+the test that carries it.
+
+## Finding 143 — the intermittent run is two different faults, and neither is the suite
+
+Two captured full-suite runs of `packages/core` failed, and they failed
+*differently*. Separating them was the first thing this investigation did,
+because every earlier attempt had treated "the suite is flaky" as one property
+and no single explanation fits both.
+
+| log | exit | `FAIL` lines | coverage ENOENT | `Tests` line |
+| --- | --- | --- | --- | --- |
+| `/tmp/cap-1.log` | nonzero | **0** | **2** | absent |
+| `/tmp/cap-2.log` | nonzero | **4** | 0 | `4 failed \| 3276 passed (3280)` |
+
+A run that exits nonzero with **no failing test and no summary line** is not a
+test failure. Nothing in the suite ran incorrectly; the process died while
+reporting. A run with four `FAIL` lines is the ordinary kind. These need
+different repairs, and the record below keeps them apart.
+
+### The four genuine failures are not four defects
+
+`cap-2`'s failures were, in the order the reporter listed them:
+
+```
+ FAIL  test/gen-examples.test.ts > ... passes --check against the file it has just written
+ FAIL  test/gen-rcaeval-cases.test.ts > ... classifies each case into its suite
+ FAIL  test/ingest-report.test.ts > ... ingests a file with more rows than can be spread into a call
+ FAIL  test/ingest-report.test.ts > ... keeps every row when several files each exceed the limit
+```
+
+Four different files, and each one passes in isolation. Run alone:
+
+| file | tests | wall |
+| --- | --- | --- |
+| `gen-examples.test.ts` | 14 passed | 4.69 s |
+| `gen-rcaeval-cases.test.ts` | 21 passed | 4.03 s |
+| `ingest-report.test.ts` | 15 passed | 14.69 s |
+
+Measured per test, the two `ingest-report` entries are the whole cost of that
+file -- 2491 ms and **8706 ms** against a `ROWS_TIMEOUT_MS` of 30 000. They sit
+inside the argument-limit describe block, whose docstring records why the size
+is what it is: `ROWS = 130_000` is deliberately past the probed V8 spread
+ceiling (between 100 000 and 125 000), and the comment already says the timeout
+is raised because "building and parsing a payload of that size is the work under
+test, not slow setup".
+
+So the budget is correct by design and the *headroom* is the finding. 8706 ms
+measured alone is 29% of a 30 000 ms budget; under a full suite the same test is
+competing with 122 other files for a container whose cgroup grants **4 CPUs**
+while `nproc` advertises 32. A 3.4× margin is not a margin that survives that,
+and the observed failure is exactly the shape it would produce -- and it lands on
+a *different* set of files each time, which is why four victims looked like four
+defects and were one condition.
+
+### The other mode is a race inside vitest's coverage reporter
+
+`cap-1` exited nonzero with `FAIL=0` and this, twice:
+
+```
+Unhandled Rejection
+Error: ENOENT: no such file or directory, open '.../packages/core/coverage/.tmp/coverage-11.json'
+ ❯ Object.writeFile ../../node:internal/fs/promises:1212:14
+```
+
+The mechanism is readable in the installed provider, and it was confirmed by
+running the two candidate orders rather than by argument. `BaseCoverageProvider`
+accumulates a `pendingPromises` array of `writeFile` calls, one per suite, and
+`readCoverageFiles()` drains it exactly once:
+
+```js
+async readCoverageFiles({ onFileRead, onFinished, onDebug }) {
+  const total = this.pendingPromises.length;
+  await Promise.all(this.pendingPromises);   // the only drain
+  this.pendingPromises = [];                 // and the reset
+```
+
+Anything pushed after that drain is never read, and its rejection has no owner --
+which is precisely an `Unhandled Rejection` that sets the process exit code with
+no test having failed. The probe that settles it runs both orders against a real
+temp directory:
+
+```
+order1 (all writes awaited before the drain): 20 of 20 files landed
+order2 (a write pushed after the drain):       1 of 2 landed, and the second
+                                               raised ENOENT at
+                                               node:internal/fs/promises:1212
+```
+
+The second `ENOENT` is the same line number as the one in `cap-1`. The write
+site is the worker's own completion hook, which pushes its coverage through the
+RPC bridge after the file's tests finish:
+
+```js
+testRunner.onAfterRunFiles = async (files) => {
+  const coverage = await takeCoverageInsideWorker(config.coverage, executor);
+  if (coverage) rpc().onAfterSuiteRun({ coverage, ... });
+```
+
+**This defect is in vitest's coverage reporter, not in this repository**, so the
+only honest options are to remove the trigger or to report the race when it
+happens. Editing `pendingPromises` is not available to us, and a `--no-coverage`
+CI path would not be a repair -- it would delete the coverage gate that the rest
+of this campaign exists to enforce.
+
+### What was falsified along the way
+
+Two explanations were recorded as candidates before they were measured, and both
+are now dead. They are kept here because each was plausible and each would have
+produced a change to this repository for no reason:
+
+**Memory.** `maxWorkers: 8` was added to `packages/core/vitest.config.ts` on the
+theory that the default of 32 overruns the container's 8 GiB. The full table is
+in that file's own comment and it does not support the theory: `memory.events
+max` delta was **0** at 4 workers, **0** at 8, and **0** at the default 32 -- and
+the default run was *green*, 3280 passed. `oom_kill` was 0 throughout. The cap is
+retained as headroom, and both the comment and this entry say so rather than
+upgrading it into a repair it is not.
+
+**A leaked child process.** Four test files use an asynchronous `spawn`
+(`fault-extraction-scripts`, `fetch-official`, `gate-test-battery-exclusion`,
+`timeout-budget`), and a worker that outlives its file would plausibly push
+coverage after the drain. Running each file alone and counting vitest processes
+afterwards gives `before=1 after=1` for all four, and every `node` process on the
+box has an `etimes` equal to the container's own age -- none of them is from a
+test run. No leak.
+
+### Environment
+
+`nproc` reports **32**; `cpu.max` is `400000 100000`, i.e. **4 CPUs** of quota;
+`cpu.stat` shows `nr_throttled 4885` in `nr_periods 20181`, so the cgroup was
+throttled in roughly a quarter of all periods. Every "it is slower in the suite"
+observation in this entry is downstream of that number, and it is also the
+condition under which a worker's coverage RPC is most likely to arrive late.
+
+## Finding 144 — a syntax check that asserted the process had started, not that it succeeded
+
+`fault-extraction-scripts.test.ts` ended with a five-line describe block whose
+title is a claim and whose body does not test it:
+
+```ts
+it('is valid JavaScript that Node accepts', () => {
+  for (const script of [DERIVE, SCORE]) {
+    const result = spawn(process.execPath, ['--check', script], { cwd: ROOT });
+    expect(result.pid).toBeGreaterThan(0);
+  }
+});
+```
+
+Two independent faults sit in that line, and they compound.
+
+**The child is never joined.** `spawn` is asynchronous; nothing awaits the
+child, so the test body completes while node is still loading. The comment above
+it -- "cheap, and it catches the class of edit that leaves a stray `fi` or an
+unbalanced quote" -- describes work that has not happened at the time the
+assertion runs.
+
+**`pid > 0` is true of a process that fails.** Every successfully *started*
+process has a pid, including one that exits 1 because the file it was told to
+check does not parse. `node --check` on a file with an unbalanced quote prints a
+syntax error to stderr, exits 1, and still hands the parent a pid. So the
+assertion is satisfied by exactly the input the test exists to reject: a script
+with a syntax error would pass, and the title would still read "is valid
+JavaScript that Node accepts".
+
+That is this campaign's recurring shape -- something that reports success while
+doing nothing -- in its purest form so far, because the *title* is the claim and
+the assertion measures a different, always-true property. Eight earlier findings
+were clauses nobody read; this one is an assertion nobody could fail.
+
+### How it was found
+
+Not by reading it. It was found by the guard added in this same iteration,
+`coverage-writes-are-drained.test.ts`, whose repository-side rule asks which test
+files start an asynchronous child and never join it. That rule exists for a
+different reason -- a child that outlives its file can push coverage into the
+reporter after the write array has been drained, which is mode (a) of Finding
+143 -- and it named exactly one file. Reading that file to confirm the finding is
+what exposed the assertion defect underneath it, which is the more serious half.
+
+The ordering of those two discoveries is the lesson worth keeping: the guard was
+written about scheduling, and it found a correctness defect, because an unjoined
+child and an unasserted result have the same cause -- a `spawn` call written as
+though it were `spawnSync`.
+
+### The repair
+
+`spawnSync` (already imported in the file), an assertion on `status`, and a
+control that proves the assertion can fail:
+
+```ts
+it('is valid JavaScript that Node accepts', () => {
+  for (const script of [DERIVE, SCORE]) {
+    const result = spawnSync(process.execPath, ['--check', script], { encoding: 'utf8', cwd: ROOT });
+    expect(result.status, `${script} is not valid JavaScript:\n${result.stderr ?? ''}`).toBe(0);
+  }
+});
+
+it('and the check above can fail, so a green run means the files were read', () => {
+  const broken = join(TMP, 'broken.mjs');
+  writeFileSync(broken, 'export const x = ;\n');
+  const result = spawnSync(process.execPath, ['--check', broken], { encoding: 'utf8', cwd: ROOT });
+  expect(result.status, 'node --check accepted a file with a syntax error').not.toBe(0);
+});
+```
+
+The control is not decoration. Without it, a misspelled flag, or a node that
+ignored `--check`, would leave the first loop passing over files it never
+examined -- the same false-green one level up, which is how the first version
+came to exist. The failure message now carries the child's stderr, so a red run
+names the offending line instead of just the exit status.
+
+### Why removing the asynchronous `spawn` does not weaken the site proof
+
+`gate-sites-are-proven.test.ts` rule 7 infers a test file's script coverage from
+`spawnSync`/`execFileSync`/`execSync` calls only -- asynchronous `spawn` is not
+part of the inference. The proof for these two scripts was always carried by the
+`execFileSync` calls inside the file's `run()` helper. Removing the `spawn` call
+therefore changes nothing the inventory reads, which was verified by running rule
+7 after the edit rather than assumed from reading it.
+
+### Mutation evidence
+
+The new guard was shown to be load-bearing rather than self-agreeing, by breaking
+each property it claims and confirming it goes red:
+
+| mutation | guard's verdict |
+| --- | --- |
+| `readCoverageFiles`: reset placed before the drain | **red** -- names the ordering assertion |
+| a test file added that spawns and never joins | **red** -- names the file |
+
+The first attempt at the ordering mutation silently did not apply: the script
+matched the two statements by a hard-coded three-tab indent and the file uses
+two, so nothing was written and the guard reported green. That green would have
+been read as "the ordering assertion is vacuous". The mutation was rewritten to
+locate the statements by regex and to print the text it replaced, and it then
+went red as expected. A mutation harness that can no-op is the same class of
+defect as the test it is validating, and it is recorded here for that reason.
+
+## Finding 145 — the user-guide gate was rebuilding the repository under test
+
+The intermittent failure catalogued in Finding 143 as mode (b) is not a flaky
+test, not a timeout budget, and not memory pressure. It is one test that rebuilds
+the packages the rest of the suite is reading, and its cause is a documentation
+gate executing a command with a side effect in the tree under test.
+
+### The measurement that found it
+
+Three facts, each cheap and each necessary:
+
+1. **`dist` is rewritten once per suite run and never while idle.** Sampling the
+   mtime of `packages/core/dist/index.js` and `packages/cli/dist/main.js` every
+   400 ms showed a rewrite at the start of every full-suite run and *no* change
+   over a 90-second idle window. The suite causes it; nothing else does.
+
+2. **The rewriter is `tsc` under `pnpm build`.** Polling the process table
+   throughout a run caught:
+
+   ```
+   pnpm official:check
+    └ sh -c pnpm build
+       └ sh -c pnpm --filter @rca-bench-factory/core build && pnpm --filter @rca-bench-factory/cli build
+          └ node .../typescript/bin/tsc -p tsconfig.json
+   ```
+
+   Both packages' outputs, in the working tree, mid-run.
+
+3. **Its parent is the user-guide gate.** `/proc/<pid>/status` walked up from that
+   process gives the chain that names the culprit exactly:
+
+   ```
+   pnpm official:check
+    └ bash /tmp/rca-bench-guide-BV1fSZ/steps.sh
+       └ node scripts/check-user-guide.mjs
+          └ node (vitest 5)
+   ```
+
+`docs/user-guide.md` documents `pnpm official:check`, and the root manifest gives
+it a hook:
+
+```json
+"preofficial:check": "pnpm build"
+```
+
+`check-user-guide.mjs` runs the document's `bash` blocks verbatim with
+`cwd: ROOT`, so executing the guide ran a full build of both packages **inside
+the repository, in the middle of the suite that was reading it**.
+
+### Why that produced a test failure
+
+About a hundred test files read `packages/core/dist/index.js` or spawn
+`packages/cli/dist/main.js`, and a `tsc` build is not atomic across the files it
+emits. A concurrent importer could therefore read `dist/index.js` after it was
+rewritten but before the module it re-exports from was. The captured failure is
+precisely that torn state:
+
+```
+SyntaxError: The requested module './fault/category-derivation.js' does not
+provide an export named 'ALT_READING_FLOOR'
+```
+
+surfacing as `expected 1 to be +0` from whichever file happened to spawn a reader
+at that instant -- and a *different* file each time. That is why four separate
+victims looked like four defects: two were CPU-starvation timeouts in
+`ingest-report.test.ts`, and two were this torn import.
+
+The same mechanism explains the two other observations that had been recorded
+without explanation: the failure landing on a different file each run, and the
+whole suite's wall time being dominated by contention. Two concurrent `tsc` runs
+plus 8 vitest workers on a cgroup with a **4-CPU** quota is where the throttling
+in Finding 143's environment section comes from.
+
+### The repair
+
+The hook is a *precondition* of the script, not the thing the script asserts, and
+the guide's step is about what a reader types -- which is still executed exactly
+as written. So the gate suppresses `pre`/`post` hooks for the duration of the
+walkthrough:
+
+```js
+env: { ...process.env, npm_config_enable_pre_post_scripts: 'false' },
+```
+
+Verified by experiment rather than by reading pnpm's documentation:
+
+| run | `packages/core/dist/index.js` |
+| --- | --- |
+| `pnpm official:check` | rewritten |
+| `pnpm official:check` with the variable set | **untouched**, exit 0, no build emitted |
+
+What is given up is only the *side effect* of re-running a build in a tree that is
+already built and is being read by other tests. The precondition keeps its own
+proof in two places that do not share this hazard: `cold-tree-preconditions.test.ts`
+holds the declaration (`pre<script>` exists and names a build), and the
+`cold-tree` CI job exercises the behaviour on a machine that has never been built.
+This is the same division of labour the repository already uses for
+`pretypecheck`.
+
+### The guard, and its mutation
+
+`check-user-guide.test.ts` now records the build outputs' mtimes before the live
+run and asserts they are unmoved afterwards, and it asserts the hazard still
+exists from both sides so it cannot pass on a document that no longer has one:
+the guide must still contain `pnpm official:check`, and the manifest must still
+give that script a build hook. If either disappears, the test fails and says to
+re-derive it rather than to delete it -- an assertion whose subject has vanished
+is the failure mode this campaign keeps recording.
+
+Removing the one-line repair and re-running the guard produced exactly one red
+test, naming itself:
+
+```
+FAIL  test/check-user-guide.test.ts > ... > does not rebuild the packages it is
+reading the guide against
+```
+
+and restoring it returned the file to 12 passed. The guard is load-bearing.
+
+### A side effect worth recording
+
+The same file's standalone cost fell from **5517 ms** (the figure in
+`timeout-budget.test.ts`'s measured table) to **1282 ms**, because the build the
+gate used to trigger is gone. Every measurement in that table was taken in a tree
+where this gate ran, so the numbers below the ones for `check-user-guide` may be
+conservatively high for the same reason. The table is left as measured rather
+than silently adjusted; what changed is the machine's work, and that is recorded
+here.
+
+### What this does not establish
+
+It does not establish that the suite is now deterministic. It establishes that
+one measured cause of one measured failure mode is removed, and it leaves a test
+that fails if that cause returns. The coverage temp-file race of Finding 143's
+mode (a) is a separate defect in vitest's reporter and is unaffected by this
+change.
+
+### Acceptance record for findings 143-145
+
+Taken on the tree this entry was committed from, after every repair above.
+
+**Twelve consecutive full-suite runs, all green:**
+
+```
+run  1..12   rc=0   FAIL=0   coverage-ENOENT=0   Tests 3285 passed (3285)
+```
+
+Twelve clean runs is the bar this investigation set for itself, because the
+defects it was chasing were *intermittent* and a single green run is what the
+previous four attempts at this had mistaken for a repair. Before the repairs the
+same window produced 2 failures in 12, both of them the torn-`dist` import of
+Finding 145 or the `ingest-report` timeout that Finding 145's load explains; the
+coverage-ENOENT race of Finding 143's mode (a) did not appear in any of the last
+24 runs, which is recorded as *not observed* rather than as fixed -- it is a
+defect in vitest's reporter and nothing in this repository changed it.
+
+**Coverage, per dimension:**
+
+| metric | value | threshold |
+| --- | --- | --- |
+| statements | **99.96%** | 95% |
+| branches | **99.91%** | 95% |
+| functions | **100%** | 100% |
+| lines | **99.96%** | 95% |
+
+**Every gate:**
+
+| gate | result |
+| --- | --- |
+| `pnpm lint` (7 checks) | rc=0, `ALL PROPERTIES HOLD` |
+| `pnpm typecheck` | rc=0 |
+| `pnpm docs:check:cold` (4 checks) | rc=0 |
+| `pnpm docs:counts:check` | rc=0 |
+| `pnpm examples:check` | rc=0 |
+| `pnpm examples:bundle:check` | rc=0 |
+| `pnpm official:check` | rc=0 |
+
+**Counts, retaken after the new guard files were added:**
+
+| scope | files | tests |
+| --- | --- | --- |
+| core | 124 | 3285 |
+| cli | 3 | 173 |
+| repo | 127 | 3458 |
+
+The retake is worth recording as its own small lesson. Regenerating
+`golden-master/doc-counts.json` immediately made the numbers *published* in
+`docs/progress.md` stale, and `check-doc-counts.test.ts` failed with the exact
+lines named -- `line 3681: declares the current state of 'core' as 121 files /
+3269 tests, but the suite has 124 / 3285`. The four `as of this commit` rows were
+corrected; the dated `Pass 39` rows beside them were deliberately left alone,
+because a row that records a past run is a record and not a claim. A gate that
+names the line is what made that distinction cheap to keep.

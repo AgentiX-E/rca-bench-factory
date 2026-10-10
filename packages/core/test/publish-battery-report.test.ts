@@ -44,6 +44,39 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'publish-battery-report.py');
 const SOURCE = readFileSync(SCRIPT, 'utf8');
 
+/**
+ * The budget for a test that spawns the publish script with a token.
+ *
+ * ## The measurement this exists for
+ *
+ * Two tests in this file pass `GITHUB_TOKEN: 'not-a-real-token'`, so the child
+ * reads the report, decides to publish, and makes a real HTTPS call to
+ * `api.github.com` -- which answers 403, because the token is not real. The
+ * spawn itself is allowed 60 s (`run`'s own `timeout`), but the **vitest test**
+ * around it was left at the 5000 ms default, and under load the child does not
+ * finish inside it:
+ *
+ *     FAIL  publish-battery-report.test.ts > a publish that was attempted and
+ *           failed exits non-zero
+ *     Error: Test timed out in 5000ms.
+ *
+ * Measured standalone, per test: 997 ms, 1390 ms, 2391 ms -- all inside the
+ * default, which is why the file read as sound. The failure is a property of the
+ * *suite*, not of the file: this container is throttled to 4 CPUs while reporting
+ * 32 (`cpu.max = 400000/100000`, and `nr_throttled` 4885 of 20181 periods), so
+ * an in-suite cost inflates well past its standalone one. `timeout-budget.test.ts`
+ * measures that inflation at up to 3.1x and holds the standalone table for the
+ * files that need it.
+ *
+ * ## Why 60 s and not "whatever passes"
+ *
+ * The child's own budget is 60 s, so a test budget below that would report a
+ * timeout for a child that was still working -- a verdict about the harness
+ * rather than about the script. Matching the two means the failure a reader sees
+ * is the script's own exit, which is what the assertion is about.
+ */
+const NETWORK_TIMEOUT_MS = 60_000;
+
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-publish-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -89,7 +122,7 @@ describe('scripts · the battery report is published to a channel that carries c
     const withToken = run({ cwd: scratch, env: { GITHUB_TOKEN: 'not-a-real-token' } });
     expect(withToken.status).toBe(0);
     expect(withToken.output).toContain('nothing to publish');
-  });
+  }, NETWORK_TIMEOUT_MS);
 
   it('a publish that was attempted and failed exits non-zero', () => {
     // **This assertion is the correction of a real CI failure, not a preference.**
@@ -117,7 +150,7 @@ describe('scripts · the battery report is published to a channel that carries c
     expect(result.status).toBe(1);
     expect(result.output).toMatch(/could not publish/);
     expect(result.output).toMatch(/channel is broken/);
-  });
+  }, NETWORK_TIMEOUT_MS);
 
   it('the write permission the publish needs is granted, and master is not it', () => {
     // The 403 above was a workflow file, not a code, defect: `permissions:

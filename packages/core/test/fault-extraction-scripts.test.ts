@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -420,12 +420,69 @@ describe('scripts · the key never appears in either script', () => {
 });
 
 describe('scripts/derive-fault-golden.mjs · it is a real process, not a shell fragment', () => {
+  /**
+   * `node --check` on each script -- and on a control that must fail.
+   *
+   * ## The defect this replaces
+   *
+   * The first version of this test was one statement:
+   *
+   *     const result = spawn(process.execPath, ['--check', script], { cwd: ROOT });
+   *     expect(result.pid).toBeGreaterThan(0);
+   *
+   * and it carried two faults in that line.
+   *
+   * The first is that `spawn` is asynchronous and nothing ever joined the child:
+   * the test finished while node was still starting, so no property of the run
+   * was observed at all. The second, and the serious one, is that `pid > 0` is
+   * true of a process that **exits with a syntax error** -- so the assertion the
+   * title claims ("is valid JavaScript that Node accepts") was never made. A
+   * script with an unbalanced quote would have passed this test, and the comment
+   * above it says the test exists precisely to catch that.
+   *
+   * That is this campaign's recurring shape -- something that reports success
+   * while doing nothing -- found here by the guard in
+   * `coverage-writes-are-drained.test.ts`, which flagged the unjoined child
+   * because a child that outlives its file can push coverage into the reporter
+   * after the write array has been drained. The assertion defect is the more
+   * serious half of what it turned up, and it is repaired below.
+   *
+   * ## The control
+   *
+   * `--check` exits non-zero on invalid input, and the second test demonstrates
+   * that on a fixture rather than assuming it. Without the control, a misspelled
+   * flag -- or a node that silently ignored `--check` -- would leave the first
+   * loop passing over files it never examined, which is the same false-green one
+   * level up.
+   */
+  const TMP = mkdtempSync(join(tmpdir(), 'rca-bench-syntax-'));
+  afterAll(() => rmSync(TMP, { recursive: true, force: true }));
+
   it('is valid JavaScript that Node accepts', () => {
-    // Cheap, and it catches the class of edit that leaves a stray `fi` or an
-    // unbalanced quote in a heredoc-driven workflow command.
     for (const script of [DERIVE, SCORE]) {
-      const result = spawn(process.execPath, ['--check', script], { cwd: ROOT });
-      expect(result.pid).toBeGreaterThan(0);
+      const result = spawnSync(process.execPath, ['--check', script], {
+        encoding: 'utf8',
+        cwd: ROOT,
+      });
+      expect(
+        result.status,
+        `${script} is not valid JavaScript:\n${result.stderr ?? ''}`,
+      ).toBe(0);
     }
+  });
+
+  it('and the check above can fail, so a green run means the files were read', () => {
+    const broken = join(TMP, 'broken.mjs');
+    // `export const x = ;` is a syntax error node rejects at parse time; it
+    // cannot be valid in any future version, which a runtime check could be.
+    writeFileSync(broken, 'export const x = ;\n');
+    const result = spawnSync(process.execPath, ['--check', broken], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    });
+    expect(result.status, 'node --check accepted a file with a syntax error').not.toBe(0);
+    expect(result.status, 'a missing file and a syntax error must be distinguishable').not.toBe(
+      null,
+    );
   });
 });

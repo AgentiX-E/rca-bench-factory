@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -210,7 +210,42 @@ const GUIDE_RUN_TIMEOUT_MS = 60_000;
  */
 let liveRun: Outcome;
 
+/**
+ * The build outputs, and their mtimes when the live run started.
+ *
+ * `docs/user-guide.md` documents `pnpm official:check`, and the root manifest
+ * gives that script the hook `"preofficial:check": "pnpm build"`. The gate runs
+ * the document's commands verbatim with `cwd: ROOT`, so before this was fixed
+ * the suite rebuilt both packages -- `tsc` over the whole project -- **inside the
+ * repository, while ~100 other test files were reading it**.
+ *
+ * Measured, not inferred: those two files were observed being rewritten exactly
+ * once per full-suite run and never while the machine was idle, and polling the
+ * process table during a run caught the ancestry
+ * `pnpm official:check` <- `steps.sh` <- `check-user-guide.mjs` <- `vitest`.
+ *
+ * A `tsc` build is not atomic across the files it emits, so a concurrent
+ * importer could read `dist/index.js` after it was rewritten but before the
+ * module it re-exports from was. The observed symptom was exactly that torn
+ * state -- `SyntaxError: The requested module './fault/category-derivation.js'
+ * does not provide an export named 'ALT_READING_FLOOR'` -- surfacing as
+ * `expected 1 to be +0` from whichever file spawned a reader at that instant,
+ * a different one each run. That is why four separate "flaky tests" turned out
+ * to be one condition, and this is the assertion that keeps it fixed.
+ */
+const BUILD_OUTPUTS = ['packages/core/dist/index.js', 'packages/cli/dist/main.js'];
+
+const buildOutputMtimes = new Map<string, number>();
+
 beforeAll(() => {
+  for (const relative of BUILD_OUTPUTS) {
+    try {
+      buildOutputMtimes.set(relative, statSync(resolve(ROOT, relative)).mtimeMs);
+    } catch {
+      // A missing output is a different failure, reported by the typecheck
+      // contract rather than here; the assertion below skips what it cannot see.
+    }
+  }
   const result = spawnSync(process.execPath, [resolve(ROOT, 'scripts', SCRIPT)], {
     encoding: 'utf8',
     cwd: ROOT,
@@ -255,6 +290,42 @@ describe('scripts/check-user-guide.mjs · the walkthrough is executed', () => {
     const fences = bashFenceCount(markdown);
     expect(fences).toBeGreaterThan(0);
     expect(liveRun.stdout).toContain(`${fences} bash block(s)`);
+  });
+
+  it('does not rebuild the packages it is reading the guide against', () => {
+    // The hazard, asserted from both sides so the test cannot pass vacuously:
+    // the guide must still document a command that *has* a build hook, and the
+    // gate must still execute the document.
+    const markdown = readFileSync(GUIDE, 'utf8');
+    expect(
+      markdown,
+      'the guide no longer documents `pnpm official:check`; if that command was removed, this '
+        + 'assertion is defending nothing and the reason for the suppressed hook changed',
+    ).toContain('pnpm official:check');
+
+    const manifest = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(
+      manifest.scripts?.['preofficial:check'],
+      'the build hook was removed from the manifest, so the guide step is no longer a hazard; '
+        + 're-derive this test rather than deleting it',
+    ).toMatch(/pnpm .*build/);
+
+    // And the measurement. `beforeAll` recorded the outputs before the gate ran,
+    // so a rebuild inside the run is visible here as a moved mtime.
+    expect(buildOutputMtimes.size, 'no build output was found to observe').toBeGreaterThan(0);
+    const moved: string[] = [];
+    for (const [relative, before] of buildOutputMtimes) {
+      const after = statSync(resolve(ROOT, relative)).mtimeMs;
+      if (after !== before) moved.push(relative);
+    }
+    expect(
+      moved,
+      'the guide gate rebuilt these outputs while the suite was reading them; a `tsc` build is '
+        + 'not atomic, so a concurrent importer can observe a torn dist and fail with a module '
+        + 'error that names neither the build nor this gate',
+    ).toEqual([]);
   });
 
   it('reports the fence census, so a re-tagged fence cannot shrink coverage in silence', () => {

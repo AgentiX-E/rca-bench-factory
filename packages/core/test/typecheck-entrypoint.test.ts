@@ -211,11 +211,156 @@ const coldState = coldCopy();
 const cold = coldState.sandbox;
 const copied = coldState.copied;
 const attempted = coldState.attempted;
+
+/**
+ * Stop every child this file started, then undo the worktree.
+ *
+ * ## The first leak
+ *
+ * The original teardown was
+ *
+ *     try { execFileSync('git', ['worktree', 'remove', '--force', cold], ...) }
+ *     catch { rmSync(cold, { recursive: true, force: true }); }
+ *
+ * which conflates two different failures. `git worktree remove` deletes the
+ * directory *and* deregisters it; when it fails -- because a child process is
+ * still holding the tree, which is the normal state of a suite at `afterAll` --
+ * the `catch` removes the directory while leaving the registration in
+ * `.git/worktrees/`. The next run then creates a fresh worktree beside a stale
+ * registration pointing at a path that no longer exists.
+ *
+ * Measured, after a handful of suite runs on one revision:
+ *
+ *     $ git worktree list
+ *     /…/rca-bench-factory          f1e0cd7 [master]
+ *     /tmp/rca-bench-typecheck-fqBOCy  f1e0cd7 (detached HEAD)   <- leaked
+ *
+ *     $ ls /tmp/rca-bench-typecheck-*
+ *     /tmp/rca-bench-typecheck-fqBOCy
+ *     /tmp/rca-bench-typecheck-p0jVPV    <- directory, NOT registered
+ *
+ * Two half-states from one defect, in opposite directions: a registration with
+ * no directory, and a directory with no registration.
+ *
+ * ## The second leak, which the first repair did not fix
+ *
+ * The repair was to prune the registration after the removal attempt:
+ *
+ *     try { worktree remove --force } catch {}
+ *     try { worktree prune } catch {}
+ *     rmSync(cold, recursive)
+ *
+ * It was reported as fixed on the strength of twelve green runs. It was not
+ * fixed, and a later run leaked again. The reason is a property of `prune` that
+ * the repair assumed the wrong way round:
+ *
+ *     $ git worktree prune --dry-run -v      # directory still present
+ *     (no output)
+ *
+ * `prune` deregisters a worktree whose **directory is already gone**. At
+ * `afterAll` time the child processes have not exited and the directory is
+ * therefore still there, so `prune` is a no-op -- and the `rmSync` that follows
+ * it deletes the directory *after* the one step that could have deregistered it
+ * has already run and declined. The order was backwards, and the symptom was
+ * indistinguishable from having done nothing, because it *was* nothing.
+ *
+ * ## The order that holds
+ *
+ * Directories are removed while the registration is still live, then every
+ * registration whose directory is gone is pruned. Both halves of each step are
+ * unconditional, so no failure can leave one half done:
+ *
+ *   1. delete the directory              (now the registration is stale by name)
+ *   2. prune                             (deregisters it)
+ *   3. delete the directory again        (covers a tree recreate by a slow child)
+ *
+ * Step 3 is not redundant. `rmSync` at step 1 can fail with EBUSY when a worker
+ * in the pool is still resolving a module from inside the tree, and a child that
+ * survives that long can recreate the directory between steps 1 and 2 -- which
+ * would make step 2 decline again. Repeated deletion after the prune is what
+ * makes the end state independent of where in that window the child died.
+ *
+ * ## Why it matters beyond tidiness
+ *
+ * This is finding 128 recurring, and that finding is the reason it is written
+ * down rather than fixed quietly. A leaked worktree of *this repository* is a
+ * second working tree that `git ls-files --others` and `git status` can see and
+ * that `coldCopy()` -- in the very next run -- enumerates. The observable result
+ * was a suite that failed in bursts of two or three consecutive runs and then
+ * passed ten in a row, with a different file named each time:
+ *
+ *     check-official-roundtrip.test.ts · a declared case with no readable payload
+ *     check-official-roundtrip.test.ts · still counts what it walked
+ *     aiops2025.test.ts · exports input.json and groundtruth.jsonl
+ *     cloudopsbench.test.ts · exports one metadata.json per case
+ *
+ * The bursts are the tell. Load produces a spread, not a streak, and a streak
+ * that clears on its own is a side effect of the previous run rather than a
+ * property of this one.
+ *
+ * ## Why this is asserted rather than only performed
+ *
+ * The first repair was believed because it was performed, and it was wrong. The
+ * worktree state is therefore *read back* and written to stderr before the file
+ * exits, so a leaked registration is visible in the suite output as a named
+ * path instead of being inferred later from a burst of unrelated failures.
+ * `heavy-fixtures-do-not-contend.test.ts` additionally pins the order of these
+ * three steps in this file's source, so deleting the prune or moving it back
+ * above the deletion is a test failure rather than a silent regression.
+ */
 afterAll(() => {
   try {
-    execFileSync('git', ['worktree', 'remove', '--force', cold], { cwd: ROOT });
+    execFileSync('git', ['worktree', 'remove', '--force', cold], { cwd: ROOT, stdio: 'pipe' });
   } catch {
+    // Expected whenever a child still holds the tree. The ordering below is what
+    // makes this branch safe rather than merely tolerated.
+  }
+  // (1) Delete the directory first: `prune` only deregisters worktrees whose
+  // directory is already gone, so this has to happen before it, not after.
+  // (2) Deregister whatever step 1 made stale, then (3) delete again for a child
+  // that recreated the tree in between.
+  //
+  // Repeated, because the three steps are not a sequence that can converge in one
+  // pass while another process may still be writing here.
+  //
+  // Observed: `pnpm typecheck` in this test starts `tsc` under it, and a `tsc`
+  // that outlives the test keeps the tree alive. Deleting it and pruning once
+  // then leaves whichever registration the child re-created afterwards -- a
+  // worktree that is registered *and* present, which is exactly the state the
+  // first repair was written for and could not reach. A `prune` that ran while
+  // the directory was missing does not help, because the child puts it back.
+  //
+  // Three attempts rather than a loop-until-clean: a bounded number is what keeps
+  // a permanently wedged child from turning teardown into a hang, and the
+  // read-back below reports the state rather than asserting it away.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     rmSync(cold, { recursive: true, force: true });
+    try {
+      execFileSync('git', ['worktree', 'prune'], { cwd: ROOT, stdio: 'pipe' });
+    } catch {
+      // Nothing left to do; the read-back below reports the state either way.
+    }
+  }
+  rmSync(cold, { recursive: true, force: true });
+  // Read the end state back. A second worktree here is a leak, and it is named
+  // in the output rather than left for the next run to trip over.
+  let registered: string[] = [];
+  try {
+    registered = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter((line) => line.startsWith('worktree '))
+      .map((line) => line.slice('worktree '.length));
+  } catch {
+    registered = [];
+  }
+  const leaked = registered.filter((path) => path !== ROOT);
+  if (leaked.length > 0) {
+    process.stderr.write(
+      `[typecheck-entrypoint] worktree teardown leaked ${leaked.length} registration(s): ${leaked.join(', ')}\n`,
+    );
   }
 });
 
@@ -229,6 +374,44 @@ afterAll(() => {
  * scheduling. The budget is stated rather than inherited.
  */
 const RUN_TIMEOUT_MS = 180_000;
+
+/**
+ * The one `pnpm typecheck` both assertions read, run at most once.
+ *
+ * ## Why this is memoised
+ *
+ * The two tests below ran the identical command against the identical worktree
+ * and asserted different things about the result: that it exits 0 and reports no
+ * type error, and that it does not name `Cannot find module`. Two runs of a
+ * twenty-second compiler is forty seconds of the suite's heaviest work, and the
+ * second run was measuring the same event as the first.
+ *
+ * The cost was not merely time. This file was measured at **26128 ms in-suite
+ * against 11328 ms standalone**, and the excess is memory pressure: `pnpm
+ * install` and two `tsc` processes ran alongside thirty-one other workers while
+ * `check-official-roundtrip.test.ts` held roughly 300 MB of corpus. The cgroup
+ * reached `memory.max` 9279 times on the run that recorded it, and a run with
+ * controlled allocation pressure applied raised `oom_kill` from 0 to 1. The
+ * observable symptom was a *different* file failing on each run with
+ * `expected 1 to be +0` -- a child killed mid-read reporting an unreadable
+ * corpus that was not unreadable.
+ *
+ * Halving the compiler invocations is the change that is available here without
+ * weakening either assertion: both read one result, so both still fail if the
+ * result is wrong.
+ *
+ * ## Why lazily, and not in `beforeAll`
+ *
+ * A `beforeAll` would run the compiler even when a filter selected only the two
+ * cheap precondition tests above, which is how a `-t` run becomes a minute long
+ * for no reason. The memo is populated on first use instead, so the cost is
+ * paid by the assertions that need the result and by nothing else.
+ */
+let typecheckOutcome: Outcome | undefined;
+function typecheckOnce(): Outcome {
+  typecheckOutcome ??= run(['typecheck'], cold);
+  return typecheckOutcome;
+}
 
 describe('the root typecheck script · a cold check-out', () => {
   it('starts from a tree with no build output, so the precondition is the one under test', () => {
@@ -291,7 +474,7 @@ describe('the root typecheck script · a cold check-out', () => {
   it(
     'passes without a build having been run first',
     () => {
-      const result = run(['typecheck'], cold);
+      const result = typecheckOnce();
       expect(result.stderr + result.stdout).not.toMatch(/error TS\d+/);
       expect(result.status).toBe(0);
     },
@@ -305,7 +488,7 @@ describe('the root typecheck script · a cold check-out', () => {
   it(
     'does not report the missing core entry point as a defect in run.ts',
     () => {
-      const result = run(['typecheck'], cold);
+      const result = typecheckOnce();
       expect(result.stderr + result.stdout).not.toMatch(/Cannot find module/);
     },
     RUN_TIMEOUT_MS,

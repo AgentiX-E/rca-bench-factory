@@ -138,7 +138,12 @@ describe('scripts/gen-rcaeval-cases.mjs · the derivation', () => {
     caseDir(root, 'RE2-OB', 'checkoutservice_cpu', '2');
     caseDir(root, 'RE3-TT', 'ts-order-service_f1', '1');
     const out = join(scratch, `suites-${counter}.json`);
-    expect(run(['--official-dir', root, '--out', out]).status).toBe(0);
+    // The child's stderr is carried into the assertion message. This test has
+    // failed under a full suite with `expected 1 to be +0` alone, which names the
+    // exit code but not the cause; the generator writes its reason to stderr and
+    // there is no reason for the assertion to discard it.
+    const listed = run(['--official-dir', root, '--out', out]);
+    expect(listed.status, listed.stderr).toBe(0);
     const parsed = JSON.parse(readFileSync(out, 'utf8'));
     expect(parsed.counts).toEqual({ RE1: 1, RE2: 2, RE3: 1 });
     expect(parsed.cases.map((c: { suite: string }) => c.suite)).toEqual(['RE1', 'RE2', 'RE2', 'RE3']);

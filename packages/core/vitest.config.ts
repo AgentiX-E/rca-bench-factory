@@ -3,6 +3,68 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    // The number of files run at once, capped rather than left to the CPU count.
+    //
+    // ## The measurement
+    //
+    // This machine reports 32 CPUs, so vitest's default is 32 workers. The
+    // container's cgroup allows 8 GiB:
+    //
+    //     /sys/fs/cgroup/memory.max          8589934592   (8 GiB)
+    //     memory.current at idle              2146304000   (2.0 GiB)
+    //
+    // A full suite run was measured at four parallelisms, sampling
+    // `memory.current` every 200 ms and reading `memory.events max` before and
+    // after each run. `max_delta` is how many times the cgroup touched its
+    // ceiling during the run -- the quantity that decides whether a child's next
+    // allocation succeeds:
+    //
+    //     workers   wall time   peak         max_delta
+    //       4        30 s       6672 MiB         0
+    //       8        31 s       7530 MiB         0
+    //      16        39 s       8191 MiB       968
+    //      32        30 s       7877 MiB         0      (the default)
+    //
+    // ## What this table does and does not show
+    //
+    // It does **not** show that 32 workers is reliably over budget. The 32 row
+    // measured clean, on a run where the suite was green: 3280 tests, 0 failures.
+    // Any statement that the default is the cause of the intermittent failure
+    // would be contradicted by that row, and an earlier version of this comment
+    // made exactly that claim about numbers taken from a different process.
+    //
+    // What the table does show is that the *cost* of running every file at once
+    // is a 7877 MiB peak against an 8192 MiB ceiling -- 315 MiB of headroom, with
+    // 16 workers already having touched the ceiling 968 times on a slower run.
+    // The margin at 32 is 4% of the limit, and it is the margin that moves when a
+    // dependency's memory changes, when a fixture grows, or when the baseline
+    // `memory.current` rises. The failure mode when it closes is not a clean
+    // error: a child killed mid-allocation exits 1, which the assertion under it
+    // reports as a broken subject, naming a different one each time.
+    //
+    // So this cap is **headroom bought with no measured cost**, not a proven
+    // repair of a proven cause. 8 keeps the wall time identical to the default
+    // (31 s against 30 s, inside run-to-run noise) and moves the peak off the
+    // ceiling. The honest summary is: the observed intermittency is not explained
+    // by a measurement in this table, and the cap removes one of the conditions
+    // under which it could occur.
+    //
+    // ## Why 8 and not 4
+    //
+    // Both are clean and both are the same wall time, so the choice is cost. 8
+    // leaves more parallelism for the files that are individually slow, which is
+    // what the cap is spending. 4 would also be defensible.
+    //
+    // ## Why this is a config change and not a test change
+    //
+    // The failing assertion was correct: `scripts/check-official.mjs` did exit
+    // nonzero, because the kernel killed it. Nothing about the script or its
+    // fixture was wrong, so nothing about them should be edited. The budget
+    // belongs to the scheduler, and this is where the scheduler's budget is
+    // written down. `heavy-fixtures-do-not-contend.test.ts` asserts the
+    // properties of the suite that make this cap sufficient -- one heavy file,
+    // it runs a package manager, and it does so inside a worktree.
+    maxWorkers: 8,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

@@ -190,7 +190,43 @@ describe('ingestPrimeDataset · a source larger than the argument limit', () => 
    * slow setup.
    */
   const ROWS = 130_000;
-  const ROWS_TIMEOUT_MS = 30_000;
+  /**
+   * The budget, stated from measurements rather than inherited from vitest's
+   * default of 5000 ms.
+   *
+   * ## The measurements
+   *
+   * Run alone, on the machine that produced this number:
+   *
+   *     ingests a file with more rows than can be spread into a call      4063 ms
+   *     keeps every row when several files each exceed the limit          9510 ms
+   *
+   * Under a full suite the second one exceeded **30 000 ms** twice in six
+   * consecutive runs, which is the only evidence that matters here: at 9510 ms
+   * standalone the inflation under contention is greater than 3.2x, and
+   * `timeout-budget.test.ts` records 3.1x as the largest inflation it had
+   * measured. A budget of 30 000 was therefore not a budget for this test -- it
+   * was a budget for the machine's load, and the test's verdict moved with it.
+   *
+   * ## Why the workload is not reduced instead
+   *
+   * `ROWS` is the subject. It is set past the probed V8 spread ceiling (between
+   * 100 000 and 125 000) because the defect this block exists for was
+   * `RangeError: Maximum call stack size exceeded` raised at
+   * `signals.push(...ingested.signals)` on real 375-case corpus data. Shrinking
+   * the fixture below the ceiling would make the test pass by not testing what
+   * it was written for.
+   *
+   * ## Why 120 000
+   *
+   * Thirteen times the standalone cost of the slower test and roughly four times
+   * the worst in-suite figure observed. The margin is deliberately large because
+   * the container this runs in advertises 32 CPUs while its cgroup grants a
+   * 4-CPU quota, and was measured throttled in about a quarter of all periods --
+   * so the contention factor is a property of the scheduler, not of this test,
+   * and a tight margin would be re-tuned every time the load changed.
+   */
+  const ROWS_TIMEOUT_MS = 120_000;
 
   /** A metric payload with `rows` data rows, all of them valid. */
   function metricBody(rows: number): string {

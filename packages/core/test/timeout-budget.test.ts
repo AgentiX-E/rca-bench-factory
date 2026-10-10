@@ -111,7 +111,13 @@ const STANDALONE_MS: Readonly<Record<string, number>> = {
   'check-user-guide.test.ts': 5517,
   'fetch-official.test.ts': 13_212,
   'gate-test-battery-exclusion.test.ts': 5386,
-  'ingest-report.test.ts': 5012,
+  // Re-measured on a loaded machine: 14 920 ms for the file, against 5012 ms when
+  // this table was first taken. The file is the same and its heaviest two tests
+  // are the same; what changed is the machine. The number is updated rather than
+  // left standing because the rule compares against the default and a stale 5 012
+  // would understate how close to the line this file now is -- and it is the file
+  // that was observed exceeding a 30 000 ms budget twice in six full-suite runs.
+  'ingest-report.test.ts': 14_920,
   'typecheck-entrypoint.test.ts': 11_328,
 };
 
