@@ -69,6 +69,7 @@
     "probe:category-inference": "node scripts/probe-category-inference.mjs",
     "inject:type-miss-probe": "python3 scripts/injection/type-miss-probe.py",
     "inject:gate-tests": "python3 scripts/injection/gate-tests-battery.py",
+    "inject:doc-counts": "python3 scripts/injection/doc-counts-shapes.py",
     "inject:fault-extraction-scoring": "python3 scripts/injection/fault-extraction-scoring.py",
     "inject:fault-extraction-workflow": "python3 scripts/injection/fault-extraction-workflow.py",
     "inject:fetch-official-retry": "python3 scripts/injection/fetch-official-retry.py",

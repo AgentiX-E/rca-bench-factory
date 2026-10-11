@@ -198,6 +198,21 @@ jobs:
       - name: Gate-test battery (each gate's test provably fails when its guard is removed)
         run: python3 scripts/injection/gate-tests-battery.py
 
+      # `check-doc-counts.mjs` read three shapes of a published count while the
+      # document used more, and the difference was invisible: a shape a reader
+      # cannot see is indistinguishable from a shape that is not there, so rules
+      # 1 to 3 simply did not apply to 63 of the 88 rows that publish a count.
+      # One of the skipped rows had published the whole workspace's number under
+      # the label `core` since the pass that wrote it (finding 153). This battery
+      # mutates each part of the fix -- the two added shapes, the gate on the bare
+      # shape, rule 4, the exemption table's own validation, and the clause key --
+      # and requires the gate's test file to go red *on the named assertion*.
+      # Its first run reported one SURVIVED, and the mutation was right: the test
+      # that claimed to pin the added shape only asserted exit 0, which the bare
+      # shape also satisfies, so the file count was read but never used.
+      - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
+        run: python3 scripts/injection/doc-counts-shapes.py
+
       # The battery's verdicts, published to a branch so they can be read from
       # anywhere the API is.
       #

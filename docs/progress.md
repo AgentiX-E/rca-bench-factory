@@ -2282,13 +2282,23 @@ re-aimed at what the closed ceiling can still distinguish.
 
 | gate | result |
 | --- | --- |
-| core | 2623 passed (87 files); `src` 100 / 100 / 100 / 100 |
+| repo | 2623 passed (87 files); `src` 100 / 100 / 100 / 100 |
 | cli | 173 passed |
 | probe | 19/19, unrecoverable 0/19, cost 0 samples |
 | four batteries | **30 caught, 0 survived, 0 inert** |
 | golden master | PASSED (byte-stable) |
 | official | PASSED (8 targets, 1 skipped by contract) |
 | docs / examples / registry / bundle / typecheck / lint | all green |
+
+> This table's first row read `core` for fifteen passes. It is the workspace
+> figure, and finding 153 is why that could be said: 87 is every workspace's test
+> file count at this pass (84 in `packages/core` plus 3 in `packages/cli`, which
+> is where every other table's `repo` row gets its number), and `packages/core/test`
+> has never held 87 test files -- checked against every commit in the repository's
+> history, not remembered. The test count closes the same identity:
+> 2623 = 2445 + 173 + 5, which is Pass 25's `core coverage` row plus this scope's
+> own `cli` row plus the five tests this pass added. Corrected here rather than
+> left as a record, because a record of the wrong scope is not a record.
 
 ### Where M1 stands
 
@@ -3678,9 +3688,9 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 | `core` test suite | **121 files, 3265 tests passed** (Pass 39, `16f3499a9`) |
 | `cli` test suite | **3 files, 173 tests passed** (Pass 39, `16f3499a9`) |
 | repo test suite | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`, `pnpm test`, every workspace) |
-| `core` test suite | **127 files, 3319 tests passed** (as of this commit) |
+| `core` test suite | **127 files, 3334 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **130 files, 3492 tests passed** (as of this commit) |
+| repo test suite | **130 files, 3507 tests passed** (as of this commit) |
 | `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
 | M4 drop `unknownArguments` | **caught** -- 2 fail |
 | M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
@@ -3781,9 +3791,9 @@ strength of those artefacts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **127 files, 3319 tests passed** (as of this commit) |
+| `core` test suite | **127 files, 3334 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **130 files, 3492 tests passed** (as of this commit) |
+| repo test suite | **130 files, 3507 tests passed** (as of this commit) |
 | coverage — core | **99.96 / 99.91 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | `typecheck` / `lint` / `docs:check` | clean |
@@ -3802,6 +3812,20 @@ strength of those artefacts.
   files, because the suite is not cold-safe. If a cold-safe subset of the suite is
   wanted, it has to be established by measurement the way the guards were, not by
   assuming the unit tests are host-independent.
-- `--stdin` still has no automatic invoker (unchanged from 131).
+- ~~`--stdin` still has no automatic invoker (unchanged from 131).~~ **Closed by
+  finding 150**: `check-user-guide.mjs` pipes each block it is about to execute
+  through `check-no-unsafe-shell.mjs --stdin --label`, so the mode that had no
+  consumer now has the one that matters -- the blocks that actually run. The line
+  above stood for eleven passes after that, because nothing reads an "open" list.
 - The six other scripts that failed in run #174 were never examined
   individually.
+- **Prose is outside `check-doc-counts`'s subject.** The rules are defined over
+  table rows, so a count narrated in a pass's prose still has no reader -- and the
+  census that would find it cannot be written from shape alone, because prose
+  counts and prose prose look the same. Stated rather than left implied.
+- **A suite count in an unrecognised shape under a label that names no scope is
+  outside rule 4's subject too.** Such a row is worded exactly like the battery
+  verdicts (`| mutation | 26 passed |`) that share its wording and are not suite
+  counts, so widening the subject would demand a scope word from rows that have
+  none. The three shapes the document actually used to publish suite counts are
+  now all read; the residual is a fourth shape on an unlabelled row.

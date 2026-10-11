@@ -15223,3 +15223,156 @@ times. Reading the source would have found none of them; the second and third we
 found by *running* it -- once on a runner, once by being killed. The generalisable
 rule is the one this audit applies to everything else: **a mechanism is only known
 to work when something outside it has tried to make it fail.**
+
+---
+
+## Finding 153 — the gate read three shapes, the document used nineteen, and the row it could not read was the defect it was written for
+
+### What was already recorded as open
+
+`check-doc-counts.mjs` (finding 123) holds the counts published in
+`docs/progress.md` to the scopes they claim. Its own round recorded what it did
+not do:
+
+> **未覆盖 `readCounts` 三种模式之外的第四种写法**——出现第四种写法的话**没有任何东西会发现它**
+
+That is the whole finding, written down and left. This round measured it.
+
+### The measurement
+
+The subject is not "the counts the reader matched" -- that is the reader
+describing itself. It is **every table row that carries a count**: a number and,
+as its own word, one of `files`, `file`, `tests`, `test`, `passed`.
+
+| quantity | count |
+| --- | --- |
+| table rows carrying a count phrase | **88** |
+| rows the three shapes read | **25** |
+| rows skipped, and therefore checked by nothing | **63** |
+
+The three shapes were `N files, M tests passed`, `N files, M tests` and
+`N passed / M files`. The document also published `N passed (M files)` (seven
+rows), `N passed` (twelve), `N tests across M files`, `N failed / N passed`,
+`N tests pass`, and `N files throughout`. None of them was read, so rules 1 to 3
+-- scope naming, monotonicity, current-state equality -- applied to **none** of
+the rows written in them.
+
+An unread row is not a neutral omission. **A shape the reader cannot read is
+indistinguishable from a shape that is not there**, which is why the gap could not
+be found from inside the guard: the guard had nothing to compare against.
+
+### The row it was hiding
+
+`Pass 26`'s verification table begins:
+
+```
+| core | 2623 passed (87 files); `src` 100 / 100 / 100 / 100 |
+```
+
+Two independent readings say this is not a `core` row.
+
+**The file count is impossible for `core`.** `packages/core/test` has never held
+87 test files -- not at that commit, not at any commit: `git ls-tree -r` over all
+189 commits of the repository finds no revision with `core = 87`. What had 87
+files at that moment was every workspace: 84 in `packages/core` plus 3 in
+`packages/cli`.
+
+**The test count closes the same identity.** `2623 = 2445 + 173 + 5`, which is
+Pass 25's own `core coverage` row (2445) plus that table's `cli` row (173) plus
+the five tests Pass 26 added. And when a later pass records `core` again it
+records **2500**, then 2512 -- not 2623.
+
+So the row published the whole workspace's count under the label `core`. That is
+the defect the guard exists for: finding 123 was two rows labelled `test suite`
+carrying two different scopes, and this is the same mistake in the same file, in
+the one shape the reader could not read. Every gate was green for fifteen passes.
+
+### The fix
+
+Rule 4, stated at the granularity the other rules work at: **a row that names a
+scope must have its count read, or the unreadable phrase must be excused in
+writing.**
+
+| part | change |
+| --- | --- |
+| the reader | restricted to table rows, and given `N passed (M files)` -- the shape that hid the defect -- by extending the bare-test shape to consume an optional parenthesised file count |
+| the bare shape | `N passed` is read **only** on a row that names a scope, because a battery verdict reads the same way (`\| mutation \| 26 passed \|`) and demands a scope it does not have |
+| rule 4 | every count-bearing phrase in a scope-named row must be read, or its shape must be in `UNMEASURED` |
+| the exemption table | keyed on the *clause* around the phrase (`217 file x dimension pairs`), not a line number, because a key that moves on every unrelated edit gets re-signed without being read |
+| the table's own validation | an exemption with no reason, with a reason under 40 characters, or sharing another entry's reason, fails the run -- an exemption list nobody checks is the same blind spot one level in |
+| the document | the row is relabelled `repo`, with the arithmetic written beside it, because a record of the wrong scope is not a record |
+
+The measured result of the fix on the shipped file: **44 rows read** (from 25),
+**one** phrase excused, and **exactly one** rule violation -- the `core` fall from
+2623 to 2512, which is the mislabelled row itself.
+
+### Subject, and the two residuals, stated rather than implied
+
+The subject is **table rows**. Rules 1 to 3 are each defined over a row -- a label
+cell, an order over the file, a marker -- and a count narrated in prose has none
+of those. Two gaps remain and are recorded in the guard:
+
+- a stale number narrated in **prose** still has no reader;
+- a suite count in an **unrecognised shape under a label that names no scope** is
+  outside rule 4 too, because such a row is worded exactly like the battery
+  verdicts that share its wording and are not suite counts.
+
+### The battery, and the test it found
+
+`scripts/injection/doc-counts-shapes.py` mutates twelve parts of the fix --
+the two added shapes, the scope gate, rule 4, the exemption lookup, the table's
+three refusal branches, the clause key, both halves of rule 2 and rule 3, and the
+row/prose boundary -- and requires the gate's test file to go red **on the named
+assertion**, reporting `MISATTRIBUTED` separately from `CAUGHT` so an unrelated
+failure cannot be credited as a proof.
+
+Its first run reported one SURVIVED, and the mutation was right. Deleting
+`N passed (M files)` outright left the file green, because the test that claimed
+to pin it only asserted exit 0 -- and the **bare** shape also makes that row
+green: it reads the 2403 and ignores the 82. The file count was being read and
+never used. The repair is a test that makes a rule *use* it: `12 passed (999
+files)` must be refused for more files than tests, which only the pair shape can
+see. Second run: **12 caught, 0 survived, 0 inert**.
+
+Two more gaps came out of writing the battery rather than from running it: every
+existing monotonicity fixture fell by hundreds of tests, so `row.tests < prev.tests
+- 1` -- a bound that lets a real one-test regression through -- was indistinguish-
+able from the rule; and no fixture ever disagreed with the live measurement on
+`files` alone, so the first half of rule 3's equality could be deleted silently.
+Both now have a test.
+
+### One word removed from the census, with the proof
+
+The census reads "a number and a unit word", and `passed` is not one of the units.
+The reason is provable: rule 4 only examines rows the reader did *not* read, an
+unread row is one where the bare shape did not match, and such a row therefore
+contains no `N passed` phrase. A unit the census can never see would be dead
+weight that reads like coverage -- the failure this whole guard is about. Recorded
+where the vocabulary is, with the test's own limitation said out loud: the fixture
+that exercises it passes with or without `passed` in the list, so it pins the
+reading and not the vocabulary.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `check-doc-counts` on the shipped document | **44 published count(s)**, all scoped, 1 phrase excused |
+| `check-doc-counts.test.ts` | **29 tests**, was 14 |
+| new battery | **12 caught / 0 survived / 0 inert** |
+| core test suite | **127 files, 3334 tests passed** |
+| cli test suite | **3 files, 173 tests passed** |
+| repo test suite | **130 files, 3507 tests passed** |
+| coverage | **99.96 / 99.91 / 100 / 99.96** |
+| `gate-sites.json` | re-derived, 46 sites, all `proved`; the one moved site re-signed by hand |
+| `typecheck` / `lint` / `docs:check` / `docs:counts:check` | clean |
+| prose `--stdin` line in the Open list | corrected: finding 150 gave it the consumer it lacked |
+
+### What this says about the method
+
+The guard was built to catch a mislabelled scope and spent fifteen passes unable
+to see one, in the file it guards, in a shape it had no name for. The version that
+only reads what it recognises cannot report its own blindness -- and the record of
+that blindness was already in the document, one line long, filed under "not done".
+The two things that broke it open were a census of the subject rather than of the
+matcher, and a battery that would not let a test claim to pin a shape it never
+used.

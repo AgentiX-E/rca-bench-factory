@@ -76,18 +76,28 @@ afterAll(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-/** Run the guard against a document body written to a temp file. */
-function run(body: string) {
+/**
+ * Run the guard against a document body written to a temp file.
+ *
+ * `unmeasured` becomes the guard's exemption table for the run. It is passed in
+ * rather than reached for, because rule 4's three refusal branches -- a table
+ * with no reason, with a reason too short to say anything, and with two entries
+ * that share one -- are only reachable if the table can be substituted. A guard
+ * whose own exemption list cannot be driven from outside can only be shown to
+ * accept the list it ships with.
+ */
+function run(body: string, unmeasured?: unknown) {
   const dir = mkdtempSync(join(tmpdir(), 'doc-counts-'));
   dirs.push(dir);
   const doc = join(dir, 'progress.md');
   writeFileSync(doc, body);
-  const r = spawnSync('node', [SCRIPT, '--doc', doc, '--measured', MEASURED], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
+  const argv = [SCRIPT, '--doc', doc, '--measured', MEASURED];
+  if (unmeasured !== undefined) argv.push('--unmeasured', JSON.stringify(unmeasured));
+  const r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
+
+const NO_EXCUSES: unknown[] = [];
 
 const HEADER = '### Verified\n\n| gate | result |\n| --- | --- |\n';
 
@@ -248,5 +258,196 @@ describe('check-doc-counts', () => {
           `when the suite grows, both must be retaken together`,
       ).toEqual(m);
     }
+  });
+});
+
+/**
+ * The shape surface, which was open.
+ *
+ * The guard read three shapes. The document published suite counts in more than
+ * three, and the difference was invisible for a precise reason: **a shape the
+ * reader cannot read is indistinguishable from a shape that is not there**, so
+ * every rule above simply did not apply to the rows written in the others.
+ *
+ * Measured against the shipped document: 88 table rows carry a count-bearing
+ * phrase; the three shapes read 25 of them. Among the 63 the reader skipped was
+ * this row, in `Pass 26`'s verification table:
+ *
+ *   | core | 2623 passed (87 files); `src` 100 / 100 / 100 / 100 |
+ *
+ * `packages/core/test` has never held 87 test files -- checked against every
+ * commit in `git log`, not remembered -- while 87 = 84 (core) + 3 (cli) at that
+ * moment, and 2623 = 2445 + 173 + 5. The row publishes the whole workspace's
+ * count under the label `core`, which is the defect the guard was written for,
+ * hiding in the one shape it could not read.
+ *
+ * So rule 4 closes the surface at the granularity the other rules work at: a row
+ * that names a scope must have its count *read*, or the unreadable phrase must be
+ * excused in writing. Excuses are keyed on the shape, carry a reason, and the
+ * table is validated before it is used, because an exemption list nobody checks
+ * is the same blind spot one level in.
+ */
+describe('check-doc-counts -- the shapes it can read, and the ones it refuses', () => {
+  it('reads "N passed (M files)", the shape a pass used to record its own run', () => {
+    const r = run(`${HEADER}| core coverage | **2403 passed (82 files)** |\n`);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('check-doc-counts: OK');
+  });
+
+  // The positive test above cannot tell this shape from the bare one, because the
+  // bare shape also makes that row green -- it reads the 2403 and ignores the 82.
+  // The mutation battery said so in as many words: deleting the whole shape left
+  // the file green. So the file count has to be *used* by a rule before its being
+  // read can be observed, and the one rule that uses it is the impossibility of
+  // more files than tests.
+  it('refuses a parenthesised file count that exceeds the test count', () => {
+    const r = run(`${HEADER}| core test suite | **12 passed (999 files)** |\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('exceeds');
+  });
+
+  it('reads a bare test count when the row names its scope', () => {
+    const r = run(`${HEADER}| core tests | **2512 passed** |\n`);
+    expect(r.code).toBe(0);
+  });
+
+  // The bare shape is the wording a battery verdict uses as well, and those rows
+  // are not suite counts. Gating it on the scope word is what keeps `26 passed`
+  // beside `mutation` out of the guard's subject instead of asking it to name a
+  // scope it does not have.
+  it('leaves a bare test count alone when the row names no scope', () => {
+    const r = run(
+      `${HEADER}| core tests | **108 files, 3059 tests passed** |\n` + `| mutation | 26 passed |\n`,
+    );
+    expect(r.code).toBe(0);
+  });
+
+  // The shape the guard could not read, in the exact row it could not read it
+  // from: core 2623 (87 files) followed later in the file by core 2512. Rule 2
+  // is about a suite that lost tests; this row is what that rule was missing.
+  it('applies the monotonicity rule to the newly readable shape', () => {
+    const r = run(
+      `${HEADER}| core | **2623 passed (87 files)** |\n` + `| core tests | **2512 passed** |\n`,
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('fell from');
+  });
+
+  // Rule 4. A scope-named row whose count is in a shape nothing reads must fail
+  // rather than be skipped, because being skipped is what made the shipped
+  // defect survive.
+  it('refuses a scope-named row whose count is in a shape it cannot read', () => {
+    const r = run(`${HEADER}| core tests | **2512 tests in 87 files** |\n`, NO_EXCUSES);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('2512 tests');
+    expect(r.out).toContain('cannot read');
+  });
+
+  it('accepts an unreadable phrase that is excused in writing', () => {
+    const r = run(
+      `${HEADER}| core coverage | **217 file x dimension pairs, 0 below 95%** |\n`,
+      [{ shape: 'N file x dimension pairs', reason: 'the coverage matrix is a count of file x dimension pairs, which is not a suite count' }],
+    );
+    expect(r.code).toBe(0);
+  });
+
+  it('refuses an excuse with no reason at all', () => {
+    const r = run(`${HEADER}| core coverage | **217 file x dimension pairs** |\n`, [
+      { shape: 'N file x dimension pairs', reason: '' },
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('reason');
+  });
+
+  it('refuses an excuse whose reason is too short to say anything', () => {
+    const r = run(`${HEADER}| core coverage | **217 file x dimension pairs** |\n`, [
+      { shape: 'N file x dimension pairs', reason: 'coverage' },
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('reason');
+  });
+
+  // Two exemptions that read the same way are one exemption written twice, and
+  // the second is a shape nobody has actually justified.
+  it('refuses two excuses that share one reason', () => {
+    const shared = 'the coverage matrix is a count of file x dimension pairs, which is not a suite count';
+    const r = run(`${HEADER}| core coverage | **217 file x dimension pairs** |\n`, [
+      { shape: 'N file x dimension pairs', reason: shared },
+      { shape: 'N file', reason: shared },
+    ]);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('reason');
+  });
+
+  // Prose is out of the subject, and this pins it rather than leaving it to be
+  // discovered. The three rules are defined over published rows -- a scope word,
+  // a monotonicity order, a current-state marker -- and a sentence in a pass's
+  // narration has none of those. The residual is real and is stated in the
+  // guard: a stale number narrated in prose still has no reader.
+  it('leaves a count narrated in prose alone, since the rules are about rows', () => {
+    const r = run(
+      `${HEADER}| core tests | **108 files, 3059 tests passed** |\n` +
+        `\nThe suite reported 124 files, 3234 tests in total.\n`,
+    );
+    expect(r.code).toBe(0);
+  });
+
+  // Non-vacuity for the new shape: the shipped document must actually use it,
+  // otherwise the shape is tested only by fixtures and the guard could stop
+  // reading it without any test noticing.
+  it('reads the newly supported shape where the shipped document uses it', () => {
+    const doc = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8');
+    const rows = [
+      ...doc.matchAll(/\|\s*`?core`?[^|]*\|\s*\*\*(\d+) passed \((\d+) files\)\*\*/g),
+    ];
+    expect(
+      rows.length,
+      'the shipped document no longer publishes a "N passed (M files)" row, so this test ' +
+        'would pass without the shape being read',
+    ).toBeGreaterThan(0);
+  });
+
+  // Three assertions added because a mutation battery asked for them: each one is
+  // a half of a comparison that no test reached, so the comparison could be
+  // weakened to that half and the whole file would stay green.
+
+  // Rule 2 as a bound of the wrong sign. Every existing fixture falls by hundreds
+  // of tests, so `row.tests < prev.tests - 1` -- which would let a real one-test
+  // regression through -- was indistinguishable from the rule.
+  it('refuses a fall of a single test, which a bound of the wrong sign would allow', () => {
+    const r = run(
+      `${HEADER}| core test suite | **108 files, 3059 tests passed** |\n` +
+        `| core test suite | **108 files, 3058 tests passed** |\n`,
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('fell from');
+  });
+
+  // Rule 3's file half. The equality was written as `files !== live.files ||
+  // tests !== live.tests`, and no fixture ever disagreed on files alone, so the
+  // first half could be deleted without a single test failing.
+  it('refuses a current-state row whose file count is stale while its test count is right', () => {
+    const { tests } = (JSON.parse(MEASURED) as Record<string, { tests: number }>).core!;
+    const r = run(`${HEADER}| core test suite | **1 files, ${tests} tests passed**, as of this commit |\n`);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('but the suite has');
+  });
+
+  // The census reads "a number and a unit word", and `passed` is deliberately not
+  // one of the units. The reason is a proof rather than a preference: rule 4 only
+  // examines rows the reader did *not* read, and an unread row is one where the
+  // bare shape did not match, so it contains no `N passed` phrase at all. This
+  // row is what makes the boundary observable -- the count is taken up by the
+  // bare shape, so rule 4 is never reached, and the row is read as a dated record
+  // of core rather than refused.
+  //
+  // What this test cannot do is discriminate the census vocabulary: the row is
+  // read with or without `passed` in the unit list, so it pins the *reading* and
+  // the guard's comment carries the proof. Said here rather than left implied,
+  // because a test that looks like it pins a vocabulary it cannot see is worse
+  // than no test.
+  it('reads a "passed" phrase through the bare shape, so the census never has to', () => {
+    const r = run(`${HEADER}| core | 2512 passed of a possible 2600 |\n`, NO_EXCUSES);
+    expect(r.code).toBe(0);
   });
 });
