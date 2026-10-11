@@ -151,18 +151,41 @@ INJECTIONS = [
 ]
 
 
-def run_suite() -> tuple[int, int]:
-    """Run the gate; return (failed, passed)."""
+def parse_summary(output: str):
+    """The counts the suite printed for one run, or `None` when it printed none.
+
+    Extracted from `run_suite` so it can be held against the bytes CI actually
+    emits. A regex that only ever runs behind `subprocess.run` cannot be tested
+    against those bytes, and this parse had exactly that problem: it returned
+    `(-1, -1)` when nothing matched, a pair the table then printed beside
+    `MISSED`, which reads as "the tests have no teeth" when the truth is "no
+    summary was found". Its sibling in `scripts/inject-stability.mjs` had the
+    same gap and printed a fabricated `(failed 1, passed 0)` for every row on CI.
+
+    The escapes are stripped first because CI leaves colour on even though the
+    child's stdout is a pipe, so the runner's summary arrives as
+    `\\x1b[2m      Tests \\x1b[22m \\x1b[1m\\x1b[32m21 passed\\x1b[39m` where a
+    terminal emits `      Tests  21 passed (21)` -- and the escape sits exactly
+    where the pattern needs whitespace. `gate-tests-battery.py` carries the same
+    pattern for the same reason; these files are invoked rather than imported, so
+    neither can own it for the other.
+    """
+    plain = re.sub(r'\x1b\[[0-9;]*m', '', output)
+    match = re.search(r'Tests\s+(?:(\d+) failed \| )?(\d+) passed', plain)
+    if match is None:
+        return None
+    return (int(match.group(1)) if match.group(1) else 0, int(match.group(2)))
+
+
+def run_suite():
+    """Run the gate; return the counts it printed, or `None` if it printed none."""
     result = subprocess.run(
         ['npx', 'vitest', 'run', SUITE],
         cwd=REPO / 'packages' / 'core',
         capture_output=True,
         text=True,
     )
-    match = re.search(r'Tests\s+(?:(\d+) failed \| )?(\d+) passed', result.stdout)
-    if match is None:
-        return (-1, -1)
-    return (int(match.group(1)) if match.group(1) else 0, int(match.group(2)))
+    return parse_summary(result.stdout)
 
 
 def assert_workflow_restored(pristine: str) -> int:
@@ -198,7 +221,11 @@ def assert_workflow_restored(pristine: str) -> int:
     else:
         print('source restored: identical to the captured original')
 
-    failed, passed = run_suite()
+    counts = run_suite()
+    if counts is None:
+        print('pristine (negative control): the suite printed no summary, so every CAUGHT above is unproven')
+        return 3 if status == 0 else status
+    failed, passed = counts
     if failed != 0:
         print(f'pristine (negative control): {failed} test(s) failing, so every CAUGHT above is unproven')
         return 3 if status == 0 else status
@@ -218,11 +245,19 @@ def main() -> int:
             uncaught.append(description)
             continue
         write_atomically(WORKFLOW, pristine.replace(anchor, replacement, 1))
-        failed, passed = run_suite()
-        verdict = 'CAUGHT' if failed > 0 else 'MISSED'
-        if failed <= 0:
+        counts = run_suite()
+        if counts is None:
+            # Not `MISSED`. Nothing was read, so nothing can be said about whether
+            # the mutation was detected -- and a battery that cannot read its own
+            # evidence cannot certify anything, so the row counts as uncaught.
+            print(f'{description:64} {"":>4} {"":>4}  NO SUMMARY')
             uncaught.append(description)
-        print(f'{description:64} {failed:>4} {passed:>4}  {verdict}')
+        else:
+            failed, passed = counts
+            verdict = 'CAUGHT' if failed > 0 else 'MISSED'
+            if failed <= 0:
+                uncaught.append(description)
+            print(f'{description:64} {failed:>4} {passed:>4}  {verdict}')
         write_atomically(WORKFLOW, pristine)
 
     # Restore before the negative control, so the control measures the pristine

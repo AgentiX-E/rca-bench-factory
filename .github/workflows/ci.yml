@@ -142,6 +142,33 @@ jobs:
       - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
         run: python3 scripts/injection/type-miss-probe.py
 
+      # The three batteries below were written, repaired, and never invoked. Each
+      # has carried a restore verdict since finding 142, and each was green when
+      # run by hand -- which is exactly why nobody noticed that no job, and no
+      # package script, named any of them. The repair was verifiable only by
+      # whoever remembered to type its path, so the guard that holds it
+      # (`batteries-verify-their-restore.test.ts`) had to read them statically and
+      # records a blind spot for one of them as a result.
+      #
+      # Wiring them exposed a second defect in the same family as finding 147, and
+      # it is the reason they could not simply be added. All three read the
+      # runner's summary out of the captured text, and none of them stripped the
+      # ANSI escapes the runner emits, so on CI every injection would have been
+      # reported as MISSED -- the battery blaming its own suite for a reader that
+      # could not see the number. Two of the three did it by walking lines and
+      # testing `startswith("Tests ")`, which is false when the line begins with
+      # `\x1b[2m`. Measured against the captured bytes in
+      # `battery-summary-survives-ci-output.test.ts`, alongside the two readers
+      # finding 147 fixed.
+      - name: Fault-extraction scoring battery (no survivors)
+        run: python3 scripts/injection/fault-extraction-scoring.py
+
+      - name: Fault-extraction workflow battery (no survivors, negative control)
+        run: python3 scripts/injection/fault-extraction-workflow.py
+
+      - name: Fetch-official retry battery (no survivors)
+        run: python3 scripts/injection/fetch-official-retry.py
+
       # The five gate scripts above are covered by CI *running* them against the
       # real tree, which proves they do not crash and proves nothing about
       # whether they would refuse. That is a weaker claim than a test that forces

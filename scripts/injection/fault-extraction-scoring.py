@@ -7,6 +7,7 @@ harmless mutation -- it means the behaviour it changes is not pinned by any test
 
 Restores the pristine source after every case.
 """
+import re
 import shutil
 import subprocess
 import sys
@@ -111,6 +112,44 @@ INJECTIONS = [
 ]
 
 
+def strip_ansi(text: str) -> str:
+    """Remove the SGR escapes vitest emits when colour is on.
+
+    CI leaves colour on even though the child's stdout is a pipe, so the runner's
+    summary arrives as
+    `\\x1b[2m      Tests \\x1b[22m \\x1b[1m\\x1b[32m2 failed | 14 passed\\x1b[39m`
+    where a terminal emits `      Tests  2 failed | 14 passed (16)`.
+    """
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+def parse_failed_count(output: str):
+    """Failing tests the suite reported, or `None` when it reported no summary.
+
+    The loop this replaces tested `stripped.startswith("Tests ")` against text
+    that still held the escapes, so the line began with `\\x1b[2m` and the branch
+    was never entered. `failed` stayed 0 for every injection, and 0 is the
+    `SURVIVED` condition -- so on CI this battery would have accused its own suite
+    of having no teeth for all twelve injections, while running here it reports
+    twelve caught. Measured by driving the shipped loop with the captured CI bytes
+    in `packages/core/test/battery-summary-survives-ci-output.test.ts`.
+
+    `None` is not 0. A run that printed no summary says nothing about the
+    mutation, and the caller must not read that silence as a survivor.
+    """
+    plain = strip_ansi(output)
+    for line in plain.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Tests ") and "failed" in stripped:
+            return int(stripped.split()[1])
+    # A green run prints `Tests N passed`, which is a reading of zero failures
+    # rather than the absence of a reading.
+    for line in plain.splitlines():
+        if line.strip().startswith("Tests ") and "passed" in line:
+            return 0
+    return None
+
+
 def run_suite():
     proc = subprocess.run(
         ["npx", "vitest", "run", "test/extraction-scoring.test.ts"],
@@ -119,12 +158,7 @@ def run_suite():
         text=True,
     )
     out = proc.stdout + proc.stderr
-    failed = 0
-    for line in out.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("Tests ") and "failed" in stripped:
-            failed = int(stripped.split()[1])
-    return failed, out
+    return parse_failed_count(out), out
 
 
 def assert_source_restored() -> int:
@@ -159,6 +193,9 @@ def assert_source_restored() -> int:
     # while proving nothing, and the printed control-line would not have stopped
     # it.
     failed, _ = run_suite()
+    if failed is None:
+        print("the pristine source printed no summary, so every caught row above is unproven")
+        return 3
     if failed != 0:
         print(f"the pristine source is not green: {failed} test(s) failing before any injection")
         return 3
@@ -179,10 +216,18 @@ def main():
         open(SRC, "w").write(source.replace(old, new, 1))
 
         failed, out = run_suite()
-        status = "caught" if failed > 0 else "SURVIVED"
-        print(f"  {status:9} ({failed:2} red)  {name}")
-        if failed == 0:
+        if failed is None:
+            # Not `SURVIVED`. No summary was read, so nothing is known about
+            # whether the mutation was detected -- and a battery that cannot read
+            # its own evidence cannot certify anything, so the row counts as
+            # uncaught.
+            print(f"  {'NO SUMMARY':9} (no summary)  {name}")
             uncaught.append(name)
+        else:
+            status = "caught" if failed > 0 else "SURVIVED"
+            print(f"  {status:9} ({failed:2} red)  {name}")
+            if failed == 0:
+                uncaught.append(name)
 
         shutil.copy(PRISTINE, SRC)
 

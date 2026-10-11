@@ -14639,3 +14639,192 @@ establishes that the one shape a green run produces is parsed correctly, which i
 the case that had no test and the case the report was wrong about. The general
 lesson -- apply the normaliser at every parse boundary or none -- is stated here
 and not enforced by anything; a fifth parser added later could repeat it.
+
+---
+
+## Finding 148 — four readers of one summary line, and three batteries nothing invoked
+
+**What was seen.** Reading the CI artefact to close finding 147's open question
+left one row whose parenthetical could not be trusted, and following it out led
+to a second, larger defect underneath it.
+
+`scripts/inject-stability.mjs` runs in CI, as the step named "Scorer stability
+battery". On CI at `f6f7522a` it printed:
+
+```
+CAUGHT  A. non-deterministic: embed a per-call counter in the report  (failed 1, passed 0)
+CAUGHT  B. mutates its input: sorts the samples in place             (failed 1, passed 0)
+CAUGHT  C. pairs by position instead of by id                        (failed 1, passed 0)
+CAUGHT  D. drops the denominator: omits a sample that missed         (failed 1, passed 0)
+```
+
+Four mutations that break four different properties, and all four reporting the
+same pair. Run on this machine, the same battery at the same commit printed:
+
+```
+(failed 2, passed 14) / (failed 2, passed 14) / (failed 1, passed 15) / (failed 1, passed 0)
+```
+
+`(1, 0)` is the catch arm's default for a summary it could not read, and the
+agreeing-everywhere shape is what gave it away.
+
+**The root cause is finding 147's, one file over.** CI leaves colour on although
+the child's stdout is a pipe, so the summary arrives as
+
+```
+\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m21 passed\x1b[39m\x1b[22m\x1b[90m (21)\x1b[39m
+```
+
+`Tests\s+` walks into `\x1b[22m` where a terminal would have whitespace. Both arms
+of `runSuite` searched the raw text, both failed, and both fell through to their
+defaults -- so the number printed beside every verdict was a constant.
+
+**The verdicts were still right**, and that is worth stating rather than
+celebrating: the catch arm's default is `failed: 1` and the success arm's is
+`failed: 0`, which coincide with what the exit status already said. Nothing was
+mis-verdict. What was wrong is the evidence. A number that reads as a measurement
+and was never measured is the same defect finding 147 repaired in
+`collected_count`, and the audit's standard for it is already written down.
+
+### Two more readers, and their failure is worse than a wrong number
+
+The same summary format is read in four places. Two of them did not use a regex
+at all:
+
+```python
+for line in out.splitlines():
+    stripped = line.strip()
+    if stripped.startswith("Tests ") and "failed" in stripped:
+        failed = int(stripped.split()[1])
+```
+
+Against a CI line, `stripped` begins with `\x1b[2m`, so `startswith("Tests ")` is
+**false**, the branch is never entered, and `failed` stays 0 -- which is those
+batteries' `SURVIVED` condition. Driven with the captured CI bytes, the shipped
+loop returns `0` for a summary that says `3 failed`:
+
+```
+CI form   : failed = 0      -> verdict MISSED
+terminal  : failed = 2      -> verdict CAUGHT
+```
+
+So on CI these two would have reported **every injection as a hole in their own
+suite**, which is the battery blaming its subject for its own reader. They are
+`fault-extraction-scoring.py` (12 injections) and `fetch-official-retry.py` (5).
+
+### The reason nobody had noticed: nothing ran them
+
+| battery | in `package.json` | in a workflow |
+| --- | --- | --- |
+| `inject-stability.mjs` | yes | yes |
+| `inject-component-rule.mjs` | yes | yes |
+| `inject-m1-ceiling-tests.mjs` | yes | yes |
+| `gate-tests-battery.py` | yes | yes |
+| `m1-ceiling-probe.py` | yes | yes |
+| `scorer-stability-probe.py` | yes | yes |
+| `type-miss-probe.py` | yes | yes |
+| `fault-extraction-scoring.py` | **no** | **no** |
+| `fault-extraction-workflow.py` | **no** | **no** |
+| `fetch-official-retry.py` | **no** | **no** |
+
+Seven of ten batteries are named in both places. The three that are named in
+neither are **exactly the three finding 142 repaired** -- each now returns a
+non-zero status when its own mutation is left behind, and that repair could only
+be verified by someone typing the path by hand. It is also why
+`batteries-verify-their-restore.test.ts` had to read them statically, and why that
+file records a blind spot for one of them: a guard that cannot run its subject can
+only describe it.
+
+This is finding 131's `--stdin` at a scale of three, and finding 83's
+`verify-scorer-stability.mjs` before it: written, documented, given a script,
+never reached.
+
+### The repair
+
+**The parse.** All four readers now strip the escapes first, and all four
+distinguish *a reading of zero* from *no reading at all*. The distinction is not
+cosmetic:
+
+- `inject-stability.mjs` prints `(no summary in its output; verdict taken from
+  the exit status)` instead of a fabricated pair. Running it here shows the
+  sentence is not hypothetical -- injection D produces no summary even on this
+  machine, so its `(failed 1, passed 0)` was always a default.
+- `fault-extraction-workflow.py` returned `(-1, -1)` on a miss, which printed
+  `MISSED` and a negative control reading "**-1 test(s) failing**". It now returns
+  `None` and the table prints `NO SUMMARY`, with the control saying the suite
+  printed no summary.
+- The two line-scanners return `None` on silence and the loop prints `NO SUMMARY`
+  rather than `SURVIVED`.
+
+`inject-stability.mjs` also had to stop being un-runnable-while-imported: its
+parse is now `readSummary`, exported, with the battery's side effects moved into
+`main()` behind a direct-call guard. A regex that only ever runs inside `execSync`
+cannot be held against the bytes CI emits; a battery that fires on import cannot
+be measured from a test.
+
+**The wiring.** All three orphans now have a `package.json` script and a `run:`
+step in `ci.yml`. Before wiring them the three were re-run end to end here, and
+all three are green: 12/12, 5/5, and 9/9 with the negative control OK.
+
+### The tests, and the mutations
+
+`battery-summary-survives-ci-output.test.ts` feeds the **real captured bytes** --
+escapes intact, from CI's own artefact -- through the Node parse, and through
+three Python helpers lifted out of the shipped files and executed rather than
+pattern-matched. A TypeScript reimplementation of a Python regex would pass while
+the shipped regex was wrong, which is the failure the file is about.
+
+One assertion is cross-file on purpose: the same captured text goes through every
+reader and all of them must return 21. Each reader compared only with itself is
+exactly how four of them came to disagree.
+
+The failing form is composed, and the file says so: the escape sequences are the
+captured ones and are asserted to be, while the count is substituted, because no
+*failing* summary was captured on CI. A second all-passing capture would have
+added observations without adding discriminating power, so the fixture keeps one
+shape per role.
+
+`batteries-reach-an-invoker.test.ts` asserts the wiring from the directory rather
+than from a list: every `scripts/inject-*.mjs` and every `scripts/injection/*.py`
+must appear in a `package.json` script **and** in a `run:` command in a workflow.
+It has no exemptions -- the seven that satisfied both already did, and the three
+that did not were wired rather than excused. Its matcher is controlled: a path
+named only in a workflow comment must not count as an invocation, which is how the
+three could otherwise have been "fixed" by writing their names into `ci.yml`
+prose.
+
+Nine mutations were applied in turn, and all nine were caught:
+
+| mutation | result |
+| --- | --- |
+| bypass the stripper in `readSummary` | red, naming the Node assertion |
+| bypass the stripper in `parse_summary` | red, naming the Python assertion |
+| `describeOutcome` prints the pair regardless | red, naming the honest-print assertion |
+| bypass the stripper in `fault-extraction-scoring.py` | red |
+| silence read as 0 in `fault-extraction-scoring.py` | red |
+| bypass the stripper in `fetch-official-retry.py` | red |
+| silence read as 0 in `fetch-official-retry.py` | red |
+| unwire a battery from the workflow | red, naming the battery |
+| drop a battery's package script | red, naming the battery |
+
+### One of my own probes was wrong, and nearly produced a finding
+
+While measuring the two line-scanners I wrote a probe that reproduced their loop
+but called `int(stripped.split()[1])` **unconditionally**, without their
+`startswith` guard. It raised `ValueError: invalid literal for int() with base 10:
+'Tests'`, and I was one step from recording "these batteries crash on CI, before
+their restore runs, leaving a tracked source mutated".
+
+The shipped loop does not raise. Its condition is false on ANSI text, so it skips
+the line and returns a wrong number instead -- a quieter failure, and a different
+repair. Redone faithfully, the reproduction is `failed = 0` for the CI form
+against `failed = 2` for the terminal form. Recorded because "a probe with the
+guard removed" is the same class of error as a gate that reads a mention instead
+of a call, and because the first version of the conclusion would have been
+dramatic, actionable, and false.
+
+### Acceptance
+
+Full suite **3306 passed / 0 failed** across 126 files; coverage
+**99.96 / 99.91 / 100 / 99.96**; nine of nine mutations caught; the three wired
+batteries green end to end; `py_compile` clean on all three.
