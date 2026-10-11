@@ -14531,3 +14531,111 @@ establishes that the bodies are now read by the rule the gate already had, and
 that a body carrying that defect is caught. The rule's subject is one class --
 `$`-constructs a shell expands before the program it names starts -- and a body
 that is unsafe in some other way is outside it, as it always was for `.sh` files.
+
+## Finding 147 — the mutation battery's own count was wrong on CI, and its basis said otherwise
+
+`docs/progress.md` carried one open question about the gate-test battery:
+
+> **It does not explain the 24 CI SURVIVED.** ... That question remains open, and
+> it is now this gate's only open question.
+
+### The question is answered, from the artifact rather than from a re-run
+
+CI uploads the battery report (`ci.yml`), so the answer is a download. The report
+from the run at `f6f7522a` -- the commit that carries findings 143 to 146:
+
+```
+caught: 24   survived: 0   inert: 0   timed_out: 0   redundant: 1
+restore_status: 0   total_seconds: 110.2
+diagnosis histogram: {'tests_failed': 24, 'no_tests_collected': 1}
+```
+
+Twenty-four caught, zero survived, and every caught row carries
+`diagnosis: tests_failed` -- that is, the runner itself reported failing tests.
+The `0 caught / 24 survived` reading no longer reproduces, and the field added by
+the previous round is what makes the claim checkable rather than asserted.
+
+### But reading that report closely found a live defect in it
+
+The one row that is not CAUGHT is the legitimate REDUNDANT, and its fields
+disagree with its own evidence:
+
+```
+name:             RCAEVAL 2. a non-directory entry at the top level is treated as a suite
+verdict:          REDUNDANT
+tests_run:        0
+tests_run_basis:  summary
+output_tail:      ...
+                  '\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m21 passed\x1b[39m\x1b[90m (21)\x1b[39m'
+```
+
+The row says the runner ran **0** tests, in the basis that means "from the
+runner's own tally", while the output it ships alongside says **21 passed**.
+
+### The cause
+
+`strip_ansi` exists in that script and is applied by three of its four parsers:
+
+| function | strips? |
+| --- | --- |
+| `failing_tests` | yes, via a local `plain = strip_ansi(output)` |
+| `failed_count` | yes, same |
+| `collected_basis` | yes, inline: `re.search(..., strip_ansi(output))` |
+| **`collected_count`** | **no** |
+
+On CI vitest colourises, because the runner's stdout is not a terminal. Every
+escape therefore sits exactly where the pattern needs whitespace:
+
+```
+Tests  21 passed (21)                                  a terminal
+Tests \x1b[22m \x1b[1m\x1b[32m21 passed\x1b[39m...      CI
+```
+
+`Tests\s+(\d+) passed` matches the first and not the second. So the summary parse
+fails, `collected_count` falls through to its frame-counting fallback -- and a run
+with no failing frames returns **0**.
+
+That fallback is itself the repair for an earlier finding, and it is why the
+verdicts are right today: `failed_count` > 0 comes from the frames, so every
+injection that failed is still CAUGHT. The count is the part that was never
+exercised on CI, because the case that exposes it -- a row where nothing failed --
+is the one row the battery expects to be REDUNDANT.
+
+### Why this is the same defect as the one it was found next to
+
+`tests_run_basis` was added so that a count could not be misread: `summary` means
+an exact total, `failures` means a floor. On CI the basis strips and the count does
+not, so the field reports `summary` while the number came from the frames. **The
+mechanism built to make a number legible made it legible and still wrong** -- which
+is the shape this campaign keeps recording: a claim and its reader disagreeing,
+with the reader unable to tell.
+
+### The repair, and what holds it
+
+One line, at the top of `collected_count`:
+
+```python
+output = strip_ansi(output)
+```
+
+A test was written first, from **real captured bytes** rather than a paraphrase.
+The fixture already held CI-shaped output, but only tails too short to include a
+summary, so a third shape was added carrying the ANSI-wrapped green summary of the
+very row above, extracted from the run's artifact. Against the unfixed script it
+fails with the defect's own number:
+
+```
+AssertionError: the count must be the number the summary states: expected +0 to be 21
+```
+
+Removing the one line again returns exactly that failure and nothing else;
+restoring it returns the file to 11 passed. The three battery test files together
+are 31 passed.
+
+### What this does not establish
+
+It does not establish that the parser handles every shape CI can emit. It
+establishes that the one shape a green run produces is parsed correctly, which is
+the case that had no test and the case the report was wrong about. The general
+lesson -- apply the normaliser at every parse boundary or none -- is stated here
+and not enforced by anything; a fifth parser added later could repeat it.

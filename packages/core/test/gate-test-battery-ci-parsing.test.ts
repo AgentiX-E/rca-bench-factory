@@ -244,6 +244,37 @@ describe('scripts · the gate-test battery parses the output CI emits, not the o
     expect(Number(c3)).toBe(9);
   });
 
+  it('reads a summary that carries ANSI escapes, which is the only shape CI produces', () => {
+    // **The residual defect, and the one the basis field was added to prevent.**
+    // `strip_ansi` is applied in `failing_tests`, `failed_count` and
+    // `collected_basis` -- but not in `collected_count`, which searches the raw
+    // text. On CI every escape sits between `Tests` and the number:
+    //
+    //     '\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m21 passed\x1b[39m\x1b[90m (21)'
+    //
+    // `Tests\s+(\d+) passed` requires whitespace after `Tests` and finds `\x1b[22m`
+    // instead, so the summary parse fails and the helper falls back to counting
+    // failure frames -- of which a green run has none, so it returns 0.
+    //
+    // The consequence is in the published artifact of CI run 38106239312: the one
+    // row the runner exited 0 on carries `tests_run: 0` beside
+    // `tests_run_basis: "summary"`, while its own `output_tail` reads
+    // `Tests 21 passed (21)`. The number and its stated basis disagree, and the
+    // number is the wrong one -- a report that says the runner found nothing about
+    // the run that ran twenty-one tests.
+    const out = runPython(
+      HELPERS,
+      [
+        `tail = ${JSON.stringify(shape('REDUNDANT|0|tests_passed'))}`,
+        'print(collected_basis(tail))',
+        'print(collected_count(tail))',
+      ].join('\n'),
+    );
+    const [basis, count] = out.split('\n');
+    expect(basis, 'a summary is present, so the basis is the summary').toBe('summary');
+    expect(Number(count), 'the count must be the number the summary states').toBe(21);
+  });
+
   it('the shipped report row carries the basis beside the count', () => {
     // The distinction is only worth anything if it reaches the artifact, and the
     // artifact is the channel that can be read. Asserted on all three verdict

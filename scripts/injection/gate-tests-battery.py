@@ -476,6 +476,26 @@ def collected_count(output: str) -> int:
     mismatch that looks like a defect in the count. The count is right -- the
     label was wrong.
     """
+    # Escapes are removed first, and this line is the whole repair.
+    #
+    # `strip_ansi` was already applied by `failing_tests`, `failed_count` and
+    # `collected_basis`; this function was the one call site that searched the raw
+    # text. On CI -- where vitest colourises because the runner's stdout is not a
+    # terminal -- the summary reads
+    #
+    #     '\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m21 passed\x1b[39m...'
+    #
+    # and `Tests\s+(\d+) passed` finds `\x1b[22m` where it needs whitespace, so the
+    # summary parse failed and the frame-counting fallback answered instead. A run
+    # with no failing frames therefore reported **0**, and the published artifact
+    # of CI run 38106239312 shows the contradiction it produced: the one row the
+    # runner exited 0 on carries `tests_run: 0` beside `tests_run_basis: "summary"`,
+    # while its own `output_tail` reads `Tests 21 passed (21)`.
+    #
+    # The basis was added so that a count could not be misread. It made the
+    # disagreement legible and still could not be believed, because the basis
+    # stripped and the count did not.
+    output = strip_ansi(output)
     failed = re.search(r"Tests\s+(\d+) failed", output)
     passed = re.search(r"Tests\s+(?:\d+ failed \|\s*)?(\d+) passed", output)
     total = 0
