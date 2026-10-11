@@ -220,6 +220,68 @@ if (blocks.length === 0) {
   ]);
 }
 
+/**
+ * Every runnable block is put through the shell guard before it is executed.
+ *
+ * ## Why a separate pass, when the block is about to be run anyway
+ *
+ * Because running it cannot detect the defect this pass is for. The rule is
+ * about `$`-constructs a shell expands **before the program it names starts**,
+ * and the failure mode is silent: `${count}` inside a double-quoted argument
+ * expands to nothing, the step exits 0, and what ran is simply not what the guide
+ * documented. A walkthrough that runs clean is exactly what a block with this
+ * defect looks like from the outside, which is why the operator of this
+ * repository lost three tool calls to `Bad substitution` while every gate here
+ * was green.
+ *
+ * ## Why this gate and not the file scan
+ *
+ * `check-no-unsafe-shell.mjs` already scans the tree, and it does not scan this
+ * document: its extensions are source files, and a guide's commands are not
+ * source files. They are also not uniformly shell -- the same document holds
+ * `json` samples of command output -- so a content-based scan of the markdown
+ * would flag the samples. The tag is the contract this gate already relies on,
+ * so the check is applied to the same set the gate is willing to execute, one
+ * block at a time, and each carries a label so a failure names the fence rather
+ * than a line of a generated script nobody can see.
+ *
+ * ## Why a missing sibling is a failure rather than a skip
+ *
+ * The guard is consulted on every run; if it cannot be found, this one no longer
+ * knows that what it is about to execute is safe. Skipping in that case would
+ * restore precisely the state this pass was added to end -- commands executed
+ * with nothing having checked them -- while still reporting success.
+ */
+const SHELL_GUARD = resolve(HERE, 'check-no-unsafe-shell.mjs');
+
+function assertBlocksAreSafeToRun(bodies) {
+  if (!existsSync(SHELL_GUARD)) {
+    fail([
+      `${SHELL_GUARD} is missing, so the runnable blocks cannot be checked.`,
+      'This guard consults it for every block it executes; a run that skips the check',
+      'would execute commands nothing had looked at, while reporting success.',
+    ]);
+  }
+  const refused = [];
+  bodies.forEach((body, index) => {
+    const result = spawnSync(
+      process.execPath,
+      [SHELL_GUARD, '--stdin', '--label', `user-guide block ${index + 1}`],
+      { input: body, encoding: 'utf8', cwd: ROOT },
+    );
+    if (result.status !== 0) refused.push((result.stderr ?? '').trim());
+  });
+  if (refused.length > 0) {
+    fail([
+      'a runnable block contains a `$`-construct a shell expands before the program starts:',
+      '',
+      ...refused,
+    ]);
+  }
+}
+
+assertBlocksAreSafeToRun(blocks);
+
 resetGuideOutputs();
 
 // `set -e` so the first failing command is the one reported, and the block

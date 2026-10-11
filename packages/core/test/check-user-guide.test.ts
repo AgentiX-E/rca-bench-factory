@@ -78,6 +78,8 @@ const DRIVES = ['scripts/check-user-guide.mjs'];
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = 'check-user-guide.mjs';
+/** The sibling guard the walkthrough gate now consults before running a block. */
+const SHELL_GUARD = 'check-no-unsafe-shell.mjs';
 const GUIDE = resolve(ROOT, 'docs', 'user-guide.md');
 
 /**
@@ -120,6 +122,11 @@ function treeWith(docName: string, doc: string): string {
   mkdirSync(join(tree, 'scripts'), { recursive: true });
   mkdirSync(join(tree, 'docs'), { recursive: true });
   copyFileSync(resolve(ROOT, 'scripts', SCRIPT), join(tree, 'scripts', SCRIPT));
+  // The gate consults the shell guard before executing a block, so every
+  // sandbox needs that sibling. The real one is copied rather than stubbed,
+  // because the property under test is that the *shipped* rule is what runs: a
+  // stub would let this file pass while the rule it names was wrong.
+  copyFileSync(resolve(ROOT, 'scripts', SHELL_GUARD), join(tree, 'scripts', SHELL_GUARD));
   writeFileSync(join(tree, 'docs', docName), doc);
   for (const link of ['packages', 'node_modules', 'examples']) {
     symlinkSync(resolve(ROOT, link), join(tree, link), 'dir');
@@ -392,6 +399,11 @@ describe('scripts/check-user-guide.mjs · the walkthrough is executed', () => {
     mkdirSync(join(tree, 'scripts'), { recursive: true });
     mkdirSync(join(tree, 'docs'), { recursive: true });
     copyFileSync(resolve(ROOT, 'scripts', SCRIPT), join(tree, 'scripts', SCRIPT));
+  // The gate consults the shell guard before executing a block, so every
+  // sandbox needs that sibling. The real one is copied rather than stubbed,
+  // because the property under test is that the *shipped* rule is what runs: a
+  // stub would let this file pass while the rule it names was wrong.
+  copyFileSync(resolve(ROOT, 'scripts', SHELL_GUARD), join(tree, 'scripts', SHELL_GUARD));
     writeFileSync(
       join(tree, 'docs', 'indented.md'),
       ['# Guide', '', 'Prose.', '', '1. A step whose command is nested:', '', '   ```bash', '   node packages/cli/dist/main.js definitely-not-a-command', '   ```', '', ''].join('\n'),
@@ -466,6 +478,54 @@ describe('scripts/check-user-guide.mjs · the walkthrough is executed', () => {
       'node packages/cli/dist/main.js source \\\n  --path examples/order-prod/metrics.csv \\\n  --signal-kind metric \\\n  --assume-offset-minutes 480',
     ));
     const outcome = run(tree, 'good.md');
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('check-user-guide: OK (1 bash block(s) executed in order)');
+  });
+});
+
+describe('scripts/check-user-guide.mjs · a block is checked before it is run', () => {
+  it('refuses a block a shell would expand before the program inside it starts', () => {
+    // The defect this closes is one this campaign already recorded from the
+    // operator's side: three tool calls interrupted by `Bad substitution`,
+    // because a `$`-construct inside a double-quoted argument is expanded by the
+    // shell before the program ever sees it. The gate for that rule existed and
+    // was proved by its own fixtures -- and it never saw this document, because
+    // it scans source files and a guide's commands are not source files.
+    //
+    // Running the block cannot detect it: `${count}` expands to nothing, the
+    // step exits 0, and what ran is simply not what the guide documented. Only
+    // the rule can say so, which is why it is consulted here rather than
+    // discovered by the shell.
+    const tree = treeWith('hazard.md', guideWithBlocks('node -e "console.log(${count})"'));
+    const outcome = run(tree, 'hazard.md');
+    expectFailedForOwnReason(outcome);
+    expect(outcome.stderr).toContain('nested-interpreter-expansion');
+    // And named by the block, so the reader is sent to the guide's fence rather
+    // than to a line of a generated script nobody can see.
+    expect(outcome.stderr).toContain('user-guide block 1');
+  });
+
+  it('does not check a fence it does not run, which is the contract (control)', () => {
+    // The tag is what makes a fence runnable, and only a runnable fence is this
+    // gate's subject. Without this assertion the rule would be "any fence
+    // containing a `$`", which would fail on the output samples the guide is
+    // made of -- and the guide gate's whole design is that the tag, not the
+    // content, decides.
+    const tree = treeWith('shown.md', [
+      '# Guide',
+      '',
+      'Prose.',
+      '',
+      '```bash',
+      'echo ok',
+      '```',
+      '',
+      '```json',
+      '{"note": "node -e \\"console.log(${count})\\""}',
+      '```',
+      '',
+    ].join('\n'));
+    const outcome = run(tree, 'shown.md');
     expect(outcome.status).toBe(0);
     expect(outcome.stdout).toContain('check-user-guide: OK (1 bash block(s) executed in order)');
   });

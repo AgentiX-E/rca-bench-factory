@@ -14902,3 +14902,87 @@ all three pre-registered criteria met:
 
 Both workflows -- `CI` including the cold-tree job, and `Anchor round trip` --
 completed `success`.
+
+---
+
+## Finding 150 — the mode that had no consumer now has one, and it is the blocks that get executed
+
+**What was outstanding.** `--stdin` was added to `check-no-unsafe-shell.mjs` under
+finding 131 and has been listed as open in every round since: the mode was
+correct, tested by its own fixtures, and **nothing invoked it**. Its own docstring
+says why it exists --
+
+> the gate checks the repository, and the failure was in a **command that was never
+> in the repository**
+
+-- and the tracking document recorded the gap in the shape this campaign keeps
+finding: *the mode is a capability, whether it is used is discipline*. A rule
+applied only when someone remembers to apply it is not a gate.
+
+**The measurement that found the consumer.** `check-no-unsafe-shell.mjs` scans by
+extension, and its list is source files: `mjs|cjs|js|ts|json|sh|py`. `docs/user-guide.md`
+is not one. But `check-user-guide.mjs` **executes** that document's ```` ```bash ````
+blocks -- concatenated in order, through `bash`, with `set -e`. So the repository
+held nine shell commands that a gate performs on every run and that no gate had
+ever looked at. That is the consumer, and it is not a decorative one: the rule is
+about `$`-constructs a shell expands **before the program it names starts**, and
+the failure is silent.
+
+**Why running them cannot substitute for checking them.** `${count}` inside a
+double-quoted argument expands to nothing, the program receives an empty string,
+the step exits 0, and what ran is not what the guide documented. A walkthrough
+that runs clean is exactly what a block with this defect looks like from outside.
+The operator of this repository lost three tool calls to `Bad substitution` while
+every gate here was green -- the same defect, at the tool boundary, which is why
+`--stdin` was written; this finding closes it for the one place in the tree where
+commands are *performed* rather than *stored*.
+
+**What was measured first.** All nine blocks were piped through the gate before
+anything was changed:
+
+```
+bash blocks: 9
+flagged: 0 of 9
+```
+
+So this is not a repair of an active defect in the guide. It is the removal of a
+channel: from now on a block that would be silently mis-expanded cannot reach
+execution, and the guard against that is exercised nine times on every run rather
+than never.
+
+**The change.** `check-user-guide.mjs` runs each runnable block through the shell
+guard before executing it, one block at a time, each with `--label
+user-guide block N` so a failure names the fence rather than a line of a generated
+script nobody can see. Two decisions are deliberate and both are about refusing a
+quiet path:
+
+- **the check is applied to the same set the gate executes**, keyed on the fence
+  tag, so a ```` ```json ```` sample of command output -- which this document is
+  full of -- is shown and not checked. A content-based scan of the markdown would
+  flag the samples, and the guide gate's whole design is that the tag, not the
+  content, is the contract.
+- **a missing sibling guard is a failure, not a skip.** The guard is consulted on
+  every run; if it cannot be found, this one no longer knows that what it is about
+  to execute is safe. Skipping would restore precisely the state the pass was
+  added to end, while still reporting success.
+
+**Tests.** Two, and the second is the control that keeps the first from being
+satisfiable by a broader rule. A sandbox guide whose bash block carries
+`node -e "console.log(${count})"` must fail with `nested-interpreter-expansion` in
+the message and the block named; a sandbox guide holding the same text inside a
+`json` fence, beside one clean bash block, must pass. The sandbox now copies the
+sibling guard too -- the real one, not a stub, because the property under test is
+that the shipped rule is what runs.
+
+Before the change the first test was red with `expected +0 to be 1`: the gate
+accepted the hazardous block, which is the defect stated as an exit code. Removing
+the check afterwards reddens that assertion and only that one; restoring it
+returns the file to 14 passed.
+
+**Acceptance.** The real document still passes end to end --
+`check-user-guide: OK (9 bash block(s) executed in order)`, fences
+`bash=9 json=5 text=2 ts=1` -- so the check runs nine times per gate invocation and
+refuses nothing. Full suite **3308 passed / 0 failed** across 126 files; coverage
+**99.96 / 99.91 / 100 / 99.96**; `lint`, `typecheck`, `docs:check:cold`,
+`docs:counts:check`, `examples:check`, `examples:bundle:check` and `official:check`
+all rc=0. Counts retaken: core 126/3308, cli 3/173, repo 129/3481.
