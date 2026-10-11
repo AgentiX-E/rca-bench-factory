@@ -113,6 +113,12 @@ const REGISTER: Record<string, Entry> = {
   'score-fault-extraction.mjs': { class: 'gate' },
   'verify-example-pack.mjs': { class: 'gate' },
   'verify-scorer-stability.mjs': { class: 'gate' },
+  // A gate whose subject is other gates: it empties each `check-*.mjs` and fails
+  // if any of them can be emptied with no test noticing. Found by measurement
+  // rather than by reading, and recorded because the tracking row for it said
+  // "3 of 8 gates" while all thirteen were already caught -- the row was counting
+  // the mechanism rather than the property.
+  'verify-gates-are-testable.mjs': { class: 'gate' },
 
   // --- Probes: a literal failure exit, enumerated in gate-sites.json ---
   'probe-agreement-baseline.mjs': { class: 'probe' },

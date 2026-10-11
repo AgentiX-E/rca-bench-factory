@@ -57,6 +57,7 @@
     "docs:counts:check": "node scripts/measure-doc-counts.mjs --check",
     "examples:verify": "node scripts/verify-example-pack.mjs",
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
+    "verify:gates-are-testable": "node scripts/verify-gates-are-testable.mjs",
     "inject:stability": "node scripts/inject-stability.mjs",
     "inject:scorer-stability": "python3 scripts/injection/scorer-stability-probe.py",
     "inject:component-rule": "node scripts/inject-component-rule.mjs",

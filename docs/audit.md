@@ -14986,3 +14986,105 @@ refuses nothing. Full suite **3308 passed / 0 failed** across 126 files; coverag
 **99.96 / 99.91 / 100 / 99.96**; `lint`, `typecheck`, `docs:check:cold`,
 `docs:counts:check`, `examples:check`, `examples:bundle:check` and `official:check`
 all rc=0. Counts retaken: core 126/3308, cli 3/173, repo 129/3481.
+
+---
+
+## Finding 151 — the tracking row was counting the instrument, not the property
+
+**What was outstanding.** P1-6 in the tracking document asks for a meta-criterion
+over every gate: *for each enumerating or asserting gate in `scripts/check-*.mjs`
+there is a test proving that removing it turns a test red*. Its status read
+"partially complete (3 of 8 gates)" and stayed there across rounds while the gate
+list grew to thirteen.
+
+**The measurement.** The criterion is a mutation property, so it was measured
+rather than read. Each gate was hollowed by inserting `process.exit(0)` after its
+import block -- making it report success unconditionally -- and the test files
+that name it were run. Those are the only files that could notice; running the
+whole suite per gate would take an hour and cannot produce a different verdict,
+because a file that does not name the gate cannot be the proof of it.
+
+```
+CAUGHT      check-cli-reference.mjs                      11 test(s) red
+CAUGHT      check-data-model-vocabularies.mjs            10 test(s) red
+CAUGHT      check-doc-counts.mjs                         12 test(s) red
+CAUGHT      check-l4-status.mjs                          14 test(s) red
+CAUGHT      check-no-absolute-paths.mjs                  28 test(s) red
+CAUGHT      check-no-mock.mjs                             9 test(s) red
+CAUGHT      check-no-secrets.mjs                          6 test(s) red
+CAUGHT      check-no-unsafe-shell.mjs                    27 test(s) red
+CAUGHT      check-no-vendored-data.mjs                   10 test(s) red
+CAUGHT      check-official-registry.mjs                  17 test(s) red
+CAUGHT      check-official.mjs                           51 test(s) red
+CAUGHT      check-readme-sample.mjs                      10 test(s) red
+CAUGHT      check-user-guide.mjs                         16 test(s) red
+
+gates: 13  caught: 13  survived: 0  no-test: 0
+```
+
+**The property already held, for every gate.** What "3 of 8" counted was a
+**mechanism**: the gates carrying a dedicated "runs clean here, fails on a
+synthesised violation" block in `gates-are-testable.test.ts`. The criterion is
+broader than that block, and measured as written it was satisfied thirteen times
+over. So the row reported the instrument rather than the property, and the cost of
+the misreading was real: an item believed to be three-eighths done was in fact
+done, and the rounds spent on it were spent on the wrong thing.
+
+This is the sixth instance in this campaign of a carried gap dissolving under
+measurement -- findings 107, 108, 109, and the P0-3 and P0-4 rows before it -- and
+the first where the misleading number was a *completion count*. The common cause is
+worth stating plainly: **a status written from the mechanism drifts away from the
+property it was meant to summarise, and nothing re-reads it.**
+
+**Why it is now a mechanism rather than a one-off audit.**
+`scripts/verify-gates-are-testable.mjs` performs the hollowing, takes its subjects
+from the directory rather than from a list, fails on any `SURVIVED` or `NO-TEST`
+gate, refuses a run whose subject list came back empty, and verifies its own
+restores by reading each gate back and comparing. It is named by
+`verify:gates-are-testable` in `package.json` **and** by its own step in `ci.yml`,
+because finding 148 recorded at a scale of three what "green by hand and named by
+nothing" costs.
+
+**What it does not establish.** It hollows the **whole gate**. A narrower edit --
+gutting one rule inside a gate while the rest still works -- is not caught by it,
+and finding 46 is exactly that case: the enumeration inside `check-official.mjs`
+was deleted while cases were diverted past the count, and the file stayed green.
+That rule-level property has its own mechanism: `golden-master/gate-sites.json`
+enumerates every failure exit with a pointer to the test that proves it, checked by
+`gate-sites-are-proven.test.ts`. This finding added three sites to it (45 now), each
+annotated `proved` and pointed at the new file. The two are complements: one says a
+gate cannot be emptied unnoticed, the other says each of its failure exits is proved.
+
+**Tests, and two of them are the audit's own verdict logic.** The new file does not
+run the audit against the real tree -- that would put a hollowed gate under
+concurrent readers, which is the hazard finding 145 was about, and would nest
+vitest inside vitest. It runs it against a **sandbox**: a throwaway tree with one
+gate, one test naming it, and a stub `npx` that decides what the audit observes.
+Two controls follow from that, and each is a real branch of the audit:
+
+| control | stub | asserted |
+| --- | --- | --- |
+| a gate survives | exits 0, prints nothing | rc=1, `SURVIVED`, names the gate, `restored byte-for-byte: 1 of 1` |
+| a gate is caught | prints a failure line, exits 1 | rc=0, `gates: 1  caught: 1  survived: 0  no-test: 0` |
+| no gate exists | either | rc=1, `no check-*.mjs gate was found` -- the vacuity guard, proved rather than read |
+| the restore fails | swaps the gate for a symlink to `/dev/null` | rc=1, `could not restore` -- the write is discarded, so the read-back comparison must fail |
+
+The fourth is a deterministic filesystem property rather than a mock, and it exists
+because "a battery that cannot put its subject back reports success" is the defect
+finding 142 repaired in three other batteries.
+
+**One of my own detectors was wrong, again.** The first version of the scope test
+asserted that no gate filename appeared in the audit at all, and it failed on
+`check-official.mjs` -- which the audit *mentions in prose*, in the paragraph
+explaining what finding 46 found. A name-absence check cannot tell a mention from a
+use, which this repository has now recorded three times in its own scanners
+(findings 127, 133, and the `cwd: sandbox` substring in 140). The assertion is now
+about the derivation -- the subjects come from `gates()`, which reads the directory
+-- and the wrong version is recorded in the test's own comment rather than deleted.
+
+**Acceptance.** Full suite **3314 passed / 0 failed** across 127 files; coverage
+**99.96 / 99.91 / 100 / 99.96**; the audit green against the shipped tree (13
+caught, 13 restored byte-for-byte); `lint`, `typecheck`, `docs:check:cold`,
+`docs:counts:check`, `examples:check`, `examples:bundle:check` and `official:check`
+all rc=0; `gate-sites.json` re-derived to 45 sites, all `proved`, `--check` green.
+Counts retaken: core 127/3314, cli 3/173, repo 130/3487.

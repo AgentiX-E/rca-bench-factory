@@ -142,6 +142,20 @@ jobs:
       - name: Type-miss probe battery (no survivors, no inert, no blind mutations)
         run: python3 scripts/injection/type-miss-probe.py
 
+      # Every gate, emptied and watched.
+      #
+      # `docs/progress.md`'s third clause is that a gate with no test is neither a
+      # threshold nor an enumeration, and the tracking row for this item read
+      # "partially complete (3 of 8 gates)" for several rounds. That number counted
+      # a mechanism -- the gates carrying a dedicated block in
+      # `gates-are-testable.test.ts` -- while the criterion is broader. Measured as
+      # written, by inserting `process.exit(0)` into each gate and running the tests
+      # that name it, all of them are caught. This step is what keeps that true: a
+      # gate that can be emptied without a test noticing, or that no test names at
+      # all, fails the build.
+      - name: Every gate can be shown to fail
+        run: node scripts/verify-gates-are-testable.mjs
+
       # The three batteries below were written, repaired, and never invoked. Each
       # has carried a restore verdict since finding 142, and each was green when
       # run by hand -- which is exactly why nobody noticed that no job, and no

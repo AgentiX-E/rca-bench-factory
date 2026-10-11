@@ -1,6 +1,6 @@
 {
   "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
-  "scanned": 35,
+  "scanned": 36,
   "excluded": {
     "zero": 6,
     "numeric_other": 1,
@@ -324,6 +324,30 @@
       "diagnostic": "verify: the manifest says ${manifest.archiveFileCount} files but the extraction holds ${onDisk}",
       "status": "proved",
       "provedBy": "packages/core/test/pack-verify-script.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 109,
+      "condition": "subjects.length === 0",
+      "diagnostic": "check-*.mjs",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 137,
+      "condition": "back !== original",
+      "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 158,
+      "condition": "survived.length > 0 || unvisited.length > 0",
+      "diagnostic": "${gate} is named by no test at all",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-scorer-stability.mjs",
