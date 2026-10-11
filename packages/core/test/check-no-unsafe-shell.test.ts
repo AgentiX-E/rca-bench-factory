@@ -666,6 +666,156 @@ describe('scripts · check-no-unsafe-shell.mjs', () => {
       expectFailedForOwnReason(run(bad));
     });
 
+    it('reads a block-scalar `run:` body, which is the shape most steps use', () => {
+      // The defect this test was written for: a `run:` body written as a block
+      // scalar was not scanned at all. The single-line form above was caught and
+      // the block form of the *same command* returned 0, so the gate's own claim
+      // -- "the workflow files are scanned because `run:` bodies are shell" --
+      // held for the minority shape and failed for the majority one.
+      //
+      // Measured before the fix, in the shipped tree: 20 of the 58 `run:` bodies
+      // in `.github/workflows/` are block scalars, and a block scalar carrying
+      // the defect scanned clean.
+      counter += 1;
+      const dir = join(scratch, `wfblock-${counter}`);
+      mkdirSync(dir, { recursive: true });
+
+      const bad = join(dir, 'block.yml');
+      writeFileSync(
+        bad,
+        [
+          'jobs:',
+          '  a:',
+          '    steps:',
+          '      - name: carries the defect',
+          '        run: |',
+          '          node -e "console.log(${x})"',
+          '',
+        ].join('\n'),
+      );
+      const outcome = run(bad);
+      expectFailedForOwnReason(outcome);
+      // The line number has to be the line inside the body. Pointing at the
+      // `run: |` line would name a line that contains nothing to fix, and a
+      // diagnostic that names the wrong line is how the previous fix in this
+      // file came to be believed while being wrong.
+      expect(outcome.stderr, 'the report must address the body line, not the `run:` line').toContain(
+        'block.yml:6:',
+      );
+    });
+
+    it('reads a folded `run: >` body and a `run: |-` body too', () => {
+      // The three chomping and folding spellings are all `run:` bodies; a fix
+      // that recognised only `|` would leave the other two exactly as they were.
+      counter += 1;
+      const dir = join(scratch, `wffold-${counter}`);
+      mkdirSync(dir, { recursive: true });
+
+      for (const [name, marker] of [
+        ['folded.yml', '>'],
+        ['strip.yml', '|-'],
+      ] as const) {
+        const file = join(dir, name);
+        writeFileSync(
+          file,
+          [
+            'jobs:',
+            '  a:',
+            '    steps:',
+            '      - run: ' + marker,
+            '          node -e "console.log(${x})"',
+            '',
+          ].join('\n'),
+        );
+        expectFailedForOwnReason(run(file));
+      }
+    });
+
+    it('still passes a block-scalar body whose only `$` is a github expression', () => {
+      // The false positive that would get the gate switched off. A block body is
+      // where `${{ }}` is most likely to appear, so the fix is exactly the change
+      // most likely to introduce it.
+      counter += 1;
+      const dir = join(scratch, `wfexpr-${counter}`);
+      mkdirSync(dir, { recursive: true });
+      const good = join(dir, 'expressions.yml');
+      writeFileSync(
+        good,
+        [
+          'jobs:',
+          '  a:',
+          '    steps:',
+          '      - run: |',
+          '          echo "sha is ${{ github.sha }}"',
+          '          echo "ref is ${{ github.ref_name }}"',
+          '',
+        ].join('\n'),
+      );
+      const outcome = run(good);
+      expect(outcome.status, `expected a pass, got\n${outcome.stderr}`).toBe(0);
+    });
+
+    it('does not fall off the end of a file whose block body is empty', () => {
+      // A `run:` whose body the author has not written yet is valid YAML and
+      // occurs while editing. Reading past the end would crash, and a crash
+      // exits 1 -- indistinguishable, to a caller checking only the status, from
+      // the gate having found something.
+      counter += 1;
+      const dir = join(scratch, `wfempty-${counter}`);
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, 'empty.yml');
+      writeFileSync(file, ['jobs:', '  a:', '    steps:', '      - run: |', ''].join('\n'));
+      const outcome = run(file);
+      expect(outcome.status, `expected a pass, got\n${outcome.stderr}`).toBe(0);
+      expect(outcome.stderr, 'a crash is not a verdict').not.toMatch(/^\s+at .*node:internal/m);
+    });
+
+    it('passes the repository\'s own workflows, so the body scan invents nothing', () => {
+      // The control for the whole change. Every workflow in this repository is
+      // clean by construction -- CI runs them -- so a body scan that reported
+      // one of them would be a false positive on real input, which is the bar a
+      // rule about the real tree has to clear.
+      const result = spawnSync(
+        process.execPath,
+        [SCRIPT, '--root', resolve(ROOT, '.github', 'workflows')],
+        { encoding: 'utf8', cwd: ROOT },
+      );
+      expect(result.status, `the shipped workflows must scan clean:\n${result.stderr ?? ''}`).toBe(0);
+    });
+
+    it('does not read an eval-looking flag on a non-interpreter as a nested interpreter', () => {
+      // Exposed by the block-body scan above, and wrong long before it: the rule
+      // fired on the *flag*, so `-c` was read as `node -c` whether or not any
+      // interpreter was named. `grep -c`, `cut -c`, `sort -c` and `tr -c` all
+      // take that flag and none of them interprets a string.
+      //
+      // The line where this fires in the shipped tree is in
+      // `.github/workflows/fault-extraction-accuracy.yml`, inside a `run: |`
+      // body, which is why nothing had ever reported it.
+      const nonInterpreters = [
+        'x=$(printf "%s" "$y" | grep -c . || true)',
+        'n=$(cut -c1-20 "$row" | wc -l)',
+        'sorted=$(sort -c "$file" && echo "$file")',
+      ];
+      for (const line of nonInterpreters) {
+        const outcome = runStdin(line);
+        expect(
+          outcome.status,
+          `a false positive on ordinary shell:\n  ${line}\n${outcome.stderr}`,
+        ).toBe(0);
+      }
+
+      // And the other half, so the fix cannot be "never report this rule": the
+      // same flag with a program that does interpret a string must still fail.
+      for (const line of [
+        'node -e "console.log(${x})"',
+        'python3 -c "print($x)"',
+        '/usr/bin/node --eval "console.log(${x})"',
+      ]) {
+        expectFailedForOwnReason(runStdin(line));
+      }
+    });
+
     it('ignores a file whose extension carries no shell', () => {
       counter += 1;
       const file = join(scratch, `notshell-${counter}.ts`);

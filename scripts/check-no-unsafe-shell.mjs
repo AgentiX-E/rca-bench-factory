@@ -95,6 +95,35 @@ const SHELLISH = /\.(sh|bash|zsh|yml|yaml)$/;
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.git', '.turbo', '__pycache__']);
 
+/**
+ * Is this `run:` value a block scalar rather than an inline command?
+ *
+ * `|` keeps newlines, `>` folds them, and `-`/`+` choose how the trailing
+ * newline is treated. All six spellings put the shell on the following lines.
+ *
+ * The body used to be skipped outright -- `if (body === '|' ...) return;` -- with
+ * a comment saying "the body follows", which is what the body was never read to
+ * find out. Measured on the shipped tree, 20 of the 58 `run:` bodies in
+ * `.github/workflows/` are block scalars, so the shape that was skipped is the
+ * one most steps use, and a block scalar carrying the defect scanned clean while
+ * the single-line form of the same command was caught.
+ */
+function isBlockScalar(body) {
+  return /^[|>][+-]?[ \t]*$/.test(body);
+}
+
+/**
+ * Remove GitHub's own `${{ ... }}` from a workflow line before checking it.
+ *
+ * These are expanded by the runner before any shell sees the text, so they are
+ * not shell constructs. Flagging them would make the gate wrong about its own
+ * subject, and a gate that is wrong about its subject gets switched off.
+ */
+function withoutGithubExpression(text) {
+  return text.replace(/\$\{\{[^}]*\}\}/g, '');
+}
+
+
 /** Set by `--stdin`; the label `--label` gives the report, and `false` otherwise. */
 let stdinMode = false;
 let stdinLabel = '<stdin>';
@@ -222,6 +251,47 @@ function walk(dir) {
  * disagree about a string, so the gate must not itself guess.
  */
 const NESTED_INTERPRETERS = new Set(['-e', '-c', '--eval', '--expr']);
+
+/**
+ * The programs those flags belong to, when they mean "interpret this string".
+ *
+ * ## Why the flag alone is not enough
+ *
+ * The rule used to fire on the *flag*: a line whose tokens contained `-c` was
+ * treated as naming a nested interpreter, and any `$` inside a double-quoted span
+ * on that line was reported. `-c` is also `grep -c`, `cut -c`, `sort -c` and
+ * `tr -c`, so the rule was wrong about its subject for every one of them.
+ *
+ * This was invisible until the block-scalar bodies were scanned, because the line
+ * where it fires in this tree --
+ *
+ *     .github/workflows/fault-extraction-accuracy.yml:295
+ *     miss_row_count=$(printf '%s' "$missed_rows" | grep -c . || true)
+ *
+ * -- sits inside a `run: |` body and had never been read. `grep -c .` counts
+ * lines; nothing is being interpreted, and the `$missed_rows` expansion is
+ * ordinary shell that the author intended.
+ *
+ * So the rule now requires both halves: a program that interprets a string, and
+ * the flag that tells it to. Names are compared on their basename, so
+ * `/usr/bin/node` and `python3.11` are recognised.
+ */
+const INTERPRETER_PROGRAMS = new Set([
+  'node', 'nodejs', 'deno', 'bun',
+  'python', 'python2', 'python3', 'pypy',
+  'ruby', 'perl', 'php', 'lua', 'tclsh', 'rscript', 'osascript',
+  'sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'pwsh', 'powershell',
+]);
+
+/** Is this token the name of a program that interprets a string argument? */
+function namesAnInterpreter(token) {
+  const bare = token.replace(/^["']|["']$/g, '');
+  const base = bare.split('/').pop() ?? bare;
+  // A version-suffixed spelling (`python3.11`, `php8.2`) still names the program.
+  const withoutVersion = base.replace(/[\d.]+$/, '') || base;
+  return INTERPRETER_PROGRAMS.has(base) || INTERPRETER_PROGRAMS.has(withoutVersion);
+}
+
 
 /**
  * A `${...}` whose body is not a parameter expansion, and is therefore the
@@ -474,10 +544,12 @@ function checkLine(file, lineNo, line) {
       });
     }
 
-    // The nested-interpreter rule. Only consulted when the line actually names
-    // one, so a plain shell line's expansions stay allowed.
+    // The nested-interpreter rule. Only consulted when the line names an
+    // interpreter *and* gives it a string to interpret, so a plain shell line's
+    // expansions stay allowed and `grep -c` is not mistaken for `node -c`.
     const toks = tokens(code);
-    const namesInterpreter = toks.some((t) => NESTED_INTERPRETERS.has(t));
+    const namesInterpreter =
+      toks.some((t) => NESTED_INTERPRETERS.has(t)) && toks.some((t) => namesAnInterpreter(t));
     if (!namesInterpreter) continue;
 
     // A `$` that survives into the nested program is a defect: the outer shell
@@ -534,24 +606,51 @@ for (const file of selected) {
   if (!SHELLISH.test(file)) continue;
   const isWorkflow = /\.(yml|yaml)$/.test(file);
   const lines = readFileSync(file, 'utf8').split('\n');
-  lines.forEach((line, i) => {
-    // Workflows are YAML: only `run:` bodies are shell. Scanning the whole file
-    // would flag `${{ ... }}` expressions, which are YAML's own and are not
-    // shell at all -- flagging them would make the gate wrong about its own
-    // subject and it would be switched off within a week.
-    if (isWorkflow) {
-      const m = line.match(/^\s*(?:- )?run:\s*(.*)$/);
-      if (m === null) return;
-      const body = m[1];
-      // A block scalar's first line is usually empty; the body follows.
-      if (body === '' || body === '|' || body === '>' || body === '|-' || body === '>-') return;
-      // `${{ }}` is GitHub's templating, expanded before any shell sees it.
-      const withoutGithubExpr = body.replace(/\$\{\{[^}]*\}\}/g, '');
-      checkLine(file, i + 1, withoutGithubExpr);
-      return;
+
+  if (!isWorkflow) {
+    lines.forEach((line, i) => checkLine(file, i + 1, line));
+    continue;
+  }
+
+  // Workflows are YAML: only `run:` bodies are shell. Scanning the whole file
+  // would flag `${{ ... }}` expressions, which are YAML's own and are not shell
+  // at all -- flagging them would make the gate wrong about its own subject and
+  // it would be switched off within a week.
+  //
+  // An index loop rather than `forEach`, because a block body occupies the lines
+  // after the `run:` key and has to be walked from here. Reading them in the
+  // outer loop instead would let a body line that itself looks like `run:` be
+  // treated as a key.
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const m = line.match(/^[ \t]*(?:-[ \t]+)?run:[ \t]*(.*)$/);
+    if (m === null) continue;
+    const body = m[1];
+
+    if (isBlockScalar(body)) {
+      // A block body is every following line indented past the `run:` key, up to
+      // the first line that is not. Blank lines are skipped rather than treated
+      // as the end, because a blank line inside a block belongs to it.
+      //
+      // The line numbers reported are the body's own. Naming the `run: |` line
+      // would point a reader at a line with nothing to fix in it, and a
+      // diagnostic that names the wrong line is how an earlier repair in this
+      // file came to be believed while being wrong.
+      const keyColumn = line.indexOf('run:');
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const inner = lines[j];
+        if (inner.trim() === '') continue;
+        const indent = inner.length - inner.replace(/^[ \t]+/, '').length;
+        if (indent <= keyColumn) break;
+        checkLine(file, j + 1, withoutGithubExpression(inner.replace(/^[ \t]+/, '')));
+      }
+      continue;
     }
-    checkLine(file, i + 1, line);
-  });
+
+    // An inline body that is empty checks nothing; there is no command yet.
+    if (body === '') continue;
+    checkLine(file, i + 1, withoutGithubExpression(body));
+  }
 }
 
 if (failures.length > 0) {

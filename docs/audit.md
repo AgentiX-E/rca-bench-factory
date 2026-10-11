@@ -14435,3 +14435,99 @@ CI                 ->  success
 This is recorded because it is the difference between "the suite passes here now"
 and "the cause was identified". A local green run after an intermittent failure is
 what the four earlier attempts at this had, and it was wrong each time.
+
+## Finding 146 — the gate read the workflow lines that were easiest to read, and reported OK about the rest
+
+`check-no-unsafe-shell.mjs` states its own scope in a comment beside the scan
+roots:
+
+> `.sh` files are scanned in full. The workflow files are scanned because `run:`
+> bodies are shell, and a `run: node -e "..."` is exactly the defect.
+
+Only the first half of that was true. A `run:` value written as a **block scalar**
+was skipped outright:
+
+```js
+const body = m[1];
+// A block scalar's first line is usually empty; the body follows.
+if (body === '' || body === '|' || body === '>' || body === '|-' || body === '>-') return;
+```
+
+The comment says "the body follows" -- and then the body is not read. Measured on
+the shipped tree, **20 of the 58 `run:` bodies in `.github/workflows/` are block
+scalars**, so the shape that was skipped is the shape most steps use.
+
+The two forms of one command, side by side:
+
+| written as | verdict before the fix |
+| --- | --- |
+| `run: node -e "console.log(${x})"` | **caught** -- `nested-interpreter-expansion` |
+| `run: \|` then `node -e "console.log(${x})"` on the next line | **`OK`, rc=0** |
+
+Same command, same defect, different YAML spelling, opposite verdicts. This is the
+campaign's recurring shape again -- a published claim and no reader for the case
+that matters -- and it is the second time this file has been the site of it.
+
+### The fix exposed a second defect in the rule itself
+
+Scanning the bodies immediately turned the repository's own workflows red, on one
+line:
+
+```
+.github/workflows/fault-extraction-accuracy.yml:295:30
+miss_row_count=$(printf '%s' "$missed_rows" | grep -c . || true)
+```
+
+That line is not a defect. `grep -c .` counts lines; nothing is being interpreted,
+and `$missed_rows` is an ordinary expansion the author intended.
+
+The rule had been firing on the **flag** rather than on the program:
+
+```js
+const NESTED_INTERPRETERS = new Set(['-e', '-c', '--eval', '--expr']);
+const namesInterpreter = toks.some((t) => NESTED_INTERPRETERS.has(t));
+```
+
+`-c` is also `grep -c`, `cut -c`, `sort -c` and `tr -c`. None of those interprets
+a string, and every one of them was reported as though it did. The rule was wrong
+about its subject for the whole family, and nothing had ever said so because the
+one line in this tree where it fires sits inside a `run: |` body -- the shape the
+gate was not reading.
+
+So the rule now requires both halves: a program that interprets a string, and the
+flag that tells it to. Names are compared by basename after removing a version
+suffix, so `/usr/bin/node`, `python3` and `php8.2` are recognised.
+
+### What was added, and what holds it
+
+Six tests, written before the implementation:
+
+| test | before | after |
+| --- | --- | --- |
+| a block-scalar body carrying the defect is caught, and the line named is the body's line, not the `run:` line | **red** | green |
+| `run: >` and `run: |-` are read too, so the fix is not `|`-shaped | **red** | green |
+| a block body whose only `$` is `${{ }}` passes | green | green |
+| an empty block body does not fall off the end of the file | green | green |
+| the repository's own workflows still pass, so the body scan invents nothing | green | green |
+| `grep -c` / `cut -c` / `sort -c` pass, and `node -e` / `python3 -c` / `/usr/bin/node --eval` still fail | **red** | green |
+
+The three that were green before are the controls, and they are the reason this is
+a finding rather than a rewrite: a body scan that reported any of them would be a
+false positive on real input.
+
+Mutation evidence, both halves removed in turn:
+
+| mutation | result |
+| --- | --- |
+| block bodies not scanned again | **red**, 2 tests, both block-scalar ones, named |
+| eval flag alone is enough again | **red**, 5 tests, including the shipped-tree control |
+
+Restoring the file returned the suite to **47 passed**.
+
+### What this does not establish
+
+It does not establish that every workflow command in this repository is safe. It
+establishes that the bodies are now read by the rule the gate already had, and
+that a body carrying that defect is caught. The rule's subject is one class --
+`$`-constructs a shell expands before the program it names starts -- and a body
+that is unsafe in some other way is outside it, as it always was for `.sh` files.
