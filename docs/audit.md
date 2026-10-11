@@ -14828,3 +14828,77 @@ dramatic, actionable, and false.
 Full suite **3306 passed / 0 failed** across 126 files; coverage
 **99.96 / 99.91 / 100 / 99.96**; nine of nine mutations caught; the three wired
 batteries green end to end; `py_compile` clean on all three.
+
+---
+
+## Finding 149 — the push that does not finish, and why every "no output" report was true
+
+**What was seen.** Four times in this campaign the operator reported that a turn
+ended with no output, and each time the answer given was about presentation. It
+was not. The work was being done; the **result was not reaching the remote**, and
+the reason was the push itself.
+
+**The measurement.** `push_commit.py` uploads every tracked blob in the revision.
+This repository has 293-295 of them, and the run takes about **twelve minutes**.
+Two facts compose into the failure:
+
+- a single foreground command is capped at ten minutes, so the push cannot be run
+  to completion in the foreground;
+- background work does not survive the end of a turn, so a push started in the
+  background is **killed** the moment the turn ends.
+
+Measured directly: the push launched for `5ed9567` reported "still running" at
+every check across several minutes, and when the process table was read again
+there was **no `push_commit.py` process at all** and the remote ref was still the
+previous commit. The earlier check had been satisfied by `pgrep` matching *its own
+command line*, which is the same class of error as a guard whose subject is a
+substring of the file.
+
+So the sequence that produced all four reports was: commit succeeds, push is
+launched, the turn ends, the push is killed, nothing is printed -- and the remote
+never moved. A push that is killed mid-way and a push that succeeded are
+indistinguishable unless the remote ref is read, and reading it is what finally
+settled it.
+
+**The repair, and why it is a repair rather than a workaround.** The full upload is
+redundant. The remote already holds a tree containing every file the previous push
+sent, and the API deduplicates by content hash, so only the blobs whose SHA
+differs need to be created and the new tree can be expressed as *the remote tree
+plus the differences* (`base_tree`). `push_incremental.py` does that:
+
+```
+remote tip bc38583d9
+local 5ed9567 -- 295 file(s), 11 changed, 0 removed
+tree 5c54a5785 (11 entries)
+commit 5ed956747
+refs/heads/master: bc38583d9 -> 5ed956747
+VERIFIED
+```
+
+**39 seconds**, 11 blobs instead of 295, and the rebuilt commit's SHA is
+**byte-identical to the local one** -- because the remote tip was the local parent
+and the tree was reproduced exactly, so the reconstruction is the commit that was
+tested. Deletions are sent as `sha: null` entries and take their mode from the
+entry being removed, since an executable removed as `100644` is a different
+object.
+
+**What this is an instance of.** The same shape as everything else in this audit:
+a step that reports success while doing nothing. The difference is that this one
+was in the process rather than the product, and it made four correct findings look
+like four missing ones. The generalisable rule is the one already applied to every
+gate here -- **read the state, not the report**. For a push that means
+`GET /git/ref/heads/<branch>` compared against the local SHA (`push_incremental.py`
+ends by printing `VERIFIED` only when they are equal), and never the exit status of
+the upload.
+
+**Verified end to end.** The commit this pushed, `5ed9567`, ran green on CI with
+all three pre-registered criteria met:
+
+| criterion, stated before the run | result |
+| --- | --- |
+| the battery artefact's REDUNDANT row reads `tests_run: 21` where it read `0` | `21`, basis `summary`, diagnosis `tests_passed` |
+| the four rows of the scorer-stability battery stop being identical | `2/14`, `2/14`, `1/15`, and `no summary in its output` -- identical to the local run |
+| the three newly wired batteries appear and pass | all three steps success; `12 caught`, `5 caught`, negative control `0 29 OK` |
+
+Both workflows -- `CI` including the cold-tree job, and `Anchor round trip` --
+completed `success`.
