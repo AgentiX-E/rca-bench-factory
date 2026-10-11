@@ -327,7 +327,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 109,
+      "line": 191,
       "condition": "subjects.length === 0",
       "diagnostic": "check-*.mjs",
       "status": "proved",
@@ -335,7 +335,14 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 137,
+      "line": 258,
+      "diagnostic": "verify-gates-are-testable: repaired ${entry.gate}, left hollowed by a run that was killed",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 296,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -343,9 +350,9 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 158,
-      "condition": "survived.length > 0 || unvisited.length > 0",
-      "diagnostic": "${gate} is named by no test at all",
+      "line": 331,
+      "condition": "failed > 0",
+      "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },

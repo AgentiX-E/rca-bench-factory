@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -138,6 +138,117 @@ describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () 
     expect(outcome.stdout.trim()).toBe('');
   });
 
+  it('reads a failure the runner coloured, which is the only shape CI produces', () => {
+    // **The defect this file was written after.** The audit looked for a line whose
+    // first non-space character is `×`; it passed here and on CI reported
+    // `caught: 0, survived: 13`, because a runner colourises and the line is
+    // `\x1b[31m×\x1b[39m …`. That is the same defect class the audit exists to
+    // find, in the audit, and the fourth time this campaign has recorded it.
+    //
+    // The escapes below are written as printf octal rather than as literal bytes so
+    // the stub is readable; what matters is that an escape precedes the marker.
+    const outcome = audit(sandbox({ body: "printf '\\033[31m\\303\\227\\033[39m void\\n'", status: 1 }));
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('CAUGHT');
+    expect(outcome.stdout).toContain('gates: 1  caught: 1  survived: 0  no-test: 0  unattributed: 0');
+  });
+
+  it('refuses to credit a failure that names no failing test', () => {
+    // The other half of reading the verdict honestly. `npx vitest run <files>`
+    // exits non-zero when a test fails **and** when there was nothing to run -- a
+    // suite that never collected, a path that does not exist, a syntax error
+    // introduced by the hollowing itself. Crediting those as CAUGHT would be
+    // reading a crash as a proof, so the state is named rather than assumed and
+    // the run fails: an unattributable failure cannot be credited to the gate.
+    const outcome = audit(sandbox({ body: "printf 'No test files found\\n'", status: 1 }));
+    expect(outcome.status).toBe(1);
+    expect(outcome.stdout).toContain('UNATTRIBUTED');
+    expect(outcome.stderr).toContain('without naming a failing test');
+  });
+
+  it('refuses to credit a mutation it could not make parse', () => {
+    // The defect the first version actually had, and it was not theoretical.
+    //
+    // The hollowing inserted its line after the last line beginning with `import`,
+    // which for `check-official.mjs` is the opening brace of a multi-line import.
+    // The mutated gate was a **syntax error**, its tests failed for that reason,
+    // and the row read CAUGHT with 51 failing tests -- a crash credited as proof
+    // that the gate's tests notice its removal.
+    //
+    // So a mutation is parsed before it is trusted, and one that does not parse is
+    // reported, not credited. The sandbox gate below is invalid on its own, which
+    // is the simplest way to be sure the branch is reachable; the bytes must also
+    // be left exactly as they were, because there is no reason to write a mutation
+    // that will not be run.
+    const tree = sandbox({ body: 'true', status: 0 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const invalid = 'process.exit(0\n';
+    writeFileSync(gate, invalid);
+
+    const outcome = audit(tree);
+    expect(outcome.status).toBe(1);
+    expect(outcome.stdout).toContain('UNPARSABLE');
+    expect(outcome.stderr).toContain('could not be hollowed into valid JavaScript');
+    expect(readFileSync(gate, 'utf8')).toBe(invalid);
+  });
+
+  it('repairs a gate an earlier run was killed while holding', () => {
+    // **Measured, not imagined.** A run was killed while it held
+    // `scripts/check-official.mjs` hollowed, and the next `git status` showed that
+    // gate modified in the working tree. Every step after that would have read a
+    // gate with its verdict removed as the shipped gate -- the failure finding 142
+    // repaired in three batteries and 148 in the ones nothing invoked.
+    //
+    // The first repair was a signal handler and it does not cover the case: during
+    // `spawnSync` the event loop is blocked, so a handler cannot run until the
+    // child exits, and that is exactly where the kill arrived. SIGKILL cannot be
+    // handled at all. So the repair is a journal written before the mutation and
+    // consumed by the next run, which covers every way a run can end.
+    //
+    // The journal is laid down here by hand and the gate is left hollowed, so the
+    // test asserts the repair itself rather than a signal's timing.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    writeFileSync(journal, JSON.stringify({ path: gate, original, gate: 'check-throwaway.mjs' }));
+    writeFileSync(gate, 'process.exit(0);\n');
+
+    const outcome = audit(tree);
+    expect(readFileSync(gate, 'utf8'), 'the hollowed gate was measured instead of repaired').toBe(original);
+    expect(existsSync(journal), 'the journal was left behind').toBe(false);
+    expect(outcome.stderr).toContain('repaired check-throwaway.mjs');
+    // And the run then proceeded normally, so the repair is a sweep rather than a
+    // reason to stop.
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('CAUGHT');
+  });
+
+  it('fails rather than continuing when the journal cannot put the gate back', () => {
+    // The repair is a sweep, and a sweep that cannot restore has to stop. Continuing
+    // would measure a gate it knows is not the shipped one, which is the reading
+    // the journal exists to prevent -- so the failure is loud and the run ends.
+    //
+    // Proved by making the restore a no-op: the gate is a symlink to `/dev/null`, so
+    // the repair's write is discarded and the read-back cannot match. The same
+    // filesystem property the in-run restore test uses, applied one step earlier.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+    rmSync(gate);
+    symlinkSync('/dev/null', gate);
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    writeFileSync(journal, JSON.stringify({ path: gate, original, gate: 'check-throwaway.mjs' }));
+
+    const outcome = audit(tree);
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toContain('could not repair check-throwaway.mjs from the journal');
+    // And it did not go on to measure anything.
+    expect(outcome.stdout).not.toContain('CAUGHT');
+  });
+
   it('fails when it cannot put a gate back, rather than reporting success', () => {
     // The restore is verified by reading the file back and comparing, because a
     // battery that leaves a tracked file mutated corrupts every later step. The
@@ -175,7 +286,7 @@ describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () 
     const outcome = audit(sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 }));
     expect(outcome.status).toBe(0);
     expect(outcome.stdout).toContain('CAUGHT');
-    expect(outcome.stdout).toContain('gates: 1  caught: 1  survived: 0  no-test: 0');
+    expect(outcome.stdout).toContain('gates: 1  caught: 1  survived: 0  no-test: 0  unattributed: 0');
     expect(outcome.stdout).toContain('OK (1 gate(s)');
   });
 

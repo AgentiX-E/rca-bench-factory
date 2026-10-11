@@ -15088,3 +15088,138 @@ caught, 13 restored byte-for-byte); `lint`, `typecheck`, `docs:check:cold`,
 `docs:counts:check`, `examples:check`, `examples:bundle:check` and `official:check`
 all rc=0; `gate-sites.json` re-derived to 45 sites, all `proved`, `--check` green.
 Counts retaken: core 127/3314, cli 3/173, repo 130/3487.
+
+---
+
+## Finding 152 — three defects in the audit, each found by its behaviour rather than by reading
+
+`scripts/verify-gates-are-testable.mjs` was written under finding 151 to hollow
+every gate and fail if one survives. It passed here on the first run and reported
+`caught: 0, survived: 13` on CI. What followed was three distinct defects, and none
+of them was visible in the source.
+
+### The first: the audit had the defect it audits
+
+```
+gates: 13  caught: 0  survived: 13  no-test: 0
+```
+
+Every gate reported as unguarded, on the runner only. The cause was the detector:
+it looked for a line whose first non-space character is `×`, and a runner
+colourises, so the line is `\x1b[31m×\x1b[39m …` and begins with an escape. That is
+the same defect findings 147 and 148 repaired twice each in the readers of vitest's
+summary -- **in the audit, written by the same author, in the same session, after
+reasoning about it at length.** It was caught because a SURVIVED gate fails the
+run; the script's failure mode is loud by construction, which is the only reason
+the divergence surfaced at all.
+
+The repair is not only `stripAnsi`. Reading the verdict from the exit status alone
+would be worse: `npx vitest run <files>` exits non-zero when a test fails **and**
+when there was nothing to run -- a suite that never collected, a path that does not
+exist, a syntax error. Crediting those as CAUGHT is reading a crash as a proof, so
+the status must be non-zero **and** the output must name a failing test, and a run
+that fails without naming one is its own state (`UNATTRIBUTED`) that fails the
+audit.
+
+### The second: the hollowing made one gate a syntax error, and its crash was credited
+
+The mutation was inserted after the last line beginning with `import`. For
+`check-official.mjs` that line is the **opening brace of a multi-line import**:
+
+```
+import {
+
+process.exit(0);
+  exportForScoreTarget,
+```
+
+So the mutated gate did not parse, its tests failed for that reason, and the row
+read `CAUGHT … 51 test(s) red` -- a syntax error credited as proof that the gate's
+tests notice its removal. The over-claim was invisible locally because a crash and
+a caught mutation produce the same evidence, which is exactly the shape this audit
+exists to find.
+
+The repair has two halves, because either alone is insufficient. The mutation is
+now placed as the **first statement** (skipping a shebang), which ESM hoisting makes
+equivalent and which cannot break the grammar. And the mutated source is **parsed
+before it is trusted**: a candidate that does not parse is reported as `UNPARSABLE`,
+never written, and fails the run.
+
+### The third: it does not put the file back when it is killed
+
+A run of the audit was killed by an ending turn while it held
+`scripts/check-official.mjs` hollowed, and the next `git status` showed that gate
+modified in the working tree:
+
+```
+@@ -51,6 +51,8 @@ import { dirname, join, resolve } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+
+ import {
++
++process.exit(0);
+   exportForScoreTarget,
+```
+
+Every step after that would have read a gate with its verdict removed as the
+shipped gate -- the failure finding 142 repaired in three batteries and finding 148
+in the ones nothing invoked, committed by the script that exists to find it.
+
+The first repair was a `SIGINT`/`SIGTERM`/`SIGHUP` handler and **it does not cover
+the case that was observed**. During `spawnSync` the event loop is blocked, so a
+handler registered with `process.on` cannot run until the child exits, and that is
+precisely where the kill arrived; a test that asserted the handler with a 5-second
+timeout failed, which is what prompted the check. A `SIGKILL` cannot be handled by
+any process at all.
+
+So the restore is not attempted at kill time. The bytes are journalled to
+`node_modules/.cache/verify-gates-are-testable.json` **before** the mutation, and
+the next run repairs from it before measuring anything -- a sweep that covers an
+exception, a signal, a blocked event loop and `SIGKILL` alike, because all four
+leave the same journal. A journal that cannot be read, or a repair that does not
+land, is reported and fails the run rather than continuing: measuring a gate the
+script knows is not the shipped one is the reading the journal exists to prevent.
+
+### Tests
+
+Eleven, and each one is a branch of the audit or a property of its scope:
+
+| assertion | why it is there |
+| --- | --- |
+| subjects come from `gates()`, which reads the directory | a list that must be updated cannot see what it is missing |
+| an empty subject list is refused | the vacuity guard, proved rather than read |
+| a failure the runner coloured is read | **the CI failure**, reproduced locally with `FORCE_COLOR=1` |
+| a failure naming no failing test is refused | a crash must not be credited as proof |
+| a mutation that cannot parse is refused | **the over-claim**, and the gate is left unwritten |
+| a journalled gate is repaired before measuring | **the leak**, asserted without a signal's timing |
+| an unreparable journal fails the run | the sweep must not continue on a gate it cannot trust |
+| a restore that does not land is reported | the in-run equivalent, via a symlink to `/dev/null` |
+| a survivor fails the run | the verdict discriminates |
+| a caught gate passes it | the other direction, so "fails on everything" cannot satisfy the first |
+| both a package script and a workflow name it | finding 148's defect at a scale of three |
+
+### Verification
+
+Under the runner's condition, reproduced locally with `FORCE_COLOR=1`:
+
+```
+gates: 13  caught: 13  survived: 0  no-test: 0  unattributed: 0  unparsable: 0
+restored byte-for-byte: 13 of 13
+verify-gates-are-testable: OK (13 gate(s), each caught by at least one test)
+```
+
+with `git status` showing no gate left modified and the journal removed. Full suite
+**3319 passed / 0 failed** across 127 files; coverage **99.96 / 99.91 / 100 /
+99.96**; `gate-sites.json` re-derived to 46 sites, all `proved`; the seven gates
+`lint`, `typecheck`, `docs:check:cold`, `docs:counts:check`, `examples:check`,
+`examples:bundle:check` and `official:check` all rc=0. Counts retaken: core
+127/3319, cli 3/173, repo 130/3492.
+
+### What this says about the method
+
+Three defects in a script whose entire purpose is to find this class of defect,
+written in one sitting, after this campaign had already recorded the class four
+times. Reading the source would have found none of them; the second and third were
+found by *running* it -- once on a runner, once by being killed. The generalisable
+rule is the one this audit applies to everything else: **a mechanism is only known
+to work when something outside it has tried to make it fail.**
