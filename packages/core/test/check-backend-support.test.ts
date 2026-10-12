@@ -182,6 +182,26 @@ describe('check-backend-support', () => {
     expect(`${r.stdout}${r.stderr}`).toContain('snapshot current');
   });
 
+  // The battery names, for each injection, the test it expects to go red. Those
+  // names are strings in a Python table, and renaming a test leaves them stale
+  // *silently*: the battery still runs, and a stale name turns a CAUGHT into a
+  // MISATTRIBUTED. It is not hypothetical. On the runner in this round the name
+  // `fails on a query error carried inside an HTTP 200` had been reworded while
+  // fixing a comment, the battery was pushed without being re-run, and CI reported
+  // `14 caught, 0 survived, 0 inert, 1 misattributed` while the local run was green
+  // because it predated the rename. `--probe` is a negative control on the
+  // comparator rather than on the data: it also requires a name that cannot exist
+  // to be reported missing, which is what makes the check discriminating.
+  it('names, for every injection, a test that exists in the file it runs', () => {
+    const r = spawnSync('python3', [resolve(ROOT, 'scripts', 'injection', 'backend-support.py'), '--verify-expectations', '--probe'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    expect(`${r.stdout}${r.stderr}`).toContain('backend-support: OK');
+    expect(`${r.stdout}${r.stderr}`).toContain('with the comparator probed');
+    expect(r.status).toBe(0);
+  });
+
   it('declares both scripts it spawns, because gate-sites rule 7 reconciles them', () => {
     expect(DRIVES).toEqual(['scripts/check-backend-support.mjs', 'scripts/derive-backend-support.mjs']);
   });

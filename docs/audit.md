@@ -15215,6 +15215,44 @@ with `git status` showing no gate left modified and the journal removed. Full su
 `examples:bundle:check` and `official:check` all rc=0. Counts retaken: core
 127/3319, cli 3/173, repo 130/3492.
 
+### The runner caught a stale expectation, which is why the battery has a reconciliation mode
+
+The first CI run of this round reported, from the runner:
+
+```
+backend-support: 14 caught, 0 survived, 0 inert, 1 misattributed, 15 injection(s)
+```
+
+One injection made the test file red, but **not on the test it named**. The cause
+was mine: the test `fails on a query error carried inside an HTTP 200` had been
+reworded to `... carried in the body of an HTTP 200` while correcting the comment
+that the real Prometheus disproved, and the battery was pushed without being re-run.
+The local verdict had been 15/15 because it *predated* the rename.
+
+A stale expectation is silent in exactly one direction: the battery reports
+`MISATTRIBUTED` rather than `CAUGHT`, and a reader who only looks at the count sees
+"one short". So the battery now has a mode that reconciles its own expectations
+against the files they name:
+
+```
+python3 scripts/injection/backend-support.py --verify-expectations --probe
+backend-support: OK (15 expectation(s), with the comparator probed)
+```
+
+`--probe` is a negative control on the *comparator* rather than on the data: it also
+requires a name that cannot exist to be reported missing, so the check is shown to
+discriminate rather than merely to be quiet. `check-backend-support.test.ts` drives
+it, so the next rename fails locally instead of on the runner.
+
+Writing it found a second case immediately: the `NaN`/`+Inf`/`-Inf` cases were one
+`it.each`, whose titles exist only at run time, so no source string could be
+reconciled against them. They are now three named tests, which makes the
+expectation exact and names the failing value in the report.
+
+**Residual**: the reconciliation covers *this* battery. The other twelve write
+their expectations in their own table formats, and a general version would have to
+read each format -- worth doing, not done here.
+
 ### What this says about the method
 
 Three defects in a script whose entire purpose is to find this class of defect,
@@ -15525,13 +15563,13 @@ as having been refused by it.
 | --- | --- |
 | `prometheus.test.ts` | **35 tests** over real HTTP, including a socket that never answers and a refused connection |
 | `backend-support.test.ts` | **10 tests**; every `implemented` backend driven over a socket |
-| `check-backend-support.test.ts` | **13 tests**; both scripts driven against fixtures, including a deliberately corrupted snapshot |
+| `check-backend-support.test.ts` | **14 tests**; both scripts driven against fixtures, including a deliberately corrupted snapshot, plus the battery-expectation reconciliation below |
 | new battery | **15 caught / 0 survived / 0 inert** |
 | cold-tree measurement | `check-backend-support.mjs` exits 0 with `packages/core/dist` moved aside |
 | `docs:check` / `docs:check:cold` / `typecheck` / `lint` | clean; the guard is a member of both aggregates |
 | `gate-sites.json` | 48 sites, all `proved`; the two new sites authored by hand |
 | `scripts-are-classified` / `export-surface-enumerated` / `cold-tree-job` | each failed on the two new modules and the new guard until the register, the module list and the cold membership were updated -- which is those three guards doing their job |
-| core test suite | **130 files, 3398 tests passed**; `cli` 3 files, 173 tests |
+| core test suite | **130 files, 3399 tests passed**; `cli` 3 files, 173 tests |
 | coverage | **99.96 / 99.91 / 100 / 99.96**; `prometheus.ts` and `backends.ts` each **100 / 100 / 100 / 100** |
 
 ### What is not claimed

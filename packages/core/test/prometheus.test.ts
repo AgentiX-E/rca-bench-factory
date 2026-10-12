@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, describe, expect, it } from 'vitest';
 import { pullPrometheusMetrics } from '../src/ingest/prometheus.js';
+import type { PrometheusPullResult } from '../src/ingest/prometheus.js';
 import type { TelemetrySignal } from '../src/ir/types.js';
 
 /**
@@ -213,11 +214,18 @@ describe('pullPrometheusMetrics', () => {
   // number for them. A reader that only accepts numbers returns a signal whose
   // value is `undefined`, which is how finding 119's round trip reported 122
   // cases as a bare `NaN` that no reader could attribute to a layer.
-  it.each([
-    ['NaN', 'NaN'],
-    ['+Inf', '+Inf'],
-    ['-Inf', '-Inf'],
-  ])('quarantines the non-finite sample value %s instead of emitting it', async (_label, raw) => {
+  /**
+   * Three named cases rather than one `it.each`.
+   *
+   * The generator produced the same three assertions, but its titles only exist at
+   * run time, and `scripts/injection/backend-support.py` names the test it expects
+   * to fail as a *source* string. `--verify-expectations` compared the two and
+   * reported the `NaN` case stale the moment it was written, which is correct: a
+   * name the source does not contain cannot be reconciled. Three literals make the
+   * expectation check exact, and they also name the failing value in the report
+   * instead of leaving the reader to work out which row of a table it was.
+   */
+  async function pullNonFinite(raw: string): Promise<PrometheusPullResult> {
     const stub = await serve(() => ({
       status: 200,
       body: envelope({
@@ -225,10 +233,27 @@ describe('pullPrometheusMetrics', () => {
         result: [{ metric: { __name__: 'up', service: 'checkout' }, values: [[1_700_000_000, raw]] }],
       }),
     }));
-    const result = await pullPrometheusMetrics({ baseUrl: stub.baseUrl, query: 'up', ...WINDOW });
+    return pullPrometheusMetrics({ baseUrl: stub.baseUrl, query: 'up', ...WINDOW });
+  }
+
+  it('quarantines the non-finite sample value NaN instead of emitting it', async () => {
+    const result = await pullNonFinite('NaN');
     if (!result.ok) throw new Error('expected success');
     expect(result.signals).toEqual([]);
-    expect(result.quarantine).toHaveLength(1);
+    expect(result.quarantine[0]?.reason).toContain('finite');
+  });
+
+  it('quarantines the non-finite sample value +Inf instead of emitting it', async () => {
+    const result = await pullNonFinite('+Inf');
+    if (!result.ok) throw new Error('expected success');
+    expect(result.signals).toEqual([]);
+    expect(result.quarantine[0]?.reason).toContain('finite');
+  });
+
+  it('quarantines the non-finite sample value -Inf instead of emitting it', async () => {
+    const result = await pullNonFinite('-Inf');
+    if (!result.ok) throw new Error('expected success');
+    expect(result.signals).toEqual([]);
     expect(result.quarantine[0]?.reason).toContain('finite');
   });
 

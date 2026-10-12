@@ -203,7 +203,7 @@ MUTATIONS: list[tuple[str, str, str, str, str, str]] = [
         "  if (envelope['status'] !== 'success') {",
         "  if (false) {",
         PULLER_TEST,
-        "fails on a query error carried inside an HTTP 200",
+        "fails on a query error carried in the body of an HTTP 200",
     ),
     (
         "read a vector result as if it were a matrix",
@@ -250,6 +250,48 @@ MUTATIONS: list[tuple[str, str, str, str, str, str]] = [
 # Test files that must be restored as well: none of the subjects above live in
 # one, but a mutation whose anchor is missing must not leave a half-written file
 # behind, so every write is paired with a read-back below.
+
+
+def verify_expectations(probe: bool = False) -> int:
+    """Check that every injection names a test that exists in the file it runs.
+
+    ## Why this is a separate mode rather than a comment
+
+    Each entry's last field is the test that must go red, written as a string in
+    this table. Renaming a test leaves that string stale **silently**: the battery
+    still runs, and a stale name turns a CAUGHT into a MISATTRIBUTED. That is not
+    hypothetical -- it happened on the runner in this round. The test name
+    `fails on a query error carried inside an HTTP 200` was reworded while fixing a
+    comment, the battery was not re-run before pushing, and CI reported
+    `14 caught, 0 survived, 0 inert, 1 misattributed`. The local run had been green
+    because it predated the rename.
+
+    So the reconciliation is a mode, and a test drives it. `probe` is a negative
+    control on the *comparator* rather than on the data: it additionally requires a
+    name that cannot exist to be reported missing, which is what makes the check
+    discriminating rather than merely quiet.
+    """
+    cache: dict[str, str] = {}
+    missing: list[str] = []
+    for name, _target, _anchor, _replacement, test_file, expected in MUTATIONS:
+        if test_file not in cache:
+            cache[test_file] = (REPO / "packages/core" / test_file).read_text()
+        if expected not in cache[test_file]:
+            missing.append(f"{name}: {expected!r} is not in {test_file}")
+
+    if probe:
+        impossible = "this test name cannot exist"
+        if impossible in cache.get(GATE_TEST, ""):
+            missing.append("the negative control's name exists, so the comparison proves nothing")
+
+    for line in missing:
+        print(f"backend-support: {line}")
+    verdict = "FAILED" if missing else "OK"
+    print(
+        f"backend-support: {verdict} ({len(MUTATIONS)} expectation(s)"
+        + (", with the comparator probed)" if probe else ")")
+    )
+    return 1 if missing else 0
 
 
 def main() -> int:
@@ -335,4 +377,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--verify-expectations" in sys.argv:
+        sys.exit(verify_expectations(probe="--probe" in sys.argv))
     sys.exit(main())
