@@ -235,7 +235,43 @@ An empty export is reported as `skipped`, never as `passed`; a skip without an e
 OpenRCA 2.0) the metric is declared `derived` — a faithful reading of the paper, not a
 claim of official parity.
 
-## 10. Non-goals (deliberately out of scope)
+## 10. T2 backends: what can be pulled from, and what cannot
+
+P1-5 in the roadmap asks for T2's six backend families to be measured one by one,
+with the ones that cannot be supported declared explicitly. This is that
+measurement, and it is deliberately not a paragraph. Each row below is held to
+`golden-master/backend-support.json` by `scripts/check-backend-support.mjs`, which
+runs in `docs:check` *and* in the cold-tree job; that snapshot is held to
+`packages/core/src/ingest/backends.ts` by `backend-support.test.ts`, which also
+drives every backend the table calls implemented against a real HTTP server. A
+matrix that cannot fail is a paragraph with a table drawn around it, and this
+repository has already shipped four of those (findings 107, 108, 109 and 114).
+
+The implemented path is a *pull*: telemetry is fetched over HTTP. The other two
+ingest paths here read what a caller already has -- `ingest/file.ts` for files,
+`ingest/otlp.ts` for posted OTLP payloads -- which is why every row names a wire
+format rather than a product. The five unsupported rows name what the format
+requires and this repository does not have, because "not implemented yet" reads
+the same whether the work is a week or impossible, and an entry that cannot be
+re-examined is the entry this campaign keeps finding.
+
+| backend | status | description |
+| --- | --- | --- |
+| `prometheus` | implemented | HTTP JSON API: GET /api/v1/query_range, read as a matrix |
+| `jaeger` | unsupported | Jaeger answers /api/traces in its own trace JSON -- span ids as hex strings, a process table separate from the spans, and no OTLP resource attributes -- so a reader for it is a second trace decoder beside ingest/otlp.ts rather than a URL for the existing one; Jaeger emits OTLP natively, which is the path this repository supports today |
+| `loki` | unsupported | Loki answers /loki/api/v1/query_range with LogQL results whose values are [ns-timestamp, line] pairs and whose streams carry label sets Loki chose, so the service a log belongs to is a label the caller must name, and a reader that guessed it would attach every line to the wrong service |
+| `elasticsearch` | unsupported | Elasticsearch returns hits under dynamic mappings, so the timestamp field, the message field and the service field are per-index decisions: the same query against two clusters yields two shapes, and a reader would need a field mapping supplied by the caller before it could read anything at all |
+| `clickhouse` | unsupported | the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped |
+| `kubernetes` | unsupported | the Kubernetes API needs credentials that are not available to the ingest path -- an in-cluster service-account token or a kubeconfig -- and its events use the involvedObject vocabulary rather than the OTel resource attributes the IR is built on, so the reader would also need a translation table |
+
+Nothing above is a promise about a hosted service. `prometheus` means the query
+API a Prometheus or a Prometheus-compatible endpoint answers at
+`/api/v1/query_range`; the puller does not retry, because the retry policy that
+exists in this repository (`fetch-official.mjs`, finding 52) has its own exit-code
+contract and a second, quieter one inside the ingest layer would eventually
+disagree with it about which failures are retryable.
+
+## 11. Non-goals (deliberately out of scope)
 
 - A Prometheus/OTel exporter for production monitoring.
 - An RCA *agent* or root-cause *solver* — we only produce the benchmark a solver runs on.

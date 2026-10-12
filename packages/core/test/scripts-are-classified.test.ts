@@ -91,6 +91,7 @@ const REGISTER: Record<string, Entry> = {
   // --- Gates: each has failure exits, all enumerated in gate-sites.json ---
   'apply-pins.mjs': { class: 'gate' },
   'build-example-bundle.mjs': { class: 'gate' },
+  'check-backend-support.mjs': { class: 'gate' },
   'check-cli-reference.mjs': { class: 'gate' },
   'check-data-model-vocabularies.mjs': { class: 'gate' },
   'check-doc-counts.mjs': { class: 'gate' },
@@ -104,6 +105,7 @@ const REGISTER: Record<string, Entry> = {
   'check-official.mjs': { class: 'gate' },
   'check-readme-sample.mjs': { class: 'gate' },
   'check-user-guide.mjs': { class: 'gate' },
+  'derive-backend-support.mjs': { class: 'gate' },
   'derive-fault-golden.mjs': { class: 'gate' },
   'derive-gate-sites.mjs': { class: 'gate' },
   'fetch-official.mjs': { class: 'gate' },

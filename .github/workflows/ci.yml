@@ -213,6 +213,19 @@ jobs:
       - name: Doc-count shape battery (no survivors, no inert, no misattributed mutations)
         run: python3 scripts/injection/doc-counts-shapes.py
 
+      # P1-5 asks for T2's six backends to be measured and the unsupported ones
+      # declared. That declaration has three links -- the document matrix, the
+      # derived snapshot, and the registry that says which backend has a pull
+      # path -- and this battery removes one link at a time: seven refusals from
+      # the document guard, the stale-snapshot branch of the derive script, six
+      # branches of the wire reader, and the registry's agreement with its own
+      # snapshot. Its first run reported one INERT, which is the outcome the
+      # vocabulary exists for: the anchor had the wrong indentation, so nothing
+      # was mutated, and a mutation that never applied is not evidence about
+      # anything.
+      - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
+        run: python3 scripts/injection/backend-support.py
+
       # The battery's verdicts, published to a branch so they can be read from
       # anywhere the API is.
       #

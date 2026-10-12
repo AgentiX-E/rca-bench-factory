@@ -140,9 +140,11 @@ const ENUMERATED_MODULES = [
   'fault/category-derivation.ts',
   'fault/injector.ts',
   'fault/importer.ts',
+  'ingest/backends.ts',
   'ingest/file.ts',
   'ingest/otlp.ts',
   'ingest/prime.ts',
+  'ingest/prometheus.ts',
   'llm/anthropic.ts',
   'llm/deepseek.ts',
   'llm/openai-compat.ts',
@@ -364,6 +366,17 @@ function nonTestSources(): Array<{ file: string; text: string }> {
  * the checks below verify. It is not a claim about call sites.
  */
 const TESTED = [
+  // ingest/backends.ts -- the T2 registry. Named here because `index.ts` re-exports it,
+  // which is what "some module outside test/ mentions this identifier" means.
+  'T2_BACKEND_IDS',
+  'T2_BACKENDS',
+  'findBackend',
+  'backendEntry',
+  // ingest/prometheus.ts -- the one implemented pull path of the six.
+  'PROMETHEUS_QUERY_PATH',
+  'PROMETHEUS_DEFAULT_SERVICE_LABEL',
+  'PROMETHEUS_DEFAULT_TIMEOUT_MS',
+  'pullPrometheusMetrics',
   // ir/assembler.ts
   'assembleBundle',
   // ir/guards.ts -- signal-narrowing predicates, one per payload kind.

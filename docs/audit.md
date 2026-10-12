@@ -15376,3 +15376,182 @@ that blindness was already in the document, one line long, filed under "not done
 The two things that broke it open were a census of the subject rather than of the
 matcher, and a battery that would not let a test claim to pin a shape it never
 used.
+
+---
+
+## Finding 154 — the six backends were a to-do, and "supported" was a word with no measurement
+
+### What P1-5 asked for, and what was there
+
+The roadmap's P1-5 reads: *measure T2's six backends one by one and record them,
+declaring the ones that cannot be supported explicitly*. `T2` names Prometheus,
+Jaeger, Loki, Elasticsearch, ClickHouse and the Kubernetes API.
+
+Measured at the revision this finding starts from:
+
+| what | state |
+| --- | --- |
+| modules under `packages/core/src/ingest/` | **three** -- `file.ts`, `otlp.ts`, `prime.ts` |
+| modules that *reach out* to a backend | **none** |
+| places the support status was recorded | one Chinese sentence in the tracking document |
+
+The two ingest paths that existed read what a caller already has: a file on disk,
+or a payload posted to us. Neither has an input that can be absent, slow,
+unauthorised or wrong in the way a network peer can, which is why "we support
+Prometheus" could not have been true and could not have been false either -- there
+was nothing to measure.
+
+### What was built
+
+One pull path, end to end, and a registry that says which of the six have one.
+
+**`packages/core/src/ingest/prometheus.ts`** speaks `GET /api/v1/query_range`,
+reads a `matrix` result, and maps each sample to an IR metric signal. Every
+branch is a *network* fact rather than a parse fact:
+
+| branch | why it exists |
+| --- | --- |
+| unreachable host, timeout | reported as an error rather than thrown, because a puller that throws cannot be driven by a table of cases, and this module's whole test surface is one |
+| non-2xx | quoted with the body, so a 503 from a proxy is distinguishable from a 400 from the query |
+| body is not JSON | named with the endpoint, because a proxy's HTML error page is the most common way this happens |
+| no `status` field | the envelope is not the API's |
+| `status != success` | the API's own verdict, which no status code carries |
+| result type is not `matrix` | a `vector` is an instant query, not the range that was asked for |
+| no `__name__` | a series with no metric name would otherwise be named after nothing |
+| no service label | the label carrying the service is *declared by the caller*; guessing it would attach every sample to the wrong service |
+| `NaN` / `+Inf` / `-Inf` | legal time-series values with no JSON number form; Prometheus writes them as strings, and a reader that expects numbers emits `undefined` -- which is how finding 119's round trip reported 122 cases as a bare `NaN` no reader could attribute |
+
+`semanticType` is deliberately **not** set: it is a vocabulary for a consumer to
+map into, and a guess presented beside measured values is the kind of claim this
+repository refuses. The puller also does **not** retry: the repository's retry
+policy lives in `fetch-official.mjs` with its own exit-code contract (finding 52),
+and a second, quieter one inside the ingest layer would eventually disagree with it
+about which failures are retryable.
+
+### The claim, and the three links that hold it
+
+`packages/core/src/ingest/backends.ts` is the registry: six ids, and for each
+either the function that pulls or the reason it cannot be pulled from. A sentence
+saying "supported" is a claim with no reader, so three things read this one:
+
+| link | reader | what it proves |
+| --- | --- | --- |
+| registry -> snapshot | `packages/core/test/backend-support.test.ts` | `golden-master/backend-support.json` equals what the registry derives, so the snapshot cannot be stale without a red suite |
+| capability -> test | the same file, iterating the registry | **every backend called `implemented` is driven over a real socket**, so "supported" is exhibited rather than asserted; a registry entry with no driver fails |
+| snapshot -> document | `scripts/check-backend-support.mjs` | every row of `docs/architecture.md`'s matrix matches the snapshot in status *and* description; a missing row, an extra row, a duplicate row, a third status and an empty snapshot all fail |
+
+The registry and the document are deliberately not the two ends of one check: a
+document compared with another document only proves the two agree. `check-backend-
+support.mjs` reads two files, so it runs in `docs:check` **and** in the cold-tree
+job -- measured, not assumed: with `packages/core/dist` moved aside it exits 0.
+
+### The measurement against a real Prometheus
+
+The fixture servers in the test are real HTTP but they are not Prometheus, so the
+round downloaded one. The release asset is unreachable from this sandbox
+(`HTTP 000`), and the distribution package is available:
+
+```
+prometheus, version 2.45.3+ds (branch: debian/sid, revision: 2.45.3+ds-2ubuntu0.3)
+```
+
+Run on `127.0.0.1:9095` with a 5s scrape interval, scraping itself, and driven by
+**this repository's own puller** through `packages/core/dist/index.js`:
+
+```
+query  prometheus_tsdb_head_samples_appended_total, last 90s, step 10s, serviceLabel: 'job'
+signals: 2   quarantine: 0   warnings: []
+first signal: {"irVersion":"2.0","resource":{"service.name":"checkout"},
+  "timestamp":"2026-10-12T00:17:43.000Z","rawOffsetMinutes":0,"signal":"metric",
+  "payload":{"kind":"metric","name":"prometheus_tsdb_head_samples_appended_total",
+  "value":304,"tags":{"instance":"127.0.0.1:9095","type":"float"}},
+  "provenance":{"payload.value":{"source":"direct"},"payload.name":{"source":"direct"},
+  "timestamp":{"source":"direct"}}}
+```
+
+Three further readings against the same server:
+
+| request | real Prometheus answers | our reader |
+| --- | --- | --- |
+| `rate(` (parse error) | **HTTP 400**, `{"status":"error","errorType":"bad_data",...}` | `ok: false`, error names `400` and the body |
+| a range exceeding the 11,000-point limit | **HTTP 400**, `status: error` | `ok: false` |
+| `no_such_metric_here` | HTTP 200, empty matrix | `ok: true`, 0 signals, 0 quarantine |
+| `up`, with no service label declared | — | `ok: true`, 1 quarantine: no `'service'` label |
+
+**And the real server disproved a claim this module was carrying.** The comment on
+the `status != success` branch said Prometheus "reports a failed query with HTTP
+200 and `status: error`". It does not: both a parse error and a resolution error
+come back as **HTTP 400**. The branch is still needed -- the body's verdict is the
+only thing that makes the reader correct against an endpoint that answers 200 --
+but it is a **defence rather than a reproduction**, and it now says so. The
+fixture that exercises it is labelled the same way.
+
+### The battery, and the vocabulary earning its keep
+
+`scripts/injection/backend-support.py` removes one link at a time: seven refusals
+from the document guard, the stale-snapshot branch of the derive script, six
+branches of the wire reader, and the registry's agreement with its own snapshot.
+Fifteen injections, and it requires the gate's test file to go red **on the named
+assertion**, reporting `MISATTRIBUTED` separately so a crash cannot be credited as
+a proof (finding 152).
+
+Its first run reported **one INERT**, and the vocabulary is why that mattered: the
+anchor for the non-finite-value mutation had eight spaces of indentation where the
+source has six, so nothing was mutated. Reported as `SURVIVED` it would have read
+as "the test does not cover NaN"; reported as `INERT` it is one line of diagnosis.
+Second run: **15 caught, 0 survived, 0 inert**.
+
+### The status of the other five
+
+Each is declared `unsupported` **with what its wire format requires and this
+repository does not have**, because "not implemented yet" reads the same whether
+the work is a week or impossible:
+
+| backend | what it would take |
+| --- | --- |
+| Jaeger | a second trace decoder beside `ingest/otlp.ts`: hex span ids, a process table separate from the spans, no OTLP resource attributes. Jaeger emits OTLP natively, which is the supported path |
+| Loki | a LogQL reader whose streams carry label sets Loki chose, so the service is a label the caller must name; guessing it attaches every line to the wrong service |
+| Elasticsearch | a field mapping supplied by the caller, because the timestamp, message and service fields are per-index decisions under dynamic mappings |
+| ClickHouse | either a schema this project does not own, or arbitrary SQL, which would make the ingest path untyped |
+| Kubernetes API | credentials the ingest path has no business holding, plus a translation from `involvedObject` to the OTel resource attributes the IR is built on |
+
+These are declarations, not attempts: **no Jaeger, Loki, Elasticsearch, ClickHouse
+or Kubernetes endpoint was contacted**, and reading the wire format is not the same
+as having been refused by it.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `prometheus.test.ts` | **35 tests** over real HTTP, including a socket that never answers and a refused connection |
+| `backend-support.test.ts` | **10 tests**; every `implemented` backend driven over a socket |
+| `check-backend-support.test.ts` | **13 tests**; both scripts driven against fixtures, including a deliberately corrupted snapshot |
+| new battery | **15 caught / 0 survived / 0 inert** |
+| cold-tree measurement | `check-backend-support.mjs` exits 0 with `packages/core/dist` moved aside |
+| `docs:check` / `docs:check:cold` / `typecheck` / `lint` | clean; the guard is a member of both aggregates |
+| `gate-sites.json` | 48 sites, all `proved`; the two new sites authored by hand |
+| `scripts-are-classified` / `export-surface-enumerated` / `cold-tree-job` | each failed on the two new modules and the new guard until the register, the module list and the cold membership were updated -- which is those three guards doing their job |
+| core test suite | **130 files, 3398 tests passed**; `cli` 3 files, 173 tests |
+| coverage | **99.96 / 99.91 / 100 / 99.96**; `prometheus.ts` and `backends.ts` each **100 / 100 / 100 / 100** |
+
+### What is not claimed
+
+- **No CLI command.** The puller is reachable through the package's entry point
+  and the registry, not through `rca-bench`. Adding one means a new command in
+  `docs/cli-reference.md` and a new column in that gate's comparison, which is a
+  separate change.
+- **One of six.** Five backends have a written reason and no reader.
+- **Not a hosted service.** `prometheus` means the query API, and the version that
+  was measured is named above; nothing here says anything about a particular
+  deployment's remote-write configuration, retention or federation.
+
+### What this says about the method
+
+The requirement asked for six measurements and the honest answer at the start was
+"none, and here is a sentence". The work is not that a puller now exists -- it is
+that the claim "we support Prometheus" acquired a reader at three levels and a
+server that could contradict it. It did contradict it: the one-line comment about
+which status code a failed query returns was wrong, and nothing but contacting a
+real Prometheus would have said so. That is the same shape as finding 153's
+mislabelled row -- a claim that survived because nothing that could disagree with
+it had been pointed at it.

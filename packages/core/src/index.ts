@@ -281,6 +281,22 @@ export type {
   JsonlParseResult,
 } from './ingest/file.js';
 
+export { backendEntry, findBackend, T2_BACKENDS, T2_BACKEND_IDS } from './ingest/backends.js';
+export type {
+  T2Backend,
+  T2BackendEntry,
+  T2BackendId,
+  T2BackendImplemented,
+  T2BackendUnsupported,
+} from './ingest/backends.js';
+
+export { pullPrometheusMetrics, PROMETHEUS_DEFAULT_SERVICE_LABEL, PROMETHEUS_DEFAULT_TIMEOUT_MS, PROMETHEUS_QUERY_PATH } from './ingest/prometheus.js';
+export type {
+  PrometheusPullOptions,
+  PrometheusPullResult,
+  PrometheusQuarantineRecord,
+} from './ingest/prometheus.js';
+
 export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/otlp.js';
 export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';
 

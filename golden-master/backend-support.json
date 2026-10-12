@@ -1,0 +1,35 @@
+{
+  "rule": "derived from packages/core/src/ingest/backends.ts; see scripts/derive-backend-support.mjs",
+  "backends": [
+    {
+      "id": "prometheus",
+      "status": "implemented",
+      "summary": "HTTP JSON API: GET /api/v1/query_range, read as a matrix"
+    },
+    {
+      "id": "jaeger",
+      "status": "unsupported",
+      "reason": "Jaeger answers /api/traces in its own trace JSON -- span ids as hex strings, a process table separate from the spans, and no OTLP resource attributes -- so a reader for it is a second trace decoder beside ingest/otlp.ts rather than a URL for the existing one; Jaeger emits OTLP natively, which is the path this repository supports today"
+    },
+    {
+      "id": "loki",
+      "status": "unsupported",
+      "reason": "Loki answers /loki/api/v1/query_range with LogQL results whose values are [ns-timestamp, line] pairs and whose streams carry label sets Loki chose, so the service a log belongs to is a label the caller must name, and a reader that guessed it would attach every line to the wrong service"
+    },
+    {
+      "id": "elasticsearch",
+      "status": "unsupported",
+      "reason": "Elasticsearch returns hits under dynamic mappings, so the timestamp field, the message field and the service field are per-index decisions: the same query against two clusters yields two shapes, and a reader would need a field mapping supplied by the caller before it could read anything at all"
+    },
+    {
+      "id": "clickhouse",
+      "status": "unsupported",
+      "reason": "the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped"
+    },
+    {
+      "id": "kubernetes",
+      "status": "unsupported",
+      "reason": "the Kubernetes API needs credentials that are not available to the ingest path -- an in-cluster service-account token or a kubeconfig -- and its events use the involvedObject vocabulary rather than the OTel resource attributes the IR is built on, so the reader would also need a translation table"
+    }
+  ]
+}

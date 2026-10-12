@@ -1,8 +1,8 @@
 {
   "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
-  "scanned": 36,
+  "scanned": 38,
   "excluded": {
-    "zero": 6,
+    "zero": 7,
     "numeric_other": 1,
     "computed": 6
   },
@@ -29,6 +29,13 @@
       "diagnostic": "${path} is stale - run \\",
       "status": "proved",
       "provedBy": "packages/core/test/build-example-bundle.test.ts"
+    },
+    {
+      "script": "scripts/check-backend-support.mjs",
+      "line": 51,
+      "diagnostic": "check-backend-support: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-backend-support.test.ts"
     },
     {
       "script": "scripts/check-cli-reference.mjs",
@@ -192,6 +199,13 @@
       "diagnostic": "check-user-guide: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-user-guide.test.ts"
+    },
+    {
+      "script": "scripts/derive-backend-support.mjs",
+      "line": 61,
+      "diagnostic": "derive-backend-support: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-backend-support.test.ts"
     },
     {
       "script": "scripts/derive-fault-golden.mjs",
