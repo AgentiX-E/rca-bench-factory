@@ -104,6 +104,7 @@ const REGISTER: Record<string, Entry> = {
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },
   'check-readme-sample.mjs': { class: 'gate' },
+  'check-roundtrip-record.mjs': { class: 'gate' },
   'check-user-guide.mjs': { class: 'gate' },
   'derive-backend-support.mjs': { class: 'gate' },
   'derive-fault-golden.mjs': { class: 'gate' },

@@ -145,6 +145,7 @@ const COLD_AGGREGATES: ReadonlyMap<string, readonly string[]> = new Map([
       'check-l4-status.mjs',
       'check-doc-counts.mjs',
       'check-backend-support.mjs',
+      'check-roundtrip-record.mjs',
       'check-data-model-vocabularies.mjs',
       'derive-gate-sites.mjs',
     ],

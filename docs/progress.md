@@ -13,7 +13,7 @@ vendored.
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across **every module in `src/` (47 at this revision), 538 runtime symbols, 0 orphans**, exemptions keyed by symbol rather than by module |
-| L4 | Official reproduction | **3 of 4 anchors met** | see below |
+| L4 | Official reproduction | **3 of 4 anchors met; the fourth's path now runs on the real corpus** | Golden Master, mutation suite and the official-metric regression are green in CI every push; the real-corpus round trip round-tripped **375 / 375 at `oracle=1.00`** (run `38250480271`, see `## The last measured round trip`). **The number is still not reproduced**: no comparison against upstream published figures exists, which is P0-2 |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
 
 **Both CI workflows are green on the revision this document describes** (`4181060ee`):
@@ -179,6 +179,30 @@ reader at all.
 `packages/cli` is at 100% on all four dimensions. It carries no gate of its own,
 because it is a thin argument-parsing shell over core and the gate belongs where
 the logic is; the figure is recorded because it is measured on every run.
+
+## The last measured round trip
+
+The fourth anchor's path now runs on the real corpus. Measured by
+`official-data.yml` run `38250480271` at `167e08f28`; the figures below are held to
+`golden-master/roundtrip.json` by `scripts/check-roundtrip-record.mjs`, and that
+file's pins are held to `golden-master/official-assets.json` by the same guard --
+so a number here that stops matching the record fails the documentation gate in
+both the warm and the cold-tree job.
+
+| item | value |
+| --- | --- |
+| anchor | `rcaeval-re1` |
+| cases declared by the corpus | **375** |
+| cases round-tripped at `oracle=1.00` | **375** |
+| cases that did not | **0** |
+
+Three things about this table are deliberately absent from it. It does **not**
+claim the score agrees with upstream's published numbers -- `oracle=1.00` is the
+official rule applied to the ground-truth root cause, which is the scorer's own
+ceiling and not a solver's accuracy; that comparison is P0-2 and is unmeasured. It
+does **not** cover RE2 or RE3, which are separate anchors with separate fetches. And
+it does **not** replace the dated per-pass records further down this file, which
+say what each pass measured at the time.
 
 ## Audit passes
 
@@ -2996,7 +3020,7 @@ state -- and failed on its own premise. The fixture now classifies the registry.
 - It does **not** claim all 122 failures share this shape. Five are measured in
   full; the rest are counted. The five establish the gap is per-service rather
   than per-component, which makes the remaining 120 plausible, not proven.
-- It does **not** re-run RE1, so the pass count is still Pass 31's 253 of 375.
+- It does **not** re-run RE1, so the pass count it reports is Pass 31's 253 of 375 -- which **was true when this pass was written and is not any more**: run `38250480271` round-tripped 375 of 375 under the semantics this pass established. See `## The last measured round trip` at the top of this file, and finding 155. The sentence is left with its correction rather than deleted, because the claim it records is part of what the pass did.
 - It does **not** claim RE1's anchor is reproduced. A pin says the bytes are the
   bytes; the score's agreement with upstream is unmeasured.
 - It does **not** explain every `NaN` -- zero traffic accounts for most and
@@ -3688,9 +3712,9 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 | `core` test suite | **121 files, 3265 tests passed** (Pass 39, `16f3499a9`) |
 | `cli` test suite | **3 files, 173 tests passed** (Pass 39, `16f3499a9`) |
 | repo test suite | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`, `pnpm test`, every workspace) |
-| `core` test suite | **130 files, 3399 tests passed** (as of this commit) |
+| `core` test suite | **131 files, 3419 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **133 files, 3572 tests passed** (as of this commit) |
+| repo test suite | **134 files, 3592 tests passed** (as of this commit) |
 | `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
 | M4 drop `unknownArguments` | **caught** -- 2 fail |
 | M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
@@ -3791,9 +3815,9 @@ strength of those artefacts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **130 files, 3399 tests passed** (as of this commit) |
+| `core` test suite | **131 files, 3419 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **133 files, 3572 tests passed** (as of this commit) |
+| repo test suite | **134 files, 3592 tests passed** (as of this commit) |
 | coverage — core | **99.96 / 99.91 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | `typecheck` / `lint` / `docs:check` | clean |

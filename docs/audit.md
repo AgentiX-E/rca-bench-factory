@@ -15569,7 +15569,7 @@ as having been refused by it.
 | `docs:check` / `docs:check:cold` / `typecheck` / `lint` | clean; the guard is a member of both aggregates |
 | `gate-sites.json` | 48 sites, all `proved`; the two new sites authored by hand |
 | `scripts-are-classified` / `export-surface-enumerated` / `cold-tree-job` | each failed on the two new modules and the new guard until the register, the module list and the cold membership were updated -- which is those three guards doing their job |
-| core test suite | **130 files, 3399 tests passed**; `cli` 3 files, 173 tests |
+| core test suite | **131 files, 3419 tests passed**; `cli` 3 files, 173 tests |
 | coverage | **99.96 / 99.91 / 100 / 99.96**; `prometheus.ts` and `backends.ts` each **100 / 100 / 100 / 100** |
 
 ### What is not claimed
@@ -15593,3 +15593,110 @@ which status code a failed query returns was wrong, and nothing but contacting a
 real Prometheus would have said so. That is the same shape as finding 153's
 mislabelled row -- a claim that survived because nothing that could disagree with
 it had been pointed at it.
+
+---
+
+## Finding 155 — P0-1 closed, and the number it closed on lived only in a log line
+
+### The result
+
+The requirement this repository has carried longest is P0-1: *fetch RCAEval's real
+corpus, round-trip it through this project's export, and score it with RCAEval's own
+published rule*. It has been open since the first iteration, and finding 114 is
+what turned it from "the sandbox cannot reach Zenodo" into "dispatch the workflow
+and read the answer".
+
+The answer, on run `38250480271` at `167e08f28`:
+
+```
+VERIFIED  rcaeval-re1-ob: bytes=30966778 sha256=4a709297e0a8...
+VERIFIED  rcaeval-re1-ss: bytes=79089075 sha256=b4424b0b3863...
+VERIFIED  rcaeval-re1-tt: bytes=279663965 sha256=2b33b7ab0719...
+REPORT    /tmp/pins.json: 3 pin(s) measured
+apply-pins: OK (3 pin(s) agree with the report; nothing written)
+registry pins agree with this download
+... 375 lines of `ROUNDTRIP PASS <n>/375 ... oracle=1.00 ...`
+ROUNDTRIP PASSED (375 case(s) round-tripped through the official layout)
+```
+
+**375 of 375.** Finding 119 measured 253 of 375 and finding 121 established that
+the other 122 were one system's `NaN` cells, declared as gaps in the corpus's own
+plaintext; the semantics from that round are what this run exercised. All three
+asset digests were verified against `golden-master/official-assets.json` and agree,
+so P0-1's third acceptance item needed nothing merged.
+
+### What was wrong with the record, which is the finding
+
+The result existed in exactly one place: a line in a workflow log. Nothing in the
+repository published it, and what the repository *did* publish was a **different
+run's number stated in the present tense**:
+
+> - It does **not** re-run RE1, so the pass count is still Pass 31's 253 of 375.
+
+That sentence was written by the pass that fixed the `NaN` semantics, was true when
+it was written, and stopped being true the moment the corpus started passing -- and
+nothing in this repository could notice. It is finding 153's shape again: a claim
+with no reader, and a reader is exactly what the number needed.
+
+The aggravating detail is that this repository **already has the mechanism**. The
+test counts are held to a committed measurement by `check-doc-counts.mjs`; the L4
+status table is held to the asset registry by `check-l4-status.mjs`; the T2 backend
+matrix is held to a derived snapshot (finding 154). The round trip, the one
+measurement that took a year of work to obtain, was held to nothing.
+
+### The fix
+
+| part | what it does |
+| --- | --- |
+| `golden-master/roundtrip.json` | the last measured round trip: anchor, run id, commit, the corpus's declared case count, the round-tripped count, the oracle, and the three measured pins |
+| `docs/progress.md`, `## The last measured round trip` | the published figures, near the top where a reader looks, with what the table does **not** claim written under it |
+| `scripts/check-roundtrip-record.mjs` | holds the three of them together: the record's provenance, the corpus partition, the pins against the registry **in both directions**, and all four published figures |
+
+The both-directions half matters. One direction catches a record that vouches for
+bytes the registry denies; the other catches a record that quietly omits the asset
+that failed to verify, which would read as complete.
+
+The `oracle=1.00` figure is deliberately **not** presented as agreement with
+upstream's published accuracy: it is the official rule applied to the ground-truth
+root cause, which is the scorer's own ceiling rather than a solver's accuracy. The
+comparison P0-2 asks for is still unmeasured, and the document says so under the
+table instead of leaving a reader to infer otherwise.
+
+### The guard's own defect, found by its own test
+
+The first version scoped the document by *any line* containing the section's name.
+The headline table's L4 row cross-references the section, so that row matched
+first, the guard read the rows under it, and every figure came back `undefined` --
+four confident complaints about a document that was correct. The correction is one
+predicate: the section is the *heading*. The fixture that catches it is in the
+battery, which puts the defect back to show the fixture is load-bearing.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `check-roundtrip-record.mjs` on the shipped files | **OK** (375/375 at oracle=1, 3 pins agree, run `38250480271` on `167e08f28`) |
+| `check-roundtrip-record.test.ts` | **20 tests**, every refusal branch plus the heading scoping |
+| new battery | **17 caught / 0 survived / 0 inert / 0 misattributed** |
+| `gate-sites.json` | 49 sites, all `proved`; the new site authored by hand |
+| cold-tree measurement | the guard reads three files, and is a member of `docs:check` and `docs:check:cold` |
+| `scripts-are-classified` / `batteries-reach-an-invoker` / `cold-tree-job` | each failed on the new guard until the register, the battery list and the cold membership were updated |
+
+### What this does not claim
+
+- **Not the score.** `oracle=1.00` is the scorer's ceiling on ground truth. No
+  comparison with upstream's published numbers exists (P0-2).
+- **Not RE2 or RE3.** Separate anchors, separate fetches, still at zero.
+- **Not that the numbers are current forever.** The record is a measurement taken
+  by a workflow that runs weekly; a newer run makes it stale, and only a reader
+  who checks the runs list would know. That is stated in the record's own `rule`
+  field rather than left as a surprise.
+
+### What this says about the method
+
+The measurement cost a dispatch and an hour; the *finding* is that a year of work
+was one sentence away from being invisible, in a file that already holds three
+other measurements to gates. The pattern this campaign keeps meeting is not that
+numbers are wrong but that they have no reader -- and the remedy is always the
+same: name the measurement, publish it where a reader looks, and give something the
+job of disagreeing.

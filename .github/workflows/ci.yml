@@ -226,6 +226,20 @@ jobs:
       - name: Backend-support battery (no survivors, no inert, no misattributed mutations)
         run: python3 scripts/injection/backend-support.py
 
+      # The fourth anchor's path now runs on the real corpus: run 38250480271
+      # round-tripped 375 of 375 RE1 cases at oracle=1.00. This battery keeps the
+      # guard that records it from decaying the way the previous number did --
+      # 'the pass count is still Pass 31's 253 of 375' stood in the present tense
+      # for two passes after the corpus started passing, because the number lived
+      # in a log line and the sentence lived in a document and nothing joined them.
+      # Seventeen injections: the record's provenance, the corpus partition, the
+      # pins against the registry in both directions, and each of the document's
+      # four figures -- plus one that puts back the guard's own first defect, which
+      # scoped the document by any line mentioning the section and so read the
+      # headline table's cross-reference instead of the section.
+      - name: Round-trip record battery (no survivors, no inert, no misattributed mutations)
+        run: python3 scripts/injection/roundtrip-record.py
+
       # The battery's verdicts, published to a branch so they can be read from
       # anywhere the API is.
       #

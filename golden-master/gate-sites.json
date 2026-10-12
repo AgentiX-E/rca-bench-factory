@@ -1,6 +1,6 @@
 {
   "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
-  "scanned": 38,
+  "scanned": 39,
   "excluded": {
     "zero": 7,
     "numeric_other": 1,
@@ -192,6 +192,13 @@
       "diagnostic": "README sample check FAILED (${failures} of ${blocks.length})",
       "status": "proved",
       "provedBy": "packages/core/test/check-readme-sample.test.ts"
+    },
+    {
+      "script": "scripts/check-roundtrip-record.mjs",
+      "line": 63,
+      "diagnostic": "check-roundtrip-record: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-roundtrip-record.test.ts"
     },
     {
       "script": "scripts/check-user-guide.mjs",
