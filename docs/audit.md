@@ -15700,3 +15700,129 @@ other measurements to gates. The pattern this campaign keeps meeting is not that
 numbers are wrong but that they have no reader -- and the remedy is always the
 same: name the measurement, publish it where a reader looks, and give something the
 job of disagreeing.
+
+---
+
+## Finding 156 — P0-2's score existed as a log line, and the report that was missing had a temporal dead zone in it
+
+### What P0-2 asks for, and what was there
+
+> **P0-2** | record the official scorer's **score** on the real corpus (not only
+> that the round trip passed) | produce a comparable score report, and state the
+> difference from the published figures
+
+P0-1 closed with 375 of 375 at `oracle=1.00` (finding 155). What P0-2 asks for is
+the *score report*, and measured before this round it did not exist. The round trip
+prints one line per case:
+
+```
+ROUNDTRIP PASS 375/375 RE1-TT/ts-travel-service_mem/5 target=rcaeval-re1 oracle=1.00 signals=1199040
+```
+
+and the artifact `official-data.yml` uploaded carried `/tmp/rcaeval-cases.json` and
+`/tmp/pins.json` -- the descriptors and the pins, **and no scores at all**. So the
+answer to "produce a score report on the real corpus" was 375 lines of log.
+
+That is finding 155's shape one step further on, and it is worth naming the pattern
+precisely because this is the third round in a row it has appeared in: the round
+trip, the record and now the score each existed as something a human would have to
+read a log to find. A measurement that is not an artifact cannot be checked by
+anything.
+
+### What was built
+
+**`check-official.mjs --report <path>`** writes the report the round trip computes:
+
+```json
+{
+  "schema": "rca-bench-rcaeval-scores/1",
+  "corpus": "/tmp/official",
+  "targets": ["rcaeval-re1"],
+  "summary": {
+    "declared": 375, "scored": 375, "skipped": 0, "failed": 0,
+    "oracle": { "min": 1, "max": 1, "mean": 1, "distribution": { "1": 375 } }
+  },
+  "cases": [ { "caseId": "RE1-OB/adservice_cpu/1", "target": "rcaeval-re1", "status": "scored", "score": 1 } ]
+}
+```
+
+Four decisions in it are worth their own sentence each:
+
+| decision | why |
+| --- | --- |
+| the report is written **before every exit**, including the failing ones | a run that scored 300 of 375 and then failed has measured something, and a report that appears only on success withholds the measurement a reader needs to see why it failed |
+| `status` is a closed set -- `scored` / `skipped` / `failed` | `skipped` is the target's own contract refusing the fault class (RE3 refuses non-code faults), which is neither a pass nor a failure; collapsing it into either would make one of them wrong |
+| the records cover the **declared** set, not the found one | a case that is declared and absent from the corpus is a `failed` record with that reason; a report whose records cover a subset reads as a report about the whole |
+| an empty score set is `null`, not `0` | zero is a score; "no case scored" is not one, and a reader comparing the two would take an empty run for a failing one |
+
+The artifact upload now includes `/tmp/rcaeval-scores.json`.
+
+### The defect the tests found in it
+
+The first version declared `const scoreRecords = []` **after** the loop that fills
+the first of its records, so the absent-case branch pushed into a name in its own
+temporal dead zone. The script threw a `ReferenceError`, exited non-zero -- which is
+the exit code that branch wants -- and wrote no report.
+
+That is a defect with a very specific signature: **a crash wearing the costume of a
+correct verdict.** The absent-case exit code is `1` whether the reason is "the case
+is missing" or "the reporter is broken", and only the file that should have been
+written distinguishes them. The test that caught it is the one asserting a *failing*
+run still produces a report, which is exactly the property the ordering decision was
+made for.
+
+### The record, and what the guard now checks
+
+`golden-master/roundtrip.json` gained a `scores` block, and
+`scripts/check-roundtrip-record.mjs` checks the properties that make a report
+readable rather than its arithmetic:
+
+- the block says **where its numbers came from** -- a report with no provenance is
+  the defect this record exists to fix;
+- `scored + skipped + failed === declared` -- the records cover the declared set;
+- `scores.scored === corpus.roundTripped` -- two names for one fact, and they may
+  not disagree;
+- the distribution accounts for exactly the scored cases, and every key lies inside
+  `[min, max]`;
+- **the mean equals the distribution's mean**, because a mean written beside a
+  distribution rather than computed from it is a second number that can drift;
+- an empty score set has `null` for min, max and mean;
+- `docs/progress.md` publishes the mean and the worst case, and they match.
+
+The score block for run `38250480271` is reconstructed from that run's own per-case
+lines, because the run predates `--report`; the block's `source` field says so, and
+the next run fills it from the report itself.
+
+### The comparison P0-2 asks for, and why it is not made yet
+
+`oracle=1.00` is **the official rule applied to the ground-truth root cause** -- the
+scorer's own ceiling on the corpus. Upstream's published figures are *solver*
+accuracies over the same corpora. The two are not the same quantity, and adding them
+to a table beside each other would be the kind of comparison this repository refuses.
+What would make them comparable is running **upstream's own scorer, with its own
+answer key**, over the same corpus and comparing the two numbers.
+
+That is the remaining half of P0-2. It is now stated in `docs/progress.md` under the
+table rather than left for a reader to infer, and it is the next round's work.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `check-official.mjs` without `--report` | unchanged: the nine verdict lines and the summary are byte-identical, asserted line for line |
+| `check-official-roundtrip.test.ts` | **52 tests**, five of them new: records cover the declared set, the summary is computed from the records, the failing run still writes, nothing is written when not asked, and no `.partial` survives |
+| `check-roundtrip-record.test.ts` | **29 tests**, nine of them new, one per refusal above |
+| new battery | **25 caught / 0 survived / 0 inert / 0 misattributed**, one injection per refusal plus the heading-scoping defect |
+| `gate-sites.json` | 49 sites, all `proved`; six re-signed by hand after `check-official.mjs` moved |
+| core test suite | **131 files, 3433 tests passed**; `cli` 3 files, 173 tests |
+| coverage | core **99.96 / 99.91 / 100 / 99.96**; `cli` **100 / 100 / 100 / 100** |
+
+### What this says about the method
+
+Three rounds, three artefacts that existed only as something a human would read a log
+to find: the round trip, the record of it, and now its score. Each fix was the same
+move -- name the measurement, write it down where a reader looks, and give something
+the job of disagreeing -- and each round the *next* layer down was where the
+unwritten number was living. The remaining half of P0-2 is deliberately left as a
+claim the repository does not make, because the comparison it would need is between
+two quantities that are not the same.

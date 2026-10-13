@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1209,5 +1209,111 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     // Now that the block is reachable, the count is asserted by running it too.
     const outcome = run(['--bundle', writeRegressedBundle('no-cases')]);
     expect(outcome.status).toBe(1);
+  });
+});
+
+/**
+ * `--report`, the score report P0-2 asks for.
+ *
+ * Before this flag, the only score the round trip produced was the `oracle=`
+ * figure on each `ROUNDTRIP` line, and the artifact `official-data.yml` uploaded
+ * carried the descriptors and the pins and **no scores at all** -- so "the score
+ * report on the real corpus" existed as log lines. P0-1 measured 375 of 375 at
+ * `oracle=1.00` and the finding attached to it was that the number lived in one
+ * line of a workflow log (finding 155).
+ *
+ * The four properties below are the ones a reader of such a report depends on:
+ * the records cover the declared set, the summary is computed from the records
+ * rather than beside them, the report exists on a *failing* run too, and an empty
+ * score set is `null` rather than `0`.
+ */
+describe('scripts/check-official.mjs · the score report', () => {
+  function report(path: string): Record<string, unknown> {
+    return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  }
+
+  it('writes one record per declared case, and a summary computed from them', () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    writeCase(root, 'RE2-ss-mem_1');
+    const cases = join(scratch, 'report.json');
+    writeCases(cases, ['RE2-ob-cpu_1', 'RE2-ss-mem_1']);
+    const out = join(scratch, 'scores.json');
+
+    const result = run(['--official-dir', root, '--cases', cases, '--report', out]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('ROUNDTRIP report');
+
+    const written = report(out) as { cases: { caseId: string; status: string; score?: number }[]; summary: Record<string, never> };
+    expect(written.cases.map((c) => c.caseId)).toEqual(['RE2-ob-cpu_1', 'RE2-ss-mem_1']);
+    expect(written.cases.every((c) => c.status === 'scored')).toBe(true);
+    const summary = written.summary as unknown as { declared: number; scored: number; skipped: number; failed: number; oracle: { min: number; max: number; mean: number; distribution: Record<string, number> } };
+    expect(summary.declared).toBe(2);
+    expect(summary.scored).toBe(2);
+    expect(summary.failed).toBe(0);
+    expect(summary.oracle.min).toBe(1);
+    expect(summary.oracle.max).toBe(1);
+    expect(summary.oracle.mean).toBe(1);
+    // The distribution has to account for the scored cases exactly, or it is a
+    // second, independent count that can disagree with the first.
+    expect(Object.values(summary.oracle.distribution).reduce((a, b) => a + b, 0)).toBe(summary.scored);
+  });
+
+  it('covers the declared set even when a case is absent from the corpus', () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const cases = join(scratch, 'declared.json');
+    writeCases(cases, ['RE2-ob-cpu_1', 'RE2-ob-cpu_2']);
+    const out = join(scratch, 'absent.json');
+
+    const result = run(['--official-dir', root, '--cases', cases, '--report', out]);
+    expect(result.status).toBe(1);
+    const written = report(out) as { cases: { caseId: string; status: string; reason?: string }[] };
+    expect(written.cases).toHaveLength(2);
+    const absent = written.cases.find((c) => c.caseId === 'RE2-ob-cpu_2');
+    expect(absent?.status).toBe('failed');
+    expect(absent?.reason).toContain('absent');
+  });
+
+  it('writes the report on a failing run, which is when a reader needs it', () => {
+    const root = freshRoot();
+    const cases = join(scratch, 'unreadable.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const out = join(scratch, 'failed.json');
+
+    const result = run(['--official-dir', root, '--cases', cases, '--report', out]);
+    expect(result.status).toBe(1);
+    const written = report(out) as { summary: { scored: number; failed: number; oracle: { min: number | null; mean: number | null } } };
+    expect(written.summary.failed).toBe(1);
+    expect(written.summary.scored).toBe(0);
+    // `null`, not `0`: zero is a score and "no case scored" is not one.
+    expect(written.summary.oracle.min).toBeNull();
+    expect(written.summary.oracle.mean).toBeNull();
+  });
+
+  it('writes nothing when it was not asked to', () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const cases = join(scratch, 'noreport.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const out = join(scratch, 'never-written.json');
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('ROUNDTRIP report');
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('leaves no half-written file behind', () => {
+    const root = freshRoot();
+    writeCase(root, 'RE2-ob-cpu_1');
+    const cases = join(scratch, 'atomic.json');
+    writeCases(cases, ['RE2-ob-cpu_1']);
+    const out = join(scratch, 'atomic-scores.json');
+
+    run(['--official-dir', root, '--cases', cases, '--report', out]);
+    // The write goes to `<path>.partial` and is renamed, so a reader never sees a
+    // truncated report -- and the temp file must not survive the rename.
+    expect(existsSync(`${out}.partial`)).toBe(false);
   });
 });

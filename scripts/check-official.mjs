@@ -44,9 +44,18 @@
  *
  *   node scripts/check-official.mjs
  *   node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/cases.json
+ *
+ * `--report <path>` writes the score report the round trip computed: one record
+ * per declared case and a summary over the scored ones. Without it, the only
+ * score in existence is the `oracle=` figure on each `ROUNDTRIP` line, which is a
+ * log line -- P0-2 asks for a *score report* on the real corpus, and the artifact
+ * a workflow uploads had carried the descriptors and the pins and no scores at
+ * all. The report is written before **every** exit, including the failing ones,
+ * because a run that failed after scoring 300 cases has measured something a
+ * reader wants and a report that only appears on success withholds it.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -586,6 +595,7 @@ console.log(`\nOfficial-metric regression PASSED (${passed} targets scored, ${re
 // ---------------------------------------------------------------------------
 // The official-data round trip, only when asked for.
 // ---------------------------------------------------------------------------
+const scoreReportPath = argValue('--report');
 const officialDirArg = argValue('--official-dir');
 if (officialDirArg === undefined) process.exit(0);
 
@@ -622,11 +632,30 @@ if (caseCount === 0) {
  * would otherwise score the subset that happens to still exist and report on it
  * as if it were the whole corpus.
  */
+/**
+ * One record per declared case, and the summary computed from them.
+ *
+ * `status` is a closed set: `scored` (the official rule produced a number),
+ * `skipped` (the target's own contract refused the fault class, which is
+ * neither a pass nor a failure -- RE3 refuses non-code faults), and `failed`
+ * (the case did not reach a score). A case that is declared and absent from the
+ * corpus is `failed` with that as its reason, because a report whose records do
+ * not cover the declared set is a report about a subset.
+ *
+ * Declared *before* the loop that fills the first of those records. The first
+ * version declared it after, so the absent-case branch pushed into a name in its
+ * own temporal dead zone: the script threw a ReferenceError, exited non-zero
+ * (which is the exit code that branch wants) and wrote no report at all -- a
+ * failure that a reader would have taken for "the run failed", and the test that
+ * caught it was the one asserting a failing run still produces a report.
+ */
+const scoreRecords = [];
 const declared = [];
 for (const entry of descriptors.cases ?? []) {
   declared.push(entry.caseId);
   if (!files.has(`${entry.caseId}/inject_time.txt`)) {
     roundTripFailures.push(`${entry.caseId}: declared in ${casesPath} but absent from ${officialDir}`);
+    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: 'declared but absent from the corpus' });
   }
 }
 if (declared.length > 0) {
@@ -658,6 +687,7 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   if (!adapted.ok) {
     console.log(`ROUNDTRIP FAIL ${label} reason=${adapted.reason}`);
     roundTripFailures.push(`${entry.caseId}: ${adapted.reason}`);
+    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: adapted.reason });
     continue;
   }
 
@@ -698,6 +728,7 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   if (!ingested.ok) {
     console.log(`ROUNDTRIP FAIL ${label} reason=ingest refused the case`);
     roundTripFailures.push(`${entry.caseId}: ingest failed - ${ingested.error}`);
+    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: `ingest failed - ${ingested.error}` });
     continue;
   }
 
@@ -706,11 +737,12 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   if (signals === 0) {
     // A case that produced no signal has told us nothing about the exporter, and
     // counting it as a pass would be the fourth anchor certifying an empty run.
-    console.log(`ROUNDTRIP FAIL ${label} signals=0`);
-    roundTripFailures.push(
+    const noSignals =
       `${entry.caseId}: the ingest read no signals from the corpus` +
-        (quarantine.length > 0 ? ` (first reason: ${quarantine[0].reason})` : ''),
-    );
+      (quarantine.length > 0 ? ` (first reason: ${quarantine[0].reason})` : '');
+    console.log(`ROUNDTRIP FAIL ${label} signals=0`);
+    roundTripFailures.push(noSignals);
+    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: noSignals });
     continue;
   }
 
@@ -723,6 +755,7 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
 
   if (report === undefined) {
     roundTripFailures.push(`${entry.caseId}: target '${target}' produced no report`);
+    scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: `target '${target}' produced no report` });
     continue;
   }
 
@@ -737,15 +770,71 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     `ROUNDTRIP ${mark} ${label} target=${target.padEnd(16)} oracle=${scored.toFixed(2)} signals=${signals}`,
   );
 
-  if (skipped) continue;
-  if (scored !== 1) {
-    roundTripFailures.push(
-      `${entry.caseId}: our own export does not score 1.0 under ${target}'s published rule (got ${scored}); ` +
-        `the official exporter read ${Object.keys(exported.files).length} file(s)`,
-    );
+  if (skipped) {
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: 'the target refuses this fault class' });
     continue;
   }
+  if (scored !== 1) {
+    const reason =
+      `${entry.caseId}: our own export does not score 1.0 under ${target}'s published rule (got ${scored}); ` +
+      `the official exporter read ${Object.keys(exported.files).length} file(s)`;
+    roundTripFailures.push(reason);
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', score: scored, reason });
+    continue;
+  }
+  scoreRecords.push({ caseId: entry.caseId, target, status: 'scored', score: scored });
   roundTripped += 1;
+}
+
+/**
+ * Write the score report, when one was asked for.
+ *
+ * Called before every exit rather than once at the end, because a run that
+ * scored 300 of 375 cases and then failed has measured something, and a report
+ * that only appears on success withholds exactly the measurement a reader needs
+ * to see why the run failed. The file is written atomically (temp then rename)
+ * so a reader never sees a half-written report.
+ */
+function emitScoreReport() {
+  if (scoreReportPath === undefined) return;
+  const scoredCases = scoreRecords.filter((r) => r.status === 'scored');
+  const scores = scoredCases.map((r) => r.score);
+  const distribution = {};
+  for (const score of scores) {
+    const key = String(score);
+    distribution[key] = (distribution[key] ?? 0) + 1;
+  }
+  const report = {
+    schema: 'rca-bench-rcaeval-scores/1',
+    corpus: officialDir,
+    casesFile: casesPath,
+    targets: [...new Set(scoreRecords.map((r) => r.target).filter(Boolean))],
+    summary: {
+      declared: declared.length,
+      scored: scoredCases.length,
+      skipped: scoreRecords.filter((r) => r.status === 'skipped').length,
+      failed: scoreRecords.filter((r) => r.status === 'failed').length,
+      // An empty score set has no minimum. `null` rather than `0`, because zero
+      // is a score and "no case scored" is not one; a reader comparing the two
+      // would take an empty run for a failing one.
+      oracle: scores.length === 0
+        ? { min: null, max: null, mean: null, distribution }
+        : {
+            min: Math.min(...scores),
+            max: Math.max(...scores),
+            mean: scores.reduce((a, b) => a + b, 0) / scores.length,
+            distribution,
+          },
+    },
+    cases: scoreRecords,
+  };
+  const temp = `${scoreReportPath}.partial`;
+  writeFileSync(temp, `${JSON.stringify(report, null, 2)}\n`);
+  renameSync(temp, scoreReportPath);
+  console.log(
+    `ROUNDTRIP report ${scoreReportPath}: ${report.summary.scored} scored, ` +
+      `${report.summary.skipped} skipped, ${report.summary.failed} failed`,
+  );
 }
 
 if (roundTripFailures.length > 0) {
@@ -760,6 +849,7 @@ if (roundTripFailures.length > 0) {
     `ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped; ` +
       `${roundTripFailures.length} finding(s)`,
   );
+  emitScoreReport();
   process.exit(1);
 }
 
@@ -777,7 +867,9 @@ if (declared.length > 0 && roundTripped !== declared.length) {
     `\nROUNDTRIP FAILED\nROUNDTRIP   - ${declared.length} case(s) declared but ${roundTripped} round-tripped, ` +
       `and no finding names the difference`,
   );
+  emitScoreReport();
   process.exit(1);
 }
 
+emitScoreReport();
 console.log(`\nROUNDTRIP PASSED (${roundTripped} case(s) round-tripped through the official layout)`);

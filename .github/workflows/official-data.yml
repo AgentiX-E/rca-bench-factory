@@ -243,7 +243,14 @@ jobs:
       - name: Round-trip the corpus and score it with the official rule
         run: |
           set -eu
-          node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/rcaeval-cases.json
+          # `--report` writes the score report: one record per declared case and
+          # a summary over the scored ones, written before every exit including
+          # the failing ones. Without it the only score in existence was the
+          # `oracle=` figure on each ROUNDTRIP line, and this step's artifact
+          # carried the descriptors and the pins and no scores -- so the answer to
+          # P0-2's "a score report on the real corpus" was a line in a log, which
+          # is what finding 155 is about.
+          node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/rcaeval-cases.json --report /tmp/rcaeval-scores.json
 
       - name: Report free disk after the fetch
         if: always()
@@ -256,13 +263,14 @@ jobs:
       #  - the pins file is the measurement that gets merged into the registry.
       #
       # Neither is corpus data. The 19 GB archive dies with the runner.
-      - name: Upload the derived descriptors and the measured pins
+      - name: Upload the derived descriptors, the score report and the measured pins
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-${{ steps.fetch.outputs.anchor || 'rcaeval-re2' }}-round-trip
           path: |
             /tmp/rcaeval-cases.json
+            /tmp/rcaeval-scores.json
             /tmp/pins.json
           if-no-files-found: warn
           retention-days: 30

@@ -48,6 +48,13 @@ function record(overrides: Record<string, unknown> = {}) {
     anchor: 'rcaeval-re1',
     run: { id: 1, headSha: 'deadbee', event: 'workflow_dispatch' },
     corpus: { declaredCases: 375, roundTripped: 375, oracle: 1 },
+    scores: {
+      scored: 375,
+      skipped: 0,
+      failed: 0,
+      oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 375 } },
+      source: 'fixture',
+    },
     pins: [{ id: 'rcaeval-re1-ob', bytes: 10, sha256: SHA }],
     ...overrides,
   };
@@ -61,6 +68,8 @@ function doc(figures: Record<string, string> = {}): string {
     'cases declared by the corpus': '**375**',
     'cases round-tripped at `oracle=1.00`': '**375**',
     'cases that did not': '**0**',
+    'mean oracle score across the scored cases': '**1.00**',
+    'worst per-case oracle score': '**1.00**',
     ...figures,
   };
   return (
@@ -224,6 +233,140 @@ describe('check-roundtrip-record', () => {
     const r = run({ raw: { record: '{ not json' } });
     expect(r.code).toBe(1);
     expect(r.out).toContain('cannot read the round-trip record');
+  });
+
+  // The score block, which is P0-2's deliverable. Before it, the round trip's score
+  // existed as `oracle=` on each ROUNDTRIP line and nothing else (finding 155).
+  it('refuses a score block that does not say where its numbers came from', () => {
+    const r = run({
+      record: record({
+        scores: { scored: 375, skipped: 0, failed: 0, oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 375 } } },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('does not say where its numbers came from');
+  });
+
+  it('refuses a score block whose records do not cover the declared set', () => {
+    const r = run({
+      record: record({
+        scores: {
+          scored: 374,
+          skipped: 0,
+          failed: 0,
+          oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 374 } },
+          source: 'fixture',
+        },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('accounts for');
+  });
+
+  it('refuses a scored count that disagrees with the round-tripped count', () => {
+    const r = run({
+      record: record({
+        scores: {
+          // The partition is valid (374 + 1 + 0 = 375) so the only thing wrong is
+          // that `scored` disagrees with the corpus's `roundTripped` -- which is
+          // the same fact under two names.
+          scored: 374,
+          skipped: 1,
+          failed: 0,
+          oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 374 } },
+          source: 'fixture',
+        },
+        corpus: { declaredCases: 375, roundTripped: 375, oracle: 1 },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('two');
+  });
+
+  it('refuses a distribution that does not account for the scored cases', () => {
+    const r = run({
+      record: record({
+        scores: {
+          scored: 375,
+          skipped: 0,
+          failed: 0,
+          oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 374 } },
+          source: 'fixture',
+        },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('second, independent count');
+  });
+
+  it('refuses a mean outside the range the block reports', () => {
+    const r = run({
+      record: record({
+        scores: {
+          scored: 375,
+          skipped: 0,
+          failed: 0,
+          oracle: { min: 1, max: 1, mean: 0.5, distribution: { 1: 375 } },
+          source: 'fixture',
+        },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('no set of');
+  });
+
+  it('refuses a distribution holding a score outside the reported range', () => {
+    const r = run({
+      record: record({
+        scores: {
+          scored: 375,
+          skipped: 0,
+          failed: 0,
+          oracle: { min: 1, max: 1, mean: 1, distribution: { 0.5: 375 } },
+          source: 'fixture',
+        },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('outside');
+  });
+
+  // The mean written beside a distribution rather than computed from it is a
+  // second number that can drift from the first.
+  it('refuses a mean that is not the distribution\'s mean', () => {
+    const r = run({
+      record: record({
+        scores: {
+          scored: 375,
+          skipped: 0,
+          failed: 0,
+          oracle: { min: 0, max: 1, mean: 0.99, distribution: { 0: 5, 1: 370 } },
+          source: 'fixture',
+        },
+      }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("distribution's mean");
+  });
+
+  // Zero is a score; "no case scored" is not one.
+  it('refuses a zero minimum when nothing was scored', () => {
+    const r = run({
+      record: record({
+        corpus: { declaredCases: 1, roundTripped: 0, oracle: 1 },
+        scores: { scored: 0, skipped: 0, failed: 1, oracle: { min: 0, max: null, mean: null, distribution: {} }, source: 'fixture' },
+        pins: [{ id: 'rcaeval-re1-ob', bytes: 10, sha256: SHA }],
+      }),
+      doc: doc({ 'cases round-tripped at `oracle=1.00`': '**0**', 'cases that did not': '**1**' }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('absence of one');
+  });
+
+  it('refuses a document whose mean disagrees with the record', () => {
+    const r = run({ doc: doc({ 'mean oracle score across the scored cases': '**0.98**' }) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('mean oracle');
   });
 
   it('declares the script it spawns, because gate-sites rule 7 reconciles it', () => {

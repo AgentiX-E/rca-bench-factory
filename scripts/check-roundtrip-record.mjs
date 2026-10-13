@@ -118,6 +118,8 @@ function readPublished(doc) {
     else if (key.includes('cases declared')) figures.declaredCases = Number(value.replace(/[^0-9]/g, ''));
     else if (key.includes('round-tripped')) figures.roundTripped = Number(value.replace(/[^0-9]/g, ''));
     else if (key.includes('did not')) figures.failed = Number(value.replace(/[^0-9]/g, ''));
+    else if (key.includes('mean oracle')) figures.meanOracle = Number(value.replace(/[^0-9.]/g, ''));
+    else if (key.includes('worst per-case')) figures.worstOracle = Number(value.replace(/[^0-9.]/g, ''));
   }
   return figures;
 }
@@ -157,7 +159,85 @@ function main() {
     problems.push(`the record reports oracle ${corpus.oracle}, which is not a score in (0, 1]`);
   }
 
-  // 3. The pins, against the registry the workflow itself verifies a fetch against.
+  // 3. The score block, and the partition it claims.
+  //
+  // P0-2 asked for a score report on the real corpus and the answer used to be
+  // log lines (finding 155). The block is checked here for the property that
+  // makes a report readable rather than for its arithmetic: the three statuses
+  // partition the declared set, the distribution accounts for every scored case,
+  // and the mean is the distribution's mean rather than a number written beside
+  // it.
+  const scores = record.scores ?? {};
+  const oracle = scores.oracle ?? {};
+  const distribution = oracle.distribution ?? {};
+  if (typeof scores.source !== 'string' || scores.source === '') {
+    problems.push('the score block does not say where its numbers came from, which is the defect this record exists to fix');
+  }
+  const partition = (scores.scored ?? 0) + (scores.skipped ?? 0) + (scores.failed ?? 0);
+  if (!Number.isInteger(scores.scored) || partition !== declaredCases) {
+    problems.push(
+      `the score block accounts for ${partition} of ${declaredCases} declared case(s) ` +
+        `(${scores.scored} scored + ${scores.skipped} skipped + ${scores.failed} failed). A report whose ` +
+        'records do not cover the declared set is a report about a subset.',
+    );
+  }
+  if (scores.scored !== roundTripped) {
+    problems.push(
+      `the record says ${roundTripped} case(s) round-tripped and ${scores.scored} scored; those are two ` +
+        'names for the same fact and they disagree',
+    );
+  }
+  const distributionTotal = Object.values(distribution).reduce((a, b) => a + b, 0);
+  if (Object.keys(distribution).length > 0 && distributionTotal !== scores.scored) {
+    problems.push(
+      `the distribution accounts for ${distributionTotal} case(s) and ${scores.scored} were scored, so it ` +
+        'is a second, independent count that can disagree with the first',
+    );
+  }
+  if (scores.scored === 0) {
+    for (const field of ['min', 'max', 'mean']) {
+      if (oracle[field] !== null) {
+        problems.push(
+          `no case was scored and the oracle's ${field} is ${oracle[field]}; an empty score set has no ` +
+            `${field}, and zero is a score rather than the absence of one`,
+        );
+      }
+    }
+  } else {
+    for (const field of ['min', 'max', 'mean']) {
+      if (typeof oracle[field] !== 'number') {
+        problems.push(`the oracle's ${field} is not a number, so the score block is not readable`);
+      }
+    }
+    if (typeof oracle.min === 'number' && typeof oracle.max === 'number' && typeof oracle.mean === 'number') {
+      if (!(oracle.min <= oracle.mean && oracle.mean <= oracle.max)) {
+        problems.push(
+          `the oracle's mean (${oracle.mean}) is outside [${oracle.min}, ${oracle.max}], which no set of ` +
+            'scores can produce',
+        );
+      }
+      for (const [score, count] of Object.entries(distribution)) {
+        const value = Number(score);
+        if (!(value >= oracle.min && value <= oracle.max)) {
+          problems.push(`the distribution holds a score of ${score}, outside [${oracle.min}, ${oracle.max}]`);
+        }
+        if (!Number.isInteger(count) || count <= 0) {
+          problems.push(`the distribution holds ${count} case(s) at ${score}, which is not a count`);
+        }
+      }
+      if (Object.keys(distribution).length > 0) {
+        const weighted = Object.entries(distribution).reduce((a, [score, count]) => a + Number(score) * count, 0) / distributionTotal;
+        if (Math.abs(weighted - oracle.mean) > 1e-9) {
+          problems.push(
+            `the mean is ${oracle.mean} and the distribution's mean is ${weighted}; a mean written beside ` +
+              'a distribution rather than computed from it is a second number that can drift',
+          );
+        }
+      }
+    }
+  }
+
+  // 4. The pins, against the registry the workflow itself verifies a fetch against.
   const registry = registryAssets(readJson(registryPath, 'the asset registry'));
   const pins = Array.isArray(record.pins) ? record.pins : [];
   if (pins.length === 0) {
@@ -193,7 +273,7 @@ function main() {
     }
   }
 
-  // 4. The documents, scoped to the section that claims to be current.
+  // 5. The documents, scoped to the section that claims to be current.
   const published = readPublished(readFileSync(docPath, 'utf8'));
   if (published === null) {
     fail([
@@ -224,13 +304,30 @@ function main() {
   if (published.failed !== failed) {
     problems.push(`the document says ${published.failed} cases did not round-trip; the record implies ${failed}`);
   }
+  if (scores.scored > 0 && typeof oracle.mean === 'number') {
+    if (published.meanOracle !== Number(oracle.mean.toFixed(2))) {
+      problems.push(
+        `the document publishes a mean oracle of ${published.meanOracle} and the record's distribution has ` +
+          `a mean of ${oracle.mean.toFixed(2)}. This is the number P0-2 asks for, so it is the one a reader ` +
+          'compares against upstream.',
+      );
+    }
+    if (typeof oracle.min === 'number' && published.worstOracle !== Number(oracle.min.toFixed(2))) {
+      problems.push(
+        `the document publishes a worst case of ${published.worstOracle} and the record's minimum is ` +
+          `${oracle.min.toFixed(2)}`,
+      );
+    }
+  }
 
   if (problems.length) fail(problems);
 
   console.log(
     `check-roundtrip-record: OK (${record.anchor}: ${roundTripped}/${declaredCases} at ` +
-      `oracle=${corpus.oracle}, ${pins.length} pin(s) agree with the registry, run ${run.id} on ` +
-      `${run.headSha}; and ${docPath.endsWith('progress.md') ? 'docs/progress.md' : docPath} publishes the same)`,
+      `oracle=${corpus.oracle}, mean ${oracle.mean ?? 'n/a'} over ${scores.scored} scored ` +
+      `(${scores.skipped} skipped, ${scores.failed} failed), ${pins.length} pin(s) agree with the registry, ` +
+      `run ${run.id} on ${run.headSha}; and ${docPath.endsWith('progress.md') ? 'docs/progress.md' : docPath} ` +
+      'publishes the same)',
   );
 }
 

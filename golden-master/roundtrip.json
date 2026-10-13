@@ -13,6 +13,20 @@
     "roundTripped": 375,
     "oracle": 1
   },
+  "scores": {
+    "scored": 375,
+    "skipped": 0,
+    "failed": 0,
+    "oracle": {
+      "min": 1,
+      "max": 1,
+      "mean": 1,
+      "distribution": {
+        "1": 375
+      }
+    },
+    "source": "the run's own per-case ROUNDTRIP lines, which print `oracle=` for every case; run 38250480271 predates `--report`, which writes this block from scripts/check-official.mjs. The next run fills it from the report itself."
+  },
   "pins": [
     {
       "id": "rcaeval-re1-ob",
