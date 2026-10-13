@@ -454,7 +454,13 @@ describe('scripts · the gate-test battery writes a report that survives a block
     expect(code).toMatch(/def output_tail\(output: str/);
     expect(code).toMatch(/output.splitlines\(\)\[-lines:\]/);
     const wired = code.match(/"output_tail": output_tail\(output\)/g) ?? [];
-    expect(wired.length).toBe(3); // CAUGHT, REDUNDANT, SURVIVED
+    // Every arm that ran the suite, counted from the source rather than fixed at
+    // the three that existed when this was written: attribution added a fourth
+    // (`UNATTRIBUTED`) that also needs its output preserved, and a constant here
+    // reported that as a wiring defect.
+    const ran = code.match(/"exit_status": status/g) ?? [];
+    expect(wired.length).toBe(ran.length);
+    expect(wired.length).toBeGreaterThanOrEqual(4);
   });
 
   it('every reader of a verdict tuple agrees with the tuple the battery builds', () => {

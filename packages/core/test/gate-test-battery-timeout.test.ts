@@ -101,7 +101,14 @@ describe('scripts · the gate-test battery reports a timeout as a timeout', () =
     // `timed_out` has to reach the failure condition. A battery that printed
     // TIMEOUT and returned 0 would be worse than the bug it replaces: CI would
     // go green over a run that decided nothing.
-    expect(SOURCE).toMatch(/if survived or inert or timed_out:/);
+    // Every verdict that is not a proof has to fail the run, and that condition is
+    // the list. Naming the whole set rather than the three that existed when this
+    // was written is what makes a *new* non-proof verdict impossible to add
+    // silently: a verdict missing from this line is tolerated by the exit code.
+    expect(SOURCE).toMatch(/if survived or inert or timed_out or unparseable or unattributed:/);
+    for (const verdict of ['SURVIVED', 'INERT', 'TIMEOUT', 'UNPARSEABLE', 'UNATTRIBUTED']) {
+      expect(SOURCE).toContain(`"${verdict}"`);
+    }
   });
 
   it('the preflight asks for a version instead of running the whole suite', () => {

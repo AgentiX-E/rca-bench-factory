@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -398,6 +399,146 @@ def failing_tests(output: str) -> list[str]:
         if frame:
             names.append(f"failure in {frame.group(1)}")
     return names
+
+
+
+def parses(script: str, text: str) -> tuple[bool, str]:
+    """Whether the mutated script is still something node will load.
+
+    The discriminator that the CAUGHT condition does not have. An injection whose
+    anchor lands inside a multi-line construct -- or on a brace that no longer
+    balances -- leaves a file that cannot be parsed, and a file that cannot be
+    parsed makes *every* test in the file fail. Exit status and failed count are
+    both exactly what a real catch produces, so the verdict is identical and
+    means the opposite.
+
+    Finding 152 is this defect one script over: `verify-gates-are-testable.mjs`
+    credited an injection that landed inside a multi-line import as `CAUGHT 51
+    red`, because nothing asked whether the mutated file could still be read. The
+    repair there was to check first; this is the same check, and it is why the
+    verdict `UNPARSEABLE` exists rather than being folded into `UNATTRIBUTED` --
+    one is a broken mutation and the other is a mutation that missed, and they
+    call for different repairs.
+    """
+    suffix = pathlib.Path(script).suffix or '.js'
+    with tempfile.NamedTemporaryFile('w', suffix=suffix, delete=False, dir=tempfile.gettempdir()) as handle:
+        handle.write(text)
+        temp = handle.name
+    try:
+        probe = subprocess.run(['node', '--check', temp], capture_output=True, text=True)
+    finally:
+        os.unlink(temp)
+    detail = [line for line in probe.stderr.splitlines() if line.strip()]
+    return probe.returncode == 0, (detail[0].strip() if detail else '')
+
+
+TEST_DIR = REPO / 'packages' / 'core' / 'test'
+
+
+def _witness_problems(
+    expectations: dict[str, tuple[str, ...]], files: dict[str, pathlib.Path]
+) -> list[str]:
+    """Every witness must be a string that appears in the file it points at.
+
+    `files` is a parameter rather than something read from `INJECTIONS` so the
+    negative control below can drive this comparison with a file of its own. The
+    first version read `INJECTIONS` internally, so the probe's synthetic entry was
+    reported as "an expectation for an injection that does not exist" -- the
+    comparator complaining about the control instead of exercising it, which would
+    have made `--probe` pass for the wrong reason.
+    """
+    problems: list[str] = []
+    for name, witnesses in expectations.items():
+        path = files.get(name)
+        if path is None:
+            problems.append(f"{name!r} declares an expectation but is not an injection")
+            continue
+        if not path.exists():
+            problems.append(f"{name}: the file {path.name} does not exist")
+            continue
+        source = path.read_text()
+        for witness in witnesses:
+            if witness not in source:
+                problems.append(f"{name}: {witness!r} is not a test title in {path.name}")
+    return problems
+
+
+def verify_expectations(probe: bool = False) -> int:
+    """Reconcile the expectation table against the injections and the test files.
+
+    A witness that has been renamed away turns a `CAUGHT` into an `UNATTRIBUTED`
+    silently -- the battery still runs, still reports a number, and the number is
+    one lower than the reader expects. Same failure mode as the stale expectation
+    that CI caught in finding 156, and the same remedy: make it a mode, drive the
+    mode from a test, and add `--probe` as a negative control on the comparator
+    rather than on the data. Without the probe, a comparison that never reports
+    anything is indistinguishable from a comparison that finds nothing wrong.
+    """
+    problems: list[str] = []
+
+    declared = {name for name, *_ in INJECTIONS}
+    if set(EXPECTATIONS) != declared:
+        missing = sorted(declared - set(EXPECTATIONS))
+        extra = sorted(set(EXPECTATIONS) - declared)
+        if missing:
+            problems.append(f"no expectation declared for: {', '.join(missing)}")
+        if extra:
+            problems.append(f"expectations for injections that do not exist: {', '.join(extra)}")
+
+    for name in EXPECTED_SURVIVORS:
+        if EXPECTATIONS.get(name):
+            problems.append(
+                f"{name} is an expected survivor and also declares a witness; "
+                "an injection cannot be both"
+            )
+
+    files = {name: TEST_DIR / test_file for name, _s, test_file, *_ in INJECTIONS}
+    problems.extend(_witness_problems(EXPECTATIONS, files))
+
+    if probe:
+        impossible = 'a test title that cannot exist anywhere at all'
+        probed = _witness_problems({'probe': (impossible,)}, {'probe': TEST_DIR / 'check-doc-counts.test.ts'})
+        if len(probed) != 1 or impossible not in probed[0]:
+            problems.append(
+                "the negative control failed: a witness that cannot exist was not reported "
+                f"missing (got {probed!r}), so this reconciliation proves nothing"
+            )
+
+    for line in problems:
+        print(f"gate-tests-battery: {line}")
+    verdict = 'FAILED' if problems else 'OK'
+    print(
+        f"gate-tests-battery: {verdict} ({sum(len(w) for w in EXPECTATIONS.values())} witness(es) "
+        f"across {len(EXPECTATIONS)} injection(s)"
+        + (', with the comparator probed)' if probe else ')')
+    )
+    return 1 if problems else 0
+
+
+def attribute(name: str, status: int, failed: int, failing: list[str]) -> tuple[str, list[str]]:
+    """The verdict a red earns, and what is missing if it earns only half of one.
+
+    Split out of the loop so it can be driven by a fixture rather than by waiting
+    for an injection to happen to produce the shape under test. The two halves it
+    separates are the whole point of this round:
+
+    * `status != 0 and failed > 0` says **the suite went red**;
+    * the declared witnesses appearing among the failing tests says **this test is
+      what disagrees**.
+
+    Only the second is a measurement about the guard, and the condition used to
+    answer with the first.
+    """
+    if status == 0 or failed == 0:
+        return 'NO_RED', []
+    unresolved = missing_witnesses(name, failing)
+    return ('UNATTRIBUTED', unresolved) if unresolved else ('CAUGHT', [])
+
+
+def missing_witnesses(name: str, failing: list[str]) -> list[str]:
+    """The declared witnesses that the runner's own failure list does not contain."""
+    joined = chr(10).join(failing)
+    return [witness for witness in EXPECTATIONS.get(name, ()) if witness not in joined]
 
 
 def failed_count(output: str) -> int:
@@ -956,6 +1097,112 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
 # same way, with the difference that the check here is a guard on a walk rather
 # than on a value.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# What each injection must break, named.
+#
+# Every entry above declares, in prose, the test that its mutation has to break.
+# Prose is not checkable, and the CAUGHT condition was `status != 0 and
+# failed > 0` -- so an injection that broke the script in some *other* way was
+# credited as proof that the named test is load-bearing. That is not
+# hypothetical: prefixing `scripts/check-readme-sample.mjs` with a line that is
+# not JavaScript gives exit 1 and seven failing tests, and the condition accepts
+# it while exercising nothing that README 1's description names.
+#
+# `EXPECTATIONS` is the same claim in a checkable form: the substrings of the
+# runner's failing-test lines that must be present for the verdict to be
+# `CAUGHT`. Anything else that goes red is `UNATTRIBUTED`, which is a failure,
+# because "the suite went red" and "this test is what disagrees" are different
+# measurements and the battery exists to make the second one.
+#
+# Two reconciliations keep it honest, in the shape findings 156 and 157 use:
+# every name here must be a key of `INJECTIONS` (both directions), and every
+# witness must appear in the test file the row runs, so a renamed test fails
+# locally instead of turning a CAUGHT into an UNATTRIBUTED on the runner.
+#
+# An injection declared to *survive* (`EXPECTED_SURVIVORS`) declares no witness,
+# and a row that declares one cannot also be excused as a survivor.
+EXPECTATIONS: dict[str, tuple[str, ...]] = {
+    'README 1. the sample marker stops matching, so nothing is collected': (
+        'executes a sample block and reports it by number',
+        'picks the sample out by its import rather than by fence position',
+    ),
+    'README 2. the rewrite pattern stops matching the collection marker': (
+        'picks the sample out by its import rather than by fence position',
+    ),
+    'README 3. a failed sample no longer fails the run': (
+        'fails the sample when the call does not match the real signature',
+        'reports a partial pass as partial, so one broken sample is not read as all-broken',
+    ),
+    'README 4. the block is not executed at all, only collected': (
+        'fails the sample when the call does not match the real signature',
+    ),
+    'BUNDLE 1. the archive comparison always agrees': (
+        'refuses a stale archive',
+        'refuses a stale metadata file',
+    ),
+    'BUNDLE 2. only the archive is compared, not the metadata': (
+        'refuses a stale metadata file',
+    ),
+    'BUNDLE 3. an empty example directory is accepted': (
+        'refuses an example directory holding no files at all',
+    ),
+    "BUNDLE 4. the manifest's file count stops agreeing with its own listing": (
+        'counts the manifest in the file count it advertises',
+    ),
+    'BUNDLE 5. the tar stops being reproducible': (
+        'pins every tar field that could vary between machines',
+    ),
+    'EXAMPLES 1. --check stops comparing the data file': (
+        'refuses a stale data file and names the command that fixes it',
+    ),
+    'EXAMPLES 2. a missing data file stops being reported': (
+        'refuses --check when the data file does not exist at all',
+    ),
+    'EXAMPLES 3. an example block is left stale instead of rewritten': (
+        'replaces a stale example block with the real export',
+        'honours the truncate modifier rather than writing the whole export',
+    ),
+    'EXAMPLES 4. a marker naming an unknown target stops throwing': (
+        'refuses an example that names a target the exporters do not produce',
+    ),
+    'EXAMPLES 5. a marker naming an unexported path stops throwing': (
+        'refuses an example naming a path the target does not export',
+    ),
+    'EXAMPLES 6. a field marker that matches nothing stops throwing': (
+        'refuses a field marker that matches no documented file',
+    ),
+    'EXAMPLES 7. the truncate modifier is ignored': (
+        'honours the truncate modifier rather than writing the whole export',
+    ),
+    'CLIREF 1. the flag lookup loses its word boundary': (
+        'does not accept a longer flag as documentation of a shorter one',
+    ),
+    'CLIREF 2. an implemented-but-undocumented command stops being reported': (
+        'refuses a command the binary implements but the reference omits',
+    ),
+    'CLIREF 3. a documented-but-unimplemented command stops being reported': (
+        'refuses a section heading for a command the binary does not implement',
+    ),
+    'CLIREF 4. a flag the reference never mentions stops being reported': (
+        'refuses a reference that documents no flag at all',
+    ),
+    'CLIREF 5. only the first disagreement is reported': (
+        'reports every disagreement rather than stopping at the first',
+    ),
+    'RCAEVAL 1. --check stops comparing the descriptor file': (
+        'refuses a file that has drifted from the corpus',
+    ),
+    'RCAEVAL 2. a non-directory entry at the top level is treated as a suite': (),
+    'RCAEVAL 3. the per-suite tally drops the suites with no cases': (
+        'skips a fourth suite, and its on-demand tally branch is therefore dead',
+    ),
+    'RCAEVAL 4. the run level is read from one directory deeper': (
+        'recovers a service whose name contains hyphens',
+    ),
+}
+
+
 EXPECTED_SURVIVORS: dict[str, str] = {
     "RCAEVAL 2. a non-directory entry at the top level is treated as a suite": (
         "redundant with the `try { readdirSync(suitePath) } catch { continue }` "
@@ -975,11 +1222,17 @@ ORIGINALS: dict[str, str] = {
 
 def main() -> int:
     results: list[tuple[str, str, list[str], float]] = []
-    caught = survived = inert = timed_out = 0
+    caught = survived = inert = timed_out = unparseable = unattributed = 0
     slowest: tuple[float, str] = (0.0, "")
     total_seconds = 0.0
 
     assert_vitest_is_callable()
+    # The table is reconciled before a single file is written: an injection with
+    # no witness would silently accept any red, which is the state this round
+    # measured its way out of.
+    reconcile = verify_expectations()
+    if reconcile != 0:
+        return reconcile
     lock_fd = acquire_exclusive_lock()
 
     try:
@@ -1000,6 +1253,22 @@ def main() -> int:
                 print("         -- the mutation changed nothing")
                 inert += 1
                 results.append((name, "INERT", [], 0.0, {"diagnosis": "mutation_was_a_noop"}))
+                continue
+
+            # Asked before the tests run, because the answer decides whether the
+            # test run can decide anything. A script that does not parse fails
+            # every test in the file that imports it, which is the same exit
+            # status and the same shape of failure as a real catch.
+            loads, parse_error = parses(script, mutated)
+            if not loads:
+                print(f"UNPARSEABLE {name}")
+                print(f"         expecting: {description}")
+                print(f"         -- the mutated script no longer parses: {parse_error}")
+                print("            Every test in the file fails on that alone, so the red is")
+                print("            not evidence about this guard. The mutation is wrong, not")
+                print("            the test.")
+                unparseable += 1
+                results.append((name, "UNPARSEABLE", [], 0.0, {"diagnosis": "the mutated script does not parse", "parse_error": parse_error}))
                 continue
 
             try:
@@ -1032,13 +1301,27 @@ def main() -> int:
             basis = collected_basis(output)
             why = diagnosis(status, output, collected)
 
-            if status != 0 and failed_count(output) > 0:
+            failures = failed_count(output)
+            verdict, unresolved = attribute(name, status, failures, failing_tests(output))
+            if verdict != 'NO_RED':
                 names = failing_tests(output)
-                print(f"CAUGHT   {name}")
-                print(f"         expecting: {description}")
-                print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
-                caught += 1
-                results.append((name, "CAUGHT", names, elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
+                if unresolved:
+                    print(f"UNATTRIBUTED {name}")
+                    print(f"         expecting: {description}")
+                    print("         -- the suite went red, but the failure does not name the")
+                    print("            test(s) this injection is declared to break, so the red")
+                    print("            is not evidence about this guard:")
+                    for witness in unresolved:
+                        print(f"              missing: {witness}")
+                    print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
+                    unattributed += 1
+                    results.append((name, "UNATTRIBUTED", names, elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": why, "missing_witnesses": unresolved, "output_tail": output_tail(output)}))
+                else:
+                    print(f"CAUGHT   {name}")
+                    print(f"         expecting: {description}")
+                    print(f"         failing:   {len(names)} test(s), first: {names[0] if names else '(unnamed)'}  [{elapsed:.1f}s]")
+                    caught += 1
+                    results.append((name, "CAUGHT", names, elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": why, "output_tail": output_tail(output)}))
             elif name in EXPECTED_SURVIVORS:
                 print(f"REDUNDANT {name}")
                 print(f"         expecting: {description}")
@@ -1068,6 +1351,8 @@ def main() -> int:
         "survived": survived,
         "inert": inert,
         "timed_out": timed_out,
+        "unparseable": unparseable,
+        "unattributed": unattributed,
         "redundant": len(EXPECTED_SURVIVORS),
         "total_seconds": round(total_seconds, 1),
         "slowest": {"seconds": round(slowest[0], 1), "injection": slowest[1]},
@@ -1076,7 +1361,8 @@ def main() -> int:
     print()
     print(
         f"{caught} caught, {survived} survived, {inert} inert, "
-        f"{timed_out} timed out, {len(EXPECTED_SURVIVORS)} redundant (expected)"
+        f"{timed_out} timed out, {unparseable} unparseable, {unattributed} unattributed, "
+        f"{len(EXPECTED_SURVIVORS)} redundant (expected)"
     )
     # The cost is printed because it is the one number that differs between the
     # machine this was written on and the machine it runs on, and the difference
@@ -1090,11 +1376,11 @@ def main() -> int:
     if restore_status != 0:
         write_report(results, summary)
         return restore_status
-    if survived or inert or timed_out:
+    if survived or inert or timed_out or unparseable or unattributed:
         print()
         print("Failures:")
         for name, verdict, *_ in results:
-            if verdict in {"SURVIVED", "INERT", "TIMEOUT"}:
+            if verdict in {"SURVIVED", "INERT", "TIMEOUT", "UNPARSEABLE", "UNATTRIBUTED"}:
                 print(f"  {verdict}  {name}")
         write_report(results, summary)
         return 1
@@ -1103,4 +1389,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--verify-expectations" in sys.argv:
+        sys.exit(verify_expectations(probe="--probe" in sys.argv))
     sys.exit(main())

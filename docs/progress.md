@@ -3718,9 +3718,9 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 | `core` test suite | **121 files, 3265 tests passed** (Pass 39, `16f3499a9`) |
 | `cli` test suite | **3 files, 173 tests passed** (Pass 39, `16f3499a9`) |
 | repo test suite | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`, `pnpm test`, every workspace) |
-| `core` test suite | **131 files, 3433 tests passed** (as of this commit) |
+| `core` test suite | **132 files, 3444 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **134 files, 3606 tests passed** (as of this commit) |
+| repo test suite | **135 files, 3617 tests passed** (as of this commit) |
 | `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
 | M4 drop `unknownArguments` | **caught** -- 2 fail |
 | M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
@@ -3821,9 +3821,9 @@ strength of those artefacts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **131 files, 3433 tests passed** (as of this commit) |
+| `core` test suite | **132 files, 3444 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **134 files, 3606 tests passed** (as of this commit) |
+| repo test suite | **135 files, 3617 tests passed** (as of this commit) |
 | coverage — core | **99.96 / 99.91 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | `typecheck` / `lint` / `docs:check` | clean |

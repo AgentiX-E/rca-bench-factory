@@ -286,7 +286,15 @@ describe('scripts · the gate-test battery parses the output CI emits, not the o
       .join('\n');
     expect(code).toMatch(/basis = collected_basis\(output\)/);
     const wired = code.match(/"tests_run_basis": basis/g) ?? [];
-    expect(wired.length).toBe(3);
+    // Not a fixed three any more. The row has to carry its basis on **every** arm
+    // that reports a test run, and the number of those arms is a property of the
+    // source rather than a constant: attribution added an arm (`UNATTRIBUTED`)
+    // without changing how many tests ran, and the fixed count turned that into a
+    // red suite that said nothing about the wiring. `exit_status` is written by
+    // exactly the arms that ran the suite, so it is the count to hold to.
+    const ran = code.match(/"exit_status": status/g) ?? [];
+    expect(wired.length).toBe(ran.length);
+    expect(wired.length).toBeGreaterThanOrEqual(4);
     // And it reaches the row through the same spread the other fields use.
     expect(code).toMatch(/\*\*detail/);
   });

@@ -15826,3 +15826,177 @@ the job of disagreeing -- and each round the *next* layer down was where the
 unwritten number was living. The remaining half of P0-2 is deliberately left as a
 claim the repository does not make, because the comparison it would need is between
 two quantities that are not the same.
+
+---
+
+## Finding 157 — the battery that proves every gate is guarded credited any red as a proof
+
+### What the battery is for
+
+`scripts/injection/gate-tests-battery.py` is the load-bearing member of this
+repository's verification story. It takes each gate script and breaks it -- one
+anchor at a time, twenty-five of them -- then runs that gate's own test file and
+asks whether the suite noticed. Every claim of the form "this guard is guarded"
+rests on it, and the meta-gate that asks whether each gate *can* be shown to fail
+(`verify-gates-are-testable.mjs`) is downstream of it.
+
+Each row declares, in its fifth field, the specific assertion the mutation is
+supposed to break. For example:
+
+```
+"README 1. the sample marker stops matching, so nothing is collected"
+"the test that a good sample is executed and the test that the marker is what selects it"
+```
+
+and the verdict was decided by:
+
+```python
+if status != 0 and failed_count(output) > 0:
+```
+
+### The measurement
+
+The declared assertion is printed and never compared. So the battery answers *the
+suite went red* to a question that is *this test disagrees* -- and those are
+different measurements whenever a mutation breaks something else on the way.
+
+Measured, not argued. Prefixing `scripts/check-readme-sample.mjs` with a line that
+is not JavaScript:
+
+```
+restored byte-exact: True
+exit status: 1 | failed: 7
+the battery's CAUGHT condition (status != 0 and failed > 0): True
+```
+
+A file that cannot be parsed fails every test that imports it, so the exit status
+and the failure count are **indistinguishable from a real catch**. Had one of the
+twenty-five anchors ever landed inside a multi-line construct, the battery would
+have reported `CAUGHT` for a row that demonstrated nothing -- and the report would
+have carried a syntax error in its `output_tail` field, forty lines below the
+verdict, for a reader to notice.
+
+This is finding 152's defect one script over: `verify-gates-are-testable.mjs`
+credited an injection that landed inside a multi-line import as `CAUGHT 51 red`
+until it was made to check that the mutated file still parses. The lesson was
+written down and applied to that one script.
+
+**And the evidence of the gap was in this battery's own report the whole time.**
+Every row persists the runner's failing-test lines. For the twenty-four caught
+rows, the names are there -- `scripts/check-readme-sample.mjs · what it asserts
+about a good sample > executes a sample block and reports it by number` and so on
+-- recorded, printed, and read by nothing.
+
+| quantity | value |
+| --- | --- |
+| injections | **25** |
+| injections whose declared assertion is compared with the failure | **0** |
+| injections that currently produce a non-parsing script | **0** |
+
+The last row is why this was a gap rather than an active failure: been-zero is not
+the same as cannot-happen, and the whole class depends on the anchors holding.
+
+### The fix
+
+**A declared witness per injection, checked in two places.**
+
+`EXPECTATIONS` states each row's claim in a form a program can disagree with: the
+substrings of the runner's failing-test lines that must be present.
+
+```python
+EXPECTATIONS: dict[str, tuple[str, ...]] = {
+    'README 1. the sample marker stops matching, so nothing is collected': (
+        'executes a sample block and reports it by number',
+        'picks the sample out by its import rather than by fence position',
+    ),
+    ...
+}
+```
+
+`attribute()` decides from it -- `NO_RED` / `CAUGHT` / `UNATTRIBUTED` -- and
+`UNATTRIBUTED` is a failure, reported separately from `SURVIVED` because the
+repairs are opposite: a survivor says the test does not exist, an unattributed red
+says the mutation missed.
+
+The parse guard is the other half, and it runs **before** the suite is invoked, so
+an unparseable mutation cannot be credited even in principle. Its verdict is
+`UNPARSEABLE`, separate from `UNATTRIBUTED`, for the same reason.
+
+Two reconciliations keep the table from decaying, in the shape findings 156 and
+154 established:
+
+| link | what it holds |
+| --- | --- |
+| `INJECTIONS` -> `EXPECTATIONS` | both directions: no injection without a witness, no witness without an injection |
+| witness -> test file | every declared witness must appear as a title in the file its row runs, so a rename fails **locally** instead of turning a `CAUGHT` into an `UNATTRIBUTED` on the runner |
+| survivors vs witnesses | a row excused as an expected survivor cannot also claim a witness |
+
+`--verify-expectations --probe` is the mode a test drives, and `--probe` is a
+negative control on the comparator rather than on the data: it requires a witness
+that cannot exist to be reported missing, so a comparison that never reports
+anything cannot be mistaken for one that finds nothing wrong.
+
+The completeness check runs inside `main()` before a file is touched -- a row with
+no witness is exactly the state this round measured its way out of.
+
+### The witnesses were not copied from the last run
+
+The obvious way to fill the table is to paste the names the previous report
+observed, and it is the wrong way: it would pin whatever the last run happened to
+do, including an incidental break, which is the defect rather than the fix.
+
+Each entry was authored from the row's own prose and then reconciled against the
+test file's source. The two disagreeing cases are the interesting ones:
+
+- `README 2`'s description says "the dead-branch test's equivalence half: the two
+  literals stop being the same string", and the test that carries it is
+  `picks the sample out by its import rather than by fence position` -- the
+  mutation and README 1's are the two sides of that equivalence, which is why the
+  same title is the witness for both.
+- `BUNDLE 5`'s description says "the two-build reproducibility test" and the title
+  is `pins every tar field that could vary between machines`.
+
+The first full run afterwards: **24 caught, 0 survived, 0 inert, 0 timed out,
+0 unparseable, 0 unattributed, 1 redundant** -- the same verdicts as before the
+change, now with a reason for each one.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| the battery, on the shipped table | **24 caught / 0 unattributed / 0 unparseable**, 25 injections, 83.8s |
+| `--verify-expectations --probe` | **OK (28 witness(es) across 25 injection(s), with the comparator probed)** |
+| `gate-test-battery-attribution.test.ts` | **11 tests**, including two that drive `main()` with a one-row table so the wiring is exercised and not only the decision functions |
+| mutation of the fix itself | three mutations -- restore the old condition, disable the parse guard, neuter the witness lookup -- each turns the new test file **red**, and the battery is **byte-identical** afterwards |
+| governance guards | `batteries-reach-an-invoker`, `batteries-verify-their-restore`, `cold-tree-job`, `scripts-are-classified`, `gate-sites-are-proven`, `export-surface-enumerated`, `timeout-budget`, `ci-reaches-doc-guards`: **274 passed** |
+| `gate-sites.json` | unchanged: 49 sites, all `proved` |
+| core test suite | **132 files, 3444 tests passed**; `cli` 3 files, 173 tests |
+| coverage | **99.96 / 99.91 / 100 / 99.96**; `cli` **100 / 100 / 100 / 100** |
+
+The `UNPARSEABLE` end-to-end test asserts that the stub for `run_tests` is **never
+called** -- it raises if it is. That is the difference between testing the
+condition and testing the order the condition is asked in, and the order is what
+makes the guard hold.
+
+### What is not covered
+
+- **The witnesses pin one substring per test, not the assertion inside it.** A
+  mutation that breaks a test *by* an unrelated assertion inside the same test
+  body is attributed correctly, because attribution is at test granularity. That
+  is the granularity the runner reports at, and no finer one is available.
+- **The other twelve batteries.** Three of them compare a declared expectation
+  with the output (`doc-counts-shapes`, `backend-support`, `roundtrip-record`);
+  the remaining four decide on `failed > 0` alone
+  (`fault-extraction-scoring`, `fault-extraction-workflow`, `fetch-official-retry`,
+  and the probes are a different shape). Finding 156 recorded this as a residual;
+  it is still one, and it is now the largest single gap in the verification story.
+
+### What this says about the method
+
+The battery has persisted the failing test names of every injection for as long as
+it has existed, and the claim they could check was written in prose one field to
+the left. Nothing was missing except the comparison -- which is the same sentence
+this campaign has written about a mislabelled row (153), a log-line measurement
+(155), and a score that was not an artefact (156). **A claim and its evidence
+sitting in the same record, unconnected, is the most common shape of the defect
+found here**, and the remedy is always to make something compare them.
