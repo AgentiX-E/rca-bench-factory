@@ -81,7 +81,23 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 /** Lift a top-level Python function out of a script, by name. */
 function extract(source: string, name: string): string {
   const start = source.indexOf(`def ${name}(`);
-  if (start < 0) throw new Error(`no definition of ${name} in the script`);
+  // The reader moved into `scripts/injection/_witnesses.py`, which the four
+  // batteries share; a name that is not in the script is looked up there, with the
+  // module-level patterns it reads. A second copy in each battery is the state this
+  // round measured its way out of.
+  if (start < 0) {
+    const shared = readFileSync(resolve(ROOT, 'scripts', 'injection', '_witnesses.py'), 'utf8');
+    const fromShared = shared.indexOf(`def ${name}(`);
+    if (fromShared < 0) throw new Error(`no definition of ${name} in either file`);
+    const restShared = shared.slice(fromShared + 1);
+    const nextShared = restShared.search(/\ndef /);
+    const body = shared.slice(fromShared, nextShared < 0 ? undefined : fromShared + 1 + nextShared);
+    const constants = shared
+      .split('\n')
+      .filter((line) => /^(ANSI|TRANSFORM_FAILURE)\b/.test(line))
+      .join('\n');
+    return `${constants}\n\n${body}`;
+  }
   const rest = source.slice(start + 1);
   const next = rest.search(/\ndef /);
   return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next);

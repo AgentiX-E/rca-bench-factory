@@ -103,9 +103,33 @@ function codeOf(source: string): string {
  * a generated script, i.e. an empty result that reads as a wrong answer rather
  * than as a broken harness.
  */
+function extractFunctionFrom(source: string, name: string): string {
+  const start = source.indexOf(`def ${name}(`);
+  if (start < 0) throw new Error(`no definition of ${name} in either file`);
+  const rest = source.slice(start + 1);
+  const next = rest.search(/\ndef /);
+  return source.slice(start, next < 0 ? undefined : start + 1 + next);
+}
+
 function extractPythonFunction(source: string, name: string): string {
   const start = source.indexOf(`def ${name}(`);
-  if (start < 0) throw new Error(`no definition of ${name} in the battery`);
+  // The reader, the decision and the table check moved into
+  // `scripts/injection/_witnesses.py`, which all four injection batteries share;
+  // a name that is not in the battery is looked up there. Keeping a second copy in
+  // the battery is the state this round measured its way out of.
+  if (start < 0) {
+    const shared = readFileSync(resolve(ROOT, 'scripts', 'injection', '_witnesses.py'), 'utf8');
+    // The function reads two module-level patterns, so the isolated harness gets
+    // them as well. Without this the extracted definition raises `NameError` and
+    // the harness prints nothing -- an empty result that reads as a wrong answer
+    // instead of as a broken harness, which is the failure this helper's own
+    // docstring is about.
+    const constants = shared
+      .split('\n')
+      .filter((line) => /^(ANSI|TRANSFORM_FAILURE)\b/.test(line))
+      .join('\n');
+    return `${constants}\n\n${extractFunctionFrom(shared, name)}`;
+  }
   const rest = source.slice(start + 1);
   const next = rest.search(/\ndef /);
   return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next);

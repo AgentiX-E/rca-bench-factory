@@ -66,6 +66,9 @@ import time
 from pathlib import Path
 from typing import Callable
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared attribution table)
+
 REPO = Path(__file__).resolve().parents[2]
 
 # The vitest binary, resolved from the repository's own install. The battery
@@ -355,190 +358,29 @@ def acquire_exclusive_lock() -> int:
     return fd
 
 
-def strip_ansi(text: str) -> str:
-    """Remove SGR colour codes so the parsers below see the same text locally and in CI.
-
-    CI is not a TTY and vitest still emits `\x1b[31m` escapes -- the captured CI
-    output has them, and the local run does not. Any pattern anchored on the first
-    visible character therefore works on one machine and not the other, which is
-    how the regexes in this file produced opposite verdicts in the two places.
-
-    A no-op on already-plain text, so stripping unconditionally is safe.
-    """
-    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
-
-
-def failing_tests(output: str) -> list[str]:
-    """The names of the tests vitest marked as failed, stripped of decoration.
-
-    Three shapes are matched, because vitest prints different ones and this
-    repository has now been bitten by matching only the first:
-
-      `× name` / `✗ name`   the default reporter's failed-test lines
-      `❯ file:line:col`     the per-failure *frame* header
-
-    The frame marker is what the captured CI output actually contains. Matching
-    only `×`/`✗` found zero failures in a run whose output was ten lines of
-    failure frames, and the CAUGHT condition is `status != 0 and failed > 0` --
-    so that miss is what turned twenty-four caught injections into twenty-four
-    survivors on CI while the same code reported 24 caught here.
-
-    ANSI escapes are stripped first for the same reason: the escapes sit between
-    the marker and the name, so a pattern anchored on the line start matches in a
-    terminal and fails in a pipe.
-    """
-    plain = strip_ansi(output)
-    names = []
-    for line in plain.splitlines():
-        stripped = line.strip()
-        match = re.match(r"[×✗]\s+(.*?)(?:\s+\d+ms)?$", stripped)
-        if match:
-            names.append(match.group(1).strip())
-            continue
-        frame = re.match(r"❯\s+(\S+?):\d+:\d+", stripped)
-        if frame:
-            names.append(f"failure in {frame.group(1)}")
-    return names
-
-
-
-def parses(script: str, text: str) -> tuple[bool, str]:
-    """Whether the mutated script is still something node will load.
-
-    The discriminator that the CAUGHT condition does not have. An injection whose
-    anchor lands inside a multi-line construct -- or on a brace that no longer
-    balances -- leaves a file that cannot be parsed, and a file that cannot be
-    parsed makes *every* test in the file fail. Exit status and failed count are
-    both exactly what a real catch produces, so the verdict is identical and
-    means the opposite.
-
-    Finding 152 is this defect one script over: `verify-gates-are-testable.mjs`
-    credited an injection that landed inside a multi-line import as `CAUGHT 51
-    red`, because nothing asked whether the mutated file could still be read. The
-    repair there was to check first; this is the same check, and it is why the
-    verdict `UNPARSEABLE` exists rather than being folded into `UNATTRIBUTED` --
-    one is a broken mutation and the other is a mutation that missed, and they
-    call for different repairs.
-    """
-    suffix = pathlib.Path(script).suffix or '.js'
-    with tempfile.NamedTemporaryFile('w', suffix=suffix, delete=False, dir=tempfile.gettempdir()) as handle:
-        handle.write(text)
-        temp = handle.name
-    try:
-        probe = subprocess.run(['node', '--check', temp], capture_output=True, text=True)
-    finally:
-        os.unlink(temp)
-    detail = [line for line in probe.stderr.splitlines() if line.strip()]
-    return probe.returncode == 0, (detail[0].strip() if detail else '')
-
-
-TEST_DIR = REPO / 'packages' / 'core' / 'test'
-
-
-def _witness_problems(
-    expectations: dict[str, tuple[str, ...]], files: dict[str, pathlib.Path]
-) -> list[str]:
-    """Every witness must be a string that appears in the file it points at.
-
-    `files` is a parameter rather than something read from `INJECTIONS` so the
-    negative control below can drive this comparison with a file of its own. The
-    first version read `INJECTIONS` internally, so the probe's synthetic entry was
-    reported as "an expectation for an injection that does not exist" -- the
-    comparator complaining about the control instead of exercising it, which would
-    have made `--probe` pass for the wrong reason.
-    """
-    problems: list[str] = []
-    for name, witnesses in expectations.items():
-        path = files.get(name)
-        if path is None:
-            problems.append(f"{name!r} declares an expectation but is not an injection")
-            continue
-        if not path.exists():
-            problems.append(f"{name}: the file {path.name} does not exist")
-            continue
-        source = path.read_text()
-        for witness in witnesses:
-            if witness not in source:
-                problems.append(f"{name}: {witness!r} is not a test title in {path.name}")
-    return problems
-
-
 def verify_expectations(probe: bool = False) -> int:
-    """Reconcile the expectation table against the injections and the test files.
+    """Reconcile the witness table against the injections and the test files.
+
+    Delegates to `_witnesses.verify_witness_table`, which is the same reconciliation
+    the other three batteries run. The reader, the decision and the table check used
+    to be four copies in four files; the last drift between them -- a verdict that
+    accepted any red -- is why the shared module exists.
 
     A witness that has been renamed away turns a `CAUGHT` into an `UNATTRIBUTED`
-    silently -- the battery still runs, still reports a number, and the number is
-    one lower than the reader expects. Same failure mode as the stale expectation
-    that CI caught in finding 156, and the same remedy: make it a mode, drive the
-    mode from a test, and add `--probe` as a negative control on the comparator
-    rather than on the data. Without the probe, a comparison that never reports
-    anything is indistinguishable from a comparison that finds nothing wrong.
+    silently, so this has to fail locally rather than on the runner, and `--probe` is
+    a negative control on the comparator rather than on the data.
     """
-    problems: list[str] = []
-
-    declared = {name for name, *_ in INJECTIONS}
-    if set(EXPECTATIONS) != declared:
-        missing = sorted(declared - set(EXPECTATIONS))
-        extra = sorted(set(EXPECTATIONS) - declared)
-        if missing:
-            problems.append(f"no expectation declared for: {', '.join(missing)}")
-        if extra:
-            problems.append(f"expectations for injections that do not exist: {', '.join(extra)}")
-
-    for name in EXPECTED_SURVIVORS:
-        if EXPECTATIONS.get(name):
-            problems.append(
-                f"{name} is an expected survivor and also declares a witness; "
-                "an injection cannot be both"
-            )
-
     files = {name: TEST_DIR / test_file for name, _s, test_file, *_ in INJECTIONS}
-    problems.extend(_witness_problems(EXPECTATIONS, files))
-
-    if probe:
-        impossible = 'a test title that cannot exist anywhere at all'
-        probed = _witness_problems({'probe': (impossible,)}, {'probe': TEST_DIR / 'check-doc-counts.test.ts'})
-        if len(probed) != 1 or impossible not in probed[0]:
-            problems.append(
-                "the negative control failed: a witness that cannot exist was not reported "
-                f"missing (got {probed!r}), so this reconciliation proves nothing"
-            )
-
-    for line in problems:
-        print(f"gate-tests-battery: {line}")
-    verdict = 'FAILED' if problems else 'OK'
-    print(
-        f"gate-tests-battery: {verdict} ({sum(len(w) for w in EXPECTATIONS.values())} witness(es) "
-        f"across {len(EXPECTATIONS)} injection(s)"
-        + (', with the comparator probed)' if probe else ')')
+    return W.verify_witness_table(
+        'gate-tests-battery',
+        EXPECTATIONS,
+        [name for name, *_ in INJECTIONS],
+        files,
+        TEST_DIR,
+        'check-doc-counts.test.ts',
+        survivors=tuple(EXPECTED_SURVIVORS),
+        probe=probe,
     )
-    return 1 if problems else 0
-
-
-def attribute(name: str, status: int, failed: int, failing: list[str]) -> tuple[str, list[str]]:
-    """The verdict a red earns, and what is missing if it earns only half of one.
-
-    Split out of the loop so it can be driven by a fixture rather than by waiting
-    for an injection to happen to produce the shape under test. The two halves it
-    separates are the whole point of this round:
-
-    * `status != 0 and failed > 0` says **the suite went red**;
-    * the declared witnesses appearing among the failing tests says **this test is
-      what disagrees**.
-
-    Only the second is a measurement about the guard, and the condition used to
-    answer with the first.
-    """
-    if status == 0 or failed == 0:
-        return 'NO_RED', []
-    unresolved = missing_witnesses(name, failing)
-    return ('UNATTRIBUTED', unresolved) if unresolved else ('CAUGHT', [])
-
-
-def missing_witnesses(name: str, failing: list[str]) -> list[str]:
-    """The declared witnesses that the runner's own failure list does not contain."""
-    joined = chr(10).join(failing)
-    return [witness for witness in EXPECTATIONS.get(name, ()) if witness not in joined]
 
 
 def failed_count(output: str) -> int:
@@ -791,6 +633,18 @@ def _diagnose(status: int, output: str) -> str:
 # `mutation(source)` rewrites the gate's source. The requirement is implicit and
 # uniform -- the named test file must fail -- because that is the whole claim
 # being tested. What varies is *which* guard is removed.
+# The reader and the decision live in `_witnesses.py`; the names are aliased
+# here because this file's helpers and its own tests were written against them.
+TEST_DIR = REPO / 'packages' / 'core' / 'test'
+
+strip_ansi = W.strip_ansi
+failing_tests = W.failing_tests
+parses = W.parses_js
+attribute = W.attribute
+missing_witnesses = W.missing_witnesses
+transform_failure = W.transform_failure
+
+
 INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
     # ------------------------------------------------------------------ README
     (
@@ -1302,9 +1156,22 @@ def main() -> int:
             why = diagnosis(status, output, collected)
 
             failures = failed_count(output)
-            verdict, unresolved = attribute(name, status, failures, failing_tests(output))
+            names = failing_tests(output)
+            # `attribute` is the shared decision: the witness table is what turns
+            # "the suite went red" into "the test this injection names is why".
+            verdict, unresolved = attribute(
+                name, EXPECTATIONS, status, failures, names, transform_failure(output)
+            )
             if verdict != 'NO_RED':
-                names = failing_tests(output)
+                if verdict == W.UNPARSEABLE:
+                    print(f"UNPARSEABLE {name}")
+                    print(f"         expecting: {description}")
+                    print(f"         -- the mutated script no longer loads: {unresolved[0][:110]}")
+                    print("            Every test in the file fails on that alone, so the red")
+                    print("            is not evidence about this guard.")
+                    unparseable += 1
+                    results.append((name, "UNPARSEABLE", names, elapsed, {"tests_run": collected, "tests_run_basis": basis, "exit_status": status, "diagnosis": "the mutated script does not load", "parse_error": unresolved[0], "output_tail": output_tail(output)}))
+                    continue
                 if unresolved:
                     print(f"UNATTRIBUTED {name}")
                     print(f"         expecting: {description}")

@@ -77,7 +77,24 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 /** Lift a top-level Python function out of the battery, by name. */
 function extract(name: string): string {
   const start = SOURCE.indexOf(`def ${name}(`);
-  if (start < 0) throw new Error(`no definition of ${name} in the battery`);
+  // The reader, the decision and the table check moved into
+  // `scripts/injection/_witnesses.py`, which all four injection batteries share; a
+  // name that is not in the battery is looked up there, with the module-level
+  // patterns it reads. Keeping a second copy in the battery is the state this round
+  // measured its way out of.
+  if (start < 0) {
+    const shared = readFileSync(resolve(ROOT, 'scripts', 'injection', '_witnesses.py'), 'utf8');
+    const constants = shared
+      .split('\n')
+      .filter((line) => /^(ANSI|TRANSFORM_FAILURE)\b/.test(line))
+      .join('\n');
+    const fromShared = shared.indexOf(`def ${name}(`);
+    if (fromShared < 0) throw new Error(`no definition of ${name} in either file`);
+    const restShared = shared.slice(fromShared + 1);
+    const nextShared = restShared.search(/\ndef /);
+    const body = shared.slice(fromShared, nextShared < 0 ? undefined : fromShared + 1 + nextShared);
+    return `${constants}\n\n${body}`;
+  }
   const rest = SOURCE.slice(start + 1);
   const next = rest.search(/\ndef /);
   return next < 0 ? SOURCE.slice(start) : SOURCE.slice(start, start + 1 + next);

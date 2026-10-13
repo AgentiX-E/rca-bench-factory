@@ -73,6 +73,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared attribution table)
+
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / '.github' / 'workflows' / 'fault-extraction-accuracy.yml'
 PRISTINE = REPO / 'node_modules' / '.cache' / 'fault-extraction-workflow.pristine.yml'
@@ -178,14 +181,19 @@ def parse_summary(output: str):
 
 
 def run_suite():
-    """Run the gate; return the counts it printed, or `None` if it printed none."""
+    """Run the gate; return its counts and its output.
+
+    The output is returned because the verdict is no longer decided by the counts
+    alone: a red has to name the test it broke, and that name is only in the
+    runner's output.
+    """
     result = subprocess.run(
         ['npx', 'vitest', 'run', SUITE],
         cwd=REPO / 'packages' / 'core',
         capture_output=True,
         text=True,
     )
-    return parse_summary(result.stdout)
+    return parse_summary(result.stdout), result.stdout
 
 
 def assert_workflow_restored(pristine: str) -> int:
@@ -221,7 +229,7 @@ def assert_workflow_restored(pristine: str) -> int:
     else:
         print('source restored: identical to the captured original')
 
-    counts = run_suite()
+    counts, _out = run_suite()
     if counts is None:
         print('pristine (negative control): the suite printed no summary, so every CAUGHT above is unproven')
         return 3 if status == 0 else status
@@ -233,7 +241,70 @@ def assert_workflow_restored(pristine: str) -> int:
     return status
 
 
+TEST_DIR = REPO / 'packages' / 'core' / 'test' / 'llm'
+TEST_FILE = 'workflow-provider.test.ts'
+
+# ---------------------------------------------------------------------------
+# What each injection must break, named.
+#
+# The condition used to be `failed > 0`, which answers *the suite went red* to a
+# question that is *the behaviour this mutation changed is pinned by a test*.
+# This battery declares its subject in prose on every row -- "the gate under test
+# is `test/llm/workflow-provider.test.ts`, which asserts that the workflow's
+# provider handling cannot drift from the registry" -- and nothing compared the
+# suite's failure against it.
+#
+# Each entry names the substrings of the runner's failing-test lines that must be
+# present for the red to count. `scripts/injection/_witnesses.py` holds the
+# decision; `--verify-expectations --probe` reconciles this table against the
+# injections and the test file.
+EXPECTATIONS: dict[str, tuple[str, ...]] = {
+    'a registered provider has no secret mapping': (
+        'binds a secret for each registered provider',
+    ),
+    'the key is demanded under a name this repository invented': (
+        'does not reference a secret name this repository invented',
+    ),
+    'the selected key is never masked': (
+        'masks the selected key before using it',
+    ),
+    'a vendor endpoint is hard-coded, reintroducing the lock': (
+        'keeps the endpoint and model optional and out of the file',
+    ),
+    'the resolved provider is not forwarded to the derivation': (
+        'passes the provider through to the derivation step',
+    ),
+    'provider resolution stops using the registry': (
+        'resolves the provider through the registry rather than re-implementing it',
+    ),
+    'the key-selection step loses `set -eu`': (
+        'uses a shell that fails on an unset variable, in the step that picks the key',
+    ),
+    '`set -u` is downgraded to `set -e`, so an unset variable expands to empty': (
+        'aborts the key-selection step rather than continuing with an empty key',
+    ),
+    'the case arm for a registered provider is deleted': (
+        'selects a key for each registered provider',
+    ),
+}
+
+
+def verify_expectations(probe: bool = False) -> int:
+    """Reconcile the witness table against the injections and the test file."""
+    files = {name: TEST_DIR / TEST_FILE for name, *_ in INJECTIONS}
+    return W.verify_witness_table(
+        'fault-extraction-workflow', EXPECTATIONS, [name for name, *_ in INJECTIONS], files,
+        TEST_DIR, TEST_FILE, probe=probe,
+    )
+
+
 def main() -> int:
+    # Reconcile before anything is mutated: an injection with no witness accepts
+    # any red, which is the state this round measured its way out of.
+    reconcile = verify_expectations()
+    if reconcile != 0:
+        return reconcile
+
     pristine = WORKFLOW.read_text()
     write_atomically(PRISTINE, pristine)
 
@@ -245,7 +316,7 @@ def main() -> int:
             uncaught.append(description)
             continue
         write_atomically(WORKFLOW, pristine.replace(anchor, replacement, 1))
-        counts = run_suite()
+        counts, out = run_suite()
         if counts is None:
             # Not `MISSED`. Nothing was read, so nothing can be said about whether
             # the mutation was detected -- and a battery that cannot read its own
@@ -254,10 +325,24 @@ def main() -> int:
             uncaught.append(description)
         else:
             failed, passed = counts
-            verdict = 'CAUGHT' if failed > 0 else 'MISSED'
-            if failed <= 0:
+            decided, detail = W.attribute(
+                description, EXPECTATIONS, 1 if failed > 0 else 0, failed,
+                W.failing_tests(out), W.transform_failure(out),
+            )
+            if decided == W.CAUGHT:
+                verdict = 'CAUGHT'
+            elif decided == W.UNATTRIBUTED:
+                verdict = 'UNATTRIBUTED'
+                uncaught.append(description)
+            elif decided == W.UNPARSEABLE:
+                verdict = 'UNPARSEABLE'
+                uncaught.append(description)
+            else:
+                verdict = 'MISSED'
                 uncaught.append(description)
             print(f'{description:64} {failed:>4} {passed:>4}  {verdict}')
+            for witness in detail:
+                print(f'      {witness[:120]}')
         write_atomically(WORKFLOW, pristine)
 
     # Restore before the negative control, so the control measures the pristine
@@ -293,4 +378,6 @@ def main() -> int:
 
 
 if __name__ == '__main__':
+    if '--verify-expectations' in sys.argv:
+        sys.exit(verify_expectations(probe='--probe' in sys.argv))
     sys.exit(main())

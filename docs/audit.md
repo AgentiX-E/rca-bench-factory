@@ -16000,3 +16000,146 @@ this campaign has written about a mislabelled row (153), a log-line measurement
 (155), and a score that was not an artefact (156). **A claim and its evidence
 sitting in the same record, unconnected, is the most common shape of the defect
 found here**, and the remedy is always to make something compare them.
+
+---
+
+## Finding 158 — three more batteries answered "the suite went red" to a question about a specific test
+
+### What was measured
+
+Finding 157 fixed `gate-tests-battery.py` and recorded the residual in one
+sentence: *the remaining batteries decide on `failed > 0` alone*. This round
+measured that residual.
+
+| battery | injections | verdict condition | claim compared with the failure |
+| --- | --- | --- | --- |
+| `gate-tests-battery` | 25 | witnesses (finding 157) | yes |
+| `fault-extraction-scoring` | **12** | `failed > 0` | **no** |
+| `fault-extraction-workflow` | **9** | `failed > 0` | **no** |
+| `fetch-official-retry` | **5** | `failed > 0` | **no** |
+
+Twenty-six injections, and not one of them was credited only if the test it
+describes is the test that disagreed. `fault-extraction-scoring` even returned the
+runner's **output** from `run_suite` -- and used it only to parse a count.
+
+### What was built
+
+**One implementation, four users.** `scripts/injection/_witnesses.py` owns the
+reader (`failing_tests`, `transform_failure`, `strip_ansi`), the decision
+(`attribute`), and the table check (`witness_problems`,
+`verify_witness_table`). The four batteries import it and alias the names.
+
+Four copies of a condition is four places for the next one to drift, and the drift
+in this area is why the module exists. `gate-tests-battery.py` was migrated too,
+so there is now **one** implementation rather than one plus three: a battery that
+stopped delegating fails `battery-witnesses.test.ts`, which asserts the call sites
+by counting them.
+
+Each of the three batteries gained an `EXPECTATIONS` table and
+`--verify-expectations --probe`, the same two reconciliations as finding 157:
+`INJECTIONS` and `EXPECTATIONS` must agree in both directions, and every witness
+must appear as a title in the file its row runs.
+
+### The second discriminator, and why it is a measurement
+
+The demonstrated hole in finding 157 was a mutation that leaves the file
+unparseable. For TypeScript there is no `node --check`: `esbuild` is not on this
+machine's path and `tsc` reports module-resolution errors that are not parse
+errors. So the shape was **measured** instead of assumed, by appending
+`const broken: number = ;` to the scorer's source and reading what the runner
+printed:
+
+```
+exit: 1
+  Transform failed     1  ['Error: Transform failed with 1 error:']
+  Tests                1  ['Tests  no tests']
+  Test Files           1  ['Test Files  1 failed (1)']
+```
+
+`Transform failed` and `Tests  no tests` are the discriminator, and they are
+format-agnostic -- the runner prints them for `.mjs` as well, which is why
+`attribute` consults them **before** the witnesses. The order is the substance:
+when a file cannot be transformed, the declared witness *is* among the failures, so
+a witness check alone cannot see this case.
+
+### The witnesses were wrong six times, and that is the mechanism working
+
+Twenty-six witnesses were authored from each row's description and reconciled
+against the test file's source, then verified by running each battery. Six were
+wrong, and the first run said so:
+
+```
+fault-extraction-scoring   UNATTRIBUTED  the sample-id pairing check removed
+                             missing: refuses to score a run whose predictions do not cover the samples
+fault-extraction-scoring   UNATTRIBUTED  an empty dataset accepted
+                             missing: rejects a missing samples array
+fetch-official-retry       UNATTRIBUTED  the digest comparison always agrees
+                             missing: retries when the download succeeded but the bytes are wrong
+```
+
+Each was repaired by reading what the mutation actually breaks, not by relaxing
+the check: `reports a mismatched sample id as a hard error rather than scoring it`,
+`names the duplicated sample id rather than averaging over it twice`,
+`reports an empty dataset as an error, because an empty run measures nothing`,
+`does not retry a same-length digest mismatch, and reports it as a pin problem`.
+One of those corrections was itself a typo -- `pin mismatch` for `pin problem` --
+which the source reconciliation caught before the battery ran.
+
+That is the finding in miniature: **the guess was cheap and the check was what made
+it worth anything.** A table filled from the previous run's observations would have
+been right on the first try and worthless, because it would have pinned whatever
+the run happened to do.
+
+### A regression this round introduced, and the probe that caught it
+
+The patch that inserted `verify_expectations` and the expectation table into
+`fault-extraction-workflow.py` placed them **after** `def main() -> int:`, so the
+original body of `main` became dead code behind `return reconcile`, and the battery
+ran its reconciliation and **nothing else**:
+
+```
+$ python3 scripts/injection/fault-extraction-workflow.py
+fault-extraction-workflow: OK (9 witness(es) across 9 injection(s))
+$ echo $?
+0
+```
+
+A battery that silently stops running its injections and exits 0 is the worst
+shape of defect in this area -- and the reconciliation line, which is what the new
+mode prints first, made the output look healthy. It was caught by running the
+battery and noticing that a 9-injection run finished instantly. The repair moved the
+body back under its own `def main`, and the run now prints its nine rows.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `gate-tests-battery` | **24 caught / 0 unattributed / 0 unparseable**, 25 injections |
+| `fault-extraction-scoring` | **12 caught**, was 12 credited by `failed > 0` |
+| `fetch-official-retry` | **5 caught** |
+| `fault-extraction-workflow` | **9 caught**, pristine negative control green |
+| `--verify-expectations --probe` on all four | **OK** (28 + 12 + 5 + 9 witnesses, comparator probed) |
+| `battery-witnesses.test.ts` | **13 tests**, including the ordering of the transform check and the claim that there is one implementation |
+| tests that pinned the old shape | six assertions across four files failed on the change and were repointed -- the extraction helper now reads the shared module for the names that moved, and carries the module constants the function needs |
+| `typecheck` / `lint` / `docs:check` / coverage | green; coverage core **99.96 / 99.91 / 100 / 99.96** |
+| core test suite | **133 files, 3458 tests passed**; `cli` 3 files, 173 tests |
+
+### What is not covered
+
+- **The probes** (`m1-ceiling-probe.py`, `scorer-stability-probe.py`,
+  `type-miss-probe.py`) are a different shape: they measure a quantity rather than
+  break a gate, so there is no verdict to attribute. Finding 156's residual is now
+  three batteries smaller and has these three left in a form that has to be
+  described rather than converted.
+- **Attribution is at test granularity.** A mutation that breaks a test *by* an
+  unrelated assertion inside the same test body is credited correctly.
+
+### What this says about the method
+
+Finding 157 ended by naming the residual in one sentence, and this round was that
+sentence, executed. The three batteries had the failing test names in hand -- one
+of them returned the whole output from its runner -- and compared none of them with
+the claim one field away. **The claim and its evidence, in the same record,
+unconnected**: the same sentence this campaign has written about a mislabelled row
+(153), a log-line measurement (155), a score that was not an artefact (156), and a
+battery that accepted any red (157).

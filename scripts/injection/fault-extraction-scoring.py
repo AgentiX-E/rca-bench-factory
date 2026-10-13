@@ -13,6 +13,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared attribution table)
+
 REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "packages" / "core" / "src" / "fault" / "extraction-scoring.ts"
 PRISTINE = REPO / "node_modules" / ".cache" / "es-final.ts"
@@ -203,7 +206,81 @@ def assert_source_restored() -> int:
     return 0
 
 
+TEST_DIR = REPO / "packages" / "core" / "test"
+TEST_FILE = 'extraction-scoring.test.ts'
+
+
+# ---------------------------------------------------------------------------
+# What each injection must break, named.
+#
+# The condition used to be `failed > 0`, which answers *the suite went red* to a
+# question that is *the behaviour this mutation changed is pinned by a test*.
+# Two ways that goes wrong, both measured elsewhere in this repository: a mutated
+# file that can no longer be **parsed** fails every test that imports it, and a
+# mutation that breaks **something else** on the way is credited to the row that
+# belongs to the description above.
+#
+# Each entry names the substrings of the runner's failing-test lines that must be
+# present for the red to count. Anything else is `UNATTRIBUTED`; a transform
+# failure is `UNPARSEABLE`. Both are failures. `scripts/injection/_witnesses.py`
+# holds the decision and `--verify-expectations --probe` reconciles this table
+# against the injections and the test file, so a renamed test fails locally
+# instead of silently turning a CAUGHT into an UNATTRIBUTED on the runner.
+EXPECTATIONS: dict[str, tuple[str, ...]] = {
+    'unverifiable collapsed into graded': (
+        'marks a fault the verifier cannot check as unverifiable',
+    ),
+    'unvalidated graded as if valid': (
+        'marks a parse that fails validation as unvalidated, not as a miss',
+    ),
+    'unparseable graded instead of skipped': (
+        'marks an unparseable response as unparseable and grades no field',
+    ),
+    'empty denominator reported as 0 instead of null': (
+        'reports a null rate, never a zero, when the denominator is empty',
+    ),
+    'an omitted optional field scored false instead of excluded': (
+        'grades an omitted component as null when the sample did not state one',
+    ),
+    'the sample-id pairing check removed': (
+        'reports a mismatched sample id as a hard error rather than scoring it',
+    ),
+    'strict rate computed over all samples instead of graded ones': (
+        'counts each state separately and reports rates over their own denominators',
+    ),
+    'M1 threshold relaxed to accept an unmeasured rate': (
+        'reports NOT MET for a measured run below the threshold',
+    ),
+    'duplicate sample id accepted': (
+        'names the duplicated sample id rather than averaging over it twice',
+    ),
+    'an unexpected schema version read optimistically': (
+        'rejects an unknown schema version rather than reading it optimistically',
+    ),
+    'an empty dataset accepted': (
+        'reports an empty dataset as an error, because an empty run measures nothing',
+    ),
+    'case folding dropped from the comparison': (
+        'normalises fault types before comparing, so casing is not a miss',
+    ),
+}
+
+
+
+
+def verify_expectations(probe: bool = False) -> int:
+    """Reconcile the witness table against the injections and the test file."""
+    files = {name: TEST_DIR / TEST_FILE for name, *_ in INJECTIONS}
+    return W.verify_witness_table(
+        'fault-extraction-scoring', EXPECTATIONS, [name for name, *_ in INJECTIONS], files,
+        TEST_DIR, 'extraction-scoring.test.ts', probe=probe,
+    )
+
+
 def main():
+    reconcile = verify_expectations()
+    if reconcile != 0:
+        return reconcile
     shutil.copy(SRC, PRISTINE)
     uncaught = []
 
@@ -224,9 +301,23 @@ def main():
             print(f"  {'NO SUMMARY':9} (no summary)  {name}")
             uncaught.append(name)
         else:
-            status = "caught" if failed > 0 else "SURVIVED"
-            print(f"  {status:9} ({failed:2} red)  {name}")
-            if failed == 0:
+            failing = W.failing_tests(out)
+            verdict, detail = W.attribute(
+                name, EXPECTATIONS, 1 if failed > 0 else 0, failed, failing, W.transform_failure(out)
+            )
+            if verdict == W.CAUGHT:
+                print(f"  {'caught':9} ({failed:2} red)  {name}")
+            elif verdict == W.UNATTRIBUTED:
+                print(f"  {'UNATTRIBUTED':9} ({failed:2} red)  {name}")
+                for witness in detail:
+                    print(f"      missing: {witness}")
+                uncaught.append(name)
+            elif verdict == W.UNPARSEABLE:
+                print(f"  {'UNPARSEABLE':9} {name}")
+                print(f"      {detail[0][:110]}")
+                uncaught.append(name)
+            else:
+                print(f"  {'SURVIVED':9} ({failed:2} red)  {name}")
                 uncaught.append(name)
 
         shutil.copy(PRISTINE, SRC)
@@ -243,4 +334,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--verify-expectations" in sys.argv:
+        sys.exit(verify_expectations(probe="--probe" in sys.argv))
     sys.exit(main())

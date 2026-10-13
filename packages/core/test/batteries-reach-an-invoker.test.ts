@@ -46,6 +46,23 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
+/**
+ * Whether a file under `scripts/injection/` can be run as a battery.
+ *
+ * The property is *can be invoked*, not *is called a battery*: a file with an
+ * entry point is one, and a shared module is not. Narrowing by name (`_`-prefixed,
+ * say) would exempt the next file whose author picked a different prefix, and the
+ * net is meant to be wide -- a probe added there is held to the invocation rule
+ * too, which the docstring above says is intentional.
+ *
+ * The first file this excludes is `_witnesses.py`, the module the four batteries
+ * import for the shared attribution logic. It has no `__main__` guard because it is
+ * not something anyone runs.
+ */
+function isRunnable(source: string): boolean {
+  return source.includes('__main__');
+}
+
 /** The batteries, as paths relative to the repository root. */
 function batteries(): string[] {
   const topLevel = readdirSync(resolve(ROOT, 'scripts'))
@@ -53,6 +70,7 @@ function batteries(): string[] {
     .map((name) => `scripts/${name}`);
   const nested = readdirSync(resolve(ROOT, 'scripts', 'injection'))
     .filter((name) => name.endsWith('.py'))
+    .filter((name) => isRunnable(readFileSync(resolve(ROOT, 'scripts', 'injection', name), 'utf8')))
     .map((name) => `scripts/injection/${name}`);
   return [...topLevel, ...nested].sort();
 }
@@ -130,6 +148,17 @@ describe('every mutation battery reaches an invoker', () => {
       'these batteries exist, are green by hand, and no workflow runs them -- so '
         + 'nothing they prove is verified by the pipeline that decides a merge',
     ).toEqual([]);
+  });
+
+  it('decides "battery" by whether the file can be run, both ways round', () => {
+    // Both directions, because a predicate that answers `false` for everything
+    // passes every "no battery is unwired" assertion by having no subject.
+    expect(isRunnable('x = 1\n')).toBe(false);
+    expect(isRunnable('if __name__ == "__main__":\n    sys.exit(main())\n')).toBe(true);
+    const shared = readFileSync(resolve(ROOT, 'scripts', 'injection', '_witnesses.py'), 'utf8');
+    expect(shared.includes('__main__')).toBe(false);
+    expect(batteries().some((path) => path.endsWith('_witnesses.py'))).toBe(false);
+    expect(batteries().length).toBeGreaterThanOrEqual(10);
   });
 
   it('names the three that were orphans, so unwiring one is red and specific', () => {

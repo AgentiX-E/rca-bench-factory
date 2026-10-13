@@ -118,8 +118,7 @@ describe('gate-test battery · a red is not a proof until it names the test', ()
   it('refuses to credit a red whose failure does not name the declared test', () => {
     const [verdict, missing] = pythonJson(`
 print(json.dumps(module.attribute(
-    'README 1. the sample marker stops matching, so nothing is collected',
-    1, 7, ['failure in test/check-readme-sample.test.ts'])))`);
+    'README 1. the sample marker stops matching, so nothing is collected', module.EXPECTATIONS, 1, 7, ['failure in test/check-readme-sample.test.ts'])))`);
     expect(verdict).toBe('UNATTRIBUTED');
     expect(missing).toContain('executes a sample block and reports it by number');
   });
@@ -127,7 +126,7 @@ print(json.dumps(module.attribute(
   it('credits a red only when every declared witness is named', () => {
     const [verdict, missing] = pythonJson(`
 print(json.dumps(module.attribute(
-    'README 1. the sample marker stops matching, so nothing is collected', 1, 12, [
+    'README 1. the sample marker stops matching, so nothing is collected', module.EXPECTATIONS, 1, 12, [
         'scripts/check-readme-sample.mjs · what it asserts about a good sample > executes a sample block and reports it by number',
         'scripts/check-readme-sample.mjs · what it asserts about a good sample > picks the sample out by its import rather than by fence position'])))`);
     expect(verdict).toBe('CAUGHT');
@@ -138,7 +137,7 @@ print(json.dumps(module.attribute(
     // rather than a description of the first one.
     const [half, stillMissing] = pythonJson(`
 print(json.dumps(module.attribute(
-    'README 1. the sample marker stops matching, so nothing is collected', 1, 12, [
+    'README 1. the sample marker stops matching, so nothing is collected', module.EXPECTATIONS, 1, 12, [
         'scripts/check-readme-sample.mjs · what it asserts about a good sample > executes a sample block and reports it by number'])))`);
     expect(half).toBe('UNATTRIBUTED');
     expect(stillMissing).toHaveLength(1);
@@ -148,8 +147,8 @@ print(json.dumps(module.attribute(
     // A green run and a run whose failure list was not read are different
     // non-verdicts, and neither is a catch. Collapsing them would hide a runner
     // that decided nothing behind one that decided against the guard.
-    expect(pythonJson(`print(json.dumps(module.attribute('any row', 0, 0, [])))`)[0]).toBe('NO_RED');
-    expect(pythonJson(`print(json.dumps(module.attribute('any row', 1, 0, [])))`)[0]).toBe('NO_RED');
+    expect(pythonJson(`print(json.dumps(module.attribute('any row', {}, 0, 0, [])))`)[0]).toBe('NO_RED');
+    expect(pythonJson(`print(json.dumps(module.attribute('any row', {}, 1, 0, [])))`)[0]).toBe('NO_RED');
   });
 
   // The parse guard, driven through main(): the demonstration above's shape.
@@ -192,9 +191,13 @@ print(json.dumps([module.parses(module.INJECTIONS[0][1], source)[0]]))`);
     expect(result.code).toBe(0);
   });
 
+  // The table check moved into `scripts/injection/_witnesses.py`, which the four
+  // batteries share; this test drives it through the battery's own import so a
+  // battery that stopped delegating would fail here rather than silently keeping a
+  // second copy of the condition.
   it('reports a witness that is not a test title in the file it points at', () => {
     const problems = pythonJson(`
-print(json.dumps(module._witness_problems(
+print(json.dumps(module.W.witness_problems(
     {'row': ('a test title that cannot exist anywhere at all',)},
     {'row': module.TEST_DIR / 'check-doc-counts.test.ts'})))`);
     expect(problems).toHaveLength(1);
