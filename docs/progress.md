@@ -4059,9 +4059,9 @@ answered by a deployment.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **137 files, 3593 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **140 files, 3766 tests passed** (as of this commit) |
+| `core` test suite | **137 files, 3593 tests passed** (as of `bfe4edbf6`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `bfe4edbf6`) |
+| repo test suite | **140 files, 3766 tests passed** (as of `bfe4edbf6`) |
 | coverage — core | **99.96 / 99.92 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | coverage — `src/ingest/elasticsearch.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
@@ -4074,9 +4074,94 @@ answered by a deployment.
 
 ### Open
 
-- **Two backends still carry a written reason and no reader** (ClickHouse, the Kubernetes
-  API). `[open: the rule this pass wrote down -- when a reason ends in "the caller would
+- ~~Two backends still carry a written reason and no reader (ClickHouse, the Kubernetes
+  API).~~ **Closed by finding 165** for the Kubernetes half: the credentials are a required
+  argument and the "translation table" was never needed, because the IR's event payload
+  already carries `involvedObject`. The reason for the other half is carried forward below.
+- **The ClickHouse row still carries a written reason and no reader.** `[open: the rule this pass wrote down -- when a reason ends in "the caller would
   have to supply X", X is the interface -- now has two instances behind it, and the
   Kubernetes row names two things a caller would supply (credentials and a translation
   table), so it is the next one to read; ClickHouse's row names a schema this project
   does not own, which is the first reason in the set that may survive being rewritten]`
+
+## Pass 43 — the third reason whose clauses were the interface, and the one that needed no interface at all
+
+### What was built, and the two things the reason named
+
+`packages/core/src/ingest/kubernetes.ts`: a reader for the events list
+(`GET /api/v1/events`, namespaced or cluster-wide), mapping each EventList item to an IR
+signal. It is the registry's **fifth** `implemented` row, and the row it replaced said the
+reader would need two things from the caller -- **credentials**, and **"a translation
+table"**, "because its events use the `involvedObject` vocabulary rather than the OTel
+resource attributes the IR is built on". The two turned out to be different in kind.
+
+**The credentials are an interface.** `token` is a required argument with no default: the
+reader takes a bearer token from its caller rather than reading one from the environment, a
+mounted service-account directory or a kubeconfig. That is the third instance of the rule
+finding 164 wrote down, and the rule is what predicted it.
+
+**The translation table is not needed at all**, and that is the new part. `EventPayload`
+carries `reason`, `message`, `type`, `count` and **`involvedObject: { kind, name }`** -- the
+IR was built with Kubernetes events in mind, down to the shape of the field the reason
+named. There is no translation to perform. Applying the rule literally would have produced
+a required `translation` argument, a caller-supplied mapping from `involvedObject` to OTel
+resource attributes: **worse than useless**, because the vocabulary was already in the tree.
+
+### The clause that survives, and what it actually says
+
+An event about a Pod does not name a service, and the IR requires one. Turning
+`involvedObject.name` into a service name is a per-cluster convention -- a ReplicaSet hash
+suffix, a label, a naming scheme, or none of those -- so `service` is required: the caller
+says which service they are asking about. The object itself is recorded where the IR records
+objects, so one wire fact has one representation.
+
+### The decisions the wire format forced
+
+| wire fact | decision |
+| --- | --- |
+| **three** fields carry an event's own time (`eventTime`, `firstTimestamp`, `lastTimestamp`) | `timestampField` required: `lastTimestamp` answers "when did this last happen" and `firstTimestamp` "when did it start", which differ on an event whose `count` is above one. `metadata.creationTimestamp` is not offered -- that is when the Event object was written |
+| an unset timestamp is written as **`null`** | quarantined with the declaration named; reading a null as the epoch would place the event in 1970 |
+| `type` is a closed pair | carried through; a third value is quarantined rather than defaulted |
+| `count` is absent on a single occurrence | absent stays absent |
+| the list has **no time filter** | no pretence of a server-side window: a window is applied by the reader, the excluded entries are **counted** in `page.outsideWindow`, and `resourceVersion`/`hasMore` describe the **page**, not the window |
+| `limit` has **no default** | required, for the opposite reason to the other four: absent means "every matching event in the cluster", so the hazard is an unbounded response |
+| a refusal arrives as a **`Status` object** | `kind` is checked **before** `items`, so a refused request is not reported as an empty window |
+| `reason` is free text | `changeType` is never set: mapping `ScalingReplicaSet`/`Pulled`/`Killing` onto deploy/config/scale/rollback is a per-cluster vocabulary |
+
+### Could a cluster have answered it? The measurement differs from the last two rounds
+
+| attempt | outcome |
+| --- | --- |
+| the API server binary | **not distributed**: `kube-apiserver` comes with a control plane, which is a container image plus an etcd |
+| a local cluster | `kind` and `minikube` are both **container-based**, and this sandbox has no container runtime |
+| a single static binary | `kubectl` is one, but it is a **client**: it needs a cluster, which is the thing being measured |
+
+So the reader is fixture-driven, and unlike the Elasticsearch round there is **no artifact
+that would have served** -- the thing that answers this protocol is a control plane, not a
+download. That is stated rather than rounded into "no cluster was available".
+
+### Verified (Pass 43)
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **138 files, 3634 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **141 files, 3807 tests passed** (as of this commit) |
+| coverage — core | **99.96 / 99.92 / 100 / 99.96** (stmts / branch / funcs / lines) |
+| coverage — cli | **100 / 100 / 100 / 100** |
+| coverage — `src/ingest/kubernetes.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
+| `kubernetes.test.ts` | 37 tests: the mapping onto the IR's own event vocabulary, the request, all three timestamps and the null, every quarantine and every envelope/network branch |
+| `backend-support.test.ts` | 14 tests, driving **five** implemented backends through one routed fixture |
+| backend-support battery | **59 caught / 0 survived / 0 inert / 0 misattributed** (15 new injections) |
+| `check-backend-support.mjs` | **OK (6 backends in the matrix: 5 implemented, 1 unsupported with a reason)** |
+| guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
+
+### Open
+
+- **The ClickHouse row still carries a written reason and no reader.** `[open: it is the
+  first reason in the set that may survive being read -- it names a schema this project does
+  not own rather than something a caller would supply, so the rule that found three
+  interfaces may find nothing here, and the honest outcome then is a reason that says so
+  with the measurement behind it rather than a fifth reader built to make the table
+  uniform]`

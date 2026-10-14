@@ -41,6 +41,11 @@ import {
   type ElasticsearchPullResult,
 } from './elasticsearch.js';
 import { pullJaegerTraces, type JaegerPullOptions, type JaegerPullResult } from './jaeger.js';
+import {
+  pullKubernetesEvents,
+  type KubernetesPullOptions,
+  type KubernetesPullResult,
+} from './kubernetes.js';
 import { pullLokiLogs, type LokiPullOptions, type LokiPullResult } from './loki.js';
 import {
   pullPrometheusMetrics,
@@ -68,7 +73,7 @@ export type T2BackendId = (typeof T2_BACKEND_IDS)[number];
 /**
  * A pull entry point, per backend.
  *
- * Four signatures rather than one, because the four pullers genuinely differ:
+ * Five signatures rather than one, because the five pullers genuinely differ:
  * they speak different wire formats and take different options. Each backend
  * widening this type is a deliberate decision with a visible cost at the call
  * site -- a caller that wants to *drive* a backend has to know which one it is
@@ -79,7 +84,13 @@ export type PrometheusEntry = (options: PrometheusPullOptions) => Promise<Promet
 export type JaegerEntry = (options: JaegerPullOptions) => Promise<JaegerPullResult>;
 export type LokiEntry = (options: LokiPullOptions) => Promise<LokiPullResult>;
 export type ElasticsearchEntry = (options: ElasticsearchPullOptions) => Promise<ElasticsearchPullResult>;
-export type T2BackendEntry = PrometheusEntry | JaegerEntry | LokiEntry | ElasticsearchEntry;
+export type KubernetesEntry = (options: KubernetesPullOptions) => Promise<KubernetesPullResult>;
+export type T2BackendEntry =
+  | PrometheusEntry
+  | JaegerEntry
+  | LokiEntry
+  | ElasticsearchEntry
+  | KubernetesEntry;
 
 export interface T2BackendImplemented {
   readonly id: T2BackendId;
@@ -154,9 +165,15 @@ export const T2_BACKENDS: readonly T2Backend[] = [
   },
   {
     id: 'kubernetes',
-    status: 'unsupported',
-    reason:
-      'the Kubernetes API needs credentials that are not available to the ingest path -- an in-cluster service-account token or a kubeconfig -- and its events use the involvedObject vocabulary rather than the OTel resource attributes the IR is built on, so the reader would also need a translation table',
+    status: 'implemented',
+    entry: pullKubernetesEvents,
+    // The third row whose reason was its interface, and the first where one clause
+    // turned out to be unnecessary: the credentials are a required argument, and the
+    // "translation table" is not needed at all -- the IR's event payload already
+    // carries `involvedObject` in the shape the API writes it. What the reason got
+    // right is the service, which an event about a pod does not name.
+    summary:
+      'HTTP JSON API: GET /api/v1/events, read as EventList items mapped onto the IR event payload, with the service named by the caller',
   },
 ];
 
@@ -180,6 +197,7 @@ export function backendEntry(id: 'prometheus'): PrometheusEntry | null;
 export function backendEntry(id: 'jaeger'): JaegerEntry | null;
 export function backendEntry(id: 'loki'): LokiEntry | null;
 export function backendEntry(id: 'elasticsearch'): ElasticsearchEntry | null;
+export function backendEntry(id: 'kubernetes'): KubernetesEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null {
   const backend = findBackend(id);

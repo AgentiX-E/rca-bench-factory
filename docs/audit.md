@@ -16750,3 +16750,104 @@ Two lessons, both recorded in the Chinese tracking document as well:
    that as a *note* rather than an error. That tolerance is what turned a stale SHA into a
    successful push of an unchanged tree: where a tool is forgiving about the parent, the
    SHA has to come from the round's own variable rather than from memory.
+
+## Finding 165 — the third reason whose clauses were the interface, and the clause that was not needed at all
+
+### What the registry said
+
+The `kubernetes` row carried this reason:
+
+> the Kubernetes API needs credentials that are not available to the ingest path -- an
+> in-cluster service-account token or a kubeconfig -- and its events use the
+> involvedObject vocabulary rather than the OTel resource attributes the IR is built on,
+> so the reader would also need a translation table
+
+Two things the caller would supply, and by the reading rule finding 164 wrote down, two
+candidates for being the interface rather than the obstacle. They turned out to be
+different in kind.
+
+**The credentials are an interface.** `token` is a required argument with no default: the
+reader takes a bearer token from its caller rather than reading one from the environment,
+a mounted service-account directory or a kubeconfig. That is what the other four pullers
+do about credentials, which is to have none of their own.
+
+**The translation table is not needed at all.** The IR's `EventPayload` carries `reason`,
+`message`, `type`, `count` and **`involvedObject: { kind, name }`** -- the interface was
+built with Kubernetes events in mind, down to the shape of the field the reason named. So
+the reader has no translation to perform: it reads the fields the API wrote into the
+fields the IR defines, one for one.
+
+### The clause that survives, and what it actually says
+
+An event about a Pod does not name a service, and the IR requires one
+(`service.name` is `min(1)`). Turning `involvedObject.name` into a service name is a
+per-cluster convention -- a ReplicaSet hash suffix, a label, a naming scheme, or none of
+those -- so `service` is a required argument: the caller says **which service they are
+asking about**. The object itself is recorded where the IR records objects, in the
+payload's `involvedObject`, so one wire fact has one representation and the resource stays
+what the schema says it is.
+
+### The decisions the wire format forced
+
+| wire fact | what the reader does with it |
+| --- | --- |
+| `core/v1` defines **three** fields for an event's own time (`eventTime`, `firstTimestamp`, `lastTimestamp`) | `timestampField` is required, because `lastTimestamp` answers "when did this last happen" and `firstTimestamp` "when did it start" -- different answers on an event whose `count` is above one. `metadata.creationTimestamp` is deliberately not offered: it is when the Event object was written |
+| an unset timestamp is written as **`null`** | quarantined, with the declaration named: reading a null as the epoch would place the event in 1970 |
+| `type` is a closed pair (`Normal`, `Warning`) | carried into the payload; a third value is quarantined rather than defaulted, because the IR cannot hold it |
+| `count` is absent on a single occurrence | absent stays absent -- one would be filling in a field the backend did not write |
+| the list has **no time filter** | the reader does not pretend to have one: a window is applied to the entries it read, the excluded entries are **counted** in `page.outsideWindow`, and `page.resourceVersion`/`hasMore` describe the page rather than the window |
+| `limit` has **no default** | required, and for the opposite reason to the other four backends: an absent `limit` asks for every matching event in the cluster, so the hazard is an unbounded response rather than a truncated one |
+| a refusal is answered with a **`Status` object** | `kind` is checked before `items` is read, so a refused request is not reported as an empty window |
+| `reason` is free text (`ScalingReplicaSet`, `Pulled`, `Killing`) | `changeType` is never set: mapping those strings onto deploy/config/scale/rollback is a per-cluster vocabulary |
+
+### The claim, and its honest limit
+
+Nothing in this repository has contacted a Kubernetes API server, and this round measured
+what it would take:
+
+| attempt | outcome |
+| --- | --- |
+| the API server binary | it is not distributed: `kube-apiserver` comes with a control plane, which is a container image and an etcd |
+| a local cluster | `kind` and `minikube` are both container-based, and this sandbox has no container runtime |
+| a single static binary | `kubectl` is one, but it is a *client*: it needs a cluster to talk to, which is the thing being measured |
+
+So the reader is fixture-driven, and unlike the Elasticsearch round there is no artifact
+that *would* have served: the thing that answers this protocol is a control plane, not a
+download. That difference is stated rather than rounded into "no cluster was available".
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `kubernetes.test.ts` | **37 tests**: the mapping onto the IR's own event vocabulary, the request (path, limit, field selector, token), all three timestamp fields and the null, every quarantine branch (no involved object, no reason, non-string message, off-vocabulary type, bad count, unreadable timestamp, non-object item) and every envelope and network branch (Status, no items, no resource version, non-JSON, non-object, non-2xx, refused connection, silent socket) |
+| coverage, `src/ingest/kubernetes.ts` | **100 / 100 / 100 / 100** |
+| `backend-support.test.ts` | **14 tests**, driving **five** `implemented` backends through one routed fixture |
+| the battery | **59 caught / 0 survived / 0 inert / 0 misattributed** -- 15 new injections, including "reach the API with no credentials", "read a Status as an empty window" and "classify the change type from the reason string" |
+| `check-backend-support.mjs` | **OK (6 backends in the matrix: 5 implemented, 1 unsupported with a reason)** |
+| the guards the change tripped | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived |
+| core test suite | **138 files, 3634 tests passed**; `cli` 3 files, 173 tests |
+
+### What is not covered
+
+- **No cluster was contacted**, and the table above is the measurement.
+- **No CLI command.** The reader is reachable through the package entry point and the
+  registry, not through `rca-bench` -- the same gap findings 154, 160, 161, 164 and this one
+  record, now five readers wide.
+- **One backend remains** (ClickHouse), and it is the first reason in the set that may
+  survive being read: it names a schema this project does not own rather than something a
+  caller would supply.
+
+### What this says about the method
+
+Three of the five implemented readers were declared impossible for reasons whose clauses
+were the interface. That rule is now doing work -- it is what predicted that this row's
+credentials would be an argument -- and this round is the first place it was **not
+enough**. Applying it to "a translation table" would have produced a required
+`translation` argument: a caller-supplied mapping from `involvedObject` to OTel resource
+attributes. That would have been worse than useless, because the IR already had the
+vocabulary, and the only way to see it was to open `ir/types.ts` and read the payload the
+reason was about.
+
+> **A reason's clause can be an interface, and can also be answered by the schema already
+> in the tree.** The rule says where to look for the interface; reading the IR says
+> whether one is needed.

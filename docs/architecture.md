@@ -250,14 +250,14 @@ repository has already shipped four of those (findings 107, 108, 109 and 114).
 The implemented paths are *pulls*: telemetry is fetched over HTTP, from a documented
 JSON API. What differs between them is how far the claim has been tested: the
 Prometheus reader was pointed at a real server (finding 154, version 2.45.3), and the
-Jaeger, Loki and Elasticsearch readers have been driven only against fixtures, in
-`packages/core/test/jaeger.test.ts`, `packages/core/test/loki.test.ts` and
-`packages/core/test/elasticsearch.test.ts`.
+Jaeger, Loki, Elasticsearch and Kubernetes readers have been driven only against fixtures, in
+`packages/core/test/jaeger.test.ts`, `packages/core/test/loki.test.ts`,
+`packages/core/test/elasticsearch.test.ts` and `packages/core/test/kubernetes.test.ts`.
 That difference is written down rather than blurred, because "reads the documented
 wire format" and "was answered by a deployment" are different measurements. The other two
 ingest paths here read what a caller already has -- `ingest/file.ts` for files,
 `ingest/otlp.ts` for posted OTLP payloads -- which is why every row names a wire
-format rather than a product. The two unsupported rows name what the format
+format rather than a product. The one unsupported row names what the format
 requires and this repository does not have, because "not implemented yet" reads
 the same whether the work is a week or impossible, and an entry that cannot be
 re-examined is the entry this campaign keeps finding.
@@ -269,17 +269,21 @@ re-examined is the entry this campaign keeps finding.
 | `loki` | implemented | HTTP JSON API: GET /loki/api/v1/query_range, read as streams of [ns-timestamp, line] pairs whose service label the caller names |
 | `elasticsearch` | implemented | HTTP JSON API: POST /{index}/_search, read as hits whose timestamp, message and service fields -- and the timestamp encoding -- the caller declares |
 | `clickhouse` | unsupported | the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped |
-| `kubernetes` | unsupported | the Kubernetes API needs credentials that are not available to the ingest path -- an in-cluster service-account token or a kubeconfig -- and its events use the involvedObject vocabulary rather than the OTel resource attributes the IR is built on, so the reader would also need a translation table |
+| `kubernetes` | implemented | HTTP JSON API: GET /api/v1/events, read as EventList items mapped onto the IR event payload, with the service named by the caller |
 
-Two rows read `unsupported` until recently, each with a reason that was true about
-the wire format and wrong about what followed from it. The `loki` row (finding 161)
-said the service is a label the caller must name; the `elasticsearch` row (finding
-164) said a reader "would need a field mapping supplied by the caller before it could
-read anything at all". Both are statements about the interface, so both readers take
-those as required arguments with no defaults rather than guessing one -- and the
-Elasticsearch reader takes one more, because three declared field names can still
-arrive in two shapes: Elasticsearch writes a `date` as an ISO-8601 string or as epoch
-milliseconds depending on that field's own format.
+Three rows read `unsupported` until recently, each with a reason that was true about the
+wire format and wrong about what followed from it. The `loki` row (finding 161) said the
+service is a label the caller must name; the `elasticsearch` row (finding 164) said a reader
+"would need a field mapping supplied by the caller before it could read anything at all";
+the `kubernetes` row (finding 165) said the reader would need credentials and "a translation
+table". All three are statements about the interface, so those arguments are required and
+none is defaulted -- and one clause in the last of them turned out not to be needed at all:
+the IR's event payload already carries `involvedObject` in the shape the API writes it, so
+there was no translation to perform, and the one thing that reason got right is that an
+event about a pod does not name a service. The Elasticsearch reader takes one decision more
+than its reason named, because three declared field names can still arrive in two shapes:
+the field's own format decides whether a `date` is an ISO-8601 string or epoch
+milliseconds.
 
 Nothing above is a promise about a hosted service. `prometheus` means the query
 API a Prometheus or a Prometheus-compatible endpoint answers at

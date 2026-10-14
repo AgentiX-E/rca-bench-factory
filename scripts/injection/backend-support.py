@@ -67,6 +67,10 @@ LOKI_TEST = "test/loki.test.ts"
 # wire format being misread.
 ELASTICSEARCH = "packages/core/src/ingest/elasticsearch.ts"
 ELASTICSEARCH_TEST = "test/elasticsearch.test.ts"
+# The fifth reader, and the third row whose reason was its interface -- with one clause
+# that turned out to be unnecessary rather than wrong (finding 165).
+KUBERNETES = "packages/core/src/ingest/kubernetes.ts"
+KUBERNETES_TEST = "test/kubernetes.test.ts"
 REGISTRY = "packages/core/src/ingest/backends.ts"
 
 GATE_TEST = "test/check-backend-support.test.ts"
@@ -491,6 +495,126 @@ MUTATIONS: list[tuple[str, str, str, str, str, str]] = [
         REGISTRY,
         "    id: 'elasticsearch',\n    status: 'implemented',",
         "    id: 'elasticsearch',\n    status: 'unsupported',\n    reason: 'this backend was flipped by a mutation, and the reason is long enough to pass the length rule',",
+        REGISTRY_TEST,
+        "holds the committed snapshot equal to the registry it is derived from",
+    ),
+    (
+        "reach the API with no credentials",
+        KUBERNETES,
+        "      headers: { accept: 'application/json', authorization: `Bearer ${token}` },",
+        "      headers: { accept: 'application/json' },",
+        KUBERNETES_TEST,
+        "asks the namespaced list endpoint for the page, with the token the caller supplied",
+    ),
+    (
+        "ignore the namespace and read the cluster-wide list",
+        KUBERNETES,
+        "      (namespace === undefined\n        ? KUBERNETES_EVENTS_PATH\n        : `/api/v1/namespaces/${encodeURIComponent(namespace)}/events`),",
+        "      KUBERNETES_EVENTS_PATH,",
+        KUBERNETES_TEST,
+        "asks the namespaced list endpoint for the page, with the token the caller supplied",
+    ),
+    (
+        "read a Status as an empty window",
+        KUBERNETES,
+        "  if (envelope['kind'] !== 'EventList') {",
+        "  if (false) {",
+        KUBERNETES_TEST,
+        "fails on a Status where a list was expected, which is how the API answers a refusal",
+    ),
+    (
+        "read a missing resource version as no version at all",
+        KUBERNETES,
+        "  if (typeof resourceVersion !== 'string' || resourceVersion === '') {",
+        "  if (false) {",
+        KUBERNETES_TEST,
+        "fails on a list that carries no resource version, which is how a caller resumes",
+    ),
+    (
+        "read an unparseable timestamp as the epoch",
+        KUBERNETES,
+        "  const ms = Date.parse(raw);\n  if (Number.isNaN(ms)) {\n    return `event's declared timestamp field '${field}' is not a date this module can read: ${JSON.stringify(raw)}`;\n  }\n  return ms;",
+        "  const ms = Date.parse(raw);\n  return Number.isNaN(ms) ? 0 : ms;",
+        KUBERNETES_TEST,
+        "quarantines an event whose declared timestamp is not an RFC-3339 time",
+    ),
+    (
+        "attach an event to a service the caller never named",
+        KUBERNETES,
+        "  if (service === '') {",
+        "  if (false) {",
+        KUBERNETES_TEST,
+        "refuses a pull that names no service, because the API does not name one either",
+    ),
+    (
+        "reach an unauthenticated endpoint when no token was supplied",
+        KUBERNETES,
+        "  if (token === '') {",
+        "  if (false) {",
+        KUBERNETES_TEST,
+        "refuses a pull with no token, rather than reaching an unauthenticated endpoint",
+    ),
+    (
+        "ask for every matching event in the cluster",
+        KUBERNETES,
+        "  if (!Number.isInteger(limit) || limit <= 0) {",
+        "  if (false) {",
+        KUBERNETES_TEST,
+        "refuses a limit that is not a positive integer, because the alternative is unbounded",
+    ),
+    (
+        "represent a type the IR does not carry",
+        KUBERNETES,
+        "    if (rawType !== undefined && rawType !== 'Normal' && rawType !== 'Warning') {",
+        "    if (false) {",
+        KUBERNETES_TEST,
+        "keeps the two types the IR carries and quarantines a third",
+    ),
+    (
+        "read an absent count as one occurrence",
+        KUBERNETES,
+        "      ...(rawCount !== undefined ? { count: rawCount } : {}),",
+        "      count: rawCount ?? 1,",
+        KUBERNETES_TEST,
+        "keeps an absent count as absent, which is not the same as one occurrence",
+    ),
+    (
+        "drop the involved object from the payload",
+        KUBERNETES,
+        "      involvedObject: { kind, name },\n",
+        "",
+        KUBERNETES_TEST,
+        "maps an event to a signal whose payload is the vocabulary the IR already has",
+    ),
+    (
+        "classify the event's change type from its reason string",
+        KUBERNETES,
+        "      involvedObject: { kind, name },\n",
+        "      involvedObject: { kind, name },\n      changeType: reason === 'ScalingReplicaSet' ? 'deploy' : undefined,\n",
+        KUBERNETES_TEST,
+        "never sets a change type, which the API has no field for",
+    ),
+    (
+        "stop counting the events a declared window excluded",
+        KUBERNETES,
+        "        outsideWindow += 1;",
+        "        outsideWindow += 0;",
+        KUBERNETES_TEST,
+        "counts the events a declared window excluded, so the exclusion is visible",
+    ),
+    (
+        "report a page with a continuation as the last one",
+        KUBERNETES,
+        "      hasMore: typeof continuation === 'string' && continuation !== '',",
+        "      hasMore: false,",
+        KUBERNETES_TEST,
+        "reports the page the caller got rather than pretending it is the window",
+    ),
+    (
+        "declare the fifth pull path unsupported while keeping its entry",
+        REGISTRY,
+        "    id: 'kubernetes',\n    status: 'implemented',",
+        "    id: 'kubernetes',\n    status: 'unsupported',\n    reason: 'this backend was flipped by a mutation, and the reason is long enough to pass the length rule',",
         REGISTRY_TEST,
         "holds the committed snapshot equal to the registry it is derived from",
     ),

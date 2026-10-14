@@ -144,6 +144,7 @@ const ENUMERATED_MODULES = [
   'ingest/elasticsearch.ts',
   'ingest/jaeger.ts',
   'ingest/file.ts',
+  'ingest/kubernetes.ts',
   'ingest/loki.ts',
   'ingest/otlp.ts',
   'ingest/prime.ts',
@@ -382,6 +383,12 @@ const TESTED = [
   'ELASTICSEARCH_TIMESTAMP_FORMATS',
   'ELASTICSEARCH_SORT_DIRECTIONS',
   'pullElasticsearchLogs',
+  // ingest/kubernetes.ts -- the fifth implemented pull path, a reader for the events
+  // list.
+  'KUBERNETES_EVENTS_PATH',
+  'KUBERNETES_DEFAULT_TIMEOUT_MS',
+  'KUBERNETES_TIMESTAMP_FIELDS',
+  'pullKubernetesEvents',
   // ingest/jaeger.ts -- the second implemented pull path, a reader for the query
   // API's own trace JSON.
   'JAEGER_TRACES_PATH',

@@ -123,12 +123,31 @@ async function serveBackends(): Promise<string> {
       ],
     },
   });
+  // The shape a list answers in: an EventList whose items carry the fields the IR's
+  // event payload was built for.
+  const events = JSON.stringify({
+    kind: 'EventList',
+    apiVersion: 'v1',
+    metadata: { resourceVersion: '7431' },
+    items: [
+      {
+        metadata: { name: 'checkout-7f9c.17a1b2' },
+        involvedObject: { kind: 'Pod', name: 'checkout-7f9c' },
+        reason: 'BackOff',
+        message: 'Back-off restarting failed container',
+        type: 'Warning',
+        count: 3,
+        lastTimestamp: '2023-11-14T22:13:20.123Z',
+      },
+    ],
+  });
   const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     const url = req.url ?? '';
     if (url.startsWith('/api/traces')) res.end(traces);
     else if (url.startsWith('/loki/api/v1/query_range')) res.end(streams);
     else if (url.includes('/_search')) res.end(hits);
+    else if (url.includes('/events')) res.end(events);
     else res.end(matrix);
   });
   await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
@@ -209,14 +228,27 @@ const DRIVERS: Record<T2BackendId, (baseUrl: string) => Promise<number>> = {
     if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
     return result.signals.length;
   },
-  // The two below are declared unsupported, so they have no driver on purpose. A
+  kubernetes: async (baseUrl) => {
+    const entry = backendEntry('kubernetes');
+    if (entry === null) throw new Error('kubernetes is declared implemented and has no entry');
+    const result = await entry({
+      baseUrl,
+      // The service is the caller's declaration: an event about a pod names none, and
+      // turning a pod name into one is a per-cluster convention this reader refuses.
+      service: 'payments',
+      token: 'sa-token',
+      limit: 20,
+      timestampField: 'lastTimestamp',
+      namespace: 'payments',
+    });
+    if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
+    return result.signals.length;
+  },
+  // The one below is declared unsupported, so it has no driver on purpose. A
   // driver for an unsupported backend would be the very claim this file refuses to
   // let the registry make.
   clickhouse: async () => {
     throw new Error('clickhouse is declared unsupported and must not have a driver');
-  },
-  kubernetes: async () => {
-    throw new Error('kubernetes is declared unsupported and must not have a driver');
   },
 };
 

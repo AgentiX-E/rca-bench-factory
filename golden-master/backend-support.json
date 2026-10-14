@@ -28,8 +28,8 @@
     },
     {
       "id": "kubernetes",
-      "status": "unsupported",
-      "reason": "the Kubernetes API needs credentials that are not available to the ingest path -- an in-cluster service-account token or a kubeconfig -- and its events use the involvedObject vocabulary rather than the OTel resource attributes the IR is built on, so the reader would also need a translation table"
+      "status": "implemented",
+      "summary": "HTTP JSON API: GET /api/v1/events, read as EventList items mapped onto the IR event payload, with the service named by the caller"
     }
   ]
 }
