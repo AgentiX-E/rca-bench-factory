@@ -90,9 +90,24 @@ async function serveBackends(): Promise<string> {
     offset: 0,
     errors: null,
   });
+  const streams = JSON.stringify({
+    status: 'success',
+    data: {
+      resultType: 'streams',
+      result: [
+        {
+          stream: { service_name: 'payments', filename: '/var/log/payments.log' },
+          values: [['1700000000123456789', 'upstream 10.20.30.40 refused']],
+        },
+      ],
+    },
+  });
   const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(req.url?.startsWith('/api/traces') ? traces : matrix);
+    const url = req.url ?? '';
+    if (url.startsWith('/api/traces')) res.end(traces);
+    else if (url.startsWith('/loki/api/v1/query_range')) res.end(streams);
+    else res.end(matrix);
   });
   await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const address = server.address();
@@ -137,12 +152,26 @@ const DRIVERS: Record<T2BackendId, (baseUrl: string) => Promise<number>> = {
     if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
     return result.signals.length;
   },
-  // The four below are declared unsupported, so they have no driver on purpose. A
+  loki: async (baseUrl) => {
+    const entry = backendEntry('loki');
+    if (entry === null) throw new Error('loki is declared implemented and has no entry');
+    const result = await entry({
+      baseUrl,
+      query: '{service_name="payments"}',
+      start: 1_700_000_000,
+      end: 1_700_000_060,
+      limit: 20,
+      direction: 'backward',
+      // The label the reader is told to read, which is the whole of what this
+      // backend's registry reason used to call impossible.
+      serviceLabel: 'service_name',
+    });
+    if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
+    return result.signals.length;
+  },
+  // The three below are declared unsupported, so they have no driver on purpose. A
   // driver for an unsupported backend would be the very claim this file refuses to
   // let the registry make.
-  loki: async () => {
-    throw new Error('loki is declared unsupported and must not have a driver');
-  },
   elasticsearch: async () => {
     throw new Error('elasticsearch is declared unsupported and must not have a driver');
   },

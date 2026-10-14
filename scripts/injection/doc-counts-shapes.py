@@ -58,10 +58,14 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared witness reconciliation)
+
 REPO = Path(__file__).resolve().parents[2]
 
 GATE = REPO / "scripts" / "check-doc-counts.mjs"
 TESTS = "test/check-doc-counts.test.ts"
+TEST_FILE = REPO / "packages" / "core" / TESTS
 
 # The vitest binary, resolved from the repository's own install, so the
 # assertions are exercised exactly as CI exercises them.
@@ -306,5 +310,39 @@ def main() -> int:
     return 0
 
 
+def expectations() -> dict[str, tuple[str, ...]]:
+    """The witnesses, one per injection, read from the table's own fourth field.
+
+    Not copied into a second table on purpose: the copy is the thing that goes
+    stale, and every row here already declares the test it must break. What the
+    reconciliation adds is the check that the *test file* still contains that
+    title -- the rename trap that made finding 157's battery report a
+    `MISATTRIBUTED` on the runner while its local run was green.
+    """
+    return {name: (expected,) for name, _anchor, _replacement, expected in MUTATIONS}
+
+
+def verify_expectations(probe: bool = False) -> int:
+    """Reconcile the witness table, without mutating anything.
+
+    The mode exists so a rename fails in a tenth of a second instead of after a
+    full mutation loop -- and until finding 163 this file did not implement it, so
+    `--verify-expectations` ran all twelve injections and rewrote a gate script
+    that other tests were spawning at that moment.
+    """
+    return W.verify_witness_table(
+        "doc-counts-shapes",
+        expectations(),
+        [name for name, *_ in MUTATIONS],
+        dict.fromkeys(expectations(), TEST_FILE),
+        TEST_FILE.parent,
+        "check-doc-counts.test.ts",
+        survivors=tuple(EXPECTED_SURVIVORS),
+        probe=probe,
+    )
+
+
 if __name__ == "__main__":
+    if "--verify-expectations" in sys.argv:
+        sys.exit(verify_expectations(probe="--probe" in sys.argv))
     sys.exit(main())

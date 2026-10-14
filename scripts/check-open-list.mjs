@@ -38,6 +38,17 @@
  * The section is located by its **heading**, not by any line that mentions the word
  * "open" -- finding 155's bug, where the guard read the headline table because a row
  * in it cross-referenced the section.
+ *
+ * Every section with that heading is read, not the first one. That was finding 162:
+ * this guard located its subject with `findIndex`, a pass appended a second `### Open`
+ * section, and the new list had no reader -- the count it printed did not move and
+ * nothing in the output said a second list existed. A document that gains a list must
+ * gain a reader for it, and the only way to hold that is to read all of them.
+ *
+ * `--doc <path>` reads a different document, so the fixtures in
+ * `packages/core/test/check-open-list.test.ts` can drive the script itself. Which
+ * sections are read is not a predicate, so the copy-the-regexes route those tests use
+ * for the two judges could not have answered this question.
  */
 
 import { readFileSync } from 'node:fs';
@@ -51,21 +62,47 @@ const DOCS = [
   { path: 'docs/progress.md', heading: '### Open' },
 ];
 
+/**
+ * Where to read a document from, and what to call it in the diagnostics.
+ *
+ * The label follows the source: a message that said `docs/progress.md` while reading a
+ * test's temp file would name a file it did not read, which is the kind of diagnostic
+ * this repository has had to repair more than once.
+ */
+function source(rel) {
+  const i = process.argv.indexOf('--doc');
+  if (i === -1) return { label: rel, path: resolve(ROOT, rel) };
+  const actual = resolve(process.argv[i + 1]);
+  return { label: actual, path: actual };
+}
+
 const CLOSED = /~~|Closed by finding \d+/;
 const OPEN = /\[open:\s*([^\]]*)\]/;
 
-/** The lines of the section that starts at `heading`, up to the next heading of the same level. */
-function sectionLines(doc, heading) {
+/**
+ * Every section that starts at `heading`, in document order.
+ *
+ * A deeper heading inside a section (`#### x`) stays in it; a heading of the same
+ * level or shallower ends it. That is the rule the single-section version used, and it
+ * is kept so the two sources of truth -- this scan and the document's own structure --
+ * cannot drift apart on what "the section" means.
+ */
+function sections(doc, heading) {
   const lines = doc.split('\n');
-  const start = lines.findIndex((line) => line.trim() === heading);
-  if (start === -1) return null;
   const level = heading.match(/^#+/)[0].length;
-  const out = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^#+\s/.test(line) && line.match(/^#+/)[0].length <= level) break;
-    out.push(line);
+  const found = [];
+  let current = null;
+  for (const line of lines) {
+    if (line.trim() === heading) {
+      current = [];
+      found.push(current);
+      continue;
+    }
+    if (current === null) continue;
+    if (/^#+\s/.test(line) && line.match(/^#+/)[0].length <= level) current = null;
+    else current.push(line);
   }
-  return out;
+  return found;
 }
 
 /** The entries of a section: a `- ` line and the continuation lines indented under it. */
@@ -87,54 +124,70 @@ function entries(lines) {
 function check() {
   const problems = [];
   for (const doc of DOCS) {
+    const from = source(doc.path);
     let text;
     try {
-      text = readFileSync(resolve(ROOT, doc.path), 'utf8');
+      text = readFileSync(from.path, 'utf8');
     } catch (error) {
-      problems.push(`cannot read ${doc.path}: ${error.message}`);
+      problems.push(`cannot read ${from.label}: ${error.message}`);
       continue;
     }
-    const lines = sectionLines(text, doc.heading);
-    if (lines === null) {
-      problems.push(`${doc.path} has no \`${doc.heading}\` heading; the list this guard reads is gone`);
+    const found = sections(text, doc.heading);
+    if (found.length === 0) {
+      problems.push(`${from.label} has no \`${doc.heading}\` heading; the list this guard reads is gone`);
       continue;
     }
-    const items = entries(lines);
-    if (items.length === 0) {
-      problems.push(`${doc.path}'s \`${doc.heading}\` section is empty, so this guard has no subject`);
-      continue;
-    }
+    // Document-wide, not per section: the second list is usually written by copying
+    // the first one's shape, so a sentence shared between them is the cheapest thing
+    // to leave behind, and a per-section map would not see it.
     const reasons = new Map();
-    for (const item of items) {
-      const first = item.split('\n')[0].slice(2).trim();
-      if (CLOSED.test(item)) continue;
-      const open = item.match(OPEN);
-      if (!open) {
+    let total = 0;
+    let closed = 0;
+    found.forEach((lines, index) => {
+      const items = entries(lines);
+      if (items.length === 0) {
         problems.push(
-          `${doc.path}: an entry says neither that it is closed nor why it is open, so a reader ` +
-            `cannot tell work from history: ${first.slice(0, 80)}`,
+          `${from.label}: the \`${doc.heading}\` section ${index + 1} of ${found.length} is empty, ` +
+            'so this guard has no subject',
         );
-        continue;
+        return;
       }
-      const reason = open[1].trim();
-      if (reason.length < 40) {
-        problems.push(
-          `${doc.path}: the open reason is ${reason.length} character(s); "still open" is not a ` +
-            `reason: ${first.slice(0, 60)}`,
-        );
+      total += items.length;
+      for (const item of items) {
+        const first = item.split('\n')[0].slice(2).trim();
+        if (CLOSED.test(item)) {
+          closed += 1;
+          continue;
+        }
+        const open = item.match(OPEN);
+        if (!open) {
+          problems.push(
+            `${from.label}: an entry says neither that it is closed nor why it is open, so a reader ` +
+              `cannot tell work from history: ${first.slice(0, 80)}`,
+          );
+          continue;
+        }
+        const reason = open[1].trim();
+        if (reason.length < 40) {
+          problems.push(
+            `${from.label}: the open reason is ${reason.length} character(s); "still open" is not a ` +
+              `reason: ${first.slice(0, 60)}`,
+          );
+        }
+        if (reasons.has(reason)) {
+          problems.push(
+            `${from.label}: two entries share an open reason (${reason.slice(0, 40)}), so one of them is ` +
+              'a placeholder that will be re-signed without being read',
+          );
+        }
+        reasons.set(reason, first);
       }
-      if (reasons.has(reason)) {
-        problems.push(
-          `${doc.path}: two entries share an open reason (${reason.slice(0, 40)}), so one of them is ` +
-            'a placeholder that will be re-signed without being read',
-        );
-      }
-      reasons.set(reason, first);
-    }
-    const closed = items.filter((item) => CLOSED.test(item)).length;
+    });
+    // The section count is printed beside the entry count, so a document that gains a
+    // list cannot do it silently: the number of lists is part of the evidence.
     console.log(
-      `check-open-list: OK (${items.length} entry(ies) in ${doc.path}: ${items.length - closed} open ` +
-        `with a reason, ${closed} closed by a finding)`,
+      `check-open-list: OK (${total} entry(ies) across ${found.length} section(s) of ${from.label}: ` +
+        `${total - closed} open with a reason, ${closed} closed by a finding)`,
     );
   }
 

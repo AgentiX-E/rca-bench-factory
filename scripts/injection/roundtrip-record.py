@@ -40,6 +40,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared witness reconciliation)
+
 GUARD = "scripts/check-roundtrip-record.mjs"
 TEST_FILE = "test/check-roundtrip-record.test.ts"
 
@@ -201,5 +204,38 @@ def main() -> int:
     return 0
 
 
+def expectations() -> dict[str, tuple[str, ...]]:
+    """The witnesses, one per injection, read from the table's own fourth field.
+
+    Derived rather than copied: every row already declares the test it must break,
+    and a second table is the thing that goes stale. The reconciliation adds the
+    check that the *test file* still contains that title, which is the rename trap
+    findings 157 and 163 measured.
+    """
+    return {name: (expected,) for name, _anchor, _replacement, expected in MUTATIONS}
+
+
+def verify_expectations(probe: bool = False) -> int:
+    """Reconcile the witness table, without mutating anything.
+
+    Until finding 163 this file ignored the flag and ran all twenty-five
+    injections instead, each one rewriting a gate script that other tests spawn --
+    which is how twenty-five seconds of mutation landed inside somebody else's
+    test run.
+    """
+    return W.verify_witness_table(
+        "roundtrip-record",
+        expectations(),
+        [name for name, *_ in MUTATIONS],
+        dict.fromkeys(expectations(), REPO / "packages" / "core" / TEST_FILE),
+        (REPO / "packages" / "core" / TEST_FILE).parent,
+        "check-roundtrip-record.test.ts",
+        survivors=tuple(EXPECTED_SURVIVORS),
+        probe=probe,
+    )
+
+
 if __name__ == "__main__":
+    if "--verify-expectations" in sys.argv:
+        sys.exit(verify_expectations(probe="--probe" in sys.argv))
     sys.exit(main())

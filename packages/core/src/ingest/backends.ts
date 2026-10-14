@@ -36,6 +36,7 @@
  */
 
 import { pullJaegerTraces, type JaegerPullOptions, type JaegerPullResult } from './jaeger.js';
+import { pullLokiLogs, type LokiPullOptions, type LokiPullResult } from './loki.js';
 import {
   pullPrometheusMetrics,
   type PrometheusPullOptions,
@@ -62,16 +63,17 @@ export type T2BackendId = (typeof T2_BACKEND_IDS)[number];
 /**
  * A pull entry point, per backend.
  *
- * Two signatures rather than one, because the two pullers genuinely differ: they
- * speak different wire formats and take different options. The second backend
- * widening this type is the deliberate decision the first version of this file
- * left room for, and the cost of it is visible at the call site -- a caller that
- * wants to *drive* a backend has to know which one it is driving, which is why
- * `backendEntry` is overloaded per id rather than answering a union.
+ * Three signatures rather than one, because the three pullers genuinely differ:
+ * they speak different wire formats and take different options. Each backend
+ * widening this type is a deliberate decision with a visible cost at the call
+ * site -- a caller that wants to *drive* a backend has to know which one it is
+ * driving, which is why `backendEntry` is overloaded per id rather than answering
+ * a union.
  */
 export type PrometheusEntry = (options: PrometheusPullOptions) => Promise<PrometheusPullResult>;
 export type JaegerEntry = (options: JaegerPullOptions) => Promise<JaegerPullResult>;
-export type T2BackendEntry = PrometheusEntry | JaegerEntry;
+export type LokiEntry = (options: LokiPullOptions) => Promise<LokiPullResult>;
+export type T2BackendEntry = PrometheusEntry | JaegerEntry | LokiEntry;
 
 export interface T2BackendImplemented {
   readonly id: T2BackendId;
@@ -117,9 +119,14 @@ export const T2_BACKENDS: readonly T2Backend[] = [
   },
   {
     id: 'loki',
-    status: 'unsupported',
-    reason:
-      'Loki answers /loki/api/v1/query_range with LogQL results whose values are [ns-timestamp, line] pairs and whose streams carry label sets Loki chose, so the service a log belongs to is a label the caller must name, and a reader that guessed it would attach every line to the wrong service',
+    status: 'implemented',
+    entry: pullLokiLogs,
+    // This row used to carry the reason the backend could not be supported, and
+    // the reason was true about the wire format and wrong about what followed from
+    // it: "the service label is one the caller must name" is an interface, not an
+    // obstacle. The summary keeps the fact that the naming is the caller's, because
+    // a reader of this table still has to supply it.
+    summary: 'HTTP JSON API: GET /loki/api/v1/query_range, read as streams of [ns-timestamp, line] pairs whose service label the caller names',
   },
   {
     id: 'elasticsearch',
@@ -159,6 +166,7 @@ export function findBackend(id: string): T2Backend | undefined {
  */
 export function backendEntry(id: 'prometheus'): PrometheusEntry | null;
 export function backendEntry(id: 'jaeger'): JaegerEntry | null;
+export function backendEntry(id: 'loki'): LokiEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null {
   const backend = findBackend(id);

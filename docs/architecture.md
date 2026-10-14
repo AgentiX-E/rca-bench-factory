@@ -249,13 +249,14 @@ repository has already shipped four of those (findings 107, 108, 109 and 114).
 
 The implemented paths are *pulls*: telemetry is fetched over HTTP, from a documented
 JSON API. What differs between them is how far the claim has been tested: the
-Prometheus reader was pointed at a real server (finding 154, version 2.45.3) and the
-Jaeger reader has been driven only against a fixture, in `packages/core/test/jaeger.test.ts`.
+Prometheus reader was pointed at a real server (finding 154, version 2.45.3), and the
+Jaeger and Loki readers have been driven only against fixtures, in
+`packages/core/test/jaeger.test.ts` and `packages/core/test/loki.test.ts`.
 That difference is written down rather than blurred, because "reads the documented
 wire format" and "was answered by a deployment" are different measurements. The other two
 ingest paths here read what a caller already has -- `ingest/file.ts` for files,
 `ingest/otlp.ts` for posted OTLP payloads -- which is why every row names a wire
-format rather than a product. The four unsupported rows name what the format
+format rather than a product. The three unsupported rows name what the format
 requires and this repository does not have, because "not implemented yet" reads
 the same whether the work is a week or impossible, and an entry that cannot be
 re-examined is the entry this campaign keeps finding.
@@ -264,10 +265,15 @@ re-examined is the entry this campaign keeps finding.
 | --- | --- | --- |
 | `prometheus` | implemented | HTTP JSON API: GET /api/v1/query_range, read as a matrix |
 | `jaeger` | implemented | HTTP JSON API: GET /api/traces, read as a list of traces whose spans carry hex ids |
-| `loki` | unsupported | Loki answers /loki/api/v1/query_range with LogQL results whose values are [ns-timestamp, line] pairs and whose streams carry label sets Loki chose, so the service a log belongs to is a label the caller must name, and a reader that guessed it would attach every line to the wrong service |
+| `loki` | implemented | HTTP JSON API: GET /loki/api/v1/query_range, read as streams of [ns-timestamp, line] pairs whose service label the caller names |
 | `elasticsearch` | unsupported | Elasticsearch returns hits under dynamic mappings, so the timestamp field, the message field and the service field are per-index decisions: the same query against two clusters yields two shapes, and a reader would need a field mapping supplied by the caller before it could read anything at all |
 | `clickhouse` | unsupported | the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped |
 | `kubernetes` | unsupported | the Kubernetes API needs credentials that are not available to the ingest path -- an in-cluster service-account token or a kubeconfig -- and its events use the involvedObject vocabulary rather than the OTel resource attributes the IR is built on, so the reader would also need a translation table |
+
+The `loki` row read `unsupported` until finding 161, with a reason that was true
+about the wire format and wrong about what followed from it: that the service is a
+label the caller must name is a statement about the interface, so the reader takes
+the label as a required argument with no default rather than guessing one.
 
 Nothing above is a promise about a hosted service. `prometheus` means the query
 API a Prometheus or a Prometheus-compatible endpoint answers at

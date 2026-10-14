@@ -16364,3 +16364,266 @@ any other, and this one had no reader either** -- nothing re-examined it, becaus
 the table it lived in is only checked for internal consistency. That is the
 campaign's recurring shape at its outermost: not a number without a reader, or a
 claim without a reader, but a *decision* without one.
+
+## Finding 161 — the third backend's reason was itself the interface, and one timestamp carried two unit traps
+
+### What the registry said, and which half of it was the finding
+
+The `loki` row in `backends.ts` carried this reason:
+
+> Loki answers `/loki/api/v1/query_range` with LogQL results whose values are
+> `[ns-timestamp, line]` pairs and whose streams carry label sets Loki chose, so the
+> service a log belongs to is a label the caller must name, and a reader that
+> guessed it would attach every line to the wrong service
+
+Every clause of that is true, and it is true in the way finding 160's Jaeger reason
+was true: about the wire format. The conclusion drawn from it was not. **"The caller
+must name it" is a statement about the interface, not about feasibility** -- a reader
+whose service label is a *required argument with no default* has nothing to guess
+with. So `serviceLabel` is required, and it is required for a reason the Prometheus
+puller's `serviceLabel` is not:
+
+| puller | default | why |
+| --- | --- | --- |
+| Prometheus | `service` | OpenTelemetry's semantic conventions define this for metrics, so the default is a convention rather than a guess |
+| Loki | **none** | no convention is universal for logs: the OTel Collector's Loki exporter writes `service_name`, a Promtail pipeline writes whatever its author wrote (`job`, `app`), and neither is a promise from the backend |
+
+A default here would be one writer's habit presented as the backend's promise. The
+registry's own sentence is what says so, and it is now the interface instead of the
+excuse.
+
+### The wire facts, and what each one forced
+
+| wire fact | what the reader does with it, and why |
+| --- | --- |
+| entry timestamps are **decimal strings of nanoseconds** | parsed with `BigInt` and integer-divided to milliseconds; both ways of getting it wrong are measured below |
+| `direction` defaults to `backward`, and **with `limit` it decides which end of the window survives** | required, like `step` is in the Prometheus puller: a default would silently decide how much telemetry the caller gets |
+| `limit` defaults to **100 entries** | required, for the same reason -- a truncated window that looks complete is the failure mode of the round that produced finding 147 |
+| a stream's label set is its identity (Loki requires labels to be low-cardinality) | the labels other than the named one go into the signal's `resource`; a label value that is not a string is dropped rather than coerced, because `resource` holds strings |
+| the same endpoint answers a **LogQL metric query** with `resultType: "matrix"` | refused by name (`got 'matrix'`), not read as log bodies: a metric query is telemetry, but its sample values are not lines |
+| Loki 3 puts a **third element** in an entry when structured metadata is present | the entry is **quarantined**, with the reason naming what the third element would be; attaching a metadata object as the line is the loudest available version of guessing |
+| level labels are `level`, `severity`, `lvl` or Loki's own `detected_level`, and their values are not the IR's vocabulary (`warning` is not `WARN`, `critical` is not `FATAL`) | `severityText` is **never** set: absent means "the backend did not state one in a vocabulary this repository reads", which is a different claim from "this line was informational" |
+| results arrive in the order `direction` implies | the order is **preserved**, not re-sorted: `signals[0]` staying the backend's first entry is the only thing a reader can compare the two by |
+
+### Two unit traps in one number, both measured
+
+1.7e18 nanoseconds is past the range in which a `float64` holds every integer, and
+both wrong readings are exhibited in `loki.test.ts` rather than described:
+
+| reading of `1700000000123456789` | result |
+| --- | --- |
+| as **milliseconds** | `new Date(Number(ns))` is **not a date at all** -- beyond the `Date` range, so a reader that skipped the unit reports `Invalid Date`, not a wrong date |
+| through **`Number` and then `/ 1e6`** | `Number('1700000000123999999')` rounds up to `1700000000124000000`, so `Math.floor(Number(ts) / 1e6)` says `...124` where the digits say `...123` -- a **one-millisecond error on a real timestamp**, and the two sides are asserted side by side |
+| through **`BigInt` integer division** | `...123`, by truncation, so the IR's timestamp is never later than the line the backend wrote |
+
+The same fact bites in the other direction: the request's window is sent as
+nanosecond decimal strings built from whole milliseconds, because `value * 1e9` on a
+number of seconds arrives with the last digits already rounded. The battery injects
+both the float division and the seconds-instead-of-nanoseconds request.
+
+### The claim, and its honest limit
+
+The registry row is `implemented`, and what that does **not** mean is that a Loki
+answered this reader. This round spent sixteen minutes trying to earn the stronger
+claim and failed, measurably:
+
+| attempt | outcome |
+| --- | --- |
+| `apt-cache show loki` | the Ubuntu package of that name is *unrelated* (`2.4.7.4-10`, "MCMC linkage analysis on general pedigrees") |
+| `curl -L .../loki-linux-amd64.zip` | **HTTP 302** to `release-assets.githubusercontent.com`, and the transfer *started* |
+| six resumptions with `-C -` | **3,112,960 bytes**, then **6,467,584 bytes**, then six consecutive `Failed to connect to github.com port 443 after ~134 s`; the archive never had an end-of-central-directory record and could not be unzipped |
+
+That is the same wall finding 154 hit and it is now measured for a second product, so
+it is recorded as a property of this sandbox rather than as a one-off. The reader is
+therefore fixture-driven, exactly as the Jaeger reader is, and `docs/architecture.md`
+says so in the sentence that separates "reads the documented wire format" from "was
+answered by a deployment".
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `loki.test.ts` | **33 tests**: the mapping, both unit traps with their controls, every quarantine branch (missing label, off-format label, unreadable timestamp, non-string line, structured metadata, wrong shape) and every network branch (refused connection, silent socket, non-2xx, non-JSON, no `status`, unknown `resultType`) |
+| coverage, `src/ingest/loki.ts` | **100 / 100 / 100 / 100** |
+| `backend-support.test.ts` | **12 tests**, now driving **three** `implemented` backends over one routed fixture |
+| the battery | **32 caught / 0 survived / 0 inert / 0 misattributed** -- 13 new injections against the third reader and the registry row |
+| `--verify-expectations --probe` | caught two stale witnesses **before** the run: the test's name in the file was written `caller\'s`, so the plain-substring witness could not match. The test was renamed rather than the witness escaped |
+| `check-backend-support.mjs` | **OK (6 backends in the matrix: 3 implemented, 3 unsupported with a reason)** |
+| the guards the change tripped | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `docs:check` refused the matrix until it was re-derived |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
+| core test suite | **136 files, 3539 tests passed**; `cli` 3 files, 173 tests |
+
+### What is not covered
+
+- **No real Loki endpoint was contacted**, and the table above is what it would take.
+- **No CLI command.** The reader is reachable through the package entry point and the
+  registry, not through `rca-bench` -- the same gap findings 154 and 160 recorded, now
+  three readers wide.
+- **Three backends remain** (Elasticsearch, ClickHouse, Kubernetes), and each still
+  carries a written reason. This finding is evidence that a reason of that shape is
+  worth re-reading rather than trusting: the reason's *conclusion* is what turned out
+  to be wrong, and nothing in the repository could tell the two halves apart.
+
+### What this says about the method
+
+The registry's reason had no reader, which finding 160 already recorded. This round
+went one step further into it: **the half of the reason that was wrong was exactly the
+half that named the interface to build.** A reason written from the wire format
+documents what the decoder must handle -- which is the specification, not the
+objection. The two are indistinguishable while the reason is only ever read for
+internal consistency, and telling them apart took writing the decoder.
+
+## Finding 162 — the Open-list guard read the first list, so the second one had no reader
+
+### What happened
+
+Finding 161 appended a second `### Open` section to `docs/progress.md`, and
+`scripts/check-open-list.mjs` -- the guard that exists because three entries in that
+list had stopped meaning anything -- went on judging **the first one**. Its subject was
+located with `lines.findIndex((line) => line.trim() === heading)`, which finds the first
+match and stops.
+
+The symptom is the campaign's shape one level out. The guard printed:
+
+```
+check-open-list: OK (5 entry(ies) in docs/progress.md: 3 open with a reason, 2 closed by a finding)
+```
+
+The same five entries it had printed the round before. Nothing in the output said a
+second list existed, and the new section -- written by the same pass that was fixing a
+claim-with-no-reader -- was itself read by nothing. The first residual list has a reader
+and the second had none, and the number that would have shown it was an entry count
+that had not moved.
+
+### The fixture that makes the two halves different
+
+| document | old guard | new guard |
+| --- | --- | --- |
+| one section, clean | rc=0 | rc=0 |
+| one section, an entry that says neither | rc=1 | rc=1 |
+| **first section clean, second section has an entry that says neither** | **rc=0** | **rc=1** |
+| **first section clean, second section has a placeholder reason** | **rc=0** | **rc=1** |
+| **a section that exists and says nothing** | **rc=0** | **rc=1** |
+
+### The fix, and the two decisions in it
+
+1. **Every section with that heading is read**, and the print now carries the section
+   count beside the entry count -- `6 entry(ies) across 2 section(s)`. A document that
+   gains a list cannot do it silently, because the number of lists is part of the
+   evidence rather than an assumption the guard makes about the document.
+2. **Reason uniqueness is document-wide.** The second list is usually written by
+   copying the first one's shape, so a sentence shared between two sections is the
+   cheapest thing to leave behind, and a per-section map cannot see it.
+
+`--doc <path>` was added for the fixtures. The file previously argued against an
+injection point -- *"adding one to make it testable would change the thing under test"*
+-- and that argument was right for the *judges* (which the test file drives by
+re-implementing two regexes) and wrong for the *subject*: **which sections are read is
+not a predicate**. No copy of the regexes can answer it, which is why the defect
+survived a test file that already had seven tests.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `check-open-list.test.ts` | **13 tests** (7 before): six new fixtures, all red against the old guard and green against the new one |
+| the shipped document | `check-open-list: OK (6 entry(ies) across 2 section(s) of docs/progress.md: 4 open with a reason, 2 closed by a finding)` |
+| `derive-gate-sites` | the site moved 158 -> 211 and lost its `status`/`provedBy`, as a line shift always does; re-signed by hand to `proved` by this test file, and the table is back to **50 of 50 proved** |
+| the guard against itself | while the section list is read with `sections()`, a document with no heading at all still fails with "the list this guard reads is gone" -- the new scan returns an empty array rather than `null`, and the branch that catches it is pinned |
+
+### What this says about the method
+
+A guard whose subject is "the document" rather than "the part of it I found first" is
+the same distinction as finding 153's, one level up. The three stale entries that
+motivated this guard were claims with no reader; the guard itself then read one list out
+of two. **The failure mode is not that a reader stops working -- it is that it keeps
+working on something that is no longer the subject.**
+
+## Finding 163 — two batteries ignored the reconciliation mode, so asking them to check ran them
+
+### How it was found, and what it looked like from outside
+
+Finding 161's pass ended with a `--verify-expectations` sweep over every battery --
+the cheap local check that a renamed test has not turned a `CAUGHT` into a
+`MISATTRIBUTED`. The sweep was run beside a full `test:coverage` run, and that run
+came back with two red tests, neither of which it should have touched:
+
+```
+FAIL  test/check-doc-counts.test.ts > passes against the shipped document ...
+FAIL  test/check-doc-counts.test.ts > leaves a bare test count alone when the row names no scope
+```
+
+Both tests spawn `scripts/check-doc-counts.mjs`. Both passed in isolation. Neither
+reproduced. The second full run was green, and so was a third.
+
+### The cause
+
+Two of the six batteries in `scripts/injection/` did not implement
+`--verify-expectations`:
+
+| battery | what `--verify-expectations` did |
+| --- | --- |
+| `gate-tests-battery.py`, `fault-extraction-scoring.py`, `fetch-official-retry.py`, `fault-extraction-workflow.py` | reconciled the witness table and exited -- **54 to 120 ms** |
+| `doc-counts-shapes.py` | **ignored the flag** and ran all twelve injections -- **16.7 s** |
+| `roundtrip-record.py` | **ignored the flag** and ran all twenty-five injections -- **34.6 s** |
+
+Their `__main__` blocks called `main()` unconditionally, so the mode that exists to be
+cheap was, for those two, the most expensive thing they can do -- and every one of
+those injections rewrites a tracked gate script (`check-doc-counts.mjs`,
+`check-roundtrip-record.mjs`) while a suite that spawns the same scripts is running.
+That is the interference the two red tests were seeing: a test that spawns a guard
+observed a mutated guard, and the failure read as a defect in the guard.
+
+The evidence that pins it is in the tree rather than in a log: the mtimes of
+`scripts/check-doc-counts.mjs` and `scripts/check-roundtrip-record.mjs` moved during
+the sweep even though neither file is modified in `git status`, which is what a
+mutation-and-restore leaves behind.
+
+### Why the existing guards did not catch it
+
+`battery-witnesses.test.ts` drove the **four** batteries that implement the mode, and
+its list of batteries was hand-written -- so the two that did not implement it were
+absent from the list *and* from the subject. The list was the exemption, and the
+exemption was invisible because a missing entry reads exactly like a battery that has
+nothing to check.
+
+### The fix
+
+1. `--verify-expectations [--probe]` implemented in both batteries, delegating to
+   `_witnesses.verify_witness_table` -- the same reconciliation the other four run.
+   Their witness is the one each mutation row already declares as its fourth field,
+   so the table is derived rather than copied: what the reconciliation adds is the
+   check that the *test file* still contains that title, which is the rename trap.
+2. `battery-witnesses.test.ts` now walks `scripts/injection/` instead of reading a
+   hand list, and requires every battery to either implement the mode or be recorded
+   in `NO_WITNESS_TABLE` with its own reason. The exemption's scope is measured in
+   both directions: an excused battery must **not** mention the runner (a witness is
+   a substring of the runner's failing-test lines, so there is nothing to reconcile),
+   and a battery that is not excused must mention it. The three standalone probes
+   (`m1-ceiling-probe`, `scorer-stability-probe`, `type-miss-probe`) are excused on
+   that measured ground, each with its own sentence, and an exemption left behind
+   after a battery gains the mode fails as stale.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| the reconciliation, before | `doc-counts-shapes` **16.7 s**, `roundtrip-record` **34.6 s**, and both reported the wrong thing |
+| the reconciliation, after | `doc-counts-shapes: OK (12 witness(es) across 12 injection(s), with the comparator probed)` in **63 ms**; `roundtrip-record: OK (25 witness(es) across 25 injection(s), with the comparator probed)` in **132 ms** |
+| `battery-witnesses.test.ts` | **16 tests** (14 before): the six reconciliations, the directory walk, both directions of the exemption, and the reason rules |
+| the red it produced first | the new assertion failed with both file names before the two modes existed, and the two `it.each` rows failed with durations that are the defect in numbers |
+| `git status` after the fix | neither gate script is modified, and a full suite run beside a sweep is green |
+
+### What this says about the method
+
+The mode was added in finding 157 for a reason that had nothing to do with cost: a
+witness that has been renamed away fails *silently* at run time, and the fix was to
+make the check a mode a test can drive. Four batteries adopted it. The two that did
+not kept passing every guard in the repository, because the only thing that could
+have noticed was a list of batteries -- and the list was written by hand, once, by
+the pass that added the fourth.
+
+**A mode that silently does something else is worse than a mode that is missing.**
+The missing one errors; the one that runs twenty-five mutations looks, from outside,
+exactly like the one that ran for a tenth of a second. The only difference is a
+duration nobody reads -- and, on this occasion, a red test in an unrelated file.

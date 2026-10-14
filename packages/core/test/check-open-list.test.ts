@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 
 /**
  * The Open list has now had three entries stop meaning anything, and the sentence
@@ -20,6 +22,18 @@ import { describe, expect, it } from 'vitest';
  * substance. It cannot check whether an entry is still *true* -- that needs the
  * measurement the entry is about -- and the file says so rather than looking like
  * more than it is.
+ *
+ * ## The defect this file found next: the guard read the first list
+ *
+ * Finding 161 appended a second `### Open` section, and the guard -- which located
+ * its subject with `findIndex` -- went on judging the first one. The count it printed
+ * did not move, and nothing in its output said a second list existed. A pass that
+ * adds a residual list therefore had **no reader at all**, which is the same shape as
+ * the three stale entries above, one level out: not an entry whose reader stopped,
+ * but a reader that stops at the first list.
+ *
+ * The fixtures below are written for that: a clean first section and a dirty second
+ * one, so the check is discriminating rather than merely quiet.
  */
 
 /**
@@ -32,6 +46,46 @@ const DRIVES = ['scripts/check-open-list.mjs'];
 
 const ROOT = resolve(import.meta.dirname, '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'check-open-list.mjs');
+
+const dirs: string[] = [];
+
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+/**
+ * Run the guard against a document written to a temp file.
+ *
+ * `--doc` exists for these tests. The alternative was to test the guard's predicates
+ * by copying its two regexes into this file, which is what the first version of this
+ * file did -- and a copy cannot answer the question this section is about, because
+ * *which sections are read* is not a predicate. Two of the older fixtures below still
+ * drive the copy, and the ones in `reads its subject, not a sample of it` drive the
+ * script.
+ */
+function runOn(body: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'open-list-'));
+  dirs.push(dir);
+  const doc = join(dir, 'progress.md');
+  writeFileSync(doc, body);
+  const r = spawnSync('node', [SCRIPT, '--doc', doc], { cwd: ROOT, encoding: 'utf8' });
+  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+/**
+ * One pass's `### Open` section, in the shape the shipped document uses.
+ *
+ * The reason is long enough to pass the length rule on purpose: a fixture that failed
+ * for two reasons at once could not say which branch was reached.
+ */
+function openSection(title: string, entries: string[]): string {
+  return `## ${title}\n\n### Open\n\n${entries.join('\n')}\n`;
+}
+
+const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.';
+const OPEN_ENTRY =
+  '- A residual. [open: it needs the measurement the entry is about, and that measurement does not exist yet]';
+const BARE_ENTRY = '- A residual with no marker at all.';
 
 /**
  * The guard has no injection point for its document, and adding one to make it
@@ -99,8 +153,11 @@ describe('docs · the Open list says which entries are work and which are histor
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(`${shipped.stdout}${shipped.stderr}`).toContain('check-open-list: OK');
     expect(shipped.status).toBe(0);
-    // And the count is stated, so an empty list cannot pass as a clean one.
-    expect(shipped.stdout).toMatch(/5 entry\(ies\) in docs\/progress\.md/);
+    // And the count is stated, so an empty list cannot pass as a clean one. The
+    // section count is part of it: a guard reading one list out of two would print a
+    // smaller number and say nothing about the one it did not read (finding 162).
+    expect(shipped.stdout).toMatch(/6 entry\(ies\) across 2 section\(s\) of docs\/progress\.md/);
+    expect(shipped.stdout).toMatch(/4 open with a reason/);
     expect(shipped.stdout).toMatch(/2 closed by a finding/);
   });
 
@@ -113,5 +170,51 @@ describe('docs · the Open list says which entries are work and which are histor
       }).stdout,
     ) as { sites: { script: string }[] };
     expect(sites.sites.some((site) => site.script === 'scripts/check-open-list.mjs')).toBe(true);
+  });
+});
+
+describe('docs · the guard reads its subject, not the first sample of it', () => {
+  it('reads every Open list, not only the first one', () => {
+    // The fixture is the defect: a clean first section and a second one whose entry
+    // says neither. While the guard used `findIndex`, the second list had no reader
+    // and this document passed.
+    const r = runOn(openSection('Pass 1', [CLOSED_ENTRY]) + openSection('Pass 2', [BARE_ENTRY]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('says neither that it is closed nor why it is open');
+    expect(r.out).toContain('A residual with no marker at all.');
+  });
+
+  it('judges a reason by whether it is a placeholder, in whichever section it sits', () => {
+    const r = runOn(openSection('Pass 1', [OPEN_ENTRY]) + openSection('Pass 2', ['- Something. [open: still to do]']));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('is not a reason');
+  });
+
+  it('refuses one reason shared by two sections, because one of the two is a placeholder', () => {
+    // Scoped document-wide rather than per section: the second list is written by
+    // copying the first one's shape, so a shared sentence is the cheapest thing to
+    // leave behind, and per-section uniqueness would not see it.
+    const shared = OPEN_ENTRY.replace('- A residual. ', '- Another residual. ');
+    const r = runOn(openSection('Pass 1', [OPEN_ENTRY]) + openSection('Pass 2', [shared]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('two entries share an open reason');
+  });
+
+  it('refuses a section that exists and says nothing', () => {
+    const r = runOn(openSection('Pass 1', [OPEN_ENTRY]) + '## Pass 2\n\n### Open\n');
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('is empty, so this guard has no subject');
+  });
+
+  it('reports how many sections it read, so a second list cannot hide behind the first', () => {
+    const r = runOn(openSection('Pass 1', [OPEN_ENTRY]) + openSection('Pass 2', [CLOSED_ENTRY]));
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/2 entry\(ies\) across 2 section\(s\)/);
+  });
+
+  it('still refuses a document whose list is gone, rather than reporting zero entries', () => {
+    const r = runOn('## Pass 1\n\nNothing here.\n');
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the list this guard reads is gone');
   });
 });

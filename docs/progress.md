@@ -3718,9 +3718,9 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 | `core` test suite | **121 files, 3265 tests passed** (Pass 39, `16f3499a9`) |
 | `cli` test suite | **3 files, 173 tests passed** (Pass 39, `16f3499a9`) |
 | repo test suite | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`, `pnpm test`, every workspace) |
-| `core` test suite | **135 files, 3504 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **138 files, 3677 tests passed** (as of this commit) |
+| `core` test suite | **135 files, 3504 tests passed** (as of `78cf92046`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `78cf92046`) |
+| repo test suite | **138 files, 3677 tests passed** (as of `78cf92046`) |
 | `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
 | M4 drop `unknownArguments` | **caught** -- 2 fail |
 | M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
@@ -3821,9 +3821,9 @@ strength of those artefacts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **135 files, 3504 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **138 files, 3677 tests passed** (as of this commit) |
+| `core` test suite | **135 files, 3504 tests passed** (as of `78cf92046`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `78cf92046`) |
+| repo test suite | **138 files, 3677 tests passed** (as of `78cf92046`) |
 | coverage — core | **99.96 / 99.91 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | `typecheck` / `lint` / `docs:check` | clean |
@@ -3870,3 +3870,122 @@ measured twice.
   outside rule 4's subject.** `[open: such a row is worded exactly like the battery
   verdicts that share its wording and are not suite counts, so widening the subject
   would demand a scope word from rows that have none]`
+
+## Pass 41 — the third backend's reason was the interface it needed, and one timestamp held two unit traps
+
+### What was built, and the sentence it was built from
+
+`packages/core/src/ingest/loki.ts`: a reader for Loki's range query
+(`GET /loki/api/v1/query_range?query=&start=&end=&limit=&direction=`), mapping each
+entry of a LogQL stream result to an IR log signal. It is the registry's third
+`implemented` row, and the row it replaced said this:
+
+> the service a log belongs to is a label the caller must name, and a reader that
+> guessed it would attach every line to the wrong service
+
+That sentence is true about the wire format and wrong about what follows from it.
+**"The caller must name it" is a statement about the interface**, so the reader takes
+the label as a required argument with no default -- which is exactly what makes it
+impossible to guess. The Prometheus puller's `serviceLabel` defaults to `service`,
+because OpenTelemetry's conventions define that name for metrics; no convention is
+universal for logs (the OTel Collector's Loki exporter writes `service_name`, a
+Promtail pipeline writes the author's own `job` or `app`), so a default here would be
+one writer's habit presented as the backend's promise.
+
+### The wire facts that changed the code
+
+| wire fact | decision |
+| --- | --- |
+| entry timestamps are decimal strings of **nanoseconds** | read with `BigInt` and integer-divided to milliseconds; a float loses the low digits at 1.7e18 |
+| `direction` defaults to `backward`, and with `limit` it decides **which end of the window survives** | required, like `step` in the Prometheus puller |
+| `limit` defaults to **100 entries** | required: a truncated window that looks complete is the failure mode of pass 27 |
+| label sets are the stream's identity, and Loki keeps them low-cardinality for that reason | the labels other than the named one go into `resource`; a non-string label value is dropped, because `resource` holds strings |
+| a LogQL **metric** query answers the same endpoint with `resultType: "matrix"` | refused by name, not read as log bodies |
+| Loki 3 adds a **third element** to an entry when structured metadata is present | quarantined, with the reason naming what that element would be |
+| the level label is `level`, `severity`, `lvl` or `detected_level`, and its values are not the IR's vocabulary | `severityText` is never set: absent is not "informational" |
+| entries arrive in the order `direction` implies | the order is preserved, not re-sorted |
+
+### Both unit traps are measured, not described
+
+| reading of `1700000000123456789` | result |
+| --- | --- |
+| as milliseconds | `new Date(Number(ns))` is **not a date at all** |
+| `Number` then `/ 1e6` | `...124` for a line Loki wrote at `...123999999` -- off by a millisecond |
+| `BigInt` division, truncating | `...123`, never later than the line |
+
+The same fact bites outgoing: the window goes out as nanosecond decimal strings built
+from whole milliseconds, because `seconds * 1e9` arrives rounded.
+
+### Could a real Loki have answered it? No, and that was measured
+
+| attempt | outcome |
+| --- | --- |
+| `apt-cache show loki` | the Ubuntu package of that name is unrelated (`2.4.7.4-10`, "MCMC linkage analysis on general pedigrees") |
+| the release asset over `curl -L` | HTTP 302 to `release-assets.githubusercontent.com`, transfer started |
+| six resumptions | **3,112,960** then **6,467,584** bytes, then six consecutive `Failed to connect to github.com port 443 after ~134 s`; the archive never had an end-of-central-directory record |
+
+So this reader is fixture-driven like the Jaeger one, and both `backend-support.json`
+and the architecture matrix say so beside the row that *was* pointed at a real server
+(Prometheus, finding 154). Sixteen minutes were spent failing to earn the stronger
+claim, which is the honest form of "not contacted".
+
+### The second defect this pass found: the Open-list guard read the first list
+
+Appending an `### Open` section to this very file exposed a guard reading one list out
+of two. `check-open-list.mjs` located its subject with `findIndex`, so the new section
+had no reader -- and the number that would have shown it (an entry count) had not moved.
+The fix reads **every** section with that heading, prints the section count beside the
+entry count, scopes reason-uniqueness document-wide, and gained a `--doc` flag so its
+fixtures drive the script rather than a copy of its two regexes. The seven existing
+tests could not have caught this, and the file's own argument against an injection point
+was sound for the judges and wrong for the subject: *which sections are read is not a
+predicate*. Finding 162 records it; the shipped document now reports
+`6 entry(ies) across 2 section(s)`, and the gate-sites entry moved 158 -> 211 and was
+re-signed to `proved` by hand, as a line shift requires.
+
+### The third defect this pass found: the cheap check that ran the whole battery
+
+A `--verify-expectations` sweep over every battery ended with two red tests in
+`check-doc-counts.test.ts`, neither reproducible in isolation. The cause: two of the six
+batteries ignored that flag and ran their **whole** mutation loop instead -- 16.7 s and
+34.6 s against 54-120 ms for the four that implement it -- rewriting a gate script while
+a suite that spawns the same script was running. The fix implements the mode in both
+(delegating to the shared reconciliation, which is what every other battery does), and
+`battery-witnesses.test.ts` now walks `scripts/injection/` instead of a hand-written
+list: every battery either implements the mode or is recorded in `NO_WITNESS_TABLE` with
+its own reason, and the exemption is measured in both directions. Finding 163 records
+it. **A mode that silently does something else is worse than a mode that is missing** --
+the missing one errors, the other looks identical from outside except for a duration
+nobody reads.
+
+### Verified (Pass 41)
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **136 files, 3550 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **139 files, 3723 tests passed** (as of this commit) |
+| coverage — core | **99.96 / 99.92 / 100 / 99.96** (stmts / branch / funcs / lines) |
+| coverage — cli | **100 / 100 / 100 / 100** |
+| coverage — `src/ingest/loki.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
+| `loki.test.ts` | 33 tests: the mapping, both unit traps with controls, every quarantine and network branch |
+| `backend-support.test.ts` | 12 tests, driving **three** implemented backends through one routed fixture |
+| backend-support battery | **32 caught / 0 survived / 0 inert / 0 misattributed** (13 new injections) |
+| `--verify-expectations --probe` | caught two stale witnesses before the run -- the test name in the file was `caller\'s`, so the plain-substring witness could not match; the test was renamed instead of escaping the witness |
+| `check-backend-support.mjs` | **OK (6 backends in the matrix: 3 implemented, 3 unsupported with a reason)** |
+| `derive-backend-support --check` | OK, snapshot current |
+| `docs:check` / `docs:check:cold` | green |
+| `typecheck` / `lint` | green |
+| `check-open-list.test.ts` | **13 tests** (7 before): six fixtures, red against the guard that read only the first list |
+| `check-doc-counts` | refused the change first: pass 39's and pass 40's `as of this commit` rows were dated to `78cf92046` rather than rewritten to today's numbers |
+| `battery-witnesses.test.ts` | **16 tests** (14 before): six reconciliations, the directory walk, and both directions of the `NO_WITNESS_TABLE` exemption |
+| guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the un-re-derived matrix; `derive-gate-sites` refused the moved site until it was re-signed |
+
+### Open
+
+- **Three backends still carry a written reason and no reader** (Elasticsearch,
+  ClickHouse, the Kubernetes API). `[open: this pass is evidence that a reason of that
+  shape is worth re-reading rather than trusting -- Loki's reason was true about the
+  wire format and wrong in its conclusion, and nothing in the repository could tell the
+  two halves apart, so the remaining three have to be examined by the same method
+  rather than counted as settled]`

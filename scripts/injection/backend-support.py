@@ -55,6 +55,12 @@ PULLER = "packages/core/src/ingest/prometheus.ts"
 # first rather than being covered only by its own test file.
 JAEGER = "packages/core/src/ingest/jaeger.ts"
 JAEGER_TEST = "test/jaeger.test.ts"
+# The third reader. It is the one whose registry reason was half wrong -- the wire
+# format does put the service in a label the caller chooses, and that turned out to
+# be an interface rather than an obstacle -- so it carries the same treatment as the
+# other two, and its two unit traps are the mutations below.
+LOKI = "packages/core/src/ingest/loki.ts"
+LOKI_TEST = "test/loki.test.ts"
 REGISTRY = "packages/core/src/ingest/backends.ts"
 
 GATE_TEST = "test/check-backend-support.test.ts"
@@ -279,6 +285,110 @@ MUTATIONS: list[tuple[str, str, str, str, str, str]] = [
         REGISTRY,
         "    id: 'prometheus',\n    status: 'implemented',",
         "    id: 'prometheus',\n    status: 'unsupported',\n    reason: 'this backend was flipped by a mutation, and the reason is long enough to pass the length rule',",
+        REGISTRY_TEST,
+        "holds the committed snapshot equal to the registry it is derived from",
+    ),
+    (
+        "read the nanosecond timestamp through a float",
+        LOKI,
+        "  return Number(BigInt(raw) / NANOS_PER_MILLI);",
+        "  return Math.floor(Number(raw) / 1_000_000);",
+        LOKI_TEST,
+        "goes through the integer rather than a float, and the two disagree on a real timestamp",
+    ),
+    (
+        "read the nanosecond timestamp as milliseconds",
+        LOKI,
+        "  return Number(BigInt(raw) / NANOS_PER_MILLI);",
+        "  return Number(raw);",
+        LOKI_TEST,
+        "reads a 19-digit nanosecond timestamp as nanoseconds, which is the trap this module exists for",
+    ),
+    (
+        "round the timestamp up to the next millisecond",
+        LOKI,
+        "  return Number(BigInt(raw) / NANOS_PER_MILLI);",
+        "  return Math.round(Number(BigInt(raw)) / 1_000_000);",
+        LOKI_TEST,
+        "goes through the integer rather than a float, and the two disagree on a real timestamp",
+    ),
+    (
+        "accept a timestamp that is not decimal nanoseconds",
+        LOKI,
+        "  if (typeof raw !== 'string' || !/^\\d+$/.test(raw)) return undefined;",
+        "  if (typeof raw !== 'string') return undefined;",
+        LOKI_TEST,
+        "quarantines a line whose timestamp is not decimal nanoseconds",
+    ),
+    (
+        "stop sending the caller's direction",
+        LOKI,
+        "  url.searchParams.set('direction', direction);",
+        "  url.searchParams.set('direction', 'forward');",
+        LOKI_TEST,
+        "asks the range endpoint for the window, in nanoseconds, honouring the limit and direction it was given",
+    ),
+    (
+        "send the window in seconds rather than nanoseconds",
+        LOKI,
+        "  url.searchParams.set('start', start.toString());",
+        "  url.searchParams.set('start', String(Number(start) / 1_000_000_000));",
+        LOKI_TEST,
+        "asks the range endpoint for the window, in nanoseconds, honouring the limit and direction it was given",
+    ),
+    (
+        "stop requiring the caller to name the service label",
+        LOKI,
+        "  if (serviceLabel === '') {",
+        "  if (false) {",
+        LOKI_TEST,
+        "refuses a pull that names no service label at all",
+    ),
+    (
+        "attach a stream's lines to a service that was never reported",
+        LOKI,
+        "    const serviceName = labels[serviceLabel];\n    if (typeof serviceName !== 'string' || serviceName === '') {",
+        "    const serviceName = labels[serviceLabel] || 'unknown-service';\n    if (false) {",
+        LOKI_TEST,
+        "quarantines a stream that carries no service label, rather than attaching its lines to another stream",
+    ),
+    (
+        "read the third element of an entry as if it were the pair",
+        LOKI,
+        "      if (!Array.isArray(rawEntry) || rawEntry.length !== 2) {",
+        "      if (!Array.isArray(rawEntry) || rawEntry.length < 2) {",
+        LOKI_TEST,
+        "quarantines a line that is not a [timestamp, line] pair, naming what the extra element would be",
+    ),
+    (
+        "read a LogQL metric query as if it were a log stream",
+        LOKI,
+        "  if (resultType !== 'streams') {",
+        "  if (false) {",
+        LOKI_TEST,
+        "fails on a range query that answers with a matrix, which is a LogQL metric query",
+    ),
+    (
+        "read a query error in an HTTP 200 as an empty window",
+        LOKI,
+        "  if (envelope['status'] !== 'success') {",
+        "  if (false) {",
+        LOKI_TEST,
+        "fails on a query error carried in the body of an HTTP 200",
+    ),
+    (
+        "accept a body with no status field",
+        LOKI,
+        "  if (envelope === undefined || typeof envelope['status'] !== 'string') {",
+        "  if (false) {",
+        LOKI_TEST,
+        "reports an envelope with no status field",
+    ),
+    (
+        "declare the third pull path unsupported while keeping its entry",
+        REGISTRY,
+        "    id: 'loki',\n    status: 'implemented',",
+        "    id: 'loki',\n    status: 'unsupported',\n    reason: 'this backend was flipped by a mutation, and the reason is long enough to pass the length rule',",
         REGISTRY_TEST,
         "holds the committed snapshot equal to the registry it is derived from",
     ),

@@ -13,8 +13,8 @@
     },
     {
       "id": "loki",
-      "status": "unsupported",
-      "reason": "Loki answers /loki/api/v1/query_range with LogQL results whose values are [ns-timestamp, line] pairs and whose streams carry label sets Loki chose, so the service a log belongs to is a label the caller must name, and a reader that guessed it would attach every line to the wrong service"
+      "status": "implemented",
+      "summary": "HTTP JSON API: GET /loki/api/v1/query_range, read as streams of [ns-timestamp, line] pairs whose service label the caller names"
     },
     {
       "id": "elasticsearch",

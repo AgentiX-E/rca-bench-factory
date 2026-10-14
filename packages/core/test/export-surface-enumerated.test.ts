@@ -143,6 +143,7 @@ const ENUMERATED_MODULES = [
   'ingest/backends.ts',
   'ingest/jaeger.ts',
   'ingest/file.ts',
+  'ingest/loki.ts',
   'ingest/otlp.ts',
   'ingest/prime.ts',
   'ingest/prometheus.ts',
@@ -378,6 +379,12 @@ const TESTED = [
   'JAEGER_TRACES_PATH',
   'JAEGER_DEFAULT_TIMEOUT_MS',
   'pullJaegerTraces',
+  // ingest/loki.ts -- the third implemented pull path, a reader for the range
+  // query's LogQL stream results.
+  'LOKI_QUERY_RANGE_PATH',
+  'LOKI_DEFAULT_TIMEOUT_MS',
+  'LOKI_DIRECTIONS',
+  'pullLokiLogs',
   // ingest/prometheus.ts -- the first implemented pull path of the six.
   'PROMETHEUS_QUERY_PATH',
   'PROMETHEUS_DEFAULT_SERVICE_LABEL',
