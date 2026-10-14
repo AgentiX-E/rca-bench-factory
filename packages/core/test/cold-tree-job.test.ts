@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -560,11 +560,17 @@ describe('ci · the cold-tree job starts where a reader starts', () => {
  *
  * ## Why it is asserted in both directions
  *
- * A workflow step is only a dependency if it is in the job that needs it. The two
- * jobs here run the same suite by different routes -- one builds first, one must
- * not -- so an install in one of them is not an install. Asserting the set of
- * jobs that carry the step, rather than that the step exists, is what makes a
- * third job added later fail this file instead of failing on the runner.
+ * A workflow step is only a dependency if it is in the job that needs it. The jobs
+ * here run the same suite by different routes -- one builds first, one must not --
+ * so an install in one of them is not an install. Asserting the set of jobs that
+ * carry the step, rather than that the step exists, is what makes a job added later
+ * fail this file instead of failing on the runner.
+ *
+ * Finding 166 added the third: `batteries`, whose own steps name battery scripts
+ * rather than vitest, so the enumeration below -- a scan for the word `vitest` in a
+ * job's body -- cannot see that it runs the suite. Its entry is therefore by hand and
+ * with a reason, and the reason is checked rather than asserted: every step of that
+ * job names a script under `scripts/`, and the batteries those scripts are.
  */
 describe('ci · the shells the suite cross-checks against are installed', () => {
   /**
@@ -575,7 +581,7 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
    * first version of this test came to match prose. The id is the key in the
    * `jobs:` map and is unique by construction.
    */
-  const SUITE_JOB_IDS = ['verify', 'cold-tree'];
+  const SUITE_JOB_IDS = ['verify', 'batteries', 'cold-tree'];
 
   /** The binaries `check-no-unsafe-shell.test.ts` spawns by name. */
   const SHELLS = ['zsh', 'bash'];
@@ -594,6 +600,54 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
     expect(missing).toEqual([]);
   });
 
+  it('declares a wall-clock budget on every job, so a hang is a budget and not six hours', () => {
+    // Finding 166. The single job that carried the batteries had `timeout-minutes: 20`,
+    // the batteries spent it on 637d11494, and GitHub reported the run as `cancelled`
+    // with the last eight steps `skipped` -- which reads like a person stopping the run
+    // rather than like a budget being spent. A job with no budget inherits the six-hour
+    // default, which is the same failure with a longer fuse.
+    const ids = jobIds();
+    // A floor of two rather than of three: this assertion is about budgets, and which
+    // jobs exist is asserted by name in the two tests below. A floor of three would make
+    // it fail whenever the split is undone for an unrelated reason, which would read as a
+    // budget defect.
+    expect(ids.length, 'no jobs found, so this assertion has no subject').toBeGreaterThanOrEqual(2);
+    const missing = ids.filter((id) => !/timeout-minutes:\s*\d+/.test(jobBody(id)));
+    expect(
+      missing,
+      'these jobs declare no budget, so a hang in one of them is reported six hours later',
+    ).toEqual([]);
+  });
+
+  it('gives the batteries the largest budget, because they are the long pole', () => {
+    // The measurements from finding 166 are 746 s of battery steps against ~60 s of
+    // verification and ~16 s of artefacts, but those numbers live in a run's own
+    // timings and this file cannot read them. What it can check is the ordering: the
+    // job with the most work is the one with the most room, so a future edit that
+    // moves a battery into `verify` has to move the budget with it.
+    const budget = (id: string): number => Number(/timeout-minutes:\s*(\d+)/.exec(jobBody(id))?.[1] ?? 0);
+    expect(budget('batteries')).toBeGreaterThan(budget('verify'));
+    expect(budget('batteries')).toBeGreaterThan(budget('artefacts'));
+  });
+
+  it('runs the batteries from the batteries job, whose steps are a list of scripts', () => {
+    // `batteries` is the one job the vitest enumeration below cannot see: its steps name
+    // battery scripts, and the word `vitest` appears inside those scripts rather than in
+    // the workflow. So its character is asserted instead -- every command that is not one
+    // of the setup commands names a script under `scripts/`, which is what stops this job
+    // becoming a second copy of `verify` with its own budget.
+    const body = jobBody('batteries');
+    const setup = new Set(['pnpm install --frozen-lockfile', 'pnpm build']);
+    const commands = runCommands(body).filter((c) => !setup.has(c) && !c.startsWith('sudo apt-get'));
+    expect(commands.length, 'the batteries job runs nothing, so this assertion is vacuous').toBeGreaterThanOrEqual(10);
+    const notAScript = commands.filter((c) => !/^(node|python3) scripts\/\S+$/.test(c));
+    expect(
+      notAScript,
+      'these commands in the batteries job are not battery scripts, so the job is not the list ' +
+        'of batteries it is registered as',
+    ).toEqual([]);
+  });
+
   it('names every job that runs vitest, so a new one cannot be added without a shell', () => {
     // The list above is a claim about the workflow. Reading the workflow back and
     // requiring every job whose body runs `vitest` to appear in it is what stops
@@ -605,8 +659,25 @@ describe('ci · the shells the suite cross-checks against are installed', () => 
     // which swept up job comments that mention the word -- the same defect as
     // finding 127's shape rule and finding 129's scanner: a pattern that reads
     // prose as if it were code.
+    //
+    // The scan reads the job's own body **and the scripts its steps name**, one level
+    // deep. The first version read only the body, which was enough while every suite
+    // runner named vitest directly; finding 166's `batteries` job names battery scripts
+    // instead, and those scripts are where the word lives. A reader following a step to
+    // the script it runs is what the guard now does, so the equality below can stay an
+    // equality instead of growing a hand-written exception.
+    const runsTheSuite = (id: string): boolean => {
+      const body = jobBody(id);
+      if (body.includes('vitest')) return true;
+      return runCommands(body).some((command) => {
+        const target = /^(?:node|python3) (scripts\/\S+)$/.exec(command)?.[1];
+        if (target === undefined) return false;
+        const full = resolve(ROOT, target);
+        return existsSync(full) && readFileSync(full, 'utf8').includes('vitest');
+      });
+    };
     const jobs = jobIds();
-    const withVitest = jobs.filter((id) => jobBody(id).includes('vitest'));
+    const withVitest = jobs.filter((id) => runsTheSuite(id));
     const registered = withVitest.filter((id) => SUITE_JOB_IDS.includes(id));
     // Every job that runs the suite must be registered, and every registered job
     // must exist -- an equality, not a subset, in both directions.

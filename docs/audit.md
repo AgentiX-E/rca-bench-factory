@@ -16825,7 +16825,7 @@ download. That difference is stated rather than rounded into "no cluster was ava
 | the battery | **59 caught / 0 survived / 0 inert / 0 misattributed** -- 15 new injections, including "reach the API with no credentials", "read a Status as an empty window" and "classify the change type from the reason string" |
 | `check-backend-support.mjs` | **OK (6 backends in the matrix: 5 implemented, 1 unsupported with a reason)** |
 | the guards the change tripped | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived |
-| core test suite | **138 files, 3634 tests passed**; `cli` 3 files, 173 tests |
+| core test suite | **138 files, 3637 tests passed**; `cli` 3 files, 173 tests |
 
 ### What is not covered
 
@@ -16851,3 +16851,119 @@ reason was about.
 > **A reason's clause can be an interface, and can also be answered by the schema already
 > in the tree.** The rule says where to look for the interface; reading the IR says
 > whether one is needed.
+
+## Finding 166 — the job's wall-clock budget was spent, and the run said "cancelled"
+
+### What happened
+
+The push of finding 165's work was reported by CI as:
+
+```
+38598558037  CI  cancelled
+38598558089  Anchor round trip  success
+```
+
+`cancelled` is what GitHub reports when a job is stopped by its own
+`timeout-minutes`, and the steps after the one that ran when the budget expired are
+`skipped`. The run's last live step was the round-trip record battery; eight steps never
+started. Nothing failed: **the budget was spent.**
+
+The numbers, read from the API rather than estimated:
+
+| run | commit | job | wall clock | steps summed |
+| --- | --- | --- | --- | --- |
+| 38583708998 | 5dcabae61 | verify | **845 s** (14.1 min) | 845 s |
+| 38598558037 | 637d11494 | verify | **1213 s** (20.2 min, killed) | 1092 s before the kill |
+
+And inside it, the growth this round caused:
+
+| step | 5dcabae61 | 637d11494 |
+| --- | --- | --- |
+| type-miss probe battery | 249 s | **413 s** |
+| backend-support battery | 178 s | **276 s** |
+| gate-test battery | 86 s | 119 s |
+| every gate can be shown to fail | 37 s | 61 s |
+| test with coverage | 50 s | 77 s |
+| the batteries, all told | 746 s | 1092 s |
+
+Two readers' worth of tests (Elasticsearch, Kubernetes) are paid for by *every* injection
+in *every* battery, because each injection re-runs a test file. The job had been inside
+its budget by **three minutes** before this round and outside it by twenty seconds
+during it.
+
+### Why this is a defect and not a slow runner
+
+Three reasons, and the third is the one worth keeping:
+
+1. **A budget that is not measured is a guess that expires.** `timeout-minutes: 20` was
+   presumably true when it was written; nothing reads the run's own step timings, so
+   nothing says when it stops being true. The failure arrived as a red run rather than as
+   a number approaching a limit.
+2. **The margin was three minutes on a shared runner whose slow step varies by 66%**
+   (type-miss probe: 249 s to 413 s for the same workflow). A budget inside one standard
+   deviation of the work is not a budget.
+3. **`cancelled` reads like a person, not like a limit.** The run name says CI was
+   cancelled, and the conclusion carries no hint that eight steps were never attempted.
+   This is finding 116's family -- a report that does not say what actually happened --
+   arriving through the runner's own vocabulary this time.
+
+### The fix, sized by the measurements
+
+The job was split into three whose clocks run **beside** each other, so the workflow's wall
+clock is bounded by its slowest job rather than by the sum of its steps:
+
+| job | what it carries | steps measured | budget |
+| --- | --- | --- | --- |
+| `verify` | build, typecheck, lint, coverage, mutation suite | ~60 s | 15 min |
+| `batteries` | the fourteen injection batteries and the report | 746-1092 s | 30 min |
+| `artefacts` | golden master, official metric, examples, documents | 16 s | 15 min |
+| `cold-tree` | unchanged | 30 s | 20 min |
+
+The budgets are not performance assertions: they exist so that a hang is reported as a
+budget rather than six hours later. And they are *readable* -- the workflow carries the
+measurements that produced them, so the next round has a number to compare against
+instead of a number to guess at.
+
+### The guards, and the one they replaced
+
+`cold-tree-job.test.ts` already had a register of "jobs that run the suite", checked in
+both directions against a scan for the word `vitest` in a job's body. The new `batteries`
+job breaks that scan -- its steps name battery scripts, and the word lives inside them --
+so the scan now reads the job's body **and the scripts its steps name**, one level deep.
+The register can stay an equality instead of growing a hand-written exception, which is
+the same choice finding 165's rule would have got wrong one level up.
+
+Three assertions were added:
+
+| assertion | what it refuses |
+| --- | --- |
+| every job declares a `timeout-minutes` | a job that inherits GitHub's six-hour default, which is this failure with a longer fuse |
+| the batteries job has the largest budget | a future edit that moves a battery into `verify` without moving the budget with it |
+| every non-setup command in the batteries job names a script under `scripts/` | the job becoming a second copy of `verify` with its own budget |
+
+Negative control, run in the tree: with the pre-split workflow restored, **four** of these
+assertions fail (the register in both directions, the largest-budget ordering, the
+batteries job's character, and the shell rule for a registered job that does not exist);
+with the split, fifteen of fifteen pass. The check is discriminating rather than merely
+quiet.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `cold-tree-job.test.ts` | **15 tests** (12 before); the register now covers three jobs and the scan reads one level into the scripts |
+| core test suite | **138 files, 3637 tests passed**; `cli` 3 files, 173 tests |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
+| the workflow itself | three jobs in parallel, every step preserved, every command and comment unchanged except for the two that moved |
+| the CI run for this commit | the two `verify`-class jobs and `batteries` run at once; the wall clock is bounded by `batteries` |
+
+### What this says about the method
+
+Every guard in this repository reads something in the tree, and the CI budget was the one
+number that described the *run* rather than the *tree*. So it decayed the way the
+campaign's first finding described -- a number nobody re-takes -- with the twist that the
+report of its decay was the word `cancelled`.
+
+> **A budget is a measurement too.** It needs a number from the thing it describes, a
+> margin wider than the thing's own variance, and a failure mode that says "the budget was
+> spent" rather than "somebody stopped this".

@@ -19,10 +19,26 @@ permissions:
   contents: write
 
 jobs:
+
+  # The verification steps, split out from the batteries below by finding 166.
+  #
+  # What the split is for: the single job that carried all of this had a
+  # `timeout-minutes: 20`, and on 637d11494 the batteries pushed it past that. The
+  # run was reported as `cancelled` with the last eight steps `skipped`, which reads
+  # like somebody stopped it rather than like a budget being spent -- so the fix is
+  # not a bigger number in one bucket, it is three buckets whose wall clocks run
+  # beside each other.
+  #
+  # Measured, from the API rather than from a feeling: on 5dcabae61 (run
+  # 38583708998) the job's steps summed to 845 s, of which these four are ~60 s; on
+  # 637d11494 they summed to 1213 s before the budget killed the job at the round-trip
+  # record battery.
   verify:
-    name: typecheck / lint / test / coverage / mutation / golden-master / build
+    name: build / typecheck / lint / coverage / mutation
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Not a performance assertion: a job that hangs has to be reported as a budget
+    # being spent rather than six hours later.
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -90,6 +106,54 @@ jobs:
       # mutation -- an injection whose anchor no longer matches produces the same
       # output as a toothless test, and reporting that as a pass would be a false
       # reading of the kind findings 68 and 74 both describe.
+
+
+  # The injection batteries. This is the long pole -- everything else in the workflow
+  # fits in two minutes -- so it gets its own job and its own budget.
+  #
+  # Measured: 746 s of steps on 5dcabae61 and 1092 s on 637d11494, where the old
+  # single job's 20-minute budget was exhausted mid-step. The 30-minute budget is
+  # above the worst measurement with room for a slower runner, and the workflow's wall
+  # clock is now bounded by this job rather than by the sum of every step.
+  batteries:
+    name: injection batteries, one step each (no survivors, no inert)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the shells the suite cross-checks against
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        run: pnpm build
+
       - name: Scorer stability battery (no survivors, no inert mutations)
         run: node scripts/inject-stability.mjs
 
@@ -287,6 +351,52 @@ jobs:
       - name: Scorer-stability probe battery (the stability gate refuses a broken scorer)
         run: python3 scripts/injection/scorer-stability-probe.py
 
+
+
+  # The artefacts and the documents: a different kind of check (files and prose rather
+  # than behaviour) and a different clock, which is why it is a third job.
+  #
+  # Measured: 16 s of steps on 5dcabae61. The budget is for the same reason as the
+  # others -- a hang is reported as a budget.
+  artefacts:
+    name: golden master / official metric / examples / documents
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the shells the suite cross-checks against
+        # `check-no-unsafe-shell.test.ts` compares the gate's rule against what
+        # `zsh` and `bash` actually do with the same string, which is the
+        # strongest acceptance criterion in the tree: the thing being modelled is
+        # installed, so the verdict is a measurement rather than a reading of a
+        # spec.
+        #
+        # `bash` is on the runner; `zsh` is not, and the workflow never installed
+        # it. The fixture therefore passed here and failed on `ubuntu-24.04`
+        # (finding 130): a missing binary produced `status: null` from spawnSync,
+        # and `null !== 0` read that as "zsh rejected it". The fixture now reports
+        # the missing binary honestly, which is why this step exists rather than
+        # an exemption for the runner.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - name: Build (core then cli; cli resolves core's dist)
+        run: pnpm build
+
       - name: Golden Master verification
         run: node golden-master/verify.mjs
 
@@ -357,6 +467,7 @@ jobs:
   # example-pack round trip answer questions about a built artefact, not about
   # whether a script can find its own inputs, so duplicating them here would cost
   # minutes and add no signal.
+
   cold-tree:
     name: cold tree / no build / every precondition declared
     runs-on: ubuntu-latest

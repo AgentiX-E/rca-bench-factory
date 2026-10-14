@@ -4140,13 +4140,34 @@ So the reader is fixture-driven, and unlike the Elasticsearch round there is **n
 that would have served** -- the thing that answers this protocol is a control plane, not a
 download. That is stated rather than rounded into "no cluster was available".
 
+### The second defect this pass found: the CI job's budget was spent, and the run said "cancelled"
+
+The push of the Kubernetes reader came back from CI as `cancelled` with eight steps
+`skipped`. Nothing failed: the job's `timeout-minutes: 20` was spent, and GitHub reports
+that as a cancellation. Measured from the API: the same job's steps summed to **845 s on
+5dcabae61** and to **1092 s on 637d11494** before the kill, with the batteries taking 746 s
+and 1092 s of that. This round's two readers are paid for by every injection in every
+battery, because each injection re-runs a test file -- so a job that had been inside its
+budget by three minutes was outside it by twenty seconds.
+
+The fix is sizing rather than a bigger number: the job is now **three jobs** whose clocks
+run beside each other (`verify` ~60 s of steps / 15 min, `batteries` 746-1092 s / 30 min,
+`artefacts` 16 s / 15 min), so the workflow's wall clock is bounded by its slowest job
+rather than by the sum of its steps, and each budget carries the measurement that produced
+it. `cold-tree-job.test.ts` gained three assertions (every job declares a budget; the
+batteries job has the largest; its non-setup commands are all battery scripts) and its
+suite-runner register now reads each job's body **and the scripts its steps name**, one
+level deep, so the register stays an equality rather than growing an exception.
+**Negative control: with the pre-split workflow restored, four of these assertions fail;
+fifteen of fifteen pass with it.** Finding 166 records it.
+
 ### Verified (Pass 43)
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **138 files, 3634 tests passed** (as of this commit) |
+| `core` test suite | **138 files, 3637 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **141 files, 3807 tests passed** (as of this commit) |
+| repo test suite | **141 files, 3810 tests passed** (as of this commit) |
 | coverage — core | **99.96 / 99.92 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | coverage — `src/ingest/kubernetes.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
@@ -4154,7 +4175,8 @@ download. That is stated rather than rounded into "no cluster was available".
 | `backend-support.test.ts` | 14 tests, driving **five** implemented backends through one routed fixture |
 | backend-support battery | **59 caught / 0 survived / 0 inert / 0 misattributed** (15 new injections) |
 | `check-backend-support.mjs` | **OK (6 backends in the matrix: 5 implemented, 1 unsupported with a reason)** |
-| guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived |
+| `cold-tree-job.test.ts` | **15 tests** (12 before): three new workflow-shape assertions, and a register whose scan reads one level into the scripts |
+| guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived; the CI budget refused the run that carried the readers |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
 ### Open
