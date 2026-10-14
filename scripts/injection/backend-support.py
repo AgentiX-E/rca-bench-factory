@@ -50,6 +50,11 @@ REPO = Path(__file__).resolve().parents[2]
 GATE = "scripts/check-backend-support.mjs"
 DERIVE = "scripts/derive-backend-support.mjs"
 PULLER = "packages/core/src/ingest/prometheus.ts"
+# The second reader. P1-5's second backend arrived in finding 160, and a wire
+# reader is where the network facts live -- so it gets the same treatment as the
+# first rather than being covered only by its own test file.
+JAEGER = "packages/core/src/ingest/jaeger.ts"
+JAEGER_TEST = "test/jaeger.test.ts"
 REGISTRY = "packages/core/src/ingest/backends.ts"
 
 GATE_TEST = "test/check-backend-support.test.ts"
@@ -125,6 +130,38 @@ def assert_vitest_is_callable() -> None:
 
 # name, target file, anchor, replacement, test file, the test that must fail
 MUTATIONS: list[tuple[str, str, str, str, str, str]] = [
+    (
+        "stop reading the service from the trace's process table",
+        JAEGER,
+        "  return typeof tableName === 'string' && tableName !== '' ? tableName : undefined;",
+        "  return undefined;",
+        JAEGER_TEST,
+        "reads the service from the process table when the span does not carry it",
+    ),
+    (
+        "keep microseconds instead of converting to milliseconds",
+        JAEGER,
+        "        durationMs: duration / 1000,",
+        "        durationMs: duration,",
+        JAEGER_TEST,
+        "maps a trace to one signal per span, with the wire facts and nothing guessed",
+    ),
+    (
+        "stop treating null data with errors as a failed query",
+        JAEGER,
+        "  if (traces === null || traces === undefined) {",
+        "  if (false) {",
+        JAEGER_TEST,
+        "treats null data with errors as a failed query, not as an empty window",
+    ),
+    (
+        "default an unstated span status to OK",
+        JAEGER,
+        "  if (otel === 'ERROR' || otel === 'OK' || otel === 'UNSET') return otel;\n  return undefined;",
+        "  if (otel === 'ERROR' || otel === 'OK' || otel === 'UNSET') return otel;\n  return 'OK';",
+        JAEGER_TEST,
+        "leaves the status absent when the backend did not state one",
+    ),
     (
         "stop refusing a missing matrix row",
         GATE,

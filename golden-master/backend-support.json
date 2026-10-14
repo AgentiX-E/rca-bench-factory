@@ -8,8 +8,8 @@
     },
     {
       "id": "jaeger",
-      "status": "unsupported",
-      "reason": "Jaeger answers /api/traces in its own trace JSON -- span ids as hex strings, a process table separate from the spans, and no OTLP resource attributes -- so a reader for it is a second trace decoder beside ingest/otlp.ts rather than a URL for the existing one; Jaeger emits OTLP natively, which is the path this repository supports today"
+      "status": "implemented",
+      "summary": "HTTP JSON API: GET /api/traces, read as a list of traces whose spans carry hex ids"
     },
     {
       "id": "loki",

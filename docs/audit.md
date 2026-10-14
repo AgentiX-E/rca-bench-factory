@@ -16259,3 +16259,93 @@ evidence would be a measurement nobody was asked to take, and the list itself ha
 reader to notice. The fix is the smallest one that changes that: make every entry say
 which it is, so that the next person to open the list is reading decisions rather
 than archaeology.
+
+---
+
+## Finding 160 — the second backend was declared unimplementable, and the declaration was half right
+
+### What the registry said, and what was true
+
+Since finding 154 the T2 registry has carried this row:
+
+> `jaeger` **unsupported** -- Jaeger answers `/api/traces` in its own trace JSON --
+> span ids as hex strings, a process table separate from the spans, and no OTLP
+> resource attributes -- so a reader for it is a second trace decoder beside
+> `ingest/otlp.ts` rather than a URL for the existing one; Jaeger emits OTLP
+> natively, which is the path this repository supports today
+
+Every clause of that is true. What it got wrong was the conclusion: **the cost of a
+second decoder is a reason to write one, not a reason to declare the backend out of
+reach.** The row read as a measurement and was, in the end, a decision that nobody
+had been asked to revisit -- the shape findings 158 and 159 kept finding in the
+residual lists, one level down.
+
+### What was built
+
+`packages/core/src/ingest/jaeger.ts`: a reader for Jaeger's query API
+(`GET /api/traces?service=&start=&end=&limit=`) that maps each span to an IR trace
+signal. It is the second `implemented` row and the first reader for a wire format
+that is not JSON-with-different-names:
+
+| wire fact | what the reader does with it, and why |
+| --- | --- |
+| hex `spanID` / `traceID` | carried through verbatim; the IR's ids are opaque strings, so decoding them would be an interpretation nobody asked for |
+| `startTime`, `duration` in **microseconds** | converted once, at the boundary: `durationMs = duration / 1000`. A reader that kept microseconds is wrong by 1000x in every duration, and the battery now injects exactly that |
+| a `processes` table **beside** the spans | the service is read from `span.process.serviceName`, and from `processes[span.processID]` when the span does not carry one; when neither has it the span is **quarantined**, because guessing would attach the span to the wrong service |
+| tags as `{key, type, value}` triples | flattened to string attributes; `error` and `otel.status_code` become the payload's `status` and are **not** repeated as attributes, so one wire fact has one representation |
+| references **typed** by `refType` | only `CHILD_OF` is a parent; `references[0]` would build a tree the trace did not record |
+| `data: null` with `errors` | a **failed query**, not an empty window; `data` *and* `errors` is a partial answer and passes the messages through as warnings |
+
+Two decisions are worth naming because they are the difference between a reader and
+a guess: **an unstated status stays absent** rather than defaulting to `OK` ("the
+backend did not say" and "the backend said it succeeded" are different facts, and
+only one is a measurement), and **`limit` is required** rather than defaulted, for
+the reason `step` is required in the Prometheus puller -- it decides how much
+telemetry the caller gets, and a wrong default is invisible in the output.
+
+### The claim, and its honest limit
+
+The registry row is `implemented` with a summary that names the wire format. What
+that word does **not** mean here is that a Jaeger answered this reader: nothing in
+this repository has contacted a Jaeger deployment, and `docs/architecture.md` now
+says so beside the matrix, in the sentence that contrasts it with Prometheus --
+which *was* pointed at a real server in finding 154. "Reads the documented wire
+format" and "was answered by a deployment" are different measurements, and the
+second one has not been taken.
+
+The capability is nevertheless exhibited rather than asserted, by the general rule
+finding 154 put in place: `backend-support.test.ts` drives **every** `implemented`
+backend over a real socket, with the driver table keyed by id so a missing driver
+fails rather than passing.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `jaeger.test.ts` | **26 tests**: the mapping and every quarantine and network branch, including a refused connection and a socket that accepts and never answers |
+| `backend-support.test.ts` | **11 tests**, now driving two `implemented` backends through a routed fixture |
+| the battery | **19 caught / 0 survived / 0 inert / 0 misattributed** -- four new injections against the second reader, one of them the microseconds conversion |
+| `check-backend-support.mjs` | **OK (6 backends: 2 implemented, 4 unsupported with a reason)** |
+| the guards the change tripped | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; the architecture matrix had to be re-derived rather than edited by hand |
+| `typecheck` / `lint` / `docs:check` | green |
+| core test suite | **135 files, 3504 tests passed**; `cli` 3 files, 173 tests |
+| coverage | **99.96 / 99.91 / 100 / 99.96**; `jaeger.ts` **100 / 100 / 100 / 100** |
+
+### What is not covered
+
+- **No real Jaeger endpoint was contacted.** The reader is measured against a
+  fixture server in this repository. A deployment could still answer something the
+  fixture does not, and the way to find that out is to point the reader at one.
+- **No CLI command.** The reader is reachable through the package's entry point and
+  the registry, not through `rca-bench` -- the same gap finding 154 recorded.
+- **Three of six backends remain.** Loki, Elasticsearch and ClickHouse, plus
+  Kubernetes: each still carries a written reason and no reader.
+
+### What this says about the method
+
+The row was not wrong about the wire format; it was wrong to treat "this needs a
+decoder" as a stopping condition. **A declaration of impossibility is a claim like
+any other, and this one had no reader either** -- nothing re-examined it, because
+the table it lived in is only checked for internal consistency. That is the
+campaign's recurring shape at its outermost: not a number without a reader, or a
+claim without a reader, but a *decision* without one.

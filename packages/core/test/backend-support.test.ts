@@ -43,9 +43,16 @@ afterAll(async () => {
   await Promise.all(servers.map((s) => s.close()));
 });
 
-/** A Prometheus-compatible endpoint that answers one canned matrix. */
-async function serveMatrix(): Promise<string> {
-  const body = JSON.stringify({
+/**
+ * One fixture server, routed by path, answering each implemented backend's shape.
+ *
+ * One server rather than one per backend because the driver table is keyed by id
+ * and the check that drives it is a single loop: a server that only spoke
+ * Prometheus would make the Jaeger driver's fixture a second thing to keep in step
+ * with the first, and the routing is the whole of the difference.
+ */
+async function serveBackends(): Promise<string> {
+  const matrix = JSON.stringify({
     status: 'success',
     data: {
       resultType: 'matrix',
@@ -57,9 +64,35 @@ async function serveMatrix(): Promise<string> {
       ],
     },
   });
-  const server = createServer((_req, res) => {
+  // The shape Jaeger's query API answers in: hex ids, microseconds, and a
+  // `processes` table beside the spans rather than inside them.
+  const traces = JSON.stringify({
+    data: [
+      {
+        traceID: '4d2f1c9ab7e35401',
+        spans: [
+          {
+            traceID: '4d2f1c9ab7e35401',
+            spanID: 'a1b2c3d4e5f60718',
+            operationName: 'GET /checkout',
+            startTime: 1_700_000_000_000_000,
+            duration: 12_500,
+            tags: [{ key: 'span.kind', type: 'string', value: 'server' }],
+            processID: 'p1',
+          },
+        ],
+        processes: { p1: { serviceName: 'payments', tags: [] } },
+        warnings: null,
+      },
+    ],
+    total: 1,
+    limit: 0,
+    offset: 0,
+    errors: null,
+  });
+  const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(body);
+    res.end(req.url?.startsWith('/api/traces') ? traces : matrix);
   });
   await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const address = server.address();
@@ -91,12 +124,22 @@ const DRIVERS: Record<T2BackendId, (baseUrl: string) => Promise<number>> = {
     if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
     return result.signals.length;
   },
-  // The five below are declared unsupported, so they have no driver on purpose.
-  // A driver for an unsupported backend would be the very claim this file
-  // refuses to let the registry make.
-  jaeger: async () => {
-    throw new Error('jaeger is declared unsupported and must not have a driver');
+  jaeger: async (baseUrl) => {
+    const entry = backendEntry('jaeger');
+    if (entry === null) throw new Error('jaeger is declared implemented and has no entry');
+    const result = await entry({
+      baseUrl,
+      service: 'payments',
+      start: 1_700_000_000,
+      end: 1_700_000_060,
+      limit: 20,
+    });
+    if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
+    return result.signals.length;
   },
+  // The four below are declared unsupported, so they have no driver on purpose. A
+  // driver for an unsupported backend would be the very claim this file refuses to
+  // let the registry make.
   loki: async () => {
     throw new Error('loki is declared unsupported and must not have a driver');
   },
@@ -175,7 +218,7 @@ describe('the T2 backend registry', () => {
   it.each(T2_BACKENDS.filter((b) => b.status === 'implemented').map((b) => b.id))(
     'exhibits the %s capability rather than asserting it',
     async (id) => {
-      const baseUrl = await serveMatrix();
+      const baseUrl = await serveBackends();
       const signals = await DRIVERS[id](baseUrl);
       expect(signals, `${id}'s driver produced no signal, so the capability is not shown`).toBeGreaterThan(0);
     },

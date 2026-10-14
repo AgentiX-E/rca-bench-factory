@@ -297,6 +297,14 @@ export type {
   PrometheusQuarantineRecord,
 } from './ingest/prometheus.js';
 
+export {
+  JAEGER_DEFAULT_TIMEOUT_MS,
+  JAEGER_TRACES_PATH,
+  pullJaegerTraces,
+  type JaegerPullOptions,
+  type JaegerPullResult,
+  type JaegerQuarantineRecord,
+} from './ingest/jaeger.js';
 export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/otlp.js';
 export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';
 

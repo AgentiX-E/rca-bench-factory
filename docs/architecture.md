@@ -247,10 +247,15 @@ drives every backend the table calls implemented against a real HTTP server. A
 matrix that cannot fail is a paragraph with a table drawn around it, and this
 repository has already shipped four of those (findings 107, 108, 109 and 114).
 
-The implemented path is a *pull*: telemetry is fetched over HTTP. The other two
+The implemented paths are *pulls*: telemetry is fetched over HTTP, from a documented
+JSON API. What differs between them is how far the claim has been tested: the
+Prometheus reader was pointed at a real server (finding 154, version 2.45.3) and the
+Jaeger reader has been driven only against a fixture, in `packages/core/test/jaeger.test.ts`.
+That difference is written down rather than blurred, because "reads the documented
+wire format" and "was answered by a deployment" are different measurements. The other two
 ingest paths here read what a caller already has -- `ingest/file.ts` for files,
 `ingest/otlp.ts` for posted OTLP payloads -- which is why every row names a wire
-format rather than a product. The five unsupported rows name what the format
+format rather than a product. The four unsupported rows name what the format
 requires and this repository does not have, because "not implemented yet" reads
 the same whether the work is a week or impossible, and an entry that cannot be
 re-examined is the entry this campaign keeps finding.
@@ -258,7 +263,7 @@ re-examined is the entry this campaign keeps finding.
 | backend | status | description |
 | --- | --- | --- |
 | `prometheus` | implemented | HTTP JSON API: GET /api/v1/query_range, read as a matrix |
-| `jaeger` | unsupported | Jaeger answers /api/traces in its own trace JSON -- span ids as hex strings, a process table separate from the spans, and no OTLP resource attributes -- so a reader for it is a second trace decoder beside ingest/otlp.ts rather than a URL for the existing one; Jaeger emits OTLP natively, which is the path this repository supports today |
+| `jaeger` | implemented | HTTP JSON API: GET /api/traces, read as a list of traces whose spans carry hex ids |
 | `loki` | unsupported | Loki answers /loki/api/v1/query_range with LogQL results whose values are [ns-timestamp, line] pairs and whose streams carry label sets Loki chose, so the service a log belongs to is a label the caller must name, and a reader that guessed it would attach every line to the wrong service |
 | `elasticsearch` | unsupported | Elasticsearch returns hits under dynamic mappings, so the timestamp field, the message field and the service field are per-index decisions: the same query against two clusters yields two shapes, and a reader would need a field mapping supplied by the caller before it could read anything at all |
 | `clickhouse` | unsupported | the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped |

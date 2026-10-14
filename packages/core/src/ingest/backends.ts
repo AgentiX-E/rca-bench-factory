@@ -35,6 +35,7 @@
  * whether the backend is a week of work or impossible.
  */
 
+import { pullJaegerTraces, type JaegerPullOptions, type JaegerPullResult } from './jaeger.js';
 import {
   pullPrometheusMetrics,
   type PrometheusPullOptions,
@@ -59,15 +60,18 @@ export const T2_BACKEND_IDS = [
 export type T2BackendId = (typeof T2_BACKEND_IDS)[number];
 
 /**
- * A pull entry point.
+ * A pull entry point, per backend.
  *
- * Today only one backend is implemented, so this is `pullPrometheusMetrics`'
- * signature. It is written as a structural type rather than as `typeof
- * pullPrometheusMetrics` so that the second backend widens it deliberately -- its
- * options and its result will differ, and a union that the compiler is asked to
- * accept is a decision somebody makes rather than a change that slips through.
+ * Two signatures rather than one, because the two pullers genuinely differ: they
+ * speak different wire formats and take different options. The second backend
+ * widening this type is the deliberate decision the first version of this file
+ * left room for, and the cost of it is visible at the call site -- a caller that
+ * wants to *drive* a backend has to know which one it is driving, which is why
+ * `backendEntry` is overloaded per id rather than answering a union.
  */
-export type T2BackendEntry = (options: PrometheusPullOptions) => Promise<PrometheusPullResult>;
+export type PrometheusEntry = (options: PrometheusPullOptions) => Promise<PrometheusPullResult>;
+export type JaegerEntry = (options: JaegerPullOptions) => Promise<JaegerPullResult>;
+export type T2BackendEntry = PrometheusEntry | JaegerEntry;
 
 export interface T2BackendImplemented {
   readonly id: T2BackendId;
@@ -104,9 +108,12 @@ export const T2_BACKENDS: readonly T2Backend[] = [
   },
   {
     id: 'jaeger',
-    status: 'unsupported',
-    reason:
-      'Jaeger answers /api/traces in its own trace JSON -- span ids as hex strings, a process table separate from the spans, and no OTLP resource attributes -- so a reader for it is a second trace decoder beside ingest/otlp.ts rather than a URL for the existing one; Jaeger emits OTLP natively, which is the path this repository supports today',
+    status: 'implemented',
+    entry: pullJaegerTraces,
+    // The wording matters more here than for Prometheus: what is implemented is a
+    // reader for the query API's own trace JSON, and nothing in this repository has
+    // contacted a Jaeger deployment. "supported" would read as the stronger claim.
+    summary: 'HTTP JSON API: GET /api/traces, read as a list of traces whose spans carry hex ids',
   },
   {
     id: 'loki',
@@ -144,7 +151,15 @@ export function findBackend(id: string): T2Backend | undefined {
  *
  * The single dispatch point, so a caller does not have to know which backend is
  * implemented in order to refuse the others consistently.
+ *
+ * Overloaded on the id rather than returning the union of the two signatures: a
+ * caller that drives a puller has to supply *that* puller's options, and a union
+ * return type would make every call site cast. The general overload is what the
+ * registry-wide checks use, and it is the one that cannot be called with options.
  */
+export function backendEntry(id: 'prometheus'): PrometheusEntry | null;
+export function backendEntry(id: 'jaeger'): JaegerEntry | null;
+export function backendEntry(id: string): T2BackendEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null {
   const backend = findBackend(id);
   return backend !== undefined && backend.status === 'implemented' ? backend.entry : null;

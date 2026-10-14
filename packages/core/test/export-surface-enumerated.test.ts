@@ -141,6 +141,7 @@ const ENUMERATED_MODULES = [
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/backends.ts',
+  'ingest/jaeger.ts',
   'ingest/file.ts',
   'ingest/otlp.ts',
   'ingest/prime.ts',
@@ -372,7 +373,12 @@ const TESTED = [
   'T2_BACKENDS',
   'findBackend',
   'backendEntry',
-  // ingest/prometheus.ts -- the one implemented pull path of the six.
+  // ingest/jaeger.ts -- the second implemented pull path, a reader for the query
+  // API's own trace JSON.
+  'JAEGER_TRACES_PATH',
+  'JAEGER_DEFAULT_TIMEOUT_MS',
+  'pullJaegerTraces',
+  // ingest/prometheus.ts -- the first implemented pull path of the six.
   'PROMETHEUS_QUERY_PATH',
   'PROMETHEUS_DEFAULT_SERVICE_LABEL',
   'PROMETHEUS_DEFAULT_TIMEOUT_MS',
