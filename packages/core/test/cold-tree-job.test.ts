@@ -146,6 +146,11 @@ const COLD_AGGREGATES: ReadonlyMap<string, readonly string[]> = new Map([
       'check-doc-counts.mjs',
       'check-backend-support.mjs',
       'check-roundtrip-record.mjs',
+      // Measured cold-safe before being added, the way every member here was: with
+      // `packages/core/dist` moved aside, `node scripts/check-open-list.mjs` exits 0.
+      // It reads one markdown file, which is an argument for why it should be safe
+      // and not evidence that it is.
+      'check-open-list.mjs',
       'check-data-model-vocabularies.mjs',
       'derive-gate-sites.mjs',
     ],

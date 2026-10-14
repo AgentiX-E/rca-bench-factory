@@ -1,6 +1,6 @@
 {
   "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
-  "scanned": 39,
+  "scanned": 40,
   "excluded": {
     "zero": 7,
     "numeric_other": 1,
@@ -176,6 +176,14 @@
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${declared.length} case(s) declared but ${roundTripped} round-tripped,",
       "status": "proved",
       "provedBy": "packages/core/test/check-official-roundtrip.test.ts"
+    },
+    {
+      "script": "scripts/check-open-list.mjs",
+      "line": 158,
+      "condition": "check() !== 0",
+      "diagnostic": "check-open-list: FAILED",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-open-list.test.ts"
     },
     {
       "script": "scripts/check-readme-sample.mjs",

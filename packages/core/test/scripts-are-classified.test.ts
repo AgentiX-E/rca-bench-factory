@@ -101,6 +101,7 @@ const REGISTER: Record<string, Entry> = {
   'check-no-secrets.mjs': { class: 'gate' },
   'check-no-unsafe-shell.mjs': { class: 'gate' },
   'check-no-vendored-data.mjs': { class: 'gate' },
+  'check-open-list.mjs': { class: 'gate' },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },
   'check-readme-sample.mjs': { class: 'gate' },

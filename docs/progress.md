@@ -3718,9 +3718,9 @@ subject matter arriving in its own text. Corrected in place rather than deleted.
 | `core` test suite | **121 files, 3265 tests passed** (Pass 39, `16f3499a9`) |
 | `cli` test suite | **3 files, 173 tests passed** (Pass 39, `16f3499a9`) |
 | repo test suite | **124 files, 3438 tests passed** (Pass 39, `16f3499a9`, `pnpm test`, every workspace) |
-| `core` test suite | **133 files, 3458 tests passed** (as of this commit) |
+| `core` test suite | **134 files, 3465 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **136 files, 3631 tests passed** (as of this commit) |
+| repo test suite | **137 files, 3638 tests passed** (as of this commit) |
 | `check-no-unsafe-shell.test.ts` | **41 passed** (was 30 before this pass) |
 | M4 drop `unknownArguments` | **caught** -- 2 fail |
 | M5 `refusesToBePiped()` always false | **caught** -- 2 fail |
@@ -3821,9 +3821,9 @@ strength of those artefacts.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **133 files, 3458 tests passed** (as of this commit) |
+| `core` test suite | **134 files, 3465 tests passed** (as of this commit) |
 | `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **136 files, 3631 tests passed** (as of this commit) |
+| repo test suite | **137 files, 3638 tests passed** (as of this commit) |
 | coverage — core | **99.96 / 99.91 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | `typecheck` / `lint` / `docs:check` | clean |
@@ -3838,24 +3838,35 @@ strength of those artefacts.
 
 ### Open
 
-- The `cold-tree` job no longer runs a vitest aggregate beyond the two rule
-  files, because the suite is not cold-safe. If a cold-safe subset of the suite is
-  wanted, it has to be established by measurement the way the guards were, not by
-  assuming the unit tests are host-independent.
+Every entry says which it is: a **closure** (`~~struck through~~`, with the finding
+that closed it) or an **open** item carrying `[open: <reason>]`. `check-open-list.mjs`
+refuses an entry that says neither, and refuses a reason short enough to be a
+placeholder -- the two ways a residual list stops being read, which finding 159
+measured twice.
+
+- **The `cold-tree` job runs no vitest aggregate beyond the two rule files**, because
+  the suite is not cold-safe. `[open: a cold-safe subset has to be established by
+  measurement the way the guards were, not by assuming the unit tests are
+  host-independent; the two cold aggregates it does run were re-measured on a cold
+  tree in finding 159 and both exit 0]`
 - ~~`--stdin` still has no automatic invoker (unchanged from 131).~~ **Closed by
   finding 150**: `check-user-guide.mjs` pipes each block it is about to execute
   through `check-no-unsafe-shell.mjs --stdin --label`, so the mode that had no
   consumer now has the one that matters -- the blocks that actually run. The line
-  above stood for eleven passes after that, because nothing reads an "open" list.
-- The six other scripts that failed in run #174 were never examined
-  individually.
-- **Prose is outside `check-doc-counts`'s subject.** The rules are defined over
-  table rows, so a count narrated in a pass's prose still has no reader -- and the
-  census that would find it cannot be written from shape alone, because prose
-  counts and prose prose look the same. Stated rather than left implied.
+  stood for eleven passes after that, because nothing reads an "open" list.
+- ~~Six other scripts failed in the `cold-tree` job in run #174 and were never read
+  individually.~~ **Closed by finding 159**: the failure was the job running a suite
+  on a tree without `dist` (finding 139), the job no longer runs one, and both
+  aggregates it does run were measured on a cold tree -- `docs:check:cold` and
+  `lint:cold` each exit 0 with `packages/core/dist` moved aside. The individual
+  readings are no longer obtainable: that run's log has aged out, so the count is
+  retired rather than carried, and the entry now says so instead of standing as
+  evidence.
+- **Prose is outside `check-doc-counts`'s subject.** `[open: the rules are defined
+  over table rows, so a count narrated in a pass's prose still has no reader -- and
+  the census that would find it cannot be written from shape alone, because prose
+  counts and prose prose look the same]`
 - **A suite count in an unrecognised shape under a label that names no scope is
-  outside rule 4's subject too.** Such a row is worded exactly like the battery
-  verdicts (`| mutation | 26 passed |`) that share its wording and are not suite
-  counts, so widening the subject would demand a scope word from rows that have
-  none. The three shapes the document actually used to publish suite counts are
-  now all read; the residual is a fourth shape on an unlabelled row.
+  outside rule 4's subject.** `[open: such a row is worded exactly like the battery
+  verdicts that share its wording and are not suite counts, so widening the subject
+  would demand a scope word from rows that have none]`

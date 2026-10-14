@@ -16143,3 +16143,119 @@ the claim one field away. **The claim and its evidence, in the same record,
 unconnected**: the same sentence this campaign has written about a mislabelled row
 (153), a log-line measurement (155), a score that was not an artefact (156), and a
 battery that accepted any red (157).
+
+---
+
+## Finding 159 — two residuals whose subject no longer existed, and a list that now has a reader
+
+### What was measured
+
+Finding 158 closed by naming three probes as "a different shape". This round checked
+that, and they are: `m1-ceiling-probe.py` and `type-miss-probe.py` carry a
+`requirement(report) -> bool` per row -- the verdict is a property of the probe's
+output, not "the suite went red" -- and `m1` even declares `crash_contains`, the text
+its failure must carry, so a probe that dies on a typo is not credited. Nothing to
+fix there. So the round went to the item the roadmap had carried the longest, and
+found that **it had no subject left**.
+
+### Residual one: the `commits` count gate
+
+The roadmap's P2-4 has said, since v1.74:
+
+> **Remaining**: the same gate for the `commits` count is not done
+
+and its stated motivation is finding 3: *"`progress.md`'s commits count went stale
+from 79 to 85"*. Measured now, in both repositories:
+
+```
+$ grep -rE "[0-9]+ (commit|commits)\b" docs/*.md
+docs/audit.md:11157 ... the v1.54 commit as `HEAD` ...
+docs/audit.md:14873 commit 5ed956747
+docs/audit.md:15314 189 commits of the repository finds no revision ...
+$ grep -rE "[0-9]+ *(次提交|个提交|提交数)" ../rca-bench-factory-docs/*.md
+(nothing)
+```
+
+**No document publishes a count of commits.** The number the item was motivated by
+was removed at some point -- correctly, since it was the stale one -- and the item
+stayed on the list because nothing re-measures an item whose subject has gone. A gate
+cannot be written for a claim that is not made, so the item is closed with this
+measurement rather than implemented.
+
+### Residual two: six scripts observed failing in run #174
+
+`docs/progress.md`'s Open list carried:
+
+> The six other scripts that failed in run #174 were never examined individually.
+
+and the audit says of them: *"the exposure is gone ... but the individual readings
+were never taken and the count stands as the evidence."* Both halves were checked:
+
+| claim | measurement |
+| --- | --- |
+| the job no longer runs a suite, so the exposure is gone | `docs:check:cold` and `lint:cold` are the job's members, and both **exit 0 with `packages/core/dist` moved aside** |
+| the individual readings | no longer obtainable: that run's log has aged out of the API |
+
+So the count is retired rather than carried. The entry now says so, with the
+measurement beside it, instead of standing as evidence for a claim nothing can
+re-check.
+
+### The pattern, three times, and the fix
+
+| entry | how it had stopped meaning anything | found by |
+| --- | --- | --- |
+| `--stdin` has no automatic invoker | closed **eleven passes** earlier by finding 150 | finding 150 |
+| the `commits` count gate is still to be done | **no such count is published anywhere** | finding 159 |
+| six scripts in run #174 were never read | the job that ran them no longer runs a suite | finding 159 |
+
+Finding 150's correction says the thing precisely and did not act on it: *"The line
+stood for eleven passes after that, because nothing reads an 'open' list."*
+
+`scripts/check-open-list.mjs` gives the list a reader. It locates the section **by
+its heading** (finding 155's bug was a guard that accepted any line mentioning the
+section), and requires every entry to say **which it is**:
+
+- **closed** -- struck through, naming the finding that closed it, so a reader can
+  tell history from work;
+- **open** -- carrying `[open: <reason>]`, with the reason required to be longer than
+  a placeholder and not shared with another entry.
+
+The section is now five entries: **three open with a reason, two closed by a
+finding**. The header paragraph the guard needs is part of the section, so the format
+is stated where a reader of the list will see it.
+
+**What it cannot do** is check whether an entry is still *true* -- that needs the
+measurement the entry is about, and a script cannot guess it. The guard's header says
+so, and refuses placeholders instead: the same trade finding 153 made for its
+exemption table, and the same honest limit.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `check-open-list.mjs` on the shipped document | **OK** (5 entries: 3 open with a reason, 2 closed by a finding) |
+| `check-open-list.test.ts` | **7 tests**: neither-marker, short reason, shared reason, closure accepted, sentence accepted, the shipped file judged by the same predicates, and the site declared |
+| cold-tree measurement | `check-open-list.mjs` exits 0 with `packages/core/dist` moved aside -- measured before it was added to `docs:check:cold`, the way every member is |
+| the guards the change tripped | rule 7 of `gate-sites.json` refused the new test because it spawned the guard without declaring it; the site derivation refused a computed exit, so the failure path is now a literal `process.exit(1)`; `cold-tree-job.test.ts` refused the unmeasured membership |
+| `docs:check` / `docs:check:cold` / `typecheck` / `lint` | green; 50 sites, all `proved` |
+| coverage | core **99.96 / 99.91 / 100 / 99.96** |
+| core test suite | **134 files, 3465 tests passed**; `cli` 3 files, 173 tests |
+
+### What is not covered
+
+- **Truth, not form.** The guard refuses an entry that does not say which it is; it
+  cannot refuse a closed entry that was closed wrongly, or an open one that has since
+  become closed. Both need the measurement the entry names.
+- **Other lists.** The roadmap's own priority table in the docs repository has the
+  same shape and is not gated -- that repository has no CI of its own, which is the
+  asymmetry finding 112 recorded.
+
+### What this says about the method
+
+Three residuals, three times the same failure: **a list that is written once and read
+never**. The campaign's usual sentence is about a claim and its evidence sitting in
+the same record unconnected; this is one step further on -- the claim is a *plan*, the
+evidence would be a measurement nobody was asked to take, and the list itself had no
+reader to notice. The fix is the smallest one that changes that: make every entry say
+which it is, so that the next person to open the list is reading decisions rather
+than archaeology.
