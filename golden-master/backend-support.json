@@ -18,8 +18,8 @@
     },
     {
       "id": "elasticsearch",
-      "status": "unsupported",
-      "reason": "Elasticsearch returns hits under dynamic mappings, so the timestamp field, the message field and the service field are per-index decisions: the same query against two clusters yields two shapes, and a reader would need a field mapping supplied by the caller before it could read anything at all"
+      "status": "implemented",
+      "summary": "HTTP JSON API: POST /{index}/_search, read as hits whose timestamp, message and service fields -- and the timestamp encoding -- the caller declares"
     },
     {
       "id": "clickhouse",

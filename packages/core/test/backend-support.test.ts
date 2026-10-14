@@ -102,11 +102,33 @@ async function serveBackends(): Promise<string> {
       ],
     },
   });
+  // The shape a search answers in: hits, each with a `_source` the caller declared
+  // three field names for.
+  const hits = JSON.stringify({
+    took: 3,
+    timed_out: false,
+    _shards: { total: 1, successful: 1, failed: 0 },
+    hits: {
+      total: { value: 1, relation: 'eq' },
+      hits: [
+        {
+          _index: 'payments-000001',
+          _id: 'abc',
+          _source: {
+            '@timestamp': '2023-11-14T22:13:20.123Z',
+            message: 'upstream 10.20.30.40 refused',
+            'service.name': 'payments',
+          },
+        },
+      ],
+    },
+  });
   const server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     const url = req.url ?? '';
     if (url.startsWith('/api/traces')) res.end(traces);
     else if (url.startsWith('/loki/api/v1/query_range')) res.end(streams);
+    else if (url.includes('/_search')) res.end(hits);
     else res.end(matrix);
   });
   await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
@@ -169,12 +191,27 @@ const DRIVERS: Record<T2BackendId, (baseUrl: string) => Promise<number>> = {
     if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
     return result.signals.length;
   },
-  // The three below are declared unsupported, so they have no driver on purpose. A
+  elasticsearch: async (baseUrl) => {
+    const entry = backendEntry('elasticsearch');
+    if (entry === null) throw new Error('elasticsearch is declared implemented and has no entry');
+    const result = await entry({
+      baseUrl,
+      index: 'payments-*',
+      start: 1_700_000_000,
+      end: 1_700_000_060,
+      size: 20,
+      timestampFormat: 'iso8601',
+      sortDirection: 'asc',
+      // The declaration the registry's reason said a reader would need before it
+      // could read anything at all, supplied as an argument instead of assumed.
+      fields: { timestamp: '@timestamp', message: 'message', service: 'service.name' },
+    });
+    if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
+    return result.signals.length;
+  },
+  // The two below are declared unsupported, so they have no driver on purpose. A
   // driver for an unsupported backend would be the very claim this file refuses to
   // let the registry make.
-  elasticsearch: async () => {
-    throw new Error('elasticsearch is declared unsupported and must not have a driver');
-  },
   clickhouse: async () => {
     throw new Error('clickhouse is declared unsupported and must not have a driver');
   },

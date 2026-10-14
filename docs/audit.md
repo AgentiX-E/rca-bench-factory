@@ -16627,3 +16627,105 @@ the pass that added the fourth.
 The missing one errors; the one that runs twenty-five mutations looks, from outside,
 exactly like the one that ran for a tenth of a second. The only difference is a
 duration nobody reads -- and, on this occasion, a red test in an unrelated file.
+
+## Finding 164 — the second reason whose last clause was the interface, and a declaration the reason did not know it needed
+
+### What the registry said
+
+The `elasticsearch` row carried this reason:
+
+> Elasticsearch returns hits under dynamic mappings, so the timestamp field, the
+> message field and the service field are per-index decisions: the same query against
+> two clusters yields two shapes, and a reader would need a field mapping supplied by
+> the caller before it could read anything at all
+
+Every clause is true, and the last one is the finding 161 shape exactly: "a mapping
+supplied by the caller" is a statement about the interface, so the mapping is a
+required argument with no defaults and there is nothing to guess.
+
+**But the reason was also incomplete**, and that is the new part. Three field *names*
+are not enough to read a document: Elasticsearch writes a `date` field as an ISO-8601
+string or as epoch milliseconds depending on that field's own `format`, so the same
+three names arrive in two shapes and a reader that sniffed the JSON type would be
+reading two index configurations as one. The declaration therefore carries a fourth
+decision -- the encoding -- which the reason did not mention at all.
+
+### What the caller has to decide, and why none of it can be defaulted
+
+| the caller's decision | why it cannot be defaulted |
+| --- | --- |
+| which field holds the timestamp, the message and the service | a per-index decision, which is what the reason said |
+| **which serialisation the timestamp field uses** | it is a second per-index decision the reason did not name; two configurations that write the same field names stay two configurations |
+| the index | it is the first path segment, and an empty one means every index in the cluster |
+| the size | Elasticsearch's own default is 10 hits, so a reader that left it out would receive a silently truncated page |
+| the sort direction | with a size limit it decides which end of the window survives |
+
+The window is built from the declaration: a `range` filter on the field the caller
+named as the timestamp, **with the format sent alongside the bounds**, ANDed with the
+caller's own query (`bool.filter` for the window, `bool.must` for the query). The
+format string travels with the request because a `date` field is parsed with the format
+its mapping declares, and the caller is the one who knows it.
+
+### What it refuses to do, and the one place it differs from Loki
+
+| decision | why |
+| --- | --- |
+| the document is **not** copied into `resource` | a Loki stream's label set is required to be low-cardinality identity, which is what `resource` records; a `_source` is a document, and its fields are as likely to be payload as identity. Copying them in would invent a convention per index, which is the defect the reason was about |
+| no severity | there is no convention for the field's name (`level`, `severity`, `log.level`) and the values are not the vocabulary the IR carries |
+| no pagination | it reads one page and reports the count **with its relation**: `gte` is Elasticsearch saying "at least this many", and a value without its relation presents an approximation as a measurement |
+| `size` is not bounded | the real upper bound is a per-index setting (`index.max_result_window`) this module cannot read, so a value above it is refused by the cluster and reported with its status |
+| a partial answer is reported as partial | `timed_out` and a failed shard are the two ways a search answers without finishing; the hits that arrived are still signals |
+
+### The claim, and its honest limit
+
+Nothing in this repository has contacted an Elasticsearch cluster, and this round
+measured what it would take:
+
+| attempt | outcome |
+| --- | --- |
+| `apt-cache policy elasticsearch` | **not in the archive**; only `elasticsearch-curator` and Go clients are |
+| `github.com/elastic/elasticsearch/releases` | the releases carry no binaries |
+| `artifacts.elastic.co` | **HTTP 200** -- the endpoint the tarball lives on *is* reachable |
+| the tarball itself | **1,549,450 of 327,031,293 bytes** in 35 s at **44,269 B/s**, which is **two hours** for the file |
+
+So the difference from the Loki round is recorded rather than rounded off: Loki's
+artifact could not be transferred at all, and this one can be but not in a session.
+The reader is fixture-driven, `docs/architecture.md` says which of the four readers has
+been answered by a deployment (Prometheus, finding 154), and neither the registry's
+summary nor the matrix claims more.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `elasticsearch.test.ts` | **39 tests**: the mapping, the declaration's four decisions, the request the reader sends, both timestamp encodings *and the refusal of the undeclared one*, every quarantine branch (no `_source`, missing/empty service, unreadable timestamp, non-string message, truncated record) and every network and envelope branch (refused connection, silent socket, non-2xx, non-JSON, non-object body, error object, no `hits`, `hits` not a list, both `total` serialisations, an unreadable total) |
+| coverage, `src/ingest/elasticsearch.ts` | **100 / 100 / 100 / 100** |
+| `backend-support.test.ts` | **13 tests**, driving **four** `implemented` backends through one routed fixture |
+| the battery | **44 caught / 0 survived / 0 inert / 0 misattributed** -- 12 new injections, including "sniff the timestamp's JSON type", "send the window in seconds" and "read an approximate total as an exact one" |
+| `check-backend-support.mjs` | **OK (6 backends in the matrix: 4 implemented, 2 unsupported with a reason)** |
+| the guards the change tripped | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived |
+| core test suite | **136 files, 3589 tests passed**; `cli` 3 files, 173 tests |
+
+### What is not covered
+
+- **No real cluster was contacted**, and the table above is the measurement.
+- **No CLI command.** The reader is reachable through the package entry point and the
+  registry, not through `rca-bench` -- the same gap findings 154, 160 and 161 recorded,
+  now four readers wide.
+- **Two backends remain** (ClickHouse, the Kubernetes API), each with a written reason.
+
+### What this says about the method
+
+Two of the four implemented readers were declared impossible for a reason whose last
+clause was **the interface**: "the caller must name the label" (Loki) and "a mapping
+supplied by the caller" (Elasticsearch). Both were written as objections and both read
+as specifications. That is now a pattern rather than an anecdote, and it gives the next
+two rows a reading rule:
+
+> **when a reason ends in "the caller would have to supply X", X is the interface, not
+> the obstacle.**
+
+This round also produced the case the rule does not cover: Elasticsearch's reason was
+not only misread, it was **incomplete**. It named the three fields and not the encoding,
+and writing the decoder is what surfaced the fourth decision. A rule for reading reasons
+can only find what the reason mentions; what it omits is found by writing the thing.

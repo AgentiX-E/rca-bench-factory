@@ -61,6 +61,12 @@ JAEGER_TEST = "test/jaeger.test.ts"
 # other two, and its two unit traps are the mutations below.
 LOKI = "packages/core/src/ingest/loki.ts"
 LOKI_TEST = "test/loki.test.ts"
+# The fourth reader, and the second row whose registry reason was its interface
+# (finding 164). Its declaration is three field names plus the timestamp's encoding,
+# so the mutations below are about a declaration being ignored rather than about a
+# wire format being misread.
+ELASTICSEARCH = "packages/core/src/ingest/elasticsearch.ts"
+ELASTICSEARCH_TEST = "test/elasticsearch.test.ts"
 REGISTRY = "packages/core/src/ingest/backends.ts"
 
 GATE_TEST = "test/check-backend-support.test.ts"
@@ -389,6 +395,102 @@ MUTATIONS: list[tuple[str, str, str, str, str, str]] = [
         REGISTRY,
         "    id: 'loki',\n    status: 'implemented',",
         "    id: 'loki',\n    status: 'unsupported',\n    reason: 'this backend was flipped by a mutation, and the reason is long enough to pass the length rule',",
+        REGISTRY_TEST,
+        "holds the committed snapshot equal to the registry it is derived from",
+    ),
+    (
+        "stop naming the format the window is parsed with",
+        ELASTICSEARCH,
+        "    format: 'strict_date_optional_time',",
+        "    format: 'epoch_millis',",
+        ELASTICSEARCH_TEST,
+        "asks the search endpoint for the window, the size and the sort the caller declared",
+    ),
+    (
+        "send the window in seconds rather than in the declared encoding",
+        ELASTICSEARCH,
+        "    gte: new Date(start).toISOString(),\n    lte: new Date(end).toISOString(),",
+        "    gte: start,\n    lte: end,",
+        ELASTICSEARCH_TEST,
+        "asks the search endpoint for the window, the size and the sort the caller declared",
+    ),
+    (
+        "sniff the timestamp's JSON type instead of reading the declared encoding",
+        ELASTICSEARCH,
+        "  if (format === 'epoch_millis') {\n    if (typeof raw === 'number' && Number.isInteger(raw)) return raw;",
+        "  if (typeof raw === 'number' && Number.isInteger(raw)) return raw;\n  if (false) {",
+        ELASTICSEARCH_TEST,
+        "quarantines the other serialisation rather than reading it as the declared one",
+    ),
+    (
+        "read an unparsed timestamp as the epoch",
+        ELASTICSEARCH,
+        "    if (typeof raw === 'number' && Number.isInteger(raw)) return raw;",
+        "    if (raw !== undefined && raw !== null) return Number(raw) || 0;",
+        ELASTICSEARCH_TEST,
+        "quarantines the other serialisation rather than reading it as the declared one",
+    ),
+    (
+        "attach a hit to a service that was never reported",
+        ELASTICSEARCH,
+        "    const serviceName = source[fields.service];\n    if (typeof serviceName !== 'string' || serviceName === '') {",
+        "    const serviceName = source[fields.service] || 'unknown-service';\n    if (false) {",
+        ELASTICSEARCH_TEST,
+        "quarantines a hit whose declared service field is missing or empty, per hit",
+    ),
+    (
+        "record the whole document as the message",
+        ELASTICSEARCH,
+        "    const message = source[fields.message];",
+        "    const message = JSON.stringify(source);",
+        ELASTICSEARCH_TEST,
+        "maps a hit to one signal per hit, with the declared fields and nothing guessed",
+    ),
+    (
+        "drop the offset that says which clock the hit came from",
+        ELASTICSEARCH,
+        "      rawOffsetMinutes: 0,\n",
+        "",
+        ELASTICSEARCH_TEST,
+        "maps a hit to one signal per hit, with the declared fields and nothing guessed",
+    ),
+    (
+        "report a partial answer as a complete one",
+        ELASTICSEARCH,
+        "    timedOut: envelope['timed_out'] === true,\n    failedShards: typeof failed === 'number' && failed > 0 ? failed : 0,",
+        "    timedOut: false,\n    failedShards: 0,",
+        ELASTICSEARCH_TEST,
+        "says so when the answer is partial, both ways Elasticsearch says it",
+    ),
+    (
+        "read an approximate total as an exact one",
+        ELASTICSEARCH,
+        "  return { value, relation: typeof relation === 'string' ? relation : 'unknown' };",
+        "  return { value, relation: 'eq' };",
+        ELASTICSEARCH_TEST,
+        "reports the total the cluster gave, with the relation that makes it readable",
+    ),
+    (
+        "read an error carried in a body as an empty window",
+        ELASTICSEARCH,
+        "  if (envelope['error'] !== undefined) {",
+        "  if (false) {",
+        ELASTICSEARCH_TEST,
+        "fails on the error object Elasticsearch wraps in a 200 body",
+    ),
+    (
+        "default the index to every index in the cluster",
+        ELASTICSEARCH,
+        "  if (index === '') {",
+        "  if (false) {",
+        ELASTICSEARCH_TEST,
+        "refuses an index it would have to default",
+    ),
+    (
+        "declare the fourth pull path unsupported while keeping its entry",
+        REGISTRY,
+        "    id: 'elasticsearch',\n    status: 'implemented',",
+        "    id: 'elasticsearch',\n    status: 'unsupported',\n    reason: 'this backend was flipped by a mutation, and the reason is long enough to pass the length rule',",
         REGISTRY_TEST,
         "holds the committed snapshot equal to the registry it is derived from",
     ),

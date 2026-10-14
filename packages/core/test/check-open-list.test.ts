@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -153,12 +153,30 @@ describe('docs · the Open list says which entries are work and which are histor
     const shipped = spawnSync('node', [SCRIPT], { cwd: ROOT, encoding: 'utf8' });
     expect(`${shipped.stdout}${shipped.stderr}`).toContain('check-open-list: OK');
     expect(shipped.status).toBe(0);
-    // And the count is stated, so an empty list cannot pass as a clean one. The
-    // section count is part of it: a guard reading one list out of two would print a
-    // smaller number and say nothing about the one it did not read (finding 162).
-    expect(shipped.stdout).toMatch(/6 entry\(ies\) across 2 section\(s\) of docs\/progress\.md/);
-    expect(shipped.stdout).toMatch(/4 open with a reason/);
-    expect(shipped.stdout).toMatch(/2 closed by a finding/);
+    // And the count is stated, so an empty list cannot pass as a clean one -- and it
+    // is read as *arithmetic* rather than as a literal. A pinned `6 entry(ies)` would
+    // have to be re-signed by every pass that appends a section, and a number that is
+    // re-signed on every unrelated edit is a number nobody reads. The section count is
+    // instead held to the document's own headings, counted here from the file, and the
+    // entry count to the two parts it is made of.
+    const summary = shipped.stdout.match(
+      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md: (\d+) open with a reason, (\d+) closed by a finding\)/,
+    );
+    expect(summary, `the guard's summary changed shape: ${shipped.stdout}`).not.toBeNull();
+    const numbers = (summary ?? []).slice(1).map(Number);
+    const entries = numbers[0] ?? 0;
+    const sections = numbers[1] ?? 0;
+    const open = numbers[2] ?? 0;
+    const closed = numbers[3] ?? 0;
+    const headings = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8')
+      .split('\n')
+      .filter((line) => line.trim() === '### Open').length;
+    expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
+    expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
+    expect(entries).toBeGreaterThanOrEqual(sections);
+    // Non-vacuity in the other direction: the shipped document has at least one
+    // closure, so "closed by a finding" is a reading rather than a constant zero.
+    expect(closed).toBeGreaterThan(0);
   });
 
   it('declares the script it spawns, because gate-sites rule 7 reconciles it', () => {

@@ -35,6 +35,11 @@
  * whether the backend is a week of work or impossible.
  */
 
+import {
+  pullElasticsearchLogs,
+  type ElasticsearchPullOptions,
+  type ElasticsearchPullResult,
+} from './elasticsearch.js';
 import { pullJaegerTraces, type JaegerPullOptions, type JaegerPullResult } from './jaeger.js';
 import { pullLokiLogs, type LokiPullOptions, type LokiPullResult } from './loki.js';
 import {
@@ -63,7 +68,7 @@ export type T2BackendId = (typeof T2_BACKEND_IDS)[number];
 /**
  * A pull entry point, per backend.
  *
- * Three signatures rather than one, because the three pullers genuinely differ:
+ * Four signatures rather than one, because the four pullers genuinely differ:
  * they speak different wire formats and take different options. Each backend
  * widening this type is a deliberate decision with a visible cost at the call
  * site -- a caller that wants to *drive* a backend has to know which one it is
@@ -73,7 +78,8 @@ export type T2BackendId = (typeof T2_BACKEND_IDS)[number];
 export type PrometheusEntry = (options: PrometheusPullOptions) => Promise<PrometheusPullResult>;
 export type JaegerEntry = (options: JaegerPullOptions) => Promise<JaegerPullResult>;
 export type LokiEntry = (options: LokiPullOptions) => Promise<LokiPullResult>;
-export type T2BackendEntry = PrometheusEntry | JaegerEntry | LokiEntry;
+export type ElasticsearchEntry = (options: ElasticsearchPullOptions) => Promise<ElasticsearchPullResult>;
+export type T2BackendEntry = PrometheusEntry | JaegerEntry | LokiEntry | ElasticsearchEntry;
 
 export interface T2BackendImplemented {
   readonly id: T2BackendId;
@@ -130,9 +136,15 @@ export const T2_BACKENDS: readonly T2Backend[] = [
   },
   {
     id: 'elasticsearch',
-    status: 'unsupported',
-    reason:
-      'Elasticsearch returns hits under dynamic mappings, so the timestamp field, the message field and the service field are per-index decisions: the same query against two clusters yields two shapes, and a reader would need a field mapping supplied by the caller before it could read anything at all',
+    status: 'implemented',
+    entry: pullElasticsearchLogs,
+    // The second row whose reason turned out to be its interface (finding 164): the
+    // field mapping is a required argument, and so is the *encoding* of the timestamp
+    // field -- Elasticsearch writes a `date` as an ISO-8601 string or as epoch
+    // milliseconds depending on that field's own format, so three declared field
+    // names can still arrive in two shapes.
+    summary:
+      'HTTP JSON API: POST /{index}/_search, read as hits whose timestamp, message and service fields -- and the timestamp encoding -- the caller declares',
   },
   {
     id: 'clickhouse',
@@ -167,6 +179,7 @@ export function findBackend(id: string): T2Backend | undefined {
 export function backendEntry(id: 'prometheus'): PrometheusEntry | null;
 export function backendEntry(id: 'jaeger'): JaegerEntry | null;
 export function backendEntry(id: 'loki'): LokiEntry | null;
+export function backendEntry(id: 'elasticsearch'): ElasticsearchEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null {
   const backend = findBackend(id);

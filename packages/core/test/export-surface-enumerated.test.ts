@@ -141,6 +141,7 @@ const ENUMERATED_MODULES = [
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/backends.ts',
+  'ingest/elasticsearch.ts',
   'ingest/jaeger.ts',
   'ingest/file.ts',
   'ingest/loki.ts',
@@ -374,6 +375,13 @@ const TESTED = [
   'T2_BACKENDS',
   'findBackend',
   'backendEntry',
+  // ingest/elasticsearch.ts -- the fourth implemented pull path, a reader for the
+  // search API's hits.
+  'ELASTICSEARCH_SEARCH_PATH',
+  'ELASTICSEARCH_DEFAULT_TIMEOUT_MS',
+  'ELASTICSEARCH_TIMESTAMP_FORMATS',
+  'ELASTICSEARCH_SORT_DIRECTIONS',
+  'pullElasticsearchLogs',
   // ingest/jaeger.ts -- the second implemented pull path, a reader for the query
   // API's own trace JSON.
   'JAEGER_TRACES_PATH',
