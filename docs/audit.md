@@ -16341,6 +16341,21 @@ fails rather than passing.
 - **Three of six backends remain.** Loki, Elasticsearch and ClickHouse, plus
   Kubernetes: each still carries a written reason and no reader.
 
+### A record defect this round made twice
+
+The commit that carried this finding quoted a JSON fragment in backticks inside its
+message, and the shell ran it: the stored sentence reads *"and with errors treated
+as a failed query"*. The follow-up commit written to correct it **quoted the same
+fragment the same way** and lost it again. Both messages are in the log, mangled, and
+neither was rewritten -- the finding itself is stated in full above, so no claim is
+lost, but a commit message is a record and these two have holes in them.
+
+Two lessons, both cheap and both worth keeping because the mistake repeated itself
+between the two commits, which is the interval in which a guard should have
+appeared: a shell-quoted commit message must not contain backticks, and when a
+correction is written the first thing to change is the thing that broke, not the
+sentence around it.
+
 ### What this says about the method
 
 The row was not wrong about the wire format; it was wrong to treat "this needs a
