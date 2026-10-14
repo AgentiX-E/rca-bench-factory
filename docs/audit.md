@@ -16729,3 +16729,24 @@ This round also produced the case the rule does not cover: Elasticsearch's reaso
 not only misread, it was **incomplete**. It named the three fields and not the encoding,
 and writing the decoder is what surfaced the fourth decision. A rule for reading reasons
 can only find what the reason mentions; what it omits is found by writing the thing.
+
+### A record defect this round made, and how it was found
+
+The first push of the Chinese documents carried **the previous round's commit** on the
+command line while the local `HEAD` was the new one. The push tool printed
+`10 file(s), 0 changed` -- and moved the remote ref anyway, so a tree that had not
+changed acquired a new commit and this round's documents were still not on the remote.
+
+The tool was not at fault: it said `0 changed` on the same line. **The mistake was reading
+that the ref moved and not reading whether anything changed.** What found it was reading
+the *remote content* -- fetching `09-推进进度追踪.md` through the API and looking for this
+round's heading, which was absent -- rather than reading the push's own summary.
+
+Two lessons, both recorded in the Chinese tracking document as well:
+
+1. **The changed count is the conclusion; the ref move is only the action.** A push
+   cannot be reported as delivered on the strength of the second one.
+2. The tool rebuilds onto the remote tip when the local parent does not match, and prints
+   that as a *note* rather than an error. That tolerance is what turned a stale SHA into a
+   successful push of an unchanged tree: where a tool is forgiving about the parent, the
+   SHA has to come from the round's own variable rather than from memory.
