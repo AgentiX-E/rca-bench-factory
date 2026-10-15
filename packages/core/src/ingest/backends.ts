@@ -36,6 +36,11 @@
  */
 
 import {
+  pullClickHouseLogs,
+  type ClickHousePullOptions,
+  type ClickHousePullResult,
+} from './clickhouse.js';
+import {
   pullElasticsearchLogs,
   type ElasticsearchPullOptions,
   type ElasticsearchPullResult,
@@ -73,7 +78,7 @@ export type T2BackendId = (typeof T2_BACKEND_IDS)[number];
 /**
  * A pull entry point, per backend.
  *
- * Five signatures rather than one, because the five pullers genuinely differ:
+ * Six signatures rather than one, because the six pullers genuinely differ:
  * they speak different wire formats and take different options. Each backend
  * widening this type is a deliberate decision with a visible cost at the call
  * site -- a caller that wants to *drive* a backend has to know which one it is
@@ -84,13 +89,15 @@ export type PrometheusEntry = (options: PrometheusPullOptions) => Promise<Promet
 export type JaegerEntry = (options: JaegerPullOptions) => Promise<JaegerPullResult>;
 export type LokiEntry = (options: LokiPullOptions) => Promise<LokiPullResult>;
 export type ElasticsearchEntry = (options: ElasticsearchPullOptions) => Promise<ElasticsearchPullResult>;
+export type ClickHouseEntry = (options: ClickHousePullOptions) => Promise<ClickHousePullResult>;
 export type KubernetesEntry = (options: KubernetesPullOptions) => Promise<KubernetesPullResult>;
 export type T2BackendEntry =
   | PrometheusEntry
   | JaegerEntry
   | LokiEntry
   | ElasticsearchEntry
-  | KubernetesEntry;
+  | KubernetesEntry
+  | ClickHouseEntry;
 
 export interface T2BackendImplemented {
   readonly id: T2BackendId;
@@ -159,9 +166,18 @@ export const T2_BACKENDS: readonly T2Backend[] = [
   },
   {
     id: 'clickhouse',
-    status: 'unsupported',
-    reason:
-      'the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped',
+    status: 'implemented',
+    entry: pullClickHouseLogs,
+    // The last of the six, and the one whose reason was an argument rather than a
+    // claim (finding 167). Both of its horns were real -- a schema this project does
+    // not own, or an untyped ingest path -- and what it did not account for is that
+    // this backend *types the result it returns*: the JSON envelope carries a `meta`
+    // block giving every column's own type, so the reader checks the caller's
+    // declaration against the backend instead of believing it. That is what the four
+    // readers before this one could not do. The statement stays free and the ingest
+    // path stays typed.
+    summary:
+      'HTTP JSON API: POST / with the statement in the body, read as a JSON envelope whose meta block types the declared timestamp, message and service columns',
   },
   {
     id: 'kubernetes',
@@ -198,6 +214,7 @@ export function backendEntry(id: 'jaeger'): JaegerEntry | null;
 export function backendEntry(id: 'loki'): LokiEntry | null;
 export function backendEntry(id: 'elasticsearch'): ElasticsearchEntry | null;
 export function backendEntry(id: 'kubernetes'): KubernetesEntry | null;
+export function backendEntry(id: 'clickhouse'): ClickHouseEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null;
 export function backendEntry(id: string): T2BackendEntry | null {
   const backend = findBackend(id);

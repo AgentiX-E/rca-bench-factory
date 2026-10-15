@@ -16967,3 +16967,191 @@ report of its decay was the word `cancelled`.
 > **A budget is a measurement too.** It needs a number from the thing it describes, a
 > margin wider than the thing's own variance, and a failure mode that says "the budget was
 > spent" rather than "somebody stopped this".
+
+## Finding 167 — the last reason was an argument, and the wire was able to witness for the caller
+
+### The shape of this one, which was not the shape of the other five
+
+The `clickhouse` row carried the only reason in the registry that argues rather than
+describes:
+
+> the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in
+> whichever format was asked for, so supporting it means either fixing a schema this project
+> does not own or accepting arbitrary SQL -- the second of which would make the ingest path
+> untyped
+
+Both horns are real. Fixing a schema this project does not own is out of the question, and an
+ingest path that emits whatever a statement returns is not typed. Findings 161, 164 and 165
+had each found a clause that was *the interface*; the reading rule they produced -- "when a
+reason ends in 'the caller would have to supply X', X is the interface" -- has no purchase
+here, because this reason does not name anything a caller would supply. It names a
+contradiction. And it was the last row.
+
+The third option is that **this backend types the result it returns**. The `JSON` format
+answers with a `meta` block carrying every column's own type:
+
+```json
+{"meta":[{"name":"ts","type":"DateTime64(3)"},
+         {"name":"service_name","type":"LowCardinality(String)"},
+         {"name":"body","type":"String"}],
+ "data":[{"ts":"2023-11-14T14:13:20.123Z","service_name":"checkout","body":"..."}],
+ "rows":1,
+ "statistics":{"elapsed":0.0012,"rows_read":2,"bytes_read":136}}
+```
+
+So an arbitrary statement does not produce an arbitrary shape. The caller declares which
+columns hold the timestamp, the message and the service; the reader **checks that declaration
+against the backend's typing** before a row is read. That is what the six readers before this
+one could not do: `serviceLabel`, `timestampFormat` and `timestampField` were the caller's
+word alone, and nothing in the repository could contradict them.
+
+### A real ClickHouse, for the second time in this series
+
+Unlike the four rounds before it, this one did not have to write "no deployment answered
+this". The measurement is short because the binary was reachable:
+
+| step | outcome |
+| --- | --- |
+| `apt-cache policy clickhouse-server` | a real package, `18.16.1+ds-7.4build2`, from the distribution archive |
+| `packages.clickhouse.com/tgz/stable/...24.3.4.147-amd64.tgz` | **HTTP 200**, and the whole 253,570,044 bytes in **18.7 s at 13.5 MB/s** |
+| the extracted static binary | `ClickHouse local version 24.3.4.147 (official build)` |
+| a hand-written two-file config | the server answered on `127.0.0.1:8123` within a second |
+
+This is the *opposite* of the Loki and Elasticsearch rounds, where the artifact could not be
+transferred at all or arrived at 44 KB/s, and it is worth being precise about why: those two
+sat behind `release-assets.githubusercontent.com` and a 327 MB tarball, and this one sits
+behind a CDN that answered at 13.5 MB/s. The wall is per-artifact, not per-sandbox -- a
+correction to finding 161's conclusion, which generalised from two failures to "this
+sandbox".
+
+Every fixture in `test/clickhouse.test.ts` is a copy of what that server sent, and the
+reader was then driven against it directly. The check that matters:
+
+| the reader says | the server says | agree |
+| --- | --- | --- |
+| `ts = DateTime64(3)` → `2023-11-14T14:13:20.123Z` | `toUnixTimestamp64Milli(ts)` → `1699971200123` → `2023-11-14T14:13:20.123Z` | **yes** |
+
+### Four wire facts that changed the design, and one that only changed a comment
+
+| measured | consequence |
+| --- | --- |
+| a rejected statement answers **HTTP 404** with `{"meta":[],"data":[],"rows":0,"exception":"Code: 47. DB::Exception: …"}` | **a failure is shaped exactly like an empty window.** `exception` is read before `data`, and a non-2xx is only the second opinion |
+| `DateTime64(3)` renders as `2023-11-14 22:13:20.123` -- no `T`, no offset, no zone | the reader sends `date_time_output_format=iso`, which renders `2023-11-14T14:13:20.123Z`, and **quarantines anything it cannot place** rather than assuming a zone |
+| `session_timezone=UTC` changes `timezone()` **and the `X-ClickHouse-Timezone` response header**, and does **not** change that rendering | **the header is not the authority.** Trusting it would place a row **eight hours** from where it belongs, on this very server |
+| an explicit `FORMAT` in the statement wins over `default_format` | a body that is not the JSON object is a **named diagnosis** ("a FORMAT clause inside the statement overrides the default_format=JSON this reader sends") rather than a parse error |
+| 64-bit integers arrive **quoted**: `"1699971200123"`, `"9007199254740993"` | the value may be a string, and reading it through `Number` **undoes the backend's own protection** -- which is why the backend quotes it |
+| `max_result_rows=1&result_overflow_mode=break` against `numbers(5)` returned **all five rows** | the reader cannot bound the query, so it bounds what it **emits** and reports `page.truncated` -- and the code says the measurement rather than the intent |
+| `CAST(1700000000.5 AS Float32)` arrives as **`1700000000`** | a `Float32` timestamp is **refused**: the spacing of a Float32 at epoch-second magnitude is **128 seconds** |
+| under `iso`, `Date` renders as `2023-11-14` | a `Date` column is **refused**: a calendar day has no time of day to place a row at |
+| `rows_before_limit_at_least: 2` appears when the statement carries `LIMIT 1` | the count is reported **with its relation**, as `page.atLeast` |
+
+The last two refusals are not pedantry and the numbers are the reason: an RCA engine reads a
+timestamp as ground truth, and both of these would put rows minutes or hours away while
+looking perfectly well-formed.
+
+### Two traps the measurement caught in my own work
+
+1. **I reproduced the empty-window trap by accident.** While probing for the instant of a
+   row, a script of mine ran `toUnixTimestamp64Milli(ts)` in a statement that also used a
+   function this server does not have. The response was a well-formed envelope with
+   `data: []`, and my `for row in response['data']` printed **nothing at all** -- a failure
+   rendered as a quiet, empty answer. That is the defect the reader now refuses, and it took
+   about ninety seconds to happen to me while writing the reader that refuses it.
+2. **The mutation battery found a guess inside the reader.** Four arms were unreachable --
+   `unit ?? 'milliseconds'` in each numeric path -- because `classifyTimestamp` had already
+   refused every type that could leave the unit undefined. A default that can never be taken
+   is not a default; it is a claim about a case that cannot arise, and this one claimed
+   `milliseconds`, which is exactly the guess the reader exists to refuse. The unit now
+   lives **inside** the reading (`{kind:'integer', unit}`), so the invariant is the
+   compiler's rather than a fallback's, and the module reached 100% on all four dimensions
+   with no `v8 ignore`.
+
+The battery on this round is **83 injections, 0 survived, 0 inert, 0 misattributed** -- 24 of
+them new, each anchored on a decision that only exists because a real server was measured.
+
+### The registry now has no unsupported rows, and says so
+
+| gate | result |
+| --- | --- |
+| `check-backend-support.mjs` | **OK (6 backends: 6 implemented, 0 unsupported)** |
+| `backend-support.test.ts` | **15 tests**, now driving **six** `implemented` backends through one routed fixture (the ClickHouse route is chosen by the *statement*, because its endpoint is the root) |
+| the two unsupported rules | replaced by a **pairing** rule -- `implemented` must carry no `reason`, `unsupported` must carry a reason of substance and no `entry` -- plus a line that **pins the unsupported set to empty**. An empty set read off a list is indistinguishable from a list nobody filled in, so the state is asserted rather than inferred: flipping a row back costs a deliberate edit and a reason |
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `clickhouse.test.ts` | **42 tests**: the request, both settings pinned, the credentials-in-headers rule, the timezone guard with its control, the unit arithmetic with the double's reading beside it, every quarantine branch, every envelope branch, every refused type, and the truncation |
+| coverage, `src/ingest/clickhouse.ts` | **100 / 100 / 100 / 100** |
+| the battery | **83 caught / 0 survived / 0 inert / 0 misattributed** (24 new injections) |
+| `check-backend-support.mjs` | **OK (6 backends in the matrix: 6 implemented, 0 unsupported with a reason)** |
+| driven against a real server | a `ClickHouse 24.3.4.147` on `127.0.0.1:8123`: the mapping, the epoch path, the failure-as-empty-window case, the FORMAT diagnosis, the `Date`/`String`/`Float32` refusals and `atLeast` all exercised, and the instants checked against `toUnixTimestamp64Milli` |
+| the guards the change tripped | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix -- twice, first for a stale row and then for a duplicate one |
+| core test suite | **139 files, 3683 tests passed**; `cli` 3 files, 173 tests; repo 142 files, 3856 tests |
+| coverage, whole tree | core **99.97 / 99.93 / 100 / 99.97**; `cli` **100 / 100 / 100 / 100** |
+| `docs:check` / `docs:check:cold` / `typecheck` / `lint` | green |
+
+### What is not covered
+
+- **No CLI command.** The reader is reachable through the package entry point and the
+  registry, not through `rca-bench` -- the same gap findings 154, 160, 161, 164, 165 and this
+  one record, now six readers wide. It is the largest remaining asymmetry in P1-5.
+- **The statement is not validated.** The reader does not parse SQL: it cannot tell a
+  `SELECT` from a `DROP`, and it relies on the account it is given being read-only. That is
+  stated in the module rather than implied, and it is the one place where "the caller writes
+  the statement" still costs something.
+
+### The interference finding 163 described, reproduced this round by accident
+
+The core suite was run **beside** this battery, and it came back with two red `loki.test.ts`
+tests -- both exact-string assertions on an error message, in a file this round never touched,
+neither of them reproducing in isolation. The cause is not in the reader: the battery carries
+**12 injections whose subject is `loki.ts`**, so a suite running beside it imports a
+**mutated** module, and `git status` looks clean by the time anybody asks because the battery
+has already restored the file. The evidence left on disk mid-run was
+`packages/core/src/ingest/kubernetes.ts` showing as modified while the run was in flight --
+the same mtime-and-content trace finding 163 used.
+
+Finding 163 recorded this shape for a battery that rewrote a *gate script another test
+spawns*. This is the same shape one step further in: a battery rewriting **any source file
+another test imports** is the same interference, and the misleading symptom is the same -- a
+failure in a file nobody touched, which does not reproduce. The remedy is a process one rather
+than a code one, and it belongs here rather than in a comment:
+
+> **Do not run a mutation battery and a test suite at the same time.** When a red test appears
+> in a file the round did not touch, the first hypothesis is the battery rather than the file.
+
+**And the same round repeated finding 158.** A patch that rebuilt the battery's injection table
+sliced from the first new entry to the closing bracket and wrote `head + new_body` -- which
+dropped everything after the bracket, including `def main()` and the `__main__` block. Running
+the script then did **nothing at all and exited 0**, and `--verify-expectations` printed
+nothing and exited 0 too, so the check that exists to catch a stale table reported success by
+not running. The signature was the duration: **174 ms**, against the 325 s the battery takes
+when it actually runs.
+
+Finding 158 recorded this exact defect for `gate-tests-battery.py` -- a patch that inserted a
+function after `def main()`, making the body dead code. It was found then because nine
+injections finished instantly; it was found now because twelve seconds of expected work
+finished in a sixth of a second. **The lesson is not "be careful with patches" but that the
+only thing which caught it, twice, was the runtime of the thing being run** -- and neither
+time by any of the repository's fifty gate sites, because a script that does nothing passes
+every gate that reads it as text.
+
+### What this says about the method
+
+Six reasons, six rows, and the last one was not a mistake at all -- it was a genuine dilemma
+whose second horn was answered by a fact about the wire that the reason had not been written
+to include. The reading rule the earlier rounds produced found the interface in three of them
+and was wrong about the fourth (Kubernetes' translation table was already in the IR) and has
+nothing to say about this one.
+
+> **A reason can be true, its dilemma can be real, and the wire can still offer a third
+> option.** Two of the six reasons here were misread, one named a decision that was not
+> needed, and one was a real argument against a design nobody had proposed. The only thing
+> that told them apart was building the reader, and the only thing that made this one
+> checkable was pointing it at a server.
+
+The other correction worth carrying forward is about evidence rather than reasoning: finding
+161 concluded from two failed downloads that the sandbox walls off release artifacts. This
+round pulled 253 MB in nineteen seconds from a different host. **A wall measured on two
+artifacts is a wall on those two artifacts.**

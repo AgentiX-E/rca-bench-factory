@@ -141,6 +141,7 @@ const ENUMERATED_MODULES = [
   'fault/injector.ts',
   'fault/importer.ts',
   'ingest/backends.ts',
+  'ingest/clickhouse.ts',
   'ingest/elasticsearch.ts',
   'ingest/jaeger.ts',
   'ingest/file.ts',
@@ -376,6 +377,11 @@ const TESTED = [
   'T2_BACKENDS',
   'findBackend',
   'backendEntry',
+  // ingest/clickhouse.ts -- the sixth implemented pull path, a reader for a statement's
+  // JSON envelope.
+  'CLICKHOUSE_DEFAULT_TIMEOUT_MS',
+  'CLICKHOUSE_TIMESTAMP_UNITS',
+  'pullClickHouseLogs',
   // ingest/elasticsearch.ts -- the fourth implemented pull path, a reader for the
   // search API's hits.
   'ELASTICSEARCH_SEARCH_PATH',

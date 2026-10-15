@@ -4165,9 +4165,9 @@ fifteen of fifteen pass with it.** Finding 166 records it.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **138 files, 3637 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **141 files, 3810 tests passed** (as of this commit) |
+| `core` test suite | **138 files, 3637 tests passed** (as of `6efd15d86`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `6efd15d86`) |
+| repo test suite | **141 files, 3810 tests passed** (as of `6efd15d86`) |
 | coverage — core | **99.96 / 99.92 / 100 / 99.96** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | coverage — `src/ingest/kubernetes.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
@@ -4181,9 +4181,130 @@ fifteen of fifteen pass with it.** Finding 166 records it.
 
 ### Open
 
-- **The ClickHouse row still carries a written reason and no reader.** `[open: it is the
-  first reason in the set that may survive being read -- it names a schema this project does
-  not own rather than something a caller would supply, so the rule that found three
-  interfaces may find nothing here, and the honest outcome then is a reason that says so
-  with the measurement behind it rather than a fifth reader built to make the table
-  uniform]`
+- ~~**The ClickHouse row still carries a written reason and no reader.**~~ **Closed by finding
+  167**, and not the way this list predicted. The prediction was that the reason might survive
+  being read and that the honest outcome might be a reason rather than a reader. It did not
+  survive: it was an argument with two real horns, and the wire offered a third option the
+  reason had not been written to include -- the backend types the result it returns.
+
+## Pass 44 — the last reason was an argument, and a real server witnessed for the caller
+
+### What was built, and the reason it was built from
+
+`packages/core/src/ingest/clickhouse.ts`: a reader for the HTTP interface
+(`POST /` with the statement in the body), mapping each row of a JSON envelope to an IR log
+signal. It is the registry's **sixth and last** `implemented` row, and the row it replaced
+carried the only reason in the set that argues rather than describes:
+
+> the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in
+> whichever format was asked for, so supporting it means either fixing a schema this project
+> does not own or accepting arbitrary SQL -- the second of which would make the ingest path
+> untyped
+
+**Both horns are real**, which is why this one is unlike findings 161, 164 and 165: there is
+no clause that can be read as an interface. The third option is that **this backend types the
+result it returns** -- the `JSON` format answers with a `meta` block giving every column's own
+type, so the caller declares which columns hold the timestamp, the message and the service and
+the reader **checks that declaration against the backend**. The four readers before it had to
+believe a `serviceLabel`, a `timestampFormat` or a `timestampField` on faith; this is the
+first that can refuse one.
+
+### A real server, which the last four rounds could not get
+
+| step | outcome |
+| --- | --- |
+| `apt-cache policy clickhouse-server` | a real package, `18.16.1+ds-7.4build2` |
+| `packages.clickhouse.com/tgz/stable/…24.3.4.147-amd64.tgz` | **HTTP 200**, whole 253,570,044 bytes in **18.7 s at 13.5 MB/s** |
+| the extracted static binary | `ClickHouse local version 24.3.4.147 (official build)` |
+| a two-file config | answering on `127.0.0.1:8123` within a second |
+
+So this reader was not merely written: it was **driven against a deployment**, and its
+instants were checked against the server's own arithmetic:
+
+| the reader says | the server says | agree |
+| --- | --- | --- |
+| `ts = DateTime64(3)` → `2023-11-14T14:13:20.123Z` | `toUnixTimestamp64Milli(ts)` → `1699971200123` | **yes** |
+
+That is a correction to finding 161 as much as a delivery: it concluded from two failed
+downloads that this sandbox walls off release artifacts. **A wall measured on two artifacts is
+a wall on those two artifacts.**
+
+### The wire facts that changed the design
+
+| measured | decision |
+| --- | --- |
+| a rejected statement is **HTTP 404** with `{"meta":[],"data":[],"rows":0,"exception":"Code: 47. …"}` | **a failure is shaped like an empty window**; `exception` is read before `data` |
+| `DateTime64(3)` renders as `2023-11-14 22:13:20.123` -- no `T`, no offset, no zone | send `date_time_output_format=iso` (→ `2023-11-14T14:13:20.123Z`), and **quarantine** what cannot be placed |
+| `session_timezone=UTC` moves `timezone()` **and the `X-ClickHouse-Timezone` header** and **not** the rendering | the header is **not** the authority; trusting it is **eight hours** wrong on this server |
+| an explicit `FORMAT` beats `default_format` | a non-JSON body is a **named diagnosis**, not a parse error |
+| 64-bit integers arrive **quoted** (`"9007199254740993"`) | the value may be a string; reading it through `Number` undoes the backend's own protection |
+| `max_result_rows=1&result_overflow_mode=break` returned **all five** rows of `numbers(5)` | the reader bounds what it **emits** and reports `page.truncated` |
+| `CAST(1700000000.5 AS Float32)` → `1700000000`; Float32 spacing at epoch magnitude is **128 s** | `Float32` is **refused** |
+| under `iso`, `Date` renders as `2023-11-14` | `Date` is **refused**: a calendar day has no time of day |
+| `rows_before_limit_at_least: 2` with `LIMIT 1` | the count is reported **with its relation** |
+
+### Two traps the measurement caught in the work itself
+
+1. **I reproduced the empty-window trap by accident.** A probe script of mine ran a statement
+   using a function this server does not have; the reply was a well-formed envelope with
+   `data: []`, and the script printed **nothing at all**. A failure rendered as a quiet answer
+   -- the defect this reader refuses, happening to its author ninety seconds into writing the
+   refusal.
+2. **The battery found a guess inside the reader.** Four arms were unreachable,
+   `unit ?? 'milliseconds'` in each numeric path, because the classifier had already refused
+   every type that could leave the unit undefined. A default that cannot be taken is a claim
+   about a case that cannot arise, and this one claimed `milliseconds` -- the exact guess the
+   reader exists to refuse. The unit now lives **inside** the reading, so the invariant is the
+   compiler's rather than a fallback's, and the module reached 100% on all four dimensions
+   with no `v8 ignore`.
+
+### The registry has no unsupported rows, and says so
+
+`check-backend-support.mjs`: **OK (6 backends: 6 implemented, 0 unsupported)**. The two
+unsupported rules are replaced by a **pairing** rule -- `implemented` carries no `reason`,
+`unsupported` carries a reason of substance and no `entry` -- and a line that **pins the
+unsupported set to empty**, because an empty set read off a list is indistinguishable from a
+list nobody filled in.
+
+### The interference finding 163 described, reproduced this round by accident
+
+The suite was run **beside** the mutation battery and came back with two red `loki.test.ts`
+tests -- exact-string assertions in a file this round never touched, neither reproducing in
+isolation. The battery carries **12 injections whose subject is `loki.ts`**, so a suite
+running beside it imports a **mutated** module, and by the time anyone looks `git status` is
+clean because the battery has restored it. The trace on disk mid-run was
+`packages/core/src/ingest/kubernetes.ts` showing as modified while the run was in flight.
+
+Finding 163 recorded this for a battery rewriting a *gate script another test spawns*; this is
+the same shape one step further in, for **any source file another test imports**. The remedy
+is a process one: **do not run a battery and a suite at once**, and when a red test appears in
+an untouched file, the first hypothesis is the battery rather than the file.
+
+### Verified (Pass 44)
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **139 files, 3683 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **142 files, 3856 tests passed** (as of this commit) |
+| coverage — core | **99.97 / 99.93 / 100 / 99.97** (stmts / branch / funcs / lines) |
+| coverage — cli | **100 / 100 / 100 / 100** |
+| coverage — `src/ingest/clickhouse.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
+| `clickhouse.test.ts` | 42 tests: the request with both settings pinned, the credentials-in-headers rule, the zone guard with its control, the unit arithmetic beside the double's reading, every quarantine and envelope branch, every refused type, the truncation |
+| `backend-support.test.ts` | 15 tests, driving **six** implemented backends through one routed fixture |
+| backend-support battery | **83 caught / 0 survived / 0 inert / 0 misattributed** (24 new injections) |
+| driven against a real server | `ClickHouse 24.3.4.147` on `127.0.0.1:8123`; the instants agree with `toUnixTimestamp64Milli` |
+| guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix twice -- once for the stale row and once for the duplicate it left behind |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
+
+### Open
+
+- **No reader has a CLI command.** Six readers are reachable through the package entry point
+  and the registry, and none through `rca-bench`. `[open: this is now the largest asymmetry
+  left in P1-5 -- the registry can be driven by a test but not by a user, so the six rows
+  describe capability rather than an available operation, and closing it is a CLI surface
+  decision rather than another puller]`
+- **The ClickHouse statement is not validated.** The reader does not parse SQL, so it cannot
+  tell a `SELECT` from a `DROP` and relies on the account being read-only. `[open: stated in
+  the module rather than implied; a read-only account is the mitigation and it is the
+  caller's to configure]`

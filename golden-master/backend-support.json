@@ -23,8 +23,8 @@
     },
     {
       "id": "clickhouse",
-      "status": "unsupported",
-      "reason": "the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped"
+      "status": "implemented",
+      "summary": "HTTP JSON API: POST / with the statement in the body, read as a JSON envelope whose meta block types the declared timestamp, message and service columns"
     },
     {
       "id": "kubernetes",

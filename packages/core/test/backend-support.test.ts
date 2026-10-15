@@ -141,14 +141,34 @@ async function serveBackends(): Promise<string> {
       },
     ],
   });
+  // The shape a statement answers in: a JSON envelope whose `meta` block types every
+  // column, which is what lets this reader check a declaration instead of believing it.
+  const envelope = {
+    meta: [
+      { name: 'ts', type: 'DateTime64(3)' },
+      { name: 'service_name', type: 'LowCardinality(String)' },
+      { name: 'body', type: 'String' },
+    ],
+    data: [{ ts: '2023-11-14T22:13:20.123Z', service_name: 'payments', body: 'upstream 10.20.30.40 refused' }],
+    rows: 1,
+    statistics: { elapsed: 0.001, rows_read: 1, bytes_read: 64 },
+  };
   const server = createServer((req, res) => {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    const url = req.url ?? '';
-    if (url.startsWith('/api/traces')) res.end(traces);
-    else if (url.startsWith('/loki/api/v1/query_range')) res.end(streams);
-    else if (url.includes('/_search')) res.end(hits);
-    else if (url.includes('/events')) res.end(events);
-    else res.end(matrix);
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      const url = req.url ?? '';
+      const body = Buffer.concat(chunks).toString('utf8');
+      // ClickHouse is routed on the statement rather than the path, because its
+      // endpoint is the root: the statement is what says which query this is.
+      if (body.includes('FROM otel_logs')) res.end(JSON.stringify(envelope));
+      else if (url.startsWith('/api/traces')) res.end(traces);
+      else if (url.startsWith('/loki/api/v1/query_range')) res.end(streams);
+      else if (url.includes('/_search')) res.end(hits);
+      else if (url.includes('/events')) res.end(events);
+      else res.end(matrix);
+    });
   });
   await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   const address = server.address();
@@ -244,11 +264,21 @@ const DRIVERS: Record<T2BackendId, (baseUrl: string) => Promise<number>> = {
     if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
     return result.signals.length;
   },
-  // The one below is declared unsupported, so it has no driver on purpose. A
-  // driver for an unsupported backend would be the very claim this file refuses to
-  // let the registry make.
-  clickhouse: async () => {
-    throw new Error('clickhouse is declared unsupported and must not have a driver');
+  clickhouse: async (baseUrl) => {
+    const entry = backendEntry('clickhouse');
+    if (entry === null) throw new Error('clickhouse is declared implemented and has no entry');
+    const result = await entry({
+      baseUrl,
+      // The statement is free and the declaration is what keeps the result typed: the
+      // registry's reason treated a caller-written statement as the obstacle, and it
+      // is the interface.
+      query: 'SELECT ts, service_name, body FROM otel_logs ORDER BY ts LIMIT 20',
+      columns: { timestamp: 'ts', message: 'body', service: 'service_name' },
+      limit: 20,
+      user: 'default',
+    });
+    if (!result.ok) throw new Error(`the pull failed: ${result.error}`);
+    return result.signals.length;
   },
 };
 
@@ -275,23 +305,43 @@ describe('the T2 backend registry', () => {
     }
   });
 
-  it('makes "unsupported" carry a reason long enough to be one', () => {
-    const unsupported = T2_BACKENDS.filter((b) => b.status === 'unsupported');
-    expect(unsupported.length).toBeGreaterThan(0);
-    for (const backend of unsupported) {
-      expect(
-        backend.reason.length,
-        `${backend.id}'s reason is too short: "not implemented yet" reads the same whether the ` +
-          `work is a week or impossible, which is what a reason is for`,
-      ).toBeGreaterThanOrEqual(40);
+  it('pairs each status with the fields that status requires, in both directions', () => {
+    // Both directions, so a row cannot carry the vocabulary of the state it is not in:
+    // an `unsupported` row with an `entry` is a reader this file refuses to let the
+    // registry deny, and an `implemented` row with a `reason` is a doubt that was left
+    // behind after the reader answered it.
+    for (const backend of T2_BACKENDS) {
+      if (backend.status === 'implemented') {
+        expect(backend.reason, `${backend.id} is implemented and still carries a reason`).toBeUndefined();
+      } else {
+        expect(
+          (backend as { reason: string }).reason.length,
+          `${backend.id}'s reason is too short: "not implemented yet" reads the same whether the ` +
+            `work is a week or impossible, which is what a reason is for`,
+        ).toBeGreaterThanOrEqual(40);
+        expect(
+          (backend as { entry?: unknown }).entry,
+          `${backend.id} is unsupported and has an entry, so the registry denies a reader it has`,
+        ).toBeUndefined();
+      }
     }
+    const reasons = T2_BACKENDS.filter((b) => b.status === 'unsupported').map((b) => b.reason);
+    expect(
+      new Set(reasons).size,
+      'two unsupported backends share a reason, so one of the two was never justified',
+    ).toBe(reasons.length);
   });
 
-  it('refuses two backends that share one reason', () => {
-    const reasons = T2_BACKENDS.filter((b) => b.status === 'unsupported').map((b) => b.reason);
-    expect(new Set(reasons).size, 'two unsupported backends share a reason, so one was never justified').toBe(
-      reasons.length,
-    );
+  it('states which of the two states the registry is in, rather than leaving it to be read off', () => {
+    // Finding 167 closed the last row, so the set below is empty -- and an empty set
+    // read off a list is indistinguishable from a set nobody filled in. This line is
+    // the claim: every one of the six has been pointed at a wire format. Flipping any
+    // row back means editing this line and writing a reason of substance, which is the
+    // point -- the state change costs a deliberate edit rather than a silent delete.
+    const implemented = T2_BACKENDS.filter((b) => b.status === 'implemented');
+    const unsupported = T2_BACKENDS.filter((b) => b.status === 'unsupported');
+    expect(implemented.length + unsupported.length).toBe(T2_BACKEND_IDS.length);
+    expect(unsupported.map((b) => b.id)).toEqual([]);
   });
 
   // Upward: the published snapshot is what the cold-tree job and the document

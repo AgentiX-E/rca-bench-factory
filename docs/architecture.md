@@ -247,20 +247,29 @@ drives every backend the table calls implemented against a real HTTP server. A
 matrix that cannot fail is a paragraph with a table drawn around it, and this
 repository has already shipped four of those (findings 107, 108, 109 and 114).
 
-The implemented paths are *pulls*: telemetry is fetched over HTTP, from a documented
-JSON API. What differs between them is how far the claim has been tested: the
-Prometheus reader was pointed at a real server (finding 154, version 2.45.3), and the
-Jaeger, Loki, Elasticsearch and Kubernetes readers have been driven only against fixtures, in
-`packages/core/test/jaeger.test.ts`, `packages/core/test/loki.test.ts`,
-`packages/core/test/elasticsearch.test.ts` and `packages/core/test/kubernetes.test.ts`.
+All six implemented paths are *pulls*: telemetry is fetched over HTTP, from a documented
+JSON API. What differs between them is how far the claim has been tested. Two have been
+pointed at a real deployment -- Prometheus (finding 154, version 2.45.3) and ClickHouse
+(finding 167, version 24.3.4.147, where the reader's instants were checked against the
+server's own `toUnixTimestamp64Milli`) -- and the other four, Jaeger, Loki, Elasticsearch
+and Kubernetes, have been driven only against fixtures, in `packages/core/test/jaeger.test.ts`,
+`packages/core/test/loki.test.ts`, `packages/core/test/elasticsearch.test.ts` and
+`packages/core/test/kubernetes.test.ts`.
 That difference is written down rather than blurred, because "reads the documented
 wire format" and "was answered by a deployment" are different measurements. The other two
 ingest paths here read what a caller already has -- `ingest/file.ts` for files,
 `ingest/otlp.ts` for posted OTLP payloads -- which is why every row names a wire
-format rather than a product. The one unsupported row names what the format
-requires and this repository does not have, because "not implemented yet" reads
-the same whether the work is a week or impossible, and an entry that cannot be
-re-examined is the entry this campaign keeps finding.
+format rather than a product.
+
+**No row reads `unsupported` any more**, and that is a claim the registry states rather than
+leaves to be read off a list: `backend-support.test.ts` pins the unsupported set to empty, so
+flipping a row back costs a deliberate edit and a reason of substance. Four of the six rows
+carried reasons whose clauses turned out to be *the interface* -- a label the caller must
+name (Loki, finding 161), a field mapping the caller supplies (Elasticsearch, finding 164),
+credentials plus a translation table (Kubernetes, finding 165, where the table turned out not
+to be needed at all), and finally an argument rather than a claim (ClickHouse, finding 167).
+That history is the reason this matrix exists in this form: a reason is worth re-reading
+rather than trusting, and twice the re-reading did not go the way the reading rule predicted.
 
 | backend | status | description |
 | --- | --- | --- |
@@ -268,22 +277,31 @@ re-examined is the entry this campaign keeps finding.
 | `jaeger` | implemented | HTTP JSON API: GET /api/traces, read as a list of traces whose spans carry hex ids |
 | `loki` | implemented | HTTP JSON API: GET /loki/api/v1/query_range, read as streams of [ns-timestamp, line] pairs whose service label the caller names |
 | `elasticsearch` | implemented | HTTP JSON API: POST /{index}/_search, read as hits whose timestamp, message and service fields -- and the timestamp encoding -- the caller declares |
-| `clickhouse` | unsupported | the ClickHouse HTTP interface executes a SQL statement the caller writes and returns it in whichever format was asked for, so supporting it means either fixing a schema this project does not own or accepting arbitrary SQL -- the second of which would make the ingest path untyped |
+| `clickhouse` | implemented | HTTP JSON API: POST / with the statement in the body, read as a JSON envelope whose meta block types the declared timestamp, message and service columns |
 | `kubernetes` | implemented | HTTP JSON API: GET /api/v1/events, read as EventList items mapped onto the IR event payload, with the service named by the caller |
 
-Three rows read `unsupported` until recently, each with a reason that was true about the
+Four rows read `unsupported` until recently, each with a reason that was true about the
 wire format and wrong about what followed from it. The `loki` row (finding 161) said the
 service is a label the caller must name; the `elasticsearch` row (finding 164) said a reader
 "would need a field mapping supplied by the caller before it could read anything at all";
 the `kubernetes` row (finding 165) said the reader would need credentials and "a translation
-table". All three are statements about the interface, so those arguments are required and
-none is defaulted -- and one clause in the last of them turned out not to be needed at all:
-the IR's event payload already carries `involvedObject` in the shape the API writes it, so
-there was no translation to perform, and the one thing that reason got right is that an
-event about a pod does not name a service. The Elasticsearch reader takes one decision more
-than its reason named, because three declared field names can still arrive in two shapes:
-the field's own format decides whether a `date` is an ISO-8601 string or epoch
-milliseconds.
+table"; the `clickhouse` row (finding 167) said supporting the backend means "either fixing a
+schema this project does not own or accepting arbitrary SQL". The first three are statements
+about the interface, so those arguments are required and none is defaulted -- and one clause
+in the third turned out not to be needed at all: the IR's event payload already carries
+`involvedObject` in the shape the API writes it, so there was no translation to perform.
+
+The fourth is a different shape, and it is the one that gives this paragraph its last
+sentence. It is an argument with two horns rather than a claim about what a caller would
+supply, and both horns are real. What it did not account for is that ClickHouse *types the
+result it returns*: the JSON envelope carries a `meta` block giving every column's own type,
+so a caller-written statement does not produce an untyped ingest path -- the declaration is
+checked against the backend rather than believed. **The Elasticsearch reader takes one
+decision more than its reason named**, because three declared field names can still arrive in
+two shapes: the field's own format decides whether a `date` is an ISO-8601 string or epoch
+milliseconds. **The ClickHouse reader is the first that can verify that decision**: the same
+three names arrive with their types attached, so a declaration that contradicts the backend
+is refused by name before a row is read.
 
 Nothing above is a promise about a hosted service. `prometheus` means the query
 API a Prometheus or a Prometheus-compatible endpoint answers at
