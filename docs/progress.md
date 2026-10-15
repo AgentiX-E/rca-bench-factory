@@ -4442,6 +4442,15 @@ The two injections were **retargeted rather than deleted**, each keeping what it
 now makes the section-scoped comparison loose (`Set.has` -> a `startsWith` scan), and CLIREF 4
 removes direction one's failure push as it now stands.
 
+### One failure that could not be reproduced, recorded rather than dismissed
+
+One invocation of `pnpm docs:counts:check` in this pass failed with `ELIFECYCLE Command failed
+with exit code 1` while the suite was green immediately before and after; two later runs of the
+same command passed, and the coverage run in the same sequence reported 139 files / 3686 tests.
+Its diagnostic is **not** in the record because my own capture piped through `tail -2` and kept
+pnpm's wrapper line instead of what the check printed. Written down rather than called flake:
+"it passed the next time" is not evidence about a check whose output nobody kept.
+
 ### Verified (Pass 46)
 
 | gate | result |

@@ -17340,6 +17340,19 @@ The two injections were **retargeted rather than deleted**, keeping what each pr
 | the anchor control | an anchor that cannot exist is reported missing **and named**; without the name in the message the control fails, which is how the pair branch's message was fixed |
 | the row shapes it had to fit | four different ones across seven batteries: `(name, subject, test, callable, witness)`, `(name, target, anchor, replacement, test, witness)`, `(name, anchor, replacement, witness)` with a module-level subject, and a battery that keeps its own inline loop and did not import the shared module at all |
 
+### One run that failed and could not be reproduced, recorded rather than dismissed
+
+While the thirteen batteries were being run end to end, one invocation of
+`pnpm docs:counts:check` failed -- `ELIFECYCLE Command failed with exit code 1`, with the
+suite otherwise green immediately before and after. Two subsequent runs of the same command
+passed, and the coverage run in the same sequence reported 139 files and 3686 tests passing.
+
+**Its diagnostic is not in this record, and that is a measurement error of mine rather than of
+the check**: the command that captured it piped through `tail -2`, which kept pnpm's wrapper
+line and discarded whatever the check had actually printed. The failure is written down here
+instead of being called flake, because "it passed the second time" is not evidence about a
+check whose output nobody kept -- which is the same defect this finding is about, one level up.
+
 ### What this says about the method
 
 Finding 157 made a renamed **witness** fail locally by turning the reconciliation into a mode,
