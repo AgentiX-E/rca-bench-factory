@@ -204,6 +204,7 @@ const DOCUMENTED_EXPORT_TARGETS = [
  * `COMMAND_SPECS` entry.
  */
 const DOCUMENTED_HELP_TOPICS = [
+  'pull',
   'source',
   'ingest',
   'transform',

@@ -199,6 +199,23 @@ export function findBackend(id: string): T2Backend | undefined {
 }
 
 /**
+ * The backends this repository can actually pull from, in registry order.
+ *
+ * Derived rather than restated, and that is the whole point: `rca-bench pull`'s
+ * `--backend` accepts this list and nothing else, so a row that changes from
+ * `implemented` to `unsupported` leaves the command without anybody editing the
+ * command. The opposite convention -- a second literal listing the six ids --
+ * is the shape this campaign has recorded repeatedly (findings 107-109): two
+ * lists over one question, which agree until one of them is updated.
+ *
+ * `packages/core/test/pull-cli.test.ts` holds `pull`'s table to this one in both
+ * directions, so the derivation is a guard rather than a comment.
+ */
+export const T2_IMPLEMENTED_BACKEND_IDS: readonly T2BackendId[] = T2_BACKENDS.filter(
+  (backend): backend is T2BackendImplemented => backend.status === 'implemented',
+).map((backend) => backend.id);
+
+/**
  * The entry point for a backend, or `null` when there is not one.
  *
  * The single dispatch point, so a caller does not have to know which backend is

@@ -17369,3 +17369,83 @@ The second-order point is about where verification happens. The batteries run in
 `pnpm test`, so a change to a gate script is verified by the *suite* only to the extent the
 suite reads that script. Moving the anchor check into the mode the suite already drives is what
 turned a **111-second runner-only failure** into a **tenth-of-a-second local one**.
+
+## Finding 170 — six readers behind one command, and the premise the compiler disproved
+
+### Three kinds of "reachable", and only the last one is a user
+
+The registry's six `implemented` rows were reachable **from a test** and **from the package
+entry point**, and from nothing a user could type. Those are not the same claim, and the
+difference is the defect this finding is about: a table of implemented readers that no operator
+can drive describes a **capability**, not an available operation.
+
+The two enumerations had never been tied together. Nothing failed when a backend was added to
+`T2_BACKENDS` without a way to invoke it, because nothing read both lists. `rca-bench pull
+--backend <id>` closes that, and the tie it makes is a **derivation**: `PULL_BACKEND_IDS` *is*
+`T2_IMPLEMENTED_BACKEND_IDS`, which *is* `T2_BACKENDS` filtered to `implemented`. A row that
+changes status leaves the command without anybody editing the command.
+
+### The premise that was false, and who said so
+
+The implementation began from a premise held without being read: that the six readers' results
+are the same shape, so one renderer could serve all six. Measured, they agree on three fields --
+`ok`, `signals`, `quarantine` -- and split three ways on the fourth:
+
+| field | readers |
+| --- | --- |
+| `warnings` | Prometheus, Jaeger, Loki |
+| `partial` + `total` | Elasticsearch |
+| `page` | ClickHouse, Kubernetes |
+
+**What caught it was `pnpm typecheck`, not a test.** The first `reportPull` took a common
+supertype whose `ok: true` arm required `warnings`; the compiler refused three of the six
+results, and the refusal named the missing field on each. The alternative -- satisfying the
+shared type by defaulting `warnings` to `[]` -- would have written a field into ClickHouse's and
+Kubernetes's documents that their readers never produced, which is the failure mode this
+campaign has recorded repeatedly: a value asserted into existence to make two things look alike.
+
+> **A premise about six modules is one `grep` away from being measured.** This one cost a
+> rewrite of the renderer that a single read of the three result types would have prevented, and
+> the compiler was the thing that measured it.
+
+### An exemption whose reason had stopped being true
+
+`acceptance.md` excused `parseInteger`'s `Number.isSafeInteger` test as redundant "within every
+range the CLI currently declares", on the ground that an unsafe integer is nine orders of
+magnitude outside `0..86400000`. Three new flags declare `1..Number.MAX_SAFE_INTEGER`, where the
+redundancy still holds -- `n > 2^53 - 1` is the same bound the range test applies -- but that is
+**not the reason given**, and a written reason that is no longer the reason for its conclusion
+is exactly the class of stale record this campaign keeps finding. The entry now states both
+cases.
+
+The same pass produced the counter-example that shows the distinction is real: `pullInstant` has
+no range beside it, so `Number.isSafeInteger` there is the entire bound and is load-bearing --
+the first check in the CLI for which the test is not redundant.
+
+### One run that failed and could not be reproduced, with its diagnostic
+
+While three guard tests were being repaired, one invocation of `vitest run` over two test files
+reported **four failures** in `vocabulary-single-source.test.ts`, every one of them inside
+`aiopsFilesWith` -- a pure function of `exportAioPs2025(validBundle())` with no IO, called from
+a test that had passed immediately before. Six later runs of the same two files (serial, and
+deliberately in parallel with the gate that had been running at the time) passed, and the full
+139-file suite passed on its next attempt.
+
+Recorded rather than dismissed, and this time with the diagnostic rather than without it --
+finding 169's unreproduced failure is in the record precisely because its output was thrown away.
+Four red tests are evidence; the honest statement about them is what they said and that they did
+not recur.
+
+### What this says about the method
+
+The batteries are the mechanism this repository uses to make a mechanism's *failure* observable,
+and this pass added no new one: `pull`'s correctness is held by ordinary tests that drive six
+real sockets, plus a derivation that makes an eighth backend a compile error. What the pass
+tests is a different question -- whether a **premise** was measured before it was built on. Two
+of the three measurements it needed (`Date.parse('1700000000')` is `Invalid Date`; only two of
+the six readers had a named re-export) were findings about the code being called, and neither
+would have surfaced from reading the command's own requirements.
+
+> **The reader a command is built on is as much a subject of measurement as the command.** A
+> CLI is mostly a description of somebody else's interface, and every assumption about that
+> interface is a candidate for the kind of check this repository already applies to its own.

@@ -4078,11 +4078,12 @@ answered by a deployment.
   API).~~ **Closed by finding 165** for the Kubernetes half: the credentials are a required
   argument and the "translation table" was never needed, because the IR's event payload
   already carries `involvedObject`. The reason for the other half is carried forward below.
-- **The ClickHouse row still carries a written reason and no reader.** `[open: the rule this pass wrote down -- when a reason ends in "the caller would
-  have to supply X", X is the interface -- now has two instances behind it, and the
-  Kubernetes row names two things a caller would supply (credentials and a translation
-  table), so it is the next one to read; ClickHouse's row names a schema this project
-  does not own, which is the first reason in the set that may survive being rewritten]`
+- ~~**The ClickHouse row still carries a written reason and no reader.**~~ **Closed by finding
+  167** in the very next pass, which read the reason and found it an *argument* rather than an
+  obstacle. Noticed two passes later, while pass 47 was closing its own entry: the next pass's
+  `### Open` said the row was closed while this one still said it was open. That is the limit
+  `check-open-list.mjs` states about itself -- it can refuse an entry that *says* nothing, and it
+  cannot refuse one that says the wrong thing.
 
 ## Pass 43 — the third reason whose clauses were the interface, and the one that needed no interface at all
 
@@ -4299,11 +4300,9 @@ an untouched file, the first hypothesis is the battery rather than the file.
 
 ### Open
 
-- **No reader has a CLI command.** Six readers are reachable through the package entry point
-  and the registry, and none through `rca-bench`. `[open: this is now the largest asymmetry
-  left in P1-5 -- the registry can be driven by a test but not by a user, so the six rows
-  describe capability rather than an available operation, and closing it is a CLI surface
-  decision rather than another puller]`
+- ~~**No reader has a CLI command.**~~ **Closed by finding 170**: `rca-bench pull --backend
+  <id>` reads any of the six, and the command's backend table *is* the registry's `implemented`
+  set rather than a second list that agrees with it.
 - **The ClickHouse statement is not validated.** The reader does not parse SQL, so it cannot
   tell a `SELECT` from a `DROP` and relies on the account being read-only. `[open: stated in
   the module rather than implied; a read-only account is the mitigation and it is the
@@ -4369,9 +4368,9 @@ hunt that finds nothing is a result.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **139 files, 3686 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **142 files, 3859 tests passed** (as of this commit) |
+| `core` test suite | **139 files, 3686 tests passed** (as of `63f703f7a`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `63f703f7a`) |
+| repo test suite | **142 files, 3859 tests passed** (as of `63f703f7a`) |
 | the reference gate's own tests | **9 tests** (6 before): the drift report, the two directions section-scoping added, and the new "no section of its own" state |
 | the shipped reference, before / after | **8 disagreements** reported, then `CLI reference check PASSED (11 commands, 13 documented)` |
 | the fixture that had to change | `referenceFor(..., { flags: false })` wrote **no sections**; once sections became the subject it exercised the "no section" branch instead of the one it names. It now writes a section per command with no flags in it |
@@ -4379,12 +4378,10 @@ hunt that finds nothing is a result.
 
 ### Open
 
-- **The CLI still cannot drive any of the six T2 readers.** The registry's `implemented` rows are
-  reachable from a test and from the package entry point, and from nothing a user can type -- so
-  the six rows describe a **capability**, not an available operation, and nothing in the
-  repository ties the two enumerations together. `[open: this is the next step and it is a CLI
-  surface decision rather than another puller -- a pull command whose backend table is held equal
-  to the registry's implemented set, so the tie is a guard rather than a convention]`
+- ~~**The CLI still cannot drive any of the six T2 readers.**~~ **Closed by finding 170**, which
+  built the command this paragraph asked for: `rca-bench pull --backend <id>`, whose backend
+  table is derived from the registry's `implemented` set and held to it in both directions by a
+  test -- the tie as a guard, which is what this entry named as the requirement.
 
 ## Pass 46 — the cheap check verified the witness and not the anchor
 
@@ -4458,15 +4455,121 @@ pnpm's wrapper line instead of what the check printed. Written down rather than 
 | the battery that failed | **24 caught, 0 survived, 0 inert, 0 unparseable, 0 unattributed, 1 redundant (expected)**, rc=0 |
 | every battery's reconciliation | `gate-tests-battery` 28, `doc-counts-shapes` 12, `backend-support` 83, `roundtrip-record` 25, `fault-extraction-scoring` 12, `fault-extraction-workflow` 9, `fetch-official-retry` 5 -- all **OK with the comparator probed** |
 | the full battery set, locally | run end to end in one pass rather than trusting CI to be the first place they all run |
-| `core` test suite | **139 files, 3686 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **142 files, 3859 tests passed** (as of this commit) |
+| `core` test suite | **139 files, 3686 tests passed** (as of `a81beb522`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `a81beb522`) |
+| repo test suite | **142 files, 3859 tests passed** (as of `a81beb522`) |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
 
 ### Open
 
-- **The CLI still cannot drive any of the six T2 readers.** Unchanged from pass 45: the registry's
-  `implemented` rows are reachable from a test and from the package entry point, and from nothing
-  a user can type. `[open: the next step, and it is a CLI surface decision rather than another
-  puller -- a pull command whose backend table is held equal to the registry's implemented set,
-  so the tie is a guard rather than a convention]`
+- ~~**The CLI still cannot drive any of the six T2 readers.**~~ **Closed by finding 170.** The next
+  pass built the command; `packages/cli/test/pull.test.ts` drives all six through `argv` against a
+  real HTTP server, so the six rows are now an operation rather than a capability.
+
+## Pass 47 — the command the six readers did not have, and the three ways they differ
+
+### What was missing, in this list's own words
+
+The registry's six `implemented` rows were reachable from a test and from the package entry
+point, and from nothing a user could type. The entry said what closing it required: *"a pull
+command whose backend table is held equal to the registry's implemented set, so the tie is a
+guard rather than a convention"*. That is `rca-bench pull`.
+
+### The shape, and why it is one command rather than six
+
+`pull --backend <id>` carries the **union** of the six readers' options and lets `--backend`
+decide which part is legal, the same shape `evolve` gives its four actions. `--token` at a
+Prometheus backend is refused rather than ignored, because a silently dropped flag is a
+configuration the caller believes took effect.
+
+The tie is a derivation, not a copy: `PULL_BACKEND_IDS` **is**
+`T2_IMPLEMENTED_BACKEND_IDS`, which is `T2_BACKENDS` filtered to `implemented`. A row that
+changes status leaves the command without anybody editing the command.
+
+| what holds the tie | how |
+| --- | --- |
+| the backend table | `pull-cli.test.ts` asserts `PULL_BACKEND_IDS` equals the registry's `implemented` ids, in the registry's order |
+| the flag table | `PULL_BACKEND_FLAGS` is a `satisfies Record<T2BackendId, …>`, so a seventh backend fails `typecheck` on its missing row |
+| the dispatch | a named `case 'kubernetes'` rather than a `default`, so a seventh backend fails there too (TS2366) instead of being parsed as Kubernetes |
+| the *ability*, not the claim | `packages/cli/test/pull.test.ts` drives all six through `argv` against a real HTTP server; a backend that is implemented and unreachable from the command line fails there |
+
+### A premise the compiler disproved before any test ran
+
+The implementation began from "the six readers' results are the same shape". They are not, and
+`pnpm typecheck` said so. The six agree on three fields -- `ok`, `signals`, `quarantine` -- and
+split three ways on the fourth:
+
+| field | readers |
+| --- | --- |
+| `warnings` | Prometheus, Jaeger, Loki |
+| `partial` + `total` | Elasticsearch |
+| `page` | ClickHouse, Kubernetes |
+
+Three different questions, so the renderer takes only the common part and each case contributes
+its own reader's facts as `notes`. The first draft required `warnings` of every result, which
+would have made ClickHouse and Kubernetes **invent** an empty one to satisfy a shared type -- a
+field two readers never produced, asserted into existence by the command that reads them.
+
+### Three measurements the command needed
+
+1. **`Date.parse('1700000000')` is `Invalid Date`.** The readers document `start` as
+   `number | string | Date`, and a `number` means epoch seconds. A CLI that passed the text
+   through would refuse the very encoding the reader documents, so the integer form is
+   recognised at the flag layer, where the flag name is known.
+2. **`--start -1` needs the `=` form**: `node:parseArgs` reads a bare `-1` after an option as
+   another option and answers "argument is ambiguous". Recorded as the spelling to type rather
+   than papered over.
+3. **Only two of the six readers had a named re-export.** `pullPrometheusMetrics` and
+   `pullJaegerTraces` were in `index.ts`; the other four were reachable *only* as a registry
+   `entry`. Enough for a test, not enough for a `switch`: `backendEntry(id)` returns the union
+   of six signatures, so a caller that has already narrowed `id` still has to narrow again to
+   call it. The four are re-exported by name now, which is what makes the dispatch compile.
+
+### One failure that could not be reproduced, with its diagnostic
+
+While the three guard tests were being repaired, one run of two test files reported **four
+failures** in `vocabulary-single-source.test.ts`, all inside `aiopsFilesWith` -- a pure function
+of `exportAioPs2025(validBundle())` with no IO. Six later runs of the same two files (serial,
+and in parallel with `check-cli-reference.mjs`) passed, and the full suite passed on the next
+attempt. Written down rather than called flake: four red tests are evidence, and the only
+honest statement about them is what they said and that they did not recur.
+
+### An exemption this pass moved, rather than left standing
+
+`acceptance.md` excused `parseInteger`'s `Number.isSafeInteger` test as "provably redundant
+**within every range the CLI currently declares**", on the ground that an unsafe integer is nine
+orders of magnitude outside `0..86400000`. `--limit`, `--size` and `--timeout-ms` declare
+`1..Number.MAX_SAFE_INTEGER`, where that is not the reason. The redundancy survives -- `n >
+2^53 - 1` is the same bound the range test applies -- but the stated reason does not, so the
+entry was rewritten to the one that is true of both ranges. `pullInstant` is the one check that
+is **not** redundant: it has no range beside it, and `Number.isSafeInteger` is the whole of the
+bound.
+
+### Verified (Pass 47)
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **140 files, 3747 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **144 files, 3933 tests passed** (as of this commit) |
+| coverage — core | **99.97 / 99.93 / 100 / 99.97** (unchanged from pass 46) |
+| coverage — cli | **100 / 100 / 100 / 100** |
+| coverage — `src/ingest/backends.ts` | **100 / 100 / 100 / 100** |
+| the `pull` parser's own tests | **60 tests**: the table derivation both ways, per-backend flag legality, every required flag dropped one at a time, the epoch/ISO/JSON/enum conversions and their refusals |
+| the `pull` runner's own tests | **13 tests**: all six backends driven through `argv` against a real HTTP server, the document's shape per backend, the three kinds of note, and the four ways it fails |
+| the full battery set, locally | run end to end in one pass: **13 batteries, rc=0, 0 survived, 0 inert, 0 misattributed** |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
+| the guards that refused the change first | `check-cli-reference` (the reference had no `pull` section), `vocabulary-single-source` (the documented command list was 11), `export-surface-enumerated` (two new names) |
+
+### Open
+
+- **The reference's per-backend table is prose beside a generated help.** The flag *set* is
+  compared in both directions by `check-cli-reference.mjs`, so a flag cannot drift out of the
+  document; the table of which backend needs which flag is a copy of `PULL_BACKEND_FLAGS` and
+  nothing reads it. `[open: holding a Markdown table to a `Record` needs a guard that reads the
+  table by shape, which is a tool this repository does not yet have -- worth building, and not
+  what this pass was for]`
+- **No reader is driven against a real deployment by CI.** The fixture server answers all six
+  shapes faithfully, but it is this repository's reading of six APIs rather than the APIs.
+  `[open: the asymmetry pass 44 recorded for ClickHouse alone, now true of five more -- a real
+  deployment is what would turn a reader from "answers our fixture" into "answers the backend"]`

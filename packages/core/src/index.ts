@@ -281,7 +281,13 @@ export type {
   JsonlParseResult,
 } from './ingest/file.js';
 
-export { backendEntry, findBackend, T2_BACKENDS, T2_BACKEND_IDS } from './ingest/backends.js';
+export {
+  backendEntry,
+  findBackend,
+  T2_BACKENDS,
+  T2_BACKEND_IDS,
+  T2_IMPLEMENTED_BACKEND_IDS,
+} from './ingest/backends.js';
 export type {
   T2Backend,
   T2BackendEntry,
@@ -305,6 +311,67 @@ export {
   type JaegerPullResult,
   type JaegerQuarantineRecord,
 } from './ingest/jaeger.js';
+
+// The remaining four readers, re-exported by name.
+//
+// Until `pull` was added only Prometheus and Jaeger had a named re-export here,
+// and the other four were reachable *only* through the registry's `entry` field.
+// That was enough for a test and not enough for the CLI: `backendEntry(id)`'s
+// return type is the union of six signatures, so a caller that has already
+// narrowed `id` still has to narrow again to call it. Naming them is what lets
+// `runPull` dispatch on the backend and hand each reader its own options.
+export { LOKI_DIRECTIONS, LOKI_DEFAULT_TIMEOUT_MS, LOKI_QUERY_RANGE_PATH, pullLokiLogs } from './ingest/loki.js';
+export type {
+  LokiDirection,
+  LokiPullOptions,
+  LokiPullResult,
+  LokiQuarantineRecord,
+} from './ingest/loki.js';
+
+export {
+  ELASTICSEARCH_DEFAULT_TIMEOUT_MS,
+  ELASTICSEARCH_SEARCH_PATH,
+  ELASTICSEARCH_SORT_DIRECTIONS,
+  ELASTICSEARCH_TIMESTAMP_FORMATS,
+  pullElasticsearchLogs,
+} from './ingest/elasticsearch.js';
+export type {
+  ElasticsearchFieldMapping,
+  ElasticsearchPullOptions,
+  ElasticsearchPullResult,
+  ElasticsearchQuarantineRecord,
+  ElasticsearchSortDirection,
+  ElasticsearchTimestampFormat,
+  ElasticsearchTotal,
+} from './ingest/elasticsearch.js';
+
+export {
+  CLICKHOUSE_DEFAULT_TIMEOUT_MS,
+  CLICKHOUSE_TIMESTAMP_UNITS,
+  pullClickHouseLogs,
+} from './ingest/clickhouse.js';
+export type {
+  ClickHousePage,
+  ClickHousePullOptions,
+  ClickHousePullResult,
+  ClickHouseQuarantineRecord,
+  ClickHouseTimestampUnit,
+} from './ingest/clickhouse.js';
+
+export {
+  KUBERNETES_DEFAULT_TIMEOUT_MS,
+  KUBERNETES_EVENTS_PATH,
+  KUBERNETES_TIMESTAMP_FIELDS,
+  pullKubernetesEvents,
+} from './ingest/kubernetes.js';
+export type {
+  KubernetesPage,
+  KubernetesPullOptions,
+  KubernetesPullResult,
+  KubernetesQuarantineRecord,
+  KubernetesTimestampField,
+} from './ingest/kubernetes.js';
+
 export { ingestOtlpLogs, ingestOtlpMetrics, ingestOtlpTraces } from './ingest/otlp.js';
 export type { OtlpIngestOptions, OtlpIngestResult, OtlpQuarantineRecord } from './ingest/otlp.js';
 
@@ -426,8 +493,15 @@ export {
   formatVersion,
   HELP_TOPICS,
   parseCliArgs,
+  PULL_BACKEND_IDS,
 } from './cli/args.js';
-export type { CliCommand, CliParseResult, EvolveAction, ExportTarget } from './cli/args.js';
+export type {
+  CliCommand,
+  CliParseResult,
+  EvolveAction,
+  ExportTarget,
+  PullCommand,
+} from './cli/args.js';
 
 export {
   buildRulegenPrompt,

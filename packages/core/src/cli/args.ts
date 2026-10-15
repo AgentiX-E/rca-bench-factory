@@ -1,6 +1,17 @@
 import { parseArgs as nodeParseArgs, type ParseArgsConfig } from 'node:util';
+import { T2_IMPLEMENTED_BACKEND_IDS, type T2BackendId } from '../ingest/backends.js';
+import { CLICKHOUSE_TIMESTAMP_UNITS, type ClickHousePullOptions } from '../ingest/clickhouse.js';
+import {
+  ELASTICSEARCH_SORT_DIRECTIONS,
+  ELASTICSEARCH_TIMESTAMP_FORMATS,
+  type ElasticsearchPullOptions,
+} from '../ingest/elasticsearch.js';
 import { FILE_FORMATS, type FileFormat, type FileSignalKind } from '../ingest/file.js';
+import type { JaegerPullOptions } from '../ingest/jaeger.js';
+import { KUBERNETES_TIMESTAMP_FIELDS, type KubernetesPullOptions } from '../ingest/kubernetes.js';
+import { LOKI_DIRECTIONS, type LokiPullOptions } from '../ingest/loki.js';
 import { PRIME_DATASET_IDS, type PrimeDatasetId } from '../ingest/prime.js';
+import type { PrometheusPullOptions } from '../ingest/prometheus.js';
 import { SIGNAL_KINDS as IR_SIGNAL_KINDS } from '../ir/types.js';
 import { z } from 'zod';
 import type { Entity, EntityEdge, SignalKind } from '../ir/types.js';
@@ -58,9 +69,44 @@ export const EVOLVE_ACTIONS = ['propose', 'approve', 'reject', 'stale'] as const
 /** The `evolve` actions. Derived from `EVOLVE_ACTIONS`. */
 export type EvolveAction = (typeof EVOLVE_ACTIONS)[number];
 
+/**
+ * The backends `pull` accepts, which is the registry's `implemented` set.
+ *
+ * An alias of `T2_IMPLEMENTED_BACKEND_IDS` rather than a second list. Two lists
+ * over one question are the defect this campaign keeps finding (findings
+ * 107-109, and the reason `HELP_TOPICS` is derived from `COMMAND_SPECS`): they
+ * agree until one of them is updated. The registry has two readers -- this
+ * command and `check-backend-support` -- and both derive from it.
+ */
+export const PULL_BACKEND_IDS: readonly T2BackendId[] = T2_IMPLEMENTED_BACKEND_IDS;
+
+/**
+ * `pull` for one backend: the id, and that reader's own options.
+ *
+ * A general shape instantiated six times rather than six interfaces written out,
+ * so the discriminator (`backend`) and the payload (`options`) are visibly tied
+ * together. That tie is what lets `runPull` dispatch with a `switch` and hand
+ * each reader an options object the compiler has already matched to it.
+ */
+type PullCommandFor<Id extends T2BackendId, Options> = {
+  command: 'pull';
+  backend: Id;
+  options: Options;
+  output?: string;
+};
+
+export type PullCommand =
+  | PullCommandFor<'prometheus', PrometheusPullOptions>
+  | PullCommandFor<'jaeger', JaegerPullOptions>
+  | PullCommandFor<'loki', LokiPullOptions>
+  | PullCommandFor<'elasticsearch', ElasticsearchPullOptions>
+  | PullCommandFor<'clickhouse', ClickHousePullOptions>
+  | PullCommandFor<'kubernetes', KubernetesPullOptions>;
+
 export type CliCommand =
   | { command: 'help'; topic?: string }
   | { command: 'version' }
+  | PullCommand
   | {
       command: 'source';
       path: string;
@@ -297,6 +343,104 @@ interface CommandSpec {
  * added to one side alone.
  */
 const COMMAND_SPECS = {
+  pull: {
+    usage: 'rca-bench pull --backend <backend> [options]',
+    description: 'Pull live telemetry from a T2 backend into IR signals.',
+    flags: {
+      backend: {
+        placeholder: `<${PULL_BACKEND_IDS.join('|')}>`,
+        type: 'string',
+        required: true,
+        help: 'Which backend to read from; each accepts a different subset of the options below',
+      },
+      'base-url': {
+        placeholder: '<url>',
+        type: 'string',
+        required: true,
+        help: "Base URL of the backend's API, with or without a trailing slash",
+      },
+      output: { placeholder: '<file>', type: 'string', help: 'Write the pulled signals to a file instead of stdout' },
+      query: {
+        placeholder: '<text>',
+        type: 'string',
+        help: 'PromQL, LogQL or SQL as the backend takes it (prometheus, loki, clickhouse)',
+      },
+      start: {
+        placeholder: '<time>',
+        type: 'string',
+        help: 'Start of the window, epoch seconds or ISO-8601 (required by every backend but kubernetes)',
+      },
+      end: {
+        placeholder: '<time>',
+        type: 'string',
+        help: 'End of the window, same encodings as --start (required by every backend but kubernetes)',
+      },
+      step: { placeholder: '<duration>', type: 'string', help: "Resolution in the backend's own syntax, e.g. 15s (prometheus)" },
+      'service-label': {
+        placeholder: '<label>',
+        type: 'string',
+        help: 'Label whose value is the service name (required by loki; optional for prometheus, default `service`)',
+      },
+      'timeout-ms': { placeholder: '<ms>', type: 'string', help: 'Per-request timeout; optional on every backend' },
+      service: {
+        placeholder: '<name>',
+        type: 'string',
+        help: "The service these signals belong to (required by jaeger and kubernetes)",
+      },
+      limit: {
+        placeholder: '<n>',
+        type: 'string',
+        help: 'Maximum number of records to read (required by jaeger, loki, clickhouse and kubernetes)',
+      },
+      direction: {
+        placeholder: `<${LOKI_DIRECTIONS.join('|')}>`,
+        type: 'string',
+        help: 'Which end of the Loki window the limit keeps (required by loki)',
+      },
+      index: { placeholder: '<pattern>', type: 'string', help: 'Index or index pattern to search (required by elasticsearch)' },
+      size: { placeholder: '<n>', type: 'string', help: 'Maximum number of hits to read (required by elasticsearch)' },
+      'timestamp-format': {
+        placeholder: `<${ELASTICSEARCH_TIMESTAMP_FORMATS.join('|')}>`,
+        type: 'string',
+        help: 'Serialisation of the declared timestamp field (required by elasticsearch)',
+      },
+      'sort-direction': {
+        placeholder: `<${ELASTICSEARCH_SORT_DIRECTIONS.join('|')}>`,
+        type: 'string',
+        help: 'Which end of the Elasticsearch window the size keeps (required by elasticsearch)',
+      },
+      fields: {
+        placeholder: '<json>',
+        type: 'string',
+        help: 'Timestamp, message and service field names as inline JSON (required by elasticsearch)',
+      },
+      columns: {
+        placeholder: '<json>',
+        type: 'string',
+        help: 'Timestamp, message and service column names as inline JSON (required by clickhouse)',
+      },
+      'timestamp-unit': {
+        placeholder: `<${CLICKHOUSE_TIMESTAMP_UNITS.join('|')}>`,
+        type: 'string',
+        help: 'Unit of a numeric ClickHouse timestamp column; refused for a date-time one (clickhouse)',
+      },
+      user: { placeholder: '<name>', type: 'string', help: 'ClickHouse user, sent as a header (required by clickhouse)' },
+      password: { placeholder: '<secret>', type: 'string', help: 'ClickHouse password; absent omits the header (clickhouse)' },
+      database: { placeholder: '<name>', type: 'string', help: 'ClickHouse database to run the statement against (clickhouse)' },
+      token: { placeholder: '<token>', type: 'string', help: 'Kubernetes bearer token, never read from the environment (required by kubernetes)' },
+      'timestamp-field': {
+        placeholder: `<${KUBERNETES_TIMESTAMP_FIELDS.join('|')}>`,
+        type: 'string',
+        help: 'Which of the event\u2019s timestamps to read (required by kubernetes)',
+      },
+      namespace: { placeholder: '<name>', type: 'string', help: 'Namespace to read from; absent reads the cluster-wide list (kubernetes)' },
+      'field-selector': {
+        placeholder: '<selector>',
+        type: 'string',
+        help: 'A fieldSelector, passed through as written (kubernetes)',
+      },
+    },
+  },
   source: {
     usage: 'rca-bench source --path <path> [options]',
     description: 'Ingest a flat file (csv, tsv, jsonl or json) into IR signals.',
@@ -465,6 +609,51 @@ const EVOLVE_ACTION_FLAGS = {
   reject: ['input', 'note', 'output'],
   stale: ['input', 'cases'],
 } as const satisfies Record<EvolveAction, readonly (keyof (typeof COMMAND_SPECS)['evolve']['flags'])[]>;
+
+/**
+ * Which options each backend accepts, and which of those it requires.
+ *
+ * `COMMAND_SPECS.pull.flags` is the **union** of the six readers' options,
+ * because one command has one option table. This is the table that says which
+ * part of it a given `--backend` may use, and it is the same shape
+ * `EVOLVE_ACTION_FLAGS` gives the `evolve` actions: a shared vocabulary, with a
+ * per-value subset that is checked rather than assumed.
+ *
+ * A flag outside `required ∪ optional` is **refused**, not ignored. `--token` at
+ * a Prometheus backend is a configuration the caller believes took effect and
+ * Prometheus has no use for; `--namespace` at Loki is a typo that would have
+ * read as "the reader ignores namespaces".
+ *
+ * Written as data rather than as six `parse` functions so that the two questions
+ * a reader of this file asks -- "what does ClickHouse need?" and "may I pass
+ * `--namespace` to it?" -- are both answered by reading one row.
+ */
+const PULL_BACKEND_FLAGS = {
+  prometheus: {
+    required: ['base-url', 'query', 'start', 'end', 'step'],
+    optional: ['service-label', 'timeout-ms'],
+  },
+  jaeger: {
+    required: ['base-url', 'service', 'start', 'end', 'limit'],
+    optional: ['timeout-ms'],
+  },
+  loki: {
+    required: ['base-url', 'query', 'start', 'end', 'limit', 'direction', 'service-label'],
+    optional: ['timeout-ms'],
+  },
+  elasticsearch: {
+    required: ['base-url', 'index', 'start', 'end', 'size', 'timestamp-format', 'sort-direction', 'fields'],
+    optional: ['query', 'timeout-ms'],
+  },
+  clickhouse: {
+    required: ['base-url', 'query', 'columns', 'limit', 'user'],
+    optional: ['timestamp-unit', 'password', 'database', 'timeout-ms'],
+  },
+  kubernetes: {
+    required: ['base-url', 'service', 'token', 'limit', 'timestamp-field'],
+    optional: ['namespace', 'field-selector', 'start', 'end', 'timeout-ms'],
+  },
+} as const satisfies Record<T2BackendId, { required: readonly string[]; optional: readonly string[] }>;
 
 function evolveFlagOptions(action: EvolveAction): ParseArgsConfig['options'] {
   const options: NonNullable<ParseArgsConfig['options']> = {};
@@ -951,6 +1140,8 @@ export function parseCliArgs(argv: string[]): CliParseResult {
   }
 
   switch (command) {
+    case 'pull':
+      return parsePull(rest);
     case 'source':
       return parseSource(rest);
     case 'export':
@@ -1061,6 +1252,412 @@ function parseIngest(args: string[]): CliParseResult {
 }
 
 /**
+ * Read the flags one backend requires, as non-blank strings.
+ *
+ * Presence and blankness are decided **here**, once. A caller that checked and
+ * then re-read would have to handle "absent" a second time, and that branch
+ * could not be reached by any input -- this project does not ship those
+ * (finding 153 removed a vocabulary member for the same reason).
+ */
+function readRequiredFlags(
+  id: T2BackendId,
+  v: ParsedValues,
+): { values: Record<string, string> } | { error: string } {
+  const values: Record<string, string> = {};
+  for (const flag of PULL_BACKEND_FLAGS[id].required) {
+    const raw = v[flag];
+    if (raw === undefined) return { error: `pull --backend ${id} requires --${flag}` };
+    const text = String(raw).trim();
+    if (text === '') return { error: `invalid --${flag} for --backend ${id}: must not be blank` };
+    values[flag] = text;
+  }
+  return { values };
+}
+
+/**
+ * Read a time the way the six readers take it: a bare integer is epoch seconds,
+ * anything else is a string for the reader to parse.
+ *
+ * The conversion is here rather than left to the reader because
+ * `Date.parse('1700000000')` is **Invalid Date** -- measured -- so passing the
+ * text through would refuse the very encoding the readers document. The bound is
+ * `Number.isSafeInteger`, not a range: this is an instant, and a value outside
+ * that range is a number that is no longer the one that was typed.
+ */
+function pullInstant(flag: string, text: string): { value: number | string } | { error: string } {
+  if (/^-?\d+$/.test(text)) {
+    const n = Number(text);
+    if (!Number.isSafeInteger(n)) return { error: `invalid --${flag} '${text}' (out of range)` };
+    return { value: n };
+  }
+  if (Number.isNaN(Date.parse(text))) {
+    return { error: `invalid --${flag} '${text}': expected epoch seconds or an ISO-8601 time` };
+  }
+  return { value: text };
+}
+
+/** Read a window whose two bounds a backend requires. */
+function requiredWindow(
+  r: Record<string, string>,
+): { start: number | string; end: number | string } | { error: string } {
+  const start = pullInstant('start', r['start']!);
+  if ('error' in start) return { error: start.error };
+  const end = pullInstant('end', r['end']!);
+  if ('error' in end) return { error: end.error };
+  return { start: start.value, end: end.value };
+}
+
+/** Read an optional time flag; absent means that side of the window is unbounded. */
+function optionalInstant(
+  flag: string,
+  raw: ParsedValues[string],
+): { value?: number | string } | { error: string } {
+  if (raw === undefined) return {};
+  const text = String(raw).trim();
+  if (text === '') return { error: `invalid --${flag}: must not be blank` };
+  return pullInstant(flag, text);
+}
+
+/** Read an optional non-blank string flag; blank is an error, absent is not. */
+function optionalText(v: ParsedValues, flag: string): { value?: string } | { error: string } {
+  const value = asNonBlank(v[flag]);
+  if (value === null) return { error: `invalid --${flag}: must not be blank` };
+  return value === undefined ? {} : { value: String(value) };
+}
+
+/** Read an optional positive-integer flag. */
+function optionalCount(flag: string, raw: ParsedValues[string]): { value?: number } | { error: string } {
+  const value = parseInteger(flag, raw, 1, Number.MAX_SAFE_INTEGER);
+  if (typeof value === 'object') return { error: value.error };
+  return value === undefined ? {} : { value };
+}
+
+/**
+ * Read a required count, from the non-blank text `readRequiredFlags` produced.
+ *
+ * Separate from `optionalCount` because the text is known present. Routing it
+ * through the absent-handling signature would make `parseInteger`'s `undefined`
+ * arm unreachable here while coverage still counted it, which is the shape this
+ * project keeps removing rather than tolerating.
+ */
+function requiredCount(flag: string, text: string): { value: number } | { error: string } {
+  if (!/^-?\d+$/.test(text)) return { error: `invalid --${flag} '${text}'` };
+  const n = Number(text);
+  if (!Number.isSafeInteger(n) || n < 1) {
+    return { error: `invalid --${flag} '${text}' (expected a positive integer)` };
+  }
+  return { value: n };
+}
+
+/** Read a required flag that must be one of a closed set, as that set's member type. */
+function requiredEnum<T extends string>(
+  flag: string,
+  text: string,
+  allowed: readonly T[],
+): { value: T } | { error: string } {
+  if (!(allowed as readonly string[]).includes(text)) {
+    return { error: `invalid --${flag} '${text}' (expected ${allowed.join('|')})` };
+  }
+  return { value: text as T };
+}
+
+/** Read an optional flag that must be one of a closed set. */
+function optionalEnum<T extends string>(
+  flag: string,
+  raw: ParsedValues[string],
+  allowed: readonly T[],
+): { value?: T } | { error: string } {
+  if (raw === undefined) return {};
+  const text = String(raw).trim();
+  if (!(allowed as readonly string[]).includes(text)) {
+    return { error: `invalid --${flag} '${text}' (expected ${allowed.join('|')})` };
+  }
+  return { value: text as T };
+}
+
+/** The three field names Elasticsearch and ClickHouse both declare a signal with. */
+const PULL_FIELD_KEYS = ['timestamp', 'message', 'service'] as const;
+
+/**
+ * Read an optional JSON-object flag.
+ *
+ * When `keys` is given each must be a non-blank string, which is what makes
+ * `--fields '{}'` a parse-time mistake rather than a request that reaches a
+ * backend and comes back empty. An empty `keys` accepts any object, which is
+ * what `elasticsearch --query` needs: that one is the caller's own query, and
+ * this repository has no opinion about its shape.
+ */
+function pullObject(
+  flag: string,
+  raw: ParsedValues[string],
+  keys: readonly string[] = [],
+): { value?: Record<string, unknown> } | { error: string } {
+  if (raw === undefined) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(raw));
+  } catch (error) {
+    return { error: `invalid --${flag}: ${(error as Error).message}` };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { error: `--${flag} must be a JSON object` };
+  }
+  const record = parsed as Record<string, unknown>;
+  for (const key of keys) {
+    const entry = record[key];
+    if (typeof entry !== 'string' || entry.trim() === '') {
+      return { error: `--${flag} needs a non-blank '${key}' field` };
+    }
+  }
+  return { value: record };
+}
+
+/**
+ * `pull` reads live telemetry out of one of the six T2 backends.
+ *
+ * The command exists because the registry's `implemented` rows were reachable
+ * from a test and from the package entry point, and from nothing a user could
+ * type: six readers that described a *capability* rather than an available
+ * operation. `--backend` names one of them, and the flags it accepts are that
+ * reader's own options -- the union in `COMMAND_SPECS` narrowed by
+ * `PULL_BACKEND_FLAGS`, so a token handed to Prometheus is refused rather than
+ * dropped.
+ */
+function parsePull(args: string[]): CliParseResult {
+  const parsed = parseFlags(args, flagOptions('pull'));
+  if ('error' in parsed) return { ok: false, error: parsed.error };
+  const v = parsed.values;
+
+  const backend = v.backend;
+  if (typeof backend !== 'string' || !isOneOf(backend, PULL_BACKEND_IDS)) {
+    return { ok: false, error: `pull requires --backend <${PULL_BACKEND_IDS.join('|')}>` };
+  }
+  const id = backend as T2BackendId;
+
+  // Every flag the command advertises reaches here parsed; only this backend's
+  // own are legal. `backend` and `output` are the two that belong to all six.
+  const spec = PULL_BACKEND_FLAGS[id];
+  const legal = new Set<string>([...spec.required, ...spec.optional]);
+  for (const name of Object.keys(v)) {
+    if (name === 'backend' || name === 'output') continue;
+    if (!legal.has(name)) return { ok: false, error: `pull --backend ${id} does not accept --${name}` };
+  }
+
+  const required = readRequiredFlags(id, v);
+  if ('error' in required) return { ok: false, error: required.error };
+  // `readRequiredFlags` refused an absent or blank required flag above, so every
+  // `r[flag]` below is a non-blank string.
+  const r = required.values;
+
+  const output = asNonBlank(v.output);
+  if (output === null) return { ok: false, error: 'invalid --output <file>' };
+  const out = output === undefined ? {} : { output: String(output) };
+
+  switch (id) {
+    case 'prometheus': {
+      const window = requiredWindow(r);
+      if ('error' in window) return { ok: false, error: window.error };
+      const serviceLabel = optionalText(v, 'service-label');
+      if ('error' in serviceLabel) return { ok: false, error: serviceLabel.error };
+      const timeoutMs = optionalCount('timeout-ms', v['timeout-ms']);
+      if ('error' in timeoutMs) return { ok: false, error: timeoutMs.error };
+      return {
+        ok: true,
+        command: {
+          command: 'pull',
+          backend: 'prometheus',
+          options: {
+            baseUrl: r['base-url']!,
+            query: r['query']!,
+            start: window.start,
+            end: window.end,
+            step: r['step']!,
+            ...(serviceLabel.value !== undefined ? { serviceLabel: serviceLabel.value } : {}),
+            ...(timeoutMs.value !== undefined ? { timeoutMs: timeoutMs.value } : {}),
+          },
+          ...out,
+        },
+      };
+    }
+    case 'jaeger': {
+      const window = requiredWindow(r);
+      if ('error' in window) return { ok: false, error: window.error };
+      const limit = requiredCount('limit', r['limit']!);
+      if ('error' in limit) return { ok: false, error: limit.error };
+      const timeoutMs = optionalCount('timeout-ms', v['timeout-ms']);
+      if ('error' in timeoutMs) return { ok: false, error: timeoutMs.error };
+      return {
+        ok: true,
+        command: {
+          command: 'pull',
+          backend: 'jaeger',
+          options: {
+            baseUrl: r['base-url']!,
+            service: r['service']!,
+            start: window.start,
+            end: window.end,
+            limit: limit.value,
+            ...(timeoutMs.value !== undefined ? { timeoutMs: timeoutMs.value } : {}),
+          },
+          ...out,
+        },
+      };
+    }
+    case 'loki': {
+      const window = requiredWindow(r);
+      if ('error' in window) return { ok: false, error: window.error };
+      const limit = requiredCount('limit', r['limit']!);
+      if ('error' in limit) return { ok: false, error: limit.error };
+      const direction = requiredEnum('direction', r['direction']!, LOKI_DIRECTIONS);
+      if ('error' in direction) return { ok: false, error: direction.error };
+      const timeoutMs = optionalCount('timeout-ms', v['timeout-ms']);
+      if ('error' in timeoutMs) return { ok: false, error: timeoutMs.error };
+      return {
+        ok: true,
+        command: {
+          command: 'pull',
+          backend: 'loki',
+          options: {
+            baseUrl: r['base-url']!,
+            query: r['query']!,
+            start: window.start,
+            end: window.end,
+            limit: limit.value,
+            direction: direction.value,
+            serviceLabel: r['service-label']!,
+            ...(timeoutMs.value !== undefined ? { timeoutMs: timeoutMs.value } : {}),
+          },
+          ...out,
+        },
+      };
+    }
+    case 'elasticsearch': {
+      const window = requiredWindow(r);
+      if ('error' in window) return { ok: false, error: window.error };
+      const size = requiredCount('size', r['size']!);
+      if ('error' in size) return { ok: false, error: size.error };
+      const timestampFormat = requiredEnum(
+        'timestamp-format',
+        r['timestamp-format']!,
+        ELASTICSEARCH_TIMESTAMP_FORMATS,
+      );
+      if ('error' in timestampFormat) return { ok: false, error: timestampFormat.error };
+      const sortDirection = requiredEnum('sort-direction', r['sort-direction']!, ELASTICSEARCH_SORT_DIRECTIONS);
+      if ('error' in sortDirection) return { ok: false, error: sortDirection.error };
+      const fields = pullObject('fields', v['fields'], PULL_FIELD_KEYS);
+      if ('error' in fields) return { ok: false, error: fields.error };
+      const query = pullObject('query', v['query']);
+      if ('error' in query) return { ok: false, error: query.error };
+      const timeoutMs = optionalCount('timeout-ms', v['timeout-ms']);
+      if ('error' in timeoutMs) return { ok: false, error: timeoutMs.error };
+      const mapping = fields.value!;
+      return {
+        ok: true,
+        command: {
+          command: 'pull',
+          backend: 'elasticsearch',
+          options: {
+            baseUrl: r['base-url']!,
+            index: r['index']!,
+            start: window.start,
+            end: window.end,
+            size: size.value,
+            timestampFormat: timestampFormat.value,
+            sortDirection: sortDirection.value,
+            fields: {
+              timestamp: mapping['timestamp'] as string,
+              message: mapping['message'] as string,
+              service: mapping['service'] as string,
+            },
+            ...(query.value !== undefined ? { query: query.value } : {}),
+            ...(timeoutMs.value !== undefined ? { timeoutMs: timeoutMs.value } : {}),
+          },
+          ...out,
+        },
+      };
+    }
+    case 'clickhouse': {
+      const limit = requiredCount('limit', r['limit']!);
+      if ('error' in limit) return { ok: false, error: limit.error };
+      const columns = pullObject('columns', v['columns'], PULL_FIELD_KEYS);
+      if ('error' in columns) return { ok: false, error: columns.error };
+      const timestampUnit = optionalEnum('timestamp-unit', v['timestamp-unit'], CLICKHOUSE_TIMESTAMP_UNITS);
+      if ('error' in timestampUnit) return { ok: false, error: timestampUnit.error };
+      const database = optionalText(v, 'database');
+      if ('error' in database) return { ok: false, error: database.error };
+      const timeoutMs = optionalCount('timeout-ms', v['timeout-ms']);
+      if ('error' in timeoutMs) return { ok: false, error: timeoutMs.error };
+      const mapping = columns.value!;
+      return {
+        ok: true,
+        command: {
+          command: 'pull',
+          backend: 'clickhouse',
+          options: {
+            baseUrl: r['base-url']!,
+            query: r['query']!,
+            columns: {
+              timestamp: mapping['timestamp'] as string,
+              message: mapping['message'] as string,
+              service: mapping['service'] as string,
+            },
+            limit: limit.value,
+            user: r['user']!,
+            // A password may be the empty string -- "absent" and "empty" are
+            // different to the reader, and to the server -- so it is carried
+            // verbatim rather than put through the blank-is-an-error reader.
+            ...(v['password'] !== undefined ? { password: String(v['password']) } : {}),
+            ...(timestampUnit.value !== undefined ? { timestampUnit: timestampUnit.value } : {}),
+            ...(database.value !== undefined ? { database: database.value } : {}),
+            ...(timeoutMs.value !== undefined ? { timeoutMs: timeoutMs.value } : {}),
+          },
+          ...out,
+        },
+      };
+    }
+    // Named rather than left to a `default`, so that a seventh backend added to
+    // the registry fails `pnpm typecheck` here (TS2366) instead of being parsed
+    // as Kubernetes. `PULL_BACKEND_FLAGS` fails the same way, on its missing row.
+    case 'kubernetes': {
+      const limit = requiredCount('limit', r['limit']!);
+      if ('error' in limit) return { ok: false, error: limit.error };
+      const timestampField = requiredEnum('timestamp-field', r['timestamp-field']!, KUBERNETES_TIMESTAMP_FIELDS);
+      if ('error' in timestampField) return { ok: false, error: timestampField.error };
+      const namespace = optionalText(v, 'namespace');
+      if ('error' in namespace) return { ok: false, error: namespace.error };
+      const fieldSelector = optionalText(v, 'field-selector');
+      if ('error' in fieldSelector) return { ok: false, error: fieldSelector.error };
+      const start = optionalInstant('start', v['start']);
+      if ('error' in start) return { ok: false, error: start.error };
+      const end = optionalInstant('end', v['end']);
+      if ('error' in end) return { ok: false, error: end.error };
+      const timeoutMs = optionalCount('timeout-ms', v['timeout-ms']);
+      if ('error' in timeoutMs) return { ok: false, error: timeoutMs.error };
+      return {
+        ok: true,
+        command: {
+          command: 'pull',
+          backend: 'kubernetes',
+          options: {
+            baseUrl: r['base-url']!,
+            service: r['service']!,
+            token: r['token']!,
+            limit: limit.value,
+            timestampField: timestampField.value,
+            ...(namespace.value !== undefined ? { namespace: namespace.value } : {}),
+            ...(fieldSelector.value !== undefined ? { fieldSelector: fieldSelector.value } : {}),
+            ...(start.value !== undefined ? { start: start.value } : {}),
+            ...(end.value !== undefined ? { end: end.value } : {}),
+            ...(timeoutMs.value !== undefined ? { timeoutMs: timeoutMs.value } : {}),
+          },
+          ...out,
+        },
+      };
+    }
+  }
+}
+
+/**
  * The shape a hand-written JSON list flag must have before core sees it.
  *
  * Deliberately weaker than `entityGraphSchema`: this checks only what a
@@ -1150,6 +1747,7 @@ export function formatHelp(): string {
     '  rca-bench <command> [options]',
     '',
     'Commands:',
+    '  pull       Pull live telemetry from a T2 backend into IR signals',
     '  source     Ingest a flat file into IR signals',
     '  ingest     Ingest a prime dataset slice into an IR bundle',
     '  transform  Apply transform rules to source records',

@@ -375,6 +375,7 @@ const TESTED = [
   // which is what "some module outside test/ mentions this identifier" means.
   'T2_BACKEND_IDS',
   'T2_BACKENDS',
+  'T2_IMPLEMENTED_BACKEND_IDS',
   'findBackend',
   'backendEntry',
   // ingest/clickhouse.ts -- the sixth implemented pull path, a reader for a statement's
@@ -811,6 +812,7 @@ const TESTED = [
   'EVOLVE_ACTIONS',
   'EXPORT_TARGETS',
   'HELP_TOPICS',
+  'PULL_BACKEND_IDS',
   'formatCommandHelp',
   'formatHelp',
   'formatVersion',

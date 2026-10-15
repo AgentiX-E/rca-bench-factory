@@ -295,13 +295,19 @@ and the reason, not from a downstream exception.
      against the per-module branch floor — but the *invariant that keeps it
      unreachable* is guarded by a test that reads the flag table and fails if a
      flag read as a string is declared as anything else.
-  2. `parseInteger`'s `Number.isSafeInteger` test is **provably redundant within
-     every range the CLI currently declares**: any unsafe integer is at least
-     nine orders of magnitude outside `0..86400000` or `-720..840` and is
-     rejected by the range test instead. The injection matrix records this as a
-     **green** result on purpose. The check is kept because the redundancy is a
-     property of today's bounds, not of the function, and a future flag with a
-     range near `2^53` would make it load-bearing again.
+  2. `parseInteger`'s `Number.isSafeInteger` test is **redundant within every
+     range the CLI declares**, for one of two reasons, and pass 47 had to say
+     both. Where the bound is small — `0..86400000` for the windows,
+     `-720..840` for the offsets — an unsafe integer is at least nine orders of
+     magnitude outside it and the range test rejects it. Where the bound **is**
+     `Number.MAX_SAFE_INTEGER` — `--limit`, `--size` and `--timeout-ms` — the two
+     tests are the same test, because `n > 2^53 - 1` is exactly what
+     `!Number.isSafeInteger(n)` means for an integer. The injection matrix
+     records this as a **green** result on purpose; the check is kept because the
+     redundancy is a property of today's bounds, not of the function.
+     `pullInstant` is the case that shows the distinction is real: it has no
+     range beside it, so `Number.isSafeInteger` is the whole of its bound and is
+     load-bearing there.
 
 Both exemptions are recorded in [`audit.md`](./audit.md) with the measurement
 that established them. A module touched by an audit pass is normally required to

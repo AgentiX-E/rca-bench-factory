@@ -24,6 +24,12 @@ import {
   parseDelimited,
   parseJsonArray,
   parseJsonl,
+  pullClickHouseLogs,
+  pullElasticsearchLogs,
+  pullJaegerTraces,
+  pullKubernetesEvents,
+  pullLokiLogs,
+  pullPrometheusMetrics,
   rejectProposal,
   renderPackManifest,
   renderPage,
@@ -56,6 +62,8 @@ import type {
   ScoreTargetId,
   SkippedCase,
   SourceRecord,
+  T2BackendId,
+  TelemetrySignal,
   TransformResult,
   TransformRule,
 } from '@rca-bench-factory/core';
@@ -154,6 +162,176 @@ async function writeFiles(outDir: string, files: ExportedFiles): Promise<void> {
     const full = join(outDir, relPath);
     await mkdir(dirname(full), { recursive: true });
     await writeFile(full, content);
+  }
+}
+
+/**
+ * What all six readers' results agree on, which is what one renderer can serve.
+ *
+ * They agree on three things: `ok`, `signals` and `quarantine` -- the last with
+ * at least an index and a reason on every backend, which is what makes "here is
+ * where the hole is" a promise the command can keep without knowing which
+ * backend it spoke to.
+ *
+ * They do **not** agree beyond that, and this type says so by not mentioning it.
+ * The six split three ways: Prometheus, Jaeger and Loki answer with `warnings`;
+ * Elasticsearch with `partial` and `total`; ClickHouse and Kubernetes with a
+ * `page`. Those are three different questions, rendered three different ways
+ * below rather than flattened into a field two readers would have had to invent.
+ */
+type PullOutcome =
+  | {
+      ok: true;
+      signals: readonly TelemetrySignal[];
+      quarantine: readonly { readonly index: number; readonly reason: string }[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * The lines a search's `partial` block and `total` add.
+ *
+ * An answer that timed out, or one a shard failed out of, is an answer that
+ * stops short of the window -- so it is said on stderr, where an operator sees
+ * it, rather than left in a document they may be piping somewhere.
+ */
+function searchNotes(
+  partial: { readonly timedOut: boolean; readonly failedShards: number },
+  total: { readonly value: number; readonly relation: string } | undefined,
+): string[] {
+  const notes: string[] = [];
+  if (partial.timedOut) notes.push('the search timed out before it finished');
+  if (partial.failedShards > 0) {
+    notes.push(`${partial.failedShards} shard(s) failed, so this answer covers the rest of the index`);
+  }
+  if (total !== undefined && total.relation === 'gte') {
+    notes.push(`the cluster counted at least ${total.value} hits, so it stopped counting`);
+  }
+  return notes;
+}
+
+/** The lines a ClickHouse page adds: what the limit and the statement kept. */
+function clickHouseNotes(page: {
+  readonly rows: number;
+  readonly kept: number;
+  readonly truncated: boolean;
+  readonly atLeast?: number;
+}): string[] {
+  const notes: string[] = [];
+  if (page.truncated) notes.push(`the declared --limit cut the page short at ${page.kept} of ${page.rows} row(s)`);
+  if (page.atLeast !== undefined) {
+    notes.push(`the statement's own LIMIT matched at least ${page.atLeast} row(s)`);
+  }
+  return notes;
+}
+
+/** The lines a Kubernetes page adds: whether the list continued, and what it dropped. */
+function kubernetesNotes(page: {
+  readonly hasMore: boolean;
+  readonly outsideWindow: number;
+}): string[] {
+  const notes: string[] = [];
+  if (page.hasMore) notes.push('the list holds more events than this page');
+  if (page.outsideWindow > 0) {
+    notes.push(`${page.outsideWindow} event(s) fall outside the requested window`);
+  }
+  return notes;
+}
+
+/**
+ * Turn one backend's result into a document, or into an exit code.
+ *
+ * Shared by all six because the part they agree on is the part that needed
+ * writing once: six copies of "report the quarantine" would be six places for
+ * that report to drift, which is what `reportRejections` was extracted to
+ * prevent for the four file commands.
+ *
+ * The document is the reader's own result with `backend` added, serialised whole
+ * -- `warnings`, `partial`, `page` and all. Narrowing it to a common shape here
+ * would mean dropping three of the six readers' most useful fields to make the
+ * other three look symmetrical.
+ *
+ * Generic over the result rather than taking the common supertype, so `{
+ * ...result }` keeps the concrete fields at the type level as well as at
+ * runtime; `outcome` below is the widened view used for the discriminant.
+ */
+async function reportPull<Result extends PullOutcome>(
+  backend: T2BackendId,
+  result: Result,
+  notes: readonly string[],
+  output: string | undefined,
+  ctx: Ctx,
+): Promise<number> {
+  const outcome: PullOutcome = result;
+  if (!outcome.ok) {
+    ctx.stderr(`error: ${outcome.error}\n`);
+    return 1;
+  }
+
+  if (outcome.quarantine.length > 0) {
+    ctx.stderr(`warning: ${outcome.quarantine.length} record(s) quarantined\n`);
+    reportRejections(
+      outcome.quarantine.length,
+      outcome.quarantine.slice(0, MAX_REPORTED_ROWS),
+      (row) => ({ where: `index ${row.index}`, reason: row.reason }),
+      ctx,
+    );
+  }
+  for (const note of notes) ctx.stderr(`warning: ${backend}: ${note}\n`);
+
+  const payload = JSON.stringify({ backend, ...result }, null, 2) + '\n';
+  if (output !== undefined) {
+    await writeFile(resolve(ctx.cwd, output), payload);
+  } else {
+    ctx.stdout(payload);
+  }
+  return 0;
+}
+
+/**
+ * `pull` reads live telemetry from one T2 backend.
+ *
+ * The dispatch is a `switch` on the command's own discriminant, so each reader
+ * receives an options object the compiler has already matched to it:
+ * `pullJaegerTraces` cannot be handed ClickHouse's columns, and a `--token` that
+ * only Kubernetes takes never reaches Prometheus. There is deliberately no
+ * `default` -- a seventh backend fails the typecheck here (TS2366) rather than
+ * falling through to whichever reader happened to be written last.
+ *
+ * Each case also says what *its* reader can say and no other's, which is why the
+ * `notes` argument is built here rather than inside the shared renderer.
+ */
+async function runPull(cmd: Extract<CliCommand, { command: 'pull' }>, ctx: Ctx): Promise<number> {
+  switch (cmd.backend) {
+    case 'prometheus': {
+      const result = await pullPrometheusMetrics(cmd.options);
+      const notes = result.ok ? result.warnings : [];
+      return await reportPull('prometheus', result, notes, cmd.output, ctx);
+    }
+    case 'jaeger': {
+      const result = await pullJaegerTraces(cmd.options);
+      const notes = result.ok ? result.warnings : [];
+      return await reportPull('jaeger', result, notes, cmd.output, ctx);
+    }
+    case 'loki': {
+      const result = await pullLokiLogs(cmd.options);
+      const notes = result.ok ? result.warnings : [];
+      return await reportPull('loki', result, notes, cmd.output, ctx);
+    }
+    case 'elasticsearch': {
+      const result = await pullElasticsearchLogs(cmd.options);
+      const notes = result.ok ? searchNotes(result.partial, result.total) : [];
+      return await reportPull('elasticsearch', result, notes, cmd.output, ctx);
+    }
+    case 'clickhouse': {
+      const result = await pullClickHouseLogs(cmd.options);
+      const notes = result.ok ? clickHouseNotes(result.page) : [];
+      return await reportPull('clickhouse', result, notes, cmd.output, ctx);
+    }
+    case 'kubernetes': {
+      const result = await pullKubernetesEvents(cmd.options);
+      const notes = result.ok ? kubernetesNotes(result.page) : [];
+      return await reportPull('kubernetes', result, notes, cmd.output, ctx);
+    }
   }
 }
 
@@ -695,6 +873,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<num
       case 'version':
         ctx.stdout(formatVersion() + '\n');
         return 0;
+      case 'pull':
+        return await runPull(parsed.command, ctx);
       case 'source':
         return await runSource(parsed.command, ctx);
       case 'export':

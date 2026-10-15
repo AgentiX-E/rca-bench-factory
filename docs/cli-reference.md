@@ -11,6 +11,7 @@ and score an exported dataset.
 | --- | --- |
 | `help` | Print usage |
 | `version` | Print the semantic version |
+| `pull` | Pull live telemetry from a T2 backend (Prometheus / Jaeger / Loki / Elasticsearch / ClickHouse / Kubernetes) into IR signals |
 | `source` | Ingest a flat file (CSV/TSV/JSONL/JSON) into IR signals |
 | `ingest` | Ingest a prime dataset slice (official benchmark data) into an IR bundle |
 | `transform` | Apply transform rules (the 7 strategies) to source records |
@@ -50,6 +51,56 @@ rca-bench ingest --source ./official-data --target rcaeval --cases cases.json --
 rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./roundtrip
 rca-bench official --target rcaeval-re2 --dir ./roundtrip
 ```
+
+### `rca-bench pull`
+
+```text
+rca-bench pull --backend <prometheus|jaeger|loki|elasticsearch|clickhouse|kubernetes>
+               --base-url http://127.0.0.1:9090 [--output signals.json] [--timeout-ms 15000]
+               [--query 'rate(http_requests_total[5m])'] [--start 1700000000] [--end 1700000060]
+               [--step 15s] [--limit 20] [--size 20] [--service payments]
+               [--service-label service] [--direction forward|backward]
+               [--index 'payments-*'] [--timestamp-format iso8601|epoch_millis]
+               [--sort-direction asc|desc] [--fields '{"timestamp":"@timestamp",...}']
+               [--columns '{"timestamp":"ts",...}'] [--timestamp-unit milliseconds]
+               [--user default] [--password secret] [--database otel]
+               [--token <bearer>] [--timestamp-field eventTime|lastTimestamp|firstTimestamp]
+               [--namespace payments] [--field-selector 'type=Warning']
+```
+
+- `--backend` is the **registry's `implemented` set**, in the registry's order: the six
+  backends P1-5 requires. The command's table and the registry's are held equal by a test,
+  so a row that changes status leaves the command without anybody editing it.
+- **The backend decides which of the options above are legal.** `--token` belongs to
+  Kubernetes; passing it to Prometheus is refused rather than ignored, because a silently
+  dropped flag is a configuration the caller believes took effect. For the same reason each
+  backend's required flags are required *at that backend* and not globally:
+
+  | `--backend` | Required | Optional |
+  | --- | --- | --- |
+  | `prometheus` | `--base-url --query --start --end --step` | `--service-label --timeout-ms` |
+  | `jaeger` | `--base-url --service --start --end --limit` | `--timeout-ms` |
+  | `loki` | `--base-url --query --start --end --limit --direction --service-label` | `--timeout-ms` |
+  | `elasticsearch` | `--base-url --index --start --end --size --timestamp-format --sort-direction --fields` | `--query --timeout-ms` |
+  | `clickhouse` | `--base-url --query --columns --limit --user` | `--timestamp-unit --password --database --timeout-ms` |
+  | `kubernetes` | `--base-url --service --token --limit --timestamp-field` | `--namespace --field-selector --start --end --timeout-ms` |
+
+- `--start` and `--end` take **epoch seconds** or an **ISO-8601** string. An instant before
+  1970 needs the `=` form (`--start=-1`), because `parseArgs` reads a bare `-1` after an
+  option as another option.
+- The document written to stdout (or `--output`) is the reader's own result with `backend`
+  added — `signals` and `quarantine` always, plus whatever else that backend answers with:
+  `warnings` for Prometheus, Jaeger and Loki, `partial`/`total` for Elasticsearch, `page` for
+  ClickHouse and Kubernetes. Nothing is flattened away to make the six look alike.
+- Rejected records are named on stderr (`N record(s) quarantined`), and so are the facts
+  that mean the answer is **less than the window asked for**: a search that timed out or
+  lost a shard, a page the `--limit` cut short, a list with more events, events the window
+  excluded, and any `warnings` the backend reported.
+- Exit code is `0` when the backend answered — even with a partial page or quarantined
+  records — and `1` when the request could not be answered at all (unreachable host, a
+  non-2xx status, a body that is not the documented envelope).
+- The ClickHouse statement is passed through as written and is **not parsed**: a read-only
+  account is the mitigation for that, and it is the caller's to configure.
 
 ### `rca-bench source`
 
