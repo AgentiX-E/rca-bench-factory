@@ -339,6 +339,7 @@ def verify_expectations(probe: bool = False) -> int:
         "check-doc-counts.test.ts",
         survivors=tuple(EXPECTED_SURVIVORS),
         probe=probe,
+        anchors=[(name, GATE, (anchor, replacement)) for name, anchor, replacement, *_ in MUTATIONS],
     )
 
 

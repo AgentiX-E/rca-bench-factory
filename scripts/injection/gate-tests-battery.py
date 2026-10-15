@@ -380,6 +380,7 @@ def verify_expectations(probe: bool = False) -> int:
         'check-doc-counts.test.ts',
         survivors=tuple(EXPECTED_SURVIVORS),
         probe=probe,
+        anchors=[(name, REPO / subject, edit) for name, subject, _test, edit, _witness in INJECTIONS],
     )
 
 
@@ -808,9 +809,8 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "check-cli-reference.test.ts",
         lambda t: rename(
             t,
-            "  const pattern = new RegExp(`${flag.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}(?![\\\\w-])`);\n"
-            "  return pattern.test(markdown);",
-            "  return markdown.includes(flag);",
+            "    if (!written.has(flag)) {",
+            "    if (![...written].some((one) => one.startsWith(flag))) {",
         ),
         "the boundary test -- and only that test, which is what makes it the guard for the boundary",
     ),
@@ -846,8 +846,8 @@ INJECTIONS: list[tuple[str, str, str, Callable[[str], str], str]] = [
         "check-cli-reference.test.ts",
         lambda t: rename(
             t,
-            "    if (!mentionsFlag(markdown, flag)) {\n"
-            "      failures.push(`'${flag}' is accepted by '${topic}' but absent from docs/cli-reference.md`);\n"
+            "    if (!written.has(flag)) {\n"
+            "      failures.push(`'${flag}' is accepted by '${topic}' but absent from docs/cli-reference.md's section for it`);\n"
             "    }",
             "",
         ),

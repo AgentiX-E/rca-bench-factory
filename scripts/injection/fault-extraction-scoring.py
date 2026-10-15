@@ -274,6 +274,7 @@ def verify_expectations(probe: bool = False) -> int:
     return W.verify_witness_table(
         'fault-extraction-scoring', EXPECTATIONS, [name for name, *_ in INJECTIONS], files,
         TEST_DIR, 'extraction-scoring.test.ts', probe=probe,
+        anchors=[(n, SRC, (a, r)) for n, a, r, *_ in INJECTIONS]
     )
 
 

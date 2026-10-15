@@ -178,6 +178,64 @@ def witness_problems(
     return problems
 
 
+def anchor_problems(entries: "list[tuple[str, pathlib.Path, object]]") -> list[str]:
+    """Report every injection whose own edit can no longer be applied.
+
+    ## Why this is here, and what it caught
+
+    A battery whose anchor has moved does not fail; it reports `INERT` and keeps
+    going, and the number at the end is one lower than the reader expects. Until
+    this function existed, the only way to see one was to run the battery -- 111
+    seconds for the gate-test battery, on the runner, after a push. That happened:
+    a rewrite of `check-cli-reference.mjs` deleted the two lines two injections
+    anchored on, the suite was green locally, and CI failed in the batteries job.
+
+    `--verify-expectations` now applies each injection's own edit to the file as it
+    is and reports what cannot be done. `entries` is `(name, subject, edit)`, where
+    `edit` is either the callable the battery would apply -- `rename` asserts the
+    anchor is present, so a stale one raises -- or an `(anchor, replacement)` pair
+    for the tables that keep their edits as data. Both leave `INERT` behind without
+    this check, and neither is visible by reading the table.
+    """
+    problems: list[str] = []
+    cache: dict[pathlib.Path, str] = {}
+    for name, subject, edit in entries:
+        text = cache.get(subject)
+        if text is None:
+            try:
+                text = subject.read_text(encoding="utf-8")
+            except OSError as exc:
+                problems.append(f"{name}: cannot read {subject}: {exc}")
+                continue
+            cache[subject] = text
+
+        if callable(edit):
+            try:
+                mutated = edit(text)
+            except AssertionError as exc:
+                problems.append(
+                    f"{name}: this injection cannot be applied any more -- {exc} "
+                    f"(subject {subject.name}); retarget it rather than deleting it"
+                )
+                continue
+            if mutated == text:
+                problems.append(f"{name}: applying this injection leaves {subject.name} unchanged")
+            continue
+
+        anchor, replacement = edit
+        if anchor not in text:
+            # The anchor itself is in the message, shortened: it is what the reader
+            # has to go and find, and it is also what the negative control below
+            # looks for -- an anchor that cannot exist has to come back named.
+            problems.append(
+                f"{name}: the anchor {anchor[:60]!r} is not in {subject.name} any more, so this "
+                "injection cannot run; retarget it rather than deleting it"
+            )
+        elif anchor == replacement:
+            problems.append(f"{name}: the replacement equals the anchor, so nothing is mutated")
+    return problems
+
+
 def verify_witness_table(
     label: str,
     expectations: dict[str, tuple[str, ...]],
@@ -187,6 +245,7 @@ def verify_witness_table(
     probe_against: str,
     survivors: tuple[str, ...] = (),
     probe: bool = False,
+    anchors: "list[tuple[str, pathlib.Path, object]]" = None,  # type: ignore[assignment]
 ) -> int:
     """Reconcile the witness table against the injections and the test files.
 
@@ -216,6 +275,20 @@ def verify_witness_table(
             )
 
     problems.extend(witness_problems(expectations, files))
+
+    # A stale anchor is an `INERT`: the battery still runs, still prints a number,
+    # and the number is short by one. Applying each edit here is the difference
+    # between finding that in a tenth of a second and finding it on the runner.
+    if anchors:
+        problems.extend(anchor_problems(anchors))
+        if probe:
+            absent = "an anchor that cannot appear in any file at all"
+            probed_anchor = anchor_problems([("probe", probe_dir / probe_against, (absent, ""))])
+            if len(probed_anchor) != 1 or absent not in probed_anchor[0]:
+                problems.append(
+                    "the anchor control failed: an anchor that cannot exist was not reported "
+                    f"missing (got {probed_anchor!r}), so that check proves nothing"
+                )
 
     if probe:
         impossible = "a test title that cannot exist anywhere at all"

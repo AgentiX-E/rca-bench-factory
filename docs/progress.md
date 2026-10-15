@@ -4385,3 +4385,79 @@ hunt that finds nothing is a result.
   repository ties the two enumerations together. `[open: this is the next step and it is a CLI
   surface decision rather than another puller -- a pull command whose backend table is held equal
   to the registry's implemented set, so the tie is a guard rather than a convention]`
+
+## Pass 46 — the cheap check verified the witness and not the anchor
+
+### What failed
+
+Finding 168 was pushed with every local gate green -- typecheck, lint, `docs:check`,
+`docs:check:cold`, `docs:counts:check`, the suite at 139 files / 3686 tests, coverage
+99.97/99.93/100/99.97 -- and CI failed:
+
+```
+38727106150  CI  failure
+  job injection batteries ...  failure
+      !! step 17: Gate-test battery  failure
+```
+
+Locally the same battery explains itself:
+
+```
+INERT    CLIREF 1. the flag lookup loses its word boundary
+INERT    CLIREF 4. a flag the reference never mentions stops being reported
+```
+
+Both injections anchored on lines the guard rewrite **deleted**. An injection whose anchor is
+gone does not fail -- `rename` raises, the battery records `INERT`, keeps going, and prints a
+number one lower than the reader expects.
+
+### The gap, which is the finding rather than the incident
+
+The cheap mode, `--verify-expectations`, verified the **witness** -- that the test each
+injection names still exists -- and not the **anchor** -- that the code text the injection edits
+is still in the subject. Those are the two ways an injection goes quiet:
+
+| what is stale | the battery reports | caught locally? |
+| --- | --- | --- |
+| the witness (a renamed test) | `MISATTRIBUTED` | **yes** -- finding 157 made it a mode |
+| the anchor (deleted code) | `INERT` | **no** -- only by running the battery, 111 s, on the runner |
+
+The suite drives the reconciliation mode for every battery already
+(`battery-witnesses.test.ts`), so closing this half makes a stale anchor a
+**tenth-of-a-second local failure** instead of a runner-only one. It is also why the local run
+was green: thirteen `pnpm inject:*` commands, all of which run together only in CI, and nothing
+says which of them a given change needs.
+
+### The fix
+
+`_witnesses.anchor_problems` applies **each injection's own edit to the subject as it is**: a
+table that keeps edits as data is checked for the anchor's presence and for a replacement that
+differs; a table that keeps edits as a callable is **called**, and `rename`'s own
+`AssertionError` is the report, so no anchor list is extracted or duplicated. It is wired into
+all seven batteries from their own row shapes -- four different ones -- and `--probe` gained a
+control: an anchor that cannot exist must come back **named**. That control found a defect in
+its own message on the first run, because the pair branch did not include the anchor text.
+
+The two injections were **retargeted rather than deleted**, each keeping what it proves: CLIREF 1
+now makes the section-scoped comparison loose (`Set.has` -> a `startsWith` scan), and CLIREF 4
+removes direction one's failure push as it now stands.
+
+### Verified (Pass 46)
+
+| gate | result |
+| --- | --- |
+| the battery that failed | **24 caught, 0 survived, 0 inert, 0 unparseable, 0 unattributed, 1 redundant (expected)**, rc=0 |
+| every battery's reconciliation | `gate-tests-battery` 28, `doc-counts-shapes` 12, `backend-support` 83, `roundtrip-record` 25, `fault-extraction-scoring` 12, `fault-extraction-workflow` 9, `fetch-official-retry` 5 -- all **OK with the comparator probed** |
+| the full battery set, locally | run end to end in one pass rather than trusting CI to be the first place they all run |
+| `core` test suite | **139 files, 3686 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **142 files, 3859 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
+
+### Open
+
+- **The CLI still cannot drive any of the six T2 readers.** Unchanged from pass 45: the registry's
+  `implemented` rows are reachable from a test and from the package entry point, and from nothing
+  a user can type. `[open: the next step, and it is a CLI surface decision rather than another
+  puller -- a pull command whose backend table is held equal to the registry's implemented set,
+  so the tie is a guard rather than a convention]`

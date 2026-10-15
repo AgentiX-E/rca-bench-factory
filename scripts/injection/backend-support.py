@@ -45,6 +45,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _witnesses import anchor_problems  # noqa: E402  (the shared anchor check)
+
 REPO = Path(__file__).resolve().parents[2]
 
 GATE = "scripts/check-backend-support.mjs"
@@ -855,6 +858,28 @@ def verify_expectations(probe: bool = False) -> int:
         impossible = "this test name cannot exist"
         if impossible in cache.get(GATE_TEST, ""):
             missing.append("the negative control's name exists, so the comparison proves nothing")
+
+    # A stale anchor is an `INERT`: the battery runs, prints a number, and the number
+    # is short by one. Applying each edit here is the difference between finding that
+    # in a tenth of a second and finding it on the runner -- which is how it was
+    # found, after a rewrite of a gate script deleted two anchors and CI failed in
+    # the batteries job while the local suite was green.
+    missing.extend(
+        anchor_problems(
+            [
+                (name, REPO / target, (anchor, replacement))
+                for name, target, anchor, replacement, *_ in MUTATIONS
+            ]
+        )
+    )
+    if probe:
+        absent = "an anchor that cannot appear in any file at all"
+        probed_anchor = anchor_problems([("probe", REPO / "package.json", (absent, ""))])
+        if len(probed_anchor) != 1 or absent not in probed_anchor[0]:
+            missing.append(
+                "the anchor control failed: an anchor that cannot exist was not reported "
+                f"missing (got {probed_anchor!r}), so that check proves nothing"
+            )
 
     for line in missing:
         print(f"backend-support: {line}")

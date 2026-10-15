@@ -232,6 +232,7 @@ def verify_expectations(probe: bool = False) -> int:
         "check-roundtrip-record.test.ts",
         survivors=tuple(EXPECTED_SURVIVORS),
         probe=probe,
+        anchors=[(name, REPO / GUARD, (anchor, replacement)) for name, anchor, replacement, *_ in MUTATIONS],
     )
 
 

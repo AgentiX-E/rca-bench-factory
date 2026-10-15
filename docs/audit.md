@@ -17260,3 +17260,99 @@ The second-order result is the one worth carrying: **tightening a guard whose su
 wrong does not just catch future drift, it finds the drift already committed.** Eight
 disagreements in a document that eleven gate sites had been passing over, one of which
 instructed a reader to type a flag the binary rejects.
+
+## Finding 169 — the cheap check verified the witness and not the anchor, so a stale anchor was a runner-only failure
+
+### What failed, and where the local run had been green
+
+The commit for finding 168 was pushed with every local gate green -- typecheck, lint,
+`docs:check`, `docs:check:cold`, `docs:counts:check`, the full suite at 139 files and 3686
+tests, coverage 99.97/99.93/100/99.97. CI failed:
+
+```
+38727106150  CI  failure
+  job injection batteries, one step each ...  failure
+      !! step 17: Gate-test battery (each gate's test provably fails when its ...)  failure
+```
+
+Run locally, the same battery says why:
+
+```
+INERT    CLIREF 1. the flag lookup loses its word boundary
+INERT    CLIREF 4. a flag the reference never mentions stops being reported
+```
+
+Both are injections in `scripts/injection/gate-tests-battery.py` whose **anchors** are lines
+that finding 168 deleted when it rewrote `check-cli-reference.mjs` -- the old
+`mentionsFlag` body and the old per-topic `failures.push`. An injection whose anchor is gone
+does not fail: `rename` raises, the battery records `INERT`, keeps going, and prints a number
+one lower than the reader expects.
+
+### The gap, which is the finding rather than the incident
+
+The batteries have a cheap mode, `--verify-expectations`, and `battery-witnesses.test.ts`
+drives it for every battery **from the suite**. That mode verified the **witness** -- that the
+test each injection names still exists in the file it runs -- and it did not verify the
+**anchor** -- that the code text the injection edits is still in the subject.
+
+Those are the two ways an injection goes quiet, and they are different defects with different
+verdicts:
+
+| what is stale | what the battery reports | was it caught locally |
+| --- | --- | --- |
+| the witness (a renamed test) | `MISATTRIBUTED` | **yes** -- finding 157 made it a mode |
+| the anchor (deleted code) | `INERT` | **no** -- only by running the battery, 111 s, on the runner |
+
+So the repository had a local check for one half and not the other, and the half it lacked is
+the one a rewrite of a gate script produces. There is also no aggregate local command for the
+batteries: thirteen `pnpm inject:*` scripts, all of which run together only in the CI
+`batteries` job. "Verify before pushing" therefore meant knowing which of thirteen to run, and
+nothing told me this change needed one.
+
+### The fix
+
+`_witnesses.anchor_problems` applies **each injection's own edit to the subject as it is**:
+
+- a table that keeps its edits as data (`(anchor, replacement)`) is checked for the anchor's
+  presence, and for a replacement that differs;
+- a table that keeps its edits as a callable is **called**. `rename` asserts the anchor is
+  present, so a stale anchor raises `AssertionError`, and that exception *is* the report --
+  no anchor list is extracted or duplicated.
+
+It is wired into all seven batteries that own injections, from their own row shapes, and
+`--probe` gained a control for it: an anchor that cannot appear in any file must come back
+**named**. That control found a defect in its own message on the first run -- the pair branch
+did not include the anchor text, so the control could not see what it was looking for.
+
+The two injections were **retargeted rather than deleted**, keeping what each proves:
+
+| injection | was anchored on | now anchored on | what it still proves |
+| --- | --- | --- | --- |
+| CLIREF 1 | `mentionsFlag`'s trailing word boundary | `written.has(flag)` becoming a `startsWith` scan | a renamed flag is not documentation of the shorter one |
+| CLIREF 4 | the old `failures.push` for direction one | the same push in the section-scoped check | a flag the reference never mentions is still reported |
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| the battery that failed | `pnpm inject:gate-tests` -> **24 caught, 0 survived, 0 inert, 0 unparseable, 0 unattributed, 1 redundant (expected)**, rc=0 |
+| every battery's reconciliation, with anchors | `gate-tests-battery` 28 witnesses, `doc-counts-shapes` 12, `backend-support` 83, `roundtrip-record` 25, `fault-extraction-scoring` 12, `fault-extraction-workflow` 9, `fetch-official-retry` 5 -- **all OK with the comparator probed** |
+| the anchor control | an anchor that cannot exist is reported missing **and named**; without the name in the message the control fails, which is how the pair branch's message was fixed |
+| the row shapes it had to fit | four different ones across seven batteries: `(name, subject, test, callable, witness)`, `(name, target, anchor, replacement, test, witness)`, `(name, anchor, replacement, witness)` with a module-level subject, and a battery that keeps its own inline loop and did not import the shared module at all |
+
+### What this says about the method
+
+Finding 157 made a renamed **witness** fail locally by turning the reconciliation into a mode,
+and that worked: the class it covers has not recurred. The same reasoning was never applied to
+the **anchor**, which is the other input an injection has -- and the two are checked against
+different things: a witness against a test *file*, an anchor against the code *text*. One is
+reachable without executing anything; the other needs the edit applied, which is exactly what a
+cheap mode can now do.
+
+> **An injection has two inputs, and a reconciliation that checks one of them reports half a
+> table as whole.** The half it did not check is the half a gate rewrite breaks.
+
+The second-order point is about where verification happens. The batteries run in CI and not in
+`pnpm test`, so a change to a gate script is verified by the *suite* only to the extent the
+suite reads that script. Moving the anchor check into the mode the suite already drives is what
+turned a **111-second runner-only failure** into a **tenth-of-a-second local one**.
