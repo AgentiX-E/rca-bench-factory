@@ -76,16 +76,75 @@ for (const topic of topics) {
 }
 
 /**
- * Does the reference mention this exact flag?
+ * The reference's per-command sections, keyed by the command each one documents.
  *
- * A plain `includes` is not enough: `--lead-ms-X` contains `--lead-ms`, so a
- * renamed flag would still look documented. The trailing boundary rejects a
- * flag character following the name, which is what makes a rename visible.
+ * ## Why this exists, and the defect it fixes
+ *
+ * The first version of this gate looked a flag up in the **whole document**:
+ *
+ *   `mentionsFlag(markdown, flag)` -- over `markdown`
+ *
+ * while the header above claims it catches "a command whose `--help` output and
+ * whose reference **section** disagree". Both halves of that were false, and
+ * both were measured rather than reasoned about:
+ *
+ *  - a real flag could be deleted from its own command's section and written
+ *    under another command's heading, and the gate stayed green, because the
+ *    name was still somewhere in the file;
+ *  - a flag **no command accepts** could be written in a section, and the gate
+ *    stayed green too, because every check ran from the help text towards the
+ *    document and none ran back.
+ *
+ * A section runs from its own `### \`rca-bench X\`` heading to the next heading
+ * at the same or a higher level. That is the same rule `check-open-list.mjs`
+ * needed for its second list (finding 162): the subject is the section, and a
+ * document-wide search is a different subject wearing the same name.
+ *
+ * ## What is deliberately not compared
+ *
+ * The text before the first per-command heading documents global behaviour --
+ * `--help`, `-h`, `help <command>` -- which no command advertises as its own
+ * flag and every command accepts. Holding that preamble to a command's flag set
+ * would report a disagreement where there is none, so the per-command sections
+ * are the contract and the preamble is prose. Said here rather than left as a
+ * silent gap.
  */
-function mentionsFlag(markdown, flag) {
-  const pattern = new RegExp(`${flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`);
-  return pattern.test(markdown);
+function commandSections(markdown) {
+  const sections = new Map();
+  let current;
+  for (const line of markdown.split('\n')) {
+    const heading = /^### `rca-bench ([\w-]+)`\s*$/.exec(line);
+    if (heading !== null) {
+      current = heading[1];
+      if (!sections.has(current)) sections.set(current, []);
+      continue;
+    }
+    if (/^#{1,3} /.test(line)) {
+      current = undefined;
+      continue;
+    }
+    if (current !== undefined) sections.get(current).push(line);
+  }
+  return sections;
 }
+
+/**
+ * Every flag written in a block of text, as a set.
+ *
+ * The leading boundary rejects a flag glued to a word, so prose about
+ * `x--flag` is not read as a mention; the trailing side needs no boundary here
+ * because the comparison is set membership -- `--lead-ms-X` is simply not
+ * `--lead-ms`, which is what makes a rename visible.
+ */
+function flagsIn(lines) {
+  // `--` followed by a lowercase letter: a flag starts with a word, and a
+  // Markdown table rule is `| --- |`. Without that letter the rule's own dashes
+  // read as a flag named `---`, which is what the first run of this check
+  // reported under `official` before it was narrowed.
+  return new Set([...lines.join('\n').matchAll(/(?<![\w-])(--[a-z][\w-]*)/g)].map((m) => m[1]));
+}
+
+const sections = commandSections(markdown);
 
 for (const topic of topics) {
   let help;
@@ -96,15 +155,32 @@ for (const topic of topics) {
     continue;
   }
 
-  // Every flag the help advertises must appear somewhere in the reference
-  // document. The prose around it is free-form; the flag name is the contract.
   const flags = [...help.matchAll(/^ {2}(--[\w-]+)/gm)].map((m) => m[1]);
   if (flags.length === 0) {
     failures.push(`command '${topic}' advertises no flags, which cannot be right`);
   }
+
+  const section = sections.get(topic);
+  if (section === undefined) {
+    failures.push(`command '${topic}' has no \`### rca-bench ${topic}\` section in docs/cli-reference.md`);
+    continue;
+  }
+  const written = flagsIn(section);
+
+  // Direction one: every flag the help advertises must be written down in the
+  // section a reader would follow to find out what it does.
   for (const flag of flags) {
-    if (!mentionsFlag(markdown, flag)) {
-      failures.push(`'${flag}' is accepted by '${topic}' but absent from docs/cli-reference.md`);
+    if (!written.has(flag)) {
+      failures.push(`'${flag}' is accepted by '${topic}' but absent from docs/cli-reference.md's section for it`);
+    }
+  }
+
+  // Direction two: every flag written in the section must be one the command
+  // accepts. This is the direction that reads a reference when the flag has
+  // been removed from the binary -- the moment a stale document misleads.
+  for (const flag of written) {
+    if (!flags.includes(flag)) {
+      failures.push(`'${flag}' is written under '${topic}', which does not accept it`);
     }
   }
 }

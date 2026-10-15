@@ -17155,3 +17155,108 @@ The other correction worth carrying forward is about evidence rather than reason
 161 concluded from two failed downloads that the sandbox walls off release artifacts. This
 round pulled 253 MB in nineteen seconds from a different host. **A wall measured on two
 artifacts is a wall on those two artifacts.**
+\n
+## Finding 168 — the guard that read the document where it said "section", and the three drifts that had been living there
+
+### What the guard claimed, and what it read
+
+`scripts/check-cli-reference.mjs` opens with:
+
+> Two independent drifts are possible, and this catches both: ... 2. A command whose
+> `--help` output and whose reference **section** disagree about the flag set.
+
+The second half of that was false, in two ways at once, and both were measured before
+anything was changed:
+
+| what was written | what the gate said |
+| --- | --- |
+| a flag **no command accepts** (`--not-a-real-flag`), added to the `pack` section | **PASSED** |
+| `--lead-ms` deleted from the `ingest` section and written under `pack` instead | **PASSED** |
+
+The cause is one line: `mentionsFlag(markdown, flag)` searched the **whole document**. So a
+flag satisfied the command that advertises it as long as the name appeared *somewhere*, and
+nothing at all checked the other direction -- every test ran from the help text towards the
+document, so a document that invented a flag, or kept one after it was removed from the
+binary, was never contradicted.
+
+That is finding 162's defect one level down (a guard reading the first of two lists), and
+finding 153's (a shape face that is not closed), in the place where it costs a reader
+most: **the flag list is the part of a reference a reader actually types.**
+
+### The fix, and the three drifts it immediately found
+
+Flags are now compared **within each command's own section**, in both directions: every flag
+the help advertises must be written in that command's section, and every flag written there
+must be one the command accepts. Sections are bounded the way finding 162 established -- from
+their `### rca-bench X` heading to the next heading at the same or a higher level.
+
+The stricter rule did not pass the shipped document. It found **eight** disagreements, and
+they are three different things:
+
+| finding | what was wrong |
+| --- | --- |
+| `--output` written in the `export` section | **`rca-bench export` does not accept it.** Measured: `rca-bench export --output z` answers `error: Unknown option '--output'`. The reference told a reader to type a flag the command rejects, in the sentence explaining where the skip warning is printed. It is `--out-dir`. |
+| `ingest`'s section named `--layout` and `--anchors` as if they were its own | they belong to `source` and `score`; the sentence was making a point about a **convention**, and named two other commands' flags to do it. Now it names the commands. |
+| `---` reported as a flag under `official` | the rule, not the document: a Markdown table's separator row is `\| --- \|`. Narrowed to `--` followed by a lowercase letter, so a flag still has to start with a word. |
+
+Six of the eight are one defect wearing a single face: the `ingest` section
+carried a three-command round-trip example (`ingest` → `export` → `official`) inside a
+`bash` fence, so `--suite`, `--input`, `--out-dir` and `--dir` appeared under a command that
+does not take them.
+
+The tempting fix was an exemption -- "flags in a fenced block do not count" -- and it is the
+wrong one. The example is about three commands; documenting it under one of them is what put
+another command's flags in that section. It moved to a `## Worked example: the L4 round trip`
+section of its own, where the prose can say that each flag belongs to the command it follows.
+**The document got better, not merely quieter.**
+
+### What is deliberately not compared, and why that is stated rather than left out
+
+The text before the first per-command heading documents global behaviour: `--help`, `-h`,
+`help <command>`. No command advertises `--help` as its own flag (measured: the flag list
+`--help` produces does not contain it) and every command accepts it. Holding the preamble to
+one command's flag set would report a disagreement where there is none, so the per-command
+sections are the contract and the preamble is prose. That boundary is written into the
+script rather than left as a silent gap -- a gap nobody states is the shape this campaign
+keeps finding.
+
+### A defect I looked for and did not find, with the measurement
+
+The same hunt turned up a candidate next door: a command added to the CLI's spec table
+without a handler in `run.ts` would be advertised by `--help`, documented, and reachable --
+and `run`'s switch has no `default`, so the fall-through would return `undefined` to
+`process.exitCode`, which is a command that **does nothing and exits 0**.
+
+It is not reachable. Measured: adding a variant to the `CliCommand` union and stopping there
+fails `pnpm typecheck` with
+
+```
+src/run.ts(673,70): error TS2366: Function lacks ending return statement and return type
+does not include 'undefined'.
+```
+
+`noImplicitReturns` is on and CI runs the typecheck, so the enumeration can only be extended
+by implementing it. Recorded here because a hunt that finds nothing is a result, and because
+the next person to wonder will otherwise re-run the same experiment.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| `check-cli-reference.test.ts` | **9 tests** (6 before), across three describes: the drift report, the two directions the section-scoped check added, and the new "no section of its own" state |
+| the two new tests, before the fix | **red** -- both fixtures passed the old gate, which is what made them worth writing |
+| the shipped document, before the fix | **8 disagreements reported**, 3 real and 5 from one editorial mistake |
+| the shipped document, after | `CLI reference check PASSED (11 commands, 13 documented)` |
+| the fixture that had to change | `referenceFor(..., { flags: false })` wrote **no sections**, so once sections became the subject it exercised the "no section" branch instead of the one it names. It now writes a section per command with no flags in it, and the test's comment says why |
+
+### What this says about the method
+
+The gate's header was a claim about its own subject, and the claim was wrong in the way
+finding 162's was: **a document-wide search is not a section-scoped search wearing the same
+word.** The difference is invisible until a flag is moved, which no amount of reading the
+script reveals -- moving one was the measurement.
+
+The second-order result is the one worth carrying: **tightening a guard whose subject was
+wrong does not just catch future drift, it finds the drift already committed.** Eight
+disagreements in a document that eleven gate sites had been passing over, one of which
+instructed a reader to type a flag the binary rejects.

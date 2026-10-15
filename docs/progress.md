@@ -4284,9 +4284,9 @@ an untouched file, the first hypothesis is the battery rather than the file.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **139 files, 3683 tests passed** (as of this commit) |
-| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
-| repo test suite | **142 files, 3856 tests passed** (as of this commit) |
+| `core` test suite | **139 files, 3683 tests passed** (as of `153b72971`) |
+| `cli` test suite | **3 files, 173 tests passed** (as of `153b72971`) |
+| repo test suite | **142 files, 3856 tests passed** (as of `153b72971`) |
 | coverage — core | **99.97 / 99.93 / 100 / 99.97** (stmts / branch / funcs / lines) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | coverage — `src/ingest/clickhouse.ts` and the whole `src/ingest` directory | **100 / 100 / 100 / 100** |
@@ -4308,3 +4308,80 @@ an untouched file, the first hypothesis is the battery rather than the file.
   tell a `SELECT` from a `DROP` and relies on the account being read-only. `[open: stated in
   the module rather than implied; a read-only account is the mitigation and it is the
   caller's to configure]`
+
+
+## Pass 45 — the guard that read the document where it said "section", and the three drifts under it
+
+### What the guard claimed, and what it read
+
+`scripts/check-cli-reference.mjs` opens by claiming it catches "a command whose `--help` output
+and whose reference **section** disagree about the flag set". Measured before anything was
+changed, the claim was false in two ways at once:
+
+| what was written | what the gate said |
+| --- | --- |
+| a flag **no command accepts** (`--not-a-real-flag`), added to a command's section | **PASSED** |
+| `--lead-ms` deleted from the `ingest` section and written under `pack` | **PASSED** |
+
+The cause is one line -- `mentionsFlag(markdown, flag)` searched the **whole document** -- so a
+flag satisfied the command that advertises it as long as the name appeared *somewhere*, and
+nothing checked the other direction at all. Every test ran from the help text towards the
+document, so a document that invented a flag, or kept one after it was removed from the binary,
+was never contradicted.
+
+### The fix, and what it found on its first run
+
+Flags are now compared **within each command's own section**, both directions: every flag the
+help advertises must be written in that command's section, and every flag written there must be
+one the command accepts. Sections are bounded the way finding 162 established -- their heading
+to the next heading at the same or a higher level.
+
+The stricter rule did **not** pass the shipped document. It reported eight disagreements:
+
+| what | what was wrong |
+| --- | --- |
+| `--output` under `export` | **the command does not accept it** -- measured, `rca-bench export --output z` answers `error: Unknown option '--output'`. The reference told a reader to type a flag the binary rejects, in the sentence about where the skip warning goes. It is `--out-dir`. |
+| six under `ingest` | one editorial mistake: the section carried a three-command round-trip example inside a `bash` fence, so `--suite`, `--input`, `--out-dir` and `--dir` appeared under a command that does not take them, plus `--layout` and `--anchors` named as if they were `ingest`'s own. |
+| `---` under `official` | the rule, not the document: a Markdown table's separator row is `\| --- \|`. Narrowed to `--` followed by a lowercase letter. |
+
+The tempting fix for the six was an exemption -- "flags in a fenced block do not count" -- and it
+is the wrong one: the example is about **three** commands, and documenting it under one of them
+is what put another command's flags in that section. It moved to a `## Worked example: the L4
+round trip` section of its own. **The document got better, not merely quieter.**
+
+### What is deliberately not compared, stated rather than left out
+
+The text before the first per-command heading documents global behaviour (`--help`, `-h`,
+`help <command>`), which no command advertises as its own flag -- measured -- and every command
+accepts. The per-command sections are the contract and the preamble is prose, and the script
+says so instead of leaving a silent gap.
+
+### A defect hunted for, and not found, with the measurement
+
+The same hunt produced a candidate: a command added to the spec table without a handler in
+`run.ts` would be advertised, documented and reachable, and `run`'s switch has no `default`, so
+the fall-through would return `undefined` -- a command that does nothing and exits 0. Measured:
+adding a variant to the `CliCommand` union and stopping there fails `pnpm typecheck` with
+`TS2366: Function lacks ending return statement`, and CI runs the typecheck. Recorded because a
+hunt that finds nothing is a result.
+
+### Verified (Pass 45)
+
+| gate | result |
+| --- | --- |
+| `core` test suite | **139 files, 3686 tests passed** (as of this commit) |
+| `cli` test suite | **3 files, 173 tests passed** (as of this commit) |
+| repo test suite | **142 files, 3859 tests passed** (as of this commit) |
+| the reference gate's own tests | **9 tests** (6 before): the drift report, the two directions section-scoping added, and the new "no section of its own" state |
+| the shipped reference, before / after | **8 disagreements** reported, then `CLI reference check PASSED (11 commands, 13 documented)` |
+| the fixture that had to change | `referenceFor(..., { flags: false })` wrote **no sections**; once sections became the subject it exercised the "no section" branch instead of the one it names. It now writes a section per command with no flags in it |
+| `derive-gate-sites` | the one moved site (`check-cli-reference.mjs`, 123 -> 199) lost its signature as a line shift always does, and was **re-signed by hand** to `proved`; the inventory is back to **50 of 50** |
+
+### Open
+
+- **The CLI still cannot drive any of the six T2 readers.** The registry's `implemented` rows are
+  reachable from a test and from the package entry point, and from nothing a user can type -- so
+  the six rows describe a **capability**, not an available operation, and nothing in the
+  repository ties the two enumerations together. `[open: this is the next step and it is a CLI
+  surface decision rather than another puller -- a pull command whose backend table is held equal
+  to the registry's implemented set, so the tie is a guard rather than a convention]`

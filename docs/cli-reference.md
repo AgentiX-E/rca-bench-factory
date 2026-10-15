@@ -39,6 +39,18 @@ Help is not a way past a bad command name: `rca-bench frobnicate --help` still
 fails with `unknown command 'frobnicate'`, because a typo silently answered with
 usage text teaches the caller nothing.
 
+## Worked example: the L4 round trip
+
+Three commands compose into the verification that starts from the official dataset rather
+than from a bundle we authored. Each flag below belongs to the command it follows, which is
+why the sequence lives here rather than inside any one command's reference:
+
+```bash
+rca-bench ingest --source ./official-data --target rcaeval --cases cases.json --output bundle.json
+rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./roundtrip
+rca-bench official --target rcaeval-re2 --dir ./roundtrip
+```
+
 ### `rca-bench source`
 
 ```text
@@ -102,7 +114,8 @@ rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
   rca-bench ingest --source ./official-data --target rcaeval --cases cases.json \
     --entities '[{"entityId":"service:rcaeval/ts-absent","kind":"service","name":"ts-absent","aliases":[]}]'
   ```
-  The value is inline JSON, matching `--layout` and `--anchors`, and each entry
+  The value is inline JSON, following the convention the `source` and `score` commands
+  each set for their own structured options, and each entry
   is validated against the same entity contract the IR uses. An empty array is
   rejected: a declaration that declares nothing is a mistake, not a no-op.
 - `--edges` adds topology edges the telemetry does not express, as inline JSON in
@@ -147,14 +160,6 @@ rca-bench ingest --source ./official-data --target rcaeval --cases cases.json
   stderr without failing the run. Non-zero `hardErrors` must be treated as "that
   case was not reproduced".
 - The bundle is written to `--output` or to stdout.
-
-**Round trip.** The three commands compose into the L4 verification:
-
-```bash
-rca-bench ingest --source ./official-data --target rcaeval --cases cases.json --output bundle.json
-rca-bench export --target rcaeval --suite RE2 --input bundle.json --out-dir ./roundtrip
-rca-bench official --target rcaeval-re2 --dir ./roundtrip
-```
 
 ### `rca-bench transform`
 
@@ -242,7 +247,7 @@ warning: 1 of 2 case(s) skipped
   A bundle of N cases that exports N−1 produces a *smaller benchmark*, and
   `score` then scores the remainder and reports a number that looks complete.
   The warning is what makes the two distinguishable. It is printed even when
-  `--output` is used, and the total is never capped — only the per-case detail
+  `--out-dir` is used, and the total is never capped — only the per-case detail
   is, at 10 lines, stated as `... and N more`.
 - Which condition triggers a skip depends on the target. `openrca-1.0`,
   `openrca-2.0`, `rcaeval`, `rca100` and `aiops2025` skip a case with no

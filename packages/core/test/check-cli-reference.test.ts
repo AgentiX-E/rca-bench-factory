@@ -157,10 +157,17 @@ describe('scripts/check-cli-reference.mjs · the drift report', () => {
   });
 
   it('refuses a reference that documents no flag at all', { timeout: 30_000 }, () => {
-    // The `flags.length === 0` branch: a command advertising no flags "cannot
-    // be right", in the gate's words. Without it, a reference stripped of every
-    // flag table would pass -- there would be nothing to look up and no failure
-    // to report. This is the branch that makes the flag comparison total.
+    // The branch that makes the flag comparison total: a reference whose
+    // sections exist but never name a flag used to pass, because a lookup that
+    // finds nothing reports nothing. The document below lists every command and
+    // describes each one, so the only thing missing is the flags -- which is
+    // exactly the drift a reader cannot see and a gate must.
+    //
+    // The fixture writes a section per command. It wrote *no* sections until
+    // the check became section-scoped, at which point "no section" -- a
+    // different defect with a different message -- was reported instead, and
+    // this test failed for a reason that had nothing to do with what it
+    // asserts. That is the fixture being wrong rather than the check.
     const topics = advertisedTopics();
     const document = referenceFor(topics, { flags: false });
 
@@ -217,6 +224,86 @@ describe('scripts/check-cli-reference.mjs · the drift report', () => {
   });
 });
 
+/**
+ * The two directions the first version of this gate did not read.
+ *
+ * Its header claims it catches "a command whose `--help` output and whose
+ * reference section disagree about the flag set". Measured, it did not: the
+ * lookup was `mentionsFlag(markdown, flag)`, over the **whole document**, and
+ * only in the direction help → reference. So a flag could be listed under the
+ * wrong command, or invented outright, and the gate stayed green. Both are
+ * finding 153's shape -- the guard's subject was the document where it said
+ * "section" -- and both are exhibited below rather than described.
+ */
+describe('scripts/check-cli-reference.mjs · the section, not the document', () => {
+  it('refuses a flag documented under a command that does not accept it', { timeout: 30_000 }, () => {
+    // The fixture moves a real flag out of the section of the command that
+    // advertises it and into the section of a command that does not. The
+    // document still mentions the flag, so a whole-document lookup passes it;
+    // the command whose `--help` lists it now has nothing under its own
+    // heading, which is what a reader follows.
+    const flags = advertisedFlags();
+    expect(flags.length).toBeGreaterThan(0);
+    const [topic, flag] = flags[0]!;
+    const topics = advertisedTopics();
+    const other = topics.find((t) => t !== topic);
+    expect(other, 'only one command advertises flags, so this fixture has no subject').toBeDefined();
+
+    let document = referenceFor(topics);
+    // Remove the honest mention, then write the flag under the other command.
+    document = document.split(flag).join('--removed-entirely');
+    document = document.replace(
+      `### \`rca-bench ${other}\``,
+      `### \`rca-bench ${other}\`\n\nThe flag \`${flag}\` is documented here, under the wrong command.`,
+    );
+    expect(document).toContain(flag);
+
+    const result = run(treeWith(document));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`'${flag}' is accepted by '${topic}'`);
+  });
+
+  it('refuses a flag no command accepts, documented in a command section', { timeout: 30_000 }, () => {
+    // The direction the gate never read at all: every check ran from the help
+    // text towards the document, so a document that invents a flag -- or keeps
+    // one after it was removed from the CLI -- was never contradicted. A
+    // reference is read precisely when the flag is gone from the binary, which
+    // is the moment this direction matters.
+    const topics = advertisedTopics();
+    const document = `${referenceFor(topics)}
+A reader may also pass \`--not-a-real-flag <x>\`.\n`;
+
+    const result = run(treeWith(document));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('--not-a-real-flag');
+  });
+});
+
+describe('scripts/check-cli-reference.mjs · a command with no section of its own', () => {
+  it('refuses a command the binary implements, listed, and left without a section', { timeout: 30_000 }, () => {
+    // A third state, and one the section-scoped check made new: the command is in
+    // the reference's table, so a reader knows it exists, and its `--help` works,
+    // but nothing under its own heading says what its flags do. The omission is
+    // invisible from the table, which is why it needs its own message rather than
+    // being folded into "absent from the document".
+    const topics = advertisedTopics();
+    const orphaned = topics[1]!;
+    const document = referenceFor(topics).replace(
+      new RegExp(`### \\\`rca-bench ${orphaned}\\\`[\\s\\S]*?(?=### |$)`),
+      '',
+    );
+    expect(document).toContain(`| \`${orphaned}\` |`);
+    expect(document).not.toContain(`### \`rca-bench ${orphaned}\``);
+
+    const result = run(treeWith(document));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`command '${orphaned}' has no`);
+  });
+});
+
 /** Every flag the binary advertises, as `[topic, flag]`, read from its `--help`. */
 function advertisedFlags(): [string, string][] {
   const found: [string, string][] = [];
@@ -244,13 +331,21 @@ function referenceFor(topics: string[], options: { flags?: boolean } = {}): stri
   const lines = ['# CLI reference', '', '## Implemented commands', '', '| Command | What it does |', '| --- | --- |'];
   for (const topic of topics) lines.push(`| \`${topic}\` | a command |`);
   lines.push('');
-  if (options.flags === false) return `${lines.join('\n')}\n`;
   for (const topic of topics) {
+    lines.push(`### \`rca-bench ${topic}\``, '');
+    if (options.flags === false) {
+      // A section that says what the command does and never names a flag. It
+      // used to write no section at all, which stopped being the same thing
+      // once the check became section-scoped: "no section" and "a section with
+      // no flags" are now two different defects with two different messages.
+      lines.push(`Runs ${topic}.`, '');
+      continue;
+    }
     const help = spawnSync(process.execPath, [resolve(ROOT, 'packages/cli/dist/main.js'), topic, '--help'], {
       encoding: 'utf8',
     }).stdout;
     const flags = [...help.matchAll(/^ {2}(--[\w-]+)/gm)].map((m) => m[1]!);
-    lines.push(`### \`rca-bench ${topic}\``, '', `Flags: ${flags.map((f) => `\`${f}\``).join(', ')}`, '');
+    lines.push(`Flags: ${flags.map((f) => `\`${f}\``).join(', ')}`, '');
   }
   return `${lines.join('\n')}\n`;
 }
