@@ -4747,10 +4747,40 @@ the classes with a failure exit be exactly the scripts the inventory names.
 | the inventory | **57 failure site(s) across 37 of 40 script(s)**; **49 proved, 6 exempt, 0 unannotated**; exclusions `{zero: 7, indirect: 3, multiline: 0}` |
 | what the first re-derivation exposed | **7 unannotated sites** across six scripts, four of them batteries or probes the pipeline runs |
 | the guards that refused the change | `scripts-are-classified` (both directions), `probe-built-module-guards` (a probe's second exit stopped being a built-module guard), and `gate-sites-are-proven` on the two sites the deriver's own edit displaced |
-| `core` test suite | **140 files, 3756 tests passed** (as of this commit) |
+| `core` test suite | **141 files, 3756 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **144 files, 3942 tests passed** (as of this commit) |
+| repo test suite | **145 files, 3942 tests passed** (as of this commit) |
 | `typecheck` / `lint` / `docs:check` | green |
+
+### A green local run and a red CI, and the reading that separated them
+
+The first push of this pass failed CI in `build / typecheck / lint / coverage`, with **every test
+passing on the runner**:
+
+```
+Test Files  140 passed (140)
+     Tests  3756 passed (3756)
+    Errors  1 error
+
+Vitest caught 1 unhandled error during the test run.
+Error: [vitest-worker]: Timeout calling "onTaskUpdate"
+```
+
+The suite was green and vitest exited non-zero. Every case in `check-cli-reference.test.ts`
+spawns the gate, the gate imports core's built `dist/index.js`, and one case costs about 2.3 s --
+so the five cases this pass added took that file from ~21 s of serial work to ~32 s, and the
+worker's RPC to the main process timed out under the accumulated update traffic. This machine is
+faster, which is why the same run passed here.
+
+The fix is a second test file rather than a wider timeout: it restores the parallelism the extra
+cases were taking away, and the five moved to `cli-reference-backend-table.test.ts` with their
+two helpers. **The number to read is `141 files` where the previous pass had `140`** -- one file
+became two, which is what the green CI is a statement about.
+
+> **A local green is not a reading about the runner.** That sentence is in
+> `.github/workflows/ci.yml` beside the job budgets, and this pass is a second instance of it: a
+> shared budget (here, an RPC timeout nobody had measured against) exhausted by work that is
+> serial in one file and parallel across two.
 
 ### Open
 

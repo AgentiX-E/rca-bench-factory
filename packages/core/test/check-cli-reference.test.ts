@@ -351,106 +351,17 @@ function referenceFor(topics: string[], options: { flags?: boolean } = {}): stri
 }
 
 /**
- * The `pull` section's per-backend table, copied out of the committed reference.
+ * The `pull` section's per-backend table moved to
+ * `cli-reference-backend-table.test.ts`.
  *
- * The input is the **document**, not the code: the table under test is the one a
- * reader follows, and generating it from `PULL_BACKEND_FLAGS` would make every
- * test below a restatement of the thing it is supposed to check. The positive
- * control is the committed table itself; each negative mutates one row of it.
+ * It was five more cases here, and every case in this file spawns the gate, which
+ * imports core's built `dist/index.js` -- about 2.3 s each. Fourteen cases in one
+ * file is ~32 s of serial work, and CI failed with
+ * `[vitest-worker]: Timeout calling "onTaskUpdate"` **while every test passed**:
+ * the worker's RPC to the main process timed out under the accumulated update
+ * traffic, and vitest exits non-zero for an unhandled error even when the suite is
+ * green. Locally the same run passed, because this machine is faster.
+ *
+ * A second test file is the fix rather than a wider timeout -- it restores the
+ * parallelism the extra cases were taking away, and it costs nothing else.
  */
-function committedPullTable(): string {
-  const document = readFileSync(REFERENCE, 'utf8');
-  const section = document.split('### `rca-bench pull`')[1]?.split(/^### /m)[0] ?? '';
-  const lines = section.split('\n');
-  const header = lines.findIndex((l) => /\|\s*Required\s*\|/.test(l) && /\|\s*Optional\s*\|/.test(l));
-  if (header === -1) throw new Error('the committed reference has no per-backend table in its pull section');
-  const rows = [lines[header]!];
-  for (let i = header + 1; i < lines.length; i += 1) {
-    if (!lines[i]!.trim().startsWith('|')) break;
-    rows.push(lines[i]!);
-  }
-  // Trimmed, because the committed document indents its table rows and a fixture
-  // that carried the indentation through would have to reproduce it in every
-  // mutation regex -- which is a fixture detail, not part of what is under test.
-  return rows.map((row) => row.trim()).join('\n');
-}
-
-/** A reference whose `pull` section carries the given per-backend table. */
-function referenceWithPullTable(table: string): string {
-  const document = referenceFor(advertisedTopics());
-  const withTable = document.replace(
-    /(### `rca-bench pull`\n\nFlags: [^\n]*\n)/,
-    `$1\n${table}\n`,
-  );
-  if (withTable === document) throw new Error('the fixture could not place the table inside the pull section');
-  return withTable;
-}
-
-/**
- * The per-backend table, which nothing read until now.
- *
- * `check-cli-reference.mjs` compares the flag *set* of every command in both
- * directions, so a flag cannot drift out of the reference. What it never read is
- * the table in the `pull` section saying **which backend needs which flag** --
- * a hand-written copy of `PULL_BACKEND_FLAGS` that could have said anything.
- *
- * The last test is the one that matters most. Comparing the two *sets* would
- * accept a table that moved a flag from `Required` to `Optional`: every flag is
- * still named, and only the column it sits in is wrong -- which is precisely the
- * error a reader would act on.
- */
-describe('scripts/check-cli-reference.mjs · the per-backend table', () => {
-  it('accepts the committed table', { timeout: 30_000 }, () => {
-    const result = run(treeWith(referenceWithPullTable(committedPullTable())));
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain('CLI reference check PASSED');
-  });
-
-  it('refuses a backend the table leaves out', { timeout: 30_000 }, () => {
-    const table = committedPullTable().replace(/^\| `kubernetes` \|.*\n?/m, '');
-    expect(table).not.toContain('`kubernetes`');
-
-    const result = run(treeWith(referenceWithPullTable(table)));
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('kubernetes');
-  });
-
-  it('refuses a backend the table invents', { timeout: 30_000 }, () => {
-    const table = `${committedPullTable()}\n| \`graphite\` | \`--base-url\` | \`--query\` |`;
-
-    const result = run(treeWith(referenceWithPullTable(table)));
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('graphite');
-  });
-
-  it('refuses a required flag the table never names', { timeout: 30_000 }, () => {
-    const table = committedPullTable().replace(
-      /^\| `clickhouse` \|.*$/m,
-      '| `clickhouse` | `--base-url --query --columns --user` | `--timestamp-unit --password --database --timeout-ms` |',
-    );
-    expect(table).not.toMatch(/`clickhouse`[^|]*\|[^|]*--limit/);
-
-    const result = run(treeWith(referenceWithPullTable(table)));
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('--limit');
-  });
-
-  it('refuses a flag moved from required to optional, which a set comparison would accept', { timeout: 30_000 }, () => {
-    // Both columns still name `--service-label`; only the column changed. A gate
-    // that compared the union of the two would stay green here, and a reader who
-    // followed the document would omit a flag Loki refuses to run without.
-    const table = committedPullTable().replace(
-      /^\| `loki` \|.*$/m,
-      '| `loki` | `--base-url --query --start --end --limit --direction` | `--service-label --timeout-ms` |',
-    );
-
-    const result = run(treeWith(referenceWithPullTable(table)));
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('--service-label');
-  });
-});
