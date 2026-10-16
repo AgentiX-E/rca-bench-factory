@@ -4901,22 +4901,29 @@ dead one`.
 | `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
 | repo test suite | **145 files, 3947 tests passed** (as of this commit) |
 | `typecheck` / `lint` / `docs:check` / `docs:counts:check` | green |
-| CI | run `38915028418` on `590cc0819` -- **four jobs, all success**; the audit's step **153 s on the runner against 103.96 s here** |
+| CI | run `38924872859` on `7c8561db0` -- **four jobs, all success**; the audit's step **153 s on the runner against 103.96 s here** |
 
 ### The budget, measured twice, because one run is not a measurement
 
 The audit's step is the one that changed, and on the runner it went from a step nobody had timed to
 **153 s** -- 1.5x the local figure, a ratio only a runner can give you.
 
-The job that hosts every battery is where that lands, and **three runs of this same tree** measured
-it at **1375 s**, **1164 s** and **1423 s** against a budget of 1800 s. A 259-second spread on
-unchanged work -- **two thirds to four fifths of the budget, and no single run settles which**. So the
-stable statement is the range and the rule it is subject to, not a sample: this job's size is a
-distribution, and a fourth run is entitled to land anywhere in it.
+The job that hosts every battery is where that lands, and **four runs of this same tree** measured it
+at **1375 s**, **1164 s**, **1423 s** and **1059 s** of its 1800 s budget. Same work, a spread of
+**364 seconds**.
 
-That is the same lesson as the numbers above, one level up, and it is why the first version of this
-paragraph -- which wrote `1375 s` down as *the* figure -- was corrected rather than left: a single
-reading presented as a measurement is what finding 166 records happening to this exact budget.
+The planning number is **the largest observed: 1423 s, 79%**, because a budget is exhausted by the
+worst run and not by the average. The spread is an estimate of a distribution that more runs can widen
+and cannot narrow, so the honest form is *at least* this wide rather than *exactly* this wide.
+
+This paragraph was corrected **three times**, and each correction is the same mistake one sample
+smaller. It first wrote `1375 s` down as *the* figure; then reported two samples (`1375`, `1164`) and
+called the margin seven to ten minutes; then reported three (`1375`, `1164`, `1423`) and called it two
+thirds to four fifths -- and **the fourth run came in at 1059 s, below the floor of that claim**, from
+CI, an hour later, for free. Every version was falsified by the next run, and only the version that
+names the worst case and says the range can widen is not a sample dressed as a measurement. Finding
+166 is this file's record of a budget being exceeded; this is the same file failing four times to say
+what a budget measurement is.
 
 ### Open
 
@@ -4924,10 +4931,10 @@ reading presented as a measurement is what finding 166 records happening to this
   173.** The audit takes its subjects from `gate-sites.json`, and the tie is asserted in both
   directions against the real tree rather than by pattern-matching the source: 37 subjects, all 37
   caught, 37 of 37 restored byte-for-byte.
-- **The batteries job runs at two thirds to four fifths of its budget, and three runs of one tree
-  differed by 259 s.** Measured on the runner: the audit's step is **153 s** for 37 subjects where it
-  was a step nobody had timed for 16, and the job that hosts every battery measured **1375 s**,
-  **1164 s** and **1423 s** of its 1800 s on the same tree. `[open: the last time a
+- **The batteries job's worst observed run is 79% of its budget, and four readings of one tree span
+  364 s.** Measured on the runner: the audit's step is **153 s** for 37 subjects where it was a step
+  nobody had timed for 16, and the job that hosts every battery took **1375 s**, **1164 s**,
+  **1423 s** and **1059 s** of its 1800 s on the same tree. Plan with 1423 s. `[open: the last time a
   budget in this file was exhausted the run read as `cancelled` rather than as a limit (finding 166),
   and splitting the audit into its own job is the shape that would buy the margin back -- at the cost
   of a fourth job's checkout, install and build, which is a price this pass did not measure]`
