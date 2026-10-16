@@ -36,13 +36,15 @@ import { describe, expect, it } from 'vitest';
  *   - **harness** -- exists only to be driven by a battery.
  *   - **data** -- a module under `scripts/` that exports a table and has no
  *     `main`. It is imported rather than run, so it has no exit and no verdict.
- *   - **computed-probe** -- a probe whose exit status is computed rather than
- *     literal, as `process.exit(main())`. The site inventory deliberately does
- *     not fingerprint these: the argument is not the constant `1`, so there is
- *     no threshold to enumerate and nothing for the deriver to point at. They
- *     are listed here so that the exclusion is a recorded decision rather than
- *     an omission -- the deriver reports the count under `excluded.computed`,
- *     and this class is the script-level account of the same fact.
+ *   - ~~**computed-probe** -- a probe whose exit is computed rather than literal,
+ *     so the inventory cannot fingerprint it.~~ **Removed**: the class existed
+ *     because the deriver read `process.exit(1)` and dropped everything else into
+ *     `excluded.computed`, and its members were listed here as "a recorded
+ *     decision rather than an omission". The deriver now treats **any** statement
+ *     position exit whose argument is not the literal `0` as a failure site, so
+ *     every member of this class is in the inventory and none of them is an
+ *     exclusion. A class whose reason has gone is a class that has to go with it,
+ *     and nothing but a reading of that reason would have removed it.
  *
  * The check is an equality, not a subset: a script that appears in `scripts/`
  * without an entry here fails this test, and an entry here naming a script that
@@ -71,7 +73,7 @@ const SCRIPTS = resolve(ROOT, 'scripts');
  * is optional there and present only where it adds something the inventory does
  * not carry.
  */
-type Klass = 'gate' | 'probe' | 'computed-probe' | 'tool' | 'harness' | 'data';
+type Klass = 'gate' | 'probe' | 'tool' | 'harness' | 'data';
 
 interface Entry {
   class: Klass;
@@ -129,50 +131,37 @@ const REGISTER: Record<string, Entry> = {
   'probe-category-derivation.mjs': { class: 'probe' },
   'probe-denial-inventory.mjs': { class: 'probe' },
 
-  // --- Probes whose exit status is computed, so the inventory cannot list them ---
-  'probe-m1-ceiling.mjs': {
-    class: 'computed-probe',
-    why:
-      'Ends with `process.exit(main())`, so the status is whatever the run computed rather than the ' +
-      'literal 1. The deriver cannot fingerprint a threshold it cannot read, which is why this script is ' +
-      'absent from gate-sites.json and counted under excluded.computed instead.',
-  },
-  'probe-type-misses.mjs': {
-    class: 'computed-probe',
-    why:
-      'Also ends with `process.exit(main())`. The probe toggles a rule and re-scores, so its status is the ' +
-      'outcome of that comparison; there is no single failure site to enumerate, and the battery that ' +
-      'drives it is where the assertion lives.',
-  },
+  // --- Probes whose verdict is computed rather than literal ---
+  //
+  // These were `computed-probe`, a class that existed so that "the deriver cannot
+  // fingerprint this" was a recorded decision. The deriver can fingerprint them
+  // now, so they are ordinary probes with ordinary sites -- and the fact that this
+  // move had to be made by hand is the point: nothing in the tree tied the class's
+  // *existence* to the reason it was created.
+  'probe-m1-ceiling.mjs': { class: 'probe' },
+  'probe-type-misses.mjs': { class: 'probe' },
   'probe-category-inference.mjs': {
-    class: 'computed-probe',
+    class: 'tool',
     why:
-      'Reports the category each sample infers and prints a table. It exits with no explicit status at ' +
-      'all, so it is the degenerate case of the same class: there is no failure exit to enumerate, and ' +
-      'its reading is a table rather than a verdict.',
+      'A probe in name only, and the register says so: it prints the category each sample infers and exits ' +
+      'with no explicit status, so there is nothing for the inventory to list and no verdict to prove. ' +
+      'Filed as `tool` rather than `probe` because this file checks that the two classes with a failure ' +
+      'exit -- gate and probe -- are exactly the scripts the inventory names, and a probe with no exit ' +
+      'would break that correspondence rather than describe a gap in it.',
   },
 
-  // --- Harnesses: only meaningful while a battery drives them ---
-  'inject-stability.mjs': {
-    class: 'harness',
-    why:
-      'Rewrites the scorer to check that the stability properties catch the change. It has no verdict of ' +
-      'its own; the battery that drives it owns the assertion, and running it alone would leave the tree ' +
-      'mutated with nothing to restore it.',
-  },
-  'inject-component-rule.mjs': {
-    class: 'harness',
-    why:
-      'Deletes a component rule to check that the derivation probe notices the absence. Its purpose is to ' +
-      'make another script fail, so a failure exit of its own would be indistinguishable from the mutation ' +
-      'it is supposed to perform.',
-  },
-  'inject-m1-ceiling-tests.mjs': {
-    class: 'harness',
-    why:
-      'Injects the M1 ceiling cases into the suite for the probe to read. It edits test files rather than ' +
-      'reporting on them, so there is no reading to assert and no defect of its own to exit on.',
-  },
+  // --- Gates that used to be filed as harnesses ---
+  //
+  // Each of these was `harness` on the stated ground that it "has no verdict of
+  // its own". Measured, each ends in `process.exit(main())` and `main()` returns
+  // non-zero when its own checks fail -- a survivor, an inert anchor, a failed
+  // restore. The harness framing was a consequence of the deriver not reading a
+  // computed exit: with no site to point at, "no verdict" and "no enumerable
+  // verdict" were indistinguishable, and the register recorded the second as the
+  // first.
+  'inject-stability.mjs': { class: 'gate' },
+  'inject-component-rule.mjs': { class: 'gate' },
+  'inject-m1-ceiling-tests.mjs': { class: 'gate' },
 
   // --- Tools: produce an artefact or serve one, with no verdict ---
   'serve-site.mjs': {
@@ -197,16 +186,21 @@ function inventoriedScripts(): Set<string> {
 
 /** The scripts that contain a literal `process.exit(1)`, counted rather than assumed. */
 function scriptsWithFailureExit(): Set<string> {
-  const found = new Set<string>();
-  for (const name of scriptNames()) {
-    const source = readFileSync(resolve(SCRIPTS, name), 'utf8');
-    // Statement-position check, matching the deriver's own predicate closely
-    // enough for a membership question. A script that mentions the call only
-    // inside a comment or a string is not counted, which is why the pattern
-    // anchors on a preceding boundary and a trailing terminator.
-    if (/(?:^|[;{}\s])process\.exit\(\s*1\s*\)\s*;?\s*$/m.test(source)) found.add(name);
-  }
-  return found;
+  // Read from the inventory, not guessed from the source. This function used to
+  // scan each script with a regex of its own -- **a second account of the
+  // predicate `derive-gate-sites.mjs` already applies**, which is the defect this
+  // file exists to catch elsewhere. It cost nothing until the deriver learned to
+  // read a computed status: the inventory grew by seven sites, this regex did not
+  // move, and five scripts were reported as "declared a gate or probe without a
+  // failure exit" when each of them has one.
+  //
+  // The inventory is the deriver's own output, and `gate-sites-are-proven.test.ts`
+  // holds it to a fresh derivation -- so reading it here is reading the
+  // measurement rather than a restatement of it.
+  const inventory = JSON.parse(readFileSync(resolve(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'));
+  return new Set(
+    (inventory.sites as { script: string }[]).map((site) => site.script.replace(/^scripts\//, '')),
+  );
 }
 
 describe('scripts/ · every script is classified, and the class is checked', () => {
@@ -222,7 +216,7 @@ describe('scripts/ · every script is classified, and the class is checked', () 
     });
 
     it('uses only the four declared classes', () => {
-      const allowed = new Set(['gate', 'probe', 'computed-probe', 'tool', 'harness', 'data']);
+      const allowed = new Set(['gate', 'probe', 'tool', 'harness', 'data']);
       for (const [name, entry] of Object.entries(REGISTER)) {
         expect(allowed.has(entry.class), `${name} has class '${entry.class}'`).toBe(true);
       }
@@ -270,13 +264,13 @@ describe('scripts/ · every script is classified, and the class is checked', () 
     });
   });
 
-  describe('the two unproved scripts are stated, not merely absent', () => {
+  describe('the scripts the inventory cannot corroborate are stated, not merely absent', () => {
     it('gives a reason for every class that the inventory cannot corroborate', () => {
       // `tool` and `harness` are the classes with no failure exit to point at,
       // so the register's word is the only evidence. Each must therefore carry a
       // reason, and it must be long enough to be an argument.
       for (const [name, entry] of Object.entries(REGISTER)) {
-        if (!['tool', 'harness', 'data', 'computed-probe'].includes(entry.class)) continue;
+        if (!['tool', 'harness', 'data'].includes(entry.class)) continue;
         expect(typeof entry.why, `${name} is ${entry.class} without a reason`).toBe('string');
         expect((entry.why ?? '').length, `${name}'s reason is too short to be one`).toBeGreaterThan(80);
       }

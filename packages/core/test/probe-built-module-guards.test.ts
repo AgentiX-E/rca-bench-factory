@@ -212,8 +212,17 @@ describe('scripts · built-module guards', () => {
     // it counts the guards the inventory publishes against the guards this file
     // exercises, so a second guard on the same script cannot slip by.
     const inventory = JSON.parse(readFileSync(resolve(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'));
-    const published = inventory.sites.filter((site: { script: string }) =>
-      guardedScripts.includes(site.script.replace(/^scripts\//, '')),
+    // **The guard sites, not every site those scripts have.** This filter used to
+    // be `guardedScripts.includes(site.script)` alone, which was true only while a
+    // probe's guard was its *only* failure exit. `probe-denial-inventory.mjs` has
+    // a second one -- it exits non-zero when the inventory it built is
+    // unresolved -- and that site became visible the moment the deriver learned to
+    // read a non-`1` status. The pairing below is between a guard and the bundle
+    // it names, so the filter has to select guards.
+    const published = inventory.sites.filter(
+      (site: { script: string; diagnostic?: string }) =>
+        guardedScripts.includes(site.script.replace(/^scripts\//, '')) &&
+        site.diagnostic?.includes('is missing.') === true,
     );
     expect(published).toHaveLength(PROBES.length);
     // Every site's diagnostic must name a bundle this file actually exercises,

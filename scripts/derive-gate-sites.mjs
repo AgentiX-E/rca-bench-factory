@@ -322,15 +322,37 @@ function fingerprint(rawLines, index) {
  * difference between counting guards and counting mentions of guards.
  */
 function isFailureExitStatement(line) {
-  const pattern = new RegExp(
-    `(?:^|[;{}\\s])process\\.exit\\(\\s*${FAILURE_EXIT}\\s*\\)\\s*;?\\s*$`,
-  );
-  if (!pattern.test(line)) return false;
+  if (!/process\.exit\s*\(/.test(line)) return false;
   // Reject a match that is an argument to, or the subject of, something else --
   // `assert(process.exit(1))`, `.map((x) => process.exit(1))`. The statement
   // rule above already excludes the ones in this tree; this is the belt.
   const head = line.slice(0, line.indexOf('process.exit'));
-  return !/[.(?=&|]\s*$/.test(head) || /[;{})\s]$/.test(head);
+  if (/[.(?=&|]\s*$/.test(head) && !/[;{})\s]$/.test(head)) return false;
+  const arg = exitArgument(line);
+  if (arg === undefined) {
+    // The exit is not the first thing on the line: `if (!ok) process.exit(1);`.
+    // `exitArgument` anchors at the start of the line, so it returns `undefined`
+    // here, and the first version of this function matched that shape with its
+    // own literal pattern rather than asking for the argument. Dropping the
+    // fallback took `build-example-bundle.mjs`'s only failure exit out of the
+    // inventory -- `scripts-are-classified.test.ts` caught it on the same run,
+    // which is the whole reason that register exists.
+    return new RegExp(`(?:^|[;{}\\s])process\\.exit\\(\\s*${FAILURE_EXIT}\\s*\\)\\s*;?\\s*$`).test(line);
+  }
+  // **Anything but the literal `0`**, where this used to be `arg === '1'`.
+  //
+  // The narrow rule read a *spelling*, and the property it was reaching for is
+  // "exits non-zero when unhappy". Measured, the narrow version dropped eight
+  // scripts out of the site list -- `process.exit(main())` is how every battery
+  // here reports its verdict, `process.exit(cond ? 0 : 1)` is how two of the
+  // `inject-*` gates do, and `fetch-official.mjs` uses `2` for "the pin does not
+  // match, and retrying cannot help". Three of the eight are batteries the
+  // pipeline runs on every push.
+  //
+  // > A gate is a property, and the enumeration was reading a spelling. That is
+  // > finding 168's defect one level up: there the guard's subject was the
+  // > document where it said "section"; here it was the *file* the rule was about.
+  return arg !== '0';
 }
 
 function sitesIn(name, source) {
@@ -394,7 +416,7 @@ function exitArgument(line) {
  */
 function excludedIn(source) {
   const stripped = stripComments(source).split('\n');
-  const counts = { zero: 0, numeric_other: 0, computed: 0, multiline: 0 };
+  const counts = { zero: 0, indirect: 0, multiline: 0 };
   for (const line of stripped) {
     // Only a *statement* exit is a candidate at all. A call that appears inside
     // a string, a predicate or another expression is neither counted nor
@@ -405,12 +427,20 @@ function excludedIn(source) {
     const arg = exitArgument(line);
     if (arg === undefined) {
       if (/^\s*\}?\s*(?:else\s+)?process\.exit\s*\(/.test(line)) counts.multiline += 1;
+      // An exit whose statement it is cannot be read: `.then((code) =>
+      // process.exit(code))`. It is a real exit, it is neither counted nor
+      // excluded, and it used to vanish from both tallies -- two scripts in this
+      // tree report their status that way. It gets a tally of its own rather than
+      // silence, which is the point of reporting the exclusions at all.
+      else if (/=>\s*process\.exit\s*\(/.test(line)) counts.indirect += 1;
       continue;
     }
-    if (arg === FAILURE_EXIT) continue; // Kept by `sitesIn`; not an exclusion.
+    // Everything with a readable argument is either the literal `0` or a failure
+    // site. `sitesIn` keeps the latter -- including the computed and non-`1`
+    // spellings it used to drop into `computed` and `numeric_other`, which is why
+    // those two tallies are gone: a number under a label that says "we threw this
+    // away" is a claim that something was thrown away.
     if (arg === '0') counts.zero += 1;
-    else if (/^\d+$/.test(arg)) counts.numeric_other += 1;
-    else counts.computed += 1;
   }
   return counts;
 }
@@ -458,14 +488,17 @@ function derive() {
   const files = scriptFiles();
 
   const sites = [];
-  const excluded = { zero: 0, numeric_other: 0, computed: 0 };
+  // Accumulated by key rather than by naming each tally here. The list of tallies
+  // lives in `excludedIn` alone now, so adding one there cannot leave a zero here
+  // that the report then prints as a measurement -- which is what happened when
+  // `computed` and `numeric_other` stopped being exclusions: this side kept
+  // adding `undefined` and the committed file read `"computed": null`.
+  const excluded = {};
   for (const file of files) {
     const source = readFileSync(join(SCRIPTS, file), 'utf8');
     for (const site of sitesIn(file, source)) sites.push({ script: `scripts/${file}`, ...site });
     const dropped = excludedIn(source);
-    excluded.zero += dropped.zero;
-    excluded.numeric_other += dropped.numeric_other;
-    excluded.computed += dropped.computed;
+    for (const [kind, count] of Object.entries(dropped)) excluded[kind] = (excluded[kind] ?? 0) + count;
   }
 
   return { sites, excluded, scanned: files.length };
@@ -500,7 +533,9 @@ function derive() {
  */
 function serialise({ sites, excluded, scanned }) {
   const payload = {
-    rule: 'process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs',
+    rule:
+      'a statement-position process.exit(...) whose argument is not the literal 0; ' +
+      'see scripts/derive-gate-sites.mjs',
     scanned,
     excluded,
     sites: sites.map((s) => {
@@ -583,8 +618,9 @@ function main() {
     console.log(
       `derive-gate-sites: OK (${derivedSites.length} failure site(s) across ` +
         `${new Set(derivedSites.map((s) => s.script)).size} script(s); ` +
-        `${derived.excluded.zero} success exit(s), ${derived.excluded.numeric_other} other ` +
-        `numeric exit(s), ${derived.excluded.computed} computed exit(s) excluded)`,
+        `excluded: ${Object.entries(derived.excluded)
+          .map(([kind, n]) => `${n} ${kind}`)
+          .join(', ')})`,
     );
     return;
   }

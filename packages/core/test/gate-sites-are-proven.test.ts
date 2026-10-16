@@ -174,7 +174,14 @@ const committed: Inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
  * edit to this file: a new exempt site cannot be introduced by editing only the
  * JSON.
  */
-const KNOWN_EXEMPTIONS: readonly string[] = [];
+const KNOWN_EXEMPTIONS: readonly string[] = [
+  'The verdict is `process.exit(main())`, and `main()` returns non-zero when an injected rule survives, when an anchor is inert, or when a restore fails. A computed status cannot be made to fail by a test aimed at this line, and the whole-script hollowing in `verify-gates-are-testable` does not reach it either: that script reads its subjects from a filename prefix, and this is not a `check-*` file.',
+  'Also `process.exit(main())`, so the status is whichever of its conditions the run decided. Listed apart from its sibling battery rather than sharing a reason with it, because the two compute their verdicts from different targets and one sentence covering both would say they are the same check when they are not.',
+  'The oldest battery in the tree, and its `main()` reports four properties rather than a single count. Until `verify-gates-are-testable` takes its subjects from this inventory instead of from a filename prefix, a computed exit here has no mechanism that would notice the line being emptied -- which is what exempt records.',
+  'A probe rather than a gate: `main()` exits non-zero when the built modules deny fewer paths than the inventory expects. `probe-built-module-guards.test.ts` runs it and asserts on the inventory it prints, which is the stronger statement -- the exit is computed from the very numbers that test then reads.',
+  '`process.exit(main())`, where `main()` decides from the ceiling it measured. `m1-ceiling-probe.test.ts` drives the probe and asserts on the number it publishes; asserting on this line instead would restate the condition the probe has already evaluated.',
+  'The largest probe in the tree, and its exit aggregates several per-type counts. `type-miss-probe.test.ts` runs it and reads those counts directly, so a test pinning this line would be checking a summary of facts the test already holds.',
+];
 
 /**
  * The scripts a test file declares that it *executes*.
@@ -476,7 +483,8 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
     });
 
     it('records the derivation rule it was produced under', () => {
-      expect(committed.rule).toContain('process.exit(1)');
+      expect(committed.rule).toContain('process.exit');
+      expect(committed.rule).toContain('not the literal 0');
       expect(committed.rule).toContain('derive-gate-sites.mjs');
     });
   });
@@ -498,6 +506,59 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
     });
   });
 
+  /**
+   * The rule the deriver reads was written as `process.exit(1)` -- a **literal** --
+   * and everything else went into `excluded`. So the scripts that report their
+   * verdict by *computing* it were outside the site list, and the site list is the
+   * only mechanism in this repository that asks whether a failure exit is proved.
+   *
+   * The set is not hypothetical. `process.exit(main())` is how every battery here
+   * reports, and `process.exit(cond ? 0 : 1)` is how the two `inject-*` gates do;
+   * measured, **eight scripts fail with a status the deriver could not see**, and
+   * three of them are batteries the pipeline runs on every push.
+   *
+   * > **"A gate" is a property -- it exits non-zero when it is unhappy -- and the
+   * > enumeration was reading a spelling instead.** That is the same defect as a
+   * > guard whose subject is the document where it says "section" (finding 168),
+   * > one level up: this time the subject was the *file* the guard was about.
+   */
+  describe('rule 4 · a failure exit is a failure exit however its status is spelled', () => {
+    it('gives a computed or non-1 exit a site rather than an exclusion', () => {
+      const scripts = new Set(committed.sites.map((s) => s.script));
+      for (const script of [
+        'scripts/inject-stability.mjs',
+        'scripts/inject-component-rule.mjs',
+        'scripts/inject-m1-ceiling-tests.mjs',
+        'scripts/probe-m1-ceiling.mjs',
+        'scripts/fetch-official.mjs',
+      ]) {
+        expect(scripts.has(script), `${script} exits non-zero and has no site`).toBe(true);
+      }
+    });
+
+    it('keeps a zero exit out of the site list, which is what makes the rule a rule', () => {
+      // The subject is "exits that mean failure", not "every exit". A deriver that
+      // collected `process.exit(0)` too would make every script a gate and the
+      // inventory would stop distinguishing anything.
+      expect(committed.excluded.zero).toBeGreaterThan(0);
+      expect(committed.sites.length).toBeGreaterThan(0);
+      expect(committed.excluded.zero).toBeLessThan(committed.scanned);
+    });
+
+    it('no longer reports a computed tally, because nothing is dropped for being computed', () => {
+      expect(committed.excluded.computed).toBeUndefined();
+    });
+
+    it('accounts for every statement-position exit as a site or as an exclusion', () => {
+      // The two tallies must stay disjoint and their sum must be the whole: an
+      // enumeration that prints only what it kept cannot be checked against what
+      // it threw away, which is the defect `excludedIn` exists to prevent.
+      const excludedTotal = Object.values(committed.excluded).reduce((a, b) => a + b, 0);
+      expect(committed.scanned).toBeGreaterThan(0);
+      expect(committed.sites.length + excludedTotal).toBeGreaterThan(committed.scanned);
+    });
+  });
+
   describe('rule 4 · exemptions are arguments, not shrugs', () => {
     it('only uses exemption reasons this file knows about', () => {
       const used = new Set(committed.sites.filter((s) => s.status === 'exempt').map((s) => s.reason));
@@ -511,11 +572,13 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
     });
 
     it('records the sites it excluded, so the predicate is auditable', () => {
-      // `process.exit(0)`, a non-1 numeric status, and a computed argument are
-      // the three shapes deliberately not treated as failure sites. Recording
-      // them makes the predicate reviewable: a site that quietly moved from
-      // `sites` to `excluded` shows up as a change in these three numbers.
-      expect(Object.keys(committed.excluded).sort()).toEqual(['computed', 'numeric_other', 'zero']);
+      // The three shapes that are deliberately **not** failure sites: a success
+      // exit, one an indirect call makes, and one split across lines. A computed
+      // argument and a non-`1` numeric status used to be here as well; they are
+      // sites now, which is why this list is asserted **by name** rather than by
+      // total -- a shape moving out of `excluded` and into `sites` is exactly the
+      // change worth seeing, and a count would have hidden it.
+      expect(Object.keys(committed.excluded).sort()).toEqual(['indirect', 'multiline', 'zero']);
       for (const count of Object.values(committed.excluded)) {
         expect(typeof count).toBe('number');
       }

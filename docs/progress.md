@@ -4639,9 +4639,9 @@ can drive them, and a gate holding the table to the code.
 | the reference gate's own tests | **14 tests** (9 before): the committed table accepted, and four negatives -- a backend omitted, a backend invented, a required flag unnamed, and a flag moved between columns |
 | `gate-sites.json` | re-derived (the one site moved 199 -> 301) and **re-signed by hand** to `proved`; **50 of 50** |
 | `verify-gates-are-testable` | **16 gates, 16 caught, 0 survived, 0 no-test**; every source restored byte-for-byte |
-| `core` test suite | **140 files, 3752 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **144 files, 3938 tests passed** (as of this commit) |
+| `core` test suite | **140 files, 3752 tests passed** (as of `b45514f68`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `b45514f68`) |
+| repo test suite | **144 files, 3938 tests passed** (as of `b45514f68`) |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
 | the guard that refused the change first | `derive-gate-sites --check`, on the moved site -- the gate doing what finding 150 built it for |
 
@@ -4657,3 +4657,106 @@ can drive them, and a gate holding the table to the code.
   in a second repository whose files no gate here opens, so holding them to anything would need
   either a cross-repository check or the same facts mirrored where a gate can reach them, and
   neither is obviously the right shape yet]`
+
+## Pass 49 — a gate is a property, and the enumeration was reading a spelling
+
+### What was found, by asking what the two mechanisms cover
+
+`derive-gate-sites.mjs` reported `50 failure site(s) across 32 of 40 script(s)`, and the eight
+scripts with no site were not the ones a reader would guess. They were **the batteries and the
+probes** -- including three the pipeline runs on every push:
+
+```
+scripts/inject-stability.mjs      scripts/probe-m1-ceiling.mjs
+scripts/inject-component-rule.mjs scripts/probe-type-misses.mjs
+scripts/inject-m1-ceiling-tests.mjs
+scripts/probe-denial-inventory.mjs  scripts/serve-site.mjs  scripts/format-spec.mjs
+```
+
+The reason was one line. The deriver's rule was written as **`process.exit(1)`** -- a literal --
+and everything else went into `excluded`. So `process.exit(main())`, which is how every battery
+here reports its verdict, and `process.exit(2)`, which `fetch-official.mjs` uses for "the pin does
+not match and retrying cannot help", were **not failure sites**. And the site list is the only
+mechanism in this repository that asks whether a failure exit is proved.
+
+> **A gate is a property -- it exits non-zero when it is unhappy -- and the enumeration was
+> reading a spelling.** That is finding 168's shape one level up: there the guard's subject was
+> the *document* where it said "section", and here it was the *file* the rule was about.
+
+### The fix, and what the first re-derivation exposed
+
+The deriver now treats any **statement-position** exit whose argument is not the literal `0` as a
+failure site, and the exclusions are reported as what they are: `{zero: 7, indirect: 3, multiline:
+0}`. `computed` and `numeric_other` are gone as tallies because they are no longer exclusions --
+a number under a label that says "we threw this away" is a claim that something was thrown away.
+
+That took the inventory from **50 sites across 32 scripts** to **57 across 37**, and the seven new
+sites arrived **unannotated**:
+
+| script | what its exit means |
+| --- | --- |
+| `fetch-official.mjs` | `process.exit(2)`: a downloaded file does not match its registry pin |
+| `inject-stability.mjs` | `main()`: a survivor, an inert anchor, or a failed restore |
+| `inject-component-rule.mjs` | same shape, different subject |
+| `inject-m1-ceiling-tests.mjs` | same shape, different subject |
+| `probe-denial-inventory.mjs` | `unresolved.length > 0` |
+| `probe-m1-ceiling.mjs` | `main()`: the ceiling it measured |
+| `probe-type-misses.mjs` | `main()`: an aggregate of per-type counts |
+
+Six are exempt with **reasons of their own**, because this file refuses a shared reason -- a
+sentence covering two sites would say they are the same check. The seventh, `fetch-official`'s,
+is **proved**: `fetch-official.test.ts` already asserts `status === 2` in three places, against a
+pin mismatch served from its own loopback server.
+
+### Two second accounts of the same predicate, found by the change
+
+Widening the deriver broke two other guards, and both were **restatements of the predicate it
+had just corrected**:
+
+- The first draft of the new `isFailureExitStatement` dropped the path that matched an exit
+  **not at the start of a line** -- `if (!ok) process.exit(1);`. `exitArgument` anchors at the
+  line's beginning, so it returns `undefined` there, and the new code read that as "not an exit".
+  `build-example-bundle.mjs` lost its only failure site, and **`scripts-are-classified.test.ts`
+  caught it on the same run** -- which is what that register is for, and it is recorded in the
+  code rather than only here.
+- `scripts-are-classified.test.ts` carried its **own regex** for "does this script have a failure
+  exit", so when the inventory grew by seven sites the two accounts disagreed and five scripts
+  were reported as "declared a gate or probe without a failure exit" when each has one. It reads
+  the inventory now.
+
+### A class whose reason had gone, and nothing that would remove it
+
+`scripts-are-classified.test.ts` filed six scripts under two headings that both existed **because
+the deriver could not read a computed exit**: `computed-probe`, whose members were "absent from
+`gate-sites.json` and counted under `excluded.computed`", and three batteries under `harness` on
+the ground that each "has no verdict of its own". Measured, each of the three ends in
+`process.exit(main())` and `main()` returns non-zero when its own checks fail.
+
+Both headings are removed, the six scripts are now `probe` and `gate`, and `probe-category-inference.mjs`
+-- the one member with genuinely no exit -- became a `tool`, because this register requires that
+the classes with a failure exit be exactly the scripts the inventory names.
+
+> **A class is a recorded decision, and the decision expires while the class does not.** The
+> `computed-probe` heading carried its own justification in a doc comment four lines long, and
+> nothing tied that justification to the thing it justified -- so it stood until somebody read it.
+
+### Verified (Pass 49)
+
+| gate | result |
+| --- | --- |
+| the inventory | **57 failure site(s) across 37 of 40 script(s)**; **49 proved, 6 exempt, 0 unannotated**; exclusions `{zero: 7, indirect: 3, multiline: 0}` |
+| what the first re-derivation exposed | **7 unannotated sites** across six scripts, four of them batteries or probes the pipeline runs |
+| the guards that refused the change | `scripts-are-classified` (both directions), `probe-built-module-guards` (a probe's second exit stopped being a built-module guard), and `gate-sites-are-proven` on the two sites the deriver's own edit displaced |
+| `core` test suite | **140 files, 3756 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **144 files, 3942 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **`verify-gates-are-testable` reads its subjects from a filename prefix.** `gate-sites.json`
+  now enumerates **37** scripts with failure exits; the hollowing check covers the **16** named
+  `check-*.mjs`. The two mechanisms disagree about what a gate is, and the disagreement is
+  invisible from either one alone. `[open: pointing the hollowing at the inventory's script set
+  would take it from 16 subjects to 37, and the cost of that -- one vitest run per referencing test
+  file, per subject -- has to be measured before it is paid rather than assumed to be affordable]`

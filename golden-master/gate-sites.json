@@ -1,10 +1,10 @@
 {
-  "rule": "process.exit(1) with a literal argument; see scripts/derive-gate-sites.mjs",
+  "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
   "scanned": 40,
   "excluded": {
     "zero": 7,
-    "numeric_other": 1,
-    "computed": 6
+    "indirect": 3,
+    "multiline": 0
   },
   "sites": [
     {
@@ -246,6 +246,14 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
+      "line": 628,
+      "condition": "pinMismatches.length > 0",
+      "diagnostic": "\\n${pinMismatches.length} of ${results.length} asset(s) downloaded a file that does not",
+      "status": "proved",
+      "provedBy": "packages/core/test/fetch-official.test.ts"
+    },
+    {
+      "script": "scripts/fetch-official.mjs",
       "line": 637,
       "condition": "unreachable.length > 0",
       "diagnostic": "\\n${unreachable.length} of ${results.length} asset(s) could not be reached.",
@@ -274,6 +282,28 @@
       "diagnostic": "error: ${message}",
       "status": "proved",
       "provedBy": "packages/core/test/gen-rcaeval-cases.test.ts"
+    },
+    {
+      "script": "scripts/inject-component-rule.mjs",
+      "line": 258,
+      "diagnostic": "source restore DIFFERS for ${mismatched.map(([f]) => f).join(', ')} -- inspect before committing",
+      "status": "exempt",
+      "reason": "The verdict is `process.exit(main())`, and `main()` returns non-zero when an injected rule survives, when an anchor is inert, or when a restore fails. A computed status cannot be made to fail by a test aimed at this line, and the whole-script hollowing in `verify-gates-are-testable` does not reach it either: that script reads its subjects from a filename prefix, and this is not a `check-*` file."
+    },
+    {
+      "script": "scripts/inject-m1-ceiling-tests.mjs",
+      "line": 411,
+      "diagnostic": "sources restored: ${mismatched.map(([f]) => f).join(', ')} DIFFER -- inspect before committing",
+      "status": "exempt",
+      "reason": "Also `process.exit(main())`, so the status is whichever of its conditions the run decided. Listed apart from its sibling battery rather than sharing a reason with it, because the two compute their verdicts from different targets and one sentence covering both would say they are the same check when they are not."
+    },
+    {
+      "script": "scripts/inject-stability.mjs",
+      "line": 250,
+      "condition": "invokedDirectly",
+      "diagnostic": "battery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert",
+      "status": "exempt",
+      "reason": "The oldest battery in the tree, and its `main()` reports four properties rather than a single count. Until `verify-gates-are-testable` takes its subjects from this inventory instead of from a filename prefix, a computed exit here has no mechanism that would notice the line being emptied -- which is what exempt records."
     },
     {
       "script": "scripts/measure-doc-counts.mjs",
@@ -313,6 +343,30 @@
       "diagnostic": "error: ${BUNDLE} is missing.\\n",
       "status": "proved",
       "provedBy": "packages/core/test/probe-built-module-guards.test.ts"
+    },
+    {
+      "script": "scripts/probe-denial-inventory.mjs",
+      "line": 229,
+      "condition": "unresolved.length > 0",
+      "diagnostic": "no sample text was modified.",
+      "status": "exempt",
+      "reason": "A probe rather than a gate: `main()` exits non-zero when the built modules deny fewer paths than the inventory expects. `probe-built-module-guards.test.ts` runs it and asserts on the inventory it prints, which is the stronger statement -- the exit is computed from the very numbers that test then reads."
+    },
+    {
+      "script": "scripts/probe-m1-ceiling.mjs",
+      "line": 202,
+      "condition": "args.json",
+      "diagnostic": "the decision costs ${total - strictCeiling} sample(s) of headroom:",
+      "status": "exempt",
+      "reason": "`process.exit(main())`, where `main()` decides from the ceiling it measured. `m1-ceiling-probe.test.ts` drives the probe and asserts on the number it publishes; asserting on this line instead would restate the condition the probe has already evaluated."
+    },
+    {
+      "script": "scripts/probe-type-misses.mjs",
+      "line": 1726,
+      "condition": "process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(REPO + '/', ''))",
+      "diagnostic": "\\n${counts['form-variant']} form variant(s) found -- the scorer rejected an answer it should",
+      "status": "exempt",
+      "reason": "The largest probe in the tree, and its exit aggregates several per-type counts. `type-miss-probe.test.ts` runs it and reads those counts directly, so a test pinning this line would be checking a summary of facts the test already holds."
     },
     {
       "script": "scripts/score-fault-extraction.mjs",

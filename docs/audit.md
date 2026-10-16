@@ -17542,3 +17542,98 @@ had been quietly wrong for several passes.
 > **The useful question about a document is not "is it accurate today" but "what would fail if
 > it stopped being accurate".** Applying it to the tracking documents produced a defect rather
 > than a reassurance, which is the outcome the question is for.
+
+## Finding 172 — "a gate" was a filename prefix and a spelling of `1`
+
+### What was measured, and who was left out
+
+The tree has two mechanisms that ask whether a gate can be shown to fail, and they answer
+different questions: `verify-gates-are-testable.mjs` hollows a gate and checks that some test
+notices, while `golden-master/gate-sites.json` enumerates each failure exit and requires a
+pointer to the test that proves it. Reading them side by side is what produced this finding:
+
+| mechanism | subject set | how it is decided |
+| --- | --- | --- |
+| `verify-gates-are-testable` | **16** scripts | `readdirSync('scripts').filter(n => n.startsWith('check-') && n.endsWith('.mjs'))` |
+| `gate-sites.json` | **32**, then 37 scripts | a statement-position `process.exit(1)` |
+
+Neither set is the property either one is reaching for. A gate here is a script that **exits
+non-zero when it is unhappy**, and the first mechanism was reading a **filename prefix** while
+the second was reading a **spelling**.
+
+Measured, eight scripts failed outside both: five `inject-*` batteries and `probe-*` scripts, plus
+`serve-site.mjs` and `format-spec.mjs`. Three of the five are batteries the pipeline runs on every
+push, and `process.exit(main())` -- how every one of them reports -- was in the deriver's
+`excluded` tally under the name `computed`.
+
+> **A gate is a property, and both enumerations were reading a way of spelling it.** Finding 168's
+> defect was a guard whose subject was the *document* where it said "section"; this one is a level
+> up again, where the subject was the *file* the rule was about.
+
+### The fix, and the seven sites it exposed
+
+The deriver now treats any statement-position exit whose argument is not the literal `0` as a
+failure site, and reports its exclusions as what they actually are -- `{zero, indirect, multiline}`,
+where `computed` and `numeric_other` used to be. The inventory went from **50 sites across 32
+scripts to 57 across 37**, and the seven new sites arrived **unannotated**, which is the mechanism
+working: a site that has never been asked for a proof cannot be quietly added to the proved set.
+
+Six of the seven are exempt, each with **its own** reason -- this file refuses a shared one, on
+the ground that a sentence covering two sites is a sentence saying they are the same check. The
+seventh is **proved**: `fetch-official.test.ts` already asserted `status === 2` in three places, so
+the exit for a pin mismatch had a proof all along and only needed the enumeration to see it.
+
+### Two second accounts of the predicate being corrected
+
+Both of the failures this change caused were **restatements** of the rule it had just widened, and
+both were caught by a guard that exists for that:
+
+- The new `isFailureExitStatement` dropped the path for an exit **not at the start of a line**
+  (`if (!ok) process.exit(1);`), because `exitArgument` anchors at the line's beginning and returns
+  `undefined` there. `build-example-bundle.mjs` lost its only site. `scripts-are-classified.test.ts`
+  reported it on the same run -- a self-inflicted regression caught by the register whose subject
+  it was, and recorded in the code rather than only in this file.
+- `scripts-are-classified.test.ts` carried **its own regex** for "has a failure exit". When the
+  inventory grew by seven, the two accounts disagreed and five scripts were reported as "declared
+  a gate or probe without a failure exit" when each of them has one. It reads the inventory now.
+
+> **A predicate written twice will be corrected once.** The deriver's rule was widened, and every
+> copy of it elsewhere went stale in the same commit -- which is what the copies were for, and
+> what makes them worth removing rather than updating.
+
+### A class whose reason expired, and nothing to remove it
+
+`scripts-are-classified.test.ts` filed six of the eight scripts under two headings introduced
+**because the deriver could not read a computed exit**. The `computed-probe` heading said so
+itself, in a doc comment four lines long: its members were "absent from `gate-sites.json` and
+counted under `excluded.computed`". The three batteries were `harness` on the ground that each
+"has no verdict of its own" -- measured, each ends in `process.exit(main())` and `main()` returns
+non-zero when its own checks fail.
+
+Both headings are gone; the six are `probe` and `gate`; and `probe-category-inference.mjs`, the
+one member with genuinely no exit, became a `tool` -- because the register holds that the classes
+with a failure exit are *exactly* the scripts the inventory names, and a probe with no exit would
+break a correspondence rather than describe a gap in it.
+
+**Nothing removed the class.** It carried its own justification, and no mechanism tied that
+justification to the thing it justified: it stood until somebody read it, which is the same
+sentence this campaign has written about published counts, release reasons, status columns and
+Open lists. This is the first time it has been written about a **type**.
+
+> **A class is a recorded decision, and a decision can expire while the class does not.** The
+> comment was the only thing holding it; the compiler could not, a test could not, and no gate
+> was pointed at it.
+
+### What this says about the method
+
+The two mechanisms this finding is about are the ones built to answer "can this gate be shown to
+fail". They disagreed with each other about what a gate is, and **neither could see the
+disagreement**, because each was complete with respect to its own subject set.
+
+> **Reading two enumerations side by side is itself a measurement**, and it is not one either
+> mechanism can take about itself. What it found here was eight scripts that fail outside every
+> question the repository knows how to ask.
+
+The remaining half is recorded in the Open list rather than quietly fixed: the hollowing check
+still reads `check-*.mjs`, so pointing it at the inventory's 37 scripts is a change whose cost has
+to be measured before it is paid.
