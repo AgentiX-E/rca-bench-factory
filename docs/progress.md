@@ -4903,15 +4903,17 @@ dead one`.
 | `typecheck` / `lint` / `docs:check` / `docs:counts:check` | green |
 | CI | run `38915028418` on `590cc0819` -- **four jobs, all success**; the audit's step **153 s on the runner against 103.96 s here** |
 
-### The budget, measured again, because the number moved
+### The budget, measured twice, because one run is not a measurement
 
-The audit's step is the one that changed, and on the runner it went from a step nobody looked at to
-**153 s** -- 1.5x the local figure, which is the ratio a measurement on one machine cannot give you.
-The job that hosts every battery went from roughly 21 minutes to **1375 s of its 1800 s budget**.
-Seventy-six per cent is not a failure and it is not a comfortable margin either: finding 166 is the
-record of what happens when this number is not looked at, and what it looked like was `cancelled`,
-which reads as a person rather than as a limit. It is in the Open list with the number attached
-rather than left to be rediscovered by a timeout.
+The audit's step is the one that changed, and on the runner it went from a step nobody had timed to
+**153 s** -- 1.5x the local figure, a ratio only a runner can give you.
+
+The job that hosts every battery is where that lands, and it was measured on **two runs of this same
+tree**: **1375 s**, then **1164 s**, against a budget of 1800 s. A 211-second spread on unchanged
+work, so the margin is somewhere between seven and ten minutes and **one run cannot tell you which**.
+That is the same lesson as the numbers above, one level up: `1375` written down alone would have been
+a reading presented as a measurement, which is what finding 166 records happening to this exact
+budget. It is in the Open list with both numbers attached.
 
 ### Open
 
@@ -4919,9 +4921,11 @@ rather than left to be rediscovered by a timeout.
   173.** The audit takes its subjects from `gate-sites.json`, and the tie is asserted in both
   directions against the real tree rather than by pattern-matching the source: 37 subjects, all 37
   caught, 37 of 37 restored byte-for-byte.
-- **The batteries job is at 76% of its budget.** Measured on the runner: the audit's step is **153 s**
-  for 37 subjects where it was one nobody timed for 16, and the job rose to **1375 s of 1800 s**. The
-  margin is seven minutes for a job that gains a battery every few passes. `[open: the last time a
+- **The batteries job is two thirds to three quarters of its budget, and the two readings differ by
+  211 s.** Measured on the runner: the audit's step is **153 s** for 37 subjects where it was a step
+  nobody had timed for 16, and the job that hosts every battery took **1375 s** and then **1164 s**
+  of its 1800 s on the same tree. The margin is seven to ten minutes for a job that gains a battery
+  every few passes. `[open: the last time a
   budget in this file was exhausted the run read as `cancelled` rather than as a limit (finding 166),
   and splitting the audit into its own job is the shape that would buy the margin back -- at the cost
   of a fourth job's checkout, install and build, which is a price this pass did not measure]`
