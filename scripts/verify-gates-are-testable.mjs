@@ -51,7 +51,7 @@
  * would corrupt every later step, so a failed restore is a failure of this script
  * rather than a warning.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -248,13 +248,158 @@ function classify(files, result) {
   return { verdict: 'UNATTRIBUTED', failures, status, files };
 }
 
-function runTests(files) {
-  const result = spawnSync(
-    'npx',
-    ['vitest', 'run', '--root', 'packages/core', ...files],
-    { cwd: ROOT, encoding: 'utf8', timeout: 900_000 },
+/**
+ * The suite this run is waiting for, as a process group, while it is running.
+ *
+ * ## Why this is in memory *and* in the journal
+ *
+ * The two are for two different deaths, and finding 173 is what made the difference
+ * matter. A killed run leaves two things behind: a hollowed file, which the journal
+ * covers, and the nested suite, which was still rewriting the tree minutes after the
+ * run that started it had died. A run that is **signalled** can clean up itself --
+ * the handler below does, and it can only do so because this handle is here. A run
+ * that is **SIGKILLed** cannot, and for it the group is written into the journal
+ * before the file is mutated, so the next run can stop it.
+ *
+ * ## Why the group needs finding, and cannot simply be remembered
+ *
+ * `process.kill(-group, …)` reaches every member, and that is the point: the group a
+ * nested run leads contains `npx`, vitest, and vitest's workers, and stopping the
+ * leader alone leaves the rest -- measured on the first experiment with this
+ * mechanism, whose group held a `sleep` that a pid-only kill would have left behind.
+ *
+ * A group id is not an identity, though. Ids are reused, so the recorded number is
+ * checked against what the group is actually running before anything is signalled,
+ * and the check refuses more often than it kills. See `stopSuite`.
+ */
+let inFlight = null;
+
+/**
+ * The word every command line of the nested run contains.
+ *
+ * `spawn('npx', ['vitest', …])` puts `vitest` in the argv of the shell that runs
+ * `npx`, of `npx` itself, and of the runner, so the marker survives the layer in
+ * between without this script having to know how many layers there are.
+ */
+const SUITE_MARK = 'vitest';
+
+/** The process group this script is running in, asked of the kernel. */
+function ownGroup() {
+  const out = spawnSync('ps', ['-o', 'pgid=', '-p', String(process.pid)], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  const value = Number((out.stdout ?? '').trim());
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * What is running in a process group, or `null` when that cannot be read.
+ *
+ * The three answers are kept apart on purpose: an empty list means the group is gone
+ * and there is nothing to do, `null` means the question could not be answered, and
+ * neither is permission to signal anything. `ps` is POSIX and this repository's
+ * runners are Linux, but a machine without it must not be read as a machine with an
+ * idle group.
+ */
+function processesIn(group) {
+  const out = spawnSync('ps', ['-A', '-o', 'pgid=,args='], { encoding: 'utf8', timeout: 10_000 });
+  if (out.error !== undefined || out.status !== 0 || typeof out.stdout !== 'string') return null;
+  return out.stdout
+    .split('\n')
+    .map((line) => /^\s*(\d+)\s+(.*)$/.exec(line))
+    .filter((match) => match !== null)
+    .map((match) => ({ pgid: Number(match[1]), args: match[2] }))
+    .filter((row) => row.pgid === group);
+}
+
+/**
+ * Stop a nested suite that outlived the run that started it, or say why not.
+ *
+ * Every refusal is reported, because a sweep that silently declines is
+ * indistinguishable from a sweep that found nothing -- and the two mean different
+ * things to whoever is reading the output.
+ */
+function stopSuite(group, report) {
+  // `null` is the documented window -- the entry goes down before the mutation and the
+  // group a few milliseconds later -- so it is the one value that means "nothing to
+  // report", and it is the only one. Everything else that is not a usable group is
+  // something a reader wrote, and a sweep that declines in silence is
+  // indistinguishable from a sweep that found nothing.
+  if (group === null || group === undefined) return false;
+  if (!Number.isInteger(group) || group <= 0) {
+    report(`verify-gates-are-testable: left group ${JSON.stringify(group)} alone -- it is not a group id`);
+    return false;
+  }
+  if (group === process.pid || group === ownGroup()) {
+    // Catastrophic if it happened: a signal to this group takes down the shell, the
+    // runner and everything beside them.
+    report(`verify-gates-are-testable: left group ${group} alone -- it is this run's own group`);
+    return false;
+  }
+
+  const members = processesIn(group);
+  if (members === null) {
+    report(`verify-gates-are-testable: left group ${group} alone -- nothing here can say what is in it`);
+    return false;
+  }
+  if (members.length === 0) return false;
+  if (!members.some((member) => member.args.includes(SUITE_MARK))) {
+    report(
+      `verify-gates-are-testable: left group ${group} alone -- its members are not a ${SUITE_MARK} run, ` +
+        'and a group id is not an identity',
+    );
+    return false;
+  }
+
+  try {
+    process.kill(-group, 'SIGTERM');
+  } catch (error) {
+    report(`verify-gates-are-testable: could not stop group ${group}: ${error.code ?? error.message}`);
+    return false;
+  }
+  report(
+    `verify-gates-are-testable: stopped the nested suite left by the run that was killed ` +
+      `(group ${group}, ${members.length} process(es))`,
   );
-  return classify(files, result);
+  return true;
+}
+
+/**
+ * Run the test files that could notice, and report what they said.
+ *
+ * ## Why this is `spawn` and awaited, where it was `spawnSync`
+ *
+ * A `spawnSync` returns the child's pid only after the child has **exited**, which is
+ * the wrong moment to write it down: the whole reason to write it down is a run that
+ * does not reach its own cleanup. Awaiting the child instead means the group is known
+ * while it runs, so the journal can name it, and -- the second gain -- the event loop
+ * is free for the whole nested run, which is what lets the signal handler below do
+ * anything at all. `JOURNAL`'s own header records a signal handler being tried and
+ * abandoned for the opposite reason.
+ *
+ * `detached` puts the child in a group of its own, so the same group can be signalled
+ * later without touching this process.
+ */
+async function runTests(files) {
+  const child = spawn('npx', ['vitest', 'run', '--root', 'packages/core', ...files], {
+    cwd: ROOT,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  inFlight = { group: child.pid };
+  rememberSuite(child.pid);
+
+  let out = '';
+  child.stdout?.on('data', (chunk) => {
+    out += String(chunk);
+  });
+  child.stderr?.on('data', (chunk) => {
+    out += String(chunk);
+  });
+  const status = await new Promise((resolve) => child.on('close', (code) => resolve(code ?? -1)));
+  inFlight = null;
+  return classify(files, { status, stdout: out, stderr: '' });
 }
 
 const subjects = gates();
@@ -301,11 +446,18 @@ const restored = [];
  *
  * The leak was measured: a run was killed while it held `scripts/check-official.mjs`
  * hollowed, and the next `git status` showed that gate modified in the working
- * tree. The first repair was a SIGINT/SIGTERM/SIGHUP handler, and it does not work
+ * tree. The first repair was a SIGINT/SIGTERM/SIGHUP handler, and it did not work
  * for the case that was actually observed. During `spawnSync` the event loop is
  * blocked, so a handler registered with `process.on` cannot run until the child
  * exits -- and the kill that caused the leak arrived exactly there. A SIGKILL
  * cannot be handled by any process at all.
+ *
+ * The second sentence of that was read as a fact about signals for two passes. It is
+ * a fact about **blocking**: the nested run is awaited now, so the loop is free and
+ * `interrupted` below does the same sweep at signal time. The journal is still the
+ * mechanism for a SIGKILL and for a crash, and the three are complements -- a signal
+ * is cleaned up by the handler, a kill by the next run, and a survivor of either is
+ * made harmless by the precondition on the tree.
  *
  * So the restore is not attempted at kill time. The bytes are written to a journal
  * **before** the mutation, and the next run repairs from it before doing anything
@@ -358,6 +510,23 @@ function journalWrite(entries) {
   }
   mkdirSync(dirname(JOURNAL), { recursive: true });
   writeFileSync(JOURNAL, JSON.stringify(entries));
+}
+
+/**
+ * Record the nested suite's group against the entry for the file being mutated.
+ *
+ * The entry is written before the mutation and completed here, a few milliseconds
+ * later, because a `spawn` hands back its pid and a `spawnSync` does not. A kill
+ * inside that window leaves a file the next run repairs and a suite it cannot name;
+ * that is a smaller hole than the one this closes, and it is written down rather than
+ * left to be discovered.
+ */
+function rememberSuite(group) {
+  const entries = journalRead();
+  const mine = entries.find((entry) => entry.pid === process.pid && entry.suite === null);
+  if (mine === undefined) return;
+  mine.suite = group;
+  journalWrite(entries);
 }
 
 /**
@@ -449,6 +618,11 @@ function repairFromJournal() {
 
   const unrestored = [];
   for (const entry of entries) {
+    // The suite first, the file second, and the order is not cosmetic: the suite is a
+    // process reading the file this loop is about to write, and it is a process nobody
+    // is waiting for. Stopping it afterwards would restore a file underneath a reader
+    // whose verdict no run will ever collect.
+    stopSuite(entry.suite, (line) => console.error(line));
     writeFileSync(entry.path, entry.original);
     if (readFileSync(entry.path, 'utf8') !== entry.original) unrestored.push(entry.gate);
   }
@@ -485,6 +659,42 @@ if (alreadyHollowed.length > 0) {
 
 acquireLock(subjects.length);
 
+/**
+ * Put the tree back on the way out, for the deaths that arrive as a signal.
+ *
+ * `JOURNAL`'s header records this being tried and abandoned, and the reason it gives
+ * is exact: during a `spawnSync` the event loop is blocked, so a handler cannot run
+ * until the child it is waiting for has exited, and the kill that leaked a file
+ * arrived precisely there. That is a fact about **blocking**, not about signals --
+ * the nested run is awaited now, so the loop is free and this can do what the journal
+ * can only do on the next run.
+ *
+ * It is not a replacement for the journal. SIGKILL cannot be handled by any process,
+ * and a handler is not run for a crash. So there are three mechanisms and each covers
+ * what the others cannot: this one for a signal, the journal for a kill, and
+ * `HOLLOW_LINE`'s precondition so that a survivor of either is harmless.
+ */
+function interrupted(signal) {
+  const mine = journalRead().find((entry) => entry.pid === process.pid);
+  const group = inFlight?.group ?? mine?.suite ?? null;
+  if (group !== null) stopSuite(group, (line) => console.error(line));
+
+  if (mine !== undefined) {
+    writeFileSync(mine.path, mine.original);
+    journalWrite(journalRead().filter((entry) => entry.gate !== mine.gate));
+  }
+  console.error(
+    `verify-gates-are-testable: FAILED -- interrupted by ${signal}; ` +
+      (mine === undefined ? 'nothing had been written' : `${mine.gate} was put back`),
+  );
+  releaseLock();
+  process.exit(1);
+}
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => interrupted(signal));
+}
+
 for (const gate of subjects) {
   const path = resolve(ROOT, 'scripts', gate);
   const original = readFileSync(path, 'utf8');
@@ -508,12 +718,14 @@ for (const gate of subjects) {
 
   let outcome;
   // The record goes down **before** the mutation, so a kill at any point after this
-  // leaves a repair. The pid is what the next run uses to tell this run's death from
-  // its life; see `JOURNAL`.
-  journalWrite([...journalRead(), { path, original, gate, pid: process.pid }]);
+  // leaves a repair. `pid` is what the next run uses to tell this run's death from
+  // its life; `suite` is filled in the moment the nested run starts -- it cannot be
+  // known earlier, and the window between the two is the one thing here that is not
+  // covered. See `JOURNAL` and `inFlight`.
+  journalWrite([...journalRead(), { path, original, gate, pid: process.pid, suite: null }]);
   try {
     writeFileSync(path, candidate);
-    outcome = runTests(files);
+    outcome = await runTests(files);
   } finally {
     writeFileSync(path, original);
     journalWrite(journalRead().filter((entry) => entry.gate !== gate));

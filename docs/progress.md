@@ -4897,9 +4897,9 @@ dead one`.
 | `gate-sites.json` | **60 sites across 37 of 40 scripts**; **54 proved + 6 exempt + 0 unannotated**; excluded `{zero: 8, indirect: 3, multiline: 0}` |
 | the audit's own test file | **13 -> 16 tests** (subjects from the inventory both ways; a subject the prefix would miss; the already-hollowed refusal; the live-holder refusal and the dead-holder takeover) |
 | `scripts-are-classified.test.ts` | the same claim restated over mentions, and it no longer names a script in a negative form |
-| `core` test suite | **141 files, 3761 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **145 files, 3947 tests passed** (as of this commit) |
+| `core` test suite | **141 files, 3761 tests passed** (as of `3148b9410`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `3148b9410`) |
+| repo test suite | **145 files, 3947 tests passed** (as of `3148b9410`) |
 | `typecheck` / `lint` / `docs:check` / `docs:counts:check` | green |
 | CI | run `38924872859` on `7c8561db0` -- **four jobs, all success**; the audit's step **153 s on the runner against 103.96 s here** |
 
@@ -4944,13 +4944,120 @@ what a budget measurement is.
   orphan still runs for minutes, holding a CPU and re-reading a tree that is being edited, and
   nothing names it. A nested run in its own process group, killed as a group, is the shape that
   would fix it, and it is a change to how the audit spawns rather than to what it measures]`
-- **No reader is driven against a real deployment by CI.** Unchanged from pass 48: the fixture
-  server answers all six shapes faithfully, and it is this repository's reading of six APIs rather
-  than the APIs themselves. `[open: a real deployment is what would turn a reader from answering
-  our fixture into answering the backend, and it needs either a service to point at or a way to
-  stand one up inside the job -- neither of which this repository has today]`
+- **Nothing in this tree has ever been pointed at a backend it did not write.** Carried from pass
+  48 for the third time, and re-signed rather than repeated: the fixture replies to all six readers
+  in shapes this repository chose, so what the six readers are tested against is one author's
+  reading of six APIs, and every reader in the tree is certified by a document rather than by a
+  service. `[open: two of the six were driven against real deployments once, by hand, in passes 44
+  and 45, and what that cost was a running service -- so the question this entry keeps asking is
+  whether a job can stand one up, and it has been asked three times without an answer]`
 - **The tracking documents' status columns are outside every gate in this repository.** Unchanged
   from pass 48, and this pass found a second instance of the same shape *inside* the tree: a
   script's header describing the rule its own function had stopped implementing. `[open: holding
   those columns to anything would need either a cross-repository check or the same facts mirrored
   where a gate can reach them, and neither is obviously the right shape yet]`
+
+## Pass 51 -- a run that dies leaves nothing behind: not the mutation, and not the process
+
+Pass 50 left this entry: *a killed run's nested suite keeps running for minutes, holding a CPU and
+re-reading a tree that is being edited, and nothing names it.* Its fix was named as "a change to how
+the audit spawns", and three measurements decided what shape that change could take.
+
+### The three measurements that decided the shape
+
+| measured | result | what it settled |
+| --- | --- | --- |
+| `spawnSync(…, { detached: true })` | the child's pid **is** its own group id | a group can be made and later signalled without touching this process |
+| what is in a group | the leader **and its children** -- the first experiment's group held a `sleep` that a pid-only kill would have left | stop the group, not the pid |
+| `spawnSync` and the child's pid | returned only **after the child exits** | the current spawn cannot name its suite while the suite is running, which is the only moment the name is worth having |
+
+The third is the one that changed the code rather than adding to it. `runTests` is now `spawn` +
+`await`, so the group is known while it runs; `detached` puts it in a group of its own; and the
+journal entry for the file being mutated is completed with `suite` a few milliseconds after the
+mutation begins.
+
+### Three mechanisms, for three ways to die
+
+The file already had two -- a journal for a run that was killed, and a precondition for a tree a
+survivor has left mutated. It now has three, and each is written down with the case the others
+cannot cover:
+
+- **A signal** is cleaned up by `interrupted`, which stops the suite, puts the file back and exits
+  non-zero. `JOURNAL`'s header has recorded since finding 148 that a handler "does not work", with
+  the reason: during a `spawnSync` the event loop is blocked, so it cannot run until the child it is
+  waiting for has exited, which is exactly where the kill arrived. **That was a fact about blocking,
+  read as a fact about signals** -- awaiting the child frees the loop, and the handler that was
+  abandoned for two passes now does the whole sweep.
+- **A SIGKILL** cannot be handled by any process, so the journal carries the group and the next run
+  stops it before repairing the file.
+- **A survivor of either** is made harmless by the precondition on the tree, which is what turns a
+  twelve-file corruption into a failed run.
+
+The group is checked against **what it is running** before anything is signalled, and the check
+refuses more often than it kills: a group id is reused, so a recorded number can name somebody
+else's group an hour later, and a script that signals whatever a stale record points at is worse than
+one that leaves an orphan. Two refusals are proved rather than asserted -- a decoy group is left
+alone, and the group the audit is *in* is left alone, which is the catastrophic case because a signal
+there would take down the shell and the runner with it.
+
+### What an experiment found that reading the code did not
+
+`stopSuite` begins with two guards, and the first version of the second one returned in **silence**
+for a value that is neither a usable group nor the documented `null`:
+
+```
+if (!Number.isInteger(group) || group <= 0) return false;
+```
+
+The comment above it said *every refusal is reported, because a sweep that declines in silence cannot
+be told apart from one that found nothing.* The code did not do what the comment said, and what found
+it was a **test passing for the wrong reason**: the sandbox handed the audit a group id through a
+`sed` substitution, the placeholder was inside quotes, and the result was the string `"96828"` rather
+than the number `96828` -- so the guard declined silently, the own-group branch was never reached, and
+the test timed out instead of failing. Fixing the test exposed the contradiction; both are fixed, and
+the malformed case now has its own test.
+
+### The leak this pass made, in the way this pass is about
+
+One test run left `packages/core/bystander.pid` in the repository. The wrapper played the audit's
+part in a group whose members the test could watch, and wrote its bystander's pid **by relative
+path** into whatever directory the runner happened to have -- the package, not the sandbox. It was
+found by `git status`, which is also how finding 173's twelve-file corruption was found:
+
+> **The measurement that finds a leak is not the verdict; it is the working tree.** Two passes in a
+> row have now paid for that sentence, and neither leak was visible in any gate's output.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the audit, full run against the real tree | **37 subjects, 37 caught, 0 survived, 0 no-test, 0 unattributed, 0 unparsable**; **restored byte-for-byte 37 of 37**; **108.43 s** (103.96 s before this pass) |
+| orphaned processes after that run | **none** |
+| mutation checks, one per new guard | **5 of 5 CAUGHT**, each by exactly its own test: same-group spawn, no reap, no identity check, no own-group guard, no signal handler |
+| `gate-sites.json` | **61 sites across 37 of 40 scripts**; **55 proved + 6 exempt + 0 unannotated** |
+| the audit's own test file | **16 -> 22 tests** |
+| `core` test suite | **141 files, 3767 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **145 files, 3953 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- ~~**A killed run leaves its nested suite behind.**~~ **Closed by finding 174.** The suite runs in
+  a group of its own, the group is written down before it can outlive the run that started it, a
+  signal is cleaned up on the spot, and a SIGKILL is cleaned up by the next run -- with the group's
+  members checked before anything is signalled.
+- **The journal cannot name the suite for the few milliseconds before it exists.** The entry is
+  written before the mutation and completed after the `spawn` returns, so a kill inside that window
+  leaves a file the next run repairs and a suite it cannot name. `[open: the window is written down
+  rather than closed, and closing it would mean writing the record before the thing it records --
+  which would need a name for the suite that does not exist yet]`
+- **No reader is driven against a real deployment by CI.** Unchanged from pass 48: the fixture
+  server answers all six shapes faithfully, and it is this repository's reading of six APIs rather
+  than the APIs themselves. `[open: a real deployment is what would turn a reader from answering
+  our fixture into answering the backend, and it needs either a service to point at or a way to
+  stand one up inside the job -- neither of which this repository has today]`
+- **The batteries job's worst observed run is 79% of its budget, and four readings of one tree span
+  364 s.** Unchanged from pass 50, except that the audit now costs 108 s locally where it cost 104.
+  `[open: the numbers are in pass 50; the job gains a battery every few passes, and splitting this
+  audit into its own job is the shape that would buy the margin back at a price nobody has measured]`

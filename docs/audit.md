@@ -17749,3 +17749,92 @@ this was not the audit's verdict; it was `git status`.
 > **Why do you believe the thing you just measured is the thing you meant to measure?** The audit
 > had asked that question about *every other* gate for seven passes. It had not asked it about
 > itself, and the answer was no.
+
+## Finding 174 — a fact about blocking, read as a fact about signals
+
+### What the previous pass left, and why it was one entry rather than a fix
+
+Finding 173 recorded five `node (vitest N)` processes still rewriting the tree minutes after the run
+that started them had died. It recorded the cause as a property of killing rather than of the audit:
+**`spawnSync`'s `timeout` kills its direct child and nothing below it.** The fix was left in the Open
+list, because it is a change to how the audit spawns -- and three measurements decided the shape.
+
+| measured | result |
+| --- | --- |
+| `spawnSync(…, { detached: true })` | the child's pid **is** its own group id, so a group exists to be signalled later |
+| what a group contains | the leader **and its children** -- the experiment's group held a `sleep` that a pid-only kill would have missed |
+| `spawnSync` and the child's pid | handed back only **after the child has exited** |
+
+The third is the one that mattered. A pid is worth writing down at exactly one moment -- while the
+process is running and its owner may not survive to clean it up -- and `spawnSync` cannot supply it
+then. So `runTests` is `spawn` + `await`, the child is `detached`, and the journal entry for the file
+being mutated is completed with the group a few milliseconds after the mutation begins.
+
+### The paragraph that had been wrong for two passes
+
+`JOURNAL`'s header has said, since finding 148, that a signal handler was tried and **does not work**,
+and it gave the reason: during a `spawnSync` the event loop is blocked, so a handler cannot run until
+the child it is waiting for has exited, and the kill that caused the leak arrived exactly there.
+
+Every word of that is true, and the conclusion drawn from it was false. **It is a fact about
+blocking, not about signals.** Awaiting the child frees the loop, and the handler that was abandoned
+two passes ago now performs the whole sweep: stop the suite, put the file back, exit non-zero. What
+the header should have said is that the *mechanism it was describing* could not run then -- and the
+difference between those two sentences is the one this audit has spent twenty findings on.
+
+> **A measurement of a mechanism is not a measurement of the property**, and the file had written the
+> first while reading it as the second. It is finding 172's shape -- "a gate" read as a filename
+> prefix -- and finding 173's, one layer in.
+
+### Three deaths, three mechanisms, and each says which it covers
+
+- **A signal** is handled on the spot by `interrupted`.
+- **A SIGKILL** cannot be handled by any process, so the journal carries the group and the next run
+  stops it **before** repairing the file. That order is not cosmetic: the suite is a process reading
+  the file the repair is about to write.
+- **A survivor of either** -- the orphan nobody stopped -- is made harmless by `HOLLOW_LINE`'s
+  precondition: an audit refuses to measure a tree that is already mutated, so the worst a survivor
+  can do is fail.
+
+### Killing only what it made
+
+`process.kill(-group, …)` reaches the whole group, and a group **id** is not an identity: ids are
+reused, so a record from an hour ago can name somebody else's group. `stopSuite` therefore asks what
+the group is *running* before it signals anything, and it refuses more often than it kills. Three
+refusals are proved rather than asserted:
+
+| refusal | why it is the interesting one |
+| --- | --- |
+| a group whose members are not a `vitest` run | the decoy case, and the one a stale id produces |
+| the group this process is in | catastrophic -- a signal there takes down the shell and the runner with it, and the identity check cannot see it, because under vitest this process's own group is full of things whose command line says `vitest` |
+| a recorded value that is not a group id at all | see below |
+
+The third one was **not in the code**. The first version returned in silence for a value that is
+neither a usable group nor the documented `null`, while the comment directly above it said *every
+refusal is reported, because a sweep that declines in silence cannot be told apart from one that
+found nothing.* What exposed the contradiction was a **test passing for the wrong reason**: the
+sandbox interpolated a group id through `sed`, the placeholder sat inside quotes, so the audit
+received the string `"96828"` instead of the number `96828`; the guard declined silently, the branch
+the test was aimed at was never reached, and the test timed out rather than failed. Two defects, one
+behind the other, and the second was only visible after the first was fixed.
+
+### The leak, found the way finding 173's was
+
+One test run left `packages/core/bystander.pid` in the repository: the wrapper wrote a pid by
+**relative path** into whatever directory the runner had, which is the package and not the sandbox.
+No gate noticed. `git status` did.
+
+> **The measurement that finds a leak is not the verdict; it is the working tree.** Two passes in a
+> row have paid for that sentence -- twelve corrupted files in finding 173 and one stray file here --
+> and neither was visible in any output any gate produces.
+
+### What this says about the method
+
+The audit now has a mechanism for each of the three ways its own run can end, and all three are
+written down with the case they cover rather than as a single claim of safety. The one window left is
+written into the Open list: the journal names the file before it is mutated and the suite a few
+milliseconds after it starts, and a kill between those two moments leaves a repair with nothing to
+reap. Closing it would mean recording a name before the thing it names exists.
+
+> **A cleanup that is total is three statements, not one.** The pass that says "this cannot leak"
+> is the pass that has not looked for the third death.

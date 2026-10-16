@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -60,7 +60,46 @@ const AUDIT = 'verify-gates-are-testable.mjs';
 const DRIVES = ['scripts/verify-gates-are-testable.mjs'];
 
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-gate-audit-'));
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+/**
+ * Stand-ins for a nested suite, so nothing this file starts outlives it.
+ *
+ * Two tests below start a process group to play the part of a suite the audit
+ * could not stop. They are tracked here and killed in `afterAll` for the same
+ * reason the audit tracks its own: a test that leaks a process is a test that
+ * makes the next one measure a machine it did not choose.
+ */
+const strays: number[] = [];
+
+afterAll(() => {
+  for (const pid of strays) {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      // Already gone, which is the outcome every one of these tests is about.
+    }
+  }
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+/** Whether any process still belongs to a group, asked of the kernel. */
+function groupAlive(group: number): boolean {
+  const out = spawnSync('ps', ['-A', '-o', 'pgid='], { encoding: 'utf8' });
+  return (out.stdout ?? '')
+    .split('\n')
+    .map((line) => Number(line.trim()))
+    .includes(group);
+}
+
+/** Wait for a condition, so a test waits on an event rather than on a duration. */
+async function until(what: string, condition: () => boolean, ms = 10_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
 
 let counter = 0;
 
@@ -306,6 +345,245 @@ describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () 
     expect(outcome.stderr).toContain('which is still running');
     expect(outcome.stdout).not.toContain('CAUGHT');
     expect(readFileSync(gate, 'utf8')).toBe(original);
+  });
+
+  it('runs the nested suite in its own process group, so it can be stopped at all', () => {
+    // **Measured, not assumed.** Finding 173 recorded five `node (vitest N)` processes still
+    // rewriting the tree minutes after the run that started them had died, and the fix has to
+    // start here: a process in the audit's own group cannot be stopped without stopping the
+    // audit, and a `spawnSync` returns the child's pid only after the child has exited -- which
+    // is the wrong moment to write it down.
+    //
+    // The stub reports its own group and its parent's. They must differ, and the file is a
+    // measurement through the real code path rather than a reading of the source.
+    const tree = sandbox({
+      body: "ps -o pgid= -p $$ > pgids.txt\nps -o pgid= -p $PPID >> pgids.txt\nprintf '\\303\\227 void\\n'",
+      status: 1,
+    });
+    const outcome = audit(tree);
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('CAUGHT');
+
+    const [suite, parent] = readFileSync(join(tree, 'pgids.txt'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => line.trim());
+    expect(Number(suite)).toBeGreaterThan(0);
+    expect(
+      Number(suite),
+      'the suite shares the audit’s process group, so nothing can stop it once the audit is gone',
+    ).not.toBe(Number(parent));
+  });
+
+  it('stops a nested suite that the run starting it did not get to stop', async () => {
+    // The journal covers a run that was killed, and a run that was killed is exactly the one
+    // whose suite is still going. So the entry now carries the group, and the next run stops it
+    // before it repairs the file -- in that order, because stopping it last would let it keep
+    // reading a gate that is being written back.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+
+    // The stand-in: a live process group whose command line names vitest, which is the only
+    // thing the identity check is allowed to look at.
+    const suite = join(tree, 'bin', 'vitest');
+    writeFileSync(suite, '#!/bin/sh\nsleep 60\n');
+    chmodSync(suite, 0o755);
+    const orphan = spawn(suite, [], { detached: true, stdio: 'ignore' });
+    strays.push(orphan.pid ?? 0);
+    await until('the stand-in suite to start', () => groupAlive(orphan.pid ?? 0));
+
+    const dead = spawnSync(process.execPath, ['-e', '']).pid;
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    writeFileSync(
+      journal,
+      JSON.stringify([
+        { path: gate, original, gate: 'check-throwaway.mjs', pid: dead, suite: orphan.pid },
+      ]),
+    );
+
+    const outcome = audit(tree);
+    expect(outcome.stderr).toContain('stopped the nested suite');
+    expect(outcome.status).toBe(0);
+    await until('the orphaned suite to be gone', () => !groupAlive(orphan.pid ?? 0));
+    expect(readFileSync(gate, 'utf8')).toBe(original);
+  });
+
+  it('leaves a group alone when its command line is not a suite, because an id is not an identity', async () => {
+    // The negative control, and the reason the check reads what a group is running rather than
+    // trusting a number. Group ids are reused, so a journal written an hour ago can name a group
+    // that now belongs to somebody else -- and a script that kills whatever a stale record points
+    // at is worse than one that leaves an orphan.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+
+    const decoy = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+    strays.push(decoy.pid ?? 0);
+    await until('the decoy to start', () => groupAlive(decoy.pid ?? 0));
+
+    const dead = spawnSync(process.execPath, ['-e', '']).pid;
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    writeFileSync(
+      journal,
+      JSON.stringify([
+        { path: gate, original, gate: 'check-throwaway.mjs', pid: dead, suite: decoy.pid },
+      ]),
+    );
+
+    const outcome = audit(tree);
+    expect(outcome.stderr).toContain('left group');
+    expect(groupAlive(decoy.pid ?? 0), 'the decoy was killed').toBe(true);
+    expect(outcome.status).toBe(0);
+  });
+
+  it('restores the gate and stops the suite when the run is signalled', async () => {
+    // The other half of `JOURNAL`'s reasoning. Its header records that a signal handler was tried
+    // and did not work, because `spawnSync` blocks the event loop and a handler cannot run until
+    // the child it is waiting for has exited -- which is where the kill arrived. That is a fact
+    // about **blocking**, not about signals: the nested run is awaited now, so the loop is free
+    // while it runs and a handler can do what the journal can only do on the next run.
+    //
+    // Proved by killing the audit and watching what is left: the gate back to the shipped bytes,
+    // and nothing in the suite's group.
+    const tree = sandbox({ body: 'echo $$ > suite.pid\nsleep 60', status: 0 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+
+    const child = spawn(process.execPath, [join(tree, 'scripts', AUDIT)], {
+      cwd: tree,
+      env: { ...process.env, PATH: `${join(tree, 'bin')}:${process.env.PATH ?? ''}` },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let said = '';
+    child.stderr?.on('data', (chunk) => {
+      said += String(chunk);
+    });
+    await until('the nested suite to start', () => existsSync(join(tree, 'suite.pid')));
+    const group = Number(
+      (readFileSync(join(tree, 'suite.pid'), 'utf8') || '0').trim().split(/\s+/)[0],
+    );
+    strays.push(group);
+    expect(groupAlive(group), 'the stub never started a group').toBe(true);
+
+    child.kill('SIGTERM');
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    expect(code, 'an interrupted run reported success').not.toBe(0);
+    expect(said).toContain('FAILED -- interrupted by SIGTERM');
+    expect(said).toContain('check-throwaway.mjs was put back');
+    expect(readFileSync(gate, 'utf8'), 'the gate was left hollowed').toBe(original);
+    await until('the suite to be gone', () => !groupAlive(group));
+  });
+
+  it('refuses to stop the group it is running in', async () => {
+    // The catastrophic case, and the reason the guard is not "will this kill something". A group
+    // id recorded in a journal can end up naming the group the audit itself belongs to -- and a
+    // signal to that group takes down the shell, the runner and everything beside them. The
+    // identity check cannot catch it: run under vitest, this process's own group is full of
+    // things whose command line says `vitest`.
+    //
+    // The journal has to name the audit's *own* group before the audit reads it, and the audit's
+    // group is only knowable once it is running. So a wrapper leads a group of its own, writes
+    // the journal naming `$$`, and then becomes the audit. If the guard is missing the audit
+    // signals the group it is in and dies without a word, which is a failure this test can see
+    // without taking the test runner down with it.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    const template = join(tree, 'journal.template.json');
+    writeFileSync(
+      template,
+      JSON.stringify([{ path: gate, original, gate: 'check-throwaway.mjs', pid: 0, suite: '__GROUP__' }])
+        // Unquoted, so the substitution yields a number. Quoted it yields a string, and a
+        // string is not a group id -- the first version of this test proved that the hard
+        // way, by passing for the wrong reason.
+        .replace('"__GROUP__"', '__GROUP__'),
+    );
+    const wrapper = join(tree, 'wrapper.sh');
+    writeFileSync(
+      wrapper,
+      '#!/bin/sh\n' +
+        `sed "s/__GROUP__/$$/" "${template}" > "${journal}"\n` +
+        // A bystander in the same group, so "the group survived" is a statement with a subject:
+        // the audit itself is the group's only other member, and it exits either way. Its stdio
+        // is closed on purpose -- a bystander holding the audit's pipes open would keep
+        // `close` from firing for as long as it lives, which is what the first version of this
+        // test did, and it read as a timeout rather than as the thing being measured.
+        'sleep 600 >/dev/null 2>&1 &\necho $! > bystander.pid\n' +
+        `exec "${process.execPath}" "${join(tree, 'scripts', AUDIT)}"\n`,
+    );
+    chmodSync(wrapper, 0o755);
+
+    const child = spawn(wrapper, [], {
+      // `cwd` is the tree, because the wrapper writes two files by relative path.
+      cwd: tree,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // The stub has to be the `npx` the nested run finds. Without this the audit measures the
+      // real vitest against a sandbox tree, which is a failure for a reason that has nothing to
+      // do with the guard under test -- the same trap the other sandboxes avoid by construction.
+      env: { ...process.env, PATH: `${join(tree, 'bin')}:${process.env.PATH ?? ''}` },
+    });
+    strays.push(child.pid ?? 0);
+    let err = '';
+    child.stderr?.on('data', (chunk) => {
+      err += String(chunk);
+    });
+    const [code, signal] = await new Promise((resolve) =>
+      child.on('close', (exitCode, exitSignal) => resolve([exitCode, exitSignal])),
+    );
+
+    await until('the audit to report the refusal', () => err.includes('own group'));
+    expect(err).toContain('own group');
+    expect(signal, 'the audit was signalled, which means it signalled the group it was in').toBeNull();
+    expect(code).toBe(0);
+    // The bystander is the measurement: a signal to the group would have taken it with it.
+    const bystander = Number(readFileSync(join(tree, 'bystander.pid'), 'utf8').trim());
+    expect(
+      (() => {
+        try {
+          process.kill(bystander, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      })(),
+      'the bystander was killed, so the group was signalled',
+    ).toBe(true);
+    expect(readFileSync(gate, 'utf8')).toBe(original);
+  });
+
+  it('reports a recorded group it cannot read as a group, rather than passing over it', () => {
+    // The rule the sweep states about itself: every refusal is reported, because a sweep that
+    // declines in silence cannot be told apart from one that found nothing. `null` is the single
+    // exception and it is not a refusal -- it is the documented window between the journal entry
+    // and the `spawn` that names the group, which is why it is written down in the entry rather
+    // than defaulted.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    writeFileSync(
+      journal,
+      JSON.stringify([
+        {
+          path: gate,
+          original: readFileSync(gate, 'utf8'),
+          gate: 'check-throwaway.mjs',
+          pid: 0,
+          suite: 'not-a-group',
+        },
+      ]),
+    );
+
+    const outcome = audit(tree);
+    expect(outcome.stderr).toContain('"not-a-group"');
+    expect(outcome.stderr).toContain('not a group id');
+    expect(outcome.status).toBe(0);
   });
 
   it('reads a failure the runner coloured, which is the only shape CI produces', () => {
