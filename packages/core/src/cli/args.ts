@@ -627,8 +627,13 @@ const EVOLVE_ACTION_FLAGS = {
  * Written as data rather than as six `parse` functions so that the two questions
  * a reader of this file asks -- "what does ClickHouse need?" and "may I pass
  * `--namespace` to it?" -- are both answered by reading one row.
+ *
+ * Exported because the reference document carries a second copy of this table,
+ * in prose, for a reader who is not reading the source. `check-cli-reference.mjs`
+ * holds that copy to this one, column by column, so the two cannot disagree --
+ * which is the whole reason a hand-written table is acceptable here at all.
  */
-const PULL_BACKEND_FLAGS = {
+export const PULL_BACKEND_FLAGS = {
   prometheus: {
     required: ['base-url', 'query', 'start', 'end', 'step'],
     optional: ['service-label', 'timeout-ms'],

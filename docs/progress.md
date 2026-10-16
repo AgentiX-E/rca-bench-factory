@@ -4549,9 +4549,9 @@ bound.
 
 | gate | result |
 | --- | --- |
-| `core` test suite | **140 files, 3747 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **144 files, 3933 tests passed** (as of this commit) |
+| `core` test suite | **140 files, 3747 tests passed** (as of `b215811db`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `b215811db`) |
+| repo test suite | **144 files, 3933 tests passed** (as of `b215811db`) |
 | coverage — core | **99.97 / 99.93 / 100 / 99.97** (unchanged from pass 46) |
 | coverage — cli | **100 / 100 / 100 / 100** |
 | coverage — `src/ingest/backends.ts` | **100 / 100 / 100 / 100** |
@@ -4563,13 +4563,97 @@ bound.
 
 ### Open
 
-- **The reference's per-backend table is prose beside a generated help.** The flag *set* is
-  compared in both directions by `check-cli-reference.mjs`, so a flag cannot drift out of the
-  document; the table of which backend needs which flag is a copy of `PULL_BACKEND_FLAGS` and
-  nothing reads it. `[open: holding a Markdown table to a `Record` needs a guard that reads the
-  table by shape, which is a tool this repository does not yet have -- worth building, and not
-  what this pass was for]`
+- ~~**The reference's per-backend table is prose beside a generated help.**~~ **Closed by finding
+  171**, which built the guard this entry named as missing: `check-cli-reference.mjs` now reads
+  the table by its header and holds it to `PULL_BACKEND_FLAGS`, **column by column** -- a
+  comparison of the two unions would have accepted a flag moved from `Required` to `Optional`.
 - **No reader is driven against a real deployment by CI.** The fixture server answers all six
   shapes faithfully, but it is this repository's reading of six APIs rather than the APIs.
   `[open: the asymmetry pass 44 recorded for ClickHouse alone, now true of five more -- a real
   deployment is what would turn a reader from "answers our fixture" into "answers the backend"]`
+
+## Pass 48 — the table nothing read, and a status column that stood a pass behind
+
+### What was open, and the shape of closing it
+
+Pass 47's own Open list named it: `docs/cli-reference.md`'s per-backend table was "prose beside
+a generated help". The flag *set* of every command is compared in both directions, so a flag
+cannot drift out of the document -- and the table saying **which backend needs which flag** was
+a hand-written copy of `PULL_BACKEND_FLAGS` that **nothing read**. It could have said `--token`
+under Prometheus, or that every backend requires every flag, and the gate would have stayed
+green.
+
+| what is compared | how |
+| --- | --- |
+| the backend rows | located by the table's **header** -- a row naming both `Required` and `Optional` -- not by position, because the section has a fenced `text` block above it |
+| **both directions** | a backend `PULL_BACKEND_FLAGS` declares and the table omits, and a backend the table invents |
+| **both columns, separately** | a flag moved from `Required` to `Optional` still *names* the flag, so a union comparison accepts it; the column is what a reader acts on |
+| the truth | `packages/core/dist/index.js`'s own `PULL_BACKEND_FLAGS`, imported rather than restated, with `docs:check` building first |
+
+### The first run reported 96 disagreements, and they were one disagreement
+
+The check had never run against the shipped document. Its first run reported **96** failures,
+and reading them rather than counting them says what they were:
+
+```
+'base-url' is required for 'prometheus' but pull's table does not say so
+pull's table calls '--base-url' required for 'prometheus', which does not declare it
+```
+
+`PULL_BACKEND_FLAGS` names flags without their dashes -- it is read beside `COMMAND_SPECS`'
+option map, which is keyed that way -- and the document writes what a reader *types*. One
+representation difference, reported once per flag **on both sides**, for six backends. The
+prefix is added on the gate's side, with the reason written where the normalisation is: a number
+that large is a reason to read the list, not a reason to widen a threshold.
+
+### A status column, one repository over, that nothing reads
+
+The same asymmetry turned up while this pass was being planned. `09-推进进度追踪.md` records
+P1-5 -- *"measure the six T2 backends one by one"* -- and said:
+
+> **当前状态：六分之一（v1.75）** … **v1.81 更新为六分之二（finding 160）** …
+> **剩余六分之四**：Loki / ES / ClickHouse / K8s API
+
+Four readers and a command were delivered in the passes after that sentence was written. The
+row stood as the current state through all of them, because **it has no reader**: the status
+line is prose in a document this repository's gates do not open, and the one gate that reads a
+progress list states its own limit in its header -- `check-open-list.mjs` can refuse an entry
+that *says* nothing and cannot refuse one that says the wrong thing.
+
+> **A "current state" column is a claim, and a claim without a reader decays at the rate of the
+> passes that follow it.** This campaign has written that sentence about published counts, gate
+> summaries and release reasons. It applies to a progress table.
+
+`04-里程碑与路线图.md` carried the same drift in another shape -- M3's exit condition "T2
+backend pulling for Prometheus / Jaeger / Loki / ES / ClickHouse / K8s API" still marked `[ ]`
+-- and `08-实测现状基线.md` §7 still said ⬜ **未测量**. All three are corrected in this pass,
+and the correction *is* the measurement: six readers, six `implemented` rows, one command that
+can drive them, and a gate holding the table to the code.
+
+### Verified (Pass 48)
+
+| gate | result |
+| --- | --- |
+| `check-cli-reference.mjs` against the committed reference | **PASSED** (12 commands, 14 documented) |
+| the new check, first run | **96 disagreements**, all one representation difference (recorded above) |
+| the reference gate's own tests | **14 tests** (9 before): the committed table accepted, and four negatives -- a backend omitted, a backend invented, a required flag unnamed, and a flag moved between columns |
+| `gate-sites.json` | re-derived (the one site moved 199 -> 301) and **re-signed by hand** to `proved`; **50 of 50** |
+| `verify-gates-are-testable` | **16 gates, 16 caught, 0 survived, 0 no-test**; every source restored byte-for-byte |
+| `core` test suite | **140 files, 3752 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **144 files, 3938 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
+| the guard that refused the change first | `derive-gate-sites --check`, on the moved site -- the gate doing what finding 150 built it for |
+
+### Open
+
+- **No reader is driven against a real deployment by CI.** Unchanged from pass 47: the fixture
+  server answers all six shapes faithfully, and it is this repository's reading of six APIs
+  rather than the APIs themselves. `[open: a real deployment is what would turn a reader from
+  answering our fixture into answering the backend, and it needs either a service to point at or
+  a way to stand one up inside the job -- neither of which this repository has today]`
+- **The tracking documents' status columns are outside every gate in this repository.** The
+  staleness this pass corrected was found by reading, not by a check. `[open: those columns live
+  in a second repository whose files no gate here opens, so holding them to anything would need
+  either a cross-repository check or the same facts mirrored where a gate can reach them, and
+  neither is obviously the right shape yet]`

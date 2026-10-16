@@ -812,6 +812,7 @@ const TESTED = [
   'EVOLVE_ACTIONS',
   'EXPORT_TARGETS',
   'HELP_TOPICS',
+  'PULL_BACKEND_FLAGS',
   'PULL_BACKEND_IDS',
   'formatCommandHelp',
   'formatHelp',

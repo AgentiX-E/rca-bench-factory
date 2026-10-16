@@ -493,6 +493,7 @@ export {
   formatVersion,
   HELP_TOPICS,
   parseCliArgs,
+  PULL_BACKEND_FLAGS,
   PULL_BACKEND_IDS,
 } from './cli/args.js';
 export type {

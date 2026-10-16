@@ -185,6 +185,108 @@ for (const topic of topics) {
   }
 }
 
+/**
+ * The per-backend table in the `pull` section, held to `PULL_BACKEND_FLAGS`.
+ *
+ * ## What the loops above do not read
+ *
+ * They hold every command's flag **set** to its `--help`, in both directions, so
+ * a flag cannot drift out of the document. None of them reads the table under
+ * `pull` saying **which backend requires which flag**. That table is a
+ * hand-written copy of a `Record` in `packages/core/src/cli/args.ts`, and until
+ * this block existed it could have said anything -- `--token` under Prometheus,
+ * every backend requiring every flag, a seventh backend nobody implements -- and
+ * the gate would have stayed green. It is the entry pass 47 wrote into its own
+ * Open list, closed here.
+ *
+ * ## Why the two columns are compared separately
+ *
+ * A table that moved `--service-label` from `Required` to `Optional` still
+ * *names* it, so comparing the union of the two columns accepts it -- and a
+ * reader who followed that table would omit a flag Loki refuses to run without.
+ * The column is the part a reader acts on, so the column is what is compared.
+ *
+ * ## Where the truth comes from
+ *
+ * The **built package**, not a copy: `packages/core/dist/index.js` exports the
+ * same `PULL_BACKEND_FLAGS` the parser reads its option maps from, and
+ * `docs:check` builds first. A gate that restated the table would be checking
+ * itself, which is the defect this campaign keeps finding in other guises.
+ */
+const core = await import(resolve(ROOT, 'packages/core/dist/index.js'));
+
+/**
+ * The per-backend rows of the `pull` section's table, keyed by backend id.
+ *
+ * Located by its **header** -- a row naming both `Required` and `Optional` --
+ * rather than by position, because the section has a fenced `text` block above
+ * it and a positional reader would find whatever came first. Bounded by the next
+ * line that is not a table row. Returns `null` when the section has no such
+ * table, which is its own failure rather than an empty comparison.
+ */
+function backendTable(section) {
+  const lines = section.split('\n');
+  const header = lines.findIndex((l) => /\|\s*Required\s*\|/.test(l) && /\|\s*Optional\s*\|/.test(l));
+  if (header === -1) return null;
+  const rows = new Map();
+  for (let i = header + 1; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line.startsWith('|')) break;
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+    if (cells.length < 3) continue;
+    // The separator row is `| --- | --- | --- |` and names no backend; skipping
+    // it here is what keeps `flagsIn` from being asked about `---`, which is the
+    // same trap the flag-set comparison hit under `official`.
+    const id = /^`([a-z][\w-]*)`$/.exec(cells[0]);
+    if (id === null) continue;
+    rows.set(id[1], { required: flagsIn([cells[1]]), optional: flagsIn([cells[2]]) });
+  }
+  return rows;
+}
+
+const pullSection = sections.get('pull');
+if (pullSection !== undefined) {
+  const table = backendTable(pullSection.join('\n'));
+  if (table === null) {
+    failures.push("the `pull` section has no per-backend table: no row names both 'Required' and 'Optional'");
+  } else {
+    for (const [id, declared] of Object.entries(core.PULL_BACKEND_FLAGS)) {
+      const row = table.get(id);
+      if (row === undefined) {
+        failures.push(`pull's per-backend table omits '${id}', which PULL_BACKEND_FLAGS declares`);
+        continue;
+      }
+      for (const column of ['required', 'optional']) {
+        // `PULL_BACKEND_FLAGS` names flags without their dashes, because it is
+        // read beside `COMMAND_SPECS`' option map, which is keyed that way. The
+        // document writes what a reader types. The prefix is added on this side
+        // rather than demanded of either, and the first run of this check made
+        // the reason visible: without it, all 96 disagreements were the same
+        // disagreement, reported once per flag on both sides of the comparison.
+        const expected = new Set(declared[column].map((flag) => `--${flag}`));
+        for (const flag of expected) {
+          if (!row[column].has(flag)) {
+            failures.push(`'${flag}' is ${column} for '${id}' but pull's table does not say so`);
+          }
+        }
+        for (const flag of row[column]) {
+          if (!expected.has(flag)) {
+            failures.push(`pull's table calls '${flag}' ${column} for '${id}', which does not declare it`);
+          }
+        }
+      }
+    }
+    for (const id of table.keys()) {
+      if (!(id in core.PULL_BACKEND_FLAGS)) {
+        failures.push(`pull's table documents a backend '${id}' that PULL_BACKEND_FLAGS does not declare`);
+      }
+    }
+  }
+}
+
 // A section header for a command that does not exist is a documentation bug of
 // its own: readers follow it and hit `unknown command`.
 for (const heading of [...markdown.matchAll(/^### `rca-bench ([\w-]+)`/gm)].map((m) => m[1])) {

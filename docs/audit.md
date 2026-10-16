@@ -17449,3 +17449,96 @@ would have surfaced from reading the command's own requirements.
 > **The reader a command is built on is as much a subject of measurement as the command.** A
 > CLI is mostly a description of somebody else's interface, and every assumption about that
 > interface is a candidate for the kind of check this repository already applies to its own.
+
+## Finding 171 — a table nothing read, and the 96 disagreements that were one
+
+### What was open, and the shape of closing it
+
+Pass 47 wrote its own Open list, and the first entry described `docs/cli-reference.md`'s
+per-backend table: it is a hand-written copy of `PULL_BACKEND_FLAGS` saying **which backend
+needs which flag**, and **nothing read it**. The flag *set* of every command is compared in both
+directions against `--help`, so a flag cannot drift out of the document -- and the table could
+have said `--token` under Prometheus, or that every backend requires every flag, or named a
+seventh backend, and every gate would have stayed green.
+
+The fix is the shape this campaign keeps arriving at, applied to prose for the first time:
+
+| what is compared | how |
+| --- | --- |
+| the backend rows | located by the table's **header** -- a row naming both `Required` and `Optional` -- not by position, because the section has a fenced `text` block above it that a positional reader would find first |
+| **both directions** | a backend `PULL_BACKEND_FLAGS` declares and the table omits, and a backend the table invents |
+| **both columns, separately** | a flag moved from `Required` to `Optional` still *names* the flag, so a comparison of the two unions accepts it -- and a reader who followed that table would omit a flag Loki refuses to start without |
+| the truth | `packages/core/dist/index.js`'s own `PULL_BACKEND_FLAGS`, **imported rather than restated**, with `docs:check` building first |
+
+The last row is the one worth naming. A gate that restated the table in order to check the table
+would be checking itself, which is the defect (findings 107-109) that made `T2_BACKENDS` the
+source for the backend-support matrix in the first place.
+
+### The first run: 96 disagreements, and they were one
+
+The check had never been run against the shipped document before it was committed. Its first run
+reported **96** failures. Reading the list rather than counting it is what makes them
+informative:
+
+```
+'base-url' is required for 'prometheus' but pull's table does not say so
+pull's table calls '--base-url' required for 'prometheus', which does not declare it
+```
+
+`PULL_BACKEND_FLAGS` names flags **without their dashes**, because it is read beside
+`COMMAND_SPECS`' option map, which is keyed that way. The document writes what a reader *types*.
+So one representation difference was reported **once per flag, on both sides of the comparison,
+for six backends** -- and the largest number this gate has ever printed was the least
+interesting result it produced.
+
+> **A diagnostic count is not a severity, and the first thing to do with a large one is read the
+> list.** Ninety-six failures that share a cause are one defect wearing ninety-six hats, and a
+> threshold widened to accommodate them would have hidden the cause rather than the symptom.
+
+The prefix is now added on the gate's side, and the reason is written where the normalisation
+is, because the *next* reader of that line is the person deciding whether the gate is too
+strict.
+
+### The same asymmetry, one repository over, with no reader at all
+
+While this pass was being planned, the same question was asked of the tracking documents -- and
+the answer was that one of them had been wrong for several passes.
+
+`09-推进进度追踪.md` records P1-5, *"measure the six T2 backends one by one, and declare the
+unsupported ones explicitly"*. Its status line said:
+
+> **当前状态：六分之一（v1.75）** … **v1.81 更新为六分之二（finding 160）** …
+> **剩余六分之四**：Loki / ES / ClickHouse / K8s API
+
+Four readers and a command were delivered in the passes after that sentence was written, and the
+row stood as the *current state* through all of them. `04-里程碑与路线图.md` carried the same
+drift as an unchecked box -- M3's exit condition "T2 backend pulling for Prometheus / Jaeger /
+Loki / ES / ClickHouse / K8s API" still `[ ]` -- and `08-实测现状基线.md` §7 still read ⬜
+**未测量**.
+
+Nothing failed. **The status line has no reader.** It is prose in a document this repository's
+gates do not open, and the one gate that does read a progress list states its own boundary in
+its header: `check-open-list.mjs` can refuse an entry that *says* nothing and cannot refuse one
+that says the wrong thing (finding 169's limit, restated).
+
+> **A "current state" column is a claim, and a claim without a reader decays at the rate of the
+> passes that follow it.** This campaign has written that sentence about published counts, gate
+> summaries and release reasons. A progress table is not exempt from it.
+
+The three documents are corrected here, and the correction is itself the measurement: **six
+readers, six `implemented` rows in the registry, one command that can drive them, and a gate
+holding the reference's table to the code.** What is *not* fixed is the class -- those columns
+live in a second repository no gate here opens, so the next staleness will again be found by
+reading. That is recorded in the Open list rather than implied to be solved.
+
+### What this says about the method
+
+Every durable claim in this repository now has a machine reader: the backend matrix has
+`check-backend-support`, the round trip has `check-roundtrip-record`, the gate inventory has
+`derive-gate-sites`, the Open list has `check-open-list`. This pass added the reference's
+per-backend table to that set -- and found, in the same hour, a claim **outside** the set that
+had been quietly wrong for several passes.
+
+> **The useful question about a document is not "is it accurate today" but "what would fail if
+> it stopped being accurate".** Applying it to the tracking documents produced a defect rather
+> than a reassurance, which is the outcome the question is for.
