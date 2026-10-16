@@ -4908,12 +4908,15 @@ dead one`.
 The audit's step is the one that changed, and on the runner it went from a step nobody had timed to
 **153 s** -- 1.5x the local figure, a ratio only a runner can give you.
 
-The job that hosts every battery is where that lands, and it was measured on **two runs of this same
-tree**: **1375 s**, then **1164 s**, against a budget of 1800 s. A 211-second spread on unchanged
-work, so the margin is somewhere between seven and ten minutes and **one run cannot tell you which**.
-That is the same lesson as the numbers above, one level up: `1375` written down alone would have been
-a reading presented as a measurement, which is what finding 166 records happening to this exact
-budget. It is in the Open list with both numbers attached.
+The job that hosts every battery is where that lands, and **three runs of this same tree** measured
+it at **1375 s**, **1164 s** and **1423 s** against a budget of 1800 s. A 259-second spread on
+unchanged work -- **two thirds to four fifths of the budget, and no single run settles which**. So the
+stable statement is the range and the rule it is subject to, not a sample: this job's size is a
+distribution, and a fourth run is entitled to land anywhere in it.
+
+That is the same lesson as the numbers above, one level up, and it is why the first version of this
+paragraph -- which wrote `1375 s` down as *the* figure -- was corrected rather than left: a single
+reading presented as a measurement is what finding 166 records happening to this exact budget.
 
 ### Open
 
@@ -4921,11 +4924,10 @@ budget. It is in the Open list with both numbers attached.
   173.** The audit takes its subjects from `gate-sites.json`, and the tie is asserted in both
   directions against the real tree rather than by pattern-matching the source: 37 subjects, all 37
   caught, 37 of 37 restored byte-for-byte.
-- **The batteries job is two thirds to three quarters of its budget, and the two readings differ by
-  211 s.** Measured on the runner: the audit's step is **153 s** for 37 subjects where it was a step
-  nobody had timed for 16, and the job that hosts every battery took **1375 s** and then **1164 s**
-  of its 1800 s on the same tree. The margin is seven to ten minutes for a job that gains a battery
-  every few passes. `[open: the last time a
+- **The batteries job runs at two thirds to four fifths of its budget, and three runs of one tree
+  differed by 259 s.** Measured on the runner: the audit's step is **153 s** for 37 subjects where it
+  was a step nobody had timed for 16, and the job that hosts every battery measured **1375 s**,
+  **1164 s** and **1423 s** of its 1800 s on the same tree. `[open: the last time a
   budget in this file was exhausted the run read as `cancelled` rather than as a limit (finding 166),
   and splitting the audit into its own job is the shape that would buy the margin back -- at the cost
   of a fourth job's checkout, install and build, which is a price this pass did not measure]`
