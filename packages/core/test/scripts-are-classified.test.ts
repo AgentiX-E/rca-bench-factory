@@ -283,12 +283,21 @@ describe('scripts/ · every script is classified, and the class is checked', () 
       expect(new Set(reasons).size).toBe(reasons.length);
     });
 
-    it('names the two scripts that no test drives, and they are still the only two', () => {
-      // The specific finding, pinned. `serve-site.mjs` and
-      // `probe-category-inference.mjs` are in the tree and no test names either.
-      // Asserting it here means the gap is a recorded fact rather than an
-      // omission: if a third appears, the assertion below fails and the author
-      // has to classify it.
+    it('names the scripts that no test file mentions, and none of them is a gate or a probe', () => {
+      // The claim is deliberately about **mentions**, because a test file's text is
+      // what this can read, and a mention is not a drive. The exact set moved once
+      // already and the cause is worth recording: a *negative* assertion in another
+      // test -- `expect(listed).not.toContain('serve-site.mjs')` -- put that name
+      // into the corpus, so an assertion that a script must not be a subject deleted
+      // it from this list. Pinning the exact set would therefore report a coverage
+      // change where only prose had changed.
+      //
+      // What the set is evidence for is stated instead: a script no test file even
+      // mentions cannot have a verdict proved by one, so it must be a class with no
+      // verdict to prove. `serve-site.mjs` is named explicitly because it is the one
+      // that must stay unnamed -- it is an HTTP server whose only exit is the signal
+      // that stops it, and nothing should ever be driving it.
+      //
       // Read the test directory directly. An earlier version shelled out to
       // `grep -l '' --include '*.ts'`, and an empty pattern matches every file
       // including the register itself -- so the corpus contained all 32 script
@@ -310,11 +319,17 @@ describe('scripts/ · every script is classified, and the class is checked', () 
       const corpus = testFiles.map((file) => readFileSync(file, 'utf8')).join('\n');
 
       const undriven = scriptNames().filter((name) => !corpus.includes(name));
-      expect(undriven.sort()).toEqual(['probe-category-inference.mjs', 'serve-site.mjs']);
-      // And both are stated in the register, so the fact is not left implicit.
+      expect(undriven).toContain('serve-site.mjs');
       for (const name of undriven) {
-        expect(REGISTER[name]?.why).toBeTypeOf('string');
+        // A `gate` or a `probe` here would be the P1-6 defect stated in the register's
+        // own vocabulary: a script with a failure exit that no test names, so nothing
+        // could notice it being emptied.
+        expect(['tool', 'data'], `${name} is a ${REGISTER[name]?.class} that no test names`).toContain(
+          REGISTER[name]?.class,
+        );
+        expect(REGISTER[name]?.why, `${name} is unnamed and unexplained`).toBeTypeOf('string');
       }
+      expect(undriven.length).toBeLessThan(scriptNames().length / 4);
     });
 
     it('does not claim a driven script is undriven, nor the reverse', () => {

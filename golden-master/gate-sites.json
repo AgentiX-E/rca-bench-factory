@@ -2,7 +2,7 @@
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
   "scanned": 40,
   "excluded": {
-    "zero": 7,
+    "zero": 8,
     "indirect": 3,
     "multiline": 0
   },
@@ -232,7 +232,7 @@
     },
     {
       "script": "scripts/derive-gate-sites.mjs",
-      "line": 123,
+      "line": 132,
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"
@@ -410,22 +410,47 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 191,
+      "line": 284,
       "condition": "subjects.length === 0",
-      "diagnostic": "check-*.mjs",
+      "diagnostic": "golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 258,
-      "diagnostic": "verify-gates-are-testable: repaired ${entry.gate}, left hollowed by a run that was killed",
+      "line": 405,
+      "condition": "held !== null && isAlive(held.pid)",
+      "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 296,
+      "line": 443,
+      "condition": "inFlight.length > 0",
+      "diagnostic": "two runs cannot measure one tree at the same time",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 460,
+      "condition": "unrestored.length > 0",
+      "diagnostic": "could not repair ${gate} from the journal",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 479,
+      "condition": "alreadyHollowed.length > 0",
+      "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
+      "status": "proved",
+      "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-gates-are-testable.mjs",
+      "line": 520,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -433,7 +458,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 331,
+      "line": 559,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",

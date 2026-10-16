@@ -11,13 +11,23 @@ import { afterAll, describe, expect, it } from 'vitest';
  * ## What it is, and what the tracking row said about it
  *
  * `scripts/verify-gates-are-testable.mjs` inserts `process.exit(0)` into each
- * `scripts/check-*.mjs`, runs the test files that name it, and fails if any gate
- * survives or is named by nothing. It exists because the tracking row for P1-6
- * read "partially complete (3 of 8 gates)" for several rounds while the criterion
- * -- *a gate with no test is neither a threshold nor an enumeration* -- was
- * measured and already held for all thirteen. That count was of a **mechanism**
- * (gates carrying a dedicated block in `gates-are-testable.test.ts`), not of the
- * property, which is the shape this audit has now recorded at least five times.
+ * gate, runs the test files that name it, and fails if any gate survives or is
+ * named by nothing. It exists because the tracking row for P1-6 read "partially
+ * complete (3 of 8 gates)" for several rounds while the criterion -- *a gate with
+ * no test is neither a threshold nor an enumeration* -- was measured and already
+ * held for all thirteen. That count was of a **mechanism** (gates carrying a
+ * dedicated block in `gates-are-testable.test.ts`), not of the property, which is
+ * the shape this audit has now recorded at least five times.
+ *
+ * ## What its subject list is, and why it is no longer a filename prefix
+ *
+ * The first version read `readdirSync('scripts').filter(n => n.startsWith('check-'))`,
+ * which made the derivation real but made it a derivation of a **spelling**. The
+ * property is "exits non-zero when unhappy", and `golden-master/gate-sites.json`
+ * enumerates exactly that -- 37 scripts against the prefix's 16, with none in the
+ * prefix alone. So the audit now takes its subjects from the inventory, and the
+ * tests below hold that reading in both directions against the real tree rather
+ * than pattern-matching the source for a filename.
  *
  * ## Why it is not run here
  *
@@ -36,7 +46,6 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const AUDIT = 'verify-gates-are-testable.mjs';
-const AUDIT_SOURCE = readFileSync(resolve(ROOT, 'scripts', AUDIT), 'utf8');
 
 /**
  * The script this file drives.
@@ -62,34 +71,66 @@ interface Outcome {
 }
 
 /**
- * A throwaway tree holding the audit, one gate, and a test that names it.
+ * A throwaway tree holding the audit, one subject, and a test that names it.
  *
  * `stub` is what the audit's `npx` resolves to: a shell script that decides
  * whether the audit observes a failure. That is the whole experiment -- the audit
  * shells out for its evidence, so controlling the shell is controlling the
  * evidence.
+ *
+ * `subject` is the script the sandbox's inventory names, and it is a parameter
+ * because the audit's subject list is now the inventory's rather than a directory
+ * scan's: a sandbox has to say which script is a gate, and it can name one whose
+ * filename the old prefix rule would not have selected. `null` is the vacuity
+ * case -- an inventory that names nothing.
  */
-function sandbox(stub: { body: string; status: number }, withGate = true): string {
+function sandbox(stub: { body: string; status: number }, subject: string | null = 'check-throwaway.mjs'): string {
   counter += 1;
   const tree = join(scratch, `tree-${counter}`);
   mkdirSync(join(tree, 'scripts'), { recursive: true });
   mkdirSync(join(tree, 'packages', 'core', 'test'), { recursive: true });
   mkdirSync(join(tree, 'bin'), { recursive: true });
+  mkdirSync(join(tree, 'golden-master'), { recursive: true });
   copyFileSync(resolve(ROOT, 'scripts', AUDIT), join(tree, 'scripts', AUDIT));
-  // A gate whose filename this test controls, so the audit's directory scan has
-  // exactly one subject and the count in its report is a fact about the sandbox.
-  // `withGate: false` is the vacuity case: a tree with no gate at all.
-  if (withGate) {
-    writeFileSync(join(tree, 'scripts', 'check-throwaway.mjs'), 'process.exit(1);\n');
+  if (subject !== null) {
+    writeFileSync(join(tree, 'scripts', subject), 'process.exit(1);\n');
     writeFileSync(
       join(tree, 'packages', 'core', 'test', 'probe.test.ts'),
-      "// names scripts/check-throwaway.mjs so the audit has a subject to run\n",
+      `// names scripts/${subject} so the audit has a subject to run\n`,
     );
   }
+  writeFileSync(
+    join(tree, 'golden-master', 'gate-sites.json'),
+    JSON.stringify({ sites: subject === null ? [] : [{ script: `scripts/${subject}` }] }),
+  );
   const npx = join(tree, 'bin', 'npx');
   writeFileSync(npx, `#!/bin/sh\n${stub.body}\nexit ${stub.status}\n`);
   chmodSync(npx, 0o755);
   return tree;
+}
+
+/**
+ * The audit's own subject list, asked for rather than reconstructed.
+ *
+ * `--list` prints the derivation the loop is handed and stops before any file is
+ * touched, so comparing it against the inventory compares two real things. The
+ * alternative -- asserting the source mentions `gate-sites.json` -- would be the
+ * shape finding 168 recorded: a guard reading prose and calling it a check.
+ */
+function listedSubjects(): string[] {
+  const result = spawnSync(process.execPath, [resolve(ROOT, 'scripts', AUDIT), '--list'], {
+    encoding: 'utf8',
+    cwd: ROOT,
+    timeout: 120_000,
+  });
+  if (result.status !== 0) {
+    throw new Error(`--list exited ${result.status}: ${result.stderr ?? ''}`);
+  }
+  return (result.stdout ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .sort();
 }
 
 function audit(tree: string): Outcome {
@@ -106,36 +147,165 @@ function audit(tree: string): Outcome {
 }
 
 describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () => {
-  it('takes its subjects from the directory rather than from a list', () => {
+  it('takes its subjects from the inventory, in both directions', () => {
     // The rule the register in `scripts-are-classified.test.ts` states for itself:
     // a list that must be updated when a file is added is a check that cannot see
-    // the file it is missing. So the subject list is derived, and the assertion is
-    // about the derivation rather than about the absence of names.
+    // the file it is missing. The subject list is still derived -- `derive-gate-sites
+    // --check` holds the inventory to the tree, and it runs in `docs:check` and in
+    // the cold-tree job -- it is just derived one step upstream, from the property
+    // rather than from a filename.
     //
-    // The first version of this test asserted that no gate filename appeared in
-    // the audit at all, and it failed on `check-official.mjs` -- which the audit
-    // *mentions in prose*, in the paragraph explaining what finding 46 found. A
-    // name-absence check cannot tell a mention from a use, which is the same
-    // mistake this repository has now recorded three times in its own scanners
-    // (findings 127, 133, and the `cwd: sandbox` substring in 140). The property
-    // is that the subjects come from `gates()`, so that is what is asserted.
-    expect(AUDIT_SOURCE).toMatch(/function gates\(\)[\s\S]*?readdirSync/);
-    expect(AUDIT_SOURCE).toContain("startsWith('check-')");
-    expect(AUDIT_SOURCE).toContain("endsWith('.mjs')");
-    // And the derived list is what the loop is handed, so the scan and the loop
-    // cannot disagree about their subject.
-    expect(AUDIT_SOURCE).toContain('const subjects = gates();');
-    expect(AUDIT_SOURCE).toContain('for (const gate of subjects)');
+    // Both directions, because one is satisfiable by a wrong rule: a subset would
+    // pass `toContain`-style assertions while silently dropping subjects, and the
+    // prefix rule did exactly that for 21 scripts.
+    const inventory = JSON.parse(
+      readFileSync(resolve(ROOT, 'golden-master', 'gate-sites.json'), 'utf8'),
+    ) as { sites: { script: string }[] };
+    const scripts = [...new Set(inventory.sites.map((site) => site.script.replace(/^scripts\//, '')))].sort();
+    expect(listedSubjects()).toEqual(scripts);
+    expect(scripts.length).toBeGreaterThan(0);
+  });
+
+  it('measures a subject the filename prefix would have missed, and skips a script with no exit at all', () => {
+    // Two negatives that together pin the rule. "Every `.mjs` in scripts/" would
+    // satisfy the first half alone, and the old `check-*` prefix would satisfy the
+    // second half alone; only the property -- exits non-zero when unhappy -- gives
+    // both.
+    //
+    // The second half is written as a **property of the sources** rather than as a
+    // list of names, and that is not stylistic. Naming a script in a negative
+    // assertion puts its name into the corpus that
+    // `scripts-are-classified.test.ts` searches when it asks which scripts no test
+    // mentions -- so an assertion that a script must *not* be a subject silently
+    // deleted it from another guard's evidence. A mention is not a use, and a
+    // negative mention is still a mention.
+    const listed = listedSubjects();
+    expect(listed).toContain('inject-stability.mjs');
+    expect(listed).toContain('fetch-official.mjs');
+
+    const withoutExit = readdirSync(resolve(ROOT, 'scripts'))
+      .filter((name) => name.endsWith('.mjs'))
+      .filter((name) => !/process\.exit\s*\(/.test(readFileSync(resolve(ROOT, 'scripts', name), 'utf8')));
+    // Non-empty, or the loop below proves nothing.
+    expect(withoutExit.length).toBeGreaterThan(0);
+    for (const name of withoutExit) {
+      expect(listed, `${name} never exits, so it is not a gate`).not.toContain(name);
+    }
+  });
+
+  it('hollows a subject whose name is not `check-*`, because it is a gate all the same', () => {
+    // The behavioural half. The two tests above compare the audit's list against a
+    // file; this one puts a non-`check-*` subject in front of the audit and watches
+    // it be measured. Under the prefix rule the sandbox held no gate at all and the
+    // audit refused with "no `check-*.mjs` gate was found" -- which is the defect,
+    // reproduced as an experiment rather than argued.
+    const outcome = audit(
+      sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 }, 'gen-throwaway.mjs'),
+    );
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain('gen-throwaway.mjs');
+    expect(outcome.stdout).toContain('gates: 1  caught: 1  survived: 0  no-test: 0  unattributed: 0');
+    expect(outcome.stdout).toContain('restored byte-for-byte: 1 of 1');
   });
 
   it('refuses a run whose subject list came back empty', () => {
     // A vacuity guard, proved rather than read. An audit that found no gates would
     // print a tidy summary and exit 0 while measuring nothing, which is the defect
-    // this script exists to find; the sandbox below holds no gate at all.
-    const outcome = audit(sandbox({ body: 'true', status: 0 }, false));
+    // this script exists to find; the sandbox below names no subject at all.
+    const outcome = audit(sandbox({ body: 'true', status: 0 }, null));
     expect(outcome.status).toBe(1);
-    expect(outcome.stderr).toContain('no `check-*.mjs` gate was found');
+    expect(outcome.stderr).toContain('names no gate');
     expect(outcome.stdout.trim()).toBe('');
+  });
+
+  it('refuses a tree that is already hollowed, rather than measuring one', () => {
+    // **The precondition, and it is here because its absence corrupted this
+    // repository's working tree.**
+    //
+    // While the subject list was being widened, a test spawned the audit against the
+    // real tree -- and that is a recursive act, because the audit measures
+    // `scripts/verify-gates-are-testable.mjs` by running the very file that drives
+    // it. Several runs overlapped on one tree and shared one journal; each read an
+    // already hollowed file as its `original`, "restored" it, and added another
+    // marker. Twelve scripts were left mutated, one of them carrying three markers,
+    // and the repair path reported that it had repaired one of them.
+    //
+    // An audit cannot measure a tree that is not the shipped one, and the marker is
+    // what says so. The sandbox gate is hollowed by hand and the audit must refuse
+    // **before writing anything** -- so the bytes are compared afterwards.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const hollowedSource = '#!/usr/bin/env node\nprocess.exit(0);\nprocess.exit(1);\n';
+    writeFileSync(gate, hollowedSource);
+
+    const outcome = audit(tree);
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toContain('scripts/check-throwaway.mjs is already hollowed');
+    expect(outcome.stdout).not.toContain('CAUGHT');
+    expect(readFileSync(gate, 'utf8')).toBe(hollowedSource);
+  });
+
+  it('refuses while a live run holds the tree, and takes over from a dead one', () => {
+    // The journal is empty between two subjects, so it cannot exclude a second run
+    // on its own; the lock is what can, and `openSync(..., 'wx')` is what makes the
+    // acquisition atomic rather than a stat followed by a write.
+    //
+    // The pid inside is the only thing that distinguishes a holder that is alive --
+    // refuse, because two runs on one tree measure nothing -- from one that was
+    // killed -- take over, which has to keep working or a killed run would make the
+    // tree unmeasurable forever.
+    const live = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    mkdirSync(join(live, 'node_modules', '.cache'), { recursive: true });
+    writeFileSync(
+      join(live, 'node_modules', '.cache', 'verify-gates-are-testable.lock'),
+      JSON.stringify({ pid: process.pid, gate: '1 subject(s)' }),
+    );
+    const refused = audit(live);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain('another run holds this tree');
+    expect(refused.stdout).not.toContain('CAUGHT');
+
+    // A pid that has certainly exited: a child is spawned, waited for, and its number
+    // used. Reading it from a live process would prove the opposite branch.
+    const dead = spawnSync(process.execPath, ['-e', '']).pid;
+    expect(typeof dead).toBe('number');
+    const stale = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    mkdirSync(join(stale, 'node_modules', '.cache'), { recursive: true });
+    writeFileSync(
+      join(stale, 'node_modules', '.cache', 'verify-gates-are-testable.lock'),
+      JSON.stringify({ pid: dead, gate: '1 subject(s)' }),
+    );
+    const taken = audit(stale);
+    expect(taken.status).toBe(0);
+    expect(taken.stdout).toContain('CAUGHT');
+  });
+
+  it('refuses to repair a file a live process is holding', () => {
+    // The other half of the liveness question, and the reason the journal records a
+    // pid at all. Repairing a gate that a live run is holding makes that run read a
+    // pristine gate through its nested suite and record SURVIVED -- a verdict about
+    // nothing, from an audit that believes it measured something.
+    //
+    // The journal here names the pid of *this* process, which is certainly alive, and
+    // the entry is written by hand so the branch is reached without racing a real
+    // run. The file is deliberately left pristine: what is asserted is that nothing
+    // was written, not that something was undone.
+    const tree = sandbox({ body: "printf '\\303\\227 void\\n'", status: 1 });
+    const gate = join(tree, 'scripts', 'check-throwaway.mjs');
+    const original = readFileSync(gate, 'utf8');
+    const journal = join(tree, 'node_modules', '.cache', 'verify-gates-are-testable.json');
+    mkdirSync(dirname(journal), { recursive: true });
+    writeFileSync(
+      journal,
+      JSON.stringify([{ path: gate, original: 'process.exit(1);\n', gate: 'check-throwaway.mjs', pid: process.pid }]),
+    );
+
+    const outcome = audit(tree);
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toContain('check-throwaway.mjs is held by pid');
+    expect(outcome.stderr).toContain('which is still running');
+    expect(outcome.stdout).not.toContain('CAUGHT');
+    expect(readFileSync(gate, 'utf8')).toBe(original);
   });
 
   it('reads a failure the runner coloured, which is the only shape CI produces', () => {

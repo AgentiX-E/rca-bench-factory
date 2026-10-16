@@ -17637,3 +17637,115 @@ disagreement**, because each was complete with respect to its own subject set.
 The remaining half is recorded in the Open list rather than quietly fixed: the hollowing check
 still reads `check-*.mjs`, so pointing it at the inventory's 37 scripts is a change whose cost has
 to be measured before it is paid.
+
+## Finding 173 — the cost, measured before it was paid; and two preconditions the audit was missing
+
+Finding 172 left one thing undone on purpose. It closed the enumeration side -- `gate-sites.json`
+learned that a gate is "exits non-zero when unhappy" and grew from 50 sites to 57 across 37
+scripts -- and left the hollowing side reading `check-*.mjs`, with the entry stating its own
+condition: *the cost has to be measured before it is paid rather than assumed to be affordable.*
+
+### The measurement
+
+| | prefix rule | inventory |
+| --- | --- | --- |
+| subjects | 16 | **37** |
+| in the inventory but not the prefix | 0 | **21** |
+| named by at least one test file | 16 | **37** |
+| `(subject, test file)` links | 63 | **146** |
+| one full run | **51.26 s** | **103.96 s** |
+| peak RSS | 171 MB | 561 MB |
+
+The prefix set is a **strict subset**, so the change could only widen; zero NO-TEST was established
+before the run rather than discovered by it; and the floor for one nested `npx vitest` invocation
+was measured at **1.4-1.5 s whether it is handed one file or five**, so cost scales with subjects
+rather than with links. Twenty-one more subjects for **+52.7 s** in a 30-minute job is affordable
+on evidence.
+
+**The verdict was not the expected one.** 37 caught, 0 survived, 0 no-test, 0 unattributed, 0
+unparsable, and 37 of 37 restored byte-for-byte. The 21 newly visible scripts were covered the
+whole time -- including the three batteries the pipeline runs on every push. Nothing was broken.
+**The mechanism could not see them**, and a mechanism that cannot see a covered script is
+indistinguishable, from its own output, from a mechanism whose scripts are all covered.
+
+> **An enumeration that reports only what it kept cannot be checked against what it dropped.** That
+> sentence is in `derive-gate-sites.mjs` about its own tally, and this finding is the price of
+> having applied it to the exceptions and not to the subjects: 21 scripts were outside a check that
+> would have said `OK` either way.
+
+### What the widening broke, and what that says about killing a process
+
+Making the audit's subject list the inventory's made `verify-gates-are-testable.mjs` a subject **of
+itself**, because it is a script with a failure exit and its own test file is named by it. Between
+the first draft of the new tests and the fix, that was a live recursion: the audit ran on the real
+tree, its nested suite reached the file that drives it, and several runs overlapped on one tree and
+one journal. The working tree was found with **twelve scripts left hollowed, eight carrying two or
+three `process.exit(0);` markers**, and the journal held a hollowed file as the "original" it would
+restore.
+
+Three links, and only the last is about the audit's code:
+
+1. **A test ran the audit for real.** There was no way to ask the script what it measures except to
+   run it. There is now -- `--list` prints the list and stops before touching anything -- and no
+   test runs the audit against the real tree.
+2. **Killing a run does not kill its children.** `spawnSync`'s `timeout` kills its direct child and
+   nothing below it. The killed audit's `npx vitest` survived and kept driving the audit: **five
+   orphan `node (vitest N)` processes were observed still rewriting the tree minutes after the run
+   they belonged to had died.** This is finding 172's "the rule was about a spelling" a process down
+   the tree -- the thing being measured was the child, and the thing doing the damage was the
+   grandchild.
+3. **The audit had neither precondition nor owner.** It would hollow a file it could already see was
+   hollowed, and it read whatever was on disk as the bytes to restore.
+
+### The two statements that were missing
+
+- **An audit cannot measure a tree that is already mutated.** The marker the mutation writes and the
+  marker the precondition reads come from one constant, so the two cannot drift; and because a
+  hollowed "original" can no longer be journalled, **a repair can no longer be a no-op reported as a
+  repair.** That was the sharpest edge here: the old `repairFromJournal` compared the file against
+  the bytes it had just written, which is true by construction. A repair verified against its own
+  input is not verified.
+- **Two runs cannot measure one tree at the same time.** The journal records a pid: a holder that is
+  alive makes the next run refuse, because repairing under a live run makes *it* read a pristine
+  gate and record SURVIVED -- a verdict about nothing. A holder that was killed is taken over, since
+  otherwise one kill would make the tree unmeasurable forever. The journal also became a list,
+  because two kills in a session overwrote each other, and a lock taken with `openSync(..., 'wx')`
+  covers the window the journal cannot: it is empty between two subjects.
+
+Both branches are mutation-checked rather than asserted: disabling the first fails exactly
+`refuses a tree that is already hollowed, rather than measuring one`, and disabling the second fails
+exactly `refuses while a live run holds the tree, and takes over from a dead one`.
+
+> **The precondition is what makes a surviving orphan harmless.** The audit cannot stop a killed
+> run's grandchildren from running -- but it can refuse to act on the tree they are reading, which
+> turns the worst case from twelve corrupted files into a failed run. The rest is in the Open list,
+> named rather than implied.
+
+### Two more second accounts, one of them about prose
+
+- **`derive-gate-sites.mjs`'s header documented the rule its own function had stopped
+  implementing** -- three paragraphs still describing `argument === '1'`, and listing
+  `process.exit(2)` and `process.exit(cond ? 0 : 1)` among the things deliberately not counted. It
+  had been stale for a full pass. A script's prose about its own rule sits outside every gate for
+  the same reason a tracking document's status column does, and finding 172 is what made that prose
+  wrong.
+- **A negative assertion is a mention.** The new test wrote three scripts' names inside
+  `expect(listed).not.toContain(...)`, and that put them into the corpus
+  `scripts-are-classified.test.ts` searches to answer *which scripts does no test name*. One of them
+  disappeared from that guard's list, so **an assertion that a script must not be a subject deleted
+  it from another guard's evidence.** The assertion is now over the property and names nothing; and
+  the affected guard's claim was restated as what its instrument can support -- mentions, not
+  drives -- because pinning the exact set would report a coverage change where only prose had
+  changed.
+
+### What this says about the method
+
+The audit had a mechanism for the case it had seen -- a killed run -- and none for the case that
+actually happened: two runs, one tree, and a journal that could not tell them apart. Every fix here
+is a **statement about what is being measured** rather than a stronger detector: subjects come from
+the property, the tree must be the shipped one, the holder must be dead. The measurement that found
+this was not the audit's verdict; it was `git status`.
+
+> **Why do you believe the thing you just measured is the thing you meant to measure?** The audit
+> had asked that question about *every other* gate for seven passes. It had not asked it about
+> itself, and the answer was no.

@@ -23,18 +23,27 @@
  * The rule is deliberately narrow, and it is written here rather than left to
  * the reader because the count is the point:
  *
- *   - a call to `process.exit(...)` whose argument *is* the literal `1`.
+ *   - a statement-position call to `process.exit(...)` whose argument is not the
+ *     literal `0`. In practice that covers `process.exit(1)`, `process.exit(2)`,
+ *     `process.exit(cond ? 0 : 1)`, `process.exit(main())`, and the one-line
+ *     `if (!ok) process.exit(1);` -- because a gate is a **property** ("exits
+ *     non-zero when unhappy") and each of those is a spelling of it.
+ *
+ * The rule used to be `argument === '1'`, which is a spelling rather than the
+ * property and which dropped eight scripts out of the table. This file's own
+ * summary kept reporting a smaller number than the tree held, and nothing compared
+ * the two. Finding 172 records the change; the cost of having been narrow is now
+ * legible, because `verify-gates-are-testable.mjs` takes its subjects from this
+ * table: **21 scripts could have been emptied with nothing watching them.**
  *
  * Deliberately **not** counted:
  *
- *   - `process.exit(0)` -- a success exit is not a failure site.
- *   - `process.exit(2)` -- used by `score-fault-extraction.mjs` for "the
- *     measurement ran and missed the threshold", which is a different claim
- *     from "the gate refused", and is pinned by its own test.
- *   - `process.exit(cond ? 0 : 1)` -- a *computed* exit. The gate's judgement
- *     and the process status are the same expression, so there is no separate
- *     branch to falsify; the condition is what carries the meaning, and the
- *     enumeration would be counting syntax rather than guards.
+ *   - `process.exit(0)`, and any exit whose argument is the literal `0`. A success
+ *     exit is not a failure site; `probe-category-derivation.mjs` ends with one
+ *     because reaching the end is what success means there.
+ *   - a call that is not in statement position -- inside a string, a predicate, an
+ *     argument. It is not silently dropped: it gets the `indirect` tally below,
+ *     because putting it in either column would make both wrong.
  *
  * Every one of those exclusions is a claim about this tree, so the script prints
  * the tally it excluded alongside the tally it kept. A rule that only reports
