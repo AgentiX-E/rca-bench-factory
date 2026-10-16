@@ -265,8 +265,12 @@ const subjects = gates();
  * A query rather than a verdict, which is why it exits 0 on an empty list: its
  * answer is the list, and a caller comparing that answer against the inventory
  * wants to see an empty one rather than a refusal. It exists because the only other
- * way to ask this script what it measures is to run it -- 51 seconds for 16
- * subjects, on the real tree, which is the hazard `HOLLOW_LINE` describes.
+ * way to ask this script what it measures is to run it -- 104 seconds for the 37
+ * subjects this list returns, on the real tree, which is the hazard `HOLLOW_LINE`
+ * describes. (It was 51 seconds for 16 before pass 50 widened the subjects to the
+ * inventory, and that sentence said `51 seconds for 16` until it was corrected
+ * here: a number in prose is a status column, and this pass's own finding is about
+ * one of those going stale for a round.)
  * `gates-are-testable-is-enumerated.test.ts` asks with this flag and never runs the
  * audit for real.
  *

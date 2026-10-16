@@ -410,7 +410,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 284,
+      "line": 288,
       "condition": "subjects.length === 0",
       "diagnostic": "golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.",
       "status": "proved",
@@ -418,7 +418,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 405,
+      "line": 409,
       "condition": "held !== null && isAlive(held.pid)",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -426,7 +426,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 443,
+      "line": 447,
       "condition": "inFlight.length > 0",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -434,7 +434,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 460,
+      "line": 464,
       "condition": "unrestored.length > 0",
       "diagnostic": "could not repair ${gate} from the journal",
       "status": "proved",
@@ -442,7 +442,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 479,
+      "line": 483,
       "condition": "alreadyHollowed.length > 0",
       "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
       "status": "proved",
@@ -450,7 +450,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 520,
+      "line": 524,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -458,7 +458,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 559,
+      "line": 563,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
