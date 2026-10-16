@@ -4901,6 +4901,17 @@ dead one`.
 | `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
 | repo test suite | **145 files, 3947 tests passed** (as of this commit) |
 | `typecheck` / `lint` / `docs:check` / `docs:counts:check` | green |
+| CI | run `38915028418` on `590cc0819` -- **four jobs, all success**; the audit's step **153 s on the runner against 103.96 s here** |
+
+### The budget, measured again, because the number moved
+
+The audit's step is the one that changed, and on the runner it went from a step nobody looked at to
+**153 s** -- 1.5x the local figure, which is the ratio a measurement on one machine cannot give you.
+The job that hosts every battery went from roughly 21 minutes to **1375 s of its 1800 s budget**.
+Seventy-six per cent is not a failure and it is not a comfortable margin either: finding 166 is the
+record of what happens when this number is not looked at, and what it looked like was `cancelled`,
+which reads as a person rather than as a limit. It is in the Open list with the number attached
+rather than left to be rediscovered by a timeout.
 
 ### Open
 
@@ -4908,6 +4919,12 @@ dead one`.
   173.** The audit takes its subjects from `gate-sites.json`, and the tie is asserted in both
   directions against the real tree rather than by pattern-matching the source: 37 subjects, all 37
   caught, 37 of 37 restored byte-for-byte.
+- **The batteries job is at 76% of its budget.** Measured on the runner: the audit's step is **153 s**
+  for 37 subjects where it was one nobody timed for 16, and the job rose to **1375 s of 1800 s**. The
+  margin is seven minutes for a job that gains a battery every few passes. `[open: the last time a
+  budget in this file was exhausted the run read as `cancelled` rather than as a limit (finding 166),
+  and splitting the audit into its own job is the shape that would buy the margin back -- at the cost
+  of a fourth job's checkout, install and build, which is a price this pass did not measure]`
 - **A killed run leaves its nested suite behind.** Measured, not inferred: `spawnSync`'s timeout
   killed the audit and five `npx vitest` grandchildren kept running. `[open: the audit's first
   precondition makes a surviving orphan harmless -- it refuses instead of measuring -- but the
