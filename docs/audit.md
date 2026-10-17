@@ -18161,3 +18161,125 @@ twelve batteries that mutate source files did not.
 | `core` / `cli` / repo suite | **143 / 3784** · **4 / 186** · **147 / 3970** |
 | batteries | **13 of 13, rc=0**, after restoring what the interrupted run left |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
+
+## Finding 178 — an assertion is only in force while the process that makes it is alive
+
+### The leak, twice
+
+Finding 173 found the working tree with **twelve** scripts hollowed. Pass 54 walked into the second
+instance: the thirteen batteries were running when the session ended, the process died inside
+`inject:fault-extraction-scoring`, and `packages/core/src/fault/extraction-scoring.ts` was left with
+a seven-line guard deleted. Both times `git status` was the only instrument that noticed.
+
+The half that makes it permanent is the backup, and every battery has it:
+
+```python
+shutil.copy(SRC, PRISTINE)      # at start
+...
+shutil.copy(PRISTINE, SRC)      # after every injection
+assert_source_restored()        # SRC == PRISTINE?
+```
+
+A run that begins before somebody reverts **copies the mutated file into the pristine slot**, and
+then `assert_source_restored()` passes and prints `source restored: identical to the pristine
+capture`. The check is true and worthless. That is finding 173's `repairFromJournal` defect -- a
+repair verified against its own input -- in a second place, and finding 174's journal was built for
+the audit without anybody asking whether the batteries needed the same thing.
+
+> **An assertion is only in force while the process that makes it is alive.** The reasoning that
+> left the gap was *"each battery asserts its own restore, so nothing else needs to"* -- which is
+> true, and which stops being true at the moment the battery is killed, when the backup slot is
+> also refilled by the next run's confidence.
+
+### The experiment, run twice
+
+| step | measured |
+| --- | --- |
+| `inject:doc-counts`, **SIGKILL** its python process mid-loop | journal `battery-journal-87159.json` present; `scripts/check-doc-counts.mjs` one line mutated; process gone |
+| the same battery again | stderr `_witnesses: repaired doc-counts-shapes (pid 87159 is gone), 1 file(s) put back`; then `12 caught, 0 survived, 0 inert`; journal gone; tree clean |
+
+The first row is the defect, reproduced deliberately rather than by accident, and the second is the
+repair doing the thing no assertion could do after a kill.
+
+### Four decisions in `guard(label)`
+
+- **Repair at entry, and identify the holder before believing it.** A leftover journal is not
+  evidence that a run is still alive: pids are reused. The holder is checked by reading
+  `/proc/<pid>/cmdline` for this directory, so a recycled number cannot block the tree forever and a
+  live stranger cannot be mistaken for a run. Dead -> write the recorded bytes back and **verify the
+  write against the record**; live -> refuse, because repairing under a live run would make *it*
+  read a file it never mutated. This is finding 174's group-id lesson one identifier down.
+- **Record subtrees, not names.** `scripts`, `packages/core/{src,test}`, `packages/cli/{src,test}`,
+  `golden-master` -- **270 files, 4.3 MB, 4 ms**. A hand-written subject list that forgets one file
+  is precisely the defect being fixed, so the record is deliberately larger than any battery needs.
+- **Restore on the exception path**, Ctrl-C included, and clear the record.
+- **Do not restore on a normal exit, and do not outlive one.** If the guard repaired on the way
+  out, `assert_source_restored` would pass no matter what a battery did, and the check this
+  repository spent a finding on would become vacuous -- **a safety net that catches everything also
+  certifies everything.**
+
+  The second clause was learned in this pass by being bitten. The first version kept the journal
+  when a file still differed, so the next run could repair a battery that forgot; that also meant a
+  journal outlived a run whose subject had been edited by a **person**. Measured:
+  `golden-master/doc-counts.json` was edited during a battery run, the run exited normally, and the
+  next battery's repair wrote the old bytes back over the edit. A record taken at start cannot tell
+  a battery's mutation from a person's edit, so it is dropped at a normal exit. Nothing is lost: a
+  battery whose restore failed exits non-zero from its own assertion and names the files.
+
+### The second thing a kill leaves: a lock, and a job that cannot be retried
+
+`gate-tests-battery.py` keeps a lock in `tmpdir`, and its docstring already says that a SIGKILL
+leaves the file behind and the next run refuses until somebody removes it. The reasoning is sound
+-- two copies sharing the tree manufacture `SURVIVED`, which is the one verdict this repository must
+never invent -- and the failure is still one a retry cannot get past: **the job that was killed is
+the job that will be retried**, and it fails on a lock left by itself.
+
+Measured: the run killed in this session left `/tmp/rca-bench-factory-gate-tests-battery.lock`
+holding pid 226480, and three cases in `gate-test-battery-attribution.test.ts` failed with exit 3
+and a message telling a CI reader to `rm` a file.
+
+The lock writes the owner's pid into the file, so the question is answerable with the identity check
+the journal already had: a lock whose owner is gone is taken over (and the takeover is printed), a
+live owner still refuses.
+
+> **A lock is a claim about a process, exactly like a journal.** Both of them were written by
+> somebody who assumed the process would still be there; both needed the same correction.
+
+### The leak this pass found in its own test
+
+The first version of `battery-journal.test.ts` wrote journals into the real
+`node_modules/.cache`, so its cases repaired each other's subjects: the failure was a repair of a
+file belonging to a test that had already finished.
+
+> **A test's scratch escaping into the tree it measures** is the same defect one level up, and it
+> took the same fix the batteries needed: give the record a directory of its own
+> (`RCA_BENCH_BATTERY_CACHE`) instead of trusting everybody to take turns.
+
+`coverage-writes-are-drained.test.ts` then caught the file for starting asynchronous children
+without joining them -- correctly, and for its own reason: a child that outlives the file can push a
+coverage write after the reporter's queue has been drained. The two holders are now killed **and
+awaited**.
+
+### What this says about the method
+
+Three findings have now been about the same sentence in different clothes: *the thing that was
+supposed to notice was not running*. A gate nobody invoked (177). A scorer nobody compared (176). An
+assertion whose author was dead (178). The first two were about **reaching** the check; this one is
+about the check **outliving its process**, which is a different failure and needs a different
+mechanism: not another invocation, and not a stronger assertion, but a record on disk that the next
+run is obliged to read.
+
+> **A mutation guard is a claim about a process, and a process can die.** The only durable half of
+> the claim is the one written down before the mutation.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `battery-journal.test.ts` | **7 tests**: dead holder repaired, live battery refused, recycled pid is not a holder, unverifiable repair fails, exception restores, **normal exit neither repairs nor leaves a record**, and a lock whose owner is gone is taken over |
+| mutation checks | **5 of 5 CAUGHT**, one per branch, each by its own test |
+| wiring | every battery calls `W.guard("<its own name>")`; the register in `batteries-verify-their-restore.test.ts` fails if one does not |
+| end to end | SIGKILL -> repair -> 12 caught, tree clean |
+| `core` / `cli` / repo suite | **144 / 3792** · **4 / 186** · **148 / 3978** |
+| batteries | **13 of 13, rc=0** |
+| `typecheck` / `lint` / `docs:check` | green |

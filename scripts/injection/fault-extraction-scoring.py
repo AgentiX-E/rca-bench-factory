@@ -278,7 +278,7 @@ def verify_expectations(probe: bool = False) -> int:
     )
 
 
-def main():
+def _measure():
     reconcile = verify_expectations()
     if reconcile != 0:
         return reconcile
@@ -332,6 +332,18 @@ def main():
         return 1
     print(f"\nall {len(INJECTIONS)} injection(s) caught")
     return restore_status
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("fault-extraction-scoring"):
+        return _measure()
 
 
 if __name__ == "__main__":

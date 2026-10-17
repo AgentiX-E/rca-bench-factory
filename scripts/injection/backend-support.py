@@ -46,6 +46,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared journal)
 from _witnesses import anchor_problems  # noqa: E402  (the shared anchor check)
 
 REPO = Path(__file__).resolve().parents[2]
@@ -891,7 +892,7 @@ def verify_expectations(probe: bool = False) -> int:
     return 1 if missing else 0
 
 
-def main() -> int:
+def _measure() -> int:
     started = time.monotonic()
     assert_vitest_is_callable()
     subjects = sorted({target for _, target, _, _, _, _ in MUTATIONS})
@@ -971,6 +972,18 @@ def main() -> int:
         print("every mutation must be caught, or carry a reason in EXPECTED_SURVIVORS")
         return 1
     return 0
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("backend-support"):
+        return _measure()
 
 
 if __name__ == "__main__":

@@ -53,6 +53,9 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared journal)
 from typing import Callable
 
 REPO = Path(__file__).resolve().parents[2]
@@ -3074,7 +3077,7 @@ def assert_anchor_is_reachable(entries: list) -> None:
         )
 
 
-def main() -> int:
+def _measure() -> int:
     # Before anything is mutated: every entry must match a declared shape. The
     # positional reads below all have silent fallbacks, so a malformed entry is
     # not an error at the point it is misread -- it is a plausible report about
@@ -3438,6 +3441,18 @@ def main() -> int:
             f"package {restored_package})"
         )
     return 0 if caught == len(INJECTIONS) and restored else 1
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("type-miss-probe"):
+        return _measure()
 
 
 if __name__ == "__main__":

@@ -37,6 +37,9 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared journal)
 from typing import Callable
 
 REPO = Path(__file__).resolve().parents[2]
@@ -342,7 +345,7 @@ INJECTIONS: list[tuple[str, Path, Callable[[str], str], Callable[[dict], bool], 
 ]
 
 
-def main() -> int:
+def _measure() -> int:
     # No snapshots taken up front. The restore reads each file's bytes at its
     # first write (see `write_recorded`), so a file this battery has never heard
     # of is still restored -- and a snapshot pair taken here would be the fixed
@@ -443,6 +446,18 @@ def main() -> int:
     print(f"files written and restored: {len(_WRITTEN)}")
     print(f"sources restored: {restored and 'identical to backup' or 'DIFFERS -- inspect before committing'}")
     return 0 if caught == len(INJECTIONS) and restored else 1
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("m1-ceiling-probe"):
+        return _measure()
 
 
 if __name__ == "__main__":

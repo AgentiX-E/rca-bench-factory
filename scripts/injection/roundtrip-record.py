@@ -130,7 +130,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 ]
 
 
-def main() -> int:
+def _measure() -> int:
     started = time.monotonic()
     assert_vitest_is_callable()
     path = REPO / GUARD
@@ -234,6 +234,18 @@ def verify_expectations(probe: bool = False) -> int:
         probe=probe,
         anchors=[(name, REPO / GUARD, (anchor, replacement)) for name, anchor, replacement, *_ in MUTATIONS],
     )
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("roundtrip-record"):
+        return _measure()
 
 
 if __name__ == "__main__":

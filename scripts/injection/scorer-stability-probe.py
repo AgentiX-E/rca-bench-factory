@@ -31,6 +31,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _witnesses as W  # noqa: E402  (the shared journal)
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 DIST = ROOT / "packages" / "core" / "dist" / "fault" / "extraction-scoring.js"
 GATE = ROOT / "scripts" / "verify-scorer-stability.mjs"
@@ -119,7 +122,7 @@ def run_gate() -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def main() -> int:
+def _measure() -> int:
     if not DIST.exists():
         print(f"built scorer not found at {DIST}; run `pnpm build` first")
         return 2
@@ -228,6 +231,18 @@ def main() -> int:
     if not restored:
         return 2
     return 1 if (survived or inert) else 0
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("scorer-stability-probe"):
+        return _measure()
 
 
 if __name__ == "__main__":

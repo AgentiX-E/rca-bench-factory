@@ -5409,9 +5409,9 @@ and a precondition; the batteries that mutate a dozen source files did not.
 | the attempt | step + 2 tests, mutation-checked locally (deleting the step fails exactly one) |
 | CI on the attempt | **failed**: `onTaskUpdate` timeout on the second suite run, every test green |
 | the revert | `ci.yml` and the routing test are back to 7 tests; the hole is **open and recorded** |
-| `core` test suite | **143 files, 3784 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **147 files, 3970 tests passed** (as of this commit) |
+| `core` test suite | **143 files, 3784 tests passed** (as of `209d20e`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `209d20e`) |
+| repo test suite | **147 files, 3970 tests passed** (as of `209d20e`) |
 | batteries | **13 of 13, rc=0**, after restoring the mutation the interrupted run left behind |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
@@ -5432,3 +5432,128 @@ and a precondition; the batteries that mutate a dozen source files did not.
 - **The snapshot is still a number somebody types.** Nothing generates it. `[open: generating it
   means writing a tracked file from CI, which is a change to how the repository is maintained rather
   than to what it checks]`
+
+## Pass 55 -- a killed battery left a mutation, and the next run adopted it as pristine
+
+Pass 54 recorded the leak it walked into: the thirteen batteries were running when the session
+ended, the process died inside `inject:fault-extraction-scoring`, and
+`packages/core/src/fault/extraction-scoring.ts` was left with a seven-line guard deleted. That was
+the second time -- finding 173 found **twelve** files in the same state -- and both times the only
+thing that noticed was `git status`.
+
+### The half that made it permanent
+
+A battery does not merely leave a mutation. Each one captures its backup **at start**:
+
+```python
+shutil.copy(SRC, PRISTINE)
+...
+shutil.copy(PRISTINE, SRC)      # after every injection
+...
+assert_source_restored()        # compares SRC against PRISTINE
+```
+
+So the next run, starting before somebody reverts, **copies the mutated file into the pristine
+slot** and then certifies `source restored: identical to the pristine capture`. The check is true
+and worthless -- finding 173's `repairFromJournal` defect, which compared a file against the bytes
+it had just written, in a second place.
+
+> **An assertion is only in force while the process that makes it is alive.** The reasoning that
+> left this gap was "each battery asserts its own restore, so nothing else needs to". After a kill
+> there is no process to make the assertion, and the backup slot is refilled by the next run's
+> confidence.
+
+### The experiment, run before the fix and again after
+
+| step | measured |
+| --- | --- |
+| `inject:doc-counts`, **SIGKILL** its python process mid-loop | journal `battery-journal-87159.json` present; `scripts/check-doc-counts.mjs` one line mutated; process gone |
+| the same battery again | stderr `_witnesses: repaired doc-counts-shapes (pid 87159 is gone), 1 file(s) put back`; then `12 caught, 0 survived, 0 inert`; journal gone; tree clean |
+
+### `guard(label)`, and the four decisions in it
+
+`scripts/injection/_witnesses.py`:
+
+- **Repair at entry.** Every leftover journal is examined; the holder is identified by reading
+  `/proc/<pid>/cmdline` and asking whether it is a battery at all -- **a pid is reused**, and this
+  is finding 174's group-id lesson one identifier down. A dead holder's bytes are written back and
+  **verified against the record**; a live holder makes the run refuse, because repairing under it
+  would make *it* read a file it did not mutate.
+- **Record subtrees, not names.** `scripts`, `packages/core/{src,test}`, `packages/cli/{src,test}`,
+  `golden-master`: **270 files / 4.3 MB / 4 ms**. A hand-written subject list that forgets one file
+  is the defect itself, so the record is deliberately larger than any battery needs.
+- **Restore on the exception path**, including Ctrl-C, and clear the journal.
+- **Do not restore on a normal exit, and do not leave a record either.** If the guard repaired on
+  the way out, every battery's `assert_source_restored` would pass no matter what it did, and the
+  check this repository spent a finding on would become vacuous.
+
+  The second half was learned by being bitten, in this pass. The first version kept the journal when
+  a file still differed, so the next run could repair a battery that forgot -- which meant a journal
+  also outlived a run whose subject had been edited by a **person** while it ran. That is not
+  hypothetical: `golden-master/doc-counts.json` was edited during a battery run here, and the next
+  battery's repair put the old bytes back over the edit. A record taken at start cannot tell a
+  battery's mutation from a person's edit, so it is dropped at a normal exit; a battery whose
+  restore failed says so through its own assertion and a non-zero exit.
+
+Twelve batteries now run as `with W.guard("<name>"): return _measure()`.
+
+### The second thing a kill leaves: the battery's own lock
+
+`gate-tests-battery.py` -- the one that rewrites the gate scripts -- keeps a lock in `tmpdir` so two
+copies cannot share the tree. Its own docstring says a SIGKILL leaves the file behind and the next
+run refuses until somebody removes it, and calls that the safer failure.
+
+It is safer than the alternative, and it is still a failure a retry cannot get past: the job that
+was killed is exactly the job that will be retried, and it fails on a lock left by itself. Measured
+here -- the run this session killed left `/tmp/rca-bench-factory-gate-tests-battery.lock` holding
+pid 226480, and the next `gate-test-battery-attribution` run failed with **exit 3** and a message
+telling a CI reader to `rm` a file.
+
+The lock already writes the owner's pid into the file, so the question is answerable with the check
+the journal already had: **is the owner still a battery?** A lock whose owner is gone is taken over,
+and the takeover is printed; a live owner still refuses. The three tests that were failing on the
+stale lock pass again, and the file gained a case for both halves.
+
+### The leak this pass found in its own test
+
+The first version of `battery-journal.test.ts` wrote journals into `node_modules/.cache` -- the real
+one -- and its cases repaired each other's subjects. The failure it produced was a repair of a
+subject belonging to a finished test. That is the same shape as the defect being fixed, one level
+up: **a test's scratch escaping into the tree it measures.** The cache is now overridable through
+`RCA_BENCH_BATTERY_CACHE`, and the test points it at its own directory.
+
+A second guard caught the file too, and was right to: `coverage-writes-are-drained.test.ts` refuses
+a test file that starts an asynchronous child without joining it. The two holders in these cases are
+now killed and **awaited**, which is also what keeps the file from pushing coverage into the
+reporter after its queue is drained.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| mechanism tests | **7**: a dead holder is repaired, a live battery is refused, a recycled pid is not a holder, an unverifiable repair fails, an exception restores, **a normal exit neither repairs nor leaves a record**, and a lock whose owner is gone is taken over |
+| mutation checks | **5 of 5 CAUGHT**, each by exactly its own test |
+| the wiring, asserted | `batteries-verify-their-restore.test.ts` gained `guardsWithJournal`; **deleting any battery's guard turns it red** |
+| the end-to-end experiment | SIGKILL -> repair -> `12 caught`, tree clean (table above) |
+| `core` test suite | **144 files, 3792 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **148 files, 3978 tests passed** (as of this commit) |
+| batteries | **13 of 13, rc=0**, every one now inside the guard |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **A kill plus a concurrent edit is still ambiguous.** A normal exit now drops the record, so an
+  edit made during a run survives. But a *kill* leaves the record, and if a person edited a guarded
+  file in the same window the repair will revert that edit. Narrow, and not reachable from CI.
+  `[open: the shape that would close it is recording at write time instead of at start -- one more
+  IO per injection, at 25 write sites -- and it needs a decision about what a record means when the
+  writer is a person]`
+- **The counts snapshot is still not compared to the suite in CI.** `[open: pass 54 measured why
+  the obvious wiring is refused -- a second full suite run in the same job trips
+  `onTaskUpdate` with every test green -- so the step that would close it needs to reuse the
+  coverage run's transcript, which is a change to both scripts rather than a line of YAML]`
+- **Eight score targets are still transcriptions.** `[open: only RCAEval is held to code somebody
+  else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose
+  rule and a `source` string, and two of them quote a paper rather than a released evaluator --
+  so which of them has a runnable oracle at all has not been established]`

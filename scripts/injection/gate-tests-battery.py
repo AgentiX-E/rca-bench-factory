@@ -347,6 +347,24 @@ def acquire_exclusive_lock() -> int:
     try:
         fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
+        # A lock whose owner is gone is not a lock. The pid is written into the file
+        # precisely so this question can be asked, and `_is_battery_process` asks it the
+        # same way the journal does: a number is not an identity, because pids are reused.
+        #
+        # Without this, a run killed with SIGKILL blocks every later run -- and in CI that
+        # is a retried job failing on a lock left by the job it is retrying. Measured in
+        # this pass: a SIGKILLed run left `/tmp/rca-bench-factory-gate-tests-battery.lock`
+        # holding its own pid, and the next run refused with exit 3.
+        try:
+            held = int(LOCK_PATH.read_text().strip() or "-1")
+        except (OSError, ValueError):
+            held = -1
+        if not W._is_battery_process(held):
+            print(f"taking over a lock left by pid {held}, which is gone")
+            LOCK_PATH.unlink(missing_ok=True)
+            fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            return fd
         print("another instance of this battery already holds")
         print(f"  lock: {LOCK_PATH}")
         print("  -- refusing rather than sharing the working tree. Two runs would")
@@ -1074,7 +1092,7 @@ ORIGINALS: dict[str, str] = {
 }
 
 
-def main() -> int:
+def _measure() -> int:
     results: list[tuple[str, str, list[str], float]] = []
     caught = survived = inert = timed_out = unparseable = unattributed = 0
     slowest: tuple[float, str] = (0.0, "")
@@ -1253,6 +1271,18 @@ def main() -> int:
         return 1
     write_report(results, summary)
     return 0
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("gate-tests-battery"):
+        return _measure()
 
 
 if __name__ == "__main__":

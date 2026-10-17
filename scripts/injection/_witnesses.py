@@ -35,11 +35,17 @@ its own captured output.
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import hashlib
+import json
 import os
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
+import time
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -308,3 +314,224 @@ def verify_witness_table(
         + (", with the comparator probed)" if probe else ")")
     )
     return 1 if problems else 0
+
+
+# ---------------------------------------------------------------------------
+# Crash recovery
+# ---------------------------------------------------------------------------
+#
+# ## The defect this closes, measured twice
+#
+# A battery mutates a tracked file, runs the suite, and restores. If the process
+# dies inside that loop -- a kill, a closed laptop, a session that ends while the
+# thirteen batteries are running -- the mutation stays in the working tree. That
+# happened once with twelve files (finding 173, in the audit) and once with one
+# file (`inject:fault-extraction-scoring`, pass 54).
+#
+# Worse, the next run does not simply tolerate it: every battery captures its
+# backup **at start** with `shutil.copy(SRC, PRISTINE)`, so a run that begins
+# before somebody reverts copies the *mutated* file into the pristine slot and
+# then certifies `source restored: identical to the pristine capture`. The check
+# is true and worthless. That is finding 173's `repairFromJournal` defect in a
+# second place: a repair verified against its own input is not verified.
+#
+# ## What this does
+#
+# `guard()` writes the subjects' bytes to a journal **before** the first
+# mutation, and deletes it only once every subject is back. So:
+#
+# * a **kill** leaves the journal, and the next battery repairs from the recorded
+#   bytes before it does anything else;
+# * an **exception** (including Ctrl-C) restores on the way out;
+# * a **normal** exit does not repair -- the battery's own restore assertion has
+#   to keep deciding that, or the assertion would become vacuous -- it only
+#   decides whether the record can be dropped. A battery that left a file
+#   mutated keeps its journal, and the next run repairs it.
+#
+# ## Why the pid is not the identity
+#
+# A pid is reused. The holder is identified by reading `/proc/<pid>/cmdline` and
+# asking whether it is a battery at all, so a recycled number cannot block the
+# tree forever and a live stranger cannot be mistaken for a run in progress.
+# Finding 174 learned this about process **groups**; this is the same lesson one
+# identifier down.
+
+#: Where the journals live. Overridable so a test can drive the mechanism against its
+#: own directory: a test that writes into the real cache leaves residue that the next
+#: test -- or the next real battery -- reads as a crash it has to repair.
+CACHE = pathlib.Path(
+    os.environ.get("RCA_BENCH_BATTERY_CACHE")
+    or (pathlib.Path(__file__).resolve().parents[2] / "node_modules" / ".cache")
+)
+JOURNAL_PREFIX = "battery-journal-"
+JOURNAL_SCHEMA = "rca-bench-battery-journal/1"
+
+#: The subtrees a battery may mutate, recorded whole rather than by name.
+#:
+#: A hand-written subject list is the defect this file is closing: a battery that
+#: forgets one file has a journal that covers everything except the thing that
+#: broke. Recording the roots instead makes omission impossible, and 284 files /
+#: 4.1 MB costs ~15 ms to read and hash once per run -- against batteries that
+#: spend 30 to 350 seconds running suites.
+GUARDED_ROOTS = (
+    "scripts",
+    "packages/core/src",
+    "packages/core/test",
+    "packages/cli/src",
+    "packages/cli/test",
+    "golden-master",
+)
+
+#: What counts as a file the tree mutates. Telemetry-shaped data is excluded by
+#: `.gitignore` rules elsewhere; this is about source, fixtures and records.
+GUARDED_SUFFIXES = (".ts", ".mjs", ".js", ".json", ".md", ".sh")
+
+SKIP_DIRS = {"node_modules", "dist", "__pycache__", ".git", "coverage"}
+
+
+def _digest(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _is_battery_process(pid: int) -> bool:
+    """Whether `pid` is a battery run, which is what makes its journal live."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    try:
+        cmdline = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        # No `/proc`, so the identity cannot be checked: a live number is taken
+        # at its word rather than repaired out from under it.
+        return True
+    return b"injection" in cmdline
+
+
+def _restore(record: dict) -> int:
+    """Put back every recorded file that differs, verifying each write against the record."""
+    done = 0
+    for entry in record["entries"]:
+        target = pathlib.Path(entry["path"])
+        if target.is_file() and _digest(target) == entry["sha256"]:
+            continue
+        raw = base64.b64decode(entry["bytes"])
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        except OSError as error:
+            raise SystemExit(f"_witnesses: cannot restore {target}: {error}") from error
+        if _digest(target) != entry["sha256"]:
+            raise SystemExit(
+                f"_witnesses: wrote {target} back and its digest still does not match the record"
+            )
+        done += 1
+    return done
+
+
+def repair_abandoned() -> None:
+    """Undo what runs that are gone left behind, and refuse a run that is not gone."""
+    for journal in sorted(CACHE.glob(f"{JOURNAL_PREFIX}*.json")):
+        try:
+            record = json.loads(journal.read_text())
+        except (OSError, json.JSONDecodeError):
+            print(
+                f"_witnesses: {journal.name} is unreadable; remove it and check the tree by hand",
+                file=sys.stderr,
+            )
+            continue
+        pid = int(record.get("pid", -1))
+        if _is_battery_process(pid):
+            raise SystemExit(
+                f"_witnesses: pid {pid} is running {record.get('label')} on this tree; "
+                "two batteries cannot measure one working tree"
+            )
+        restored = _restore(record)
+        journal.unlink(missing_ok=True)
+        print(
+            f"_witnesses: repaired {record.get('label')} (pid {pid} is gone), "
+            f"{restored} file(s) put back",
+            file=sys.stderr,
+        )
+
+
+def _guarded_files(roots) -> list[pathlib.Path]:
+    """Every file under `roots` worth recording, sorted so two runs agree."""
+    out: list[pathlib.Path] = []
+    for root in roots:
+        root = pathlib.Path(root)
+        if root.is_file():
+            out.append(root)
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if any(part in SKIP_DIRS for part in path.parts):
+                continue
+            if path.suffix in GUARDED_SUFFIXES:
+                out.append(path)
+    return out
+
+
+@contextlib.contextmanager
+def guard(label: str, roots=None):
+    """Run a mutation phase with every file it could touch recorded on disk.
+
+    `roots` defaults to `GUARDED_ROOTS` -- the whole of the source the batteries
+    mutate -- so a battery cannot under-specify what it is protecting. A run that
+    is killed leaves the journal behind, and the next battery puts the bytes back
+    before it measures anything.
+    """
+    CACHE.mkdir(parents=True, exist_ok=True)
+    repair_abandoned()
+
+    subjects = _guarded_files(GUARDED_ROOTS if roots is None else roots)
+    if not subjects:
+        raise SystemExit(f"_witnesses: {label} was given {roots!r} and found no guarded file")
+    record = {
+        "schema": JOURNAL_SCHEMA,
+        "pid": os.getpid(),
+        "label": label,
+        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "entries": [
+            {
+                "path": str(subject),
+                "sha256": _digest(subject),
+                "bytes": base64.b64encode(subject.read_bytes()).decode(),
+            }
+            for subject in subjects
+        ],
+    }
+    journal = CACHE / f"{JOURNAL_PREFIX}{os.getpid()}.json"
+    journal.write_text(json.dumps(record))
+
+    try:
+        yield
+    except BaseException:
+        restored = _restore(record)
+        journal.unlink(missing_ok=True)
+        print(
+            f"_witnesses: {label} was interrupted; {restored} file(s) restored from the journal",
+            file=sys.stderr,
+        )
+        raise
+
+    left = [e["path"] for e in record["entries"] if _digest(pathlib.Path(e["path"])) != e["sha256"]]
+    journal.unlink(missing_ok=True)
+    if left:
+        # The journal is dropped **even here**, and the reason is measured: this pass edited
+        # `golden-master/doc-counts.json` while a battery was running, the run exited
+        # normally, and the next run's repair put the old bytes back over the edit. A record
+        # taken at start cannot tell a battery's mutation from a person's edit, so keeping it
+        # past the run that made it is a claim the record cannot support.
+        #
+        # Nothing is lost by dropping it: a battery whose restore failed exits non-zero from
+        # its own `assert_source_restored`, which names the files. The journal exists for the
+        # case where no assertion can run -- a kill -- and a normal exit is not that case.
+        print(
+            f"_witnesses: {label} left {len(left)} file(s) differing from its record; its own "
+            "restore check decides whether that is a failure",
+            file=sys.stderr,
+        )

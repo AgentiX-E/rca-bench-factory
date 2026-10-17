@@ -299,7 +299,7 @@ def verify_expectations(probe: bool = False) -> int:
     )
 
 
-def main() -> int:
+def _measure() -> int:
     # Reconcile before anything is mutated: an injection with no witness accepts
     # any red, which is the state this round measured its way out of.
     reconcile = verify_expectations()
@@ -376,6 +376,18 @@ def main() -> int:
             print(f'  - {description}')
         return 1
     return restore_status
+
+
+
+def main():
+    """Measure inside the shared journal, so a killed run leaves nothing behind.
+
+    The journal records every file this battery could mutate before it mutates one,
+    and the next battery puts back whatever a dead run left. See `guard` in
+    `_witnesses.py` for why the record is taken by subtree rather than by name.
+    """
+    with W.guard("fault-extraction-workflow"):
+        return _measure()
 
 
 if __name__ == '__main__':

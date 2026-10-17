@@ -83,6 +83,8 @@ interface Battery {
   assertsRestore: boolean;
   /** Whether it writes a backup into the repository tree. */
   writesInTreeBackup: boolean;
+  /** Whether it runs inside the shared journal, by its own name. */
+  guardsWithJournal: boolean;
 }
 
 const KEYWORDS = new RegExp(
@@ -477,6 +479,11 @@ function batteries(): Battery[] {
         // A backup written beside its subject. `/tmp` backups are the repair
         // this file recommends, so they are not counted.
         writesInTreeBackup: /\.bak|\.orig\b/.test(source) && !/tempfile\.gettempdir\(\)|\/tmp\//.test(source),
+        // The journal is the only thing between a killed run and a permanent
+        // mutation, and it is the battery's own name that the record carries.
+        guardsWithJournal: new RegExp(
+          `W\\.guard\\([\"']${entry.name.slice(0, -3)}[\"']\\)`,
+        ).test(source),
       });
     }
   };
@@ -567,6 +574,32 @@ describe('the mutation batteries under scripts/', () => {
     // matters, and the one the four earlier detector bugs actually produced.
     const unverified = BATTERIES.filter((b) => !b.assertsRestore).map((b) => b.file);
     expect(unverified, 'a battery edits tracked files without checking it put them back').toEqual([]);
+  });
+
+  it('runs inside the shared journal, so a kill is recoverable rather than permanent', () => {
+    // Why this is a rule and not a convention: twice in this campaign a battery
+    // run died mid-loop and left a tracked file mutated -- twelve files in
+    // finding 173, one file in pass 54 -- and the only thing that noticed was
+    // `git status`. The sharper half is that the next run would have made it
+    // permanent: every battery captures its backup **at start** with
+    // `shutil.copy(SRC, PRISTINE)`, so a run that begins before somebody
+    // reverts copies the mutated file into the pristine slot and then certifies
+    // `source restored: identical to the pristine capture`.
+    //
+    // The mechanism is proved behaviourally in `battery-journal.test.ts`: a dead
+    // pid's journal is repaired, a live battery's is not touched, and a normal
+    // exit is *not* repaired (so the restore assertion above stays meaningful).
+    // What is asserted here is only that every battery is wired to it -- and the
+    // label has to be its own name, so a record says which battery was running.
+    const known = BATTERIES.find((b) => b.file === 'scripts/injection/gate-tests-battery.py');
+    expect(known?.guardsWithJournal, 'the detector cannot see the shipped battery’s guard').toBe(true);
+
+    const unguarded = BATTERIES.filter((b) => !b.guardsWithJournal).map((b) => b.file);
+    expect(
+      unguarded,
+      'these batteries mutate tracked files without recording them first, so a killed run ' +
+        'leaves a mutation that the next run adopts as pristine',
+    ).toEqual([]);
   });
 
   it('keeps its backups outside the repository, where a clean-up cannot lose them', () => {
