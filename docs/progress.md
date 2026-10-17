@@ -5715,3 +5715,18 @@ surfaced it.
   ten Python batteries and wrong for a Node battery that was somehow started without a file.
   `[open: not reachable today -- every battery is a file -- but the fallback is a heuristic kept for
   old records, and the condition under which it should be deleted has not been written down]`
+- **One CI run of this commit failed 21 files with a module namespace that should be impossible, and
+  a rerun of the same commit was green.** Step 10 reported **361** failing tests, every one of them
+  either `(0, __vite_ssr_import_N__.assertExportableBundle) is not a function` or
+  `STRUCTURAL_CODES is not iterable`. A function declaration is hoisted and a module-scope `const` is
+  initialised at evaluation, so a namespace that has `exportAioPs2025` but not
+  `assertExportableBundle` means the module was still evaluating when its caller ran -- and no import
+  cycle reaches `export/guard.ts`. The two cycles that do exist are `score/score.ts <-> score/official.ts`
+  (type-only in the runtime direction) and `score/score.ts <-> targets.ts <-> cli/args.ts <-> score.ts`;
+  neither includes the guard, and every failing test was in a file that imports the exporters or the
+  scorer. Ruled out by measurement: three local full coverage runs green -- 32 cores at 8 workers,
+  the same suite pinned to two cores with `taskset`, and `CI=true` -- and a rerun of the same commit on
+  the same runner image, green in **154 s**. `[open: 361 red tests is not noise, so this is recorded
+  rather than dismissed. The next instrument is the module graph the failing worker actually saw --
+  vite-node's `__vite_ssr_import__` resolution per file -- and that needs a run that reproduces;
+  the honest state is that one has not]`

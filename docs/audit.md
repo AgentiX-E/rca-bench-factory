@@ -18410,4 +18410,5 @@ defect as a proof whose test was deleted.
 | coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | **63 across 38 scripts**, `derive-gate-sites --check` OK |
 | the three JavaScript batteries | `4`, `8`, `8` caught; 0 survived, 0 inert, restores identical |
+| CI | attempt 1 red in step 10: 21 files, 361 tests, all a module namespace missing its own exports; **rerun of the same commit green in 154 s**. Recorded under Pass 56's `### Open` rather than called a flake, because the shape is not noise and no cycle explains it |
 | `typecheck` / `lint` / `docs:check` | green |
