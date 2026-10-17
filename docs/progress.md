@@ -5145,20 +5145,32 @@ possible rather than an obstacle to it.
 | `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
 | repo test suite | **146 files, 3964 tests passed** (as of this commit) |
 | `typecheck` / `lint` / `docs:check` | green |
+| CI | run `38987237960` on `4bb688f6d` -- **four jobs, all success**, and the two new steps ran on the runner: **15 s** to install the backend and **7 s** to read it |
+
+### What the runner said, and why the reading is the point
+
+The two new steps measured **15 s and 7 s** on the runner, and the second number is the interesting
+one: locally the gate costs 5.87-7.09 s, so the runner is not slower at all. That is not a
+coincidence and it is worth writing down -- **the gate's cost is the server's warm-up, not the
+machine's speed**, because the four seconds it spends waiting are four seconds of a Prometheus
+starting up on any hardware. The install is the part that is a download.
+
+The job that hosts them went from roughly two minutes to **153 s of its 15-minute budget** across
+earlier readings, so the pair costs a fraction of the margin that job has.
 
 ### Open
 
 - ~~**No reader is driven against a real deployment by CI.**~~ **Closed for one of six by finding
-  175.** Prometheus is read from the distribution's own server in the `verify` job, on every push.
+  175.** Prometheus is read from the distribution's own server in the `verify` job, on every push,
+  in a step that took 7 s on the runner.
 - **Five readers are still certified by a fixture written by the same author.** `[open: the same
   shape as the entry this pass closed, five times over, and the cost is now known to be "a service
   that can be installed" rather than "somebody stands something up" -- Jaeger, Loki, Elasticsearch
   and Kubernetes are the four, and ClickHouse is the one that was measured by hand and nothing
   re-measures]`
-- **The gate's own cost in the job is the apt install, which has not been measured on the runner.**
-  `[open: three local runs cost 5.87-7.09 s for the gate itself, and the install that precedes it is
-  a separate reading nobody has taken -- the job's budget moved from roughly two minutes, and by how
-  much is the question this pass leaves]`
+- ~~**The gate's own cost in the job is the apt install, which has not been measured on the
+  runner.**~~ **Closed in this pass by the run itself**: 15 s for the install, 7 s for the gate, and
+  the job at 153 s of 900. The next entry that needs these numbers has them.
 - **The journal cannot name the audit's nested suite for the few milliseconds before it exists.**
   Unchanged from pass 51. `[open: written down rather than closed, and closing it would mean naming
   a process before it exists]`
