@@ -100,9 +100,15 @@ function writeJournal(options: {
   writeFileSync(
     journal,
     JSON.stringify({
-      schema: 'rca-bench-battery-journal/1',
+      // The current schema, and `script` is null because this helper stands in
+      // for a battery driven by `python3 -c` -- the one case that has no file to
+      // name. A record without a name is read with the directory heuristic, which
+      // is what the cases below arrange for; naming a script here would test a
+      // path the real batteries take and this helper does not.
+      schema: 'rca-bench-battery-journal/2',
       pid: options.pid,
       label: options.label,
+      script: null,
       startedAt: '2026-10-17T00:00:00Z',
       entries: [{ path: options.path, sha256, bytes: bytes.toString('base64') }],
     }),

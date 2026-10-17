@@ -364,7 +364,7 @@ CACHE = pathlib.Path(
     or (pathlib.Path(__file__).resolve().parents[2] / "node_modules" / ".cache")
 )
 JOURNAL_PREFIX = "battery-journal-"
-JOURNAL_SCHEMA = "rca-bench-battery-journal/1"
+JOURNAL_SCHEMA = "rca-bench-battery-journal/2"
 
 #: The subtrees a battery may mutate, recorded whole rather than by name.
 #:
@@ -393,8 +393,25 @@ def _digest(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _is_battery_process(pid: int) -> bool:
-    """Whether `pid` is a battery run, which is what makes its journal live."""
+def _is_battery_process(pid: int, script: str | None = None) -> bool:
+    """Whether `pid` is the run that wrote a record naming `script`.
+
+    ## Why the name, and not the directory
+
+    A pid is reused (finding 174's group-id lesson, one identifier down), so a
+    live number has to be checked against something the process itself says. The
+    first version asked whether the command line mentions `injection`, which is
+    true of every battery in this directory and **false of the three written in
+    JavaScript** -- they live at `scripts/inject-*.mjs`. A record left by a
+    killed Node battery would therefore have been reported as dead while that
+    battery was still running, and repaired under it: the one thing this guard
+    exists to prevent, in the one case it had not been asked about.
+
+    The record now carries the writer's own script name, and that is what is
+    looked for. Records written before the field existed fall back to the
+    directory test, so an old journal is read rather than becoming a file
+    somebody has to delete by hand.
+    """
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -407,6 +424,8 @@ def _is_battery_process(pid: int) -> bool:
         # No `/proc`, so the identity cannot be checked: a live number is taken
         # at its word rather than repaired out from under it.
         return True
+    if script:
+        return script.encode() in cmdline
     return b"injection" in cmdline
 
 
@@ -443,7 +462,7 @@ def repair_abandoned() -> None:
             )
             continue
         pid = int(record.get("pid", -1))
-        if _is_battery_process(pid):
+        if _is_battery_process(pid, record.get("script")):
             raise SystemExit(
                 f"_witnesses: pid {pid} is running {record.get('label')} on this tree; "
                 "two batteries cannot measure one working tree"
@@ -455,6 +474,20 @@ def repair_abandoned() -> None:
             f"{restored} file(s) put back",
             file=sys.stderr,
         )
+
+
+def _script_name() -> str | None:
+    """The name of the script that is running, or `None` when there is no file.
+
+    `None` is not an error: a battery driven by `python3 -c` has no file to name,
+    and a record without a name is read with the directory test the first version
+    used. A record that lied about its writer would be worse than one that does
+    not name it.
+    """
+    invoked = sys.argv[0] if sys.argv else ""
+    if not invoked or invoked.startswith("-"):
+        return None
+    return pathlib.Path(invoked).name
 
 
 def _guarded_files(roots) -> list[pathlib.Path]:
@@ -494,6 +527,10 @@ def guard(label: str, roots=None):
         "schema": JOURNAL_SCHEMA,
         "pid": os.getpid(),
         "label": label,
+        # The writer's own name, which is what makes the record's liveness
+        # answerable for a battery that does not live in this directory. See
+        # `_is_battery_process`.
+        "script": _script_name(),
         "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "entries": [
             {

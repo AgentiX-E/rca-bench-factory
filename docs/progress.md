@@ -5543,20 +5543,23 @@ reporter after its queue is drained.
 | mutation checks | **5 of 5 CAUGHT**, each by exactly its own test |
 | the wiring, asserted | `batteries-verify-their-restore.test.ts` gained `guardsWithJournal`; **deleting any battery's guard turns it red** |
 | the end-to-end experiment | SIGKILL -> repair -> `12 caught`, tree clean (table above) |
-| `core` test suite | **144 files, 3792 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **148 files, 3978 tests passed** (as of this commit) |
+| `core` test suite | **144 files, 3792 tests passed** (as of `d43a2d9`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `d43a2d9`) |
+| repo test suite | **148 files, 3978 tests passed** (as of `d43a2d9`) |
 | batteries | **13 of 13, rc=0**; the ten Python ones run inside the guard, the three Node ones do not |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
 
-- **Three Node batteries are outside the journal, and the census cannot see them either.**
+- ~~**Three Node batteries are outside the journal, and the census cannot see them either.**
   `inject-stability.mjs`, `inject-component-rule.mjs` and `inject-m1-ceiling-tests.mjs` mutate tracked
   files without an `INJECTIONS` table, which is the register's admission rule -- so their absence is
-  invisible rather than recorded. `[open: the fix is a small `journal.mjs` sharing this JSON format plus
-  a census rule that admits a file by "writes a tracked path and restores it" rather than by a table;
-  until then a kill during one of the three has nothing to repair from]`
+  invisible rather than recorded.~~ **Closed by finding 179.** The guessed repair -- "admit a file by
+  *writes a tracked path and restores it* rather than by a table" -- was wrong, and it was wrong in a
+  way worth keeping: every generator in `scripts/` writes a tracked path, so that rule would have
+  admitted twelve tools and called them batteries. The table was never the problem; the *case* was.
+  The rule is case-insensitive now, and admitting the three files made the census report four more
+  defects it had never been able to see.
 - **A kill plus a concurrent edit is still ambiguous.** A normal exit now drops the record, so an
   edit made during a run survives. But a *kill* leaves the record, and if a person edited a guarded
   file in the same window the repair will revert that edit. Narrow, and not reachable from CI.
@@ -5571,3 +5574,144 @@ reporter after its queue is drained.
   else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose
   rule and a `source` string, and two of them quote a paper rather than a released evaluator --
   so which of them has a runnable oracle at all has not been established]`
+
+## Pass 56 -- the census could not see three batteries, and "could not see" was the finding
+
+### The item was a sentence, and a sentence is not an instrument
+
+Pass 55 ended with a paragraph saying that three batteries were outside the journal *and* outside the
+census, because the census admits a file by a mutation table and those three had none. That is a
+true sentence. It is also the shape this campaign keeps finding: **a hole that is documented reads
+like a hole that has been dealt with.** Nothing failed when those three were killed; nothing failed
+when they were wired, either -- the wiring was invisible to every rule in the repository.
+
+So the subject of this pass is not "add a journal to three files". It is: *why could a census built
+to catch exactly this not see three of thirteen?*
+
+### What the admission rule was keyed on
+
+```js
+const hasTable = /\b(INJECTIONS|MUTATIONS|mutations)\s*[:=]/.test(source);
+```
+
+Three spellings, and the third is the lowercase form of one of the first two, which means the
+alternation was never about case -- it was a list of the words somebody had typed. All three
+JavaScript batteries write `const injections = [`. One character of regex stood between ten batteries
+and thirteen, and no amount of reading the rules would have shown it, because the rules are stated
+*over the set*.
+
+With `/i`, the census reported four more defects in those three files, and each is a rule that had
+been written against the file in front of its author:
+
+| rule | what it was reading | what the files say |
+| --- | --- | --- |
+| the restore verdict gates the exit | a *bare* `restored = ...` | `const restored = ...`, and `const mismatched = ...` in one of them |
+| the battery runs inside the journal | `W.guard('...')` | `withJournal('...')` |
+| the backup is outside the tree | any `.bak` anywhere in the source | `node_modules/.cache/extraction-scoring.bak.ts`, which is the recommended location |
+| the record's label is the battery's name | `name.slice(0, -3)`, which strips `.py` | `.mjs` is four characters, so the label was `inject-stability.` |
+
+The last one was introduced *while fixing the third*, one line lower in the same object literal. That
+is the most useful thing in the table: the failure mode is not carelessness, it is that a rule
+inherits the shape of its first subject and then looks general.
+
+### The fifth defect, which no rule was asking about
+
+Two of the three batteries captured their subject while the module loaded:
+
+```js
+const suiteOriginal = readFileSync(SUITE, 'utf8');   // runs before withJournal is called
+```
+
+Everything about the guard was correct and this one line would have defeated it. A battery that reads
+at load time captures whatever a killed run left, mutates from that, and writes it back as "the
+original" -- and then prints `source restored: identical to backup`, because it is. Finding 173's
+defect wearing the repair, and it would have shipped in this pass if the wiring had been the whole of
+it. The census now has a rule for it (`readsBeforeTheRepair`), and the rule is proved by putting the
+line back: red.
+
+### The handler that was written, measured, and deleted
+
+`journal.mjs` first installed `SIGINT`/`SIGTERM`/`SIGHUP` handlers that restored and re-raised. It
+looked like a strict improvement on the Python side, which only gets Ctrl-C for free. Then a
+three-line experiment:
+
+```
+process.on('SIGTERM', restore);  execFileSync('sleep', ['5']);
+---------------- SIGTERM sent here ----------------
+stderr: (nothing)     exit 0     handler never ran
+```
+
+A Node signal callback runs on the event loop, and a battery's entire mutation window is spent
+blocked inside `execFileSync`. The handler would fire between injections -- the interval that needs
+it least -- and never during the sixty seconds that matter. That is worse than no handler, because it
+invites the reader to rely on it.
+
+> A guard that fires everywhere except the window it was written for is worse than no guard.
+
+So the module has none, and the guarantee is the record on disk plus the next run. The test asserts
+it in the state that matters: a child blocked in `Atomics.wait` is killed with SIGTERM, the tree stays
+mutated, the record stays, and the next run repairs it.
+
+### The end-to-end, with the real batteries
+
+| step | measured |
+| --- | --- |
+| `node scripts/inject-component-rule.mjs`, **SIGKILL** at 4 s | record `battery-journal-614736.json` (label, script name, **272** entries); `fault-prompt-grammar.test.ts` mutated |
+| `node scripts/inject-stability.mjs` -- a different battery | `journal: repaired inject-component-rule (pid 614736 is gone), 1 file(s) put back`; `4 caught, 0 survived, 0 inert`; tree clean; no record |
+| a Node record read by `_witnesses.py`, and a Python record read by `journal.mjs` | both directions asserted in the suite, not assumed from "the formats look the same" |
+
+One format, two writers, because the battery that repairs a kill is whatever runs next and the
+schedule does not promise a language.
+
+### Two exemptions whose reasons had expired
+
+Re-deriving `gate-sites.json` moved three lines and dropped their annotations. The reasons they came
+back with were the old ones, and the old ones said:
+
+> Until `verify-gates-are-testable` takes its subjects from this inventory instead of from a filename
+> prefix, a computed exit here has no mechanism that would notice the line being emptied.
+
+That was true when it was written and stopped being true at finding 172. The sites stay `exempt`
+because no test *executes* a battery that spends a suite run mutating tracked files, so `provedBy`
+has nothing to point at -- but each now says what is actually the case: emptying the line surfaces as
+inventory drift, which is a static claim, not a test driving the status. An exemption whose reason
+expired is the same defect as a proof whose test was deleted, and only a re-derivation would have
+surfaced it.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| mechanism tests | **9** in `battery-journal-node.test.ts`, each naming one property of the record |
+| mutation checks | **13 of 13 CAUGHT** (6 against `journal.mjs`, 6 against the census rules, 1 against a battery capturing at module scope), each by the case named in its row |
+| the wiring, asserted | `readsBeforeTheRepair` and the two guard spellings; deleting any of them turns the census red |
+| end-to-end | SIGKILL -> repair by a different battery -> `4 caught`, tree clean |
+| `core` test suite | **145 files, 3803 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **149 files, 3989 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | **63 across 38 scripts**, deriver `--check` OK |
+| the three JavaScript batteries | **4 / 8 / 8** caught, 0 survived, 0 inert, restores identical |
+| record cost | **272 files / 4.35 MB / 34 ms** per entry and exit, against batteries that take 3 to 60 s |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **A kill plus a concurrent edit is still ambiguous.** A normal exit drops the record, so an edit
+  made during a run survives. A *kill* leaves the record, and a person's edit inside that window is
+  reverted by the repair. `[open: the shape that would close it is recording at write time rather
+  than at start -- one more IO per injection, at 25 write sites -- and it needs a decision about what
+  a record means when the writer is a person]`
+- **The counts snapshot is still not compared to the suite in CI.** `[open: pass 54 measured why the
+  obvious wiring is refused -- a second full suite run in the same job trips `onTaskUpdate` with every
+  test green -- so the step that would close it needs to reuse the coverage run's transcript, which is
+  a change to both scripts rather than a line of YAML]`
+- **Eight score targets are still transcriptions.** `[open: only RCAEval is held to code somebody
+  else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose rule
+  and a `source` string, and two of them quote a paper rather than a released evaluator -- so which of
+  them has a runnable oracle at all has not been established]`
+- **The JavaScript journal has no way to tell a `python3 -c` battery from a stranger.** A record with
+  no `script` field falls back to "does the command line mention `injection`", which is right for the
+  ten Python batteries and wrong for a Node battery that was somehow started without a file.
+  `[open: not reachable today -- every battery is a file -- but the fallback is a heuristic kept for
+  old records, and the condition under which it should be deleted has not been written down]`

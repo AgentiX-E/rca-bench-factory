@@ -18295,3 +18295,119 @@ run is obliged to read.
 | `core` / `cli` / repo suite | **144 / 3792** · **4 / 186** · **148 / 3978** |
 | batteries | **13 of 13, rc=0** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 179 — a census that admits by spelling sees only the spellings it was written for
+
+### The gap, as pass 55 had to write it
+
+Pass 55 wired ten batteries into the journal and then wrote this, because there was no other way to
+say it:
+
+> The three Node batteries do not, and the census cannot see them. [...] They carry no `INJECTIONS`
+> table, and the register admits a file to its census by `table && writes`. So they are outside both
+> the guard and the census, and a kill during one of them leaves the same mutation with **no record
+> to repair from**.
+
+The sentence is accurate and it is the wrong instrument. *"The census cannot see them"* is a fact
+about the census, and writing it down does not make the census able to see them; it makes the gap
+survive review, because a paragraph that names a hole reads like work that has been done.
+
+### What the census said once it could see
+
+The admission rule was `/\b(INJECTIONS|MUTATIONS|mutations)\s*[:=]/`. Three spellings, and the third
+is the lowercase form of one of the first two -- so the rule was never about case, it was about which
+words somebody had typed. All three JavaScript batteries write `const injections = [`.
+
+Adding `/i` admitted them, and the census immediately reported **four** defects in three files:
+
+| rule | verdict on the three files | what the rule had been reading |
+| --- | --- | --- |
+| the restore verdict gates the exit status | all three unverified | `derived` only matched a *bare* assignment, so every `const restored = ...` was invisible |
+| the battery runs inside the journal | all three unguarded | the guard name was `W.guard(...)`; JavaScript calls `withJournal(...)` |
+| the backup is outside the tree | `inject-stability` violated it | a `.bak` under `node_modules/.cache` counted as in-tree, which is the reverse of the rule's own recommendation |
+| the label in the record is the battery's name | all three | `.slice(0, -3)` strips `.py`; `.mjs` is four characters, so the label came back as `inject-stability.` |
+
+Four defects, one cause: each rule was written against the file that was in front of the author.
+The label bug is the sharpest illustration, because it was introduced *while fixing* the third
+instance of the same mistake, one line lower in the same object literal.
+
+And a fifth, which the census could not have been asked for: two of the three batteries read their
+subjects **while the module loaded** --
+
+```js
+const suiteOriginal = readFileSync(SUITE, 'utf8');   // before withJournal is even called
+```
+
+-- which is before the journal can repair what a killed run left. Such a battery captures the
+mutation, mutates from it, writes it back, and prints `source restored: identical to backup`. That is
+finding 173's defect wearing the repair, and it would have been introduced by *this* pass had the
+wiring been the whole of the change.
+
+### The claim this pass refused to make
+
+The first version of `scripts/injection/journal.mjs` installed `SIGINT`, `SIGTERM` and `SIGHUP`
+handlers that restored the record and re-raised the signal. It looked strictly better than the
+Python side, which relies on the default `KeyboardInterrupt`. Then it was measured:
+
+```
+process.on('SIGTERM', restore);  execFileSync('sleep', ['5']);
+---------------- SIGTERM sent here ----------------
+stderr: (nothing)     exit 0     handler never ran
+```
+
+A Node signal callback is dispatched from the event loop, and a battery's mutation window is spent
+**inside `execFileSync` waiting for the suite** -- the loop is blocked, so the callback is not
+deferred, it does not arrive at all. The interval where such a handler would run is the interval
+between injections, which is the one that needs it least.
+
+> A guard that fires everywhere except the window it was written for is worse than no guard,
+> because it invites the reader to stop relying on the one that works.
+
+So there is no signal handler, and the guarantee is stated where it can be kept: the record on disk
+and the next run. `battery-journal-node.test.ts` asserts it by killing a child that is **blocked** --
+`Atomics.wait`, the same state `execFileSync` puts a battery in -- and requiring the next run to
+repair what it left. Python gets a real benefit from its default handler; Node does not, and the
+difference is now written down instead of assumed.
+
+### The end-to-end experiment
+
+| step | measured |
+| --- | --- |
+| `node scripts/inject-component-rule.mjs`, **SIGKILL** at 4 s | `battery-journal-614736.json`: label `inject-component-rule`, script `inject-component-rule.mjs`, 272 entries; `packages/core/test/fault-prompt-grammar.test.ts` mutated |
+| `node scripts/inject-stability.mjs` -- **a different battery** | stderr `journal: repaired inject-component-rule (pid 614736 is gone), 1 file(s) put back`; then `4 caught, 0 survived, 0 inert`; tree back to the pre-kill state; no journal |
+| both directions of the shared format | a Node record repaired by `_witnesses.py`, and a Python record repaired by `journal.mjs`, each asserted separately |
+
+The second row is the point of one shared format rather than two similar ones: the battery that
+repairs a kill is whatever runs next, and which language wrote the record is not something the
+schedule promises.
+
+### Three things the widened census forced out of the exemption table
+
+Re-deriving `gate-sites.json` moved three lines and dropped their annotations, and the reasons they
+had carried were **false**:
+
+> Until `verify-gates-are-testable` takes its subjects from this inventory instead of from a filename
+> prefix, a computed exit here has no mechanism that would notice the line being emptied.
+
+That sentence was written before finding 172 and never revisited. The subject list *does* come from
+the inventory now, and the emptying *is* noticed -- as inventory drift, by the deriver check, which
+is a different claim from a test driving the status. The three sites are still `exempt` (no test
+*executes* a battery that spends a suite run mutating tracked files, so `provedBy` has nothing to
+point at), but each now says what is actually true. An exemption whose reason expired is the same
+defect as a proof whose test was deleted.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| mechanism tests | **9**: dead holder repaired before measuring; live holder refused; recycled pid not a holder; unverifiable repair refused; exception restores; normal exit neither repairs nor records; `process.exit` inside the body still drops the record; a **blocked** run killed by SIGTERM leaves the record and the next run repairs it; and both directions of the shared format |
+| mutation checks | **13 of 13 CAUGHT**, each by exactly the case named in the row (6 against `journal.mjs`, 6 against the census rules, 1 against a battery that captures at module scope) |
+| the wiring, asserted | the census gained `readsBeforeTheRepair`; **`const suiteOriginal = readFileSync(...)` at module scope turns it red** |
+| end-to-end | SIGKILL -> 272-entry record -> a different battery repairs -> `4 caught`, tree clean |
+| `core` test suite | **145 files, 3803 tests passed** |
+| `cli` test suite | **4 files, 186 tests passed** |
+| repo test suite | **149 files, 3989 tests passed** |
+| coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | **63 across 38 scripts**, `derive-gate-sites --check` OK |
+| the three JavaScript batteries | `4`, `8`, `8` caught; 0 survived, 0 inert, restores identical |
+| `typecheck` / `lint` / `docs:check` | green |

@@ -20,7 +20,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { withJournal } from './injection/journal.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -33,9 +34,6 @@ const GOLDEN = resolve(REPO, 'golden-master/fault-extraction/samples.json');
 // repository keeps the read and the write on the same filesystem by construction.
 const REPORT = resolve(REPO, 'node_modules/.cache/grammar-battery.json');
 mkdirSync(dirname(REPORT), { recursive: true });
-
-const suiteOriginal = readFileSync(SUITE, 'utf8');
-const goldenOriginal = readFileSync(GOLDEN, 'utf8');
 
 /** Run only the grammar suite; the battery is about these assertions. */
 function runSuite() {
@@ -65,12 +63,24 @@ function runSuite() {
 /**
  * Each injection returns the file contents to write, or the original unchanged.
  * Returning the original signals INERT.
+ *
+ * ## Why the subjects are read inside `main`, and not while the module loads
+ *
+ * The two reads used to happen at load time, which is *before* `withJournal`
+ * repairs whatever a killed run left behind. A battery that read its subject
+ * while loading would therefore capture the **mutated** bytes left by the
+ * previous crash, mutate from those, and write them back as "the original" --
+ * the defect pass 55 found in `shutil.copy(SRC, PRISTINE)`, moved one step
+ * earlier. Reading inside `main` puts the read after the repair by construction,
+ * which is the only ordering that cannot drift.
+ *
+ * So an entry names the file it targets and the edit to apply, and the text the
+ * edit is applied to belongs to the run rather than to the module.
  */
 const injections = [
   {
     name: 'A. golden dataset: make a second component unrecoverable from its text',
     file: GOLDEN,
-    original: goldenOriginal,
     apply(text) {
       // Rewriting `cart-service` to an invented name that shares no token with
       // the incident. The tripwire test asserts the rejected list is exactly
@@ -81,7 +91,6 @@ const injections = [
   {
     name: 'B. golden dataset: reopen the gap the rule closed, so the tripwire must break',
     file: GOLDEN,
-    original: goldenOriginal,
     apply(text) {
       // Undo the round's re-annotation: make the sample's component unrecoverable
       // from its text again. The suite now asserts the rule has *no* exception in
@@ -94,7 +103,6 @@ const injections = [
   {
     name: 'C. suite: break the contrast by accepting only right answers',
     file: SUITE,
-    original: suiteOriginal,
     apply(text) {
       // The wrong-answer acceptance rate is the measurement. Flipping the
       // predicate to look for the *right* answer in the text collapses the
@@ -110,7 +118,6 @@ const injections = [
   {
     name: 'D. suite: make the rule accept every sample, so nothing is rejected',
     file: SUITE,
-    original: suiteOriginal,
     apply(text) {
       // `tokensAllPresent` is the shared primitive both the tripwire and the
       // discrimination test read, so a mutation that hollows it out has to be
@@ -126,7 +133,6 @@ const injections = [
   {
     name: 'E. suite: reopen the gap the tripwire closed',
     file: SUITE,
-    original: suiteOriginal,
     apply(text) {
       // The assertion that keeps the rule honest: no expected component may be
       // absent from its own text. Relaxing it to "at most one is" models the
@@ -143,7 +149,6 @@ const injections = [
   {
     name: 'F. suite: assert the right-answer rate is the ceiling it is not',
     file: SUITE,
-    original: suiteOriginal,
     apply(text) {
       // The assertion that makes the contrast directional. Swapping it for the
       // direction an earlier draft wrongly asserted (rightRate <= wrongRate)
@@ -159,7 +164,6 @@ const injections = [
   {
     name: 'G. suite: assert the accepted-versus-readable gap is closed (it is not)',
     file: SUITE,
-    original: suiteOriginal,
     apply(text) {
       // What this injection tests is the *direction* of the gap assertion, not
       // the presence of a second consumer. The gap assertions record a
@@ -182,7 +186,6 @@ const injections = [
   {
     name: 'H. suite: drop the empty-token guard, so a hyphens-only name passes',
     file: SUITE,
-    original: suiteOriginal,
     apply(text) {
       // `every` over an empty array is true, so without the guard a name made
       // only of hyphens would be accepted against any text. The constructed-input
@@ -198,61 +201,86 @@ const injections = [
 let survivors = 0;
 let inert = 0;
 
-console.log('component rule battery\n');
-for (const inj of injections) {
-  const mutated = inj.apply(inj.original);
-  if (mutated === inj.original) {
-    console.log(`INERT    ${inj.name}`);
-    console.log('         -- anchor did not match; the injection never applied');
-    inert += 1;
-    continue;
-  }
-  writeFileSync(inj.file, mutated);
-  const result = runSuite();
-  writeFileSync(inj.file, inj.original);
-  // `failed === -1` means the run produced no JSON report at all -- the mutation
-  // crashed the suite before any test ran. That is a caught mutation, and it must
-  // not print the same word as a mutation nothing detected: `-1 > 0` is false, so
-  // the original form of this branch classified a broken runner as SURVIVED. This
-  // script's sibling (`inject-m1-ceiling-tests.mjs`) inherited the defect and had
-  // it exposed by an injection that made the subject exit non-zero before writing
-  // its report; the repair is applied here too rather than only where it was found.
-  if (result.failed === -1) {
-    console.log(`CAUGHT   ${inj.name}`);
-    console.log(`         (the suite failed to run at all: ${result.error ?? 'no report written'})`);
-  } else if (result.failed > 0) {
-    console.log(`CAUGHT   ${inj.name}`);
-    console.log(`         (failed ${result.failed}, passed ${result.passed})`);
-  } else {
-    console.log(`SURVIVED ${inj.name}`);
-    console.log(`         -- no test detected this mutation${result.error ? ` (${result.error})` : ''}`);
-    survivors += 1;
-  }
+/**
+ * The bytes each subject held when the run first touched it.
+ *
+ * This is the restore's source of truth, and it is populated by *reading*, so
+ * the set restored is the set written by construction. It is filled inside
+ * `main` rather than at load time; see the note above the table.
+ */
+const originals = new Map();
+
+function originalOf(file) {
+  if (!originals.has(file)) originals.set(file, readFileSync(file, 'utf8'));
+  return originals.get(file);
 }
 
-// Restore and prove restoration byte-for-byte, derived from the injections
-// rather than from two names repeated from the top of the file.
-//
-// Each entry already carries the file it targets and that file's original text,
-// so the set to restore is a property of the entry list. Writing `SUITE` and
-// `GOLDEN` back by name instead meant an injection added against a third file
-// would be restored only if someone also added it here. Measured in
-// `m1-ceiling-probe.py`: that battery reported `sources restored: identical to
-// backup` while 8098 lines of `docs/audit.md` had been replaced by a fixture.
-// Deriving the set means such an entry is covered by construction.
-const targets = new Map();
-for (const inj of injections) {
-  if (!targets.has(inj.file)) targets.set(inj.file, inj.original);
-}
-for (const [file, text] of targets) writeFileSync(file, text);
-const mismatched = [...targets].filter(([file, text]) => readFileSync(file, 'utf8') !== text);
-const restored = mismatched.length === 0;
+function main() {
+  console.log('component rule battery\n');
+  for (const inj of injections) {
+    const original = originalOf(inj.file);
+    const mutated = inj.apply(original);
+    if (mutated === original) {
+      console.log(`INERT    ${inj.name}`);
+      console.log('         -- anchor did not match; the injection never applied');
+      inert += 1;
+      continue;
+    }
+    writeFileSync(inj.file, mutated);
+    const result = runSuite();
+    writeFileSync(inj.file, original);
+    // `failed === -1` means the run produced no JSON report at all -- the mutation
+    // crashed the suite before any test ran. That is a caught mutation, and it must
+    // not print the same word as a mutation nothing detected: `-1 > 0` is false, so
+    // the original form of this branch classified a broken runner as SURVIVED. This
+    // script's sibling (`inject-m1-ceiling-tests.mjs`) inherited the defect and had
+    // it exposed by an injection that made the subject exit non-zero before writing
+    // its report; the repair is applied here too rather than only where it was found.
+    if (result.failed === -1) {
+      console.log(`CAUGHT   ${inj.name}`);
+      console.log(`         (the suite failed to run at all: ${result.error ?? 'no report written'})`);
+    } else if (result.failed > 0) {
+      console.log(`CAUGHT   ${inj.name}`);
+      console.log(`         (failed ${result.failed}, passed ${result.passed})`);
+    } else {
+      console.log(`SURVIVED ${inj.name}`);
+      console.log(`         -- no test detected this mutation${result.error ? ` (${result.error})` : ''}`);
+      survivors += 1;
+    }
+  }
 
-console.log(`\nbattery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert`);
-console.log(`files written and restored: ${targets.size}`);
-console.log(
-  restored
-    ? 'source restored: identical to backup'
-    : `source restore DIFFERS for ${mismatched.map(([f]) => f).join(', ')} -- inspect before committing`,
-);
-process.exit(survivors === 0 && inert === 0 && restored ? 0 : 1);
+  // Restore and prove restoration byte-for-byte over the set that was read, which
+  // is the set that was written.
+  //
+  // The earlier form listed `SUITE` and `GOLDEN` by name, so an injection added
+  // against a third file would be restored only if someone also added it to the
+  // second list. Measured in `m1-ceiling-probe.py`: that battery reported
+  // `sources restored: identical to backup` while 8098 lines of `docs/audit.md`
+  // had been replaced by a fixture. Deriving the set means such an entry is
+  // covered by construction.
+  for (const [file, text] of originals) writeFileSync(file, text);
+  const mismatched = [...originals].filter(([file, text]) => readFileSync(file, 'utf8') !== text);
+  const restored = mismatched.length === 0;
+
+  console.log(`\nbattery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert`);
+  console.log(`files written and restored: ${originals.size}`);
+  console.log(
+    restored
+      ? 'source restored: identical to backup'
+      : `source restore DIFFERS for ${mismatched.map(([f]) => f).join(', ')} -- inspect before committing`,
+  );
+  return survivors === 0 && inert === 0 && restored ? 0 : 1;
+}
+
+// The journal is what makes a kill recoverable instead of permanent: it records
+// every subject's bytes before the first mutation, so the next battery puts them
+// back rather than starting from a mutated tree. The label is this file's own
+// name, because that is what a later run reads to decide whether the holder is
+// still alive.
+const invokedDirectly =
+  process.argv[1] !== undefined
+  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+
+if (invokedDirectly) {
+  process.exit(withJournal('inject-component-rule', main));
+}

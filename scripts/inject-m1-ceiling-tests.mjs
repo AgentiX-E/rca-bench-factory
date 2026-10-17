@@ -36,7 +36,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { withJournal } from './injection/journal.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
@@ -49,10 +50,6 @@ const GOLDEN = resolve(REPO, 'golden-master/fault-extraction/samples.json');
 // that shares `/tmp` between jobs.
 const REPORT = resolve(REPO, 'node_modules/.cache/m1-test-battery.json');
 mkdirSync(dirname(REPORT), { recursive: true });
-
-const testOriginal = readFileSync(TEST, 'utf8');
-const probeOriginal = readFileSync(PROBE, 'utf8');
-const goldenOriginal = readFileSync(GOLDEN, 'utf8');
 
 /**
  * Run only the probe's test file; the battery is about these assertions.
@@ -328,84 +325,107 @@ const injections = [
   },
 ];
 
-const ORIGINALS = {
-  [TEST]: testOriginal,
-  [PROBE]: probeOriginal,
-  [GOLDEN]: goldenOriginal,
-};
+/**
+ * The bytes each subject held when the run first touched it.
+ *
+ * Filled inside `main` rather than while the module loads, and the ordering is
+ * the whole point: a read at load time happens *before* `withJournal` repairs
+ * what a killed run left behind, so it would capture the mutation and write it
+ * back as "the original". Pass 55 found that defect in
+ * `shutil.copy(SRC, PRISTINE)`; moving the read inside the wrapper closes it by
+ * construction rather than by remembering.
+ */
+const originals = new Map();
+
+function originalOf(file) {
+  if (!originals.has(file)) originals.set(file, readFileSync(file, 'utf8'));
+  return originals.get(file);
+}
 
 let survivors = 0;
 let inert = 0;
 let caught = 0;
 
-console.log('M1-ceiling probe test battery\n');
-for (const inj of injections) {
-  const applied = [];
-  let inertReason = null;
-  for (const edit of inj.edits) {
-    const original = ORIGINALS[edit.file];
-    const mutated = edit.apply(original);
-    if (mutated === original) {
-      inertReason = `anchor did not match in ${edit.file.replace(`${REPO}/`, '')}`;
-      break;
+function main() {
+  console.log('M1-ceiling probe test battery\n');
+  for (const inj of injections) {
+    const applied = [];
+    let inertReason = null;
+    for (const edit of inj.edits) {
+      const original = originalOf(edit.file);
+      const mutated = edit.apply(original);
+      if (mutated === original) {
+        inertReason = `anchor did not match in ${edit.file.replace(`${REPO}/`, '')}`;
+        break;
+      }
+      applied.push([edit.file, mutated]);
     }
-    applied.push([edit.file, mutated]);
-  }
-  if (inertReason !== null) {
-    console.log(`INERT    ${inj.name}`);
-    console.log(`         -- ${inertReason}; the injection never applied`);
-    inert += 1;
-    continue;
-  }
+    if (inertReason !== null) {
+      console.log(`INERT    ${inj.name}`);
+      console.log(`         -- ${inertReason}; the injection never applied`);
+      inert += 1;
+      continue;
+    }
 
-  for (const [file, mutated] of applied) writeFileSync(file, mutated);
-  const result = runSuite();
-  for (const [file] of applied) writeFileSync(file, ORIGINALS[file]);
+    for (const [file, mutated] of applied) writeFileSync(file, mutated);
+    const result = runSuite();
+    for (const [file] of applied) writeFileSync(file, originals.get(file));
 
-  // Three degenerate outcomes, and none of them is a passing suite. This is the
-  // part the first version got wrong: `failed > 0` is true only for a suite that
-  // ran and failed, so a mutation that stopped the suite from running at all fell
-  // through to SURVIVED and was counted as an assertion nobody could break.
-  if (result.total === 0) {
-    console.log(`CAUGHT   ${inj.name}`);
-    console.log(
-      `         (no test ran at all -- the mutation broke collection: ${result.error ?? 'zero tests reported'})`,
-    );
-    caught += 1;
-  } else if (result.failed > 0) {
-    console.log(`CAUGHT   ${inj.name}`);
-    console.log(`         (failed ${result.failed}, passed ${result.passed})`);
-    caught += 1;
-  } else {
-    console.log(`SURVIVED ${inj.name}`);
-    console.log(
-      `         -- ${result.total} test(s) ran and none detected this mutation${result.error ? ` (${result.error})` : ''}`,
+    // Three degenerate outcomes, and none of them is a passing suite. This is the
+    // part the first version got wrong: `failed > 0` is true only for a suite that
+    // ran and failed, so a mutation that stopped the suite from running at all fell
+    // through to SURVIVED and was counted as an assertion nobody could break.
+    if (result.total === 0) {
+      console.log(`CAUGHT   ${inj.name}`);
+      console.log(
+        `         (no test ran at all -- the mutation broke collection: ${result.error ?? 'zero tests reported'})`,
+      );
+      caught += 1;
+    } else if (result.failed > 0) {
+      console.log(`CAUGHT   ${inj.name}`);
+      console.log(`         (failed ${result.failed}, passed ${result.passed})`);
+      caught += 1;
+    } else {
+      console.log(`SURVIVED ${inj.name}`);
+      console.log(
+        `         -- ${result.total} test(s) ran and none detected this mutation${result.error ? ` (${result.error})` : ''}`,
     );
     survivors += 1;
   }
 }
 
-// Restore and prove restoration byte-for-byte, over the recorded set rather than
-// over three names repeated from the top of the file.
-//
-// The version before this listed `TEST`, `PROBE` and `GOLDEN` twice: once when
-// the snapshots were taken and once when they were written back. That is a list
-// to keep in step, and a file missing from the second copy is a file that is
-// written and never restored -- measured in `m1-ceiling-probe.py`, which
-// reported `sources restored: identical to backup` while 8098 lines of
-// `docs/audit.md` had been replaced by a fixture. Driving both loops from
-// `ORIGINALS` means the set restored is the set snapshotted, by construction.
-for (const [file, text] of Object.entries(ORIGINALS)) writeFileSync(file, text);
-const mismatched = Object.entries(ORIGINALS).filter(
-  ([file, text]) => readFileSync(file, 'utf8') !== text,
-);
-const restored = mismatched.length === 0;
+  // Restore and prove restoration byte-for-byte, over the recorded set rather
+  // than over three names repeated from the top of the file.
+  //
+  // The version before this listed `TEST`, `PROBE` and `GOLDEN` twice: once when
+  // the snapshots were taken and once when they were written back. That is a list
+  // to keep in step, and a file missing from the second copy is a file that is
+  // written and never restored -- measured in `m1-ceiling-probe.py`, which
+  // reported `sources restored: identical to backup` while 8098 lines of
+  // `docs/audit.md` had been replaced by a fixture. Driving both loops from the
+  // read set means the set restored is the set snapshotted, by construction.
+  for (const [file, text] of originals) writeFileSync(file, text);
+  const mismatched = [...originals].filter(([file, text]) => readFileSync(file, 'utf8') !== text);
+  const restored = mismatched.length === 0;
 
-console.log(`\nbattery: ${caught} caught, ${survivors} survived, ${inert} inert`);
-console.log(`files snapshotted and restored: ${Object.keys(ORIGINALS).length}`);
-console.log(
-  restored
-    ? 'sources restored: identical to backup'
-    : `sources restored: ${mismatched.map(([f]) => f).join(', ')} DIFFER -- inspect before committing`,
-);
-process.exit(survivors === 0 && inert === 0 && restored ? 0 : 1);
+  console.log(`\nbattery: ${caught} caught, ${survivors} survived, ${inert} inert`);
+  console.log(`files snapshotted and restored: ${originals.size}`);
+  console.log(
+    restored
+      ? 'sources restored: identical to backup'
+      : `sources restored: ${mismatched.map(([f]) => f).join(', ')} DIFFER -- inspect before committing`,
+  );
+  return survivors === 0 && inert === 0 && restored ? 0 : 1;
+}
+
+// The journal records every subject's bytes before the first mutation, so a run
+// killed inside the loop is repaired by the next battery instead of becoming the
+// baseline the next run copies. The label is this file's own name: a later run
+// reads it to decide whether the holder is still alive.
+const invokedDirectly =
+  process.argv[1] !== undefined
+  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+
+if (invokedDirectly) {
+  process.exit(withJournal('inject-m1-ceiling-tests', main));
+}

@@ -48,7 +48,7 @@ import { describe, expect, it } from 'vitest';
  *
  * ## What is asserted
  *
- * Three properties, each of which was false of the harness that caused the
+ * Four properties, three of which were false of the harness that caused the
  * defect:
  *
  * 1. **Every battery in the tree verifies its restore.** A battery script that
@@ -63,6 +63,31 @@ import { describe, expect, it } from 'vitest';
  *    file anywhere outside `node_modules`. This is the assertion that would have
  *    caught the defect directly: the harness's own backup was still present when
  *    the mutation became permanent.
+ * 4. **Every battery records what it may mutate before it mutates it**, so a
+ *    kill is recoverable rather than permanent. Added in pass 55, after two runs
+ *    died mid-loop and left tracked files mutated.
+ *
+ * ## What the census could not see, and why that is the interesting part
+ *
+ * Properties 1, 2 and 4 are all stated over the set of batteries, so the set is
+ * the load-bearing thing. It was wrong in three ways at once, and none of them
+ * was visible by reading the rules:
+ *
+ *   - the table it admits a file by listed `INJECTIONS`, `MUTATIONS` and
+ *     `mutations`, but not `injections` -- the spelling all three JavaScript
+ *     batteries use. They were not "unguarded"; they were **absent**, and an
+ *     absent file satisfies every rule over the set;
+ *   - the guard it looks for was `W.guard(...)`, so a JavaScript battery using
+ *     `withJournal(...)` would have been reported unguarded once it could be
+ *     seen -- which is how pass 56 discovered that the census had never been
+ *     able to check the thing it was asserting;
+ *   - a `.bak` under `node_modules/.cache` counted as one kept in the tree,
+ *     which is the reverse of the recommendation, so the first file the wider
+ *     census could see was immediately reported as violating a rule it obeys.
+ *
+ * A rule that keys on a spelling sees only the spellings it was written for.
+ * That is finding 127's lesson in a fourth place, and the reason the three fixes
+ * below are written beside the rules rather than in a changelog.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -85,6 +110,8 @@ interface Battery {
   writesInTreeBackup: boolean;
   /** Whether it runs inside the shared journal, by its own name. */
   guardsWithJournal: boolean;
+  /** Whether it reads a subject at module scope, before the journal can repair one. */
+  readsBeforeTheRepair: boolean;
 }
 
 const KEYWORDS = new RegExp(
@@ -202,10 +229,34 @@ function assertsRestore(source: string): boolean {
 
   // The value a verdict is computed from: either a call to a restore helper, or
   // an expression over such a call. A path join or a string literal is not.
+  //
+  // ## The second spelling, and the file it was hiding
+  //
+  // `const` was missing from this pattern, so the binding half of the rule only
+  // ever read Python -- where assignment is bare and `restored = ...` matches.
+  // Every JavaScript battery writes `const restored = ...`, which the pattern
+  // ignored, and `inject-stability.mjs` does not even use that name: its verdict
+  // is `const mismatched = [...written].filter(...)` and the gate is
+  // `return survivors === 0 && ... && mismatched.length === 0 ? 0 : 1`. That is
+  // the same assertion as `restored`, spelled as a count of what still differs,
+  // and the detector read neither form.
+  //
+  // Both spellings are read now: a name bound by an optional `const`/`let`/`var`,
+  // and -- because the third file's verdict is a *comparison* rather than a
+  // boolean -- a name bound to an expression that compares restored content. The
+  // comparison is what makes it a verdict: `const original = readFileSync(...)`
+  // is a capture and must not enter the set, which is exactly the mistake the
+  // name-based first version made with `PRISTINE`.
   const derived = new Set<string>();
-  for (const match of source.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\n]+)$/gm)) {
+  for (const match of source.matchAll(
+    /^\s*(?:(?:const|let|var)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^\n]+)$/gm,
+  )) {
     const [, lhs, rhs] = match as unknown as [string, string, string];
     if (isVerdictName(lhs!)) {
+      derived.add(lhs!);
+      continue;
+    }
+    if (/(readFileSync\(|read_text\(|read\(\))/.test(rhs!) && /(?:!==|===|!=|==|\bis not\b|\bis\b)/.test(rhs!)) {
       derived.add(lhs!);
       continue;
     }
@@ -348,8 +399,17 @@ function assertsRestore(source: string): boolean {
      * file it needed to read.
      */
     const restoreOperand = /(?:read_text\(|read\(\)|readFileSync\(|\bpristine\b|\boriginal\b|\bcurrent\b|\bsnapshot\b|\b_WRITTEN\b)/;
-    const comparisonWithOperands =
-      /([A-Za-z_][A-Za-z0-9_]*(?:\(\))?(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s*(?:!=|==|!==|===|\bis not\b|\bis)\s*([A-Za-z_][A-Za-z0-9_]*(?:\(\))?(?:\.[A-Za-z_][A-Za-z0-9_]*)*)/g;
+    // The operand may carry one argument list. Without it the pattern matched
+    // only nullary calls -- `path.read_text()`, `read()` -- so the JavaScript
+    // form `readFileSync(file, 'utf8') !== text` was not read as a comparison at
+    // all, and the three batteries that use it were reported as containing no
+    // measurement while containing one.
+    const operand =
+      '([A-Za-z_][A-Za-z0-9_]*(?:\\([^()]*\\))?(?:\\.[A-Za-z_][A-Za-z0-9_]*(?:\\([^()]*\\))?)*)';
+    const comparisonWithOperands = new RegExp(
+      `${operand}\\s*(?:!=|==|!==|===|\\bis not\\b|\\bis)\\s*${operand}`,
+      'g',
+    );
     const allLines = blanked.split('\n');
     for (const match of blanked.matchAll(comparisonWithOperands)) {
       const [, left, right] = match as unknown as [string, string, string];
@@ -361,6 +421,51 @@ function assertsRestore(source: string): boolean {
       if (at === -1) continue;
       for (const line of allLines.slice(at, at + 5)) {
         if (/^\s*return\s+(?:[1-9]|[A-Za-z_])/.test(line)) return true;
+      }
+      /**
+       * The same tie, as a data flow rather than as a line window.
+       *
+       * The window above is what makes a comparison *lead* to a nonzero return,
+       * and it is what caught the vacuous `if False: return 2` mutation: the
+       * `return` is still written down but no comparison reaches it. It is also
+       * a property of Python's shape, where the comparison sits in the `if` that
+       * guards the return.
+       *
+       * A JavaScript battery says the same thing over two bindings --
+       *
+       *     const mismatched = [...originals].filter(([f, t]) => readFileSync(f) !== t);
+       *     const restored = mismatched.length === 0;
+       *     return survivors === 0 && inert === 0 && restored ? 0 : 1;
+       *
+       * -- and the `return` is eight lines below the comparison, outside any
+       * window that would not also swallow unrelated code. So the tie is read
+       * as: the comparison binds a name, and that name reaches a `return`,
+       * following further bindings up to three steps. A binding no return ever
+       * reads is still not a verdict, and following the chain is what keeps the
+       * `if False:` mutation caught: that mutation removes the comparison, so
+       * there is no name to follow.
+       */
+      const bound = /^\s*(?:(?:const|let|var)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(allLines[at]!);
+      if (bound) {
+        const reads = (needle: string) => new RegExp(`\\b${needle}\\b`);
+        const seen = new Set([bound[1]!]);
+        let frontier = [bound[1]!];
+        for (let step = 0; step < 3; step += 1) {
+          if (allLines.some((line) => /^\s*return\b/.test(line) && frontier.some((n) => reads(n).test(line)))) {
+            return true;
+          }
+          const next: string[] = [];
+          for (const line of allLines) {
+            const binding = /^\s*(?:(?:const|let|var)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+            if (!binding) continue;
+            if (seen.has(binding[1]!)) continue;
+            if (!frontier.some((n) => reads(n).test(binding[2]!))) continue;
+            seen.add(binding[1]!);
+            next.push(binding[1]!);
+          }
+          frontier = next;
+          if (frontier.length === 0) break;
+        }
       }
     }
     return false;
@@ -444,6 +549,25 @@ function assertsRestore(source: string): boolean {
 }
 
 /**
+ * The string literals in a source that name a backup file.
+ *
+ * Read from literals rather than from the whole text because the question is
+ * *where a backup is written*, and prose is not a location: `_witnesses.py`
+ * recommends keeping backups outside the tree and says so in a docstring that
+ * contains the word. A whole-source test reads that recommendation as evidence
+ * of the thing it warns against, which is the fourth time in this campaign a
+ * scanner has read its own documentation as subject matter.
+ */
+function backupLiterals(source: string): string[] {
+  const out: string[] = [];
+  for (const match of source.matchAll(/'([^'\n]*)'|"([^"\n]*)"|`([^`\n]*)`/g)) {
+    const literal = match[1] ?? match[2] ?? match[3] ?? '';
+    if (/\.(?:bak|orig)\b/.test(literal)) out.push(literal);
+  }
+  return out;
+}
+
+/**
  * Every battery under `scripts/`, read from source.
  *
  * The scan covers the whole `scripts/` tree rather than its top level, because
@@ -465,7 +589,20 @@ function batteries(): Battery[] {
       // A mutation table: the battery names the mutations it applies. Both
       // spellings in this repository are covered -- the Python battery's
       // `INJECTIONS` tuple list and a local `mutations` array.
-      const hasTable = /\b(INJECTIONS|MUTATIONS|mutations)\s*[:=]/.test(source);
+      //
+      // ## Why the alternation is case-insensitive, and what it was hiding
+      //
+      // The pattern was `(INJECTIONS|MUTATIONS|mutations)`, which is three
+      // spellings and not the two it looks like: `injections` in lower case was
+      // in no branch. All three JavaScript batteries write
+      // `const injections = [`, so the census admitted ten of the thirteen
+      // batteries and reported the other three as *absent* rather than as
+      // unguarded -- pass 55 could only describe that gap in prose, because a
+      // rule that never sees a file has nothing to say about it. The flag makes
+      // the rule about the word rather than about the case somebody happened to
+      // type, which is the same repair `keyboard`-style scanners elsewhere in
+      // this repository needed.
+      const hasTable = /\b(?:injections|mutations)\s*[:=]/i.test(source);
       // And it edits a tracked file, which is what makes restoration a
       // question at all. A battery that only observes cannot damage anything.
       const writes = /write_text\(|writeFileSync\(|\.write\(/.test(source);
@@ -476,14 +613,41 @@ function batteries(): Battery[] {
         // the name-based first version was wrong about three of the six it
         // named.
         assertsRestore: assertsRestore(source),
-        // A backup written beside its subject. `/tmp` backups are the repair
-        // this file recommends, so they are not counted.
-        writesInTreeBackup: /\.bak|\.orig\b/.test(source) && !/tempfile\.gettempdir\(\)|\/tmp\//.test(source),
+        // A backup written *inside the tracked tree*. The recommended place is
+        // `node_modules/.cache`, which is not tracked and cannot be lost to a
+        // clean-up, so a `.bak` path that names it is not an in-tree backup --
+        // `inject-stability.mjs` keeps `extraction-scoring.bak.ts` there and was
+        // reported as keeping it in the tree the first time the census could see
+        // the file. The rule is read from the literals that name a backup, not
+        // from the whole source, because a docstring recommending the safe
+        // location must not be read as evidence of the unsafe one.
+        writesInTreeBackup: backupLiterals(source).some(
+          (literal) => !/node_modules|\btmp\b|\/tmp\/|tempfile/.test(literal),
+        ),
         // The journal is the only thing between a killed run and a permanent
         // mutation, and it is the battery's own name that the record carries.
+        // Two spellings, one per language: `W.guard` for the Python batteries and
+        // `withJournal` for the JavaScript ones.
+        //
+        // The stem is stripped by matching the extension rather than by dropping
+        // the last three characters, which is what the first version did: `.py`
+        // is three characters and `.mjs` is four, so every JavaScript battery was
+        // searched for under a label ending in a dot -- and the same
+        // spelling-blindness that admitted only the Python tables was one line
+        // away from being repeated in the label. The three files that made this
+        // visible were reported unguarded while carrying the guard.
         guardsWithJournal: new RegExp(
-          `W\\.guard\\([\"']${entry.name.slice(0, -3)}[\"']\\)`,
+          `(?:W\\.guard\\(|withJournal\\()\\s*["']${entry.name.replace(/\.[^.]+$/, '')}["']`,
         ).test(source),
+        // A capture at module scope runs while the file is loaded, which is
+        // *before* the guard has had a chance to put back what a killed run left.
+        // Such a battery records the mutation as the original and then certifies
+        // it: the check is true and worthless, which is the whole subject of this
+        // file one level down.
+        readsBeforeTheRepair:
+          /^(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:await\s+)?(?:readFileSync|readFile)\(/m.test(
+            source,
+          ),
       });
     }
   };
@@ -524,6 +688,26 @@ describe('the mutation batteries under scripts/', () => {
     // returns nothing has drifted and the rules would be green over an empty
     // set.
     expect(BATTERIES.map((b) => b.file)).toContain('scripts/injection/gate-tests-battery.py');
+  });
+
+  it('admits the batteries written in JavaScript, which the table rule could not see', () => {
+    // The control for the admission rule itself, and it is the one that would
+    // have caught the gap pass 55 could only describe. Every rule in this file
+    // is stated over the set, so a file that never enters the set satisfies all
+    // of them -- and three did.
+    //
+    // Named rather than counted: a count of thirteen could be satisfied by
+    // admitting thirteen wrong files.
+    const named = BATTERIES.map((b) => b.file);
+    for (const file of [
+      'scripts/inject-stability.mjs',
+      'scripts/inject-component-rule.mjs',
+      'scripts/inject-m1-ceiling-tests.mjs',
+    ]) {
+      expect(named, `${file} is outside the census, so every rule over the set ignores it`).toContain(
+        file,
+      );
+    }
   });
 
   it('reads the restore verdict in the statement that decides the exit status', () => {
@@ -599,6 +783,31 @@ describe('the mutation batteries under scripts/', () => {
       unguarded,
       'these batteries mutate tracked files without recording them first, so a killed run ' +
         'leaves a mutation that the next run adopts as pristine',
+    ).toEqual([]);
+  });
+
+  it('reads its subject after the repair, not while the module loads', () => {
+    // Being wired to the journal is not the same as being protected by it. A
+    // battery that captures its subject at module scope reads it **before**
+    // `withJournal` has put back what a killed run left, so it holds the mutated
+    // bytes, mutates from those, and writes them back as "the original" while
+    // printing `source restored: identical to backup`. That is finding 173's
+    // defect wearing the repair.
+    //
+    // Two of the three JavaScript batteries did exactly this until pass 56: the
+    // capture sat at the top of the file and only the loop was wrapped. Measured
+    // end to end, both ways round:
+    //
+    //     SIGKILL inject-component-rule mid-suite
+    //       -> battery-journal-614736.json, `fault-prompt-grammar.test.ts` mutated
+    //     inject-stability (a different battery)
+    //       -> `journal: repaired inject-component-rule (pid 614736 is gone),
+    //           1 file(s) put back`; tree clean; battery: 4 caught
+    const early = BATTERIES.filter((b) => b.readsBeforeTheRepair).map((b) => b.file);
+    expect(
+      early,
+      'these batteries capture a subject while the module loads, which is before the journal ' +
+        'can repair the mutation a killed run left -- the capture would become the pristine copy',
     ).toEqual([]);
   });
 

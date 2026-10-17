@@ -285,25 +285,27 @@
     },
     {
       "script": "scripts/inject-component-rule.mjs",
-      "line": 258,
+      "line": 285,
+      "condition": "invokedDirectly",
       "diagnostic": "source restore DIFFERS for ${mismatched.map(([f]) => f).join(', ')} -- inspect before committing",
       "status": "exempt",
-      "reason": "The verdict is `process.exit(main())`, and `main()` returns non-zero when an injected rule survives, when an anchor is inert, or when a restore fails. A computed status cannot be made to fail by a test aimed at this line, and the whole-script hollowing in `verify-gates-are-testable` does not reach it either: that script reads its subjects from a filename prefix, and this is not a `check-*` file."
+      "reason": "`process.exit(withJournal('inject-component-rule', main))`, where `main()` returns non-zero when an injected rule survives, when an anchor is inert, or when a restore fails. No test executes the battery -- it spends a suite run mutating tracked files -- so nothing can be aimed at this line; emptying it is caught only as inventory drift by the deriver check, which is a static claim rather than a test driving the status."
     },
     {
       "script": "scripts/inject-m1-ceiling-tests.mjs",
-      "line": 411,
+      "line": 430,
+      "condition": "invokedDirectly",
       "diagnostic": "sources restored: ${mismatched.map(([f]) => f).join(', ')} DIFFER -- inspect before committing",
       "status": "exempt",
-      "reason": "Also `process.exit(main())`, so the status is whichever of its conditions the run decided. Listed apart from its sibling battery rather than sharing a reason with it, because the two compute their verdicts from different targets and one sentence covering both would say they are the same check when they are not."
+      "reason": "The same computed shape over the test file it targets: `main()` fails on a survivor, an inert anchor, a restore mismatch, or a suite that reported no test at all. Listed apart from its siblings because those four conditions are different ones, and one sentence covering the three batteries would claim they fail for the same reason when they do not. Exempt for the same structural reason: no test executes it."
     },
     {
       "script": "scripts/inject-stability.mjs",
-      "line": 250,
+      "line": 255,
       "condition": "invokedDirectly",
       "diagnostic": "battery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert",
       "status": "exempt",
-      "reason": "The oldest battery in the tree, and its `main()` reports four properties rather than a single count. Until `verify-gates-are-testable` takes its subjects from this inventory instead of from a filename prefix, a computed exit here has no mechanism that would notice the line being emptied -- which is what exempt records."
+      "reason": "The oldest battery in the tree, and its `main()` reports four properties rather than a single count. It now runs inside the journal, which is why the line's condition reads `invokedDirectly` like its siblings' -- and why the exemption stands: the status is computed from a suite run four times over, so no test can drive this line, and emptying it would surface only as the deriver reporting a site that no longer exists."
     },
     {
       "script": "scripts/measure-doc-counts.mjs",

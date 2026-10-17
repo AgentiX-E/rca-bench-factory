@@ -10,6 +10,7 @@ import { execSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { withJournal } from './injection/journal.mjs';
 
 /**
  * Paths are resolved from this script's own location, never hard-coded.
@@ -247,5 +248,9 @@ const invokedDirectly =
   && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 
 if (invokedDirectly) {
-  process.exit(main());
+  // Wrapped in the journal so a kill mid-loop is recoverable rather than
+  // permanent. `main` reads its subject *inside* the wrapper, which matters: a
+  // read that happened while the module loaded would capture the bytes a
+  // previous crash left behind and then certify them as the original.
+  process.exit(withJournal('inject-stability', main));
 }
