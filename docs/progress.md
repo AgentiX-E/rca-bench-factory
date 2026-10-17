@@ -5566,10 +5566,10 @@ reporter after its queue is drained.
   `[open: the shape that would close it is recording at write time instead of at start -- one more
   IO per injection, at 25 write sites -- and it needs a decision about what a record means when the
   writer is a person]`
-- **The counts snapshot is still not compared to the suite in CI.** `[open: pass 54 measured why
-  the obvious wiring is refused -- a second full suite run in the same job trips
-  `onTaskUpdate` with every test green -- so the step that would close it needs to reuse the
-  coverage run's transcript, which is a change to both scripts rather than a line of YAML]`
+- ~~**The counts snapshot is still not compared to the suite in CI.**~~ **Closed by finding 180.**
+  Pass 54 was right that the obvious wiring fails and wrong about what it needed: not a transcript
+  to parse, but a **report vitest already writes**. `test:coverage` now emits its JSON report, and
+  `--from` derives the same three scopes from it in **0.056 s** against the spawn's **77.35 s**.
 - **Eight score targets are still transcriptions.** `[open: only RCAEval is held to code somebody
   else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose
   rule and a `source` string, and two of them quote a paper rather than a released evaluator --
@@ -5686,9 +5686,9 @@ surfaced it.
 | mutation checks | **13 of 13 CAUGHT** (6 against `journal.mjs`, 6 against the census rules, 1 against a battery capturing at module scope), each by the case named in its row |
 | the wiring, asserted | `readsBeforeTheRepair` and the two guard spellings; deleting any of them turns the census red |
 | end-to-end | SIGKILL -> repair by a different battery -> `4 caught`, tree clean |
-| `core` test suite | **145 files, 3803 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **149 files, 3989 tests passed** (as of this commit) |
+| `core` test suite | **145 files, 3803 tests passed** (as of `224b1a8`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `224b1a8`) |
+| repo test suite | **149 files, 3989 tests passed** (as of `224b1a8`) |
 | coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | **63 across 38 scripts**, deriver `--check` OK |
 | the three JavaScript batteries | **4 / 8 / 8** caught, 0 survived, 0 inert, restores identical |
@@ -5702,10 +5702,9 @@ surfaced it.
   reverted by the repair. `[open: the shape that would close it is recording at write time rather
   than at start -- one more IO per injection, at 25 write sites -- and it needs a decision about what
   a record means when the writer is a person]`
-- **The counts snapshot is still not compared to the suite in CI.** `[open: pass 54 measured why the
-  obvious wiring is refused -- a second full suite run in the same job trips `onTaskUpdate` with every
-  test green -- so the step that would close it needs to reuse the coverage run's transcript, which is
-  a change to both scripts rather than a line of YAML]`
+- ~~**The counts snapshot is still not compared to the suite in CI.**~~ **Closed by finding 180**,
+  one pass after this entry was copied forward. The reading exists; what was missing was a way to
+  reuse it, and that turned out to be a file the coverage step already writes.
 - **Eight score targets are still transcriptions.** `[open: only RCAEval is held to code somebody
   else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose rule
   and a `source` string, and two of them quote a paper rather than a released evaluator -- so which of
@@ -5730,3 +5729,126 @@ surfaced it.
   rather than dismissed. The next instrument is the module graph the failing worker actually saw --
   vite-node's `__vite_ssr_import__` resolution per file -- and that needs a run that reproduces;
   the honest state is that one has not]`
+
+## Pass 57 -- the reading was never missing; the pipeline had no way to reuse it
+
+### Two copies of one fact, and neither one could notice the other
+
+`docs/progress.md` publishes how many test files and tests the suite has.
+`golden-master/doc-counts.json` is the measurement those rows are checked
+against. `docs:check` holds the **document to the snapshot** -- and nothing held
+the **snapshot to the suite**, so the pair could be wrong together while every
+gate reported agreement. That has been written down since pass 54 as an open
+item, with the measurement that killed the obvious fix:
+
+> a second full suite run in the same job trips `onTaskUpdate` with every test
+> green
+
+The diagnosis in that sentence is about cost. The actual obstacle was that
+**nobody had asked vitest for the reading it was already producing**: the
+coverage step runs the whole suite on every push, and `--reporter=json` writes a
+file with one entry per test file and one per assertion.
+
+Two findings came out of that question, and they share a shape: *a fact stored
+by coordinate instead of by identity goes stale, and nothing is watching it.*
+
+### Finding 180a -- the counts, read from the run that already happened
+
+`test:coverage` now writes `node_modules/.cache/vitest-report.json` beside its
+coverage output, and `measure-doc-counts.mjs --from` derives the same three
+scopes from those reports.
+
+**The reading had to be shown to be the same reading.** Counting files and
+assertions from a report is a second definition of "a passing test", and this
+repository has twice shipped two green numbers that disagreed. So both readers
+are held against **one captured run** -- `vitest-report-{core,cli}-sample.json`
+are real captures, with the summary lines their runs printed recorded in the
+test beside them -- and the mutation check counts a skipped assertion or a
+failed file as a pass if the rule is loosened.
+
+| path | cost | result |
+| --- | --- | --- |
+| `pnpm docs:counts` (spawns three suites) | **77.35 s** | 147 / 3818 · 4 / 186 · 151 / 4004 |
+| `--check --from <the two reports>` | **0.056 s** | identical |
+
+And because `--from` reads `pnpm-workspace.yaml` rather than trusting the root
+`test` script's two `--filter` flags, it also asserts something the spawn could
+not: **every workspace package that declares a `test` script must contribute a
+test file**, and **every test file in a report must belong to one**. A third
+package added to the workspace and forgotten by the root filter is now a failure
+that names it, instead of a `repo` count that is quietly short.
+
+### Finding 180b -- an annotation carried by coordinate is lost by any edit above it
+
+The first full run of the new tests failed, and the failure was not mine: adding
+a docstring to `measure-doc-counts.mjs` moved its failure site from line 66 to
+97, and re-deriving dropped the site's `proved` status.
+
+`derive-gate-sites.mjs` carried the three hand-authored columns across a rewrite
+**by `script:line`**, and said so in a sentence that reads as a considered trade:
+
+> Annotations are matched by `script:line` and dropped for a site that no longer
+> exists, so a moved guard loses a stale proof rather than inheriting a wrong one.
+
+The second half is right. The first half is not what happens: **every edit above
+a site moves its line**, so a proof is dropped for a guard that did not change at
+all -- and the guard then fails on `main` with
+
+```
+scripts/measure-doc-counts.mjs:97 has status 'undefined'
+```
+
+which names a coordinate rather than a defect, and reads like a missing proof
+where there is a moved one. Measured twice: three sites in pass 56, one here. The
+same file already computes the identifier that is stable under exactly that edit
+-- the fingerprint, which its own header calls *"stable under reindentation and
+reformatting"* -- and `--check` compares fingerprints. Carrying by line while
+checking by fingerprint was two answers to one question, and the coordinate
+answer was the wrong one.
+
+The carry now uses the fingerprint. Re-deriving the real tree reports
+**`annotations: 63 of 63 carried`**, and the site that moved keeps `proved`.
+
+Two details the first version could not have had:
+
+- **a proof is consumed when it is used.** Two `process.exit(1)` calls with no
+  diagnostic above them have the same fingerprint; without consuming the
+  candidate, one proof would be attached to both and one of them would be a proof
+  about a line it is not.
+- **an ambiguous fingerprint is refused, not guessed.** With several identical
+  candidates the line is the only evidence left, so an unmoved one is preferred;
+  if none matches, the annotation is dropped and the site is named
+  (`ambiguous: ...`). A wrong proof is worse than a missing one -- which is what
+  the old sentence was trying to say, one implementation too early.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| mechanism tests | **15**: 8 on the two readings of one run, 7 on the carry |
+| mutation checks | **7 of 7 CAUGHT**, each by the case named in its row |
+| the carry, end to end | a re-derivation over a copy whose prior lines were all shifted by 1000 still carries **63 of 63**; the line-keyed version carries **0** |
+| the two readings | agree exactly on the real tree, and on the captured pair |
+| `core` test suite | **147 files, 3818 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **151 files, 4004 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | **63 across 38 scripts**, 63 of 63 annotations carried |
+| CI | the new step reads the reports in **0.056 s**; the job that could not afford a second suite run now has the comparison for free |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **A kill plus a concurrent edit is still ambiguous**, and this pass touched no battery.
+  `[open: the closing shape is a record written at write time rather than at start -- one more IO at
+  25 write sites -- and it needs a decision about what a record means when the writer is a person]`
+- **Eight score targets are still transcriptions**, and this pass did not establish a new oracle.
+  `[open: only RCAEval is held to code somebody else wrote; the other five carry a prose rule and a
+  `source` string, and whether any of them has a runnable evaluator at all has not been decided]`
+- **The JavaScript journal cannot tell a `python3 -c` battery from a stranger**, unchanged.
+  `[open: unreachable today, but the fallback exists for records written before the field did, and
+  the condition for deleting it has not been written down]`
+- **One CI run of pass 56 failed 21 files with a module namespace missing its own exports**, and a
+  rerun of the same commit was green. Nothing here touched it.
+  `[open: the next instrument is the module graph the failing worker saw, and that needs a run that
+  reproduces -- none has appeared in three local coverage runs or in the rerun]`

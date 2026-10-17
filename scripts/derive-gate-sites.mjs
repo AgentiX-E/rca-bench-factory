@@ -112,7 +112,7 @@
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -560,6 +560,77 @@ function serialise({ sites, excluded, scanned }) {
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
+/**
+ * Carry the annotation columns across a rewrite -- by fingerprint, not by position.
+ *
+ * Re-deriving used to overwrite the whole file, which silently discarded every
+ * `status`, `provedBy` and `reason` -- the three columns that are the only
+ * reason the table is more than a list.
+ *
+ * The first repair matched annotations by `script:line` and said so: "a moved
+ * guard loses a stale proof rather than inheriting a wrong one". The second half
+ * of that sentence is true and the first half is not what happens. **Any edit
+ * above a site moves its line**, so the annotation is dropped for a site that
+ * did not change at all, and the guard then fails on `main` with
+ * `has status 'undefined'` -- a red that names a coordinate instead of a defect.
+ * Measured twice: three sites in pass 56 and one in pass 57, when a docstring
+ * above `measure-doc-counts.mjs`'s `fail()` grew.
+ *
+ * This file already computes the identifier that is stable under exactly that
+ * edit -- the fingerprint, which its own header describes as "stable under
+ * reindentation and reformatting". Carrying by line while fingerprinting for
+ * `--check` was two answers to one question, and the coordinate one was wrong.
+ *
+ * A fingerprint is not always unique: two `process.exit(1)` calls with no
+ * diagnostic above them produce the same string. When several prior sites share
+ * one, the line is the only evidence left, so a candidate that has not moved is
+ * preferred -- and if none of them is at that line the annotation is dropped
+ * rather than guessed at. A wrong proof is worse than a missing one, which is
+ * what the first version's sentence was trying to say.
+ *
+ * Exported so `derive-gate-sites-annotations.test.ts` can drive it with two
+ * tables instead of moving a line in the real tree. The behaviour is otherwise
+ * only observable by editing a script and re-deriving, which is precisely the
+ * accident this fixes.
+ */
+export function carryAnnotations(sites, priorSites) {
+  const fingerprint = (site) => [site.script, site.condition ?? '', site.diagnostic ?? ''].join('\u0000');
+
+  const pending = new Map();
+  for (const site of priorSites) {
+    const key = fingerprint(site);
+    if (!pending.has(key)) pending.set(key, []);
+    pending.get(key).push(site);
+  }
+
+  let carried = 0;
+  const strays = [];
+  const merged = sites.map((site) => {
+    const candidates = pending.get(fingerprint(site)) ?? [];
+    const before = candidates.length === 1
+      ? candidates[0]
+      : candidates.find((c) => c.line === site.line);
+    if (before === undefined) {
+      if (candidates.length > 0) strays.push(`${site.script}:${site.line}`);
+      return site;
+    }
+    candidates.splice(candidates.indexOf(before), 1);
+    const entry = { ...site };
+    for (const column of ['status', 'provedBy', 'reason']) {
+      if (before[column] !== undefined) entry[column] = before[column];
+    }
+    if (entry.status !== undefined) carried += 1;
+    return entry;
+  });
+
+  return {
+    sites: merged,
+    carried,
+    priorAnnotated: priorSites.filter((site) => site.status !== undefined).length,
+    strays,
+  };
+}
+
 function main() {
   const derived = derive();
   const text = serialise(derived);
@@ -636,44 +707,33 @@ function main() {
 
   const out = argValue('--out') ?? DEFAULT_OUT;
 
-  /**
-   * Carry the annotation columns across a rewrite.
-   *
-   * Re-deriving used to overwrite the whole file, which silently discarded
-   * every `status`, `provedBy` and `reason` -- the three columns that are the
-   * only reason the table is more than a list. The operator's next commit would
-   * then delete the proof record, and the guard in
-   * `packages/core/test/gate-sites-are-proven.test.ts` would fail on `main` with
-   * no indication that the cause was this script rather than a real gap.
-   *
-   * Annotations are matched by `script:line` and dropped for a site that no
-   * longer exists, so a moved guard loses a stale proof rather than inheriting a
-   * wrong one. The new site comes back unannotated, and the guard fails until
-   * someone adds a `status` -- which is the intended pressure.
-   */
   const prior = existsSync(out) ? JSON.parse(readFileSync(out, 'utf8')) : { sites: [] };
-  const annotations = new Map(
-    (prior.sites ?? []).map((s) => [`${s.script}:${s.line}`, s]),
-  );
-  const merged = {
-    ...derived,
-    sites: derived.sites.map((site) => {
-      const before = annotations.get(`${site.script}:${site.line}`);
-      if (before === undefined) return site;
-      const entry = { ...site };
-      for (const column of ['status', 'provedBy', 'reason']) {
-        if (before[column] !== undefined) entry[column] = before[column];
-      }
-      return entry;
-    }),
-  };
+  const carried = carryAnnotations(derived.sites, prior.sites ?? []);
+  const merged = { ...derived, sites: carried.sites };
 
   writeFileSync(out, serialise(merged));
   console.log(
     `${derived.sites.length} failure site(s) across ` +
       `${new Set(derived.sites.map((s) => s.script)).size} of ${derived.scanned} script(s)`,
   );
+  console.log(
+    `annotations: ${carried.carried} of ${carried.priorAnnotated} carried` +
+      (carried.carried === carried.priorAnnotated
+        ? ''
+        : `, ${carried.priorAnnotated - carried.carried} dropped (their guard text changed, or ` +
+          'their site is gone)' +
+          (carried.strays.length > 0 ? `; ambiguous: ${carried.strays.join(', ')}` : '')),
+  );
   console.log(`written to ${out}`);
 }
 
-main();
+// Guarded so the annotation carry can be imported by a test without the import
+// re-deriving the table and writing it. The guard is the same one
+// `inject-stability.mjs` carries for the same reason: a module that does its
+// work on import cannot be measured from a test, and one that cannot be measured
+// from a test is held only by whoever last read it.
+const invokedDirectly =
+  process.argv[1] !== undefined
+  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+
+if (invokedDirectly) main();

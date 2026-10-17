@@ -1,0 +1,1525 @@
+{
+  "numTotalTestSuites": 15,
+  "numPassedTestSuites": 15,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 135,
+  "numPassedTests": 135,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1792276152680,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors prints help for an empty argv and returns 0",
+          "status": "passed",
+          "title": "prints help for an empty argv and returns 0",
+          "duration": 1.1854580000001533,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors prints the version and returns 0",
+          "status": "passed",
+          "title": "prints the version and returns 0",
+          "duration": 0.3102360000000317,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors falls back to the real working directory and sinks when no options are given",
+          "status": "passed",
+          "title": "falls back to the real working directory and sinks when no options are given",
+          "duration": 0.6820060000000012,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors writes a parse error to the real stderr when no sink is injected",
+          "status": "passed",
+          "title": "writes a parse error to the real stderr when no sink is injected",
+          "duration": 0.14903800000001866,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors reports a parse error and returns 1",
+          "status": "passed",
+          "title": "reports a parse error and returns 1",
+          "duration": 0.19249500000000808,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors prints the top-level help with no topic",
+          "status": "passed",
+          "title": "prints the top-level help with no topic",
+          "duration": 0.2744509999999991,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors prints a single command reference when a topic is given",
+          "status": "passed",
+          "title": "prints a single command reference when a topic is given",
+          "duration": 0.3366869999999835,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors accepts -h as the short form for a command reference",
+          "status": "passed",
+          "title": "accepts -h as the short form for a command reference",
+          "duration": 0.16738699999996243,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors accepts the help subcommand with a topic",
+          "status": "passed",
+          "title": "accepts the help subcommand with a topic",
+          "duration": 0.2643350000000737,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - help, version and errors"
+          ],
+          "fullName": "run - help, version and errors rejects help for an unknown topic rather than printing the command list",
+          "status": "passed",
+          "title": "rejects help for an unknown topic rather than printing the command list",
+          "duration": 0.19075199999997494,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source ingests a CSV into signals written to --output",
+          "status": "passed",
+          "title": "ingests a CSV into signals written to --output",
+          "duration": 5.7752590000000055,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source auto-detects the layout when no --layout is given",
+          "status": "passed",
+          "title": "auto-detects the layout when no --layout is given",
+          "duration": 1.1448360000001685,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source defaults to CSV and metric signal kind when both are omitted",
+          "status": "passed",
+          "title": "defaults to CSV and metric signal kind when both are omitted",
+          "duration": 2.962573999999904,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source passes every source option through to the ingester",
+          "status": "passed",
+          "title": "passes every source option through to the ingester",
+          "duration": 1.3449829999999565,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source handles an empty CSV with zero signals",
+          "status": "passed",
+          "title": "handles an empty CSV with zero signals",
+          "duration": 0.5828339999998207,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source uses an explicit --layout when provided",
+          "status": "passed",
+          "title": "uses an explicit --layout when provided",
+          "duration": 1.0893909999999778,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source names the rejected lines on stderr instead of dropping them silently",
+          "status": "passed",
+          "title": "names the rejected lines on stderr instead of dropping them silently",
+          "duration": 1.1257260000002134,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source stays silent when no line is rejected",
+          "status": "passed",
+          "title": "stays silent when no line is rejected",
+          "duration": 0.7773520000000644,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source reports a wholly rejected file as a total loss, not as silence",
+          "status": "passed",
+          "title": "reports a wholly rejected file as a total loss, not as silence",
+          "duration": 0.9140620000000581,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source stays silent for a genuinely empty file",
+          "status": "passed",
+          "title": "stays silent for a genuinely empty file",
+          "duration": 0.6468620000000556,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source caps the detail lines while keeping the total whole",
+          "status": "passed",
+          "title": "caps the detail lines while keeping the total whole",
+          "duration": 1.0240009999999984,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source auto-detects a JSONL layout",
+          "status": "passed",
+          "title": "auto-detects a JSONL layout",
+          "duration": 0.922465000000102,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source handles an empty JSONL with zero signals",
+          "status": "passed",
+          "title": "handles an empty JSONL with zero signals",
+          "duration": 0.5421719999999368,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source auto-detects a JSON array layout",
+          "status": "passed",
+          "title": "auto-detects a JSON array layout",
+          "duration": 0.7116019999998571,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source auto-detects a TSV layout",
+          "status": "passed",
+          "title": "auto-detects a TSV layout",
+          "duration": 0.7653139999999894,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source reports a missing input file and returns 1",
+          "status": "passed",
+          "title": "reports a missing input file and returns 1",
+          "duration": 0.3912799999998242,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - source"
+          ],
+          "fullName": "run - source rejects a non-object --layout and returns 1",
+          "status": "passed",
+          "title": "rejects a non-object --layout and returns 1",
+          "duration": 0.5360929999999371,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to OpenRCA",
+          "status": "passed",
+          "title": "exports a bundle to OpenRCA",
+          "duration": 3.3019550000001345,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to RCAEval with a default RE2 suite",
+          "status": "passed",
+          "title": "exports a bundle to RCAEval with a default RE2 suite",
+          "duration": 1.9876389999999446,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to RCA100",
+          "status": "passed",
+          "title": "exports a bundle to RCA100",
+          "duration": 2.336843999999928,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to AIOps2025",
+          "status": "passed",
+          "title": "exports a bundle to AIOps2025",
+          "duration": 1.4415420000000267,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to Cloud-OpsBench",
+          "status": "passed",
+          "title": "exports a bundle to Cloud-OpsBench",
+          "duration": 1.4723589999998694,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to OpenRCA 2.0",
+          "status": "passed",
+          "title": "exports a bundle to OpenRCA 2.0",
+          "duration": 1.2756070000000364,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export exports a bundle to ITBench",
+          "status": "passed",
+          "title": "exports a bundle to ITBench",
+          "duration": 1.1753019999998742,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export reports malformed bundle JSON and returns 1",
+          "status": "passed",
+          "title": "reports malformed bundle JSON and returns 1",
+          "duration": 0.544936000000007,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export"
+          ],
+          "fullName": "run - export reports a schema-invalid bundle and returns 1",
+          "status": "passed",
+          "title": "reports a schema-invalid bundle and returns 1",
+          "duration": 0.9950169999999616,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped writes an artefact covering only the exportable cases",
+          "status": "passed",
+          "title": "writes an artefact covering only the exportable cases",
+          "duration": 2.225002999999788,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped names the skipped case and its reason on stderr",
+          "status": "passed",
+          "title": "names the skipped case and its reason on stderr",
+          "duration": 2.1327909999999974,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped stays silent when every case exported",
+          "status": "passed",
+          "title": "stays silent when every case exported",
+          "duration": 1.8420849999999973,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped reports the total even past the detail cap",
+          "status": "passed",
+          "title": "reports the total even past the detail cap",
+          "duration": 2.3814629999999397,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped reports skips for openrca-1.0, not only for the target the tests favour",
+          "status": "passed",
+          "title": "reports skips for openrca-1.0, not only for the target the tests favour",
+          "duration": 1.8893879999998262,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped reports skips for openrca-2.0, not only for the target the tests favour",
+          "status": "passed",
+          "title": "reports skips for openrca-2.0, not only for the target the tests favour",
+          "duration": 1.0043309999998655,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped reports skips for rcaeval, not only for the target the tests favour",
+          "status": "passed",
+          "title": "reports skips for rcaeval, not only for the target the tests favour",
+          "duration": 1.2337820000000193,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped reports skips for rca100, not only for the target the tests favour",
+          "status": "passed",
+          "title": "reports skips for rca100, not only for the target the tests favour",
+          "duration": 1.5597430000000259,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped reports skips for aiops2025, not only for the target the tests favour",
+          "status": "passed",
+          "title": "reports skips for aiops2025, not only for the target the tests favour",
+          "duration": 0.961954999999989,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped is silent for cloud-opsbench, whose only skip condition the IR schema forbids",
+          "status": "passed",
+          "title": "is silent for cloud-opsbench, whose only skip condition the IR schema forbids",
+          "duration": 1.2424960000000738,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export names the cases it skipped"
+          ],
+          "fullName": "run - export names the cases it skipped is silent for itbench, whose only skip condition the IR schema forbids",
+          "status": "passed",
+          "title": "is silent for itbench, whose only skip condition the IR schema forbids",
+          "duration": 1.1319459999999708,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes states how many of the bundle\u2019s cases the score covers",
+          "status": "passed",
+          "title": "states how many of the bundle\u2019s cases the score covers",
+          "duration": 3.3483960000000934,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes names the case it did not score and the reason",
+          "status": "passed",
+          "title": "names the case it did not score and the reason",
+          "duration": 1.519170000000031,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes states the denominator even when every case was scored",
+          "status": "passed",
+          "title": "states the denominator even when every case was scored",
+          "duration": 1.4678309999999328,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes warns on stderr as well, so --output cannot hide it",
+          "status": "passed",
+          "title": "warns on stderr as well, so --output cannot hide it",
+          "duration": 1.2369269999999233,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes stays silent when nothing was skipped",
+          "status": "passed",
+          "title": "stays silent when nothing was skipped",
+          "duration": 1.152206999999862,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes puts the denominator in the file written by --output",
+          "status": "passed",
+          "title": "puts the denominator in the file written by --output",
+          "duration": 1.3609080000001086,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - report states the population its score describes"
+          ],
+          "fullName": "run - report states the population its score describes reports the total even past the detail cap",
+          "status": "passed",
+          "title": "reports the total even past the detail cap",
+          "duration": 1.746659000000136,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - official names the cases a target could not export"
+          ],
+          "fullName": "run - official names the cases a target could not export names the target, the case and the reason on stderr",
+          "status": "passed",
+          "title": "names the target, the case and the reason on stderr",
+          "duration": 13.104171000000179,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - official names the cases a target could not export"
+          ],
+          "fullName": "run - official names the cases a target could not export names only the targets that lost a case",
+          "status": "passed",
+          "title": "names only the targets that lost a case",
+          "duration": 5.109937999999829,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - official names the cases a target could not export"
+          ],
+          "fullName": "run - official names the cases a target could not export still passes the run, because a stated loss is not a failure",
+          "status": "passed",
+          "title": "still passes the run, because a stated loss is not a failure",
+          "duration": 3.3062509999999747,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - score"
+          ],
+          "fullName": "run - score scores a valid OpenRCA export as passing and returns 0",
+          "status": "passed",
+          "title": "scores a valid OpenRCA export as passing and returns 0",
+          "duration": 2.9480020000000877,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - score"
+          ],
+          "fullName": "run - score returns 1 for a failing export",
+          "status": "passed",
+          "title": "returns 1 for a failing export",
+          "duration": 0.4251520000000255,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - score"
+          ],
+          "fullName": "run - score scores with anchors",
+          "status": "passed",
+          "title": "scores with anchors",
+          "duration": 3.0397629999999936,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - score"
+          ],
+          "fullName": "run - score rejects a non-object --anchors and returns 1",
+          "status": "passed",
+          "title": "rejects a non-object --anchors and returns 1",
+          "duration": 0.3391999999998916,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - score"
+          ],
+          "fullName": "run - score rejects an empty --anchors object rather than scoring structure only",
+          "status": "passed",
+          "title": "rejects an empty --anchors object rather than scoring structure only",
+          "duration": 1.5139819999999418,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - score"
+          ],
+          "fullName": "run - score still scores structure only when --anchors is omitted",
+          "status": "passed",
+          "title": "still scores structure only when --anchors is omitted",
+          "duration": 2.452752000000146,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform applies transform rules and reports the result counts",
+          "status": "passed",
+          "title": "applies transform rules and reports the result counts",
+          "duration": 1.4158319999999094,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform quarantines a record with an unmapped value",
+          "status": "passed",
+          "title": "quarantines a record with an unmapped value",
+          "duration": 0.7600959999999759,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform writes to --output and honours --id-field",
+          "status": "passed",
+          "title": "writes to --output and honours --id-field",
+          "duration": 0.7901719999999841,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform rejects a non-array --input and returns 1",
+          "status": "passed",
+          "title": "rejects a non-array --input and returns 1",
+          "duration": 0.5815119999999752,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform rejects a non-array --rules and returns 1",
+          "status": "passed",
+          "title": "rejects a non-array --rules and returns 1",
+          "duration": 0.6228750000000218,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform names the rejected rows on stderr instead of dropping them silently",
+          "status": "passed",
+          "title": "names the rejected rows on stderr instead of dropping them silently",
+          "duration": 0.8834349999999631,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform stays silent when no row is rejected",
+          "status": "passed",
+          "title": "stays silent when no row is rejected",
+          "duration": 0.7189319999999952,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform warns when --id-field identifies no record",
+          "status": "passed",
+          "title": "warns when --id-field identifies no record",
+          "duration": 0.7409369999998034,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform warns when --id-field identifies only some records",
+          "status": "passed",
+          "title": "warns when --id-field identifies only some records",
+          "duration": 0.8384059999998499,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform stays silent about ids when --id-field was not requested",
+          "status": "passed",
+          "title": "stays silent about ids when --id-field was not requested",
+          "duration": 0.7227990000001228,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform warns when two records share an id",
+          "status": "passed",
+          "title": "warns when two records share an id",
+          "duration": 1.7202589999999418,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform names every duplicated id only once",
+          "status": "passed",
+          "title": "names every duplicated id only once",
+          "duration": 1.3695009999999002,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform counts quarantined rows in the same run in which it reports them",
+          "status": "passed",
+          "title": "counts quarantined rows in the same run in which it reports them",
+          "duration": 0.8815030000000661,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - transform"
+          ],
+          "fullName": "run - transform truncates the detail lines but never the total",
+          "status": "passed",
+          "title": "truncates the detail lines but never the total",
+          "duration": 1.0771319999998923,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate runs all five gates and reports the injected gate-run-id",
+          "status": "passed",
+          "title": "runs all five gates and reports the injected gate-run-id",
+          "duration": 1.3847650000000158,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate derives G1 required signals from the rca100 target",
+          "status": "passed",
+          "title": "derives G1 required signals from the rca100 target",
+          "duration": 0.8393080000000737,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate enforces the query requirement for the openrca-1.0 target",
+          "status": "passed",
+          "title": "enforces the query requirement for the openrca-1.0 target",
+          "duration": 0.8576359999999568,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate generates a timestamped gate-run-id when none is given",
+          "status": "passed",
+          "title": "generates a timestamped gate-run-id when none is given",
+          "duration": 0.8347610000000714,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate reports a schema-invalid bundle and returns 1",
+          "status": "passed",
+          "title": "reports a schema-invalid bundle and returns 1",
+          "duration": 0.799205000000029,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate gives the same G1 verdict as the report page, for every target",
+          "status": "passed",
+          "title": "gives the same G1 verdict as the report page, for every target",
+          "duration": 7.20889800000009,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate quarantines a log-less bundle for the target that needs logs",
+          "status": "passed",
+          "title": "quarantines a log-less bundle for the target that needs logs",
+          "duration": 0.7949799999998959,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities rcaeval-re1 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities rcaeval-re1 needs",
+          "duration": 0.7129629999999452,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities openrca-1.0 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities openrca-1.0 needs",
+          "duration": 0.6399510000001101,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities openrca-2.0 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities openrca-2.0 needs",
+          "duration": 0.5787769999999455,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities rcaeval-re2 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities rcaeval-re2 needs",
+          "duration": 0.5346099999999296,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities rcaeval-re3 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities rcaeval-re3 needs",
+          "duration": 0.5859089999999014,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities cloud-opsbench needs",
+          "status": "passed",
+          "title": "demands exactly the modalities cloud-opsbench needs",
+          "duration": 0.5214300000000094,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities itbench needs",
+          "status": "passed",
+          "title": "demands exactly the modalities itbench needs",
+          "duration": 0.6267920000000231,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities aiops2025 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities aiops2025 needs",
+          "duration": 0.5342490000000453,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate demands exactly the modalities rca100 needs",
+          "status": "passed",
+          "title": "demands exactly the modalities rca100 needs",
+          "duration": 0.622485000000097,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - gate"
+          ],
+          "fullName": "run - gate requires a query for openrca-1.0 and for nothing else",
+          "status": "passed",
+          "title": "requires a query for openrca-1.0 and for nothing else",
+          "duration": 2.2707530000000133,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - case"
+          ],
+          "fullName": "run - case assembles a draft into a bundle with a normalised fault",
+          "status": "passed",
+          "title": "assembles a draft into a bundle with a normalised fault",
+          "duration": 1.4672209999998813,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - case"
+          ],
+          "fullName": "run - case writes the bundle to --output",
+          "status": "passed",
+          "title": "writes the bundle to --output",
+          "duration": 0.7635610000002089,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - case"
+          ],
+          "fullName": "run - case rejects an invalid draft and returns 1",
+          "status": "passed",
+          "title": "rejects an invalid draft and returns 1",
+          "duration": 0.49568999999996777,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - case"
+          ],
+          "fullName": "run - case reports malformed draft JSON and returns 1",
+          "status": "passed",
+          "title": "reports malformed draft JSON and returns 1",
+          "duration": 0.5114049999999679,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve proposes a pending proposal from a draft",
+          "status": "passed",
+          "title": "proposes a pending proposal from a draft",
+          "duration": 0.8711160000000291,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve writes the proposed proposal to --output",
+          "status": "passed",
+          "title": "writes the proposed proposal to --output",
+          "duration": 0.5961849999998776,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve approves a pending proposal to stdout",
+          "status": "passed",
+          "title": "approves a pending proposal to stdout",
+          "duration": 0.6807350000001406,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve approves a proposal and writes it to --output",
+          "status": "passed",
+          "title": "approves a proposal and writes it to --output",
+          "duration": 0.5977069999999003,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve rejects a proposal to stdout",
+          "status": "passed",
+          "title": "rejects a proposal to stdout",
+          "duration": 0.563803999999891,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve rejects a proposal and writes it to --output",
+          "status": "passed",
+          "title": "rejects a proposal and writes it to --output",
+          "duration": 0.5820830000000115,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve computes stale cases for a failed proposal",
+          "status": "passed",
+          "title": "computes stale cases for a failed proposal",
+          "duration": 0.6152440000000752,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve computes no stale cases for an approved passing proposal",
+          "status": "passed",
+          "title": "computes no stale cases for an approved passing proposal",
+          "duration": 0.5072179999999662,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve reports a parse error and returns 1 for a malformed draft",
+          "status": "passed",
+          "title": "reports a parse error and returns 1 for a malformed draft",
+          "duration": 0.4135940000001028,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve returns 1 for a non-array --cases value",
+          "status": "passed",
+          "title": "returns 1 for a non-array --cases value",
+          "duration": 0.3790710000000672,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve refuses to reverse an approved proposal",
+          "status": "passed",
+          "title": "refuses to reverse an approved proposal",
+          "duration": 1.452387999999928,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve refuses to approve a rejected proposal",
+          "status": "passed",
+          "title": "refuses to approve a rejected proposal",
+          "duration": 0.9428559999998924,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve refuses a second approval rather than erasing the first note",
+          "status": "passed",
+          "title": "refuses a second approval rather than erasing the first note",
+          "duration": 0.7611979999999221,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "evolve"
+          ],
+          "fullName": "evolve still decides a pending proposal in both directions",
+          "status": "passed",
+          "title": "still decides a pending proposal in both directions",
+          "duration": 0.9505079999998998,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "official"
+          ],
+          "fullName": "official runs the oracle and mutation grid against an exported directory",
+          "status": "passed",
+          "title": "runs the oracle and mutation grid against an exported directory",
+          "duration": 2.4389910000002146,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "official"
+          ],
+          "fullName": "official returns 1 when the exported directory yields no cases",
+          "status": "passed",
+          "title": "returns 1 when the exported directory yields no cases",
+          "duration": 0.41221199999995406,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "official"
+          ],
+          "fullName": "official skips an empty export only when the reason is stated",
+          "status": "passed",
+          "title": "skips an empty export only when the reason is stated",
+          "duration": 0.47529899999994996,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "official"
+          ],
+          "fullName": "official runs all nine targets from a bundle and passes",
+          "status": "passed",
+          "title": "runs all nine targets from a bundle and passes",
+          "duration": 4.750596999999971,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "official"
+          ],
+          "fullName": "official fails the bundle run when RE3 has no code-level case to export",
+          "status": "passed",
+          "title": "fails the bundle run when RE3 has no code-level case to export",
+          "duration": 2.2194950000000517,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "official"
+          ],
+          "fullName": "official writes the regression report to --output",
+          "status": "passed",
+          "title": "writes the regression report to --output",
+          "duration": 2.9539009999998598,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders an HTML report to stdout",
+          "status": "passed",
+          "title": "renders an HTML report to stdout",
+          "duration": 1.001064999999926,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target openrca-2.0",
+          "status": "passed",
+          "title": "renders a report for target openrca-2.0",
+          "duration": 0.828371000000061,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target rcaeval-re1",
+          "status": "passed",
+          "title": "renders a report for target rcaeval-re1",
+          "duration": 0.7033089999999902,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target rcaeval-re2",
+          "status": "passed",
+          "title": "renders a report for target rcaeval-re2",
+          "duration": 0.6366160000000036,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target rcaeval-re3",
+          "status": "passed",
+          "title": "renders a report for target rcaeval-re3",
+          "duration": 0.6927230000001146,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target rca100",
+          "status": "passed",
+          "title": "renders a report for target rca100",
+          "duration": 0.8446659999999611,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target aiops2025",
+          "status": "passed",
+          "title": "renders a report for target aiops2025",
+          "duration": 0.7005350000001727,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target cloud-opsbench",
+          "status": "passed",
+          "title": "renders a report for target cloud-opsbench",
+          "duration": 0.6414030000000821,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report renders a report for target itbench",
+          "status": "passed",
+          "title": "renders a report for target itbench",
+          "duration": 0.784253999999919,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report writes the report to --output with a title and target",
+          "status": "passed",
+          "title": "writes the report to --output with a title and target",
+          "duration": 0.8842660000000251,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report reports a schema-invalid bundle and returns 1",
+          "status": "passed",
+          "title": "reports a schema-invalid bundle and returns 1",
+          "duration": 0.6960879999999179,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report does not present a passing score as a green verdict when the gates held the dataset back",
+          "status": "passed",
+          "title": "does not present a passing score as a green verdict when the gates held the dataset back",
+          "duration": 1.3735670000000937,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "report"
+          ],
+          "fullName": "report reports the same score and gate verdict the CLI computes for both",
+          "status": "passed",
+          "title": "reports the same score and gate verdict the CLI computes for both",
+          "duration": 1.0262240000001839,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export refuses a self-contradictory bundle"
+          ],
+          "fullName": "run - export refuses a self-contradictory bundle exits 1 and names the missing entity",
+          "status": "passed",
+          "title": "exits 1 and names the missing entity",
+          "duration": 0.710309000000052,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export refuses a self-contradictory bundle"
+          ],
+          "fullName": "run - export refuses a self-contradictory bundle writes no artefacts at all",
+          "status": "passed",
+          "title": "writes no artefacts at all",
+          "duration": 0.7672769999999218,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export refuses a self-contradictory bundle"
+          ],
+          "fullName": "run - export refuses a self-contradictory bundle points the operator at the command that lists every violation",
+          "status": "passed",
+          "title": "points the operator at the command that lists every violation",
+          "duration": 0.5906260000001566,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "run - export refuses a self-contradictory bundle"
+          ],
+          "fullName": "run - export refuses a self-contradictory bundle still exports a consistent bundle",
+          "status": "passed",
+          "title": "still exports a consistent bundle",
+          "duration": 1.8781410000001415,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1792276153821,
+      "endTime": 1792276153998.8782,
+      "status": "passed",
+      "message": "",
+      "name": "packages/cli/test/run.test.ts"
+    }
+  ]
+}

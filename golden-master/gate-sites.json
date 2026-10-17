@@ -309,7 +309,7 @@
     },
     {
       "script": "scripts/measure-doc-counts.mjs",
-      "line": 66,
+      "line": 97,
       "diagnostic": "measure-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/probe-built-module-guards.test.ts"

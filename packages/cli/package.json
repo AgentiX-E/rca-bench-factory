@@ -20,7 +20,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage --reporter=default --reporter=json --outputFile.json=node_modules/.cache/vitest-report.json"
   },
   "dependencies": {
     "@rca-bench-factory/core": "workspace:*"

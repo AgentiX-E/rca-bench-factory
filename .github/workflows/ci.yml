@@ -95,6 +95,27 @@ jobs:
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
         run: pnpm test:coverage
 
+      # The published counts, against the run that just happened.
+      #
+      # `docs/progress.md` publishes how many files and tests the suite has, and
+      # `golden-master/doc-counts.json` is the measurement those rows are checked
+      # against -- but until pass 57 nothing in the pipeline compared the snapshot
+      # to the suite. `docs:check` compares the *document* to the snapshot, so the
+      # pair could be wrong together and every gate would report agreement.
+      #
+      # Pass 54 tried the obvious wiring, a second `docs:counts:check` step in this
+      # job, and the runner refused it: `[vitest-worker]: Timeout calling
+      # "onTaskUpdate"` with every test green, because that check spawns three more
+      # suites and the coverage step above had already run them. The measurement
+      # was never the problem; the job was missing a way to *reuse* it.
+      #
+      # `test:coverage` now writes vitest's JSON report beside its coverage output,
+      # and `--from` derives the same three scopes from those reports in ~0.1 s.
+      # Measured: 80.09 s for the spawn path against 0.12 s for this one, on the
+      # same trees and the same numbers.
+      - name: Published suite counts, read from that run rather than taken again
+        run: node scripts/measure-doc-counts.mjs --check --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
+
       - name: Mutation suite (gate + export, 100% interception)
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 

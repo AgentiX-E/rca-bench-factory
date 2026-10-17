@@ -1,0 +1,260 @@
+{
+  "numTotalTestSuites": 4,
+  "numPassedTestSuites": 4,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 20,
+  "numPassedTests": 20,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1792276158037,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp parses ISO-8601 with an explicit Z offset",
+          "status": "passed",
+          "title": "parses ISO-8601 with an explicit Z offset",
+          "duration": 1.3437610000000006,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp shifts a +08:00 wall clock into UTC",
+          "status": "passed",
+          "title": "shifts a +08:00 wall clock into UTC",
+          "duration": 0.29423199999999383,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp accepts the compact +0800 offset form",
+          "status": "passed",
+          "title": "accepts the compact +0800 offset form",
+          "duration": 0.12436099999999328,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp refuses to guess an offset when none is present",
+          "status": "passed",
+          "title": "refuses to guess an offset when none is present",
+          "duration": 0.2020300000000077,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp applies assumeOffsetMinutes when the value carries no offset",
+          "status": "passed",
+          "title": "applies assumeOffsetMinutes when the value carries no offset",
+          "duration": 0.13451700000001665,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp parses unix seconds, milliseconds, microseconds and nanoseconds",
+          "status": "passed",
+          "title": "parses unix seconds, milliseconds, microseconds and nanoseconds",
+          "duration": 0.2751619999999946,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp parses the java_log layout with millisecond precision",
+          "status": "passed",
+          "title": "parses the java_log layout with millisecond precision",
+          "duration": 0.1214559999999949,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp pads short java_log milliseconds correctly (,12 means 120ms)",
+          "status": "passed",
+          "title": "pads short java_log milliseconds correctly (,12 means 120ms)",
+          "duration": 0.08166599999998425,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp shifts a negative offset east, the opposite way to a positive one",
+          "status": "passed",
+          "title": "shifts a negative offset east, the opposite way to a positive one",
+          "duration": 0.1874080000000049,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp rejects an empty value",
+          "status": "passed",
+          "title": "rejects an empty value",
+          "duration": 0.13538800000000606,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp rejects a non-integer epoch",
+          "status": "passed",
+          "title": "rejects a non-integer epoch",
+          "duration": 0.05993200000000343,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp rejects a value that does not match the declared layout",
+          "status": "passed",
+          "title": "rejects a value that does not match the declared layout",
+          "duration": 0.06710300000000302,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp handles a negative epoch (pre-1970)",
+          "status": "passed",
+          "title": "handles a negative epoch (pre-1970)",
+          "duration": 0.04113399999999956,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "parseTimestamp"
+          ],
+          "fullName": "parseTimestamp parses rfc3339 identically to iso8601",
+          "status": "passed",
+          "title": "parses rfc3339 identically to iso8601",
+          "duration": 0.1006840000000011,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "ISO helpers"
+          ],
+          "fullName": "ISO helpers round-trips epoch milliseconds",
+          "status": "passed",
+          "title": "round-trips epoch milliseconds",
+          "duration": 0.15979500000000257,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "ISO helpers"
+          ],
+          "fullName": "ISO helpers rejects a non-canonical ISO string",
+          "status": "passed",
+          "title": "rejects a non-canonical ISO string",
+          "duration": 0.06614200000001347,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "ISO helpers"
+          ],
+          "fullName": "ISO helpers shifts UTC into the UTC+8 form used by OpenRCA",
+          "status": "passed",
+          "title": "shifts UTC into the UTC+8 form used by OpenRCA",
+          "duration": 0.07588599999999701,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "ISO helpers"
+          ],
+          "fullName": "ISO helpers formats a negative offset with a minus sign",
+          "status": "passed",
+          "title": "formats a negative offset with a minus sign",
+          "duration": 0.03756700000002411,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "isWithinWindow"
+          ],
+          "fullName": "isWithinWindow is inclusive on both bounds",
+          "status": "passed",
+          "title": "is inclusive on both bounds",
+          "duration": 0.06597100000001888,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "isWithinWindow"
+          ],
+          "fullName": "isWithinWindow excludes values outside the window",
+          "status": "passed",
+          "title": "excludes values outside the window",
+          "duration": 0.04886399999998048,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1792276158257,
+      "endTime": 1792276158261.16,
+      "status": "passed",
+      "message": "",
+      "name": "packages/core/test/time.test.ts"
+    }
+  ]
+}

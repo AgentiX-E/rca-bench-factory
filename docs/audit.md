@@ -18412,3 +18412,146 @@ defect as a proof whose test was deleted.
 | the three JavaScript batteries | `4`, `8`, `8` caught; 0 survived, 0 inert, restores identical |
 | CI | attempt 1 red in step 10: 21 files, 361 tests, all a module namespace missing its own exports; **rerun of the same commit green in 154 s**. Recorded under Pass 56's `### Open` rather than called a flake, because the shape is not noise and no cycle explains it |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 180 — a fact stored by coordinate goes stale, and nothing is watching it
+
+### Two copies of one number, and the gate between them
+
+`docs/progress.md` publishes how many test files and tests the suite has.
+`golden-master/doc-counts.json` is the measurement those rows are checked
+against. `docs:check` holds the **document to the snapshot**.
+
+Nothing held the **snapshot to the suite**. The pair could be wrong together,
+agree with each other, and every gate would report agreement -- finding 159's
+shape, in the one place where the number is about the repository rather than
+about a claim in it.
+
+Pass 54 tried the obvious wiring and the runner refused it:
+
+> a second full suite run in the same job trips `onTaskUpdate` with every test
+> green
+
+That sentence explains the cost and hides the obstacle. **The reading already
+existed**: the coverage step runs the whole suite on every push, and
+`--reporter=json` writes a file with one entry per test file and one per
+assertion. Nobody had asked vitest for it.
+
+### 180a -- reading the run instead of taking another one
+
+`test:coverage` now writes `node_modules/.cache/vitest-report.json` beside its
+coverage output, and `measure-doc-counts.mjs --from` derives the same three
+scopes from those reports.
+
+| path | cost | result |
+| --- | --- | --- |
+| `pnpm docs:counts` -- spawns three suites | **77.35 s** | 147 / 3818 · 4 / 186 · 151 / 4004 |
+| `--check --from <the two reports>` | **0.056 s** | identical |
+
+The comparison that could not be afforded now costs nothing, and CI gained a
+step rather than a job.
+
+**The new reading had to be shown to be the same reading.** Counting files and
+assertions out of a report is a second definition of "a passing test", and this
+repository has twice shipped two green numbers that disagreed. So:
+
+- `vitest-report-{core,cli}-sample.json` are **real captures**, not hand-written
+  JSON; the summary lines their runs printed are recorded in the test beside
+  them, and both readers are asserted to produce the same numbers from the same
+  run;
+- the rules are driven by *editing the capture* -- mark one assertion `skipped`,
+  mark the file `failed` -- so the tests are about the rule rather than about a
+  shape invented for them;
+- the mutation check counts every assertion instead of the passing ones, counts a
+  failed file as a pass, and each mutation is caught by the case that names it.
+
+### What `--from` asserts that the spawn could not
+
+`pnpm test` runs whatever the root script filters to, and that filter is a
+hand-written second copy of the workspace list:
+
+```json
+"test": "pnpm --filter @rca-bench-factory/core test && pnpm --filter @rca-bench-factory/cli test"
+```
+
+A third package added to `packages/` would be run by neither line, and the `repo`
+count would be quietly short -- with every gate green, because every gate
+compares documents. `--from` reads `pnpm-workspace.yaml` and requires **every
+package that declares a `test` script to contribute a test file**, and **every
+test file in a report to belong to one**. Both failures are named:
+
+```
+these workspace packages declare a `test` script and contributed no test file:
+  @rca-bench-factory/cli (packages/cli)
+```
+
+### 180b -- an annotation carried by coordinate
+
+The first full run of these tests failed, and the failure was not in the new
+code: adding a docstring to `measure-doc-counts.mjs` moved its failure site from
+line 66 to 97, and re-deriving `golden-master/gate-sites.json` dropped that
+site's `proved` status.
+
+`derive-gate-sites.mjs` carried the three hand-authored columns across a rewrite
+**by `script:line`**, with a sentence that reads as a considered trade:
+
+> Annotations are matched by `script:line` and dropped for a site that no longer
+> exists, so a moved guard loses a stale proof rather than inheriting a wrong one.
+
+The second half is right and the first half is not what happens. **Every edit
+above a site moves its line.** The proof is dropped for a guard that did not
+change at all, and the guard then fails on `main` with
+
+```
+scripts/measure-doc-counts.mjs:97 has status 'undefined'
+```
+
+-- a red that names a coordinate instead of a defect, and reads like a missing
+proof where there is a moved one. Measured twice: three sites in pass 56 and one
+here, each time costing a hand-written annotation.
+
+The file already computed the identifier that is stable under exactly that edit.
+Its header calls the fingerprint *"stable under reindentation and reformatting"*,
+and `--check` compares fingerprints. **Carrying by line while checking by
+fingerprint was two answers to one question, and the coordinate answer was
+wrong.**
+
+### The carry, and the two rules it needed
+
+```js
+const fingerprint = (site) => [site.script, site.condition ?? '', site.diagnostic ?? ''].join('\u0000');
+```
+
+- **A proof is consumed when it is used.** Two `process.exit(1)` calls with no
+  diagnostic above them have the same fingerprint. Without consuming the
+  candidate, one proof would be attached to both, and one of them would be a
+  proof about a line it is not.
+- **An ambiguous fingerprint is refused, not guessed.** When several candidates
+  match, the line is the only evidence left, so an unmoved one is preferred; if
+  none is at that line the annotation is dropped and the site is printed
+  (`ambiguous: ...`). A wrong proof is worse than a missing one, which is what the
+  old sentence was trying to say one implementation too early.
+
+Re-deriving the real tree now reports **`annotations: 63 of 63 carried`**, and
+the site that moved keeps its `proved`.
+
+The end-to-end case runs the deriver over a **copy** of the table whose prior
+lines have all been shifted by 1000 -- an edit above every site at once -- and
+requires all 63 proofs to survive. Without that shift the copy and the tree agree
+on every coordinate and the case would pass against the line-keyed carry it
+exists to reject.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| mechanism tests | **15**: 8 on the two readings, 7 on the carry |
+| mutation checks | **7 of 7 CAUGHT**, each by the case named in its row |
+| the carry, end to end | 63 of 63 survive a whole-table shift; the line-keyed version carries **0** |
+| the two readings | identical on the real tree and on the captured pair |
+| `core` test suite | **147 files, 3818 tests passed** |
+| `cli` test suite | **4 files, 186 tests passed** |
+| repo test suite | **151 files, 4004 tests passed** |
+| coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | **63 across 38 scripts**; 63 of 63 annotations carried |
+| CI | the new step runs in **0.056 s**; no second suite |
+| `typecheck` / `lint` / `docs:check` | green |
