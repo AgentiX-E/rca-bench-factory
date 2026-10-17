@@ -74,6 +74,36 @@ function runsAggregate(workflow: string): boolean {
   return /^\s*run:\s*pnpm docs:check\s*$/m.test(workflow);
 }
 
+describe('ci · the counts snapshot is compared to the suite, not only to the documents', () => {
+  const workflow = read(`.github/workflows/${WORKFLOW}`);
+  const pkg = JSON.parse(read(PKG)) as { scripts: Record<string, string> };
+
+  it('runs the measurement that verifies the snapshot, because the aggregate cannot', () => {
+    // `docs:check` runs `check-doc-counts.mjs`, which compares the **documents** to
+    // `golden-master/doc-counts.json`. Nothing in the aggregate compares that file to the
+    // **suite**, so a snapshot that drifts in both places at once -- somebody adds tests and
+    // forgets the number -- leaves every document and every guard internally consistent and
+    // wrong. Measured, that is not hypothetical: pass 52 found the snapshot at 139/3686 while
+    // the suite had 140/3747, and every gate was green.
+    //
+    // It is a step of its own rather than a member of `docs:check` because it re-runs the whole
+    // suite: 80 s locally against a job whose budget is 900 s. So the assertion is that the
+    // pipeline runs *this* script, not that the aggregate contains it.
+    expect(
+      /^\s*run:\s*pnpm docs:counts:check\s*$/m.test(workflow),
+      `${WORKFLOW} must run \`pnpm docs:counts:check\`; measure-doc-counts is the only thing ` +
+        'that compares the committed snapshot to the suite, and no other step can stand in for it',
+    ).toBe(true);
+  });
+
+  it('names the measurement the package script points at, so the step cannot run something else', () => {
+    expect(pkg.scripts['docs:counts:check']).toBe('node scripts/measure-doc-counts.mjs --check');
+    // And that script is the one that writes the snapshot, so a "check" that rewrote it would
+    // make this step a green light for any drift it was supposed to report.
+    expect(pkg.scripts['docs:counts']).toBe('node scripts/measure-doc-counts.mjs');
+  });
+});
+
 describe('ci · every aggregate doc guard reaches the pipeline', () => {
   const pkg = JSON.parse(read(PKG)) as { scripts: Record<string, string> };
   const docsCheck = pkg.scripts['docs:check'];

@@ -18053,3 +18053,75 @@ another copy of itself.
 
 > **An outside implementation is worth more than a second reading of the same document** -- and the
 > price of one here was two HTTP requests and a `sys.path` entry.
+
+## Finding 177 — the check that compared the numbers existed; the one that measured them did not run
+
+### The question nobody had asked
+
+Every pass in this document ends with a table of suite counts, and every one of those numbers comes
+from `golden-master/doc-counts.json`, which is updated **by hand**. Pass 53's closing bookkeeping
+raised the obvious question for the first time: *what fails if the update is forgotten?*
+
+The answer was nothing. Two checks exist and only one was wired in:
+
+| question | who answers it | runs in CI |
+| --- | --- | --- |
+| do the documents agree with the snapshot? | `check-doc-counts.mjs`, inside `docs:check` | **yes** |
+| does the snapshot agree with the suite? | `measure-doc-counts.mjs --check`, as `docs:counts:check` | **no** |
+
+`grep -n 'counts:check' .github/workflows/ci.yml` returned nothing at all.
+
+> **A snapshot compared only to the documents is a closed system.** Both sides can be edited
+> together, consistently, and wrong, and every gate reports agreement -- because agreement is
+> exactly what they measure.
+
+This had already happened once. Pass 52 found the snapshot reading **139 files / 3686 tests** while
+the suite had **140 / 3747**, with every gate green, and recorded the discovery as *"found by
+reading two numbers side by side"*. A defect whose detection method is *somebody notices* has not
+been fixed by writing it down; it has been fixed only when a check takes over the noticing.
+
+### Why the existing routing rule did not cover it
+
+`ci-reaches-doc-guards.test.ts` asserts that everything in `docs:check` reaches the pipeline, and
+its own header states that it does **not** claim every script in `scripts/` is in `docs:check` --
+correctly, since several are probes and generators. But that leaves the other direction unstated,
+and `measure-doc-counts.mjs` is the one script where the unstated direction was load-bearing: it is
+a gate with its own tests, its own failure site in the inventory, and no invocation.
+
+### The fix, and its price
+
+One step in the `verify` job. Measured before it was added: **80.09 s** locally with a warm build,
+against a job whose budget is 900 s and whose prior reading was 153 s. It is deliberately **not** a
+member of `docs:check`: the aggregate is what every local iteration pays for, and re-running the
+suite is not what somebody wants between an edit and a red test.
+
+Two tests, in the file that already owns this rule:
+
+- the workflow must run `pnpm docs:counts:check` -- anchored to a `run:` line, because the file's
+  own header records the measurement where a comment satisfied a bare `includes` and the break
+  survived;
+- the package script must point at `measure-doc-counts.mjs **--check**`, not at the writing mode.
+  **A "check" that rewrote the snapshot would be a green light for exactly the drift it was added
+  to report**, and the two modes differ by one flag.
+
+Mutation-checked: deleting the step fails exactly one test and leaves the other eight green.
+
+### What this says about the method
+
+The repository is now good at asking *"what would fail if this were wrong"* of its code. It asked
+it of a **number** for the first time here, and the answer was: the document check would pass, the
+suite would pass, and the number would be wrong. The general form is one this document keeps
+reaching from different directions:
+
+> **A check protects the thing it reads, and nothing protects what writes it.** The document guard
+> protects the documents from the snapshot; nothing was protecting the snapshot from the suite.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `docs:counts:check` | **OK**, 80.09 s: core **143 / 3786**, cli **4 / 186**, repo **147 / 3972** |
+| the routing test file | **7 -> 9 tests** |
+| mutation | deleting the step fails **exactly one** test |
+| `core` / `cli` / repo suite | **143 / 3786** · **4 / 186** · **147 / 3972** |
+| `typecheck` / `lint` / `docs:check` | green |

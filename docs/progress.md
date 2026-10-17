@@ -5289,9 +5289,9 @@ test holds the two strings to each other.
 | `golden-master/rcaeval-evaluator.json` | **86 sets / 1506 cases**; 17 `design` + 29 `disagreed` + 40 `control`; provenance carries the commit and the sha256 of both upstream files, and a six-step reproduction recipe |
 | `rcaeval-evaluator.test.ts` | **6 tests**: the record is worth holding (counts, kinds, >1000 cases), the provenance is complete, the citation names the same repository, every pinned verdict reproduced, every `disagreed` entry still separates the two readings, and both divergences stated |
 | mutation checks, one per guard | **3 of 3 CAUGHT**: averaging the rounded rates again, a per-k denominator off by one, the citation back to the other repository |
-| `core` test suite | **143 files, 3784 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **147 files, 3970 tests passed** (as of this commit) |
+| `core` test suite | **143 files, 3784 tests passed** (as of `4369140`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `4369140`) |
+| repo test suite | **147 files, 3970 tests passed** (as of `4369140`) |
 | `typecheck` / `lint` / `derive-gate-sites --check` | green |
 
 ### Open
@@ -5316,3 +5316,77 @@ test holds the two strings to each other.
   and Kubernetes need a server the sandbox cannot currently obtain, and ClickHouse needs 253 MB
   through a channel that is timing out today; the four are unchanged, and the measurements that say
   so are in pass 52's cost table rather than in a hunch]`
+
+## Pass 54 -- the number the documents publish was measured by a script no pipeline ran
+
+This came out of pass 53's own bookkeeping. Every pass updates
+`golden-master/doc-counts.json` by hand, and the question that had never been asked is **what
+fails if that update is forgotten**.
+
+### The two halves of the check, and the one that was wired in
+
+| question | who answers it | in CI |
+| --- | --- | --- |
+| do the documents agree with the snapshot? | `check-doc-counts.mjs` (inside `docs:check`) | **yes** |
+| does the snapshot agree with the suite? | `measure-doc-counts.mjs --check` (`docs:counts:check`) | **no** |
+
+`grep -n 'counts:check' .github/workflows/ci.yml` returned nothing. So a snapshot that drifts in
+**both** places at once -- somebody adds tests and forgets the number -- leaves every document and
+every guard internally consistent and wrong, and the pipeline green.
+
+That is not hypothetical: pass 52 found the snapshot at **139 files / 3686 tests** while the suite
+had **140 / 3747**, and every gate was green. It was found by reading two numbers side by side, not
+by a check.
+
+### The cost, measured before it was paid
+
+`pnpm docs:counts:check` runs the whole suite and compares the result; **80 s locally** with a warm
+build. The `verify` job's prior reading is **153 s of its 900 s budget**, so the step fits with
+room to spare; it is a separate step rather than a member of `docs:check` because the aggregate is
+what every local run pays for, and 80 s is not what somebody wants between an edit and a red test.
+
+### The wiring is asserted, not remembered
+
+`scripts/ci-reaches-doc-guards.test.ts` asserts the subset relation *for the aggregate*: everything
+in `docs:check` reaches the pipeline. It says in its own header that it does **not** claim every
+script in `scripts/` is in `docs:check`, which is right -- several are probes and generators. But
+that leaves the other direction unstated, and this script is the one case where the unstated
+direction was the load-bearing one.
+
+So the same file gained two cases: the workflow must run `pnpm docs:counts:check`, and the package
+script must point at `measure-doc-counts.mjs --check` rather than at the writing mode -- **a "check"
+that rewrote the snapshot would be a green light for exactly the drift it was added to report.**
+
+Mutation-checked: deleting the step from `ci.yml` fails **exactly one** test and nothing else.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `docs:counts:check`, locally | **OK**, 80.09 s, core 143/3786, cli 4/186, repo 147/3972 |
+| the routing test file | **7 -> 9 tests**; removing the CI step fails exactly one |
+| `core` test suite | **143 files, 3786 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **147 files, 3972 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **A killed run leaves every battery's mutation behind, and the next run adopts it as pristine.**
+  Measured today, in this pass: the thirteen batteries were running when the session ended, the
+  process died inside `inject:fault-extraction-scoring`, and `packages/core/src/fault/extraction-scoring.ts`
+  was left with the guard deleted -- one file, seven lines, exactly the mutation. Nothing repairs it:
+  no battery writes a journal, and each takes its backup with `shutil.copy(SRC, PRISTINE)` at start,
+  so a run that begins before somebody reverts **copies the mutated file into the pristine slot** and
+  then certifies `source restored: identical to the pristine capture`, which is true and worthless.
+  This is finding 173's defect one layer out -- the audit got a journal and a precondition; the
+  batteries that mutate a dozen source files did not. `[open: the shape is known, because finding 174
+  built it for the audit -- a journal written before the mutation, a repair at the start of the next
+  run, and a refusal to start on a tree that is already mutated -- and what it needs is a shared
+  helper the twelve Python batteries call, which is a change to the battery protocol rather than to
+  any one battery]`
+- **The snapshot is still a number somebody types.** The step compares it; nothing generates it
+  during the run, because generating it means writing a tracked file from CI. `[open: the shape that
+  would close this is a job that runs the measurement, diffs the snapshot, and opens an issue or
+  fails with the exact JSON to paste -- which is a change to how the repository is maintained rather
+  than to what it checks]`
