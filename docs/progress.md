@@ -5141,9 +5141,9 @@ possible rather than an obstacle to it.
 | processes left behind, checked after every run | **none** |
 | the gate's own tests | **12**, every failure exit and both refusals proved, including a stand-in that ignores `SIGTERM` (the gate cannot stop it, and must say so rather than report a verdict) |
 | `gate-sites.json` | **63 sites across 38 of 40 scripts**; **57 proved + 6 exempt + 0 unannotated** |
-| `core` test suite | **142 files, 3778 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **146 files, 3964 tests passed** (as of this commit) |
+| `core` test suite | **142 files, 3778 tests passed** (as of `98d9a3c`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `98d9a3c`) |
+| repo test suite | **146 files, 3964 tests passed** (as of `98d9a3c`) |
 | `typecheck` / `lint` / `docs:check` | green |
 | CI | run `38987237960` on `4bb688f6d` -- **four jobs, all success**, and the two new steps ran on the runner: **15 s** to install the backend and **7 s** to read it |
 
@@ -5174,3 +5174,145 @@ earlier readings, so the pair costs a fraction of the margin that job has.
 - **The journal cannot name the audit's nested suite for the few milliseconds before it exists.**
   Unchanged from pass 51. `[open: written down rather than closed, and closing it would mean naming
   a process before it exists]`
+
+## Pass 53 -- the official metric was never checked against the official code
+
+This pass started from the roadmap rather than from its own Open list. `04-里程碑与路线图.md` has
+one unchecked item under M2:
+
+> **Golden Master 复现 RCAEval `BARO@re2-tt = [0.72, 0.99, 1, 0.83, 0.64, 0.8]`**
+
+Six numbers. Before deciding it was blocked, this pass measured what they are.
+
+### What that vector is, and the two ways it cannot be reproduced
+
+Upstream's README, in the section that shows how to reproduce it:
+
+> "in Table 6, BARO achieves **Avg@5** of 0.72, 0.99, 1, 0.83, 0.64, and 0.8 for CPU, MEM, DISK,
+> SOCKET, DELAY, LOSS, and AVERAGE on the Train Ticket dataset"
+
+**Six numbers against seven labels.** The expected-output block immediately below is the artefact
+rather than the prose, and it says:
+
+| fault | Avg@5 |
+| --- | --- |
+| CPU | 0.72 |
+| MEM | 0.99 |
+| DISK | 1.0 |
+| SOCKET | 0.83 |
+| DELAY | **0.63** |
+| LOSS | 0.64 |
+
+No AVERAGE row, and DELAY is 0.63 rather than the 0.64 a reader gets by pairing the prose's list
+in order. So the vector in the roadmap dropped DELAY entirely and took the mean (0.8) for LOSS --
+**it is a transcription of upstream's prose, not of upstream's output**, and upstream's prose is
+wrong about its own table.
+
+The second way is more fundamental: `Avg@5` is a **solver's** accuracy. BARO is a method that
+ranks candidate root causes; reproducing its number means running BARO. This product builds
+corpora, exports them and scores submissions -- it does not solve RCA. The exit condition asks the
+benchmark factory to be a contestant.
+
+> **An exit condition that names a number the product cannot produce is not an unfinished item.**
+> It is an item that will sit unchecked forever, and read as a backlog for exactly that long.
+
+### What the product can hold instead
+
+The property that *is* ours: **our scorer computes the same number as upstream's scorer, given the
+same input.** That had never been checked. `officialMetric('rcaeval-re2')` carries the rule as a
+prose quote and a `source` string, and the implementation below it was a transcription -- by the
+same author, from the same reading, with nothing to disagree with.
+
+So this pass ran **upstream's own `Evaluator`**. Its files were read at a commit
+(`259ea4167160256a74ad30004aa3d96a998c846e`) and pinned by sha256; `RCAEval/utility.py` is the one
+file supplied by the harness, because `evaluation.py` imports `dump_json`/`load_json` and never
+calls them while the real utility package pulls pandas, sklearn, requests and tqdm. Every number in
+the new record is upstream's.
+
+**317 case sets, 6162 cases, and 29 of them disagreed** -- all of them on `avg5`, all by exactly
+**0.01**, in both directions:
+
+| set | ours | upstream | averaging the rounded rates gives |
+| --- | --- | --- | --- |
+| `random-40-n29` | 0.49 | **0.48** | 0.49 |
+| `random-54-n7` | 0.48 | **0.49** | 0.48 |
+| `random-105-n3` | 0.26 | **0.27** | 0.26 |
+| `random-137-n16` | 0.42 | **0.41** | 0.42 |
+
+The five `AC@k` values agreed in **all 317 sets**. The defect was in one line: `avg5` was the mean
+of the per-k rates **after** each had been rounded to two decimals, while upstream averages the
+exact rates and rounds once. The repository already knew this rule -- finding 156 records that *"a
+mean written beside a distribution rather than computed from it is a second number that can
+drift"*, and `check-roundtrip-record.mjs` asserts exactly that of the score block -- and this was
+the one place it was broken.
+
+**Why no existing gate could have found it.** The only RCAEval corpus this project has ever scored
+is an oracle export: 375 cases, every one perfect, so every rate is exactly 1 and the two averages
+are equal by construction. The bug was invisible on every input that has ever run, and its first
+symptom would have been a user's partial-rerank submission being reported one point off.
+
+### The record, and why each entry says what it is for
+
+`golden-master/rcaeval-evaluator.json` holds **86 sets**: the 17 designed ones, the 29 that
+disagreed, and 40 controls that agreed. Each carries `kind`, and the test asserts that every
+`disagreed` entry still separates "average the rounded rates" from "round the average". Without
+that assertion the whole file could be satisfied by a set of perfect cases -- which is precisely
+the situation that let the bug live.
+
+The record also states the two divergences it does **not** reproduce: an empty corpus scores 0 here
+and prints nothing upstream (a deliberate convention, tested in `official-no-denominator.test.ts`),
+and a case whose service did not parse counts as a miss here and can be a hit upstream (reachable
+only through an export the structural gate rejects).
+
+### The citation was to a repository with no `main`
+
+`officialMetric('rcaeval-re2').source` read `cruiseresearchgroup/RCAEval`. Measured:
+
+| | `cruiseresearchgroup/RCAEval` | `phamquiluan/RCAEval` |
+| --- | --- | --- |
+| default branch | `v2` | `main` |
+| last push | 2026-02-17 | 2026-09-29 |
+| stars | 0 | 242 |
+| `evaluation.py` | 2,077 bytes | 8,463 bytes |
+
+Both copies compute the same `accuracy(k)` and `average(k)` -- read side by side to be sure -- so no
+number was ever wrong. But the corpus registry, the README whose numbers this metric claims to
+reproduce, and the branch that is still moving all point at the other repository, and nothing
+compared the two accounts. The citation now names the repository the record was taken from, and a
+test holds the two strings to each other.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the differential search | **317 sets / 6162 cases** against upstream's `Evaluator`; **5 of 5 AC@k agreed everywhere**, **29 sets differed on `avg5` by 0.01** before the fix, **0 after** |
+| `golden-master/rcaeval-evaluator.json` | **86 sets / 1506 cases**; 17 `design` + 29 `disagreed` + 40 `control`; provenance carries the commit and the sha256 of both upstream files, and a six-step reproduction recipe |
+| `rcaeval-evaluator.test.ts` | **6 tests**: the record is worth holding (counts, kinds, >1000 cases), the provenance is complete, the citation names the same repository, every pinned verdict reproduced, every `disagreed` entry still separates the two readings, and both divergences stated |
+| mutation checks, one per guard | **3 of 3 CAUGHT**: averaging the rounded rates again, a per-k denominator off by one, the citation back to the other repository |
+| `core` test suite | **143 files, 3784 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **147 files, 3970 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `derive-gate-sites --check` | green |
+
+### Open
+
+- **The other eight targets are still transcriptions.** OpenRCA 1.0/2.0, RCA100, AIOps2025,
+  Cloud-OpsBench and ITBench each carry a prose rule and a `source` string, and only RCAEval is now
+  held to code somebody else wrote. `[open: two of those six quote a paper rather than a released
+  evaluator, so there may be nothing to run -- which is a different and equally worth-writing
+  answer, and it has not been established which targets have a runnable oracle]`
+- **The record cannot be regenerated inside CI.** It needs upstream's source, which is fetched by
+  hand and pinned by digest; the recipe is in the record, but nothing runs it. `[open: a job that
+  re-fetches the two files and re-runs the generator would turn the pin into a drift detector, at
+  the cost of a network dependency in a gate -- and the value depends on how often upstream's
+  evaluator changes, which is a number nobody has measured]`
+- ~~**The roadmap's M2 exit condition asked for a contestant's score.**~~ **Closed by finding
+  176**: corrected in `04-里程碑与路线图.md` and in the acceptance table of
+  `03-验收计划与验收标准.md`, and the vector it quoted is recorded as unproducible rather than
+  pending -- it drops DELAY and reads upstream's average as LOSS.
+- **Five readers are still certified by a fixture written by the same author.** The one time an
+  outside implementation was consulted -- upstream's evaluator, this pass -- it found a defect that
+  seven passes of self-consistency had not, which is the argument. `[open: Jaeger, Loki, Elasticsearch
+  and Kubernetes need a server the sandbox cannot currently obtain, and ClickHouse needs 253 MB
+  through a channel that is timing out today; the four are unchanged, and the measurements that say
+  so are in pass 52's cost table rather than in a hunch]`

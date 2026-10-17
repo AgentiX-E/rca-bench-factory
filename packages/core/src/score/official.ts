@@ -159,7 +159,12 @@ function rcaevalMetric(suite: RcaEvalSuite): OfficialMetricSpec {
     name: `RCAEval ${suite} AC@k / Avg@5`,
     formula: 'AC@k = share of cases whose ground-truth service is in ranks[:k]; Avg@5 = mean(AC@1..AC@5)',
     provenance: 'official',
-    source: 'cruiseresearchgroup/RCAEval RCAEval/benchmark/evaluation.py',
+    // The corpus registry and the project's own README both point at `phamquiluan/RCAEval`;
+    // this string named `cruiseresearchgroup/RCAEval`, a repository whose default branch is
+    // `v2`, whose last push was 2026-02-17, and which has no `main` -- a citation nobody
+    // followed, against an oracle that now exists at `golden-master/rcaeval-evaluator.json`.
+    // Both copies of the evaluator compute the same arithmetic, so no number was ever wrong.
+    source: 'phamquiluan/RCAEval RCAEval/benchmark/evaluation.py (pinned in golden-master/rcaeval-evaluator.json)',
     quote: 'AC@k is the average of accuracy@k among cases ... Avg@k = sum_{j=1}^{k} AC@j / k',
     facets: ['ranks'],
   };
@@ -988,16 +993,31 @@ function aggregateFor(
   }
 
   if (target === 'rcaeval-re1' || target === 'rcaeval-re2' || target === 'rcaeval-re3') {
-    const ac: Record<string, number> = {};
+    // One set of rates, computed once and unrounded; both the per-k numbers and the mean come
+    // from those. `avg5` used to be the mean of the *rounded* rates, which is a second number
+    // computed out of an already-published one -- and 29 of the 317 case sets in
+    // `golden-master/rcaeval-evaluator.json`'s search came out 0.01 away from upstream's own
+    // `average(5)` because of it, in both directions.
+    //
+    // The rule was already written down in this repository: finding 156 says "a mean written
+    // beside a distribution rather than computed from it is a second number that can drift",
+    // and `check-roundtrip-record.mjs` asserts it of the score block. This was the one place
+    // it was broken, and no input the project had ever scored could show it: an oracle export
+    // is 1.00 at every k, so the two averages are equal there.
+    const rates: number[] = [];
     for (let k = 1; k <= 5; k += 1) {
       const hit = groundTruth.filter((gt, i) => {
         const ranks = predictions[i]?.ranks.slice(0, k) ?? [];
         return gt.component !== '' && ranks.includes(gt.component);
       }).length;
-      ac[`ac${k}`] = round2(hit / Math.max(1, groundTruth.length));
+      rates.push(hit / Math.max(1, groundTruth.length));
     }
-    const avg5 = round2(mean([1, 2, 3, 4, 5].map((k) => ac[`ac${k}`]!)));
-    ac.avg5 = avg5;
+    const ac: Record<string, number> = {};
+    rates.forEach((rate, index) => {
+      ac[`ac${String(index + 1)}`] = round2(rate);
+    });
+    const avg5 = round2(mean(rates));
+    ac['avg5'] = avg5;
     return { breakdown: ac, headline: avg5 * 100 };
   }
 

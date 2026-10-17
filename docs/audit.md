@@ -17932,3 +17932,124 @@ claim that has been read.
 > **The fixture is not the enemy and it is not the evidence.** It answers a different question
 > thousands of times a day, and the difference between the two questions is what this pass finally
 > put in the pipeline.
+
+## Finding 176 — a rule transcribed by the author of the scorer is not an oracle
+
+### The claim that was never checked
+
+`docs/acceptance.md` has said, since the official regression was built:
+
+> **The oracle is upstream's rule, not ours.**
+
+It was not. `officialMetric('rcaeval-re2')` carries a prose `quote`, a `source` string, and below
+them an implementation written by the same author from the same reading of the same document. The
+`AC@k`/`Avg@5` arithmetic agreed with upstream by construction -- there was one reading, and both
+the prose and the code were it -- and nothing in the tree could have disagreed.
+
+> **A transcription is not an oracle. It is a second copy of the same reading, and two copies agree
+> by definition until one of them is compared to something that was not copied.**
+
+### The number that led here, and the two ways it is unproducible
+
+`04-里程碑与路线图.md` carried one unchecked M2 exit condition:
+
+> **Golden Master 复现 RCAEval `BARO@re2-tt = [0.72, 0.99, 1, 0.83, 0.64, 0.8]`**
+
+Upstream's README introduces those numbers as `Avg@5`, and then lists **six numbers against seven
+labels** -- "0.72, 0.99, 1, 0.83, 0.64, and 0.8 for CPU, MEM, DISK, SOCKET, DELAY, LOSS, and
+AVERAGE". The expected-output block below it is the artefact, and it says CPU 0.72, MEM 0.99, DISK
+1.0, SOCKET 0.83, **DELAY 0.63**, LOSS 0.64, with no AVERAGE row at all.
+
+So the vector in the roadmap is a copy of the **prose**: it drops DELAY and reads the aggregate
+(0.8) as LOSS. It is unproducible for that reason, and for a larger one -- `Avg@5` is a *solver's*
+accuracy, produced by running BARO. This product builds corpora, exports them, and scores
+submissions. The exit condition asked the benchmark factory to enter the competition.
+
+**A checklist item can be wrong in a way that never shows up as "not done".** This one had no
+reader that could distinguish "blocked" from "mis-specified", so it read as backlog for as long as
+it existed.
+
+### The experiment
+
+Upstream's `Evaluator` was run, not read. Its two files were read at
+`259ea4167160256a74ad30004aa3d96a998c846e` and pinned by sha256 in
+`golden-master/rcaeval-evaluator.json`; the harness supplies one file, `RCAEval/utility.py`,
+because `evaluation.py` imports `dump_json`/`load_json` from it and never calls either, while the
+real module pulls pandas, sklearn, requests and tqdm.
+
+**317 generated case sets, 6162 cases.** The five `AC@k` figures agreed in every one of them. `avg5`
+disagreed in **29**, always by exactly **0.01**, in both directions:
+
+| set | ours | upstream |
+| --- | --- | --- |
+| `random-40-n29` | 0.49 | **0.48** |
+| `random-54-n7` | 0.48 | **0.49** |
+| `random-105-n3` | 0.26 | **0.27** |
+| `random-137-n16` | 0.42 | **0.41** |
+
+The cause is one expression. Ours was
+
+```ts
+const avg5 = round2(mean([1, 2, 3, 4, 5].map((k) => ac[`ac${k}`]!)));
+```
+
+where `ac[k]` had already been rounded to two decimals, and upstream is
+
+```python
+return sum(self.accuracy(i) for i in range(1, k + 1)) / k
+```
+
+with every term exact and the rounding left to the printer. So the published mean was computed from
+the published per-k numbers rather than from the rates they describe.
+
+> **This repository had already written the rule down.** Finding 156: *"a mean written beside a
+> distribution rather than computed from it is a second number that can drift"* -- and
+> `check-roundtrip-record.mjs` asserts it of the score block. The rule was known, tested in one
+> place, and broken in another, and the two places never met.
+
+### Why seven passes of self-consistency could not see it
+
+The only RCAEval corpus this project has ever scored is an **oracle** export: 375 cases, each one
+the ground truth, so `AC@1 = … = AC@5 = 1` and any averaging order gives 1.00. Every regression,
+every battery, every round trip agreed with a number that was correct by accident.
+
+The defect could only appear on a submission with a **partial** ranking, which is to say on a
+user's first real result. That is the general shape: **a metric exercised only at its ceiling is
+not exercised.**
+
+### The record, and the witness inside each entry
+
+`golden-master/rcaeval-evaluator.json` pins **86 sets**: 17 designed, the 29 that disagreed, and 40
+controls. Each entry carries `kind`, and the test asserts that every `disagreed` entry **still**
+separates "average the rounded rates" from "round the average". Deleting a set that no longer
+disagrees is therefore a test failure rather than a quiet edit -- the anti-vacuity check that a
+record of this kind needs, because the same record could otherwise be satisfied entirely by
+perfect cases, which is the exact condition under which the bug lived.
+
+The record also names the two divergences it does not reproduce: an empty corpus is 0 here and
+prints nothing upstream (a deliberate, separately tested convention), and a case whose service
+failed to parse is a miss here and can be a hit upstream (unreachable through an export the
+structural gate accepts).
+
+### The citation, measured
+
+The `source` string said `cruiseresearchgroup/RCAEval`. Measured: default branch `v2`, last push
+2026-02-17, 0 stars, `evaluation.py` 2,077 bytes. The repository the corpus registry points at, the
+one whose README publishes the numbers this metric claims to reproduce, and the one still moving:
+`phamquiluan/RCAEval`, `main`, last push 2026-09-29, 242 stars, `evaluation.py` 8,463 bytes.
+
+Both compute the same `accuracy(k)` and `average(k)` -- read side by side, because a citation change
+that silently changed the quantity would be worse than the stale citation. So no number was ever
+wrong; the pointer was. It now names the repository the record was taken from, and a test holds the
+`source` string and the record's `provenance.repo` to each other, so the next drift is a failure
+rather than a discovery.
+
+### What this says about the method
+
+The strongest thing in this repository's habit is that it asks *"what would fail if this were
+wrong"* about its own artefacts. The official metric had never been asked. Its answer turned out to
+be: nothing would fail, because the only input it ever saw was a perfect one, and its "oracle" was
+another copy of itself.
+
+> **An outside implementation is worth more than a second reading of the same document** -- and the
+> price of one here was two HTTP requests and a `sys.path` entry.

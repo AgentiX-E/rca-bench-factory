@@ -341,7 +341,14 @@ number — it is a green run that established nothing.
   metric. The ingest path must resolve the root-cause component to a graph entity, and
   the entity id must be the graph-qualified form
   (`service:rcaeval/ts-order-service`): the bare id is ambiguous, and an ambiguous id
-  that happens to resolve is not a pass.
+  that happens to resolve is not a pass. **As of finding 176 the claim has an oracle
+  behind it**: the scorer is held to upstream's own `Evaluator`, run at
+  `259ea4167160256a74ad30004aa3d96a998c846e` over 86 case sets, pinned in
+  `golden-master/rcaeval-evaluator.json` and asserted by
+  `packages/core/test/rcaeval-evaluator.test.ts`. Before that it was a transcription,
+  and the transcription was wrong -- `avg5` averaged per-k rates that had already been
+  rounded, by 0.01 in 29 of 317 generated sets, which no input this project had ever
+  scored could have shown.
 - **The case directory name preserves the hyphen.** Upstream publishes
   `dataset/ts-order-service-cpu_1/`; a component slugified to `tsorderservice` names a
   directory that does not exist. One case per system pins the exact name, and a
