@@ -83,6 +83,21 @@ export interface OfficialGroundTruth {
   readonly evidence: readonly string[];
   /** Ground-truth phrasings of the fault type (AIOps2025 Type Accuracy). */
   readonly faultDescriptions: readonly string[];
+  /**
+   * The OpenRCA `scoring_points` block, carried **only when it declares more
+   * than one root**.
+   *
+   * The flattened triple above is the first root cause and is what every other
+   * target and every display reads. The rule's denominator, however, counts the
+   * criteria of *every* root, and its numerator is an assignment over them -- so
+   * a key with two roots cannot be described by the triple, and this carries the
+   * block it came from.
+   *
+   * A one-root key is left absent on purpose: the scorer reconstructs the same
+   * three lists from the triple, and a second copy of a fact that is already
+   * here would be a second place to keep in step.
+   */
+  readonly scoringPoints?: OpenRcaScoringPoints;
 }
 
 /** A solver's answer for one case. */
@@ -97,6 +112,14 @@ export interface OfficialPrediction {
   readonly evidence: readonly string[];
   /** Length of the reasoning trace in words (AIOps2025 Efficiency). */
   readonly traceWords: number;
+  /**
+   * Root causes beyond the first, for OpenRCA 1.0.
+   *
+   * The flat fields above are root one -- the mutation harness perturbs them, so
+   * a second copy here would let a mutation change the answer without changing
+   * the score. This holds the rest, which only a multi-root submission has.
+   */
+  readonly extraRoots?: readonly OpenRcaRoot[];
 }
 
 export interface OfficialFacetVerdict {
@@ -331,6 +354,9 @@ export function readOpenRcaGroundTruth(files: Record<string, string>): OfficialG
         chain: [],
         evidence: [],
         faultDescriptions: [],
+        // Only when the triple cannot stand for the key. A one-root block is
+        // exactly the triple, and `declaredCriteria` rebuilds it.
+        ...(openRcaRootCount(points) > 1 ? { scoringPoints: points } : {}),
       });
     });
   }
@@ -338,20 +364,70 @@ export function readOpenRcaGroundTruth(files: Record<string, string>): OfficialG
   return out;
 }
 
+/**
+ * One root cause, as the published evaluator reads it.
+ *
+ * The three fields are exactly the three the evaluator's prediction regex
+ * captures, in the order it captures them, because the scoring rule compares
+ * them one for one against the `scoring_points` block.
+ */
+export interface OpenRcaRoot {
+  readonly component: string;
+  readonly reason: string;
+  readonly occurredAt: string;
+}
+
+function readOpenRcaRoot(block: Record<string, unknown>): OpenRcaRoot {
+  return {
+    component: readString(block, 'root cause component'),
+    reason: readString(block, 'root cause reason'),
+    occurredAt: readString(block, 'root cause occurrence datetime'),
+  };
+}
+
+/**
+ * Every root cause a prediction cell declares, in the order the evaluator finds them.
+ *
+ * ## Why all of them, and not the first
+ *
+ * This read `parsed['1']` and nothing else, which made the whole rule a
+ * single-root rule while the published evaluator is not. Measured against the
+ * pinned evaluator on 25 cases (`golden-master/openrca-evaluator.json`):
+ * a two-root answer submitted in the order the key does not use scored **0**
+ * here and **1.0** there, because upstream assigns predictions to scoring points
+ * and this compared them by position.
+ *
+ * A cell that is a numbered object (`{"1": {...}, "2": {...}}`) is read in
+ * numeric order; a cell that is one flat object is one root. Anything that does
+ * not parse as a JSON object declares no roots at all -- and that is a declared
+ * difference rather than an oversight: upstream's regex can pull a block out of
+ * prose, and this repository returns nothing for text it cannot parse. The
+ * difference is recorded in the corpus with its reason.
+ */
+export function readOpenRcaRoots(raw: string): OpenRcaRoot[] {
+  const parsed = safeJson(raw);
+  if (!isRecord(parsed)) return [];
+  const numbered = Object.keys(parsed).filter((key) => /^\d+$/.test(key) && isRecord(parsed[key]));
+  if (numbered.length === 0) return [readOpenRcaRoot(parsed)];
+  return numbered
+    .sort((left, right) => Number(left) - Number(right))
+    .map((key) => readOpenRcaRoot(parsed[key] as Record<string, unknown>));
+}
+
 /** Parse the JSON inside a `record.csv` `prediction` cell into a prediction. */
 export function parseOpenRcaPrediction(raw: string): OfficialPrediction {
-  const parsed = safeJson(raw);
-  const first = isRecord(parsed) ? parsed['1'] : undefined;
-  const triple = isRecord(first) ? first : isRecord(parsed) ? parsed : undefined;
+  const roots = readOpenRcaRoots(raw);
+  const first = roots[0] ?? { component: '', reason: '', occurredAt: '' };
   return {
-    component: triple === undefined ? '' : readString(triple, 'root cause component'),
+    component: first.component,
     faultType: '',
-    reason: triple === undefined ? '' : readString(triple, 'root cause reason'),
-    occurredAt: triple === undefined ? '' : readString(triple, 'root cause occurrence datetime'),
+    reason: first.reason,
+    occurredAt: first.occurredAt,
     ranks: [],
     chain: [],
     evidence: [],
     traceWords: 0,
+    extraRoots: roots.slice(1),
   };
 }
 
@@ -795,6 +871,125 @@ export function openRcaTimeMatches(predicted: string, expected: string): boolean
   return Math.abs(wallClockToMs(p) - wallClockToMs(e)) <= 60_000;
 }
 
+/** The number of root causes a `scoring_points` block declares. */
+export function openRcaRootCount(points: OpenRcaScoringPoints): number {
+  return Math.max(points.components.length, points.reasons.length, points.times.length);
+}
+
+/**
+ * The published OpenRCA score: the best assignment of predictions to criteria.
+ *
+ * `main/evaluate.py` at `microsoft/OpenRCA` (pinned by commit and digest in
+ * `golden-master/openrca-evaluator.json`) does three things this repository did
+ * not, and each one changes the number:
+ *
+ * 1. **The denominator is every declared criterion in every root.** A key with
+ *    two roots declares up to six criteria; scoring it out of three reports a
+ *    projection, not the metric.
+ * 2. **A count mismatch scores zero** -- `if scoringpoints_length ==
+ *    prediction_length`, else `scores_get` stays 0. An answer that names one
+ *    root for a two-root case earns nothing, which is stricter than any
+ *    per-criterion reading and is the rule.
+ * 3. **The assignment is chosen, not assumed.** Upstream tries every permutation
+ *    of the predictions and keeps the best; a two-root answer submitted in the
+ *    other order scores 1.0, and comparing by position scored it 0.
+ *
+ * The maximisation is computed here as a bitmask DP rather than by enumerating
+ * permutations. It is the same quantity -- maximum weight of a perfect matching
+ * between predictions and scoring points -- and it is bounded by the key's root
+ * count, because a prediction whose length differs returns before this runs.
+ *
+ * One quirk is reproduced deliberately: a criterion list whose length differs
+ * from the root count is **not** scored, while its length still counts in the
+ * denominator. A key that declares two components and one reason can therefore
+ * never be fully earned, which is what upstream computes.
+ */
+export function scoreOpenRcaRoots(
+  predicted: readonly OpenRcaRoot[],
+  points: OpenRcaScoringPoints,
+): number {
+  const roots = openRcaRootCount(points);
+  // `roots === 0` is the only empty case: the denominator is a sum of the three
+  // list lengths, so it is zero exactly when the longest of them is.
+  if (roots === 0) return 0;
+  const denominator =
+    points.components.length + points.reasons.length + points.times.length;
+  if (predicted.length !== roots) return 0;
+
+  const weight: number[][] = [];
+  for (const pred of predicted) {
+    const row: number[] = [];
+    for (let index = 0; index < roots; index += 1) {
+      let earned = 0;
+      if (points.components.length === roots && pred.component === points.components[index]) earned += 1;
+      if (points.reasons.length === roots && pred.reason === points.reasons[index]) earned += 1;
+      if (points.times.length === roots && openRcaTimeMatches(pred.occurredAt, points.times[index]!)) {
+        earned += 1;
+      }
+      row.push(earned);
+    }
+    weight.push(row);
+  }
+
+  const size = 1 << roots;
+  const best = new Array<number>(size).fill(-1);
+  best[0] = 0;
+  // Every state is reachable: the weight matrix is complete, so any subset of
+  // scoring points can be served by the predictions already used. That is why
+  // there is no "unreachable state" guard here -- it could never be taken, and a
+  // branch that cannot be taken is a claim nobody can check.
+  for (let mask = 0; mask < size; mask += 1) {
+    const assigned = popcount(mask);
+    if (assigned >= roots) continue;
+    for (let index = 0; index < roots; index += 1) {
+      if ((mask & (1 << index)) !== 0) continue;
+      const next = mask | (1 << index);
+      const candidate = best[mask]! + weight[assigned]![index]!;
+      if (candidate > best[next]!) best[next] = candidate;
+    }
+  }
+  return best[size - 1]! / denominator;
+}
+
+function popcount(value: number): number {
+  let count = 0;
+  for (let rest = value; rest !== 0; rest &= rest - 1) count += 1;
+  return count;
+}
+
+/**
+ * OpenRCA 1.0, scored over every root the key and the answer declare.
+ *
+ * The facets reported beside the score describe **root one** -- that is what the
+ * export format carries and what every other target reads -- while the score
+ * itself is the official one over all of them. The two can therefore disagree
+ * for a multi-root case, and the score is the number that matters.
+ */
+function declaredCriteria(component: string, reason: string, occurredAt: string): OpenRcaScoringPoints {
+  return {
+    components: component === '' ? [] : [component],
+    reasons: reason === '' ? [] : [reason],
+    times: occurredAt === '' ? [] : [occurredAt],
+  };
+}
+
+function scoreOpenRcaCase(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
+  const points = gt.scoringPoints ?? declaredCriteria(gt.component, gt.reason, gt.occurredAt);
+  const roots: OpenRcaRoot[] = [
+    { component: pred.component, reason: pred.reason, occurredAt: pred.occurredAt },
+    ...(pred.extraRoots ?? []),
+  ];
+  const score = scoreOpenRcaRoots(roots, points);
+  return {
+    caseId: gt.caseId,
+    facets: OFFICIAL_METRICS['openrca-1.0'].facets
+      .filter((facet) => gtHasFacet(gt, facet))
+      .map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) })),
+    score,
+    correct: score === 1,
+  };
+}
+
 /**
  * The fraction of an expected list a prediction reproduced, or `undefined` when
  * the answer key declares no such list.
@@ -936,7 +1131,7 @@ function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): 
 function scoreOneCase(target: ScoreTargetId, pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
   switch (target) {
     case 'openrca-1.0':
-      return scoreFacetSubset(pred, gt, OFFICIAL_METRICS['openrca-1.0'].facets, facetMatched);
+      return scoreOpenRcaCase(pred, gt);
     case 'openrca-2.0':
       return scoreFacetSubset(pred, gt, OFFICIAL_METRICS['openrca-2.0'].facets, facetMatched);
     case 'rcaeval-re1':

@@ -5570,10 +5570,9 @@ reporter after its queue is drained.
   Pass 54 was right that the obvious wiring fails and wrong about what it needed: not a transcript
   to parse, but a **report vitest already writes**. `test:coverage` now emits its JSON report, and
   `--from` derives the same three scopes from it in **0.056 s** against the spawn's **77.35 s**.
-- **Eight score targets are still transcriptions.** `[open: only RCAEval is held to code somebody
-  else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose
-  rule and a `source` string, and two of them quote a paper rather than a released evaluator --
-  so which of them has a runnable oracle at all has not been established]`
+- ~~**Eight score targets are still transcriptions.**~~ **Narrowed by finding 181**: OpenRCA 1.0 is
+  now held to `main/evaluate.py` over 28 cases, and the transcription it replaced was wrong on 10 of
+  the first 25. Seven remain.
 
 ## Pass 56 -- the census could not see three batteries, and "could not see" was the finding
 
@@ -5705,10 +5704,8 @@ surfaced it.
 - ~~**The counts snapshot is still not compared to the suite in CI.**~~ **Closed by finding 180**,
   one pass after this entry was copied forward. The reading exists; what was missing was a way to
   reuse it, and that turned out to be a file the coverage step already writes.
-- **Eight score targets are still transcriptions.** `[open: only RCAEval is held to code somebody
-  else wrote; OpenRCA 1.0/2.0, RCA100, AIOps2025, Cloud-OpsBench and ITBench each carry a prose rule
-  and a `source` string, and two of them quote a paper rather than a released evaluator -- so which of
-  them has a runnable oracle at all has not been established]`
+- ~~**Eight score targets are still transcriptions.**~~ **Narrowed by finding 181**, one pass after
+  this entry was copied forward. OpenRCA 1.0 is held to the evaluator; seven targets are not.
 - **The JavaScript journal has no way to tell a `python3 -c` battery from a stranger.** A record with
   no `script` field falls back to "does the command line mention `injection`", which is right for the
   ten Python batteries and wrong for a Node battery that was somehow started without a file.
@@ -5829,9 +5826,9 @@ Two details the first version could not have had:
 | mutation checks | **7 of 7 CAUGHT**, each by the case named in its row |
 | the carry, end to end | a re-derivation over a copy whose prior lines were all shifted by 1000 still carries **63 of 63**; the line-keyed version carries **0** |
 | the two readings | agree exactly on the real tree, and on the captured pair |
-| `core` test suite | **147 files, 3818 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **151 files, 4004 tests passed** (as of this commit) |
+| `core` test suite | **147 files, 3818 tests passed** (as of `01a57c7`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `01a57c7`) |
+| repo test suite | **151 files, 4004 tests passed** (as of `01a57c7`) |
 | coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | **63 across 38 scripts**, 63 of 63 annotations carried |
 | CI | the new step reads the reports in **0.056 s**; the job that could not afford a second suite run now has the comparison for free |
@@ -5842,9 +5839,10 @@ Two details the first version could not have had:
 - **A kill plus a concurrent edit is still ambiguous**, and this pass touched no battery.
   `[open: the closing shape is a record written at write time rather than at start -- one more IO at
   25 write sites -- and it needs a decision about what a record means when the writer is a person]`
-- **Eight score targets are still transcriptions**, and this pass did not establish a new oracle.
-  `[open: only RCAEval is held to code somebody else wrote; the other five carry a prose rule and a
-  `source` string, and whether any of them has a runnable evaluator at all has not been decided]`
+- **Seven score targets are still transcriptions**, and this pass established one oracle, not seven.
+  `[open: RCAEval and OpenRCA 1.0 are held to code somebody else wrote; OpenRCA 2.0, RCA100,
+  AIOps2025, Cloud-OpsBench and ITBench carry a prose rule and a `source` string, and whether any of
+  them has a runnable evaluator at all has not been decided]`
 - **The JavaScript journal cannot tell a `python3 -c` battery from a stranger**, unchanged.
   `[open: unreachable today, but the fallback exists for records written before the field did, and
   the condition for deleting it has not been written down]`
@@ -5852,3 +5850,109 @@ Two details the first version could not have had:
   rerun of the same commit was green. Nothing here touched it.
   `[open: the next instrument is the module graph the failing worker saw, and that needs a run that
   reproduces -- none has appeared in three local coverage runs or in the rerun]`
+
+## Pass 58 -- the rule was written for a list, and this repository implemented it for one
+
+### What the citation pointed at, and what the rule actually says
+
+`openrca-1.0`'s metric carried `source: 'microsoft/OpenRCA main/evaluate.py'` and
+`provenance: 'official'`. Finding 176 established the standard for that claim on
+RCAEval: a rule transcribed by the author of the scorer is not an oracle. The
+same file was read this pass, at
+`c121a483a5a91dbae50708e5942c42a6609098b2` (10,536 bytes, sha256
+`9a1c2351…d53f1`), and the transcription is wrong in three ways:
+
+| upstream | here, before |
+| --- | --- |
+| the denominator is every declared criterion in **every** root (`scores_num = len(components)+len(reasons)+len(times)`) | three criteria, from the first root only |
+| a count mismatch scores **zero** (`if scoringpoints_length == prediction_length`) | scored whatever was answered |
+| the numerator is the **best assignment** over permutations | compared by position |
+
+So the rule was a *projection* of the published metric onto a single-fault
+answer, and the product's own data model is single-fault
+(`GroundTruth.rootCauseComponent`), which is why nobody noticed: every fixture
+in the tree was single-root.
+
+### The measurement, before the change
+
+28 `(prediction, scoring_points)` pairs in `golden-master/openrca-evaluator.json`,
+each with the `(passing, failing, score)` triple upstream's own `evaluate()`
+returns. On the first 25:
+
+```
+disagreements 10 of 25
+two-second-component-wrong   here 1.0    upstream 0.83
+two-out-of-order             here 0      upstream 1.0
+two-but-one-prediction       here 1.0    upstream 0
+three-one-criterion-wrong    here 1.0    upstream 0.89
+```
+
+**Not one direction.** The projection inflated a two-root key to a perfect 1.0
+where upstream says 0.83, and scored a correctly permuted two-root answer 0 where
+upstream says 1.0. A benchmark number that is wrong in both directions cannot be
+corrected by a caveat.
+
+### After
+
+```
+disagreements 2 of 28
+reason-with-quotes   here 1.0   upstream 0.67
+embedded-in-prose    here 0     upstream 1.0
+```
+
+Both are **parsers, not rules**, and both are recorded in the corpus with their
+direction and an argument rather than quietly matched:
+
+- upstream recovers a block with a non-greedy regex, so a reason containing a
+  double quote is truncated and its criterion is lost. This repository parses the
+  cell as JSON. **Reproducing the truncation would score a correct answer lower
+  for being correct.**
+- upstream finds a JSON block anywhere in the cell; this repository requires the
+  cell to parse. Our exporter writes JSON, so an export is unaffected -- a
+  model's prose answer is not.
+
+The direction is asserted, so a change that starts agreeing fails the test.
+
+### What changed in the scorer
+
+- `readOpenRcaRoots` reads **every** block a cell declares, in numeric order,
+  instead of `parsed['1']`.
+- `scoreOpenRcaRoots` implements the published rule: the denominator is the sum of
+  the three declared lists, a length mismatch returns 0, and the numerator is the
+  maximum weight of a perfect matching between predictions and scoring points --
+  computed as a bitmask DP over the same maximisation upstream enumerates as
+  permutations, bounded by the key's root count because a mismatch returns first.
+- One upstream **quirk is reproduced deliberately**: a criterion list shorter than
+  the root count is not scored, while its length still divides. A key with two
+  components and one reason can therefore never be fully earned, and two corpus
+  cases pin that.
+- A one-root key carries no block: the scorer rebuilds the same three lists from
+  the flattened triple, and a second copy would be a second place to keep in step.
+  The block is carried only when the triple cannot stand for the key.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | **28 cases**, pinned by repo + commit + bytes + sha256, with the method written into the file |
+| agreement | **26 of 28**; the 2 differences are declared, argued, and asserted in their direction |
+| mechanism tests | **8**: the corpus's identity, its multi-root coverage, its difference arithmetic, the agreement set, the direction of each difference, the count gate, the assignment, and multi-block reading |
+| mutation checks | **7 of 7 CAUGHT**, each by the case named in its row |
+| `official:check` | 8 targets scored, 1 skipped by contract, all PASS |
+| `core` test suite | **148 files, 3826 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **152 files, 4012 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- ~~**Eight score targets are still transcriptions**, and this pass established no oracle.~~ **Narrowed
+  by finding 181**: OpenRCA 1.0 is now held to its evaluator over 28 cases, and seven targets are not.
+  The replacement entry is in pass 58's Open list, where the work happened.
+- **The product cannot represent a multi-fault answer**, and the official metric for such a case is
+  therefore zero.
+  `[open: `GroundTruth` carries one root cause, so an export answers one root for a key that may
+  declare two; the scorer now computes the published number -- zero -- instead of a projection, which
+  makes the reported accuracy honest but says nothing about whether the model should grow. That is a
+  product decision, not a scoring one]`

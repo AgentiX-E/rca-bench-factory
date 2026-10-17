@@ -18555,3 +18555,107 @@ exists to reject.
 | gate sites | **63 across 38 scripts**; 63 of 63 annotations carried |
 | CI | the new step runs in **0.056 s**; no second suite |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 181 — the rule was written for a list, and this repository implemented it for one
+
+### A citation that had never been opened
+
+`openrca-1.0`'s metric carries `source: 'microsoft/OpenRCA main/evaluate.py'` and
+`provenance: 'official'`. Finding 176 set the standard for that claim on RCAEval:
+*a rule transcribed by the author of the scorer is not an oracle*. The file was
+read this pass -- `c121a483a5a91dbae50708e5942c42a6609098b2`, 10,536 bytes, sha256
+`9a1c2351…d53f1` -- and the transcription differs in three ways that each move the
+number:
+
+| upstream | here, before |
+| --- | --- |
+| `scores_num = len(components) + len(reasons) + len(times)` over **every** root | three criteria, from the first root |
+| `if scoringpoints_length == prediction_length:` else `scores_get` stays 0 | scored whatever was answered |
+| best over `itertools.permutations(predict_results)` | compared by position |
+
+So the rule was a **projection** of the published metric onto a single-fault
+answer. The product's data model is single-fault --
+`GroundTruth.rootCauseComponent` is one string -- and every fixture in the tree
+was single-root, so nothing could have noticed.
+
+### The measurement, taken before the change
+
+28 `(prediction, scoring_points)` pairs recorded in
+`golden-master/openrca-evaluator.json`, each with the `(passing, failing, score)`
+triple upstream's own `evaluate()` returns. On the first 25:
+
+```
+disagreements 10 of 25
+two-second-component-wrong   here 1.0    upstream 0.83
+three-one-criterion-wrong    here 1.0    upstream 0.89
+two-but-one-prediction       here 1.0    upstream 0
+two-out-of-order             here 0      upstream 1.0
+```
+
+**Not one direction.** The projection inflated a two-root key to a perfect 1.0
+where the evaluator says 0.83, and it scored a correct two-root answer submitted
+in the other order **0** where the evaluator says 1.0. A benchmark number that is
+wrong in both directions cannot be repaired by a caveat, and "accuracy" that is
+sometimes generous and sometimes punitive is worse than one that is consistently
+low.
+
+### After
+
+```
+disagreements 2 of 28
+reason-with-quotes   here 1.0   upstream 0.67
+embedded-in-prose    here 0     upstream 1.0
+```
+
+Both are **parsers, not rules**, both are declared in the corpus with their
+direction, and neither is reproduced:
+
+- upstream recovers a prediction block with a non-greedy regex, so a reason
+  containing a double quote is truncated and its criterion is lost. This
+  repository parses the cell as JSON. **Reproducing the truncation would score a
+  correct answer lower for being correct.**
+- upstream finds a block anywhere in the cell, including inside prose; this
+  repository requires the cell to parse. Our exporter writes JSON, so an export is
+  unaffected -- a model's prose answer is not, and that direction is the one that
+  costs us.
+
+Each difference is asserted **in its direction**, so a change that starts
+agreeing -- or stops -- fails the test rather than passing as noise.
+
+### What the scorer now does
+
+- `readOpenRcaRoots` reads every block a cell declares, in numeric order, instead
+  of `parsed['1']`.
+- `scoreOpenRcaRoots` implements the published rule: denominator = the three
+  lists' lengths; a length mismatch returns 0; the numerator is the maximum weight
+  of a perfect matching between predictions and scoring points, computed as a
+  bitmask DP over the same maximisation upstream enumerates as permutations.
+- One upstream **quirk is reproduced deliberately**: a criterion list shorter than
+  the root count is not scored, while its length still divides. A key with two
+  components and one reason can never be fully earned, and two corpus cases pin it.
+- A one-root key carries no block. The scorer rebuilds the same three lists from
+  the flattened triple; carrying a second copy would be a second place to keep in
+  step. The block travels only when the triple cannot stand for the key.
+
+### Two branches that were removed before they shipped
+
+The first draft guarded `best[mask] < 0` and `denominator === 0`. Neither can be
+taken: the weight matrix is complete, so every DP state is reachable, and a zero
+denominator is exactly "no roots", which returns one line earlier. **A branch that
+cannot be taken is a claim nobody can check**, and this repository has spent
+findings on exactly that shape.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | **28 cases**, pinned by repo, commit, bytes and sha256, with the six-step method written into the file |
+| agreement | **26 of 28**; the 2 differences carry a direction and an argument |
+| mechanism tests | **8** |
+| mutation checks | **7 of 7 CAUGHT**, each by the case named in its row |
+| `official:check` | 8 targets scored, 1 skipped by contract, all PASS |
+| `core` test suite | **148 files, 3826 tests passed** |
+| `cli` test suite | **4 files, 186 tests passed** |
+| repo test suite | **152 files, 4012 tests passed** |
+| coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

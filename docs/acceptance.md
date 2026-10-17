@@ -349,6 +349,20 @@ number — it is a green run that established nothing.
   and the transcription was wrong -- `avg5` averaged per-k rates that had already been
   rounded, by 0.01 in 29 of 317 generated sets, which no input this project had ever
   scored could have shown.
+- **OpenRCA 1.0 is held to its evaluator the same way, and the rule changed when it
+  was.** `golden-master/openrca-evaluator.json` pins `microsoft/OpenRCA`'s
+  `main/evaluate.py` at `c121a483a5a91dbae50708e5942c42a6609098b2` (10,536 bytes,
+  sha256 `9a1c2351…d53f1`), records 28 `(prediction, scoring_points)` pairs and the
+  `(passing, failing, score)` triple the evaluator returns for each, and
+  `packages/core/test/openrca-evaluator.test.ts` replays them through this
+  repository's scorer. **25 agree; 2 are declared differences, each with its
+  direction and its reason** — upstream truncates a reason at an embedded quote, and
+  upstream finds a JSON block inside prose. Both are parser differences, and
+  reproducing either would score a correct answer lower for being correct.
+  Before this the rule was a transcription of "matched criteria / criteria" over
+  **one** root cause: measured on the first 25 cases, **10 disagreed**, inflating a
+  two-root key to 1.0 where upstream says 0.83 and scoring a correctly permuted
+  two-root answer 0 where upstream says 1.0.
 - **The case directory name preserves the hyphen.** Upstream publishes
   `dataset/ts-order-service-cpu_1/`; a component slugified to `tsorderservice` names a
   directory that does not exist. One case per system pins the exact name, and a

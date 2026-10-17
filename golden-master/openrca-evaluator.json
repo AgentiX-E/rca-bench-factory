@@ -1,0 +1,504 @@
+{
+  "upstream": {
+    "repo": "microsoft/OpenRCA",
+    "commit": "c121a483a5a91dbae50708e5942c42a6609098b2",
+    "path": "main/evaluate.py",
+    "bytes": 10536,
+    "sha256": "9a1c235139266c32b0e95c7e9938591b8fe014aad4cde95580f73f13a54d53f1",
+    "entrypoint": "evaluate(prediction: str, scoring_points: str) -> (passing, failing, score)"
+  },
+  "method": [
+    "Fetch the file at the pinned commit: GET https://api.github.com/repos/microsoft/OpenRCA/contents/main/evaluate.py?ref=c121a483a5a91dbae50708e5942c42a6609098b2 (base64 content).",
+    "Assert the bytes hash to 9a1c235139266c32b0e95c7e9938591b8fe014aad4cde95580f73f13a54d53f1.",
+    "importlib-load it as a module; it needs only `re` and `itertools` for `evaluate()`.",
+    "Call `evaluate(case.prediction, case.scoringPoints)` for every case below.",
+    "Record `passing`, `failing` and `score` verbatim; `score` is upstream's own round(x, 2).",
+    "packages/core/test/openrca-evaluator.test.ts replays this file through this repository's scorer and requires every score to be reproduced."
+  ],
+  "cases": [
+    {
+      "id": "single-perfect",
+      "note": "one root, all three criteria",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "single-flat-object",
+      "note": "a flat object instead of the numbered wrapper",
+      "prediction": "{\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "single-component-wrong",
+      "note": "one criterion missed",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-z\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "failing": [
+          "svc-z"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "single-reason-wrong",
+      "note": "one criterion missed",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is something else\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "2022-03-20 10:00:00"
+        ],
+        "failing": [
+          "something else"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "single-time-61s",
+      "note": "61 seconds away",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:01:01",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak"
+        ],
+        "failing": [
+          "2022-03-20 10:01:01"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "single-time-60s",
+      "note": "exactly at the tolerance",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:01:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:01:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "single-time-malformed",
+      "note": "a datetime the evaluator cannot parse earns nothing",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"20/03/2022 10:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak"
+        ],
+        "failing": [
+          "2022-03-20 10:00:00"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "single-all-wrong",
+      "note": "nothing matches",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 11:00:00\", \"root cause component\": \"x\", \"root cause reason\": \"y\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [],
+        "failing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "score": 0.0
+      }
+    },
+    {
+      "id": "single-component-only-key",
+      "note": "the key declares one criterion, so the denominator is one",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a",
+      "upstream": {
+        "passing": [
+          "svc-a"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "single-no-time-key",
+      "note": "two declared criteria",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "two-perfect",
+      "note": "two roots, both perfect",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "network delay",
+          "2022-03-20 10:05:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "two-second-component-wrong",
+      "note": "five of six criteria",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-z\", \"root cause reason\": \"network delay\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "network delay",
+          "2022-03-20 10:05:00"
+        ],
+        "failing": [
+          "svc-b"
+        ],
+        "score": 0.83
+      }
+    },
+    {
+      "id": "two-out-of-order",
+      "note": "the assignment, not the order, decides",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "network delay",
+          "2022-03-20 10:05:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "two-out-of-order-one-wrong",
+      "note": "best assignment still has to lose one",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-z\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "network delay",
+          "2022-03-20 10:05:00"
+        ],
+        "failing": [
+          "svc-a"
+        ],
+        "score": 0.83
+      }
+    },
+    {
+      "id": "two-but-one-prediction",
+      "note": "the counts differ, so upstream scores zero rather than half",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [],
+        "failing": [
+          "svc-a",
+          "svc-b",
+          "2022-03-20 10:00:00",
+          "2022-03-20 10:05:00",
+          "network delay",
+          "memory leak"
+        ],
+        "score": 0.0
+      }
+    },
+    {
+      "id": "one-but-two-predictions",
+      "note": "the same gate in the other direction",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [],
+        "failing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "score": 0.0
+      }
+    },
+    {
+      "id": "three-perfect",
+      "note": "three roots",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}, \"3\": {\"root cause occurrence datetime\": \"2022-03-20 10:10:00\", \"root cause component\": \"svc-c\", \"root cause reason\": \"disk full\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00\nThe 3-th predicted root cause component is svc-c\nThe 3-th predicted root cause reason is disk full\nThe 3-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:10:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "network delay",
+          "2022-03-20 10:05:00",
+          "svc-c",
+          "disk full",
+          "2022-03-20 10:10:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "three-one-criterion-wrong",
+      "note": "eight of nine",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}, \"3\": {\"root cause occurrence datetime\": \"2022-03-20 10:10:00\", \"root cause component\": \"svc-z\", \"root cause reason\": \"disk full\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00\nThe 3-th predicted root cause component is svc-c\nThe 3-th predicted root cause reason is disk full\nThe 3-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:10:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "network delay",
+          "2022-03-20 10:05:00",
+          "disk full",
+          "2022-03-20 10:10:00"
+        ],
+        "failing": [
+          "svc-c"
+        ],
+        "score": 0.89
+      }
+    },
+    {
+      "id": "three-out-of-order",
+      "note": "a permutation that needs two swaps",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:10:00\", \"root cause component\": \"svc-c\", \"root cause reason\": \"disk full\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"3\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00\nThe 3-th predicted root cause component is svc-c\nThe 3-th predicted root cause reason is disk full\nThe 3-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:10:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "network delay",
+          "2022-03-20 10:05:00",
+          "svc-c",
+          "disk full",
+          "2022-03-20 10:10:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    },
+    {
+      "id": "duplicate-components",
+      "note": "the same component twice, different reasons",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"network delay\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is network delay\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "network delay",
+          "2022-03-20 10:05:00"
+        ],
+        "failing": [
+          "svc-b"
+        ],
+        "score": 0.83
+      }
+    },
+    {
+      "id": "shared-reason-one-time-wrong",
+      "note": "a shared reason must not buy the time criterion",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 12:00:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 1-th predicted root cause reason is memory leak\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th predicted root cause component is svc-b\nThe 2-th predicted root cause reason is memory leak\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00",
+          "svc-b",
+          "memory leak"
+        ],
+        "failing": [
+          "2022-03-20 10:05:00"
+        ],
+        "score": 0.83
+      }
+    },
+    {
+      "id": "not-json",
+      "note": "no block to parse",
+      "prediction": "the root cause is probably svc-a",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [],
+        "failing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "score": 0.0
+      }
+    },
+    {
+      "id": "empty-prediction",
+      "note": "nothing at all",
+      "prediction": "",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [],
+        "failing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "score": 0.0
+      }
+    },
+    {
+      "id": "missing-field",
+      "note": "the block omits the time, which upstream reads as no match",
+      "prediction": "{\"1\": {\"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak"
+        ],
+        "failing": [
+          "2022-03-20 10:00:00"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "reason-with-quotes",
+      "note": "quotes survive the regex",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"the \\\"leak\\\" in memory\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is the \"leak\" in memory\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "2022-03-20 10:00:00"
+        ],
+        "failing": [
+          "the \"leak\" in memory"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "ragged-key-two-components-one-reason",
+      "note": "a criterion list shorter than the root count is not scored, but still divides",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\"}}",
+      "scoringPoints": "The 1-th predicted root cause component is svc-a\nThe 2-th predicted root cause component is svc-b\nThe only predicted root cause reason is memory leak",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "svc-b"
+        ],
+        "failing": [
+          "memory leak"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "ragged-key-one-component-two-times",
+      "note": "the root count comes from the longest list, not from the components",
+      "prediction": "{\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}, \"2\": {\"root cause occurrence datetime\": \"2022-03-20 10:05:00\", \"root cause component\": \"svc-b\", \"root cause reason\": \"network delay\"}}",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe 1-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00\nThe 2-th root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:05:00",
+      "upstream": {
+        "passing": [
+          "2022-03-20 10:00:00",
+          "2022-03-20 10:05:00"
+        ],
+        "failing": [
+          "svc-a"
+        ],
+        "score": 0.67
+      }
+    },
+    {
+      "id": "embedded-in-prose",
+      "note": "the evaluator's regex finds a block inside prose",
+      "prediction": "I believe the answer is {\"1\": {\"root cause occurrence datetime\": \"2022-03-20 10:00:00\", \"root cause component\": \"svc-a\", \"root cause reason\": \"memory leak\"}} and nothing else.",
+      "scoringPoints": "The only predicted root cause component is svc-a\nThe only predicted root cause reason is memory leak\nThe only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2022-03-20 10:00:00",
+      "upstream": {
+        "passing": [
+          "svc-a",
+          "memory leak",
+          "2022-03-20 10:00:00"
+        ],
+        "failing": [],
+        "score": 1.0
+      }
+    }
+  ],
+  "differences": [
+    {
+      "case": "reason-with-quotes",
+      "upstream": 0.67,
+      "here": 1.0,
+      "why": "The evaluator recovers the block with a non-greedy regex, so a reason containing a double quote is truncated and its criterion is lost. This repository parses the cell as JSON, which recovers the reason the exporter wrote. Reproducing the truncation would score a correct answer lower for being correct, so the difference is declared rather than copied."
+    },
+    {
+      "case": "embedded-in-prose",
+      "upstream": 1.0,
+      "here": 0.0,
+      "why": "The evaluator's regex finds a JSON block anywhere in the cell; this repository requires the cell to parse as JSON. The exporter writes a JSON document, so an export is unaffected -- but a hand-written or model-written answer that wraps its block in prose scores lower here than upstream. Closing it means re-implementing the regex, which is the reader the first difference argues against; the direction is stated so a decision to change it is visible."
+    }
+  ],
+  "agreements": 26
+}
