@@ -15253,6 +15253,18 @@ expectation exact and names the failing value in the report.
 their expectations in their own table formats, and a general version would have to
 read each format -- worth doing, not done here.
 
+### What this does not cover, stated because the census cannot
+
+`inject-stability.mjs`, `inject-component-rule.mjs` and `inject-m1-ceiling-tests.mjs` mutate tracked
+files and restore them at the end of a loop, exactly like the Python batteries. They carry no
+`INJECTIONS` table, and the register admits a file to its census by `table && writes` -- so they are
+outside the guard **and** outside the census, and a kill during one of them leaves a mutation with no
+record to repair from.
+
+That is the same defect this finding is about, in three files the guard cannot reach and the guard's
+own coverage check cannot count. Writing "every battery is guarded" here would have been false in a
+way nothing would catch, which is the shape this document keeps recording.
+
 ### What this says about the method
 
 Three defects in a script whose entire purpose is to find this class of defect,
@@ -18278,7 +18290,7 @@ run is obliged to read.
 | --- | --- |
 | `battery-journal.test.ts` | **7 tests**: dead holder repaired, live battery refused, recycled pid is not a holder, unverifiable repair fails, exception restores, **normal exit neither repairs nor leaves a record**, and a lock whose owner is gone is taken over |
 | mutation checks | **5 of 5 CAUGHT**, one per branch, each by its own test |
-| wiring | every battery calls `W.guard("<its own name>")`; the register in `batteries-verify-their-restore.test.ts` fails if one does not |
+| wiring | the **ten Python** batteries call `W.guard("<its own name>")`, and the register fails if one stops; the **three Node** batteries do not, and the register cannot see them (below) |
 | end to end | SIGKILL -> repair -> 12 caught, tree clean |
 | `core` / `cli` / repo suite | **144 / 3792** · **4 / 186** · **148 / 3978** |
 | batteries | **13 of 13, rc=0** |

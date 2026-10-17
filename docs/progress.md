@@ -5495,7 +5495,15 @@ it had just written, in a second place.
   battery's mutation from a person's edit, so it is dropped at a normal exit; a battery whose
   restore failed says so through its own assertion and a non-zero exit.
 
-Twelve batteries now run as `with W.guard("<name>"): return _measure()`.
+The ten Python batteries now run as `with W.guard("<name>"): return _measure()`.
+
+**The three Node batteries do not, and the census cannot see them.** `inject-stability.mjs`,
+`inject-component-rule.mjs` and `inject-m1-ceiling-tests.mjs` mutate tracked files and restore them at
+the end of a loop, exactly like the Python ones -- but they carry no `INJECTIONS` table, and the
+register in `batteries-verify-their-restore.test.ts` admits a file to its census by `table && writes`.
+So they are outside both the guard and the census, and a kill during one of them leaves the same
+mutation with **no record to repair from**. Stated here because the alternative is a sentence that
+reads as "every battery is covered" while three are not.
 
 ### The second thing a kill leaves: the battery's own lock
 
@@ -5538,11 +5546,17 @@ reporter after its queue is drained.
 | `core` test suite | **144 files, 3792 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
 | repo test suite | **148 files, 3978 tests passed** (as of this commit) |
-| batteries | **13 of 13, rc=0**, every one now inside the guard |
+| batteries | **13 of 13, rc=0**; the ten Python ones run inside the guard, the three Node ones do not |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
 
+- **Three Node batteries are outside the journal, and the census cannot see them either.**
+  `inject-stability.mjs`, `inject-component-rule.mjs` and `inject-m1-ceiling-tests.mjs` mutate tracked
+  files without an `INJECTIONS` table, which is the register's admission rule -- so their absence is
+  invisible rather than recorded. `[open: the fix is a small `journal.mjs` sharing this JSON format plus
+  a census rule that admits a file by "writes a tracked path and restores it" rather than by a table;
+  until then a kill during one of the three has nothing to repair from]`
 - **A kill plus a concurrent edit is still ambiguous.** A normal exit now drops the record, so an
   edit made during a run survives. But a *kill* leaves the record, and if a person edited a guarded
   file in the same window the repair will revert that edit. Narrow, and not reachable from CI.
