@@ -5317,76 +5317,118 @@ test holds the two strings to each other.
   through a channel that is timing out today; the four are unchanged, and the measurements that say
   so are in pass 52's cost table rather than in a hunch]`
 
-## Pass 54 -- the number the documents publish was measured by a script no pipeline ran
+
+## Pass 54 -- the check existed, the wiring was attempted, and the pipeline refused it
 
 This came out of pass 53's own bookkeeping. Every pass updates
 `golden-master/doc-counts.json` by hand, and the question that had never been asked is **what
 fails if that update is forgotten**.
 
-### The two halves of the check, and the one that was wired in
+### The hole, stated exactly
 
 | question | who answers it | in CI |
 | --- | --- | --- |
-| do the documents agree with the snapshot? | `check-doc-counts.mjs` (inside `docs:check`) | **yes** |
+| do the documents agree with the snapshot? | `check-doc-counts.mjs`, inside `docs:check` | **yes** |
 | does the snapshot agree with the suite? | `measure-doc-counts.mjs --check` (`docs:counts:check`) | **no** |
 
-`grep -n 'counts:check' .github/workflows/ci.yml` returned nothing. So a snapshot that drifts in
+`grep -n 'counts:check' .github/workflows/ci.yml` returned nothing. A snapshot that drifts in
 **both** places at once -- somebody adds tests and forgets the number -- leaves every document and
-every guard internally consistent and wrong, and the pipeline green.
+every guard internally consistent and wrong, with the pipeline green.
 
-That is not hypothetical: pass 52 found the snapshot at **139 files / 3686 tests** while the suite
-had **140 / 3747**, and every gate was green. It was found by reading two numbers side by side, not
-by a check.
+That is not hypothetical: pass 52 found the snapshot at **139 files / 3686 tests** against a suite of
+**140 / 3747**, with every gate green, and found it by reading two numbers side by side.
 
-### The cost, measured before it was paid
+### The attempt
 
-`pnpm docs:counts:check` runs the whole suite and compares the result; **80 s locally** with a warm
-build. The `verify` job's prior reading is **153 s of its 900 s budget**, so the step fits with
-room to spare; it is a separate step rather than a member of `docs:check` because the aggregate is
-what every local run pays for, and 80 s is not what somebody wants between an edit and a red test.
+One step in the `verify` job, measured at **80.09 s** locally against a job at 153 s of its 900 s
+budget, plus two tests in the file that already owns the routing rule:
 
-### The wiring is asserted, not remembered
+- the workflow must `run: pnpm docs:counts:check`, anchored to a `run:` line, because that file's
+  own header records the break where a **comment** satisfied a bare `includes`;
+- the package script must point at `measure-doc-counts.mjs **--check**`, not at the writing mode --
+  a check that rewrote the snapshot would green-light exactly the drift it was added to report.
 
-`scripts/ci-reaches-doc-guards.test.ts` asserts the subset relation *for the aggregate*: everything
-in `docs:check` reaches the pipeline. It says in its own header that it does **not** claim every
-script in `scripts/` is in `docs:check`, which is right -- several are probes and generators. But
-that leaves the other direction unstated, and this script is the one case where the unstated
-direction was the load-bearing one.
+Mutation-checked locally: deleting the step failed **exactly one** test and left the other eight
+green.
 
-So the same file gained two cases: the workflow must run `pnpm docs:counts:check`, and the package
-script must point at `measure-doc-counts.mjs --check` rather than at the writing mode -- **a "check"
-that rewrote the snapshot would be a green light for exactly the drift it was added to report.**
+### What the pipeline said, and why it is not "flaky"
 
-Mutation-checked: deleting the step from `ci.yml` fails **exactly one** test and nothing else.
+CI failed the step, and the reason is not the counts:
+
+```
+Error: [vitest-worker]: Timeout calling "onTaskUpdate"
+Error: Command failed: pnpm --filter @rca-bench-factory/core test
+    at measure (scripts/measure-doc-counts.mjs:103:17)
+```
+
+**Every test passed.** The step runs the whole suite a **second time** in the same job -- the
+coverage step already ran it once -- and on a two-core runner the worker RPC to the main process
+timed out under the accumulated update traffic. Vitest exits non-zero for an unhandled error even
+when the suite is green.
+
+This is pass 49's failure with a different cause. There, the trigger was one test file that spawned
+the CLI per case (32 s of serial work), and the fix was to split it. Here the trigger is
+**repetition of a suite that is already at the edge of that budget**. The same error message, and
+the same wrong lesson available: it looks like a flake, and calling it one would have meant a retry
+button instead of a measurement.
+
+### The decision, on evidence
+
+**The wiring was reverted.** What remains is the finding, the measured price, and the precise
+constraint:
+
+| reading | value |
+| --- | --- |
+| `docs:counts:check` alone, locally | **80.09 s**, OK |
+| the `verify` job before the step | **153 s** of 900 |
+| the suite run a second time in that job, on the runner | **`onTaskUpdate` timeout**, suite green |
+
+The shape that would work is not another job and not a retry: it is **reading the run the job
+already took**. `measure-doc-counts.mjs` runs each package separately today (`--filter core test`,
+`--filter cli test`) precisely so it can attribute counts; the coverage step produces one combined
+transcript, so reusing it needs per-package attribution from a single log -- a change to both
+scripts, and one that is verifiable locally instead of only on a runner.
+
+### The leak this pass found in its own tooling
+
+The thirteen batteries were running when the session ended. The process died inside
+`inject:fault-extraction-scoring`, and `packages/core/src/fault/extraction-scoring.ts` was left with
+a seven-line guard **deleted** -- found by `git status`, restored, and then the battery was re-run
+(12 of 12 caught).
+
+Nothing repairs that: **no battery writes a journal**, and each takes its backup with
+`shutil.copy(SRC, PRISTINE)` at start -- so a run that begins before somebody reverts **copies the
+mutated file into the pristine slot**, then certifies `source restored: identical to the pristine
+capture`, which is true and worthless. Finding 173's defect, one layer out: the audit got a journal
+and a precondition; the batteries that mutate a dozen source files did not.
 
 ### Acceptance
 
 | gate | result |
 | --- | --- |
-| `docs:counts:check`, locally | **OK**, 80.09 s, core 143/3786, cli 4/186, repo 147/3972 |
-| the routing test file | **7 -> 9 tests**; removing the CI step fails exactly one |
-| `core` test suite | **143 files, 3786 tests passed** (as of this commit) |
+| the attempt | step + 2 tests, mutation-checked locally (deleting the step fails exactly one) |
+| CI on the attempt | **failed**: `onTaskUpdate` timeout on the second suite run, every test green |
+| the revert | `ci.yml` and the routing test are back to 7 tests; the hole is **open and recorded** |
+| `core` test suite | **143 files, 3784 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **147 files, 3972 tests passed** (as of this commit) |
-| `typecheck` / `lint` / `docs:check` | green |
+| repo test suite | **147 files, 3970 tests passed** (as of this commit) |
+| batteries | **13 of 13, rc=0**, after restoring the mutation the interrupted run left behind |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
 ### Open
 
+- **The counts snapshot is still not compared to the suite in CI.** `[open: the attempt is measured
+  and rejected -- a second full suite run in the same job trips `onTaskUpdate` on a two-core runner
+  with every test green. The shape that would work is reusing the coverage run's transcript, which
+  needs per-package attribution from one log; that is locally verifiable and is the next step here,
+  rather than a retry or a fifth job]`
 - **A killed run leaves every battery's mutation behind, and the next run adopts it as pristine.**
-  Measured today, in this pass: the thirteen batteries were running when the session ended, the
-  process died inside `inject:fault-extraction-scoring`, and `packages/core/src/fault/extraction-scoring.ts`
-  was left with the guard deleted -- one file, seven lines, exactly the mutation. Nothing repairs it:
-  no battery writes a journal, and each takes its backup with `shutil.copy(SRC, PRISTINE)` at start,
-  so a run that begins before somebody reverts **copies the mutated file into the pristine slot** and
-  then certifies `source restored: identical to the pristine capture`, which is true and worthless.
-  This is finding 173's defect one layer out -- the audit got a journal and a precondition; the
-  batteries that mutate a dozen source files did not. `[open: the shape is known, because finding 174
-  built it for the audit -- a journal written before the mutation, a repair at the start of the next
-  run, and a refusal to start on a tree that is already mutated -- and what it needs is a shared
-  helper the twelve Python batteries call, which is a change to the battery protocol rather than to
-  any one battery]`
-- **The snapshot is still a number somebody types.** The step compares it; nothing generates it
-  during the run, because generating it means writing a tracked file from CI. `[open: the shape that
-  would close this is a job that runs the measurement, diffs the snapshot, and opens an issue or
-  fails with the exact JSON to paste -- which is a change to how the repository is maintained rather
+  Measured in this pass: one file, seven lines, left by `inject:fault-extraction-scoring`. No battery
+  writes a journal, and `shutil.copy(SRC, PRISTINE)` at start means a run that begins before somebody
+  reverts copies the mutation into the pristine slot and then certifies it. Finding 173's defect one
+  layer out. `[open: the shape is known because finding 174 built it for the audit -- journal before
+  the mutation, repair at start, refuse a mutated tree -- and it needs a shared helper the twelve
+  Python batteries call, which is a change to the battery protocol rather than to any one battery]`
+- **The snapshot is still a number somebody types.** Nothing generates it. `[open: generating it
+  means writing a tracked file from CI, which is a change to how the repository is maintained rather
   than to what it checks]`

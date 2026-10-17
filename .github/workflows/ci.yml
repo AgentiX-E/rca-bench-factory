@@ -95,18 +95,6 @@ jobs:
       - name: Test with coverage (core + cli, ≥95% per dimension, 100% functions)
         run: pnpm test:coverage
 
-      # `docs:check` runs `check-doc-counts.mjs`, which compares the documents to
-      # `golden-master/doc-counts.json`. **Nothing in that aggregate compares the snapshot
-      # to the suite**, and a snapshot that drifts in both places at once -- somebody adds
-      # tests and forgets the number -- leaves every document and every guard internally
-      # consistent and wrong. This step is the missing comparison.
-      #
-      # It is a step of its own rather than a member of `docs:check` because it re-runs the
-      # whole suite: measured at 80 s locally with a warm build, against a job whose budget
-      # is 900 s and whose prior reading was 153 s.
-      - name: The counts snapshot matches the suite, not just the documents
-        run: pnpm docs:counts:check
-
       - name: Mutation suite (gate + export, 100% interception)
         run: pnpm exec vitest run --root packages/core mutation.test.ts
 

@@ -18054,15 +18054,16 @@ another copy of itself.
 > **An outside implementation is worth more than a second reading of the same document** -- and the
 > price of one here was two HTTP requests and a `sys.path` entry.
 
-## Finding 177 — the check that compared the numbers existed; the one that measured them did not run
 
-### The question nobody had asked
+## Finding 177 — a check that re-runs the measurement is a second measurement, and this suite cannot pay for two
+
+### The hole
 
 Every pass in this document ends with a table of suite counts, and every one of those numbers comes
 from `golden-master/doc-counts.json`, which is updated **by hand**. Pass 53's closing bookkeeping
 raised the obvious question for the first time: *what fails if the update is forgotten?*
 
-The answer was nothing. Two checks exist and only one was wired in:
+Nothing. Two checks exist and only one was wired in:
 
 | question | who answers it | runs in CI |
 | --- | --- | --- |
@@ -18075,53 +18076,88 @@ The answer was nothing. Two checks exist and only one was wired in:
 > together, consistently, and wrong, and every gate reports agreement -- because agreement is
 > exactly what they measure.
 
-This had already happened once. Pass 52 found the snapshot reading **139 files / 3686 tests** while
-the suite had **140 / 3747**, with every gate green, and recorded the discovery as *"found by
-reading two numbers side by side"*. A defect whose detection method is *somebody notices* has not
-been fixed by writing it down; it has been fixed only when a check takes over the noticing.
+This had already happened once: pass 52 found the snapshot at **139 files / 3686 tests** against a
+suite of **140 / 3747**, with every gate green, and recorded the discovery as *"found by reading two
+numbers side by side"*. A defect whose detection method is *somebody notices* is not fixed by writing
+it down; it is fixed when a check takes over the noticing.
 
-### Why the existing routing rule did not cover it
+### The attempt
 
-`ci-reaches-doc-guards.test.ts` asserts that everything in `docs:check` reaches the pipeline, and
-its own header states that it does **not** claim every script in `scripts/` is in `docs:check` --
-correctly, since several are probes and generators. But that leaves the other direction unstated,
-and `measure-doc-counts.mjs` is the one script where the unstated direction was load-bearing: it is
-a gate with its own tests, its own failure site in the inventory, and no invocation.
+One step in the `verify` job (80.09 s locally, against a job at 153 s of 900), plus two tests in
+`ci-reaches-doc-guards.test.ts`: the workflow must `run:` the command (anchored to a `run:` line --
+that file records the break where a *comment* satisfied a bare `includes`), and the package script
+must point at `--check` rather than at the writing mode, since a check that rewrote the snapshot
+would green-light the drift it was added to report. Deleting the step failed exactly one test.
 
-### The fix, and its price
+### What the runner said
 
-One step in the `verify` job. Measured before it was added: **80.09 s** locally with a warm build,
-against a job whose budget is 900 s and whose prior reading was 153 s. It is deliberately **not** a
-member of `docs:check`: the aggregate is what every local iteration pays for, and re-running the
-suite is not what somebody wants between an edit and a red test.
+```
+Error: [vitest-worker]: Timeout calling "onTaskUpdate"
+Error: Command failed: pnpm --filter @rca-bench-factory/core test
+    at measure (scripts/measure-doc-counts.mjs:103:17)
+```
 
-Two tests, in the file that already owns this rule:
+**Every test passed.** The step re-runs the whole suite; the coverage step in the same job has
+already run it once, and on a two-core runner the worker's RPC to the main process timed out under
+the accumulated update traffic. Vitest exits non-zero for an unhandled error even when the suite is
+green.
 
-- the workflow must run `pnpm docs:counts:check` -- anchored to a `run:` line, because the file's
-  own header records the measurement where a comment satisfied a bare `includes` and the break
-  survived;
-- the package script must point at `measure-doc-counts.mjs **--check**`, not at the writing mode.
-  **A "check" that rewrote the snapshot would be a green light for exactly the drift it was added
-  to report**, and the two modes differ by one flag.
+This is finding 149's error message with a different cause. There, one test file spawned the CLI per
+case and the fix was to split it; here the cause is **repetition of a suite already at that edge**.
+The wrong lesson is available and cheap: it presents as a flake, and the fix for a flake is a retry.
 
-Mutation-checked: deleting the step fails exactly one test and leaves the other eight green.
+> **A retry would have hidden the reading.** The step did not fail because the numbers disagreed. It
+> failed because the pipeline asked the same question twice in one job, and the second asking cost
+> more than the machine had.
+
+### The decision
+
+The wiring was reverted. `ci.yml` is back to its previous shape and the routing file is back to
+seven tests. What survives is the measurement and the constraint:
+
+| reading | value |
+| --- | --- |
+| `docs:counts:check` alone, locally | **80.09 s**, OK |
+| the `verify` job before the step | **153 s** of 900 |
+| the suite run a second time in that job, on the runner | `onTaskUpdate` timeout, **suite green** |
+
+The shape that would work is neither a retry nor a fifth job: it is **reading the run the job
+already took**. `measure-doc-counts.mjs` runs each package separately so it can attribute counts;
+the coverage step emits one combined transcript, so reuse needs per-package attribution from a
+single log. That change is verifiable locally, which this one was not -- and that is the reason it
+is the next step rather than this one.
 
 ### What this says about the method
 
-The repository is now good at asking *"what would fail if this were wrong"* of its code. It asked
-it of a **number** for the first time here, and the answer was: the document check would pass, the
-suite would pass, and the number would be wrong. The general form is one this document keeps
-reaching from different directions:
+Two findings in a row have been about a check nobody ran. The first could be fixed by wiring it in.
+This one could not, and the difference is worth stating: **the fix for a missing check is not always
+another invocation of it.** Here the measurement already existed and already worked; what the
+pipeline lacked was a way to *reuse* it. Adding an invocation was the obvious move, and the runner
+rejected it for a reason that has nothing to do with the question the check asks.
 
-> **A check protects the thing it reads, and nothing protects what writes it.** The document guard
-> protects the documents from the snapshot; nothing was protecting the snapshot from the suite.
+> **A gate is a measurement plus a budget.** This campaign has spent four passes learning the first
+> half. The second half says a correct check can still be unaffordable in the place it is needed.
+
+### A leak in the tooling, measured on the way
+
+The thirteen batteries were running when the session ended; the process died inside
+`inject:fault-extraction-scoring`, and `packages/core/src/fault/extraction-scoring.ts` was left with
+a seven-line guard deleted. It was found by `git status`, restored, and the battery re-run (12 of 12
+caught).
+
+No battery writes a journal, and each takes its backup with `shutil.copy(SRC, PRISTINE)` **at
+start** -- so a run that begins before somebody reverts copies the mutated file into the pristine
+slot and then certifies `source restored: identical to the pristine capture`, which is true and
+worthless. Finding 173's defect, one layer out: the audit got a journal and a precondition; the
+twelve batteries that mutate source files did not.
 
 ### Acceptance
 
 | gate | result |
 | --- | --- |
-| `docs:counts:check` | **OK**, 80.09 s: core **143 / 3786**, cli **4 / 186**, repo **147 / 3972** |
-| the routing test file | **7 -> 9 tests** |
-| mutation | deleting the step fails **exactly one** test |
-| `core` / `cli` / repo suite | **143 / 3786** · **4 / 186** · **147 / 3972** |
-| `typecheck` / `lint` / `docs:check` | green |
+| the attempt | step + 2 tests, mutation-checked locally |
+| CI on the attempt | **failed** on `onTaskUpdate`, every test green |
+| the revert | `ci.yml` unchanged; routing file back to **7 tests** |
+| `core` / `cli` / repo suite | **143 / 3784** · **4 / 186** · **147 / 3970** |
+| batteries | **13 of 13, rc=0**, after restoring what the interrupted run left |
+| `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
