@@ -5036,9 +5036,9 @@ found by `git status`, which is also how finding 173's twelve-file corruption wa
 | mutation checks, one per new guard | **5 of 5 CAUGHT**, each by exactly its own test: same-group spawn, no reap, no identity check, no own-group guard, no signal handler |
 | `gate-sites.json` | **61 sites across 37 of 40 scripts**; **55 proved + 6 exempt + 0 unannotated** |
 | the audit's own test file | **16 -> 22 tests** |
-| `core` test suite | **141 files, 3767 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **145 files, 3953 tests passed** (as of this commit) |
+| `core` test suite | **141 files, 3767 tests passed** (as of `e9e87e9e0`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `e9e87e9e0`) |
+| repo test suite | **145 files, 3953 tests passed** (as of `e9e87e9e0`) |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -5061,3 +5061,104 @@ found by `git status`, which is also how finding 173's twelve-file corruption wa
   364 s.** Unchanged from pass 50, except that the audit now costs 108 s locally where it cost 104.
   `[open: the numbers are in pass 50; the job gains a battery every few passes, and splitting this
   audit into its own job is the shape that would buy the margin back at a price nobody has measured]`
+
+## Pass 52 -- one reader, against a server this repository did not write
+
+This entry had been carried since pass 48, and the reason it survived three passes was written on
+it: the six readers are certified by a fixture **written by the same author**, so what that
+certifies is one reading of six APIs, and the fix "needs either a service to point at or a way to
+stand one up inside the job". What made it cheap was a measurement rather than a decision.
+
+### The measurement that made it cheap
+
+`prometheus` is a **distribution package**, and on this machine it is already installed at
+**2.45.3+ds-2ubuntu0.3** -- the version finding 154 measured by hand, and the sandbox is Ubuntu
+24.04.3, the same distribution as `ubuntu-latest`. So the service this entry kept asking for costs
+`apt-get install` and no download, and the reader answered it on the first try:
+
+```
+ok: true | signals: 1 | quarantine: 0
+{ "resource": { "service.name": "prometheus" }, "payload": { "kind": "metric", "name": "up", "value": 1 } }
+```
+
+### The first run of the gate failed, and it is the finding
+
+The gate's first version waited for `/-/ready`, then asked. It failed in **0.20 seconds** with
+`the reader produced no signal ... Quarantined: nothing` -- about a server that was working. The
+three questions it could have waited for are not the same question:
+
+| asked | first true |
+| --- | --- |
+| `/-/ready` | **0.0 s** |
+| an instant query for the same metric | **4.9 s** |
+| the range query the reader actually makes | **5.5 s** |
+
+The 0.6-second gap between the last two is exactly where the gate landed. This is the oldest shape
+in this campaign one layer out -- **a mechanism's check read as the property's check** -- and it
+is the third time this pass alone: closing the readers' gap needed a question the readers do not
+ask, and the warm-up needed the question the readers *do* ask.
+
+The second thing the same run taught: a server that answers `200` with **HTML** is not warming up,
+it is the wrong address. The first version could not tell those apart and waited its whole budget
+for a web console to become an API. An empty window is worth waiting for; a body that is not JSON
+is not.
+
+### What the gate is
+
+`scripts/verify-reader-against-backend.mjs`: it finds the binary on `PATH` (no shell), takes a free
+port by binding and releasing it, writes a scrape config that labels the target with
+`service: prometheus`, starts the server **detached** so its whole group can be stopped, waits for
+the range form of *the query it is about to make*, reads it through `pullPrometheusMetrics`, reads
+it again with a label the server does not set, stops the server, and waits for the port to stop
+answering before it reports anything.
+
+The version it prints is the one **the server said** -- `prometheus_build_info`'s own `version`
+label, read through the reader -- and two tests hold that: one asserts a version the stand-in
+invents appears in the output, and one asserts two runs against two servers report two different
+versions. A constant in the script passes the first and fails the second.
+
+The negative control is the half a fixture cannot supply. A fixture contains the labels its author
+chose, so "the reader quarantines a series with no service" is not something a fixture can fail at
+honestly. Against the real server the gate reads the same series twice, once with `service` and
+once with `not_a_label_this_server_sets`, and requires **zero signals and a quarantine** the second
+time. The first run of this check against the real server, before the config labelled anything,
+quarantined `prometheus_build_info` for exactly this reason -- which is what made the control
+possible rather than an obstacle to it.
+
+### What it does not establish
+
+- **Five of the six readers.** One is not six, and `docs/architecture.md` now says which degree of
+  evidence each reader has.
+- **A deployment's configuration.** The server here scrapes itself with a label the gate writes.
+  What is certified is that the reader meets the real query API, not that it meets anybody's
+  Prometheus.
+- **That the fixture was wrong.** The fixture answers a different question, thousands of times a
+  day, and it stays.
+
+| gate | result |
+| --- | --- |
+| the gate, against the real distribution server, three runs | **OK**, `prometheus 2.45.3+ds`, 1 real signal, and none without the label; **5.87 s / 6.88 s / 7.09 s** |
+| processes left behind, checked after every run | **none** |
+| the gate's own tests | **12**, every failure exit and both refusals proved, including a stand-in that ignores `SIGTERM` (the gate cannot stop it, and must say so rather than report a verdict) |
+| `gate-sites.json` | **63 sites across 38 of 40 scripts**; **57 proved + 6 exempt + 0 unannotated** |
+| `core` test suite | **142 files, 3778 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **146 files, 3964 tests passed** (as of this commit) |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- ~~**No reader is driven against a real deployment by CI.**~~ **Closed for one of six by finding
+  175.** Prometheus is read from the distribution's own server in the `verify` job, on every push.
+- **Five readers are still certified by a fixture written by the same author.** `[open: the same
+  shape as the entry this pass closed, five times over, and the cost is now known to be "a service
+  that can be installed" rather than "somebody stands something up" -- Jaeger, Loki, Elasticsearch
+  and Kubernetes are the four, and ClickHouse is the one that was measured by hand and nothing
+  re-measures]`
+- **The gate's own cost in the job is the apt install, which has not been measured on the runner.**
+  `[open: three local runs cost 5.87-7.09 s for the gate itself, and the install that precedes it is
+  a separate reading nobody has taken -- the job's budget moved from roughly two minutes, and by how
+  much is the question this pass leaves]`
+- **The journal cannot name the audit's nested suite for the few milliseconds before it exists.**
+  Unchanged from pass 51. `[open: written down rather than closed, and closing it would mean naming
+  a process before it exists]`

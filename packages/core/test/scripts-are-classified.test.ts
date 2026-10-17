@@ -119,6 +119,7 @@ const REGISTER: Record<string, Entry> = {
   'score-fault-extraction.mjs': { class: 'gate' },
   'verify-example-pack.mjs': { class: 'gate' },
   'verify-scorer-stability.mjs': { class: 'gate' },
+  'verify-reader-against-backend.mjs': { class: 'gate' },
   // A gate whose subject is other gates: it empties each `check-*.mjs` and fails
   // if any of them can be emptied with no test noticing. Found by measurement
   // rather than by reading, and recorded because the tracking row for it said

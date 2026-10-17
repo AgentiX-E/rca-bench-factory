@@ -34,7 +34,7 @@ jobs:
   # 637d11494 they summed to 1213 s before the budget killed the job at the round-trip
   # record battery.
   verify:
-    name: build / typecheck / lint / coverage / mutation
+    name: build / typecheck / lint / coverage / mutation / one reader against a real backend
     runs-on: ubuntu-latest
     # Not a performance assertion: a job that hangs has to be reported as a budget
     # being spent rather than six hours later.
@@ -97,6 +97,23 @@ jobs:
 
       - name: Mutation suite (gate + export, 100% interception)
         run: pnpm exec vitest run --root packages/core mutation.test.ts
+
+      # One reader, against a server this repository did not write.
+      #
+      # `docs/progress.md` carried this from pass 48: six readers are certified by a fixture the
+      # same author wrote, so what that certifies is one reading of six APIs. Two of the six were
+      # pointed at real deployments once, by hand, and what that cost was somebody standing a
+      # service up. The distribution already carries Prometheus 2.45.3 -- the same version pass 44
+      # measured by hand -- so the cost here is an `apt-get` and nine seconds.
+      #
+      # The gate starts the server on a port of its own, reads it, reads it again with a label the
+      # server does not set, and stops it. A missing binary fails the step with the package name
+      # rather than reading as a broken reader.
+      - name: Install a backend this repository did not write
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
+
+      - name: A reader, against that backend
+        run: node scripts/verify-reader-against-backend.mjs
 
       # The scorer-stability battery is a gate, not a report.
       #

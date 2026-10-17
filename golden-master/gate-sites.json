@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 40,
+  "scanned": 41,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -471,6 +471,21 @@
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-reader-against-backend.mjs",
+      "line": 235,
+      "diagnostic": "verify-reader-against-backend: FAILED -- ${note}",
+      "status": "proved",
+      "provedBy": "packages/core/test/reader-against-backend.test.ts"
+    },
+    {
+      "script": "scripts/verify-reader-against-backend.mjs",
+      "line": 380,
+      "condition": "!(await stopServer(server, address))",
+      "diagnostic": "verify-reader-against-backend: FAILED -- the server is still listening on ${address}",
+      "status": "proved",
+      "provedBy": "packages/core/test/reader-against-backend.test.ts"
     },
     {
       "script": "scripts/verify-scorer-stability.mjs",

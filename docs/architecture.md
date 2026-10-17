@@ -248,13 +248,26 @@ matrix that cannot fail is a paragraph with a table drawn around it, and this
 repository has already shipped four of those (findings 107, 108, 109 and 114).
 
 All six implemented paths are *pulls*: telemetry is fetched over HTTP, from a documented
-JSON API. What differs between them is how far the claim has been tested. Two have been
-pointed at a real deployment -- Prometheus (finding 154, version 2.45.3) and ClickHouse
-(finding 167, version 24.3.4.147, where the reader's instants were checked against the
-server's own `toUnixTimestamp64Milli`) -- and the other four, Jaeger, Loki, Elasticsearch
-and Kubernetes, have been driven only against fixtures, in `packages/core/test/jaeger.test.ts`,
-`packages/core/test/loki.test.ts`, `packages/core/test/elasticsearch.test.ts` and
-`packages/core/test/kubernetes.test.ts`.
+JSON API. What differs between them is how far the claim has been tested, and there are now
+three degrees of it rather than two.
+
+**One is driven against a real server by CI, on every push.** Prometheus, through
+`scripts/verify-reader-against-backend.mjs`: the gate starts the distribution's server, reads it
+through `pullPrometheusMetrics`, reads it again with a service label the server does not set, and
+stops it. `apt-get` on `ubuntu-latest` returns 2.45.3 -- the version finding 154 measured by hand
+-- and the version the gate reports is the one **the server said**, not one typed into a file, so
+a distribution bump is reported rather than hidden.
+
+**One has been pointed at a real deployment by hand only.** ClickHouse (finding 167, version
+24.3.4.147, where the reader's instants were checked against the server's own
+`toUnixTimestamp64Milli`). A measurement somebody took once is evidence about the reader on the
+day, and finding 154's Prometheus run was in this group until this pass moved it to the one above.
+
+**Four have been driven only against fixtures**: Jaeger, Loki, Elasticsearch and Kubernetes, in
+`packages/core/test/jaeger.test.ts`, `packages/core/test/loki.test.ts`,
+`packages/core/test/elasticsearch.test.ts` and `packages/core/test/kubernetes.test.ts`. Their
+readers are exercised against shapes this repository wrote, which is the same author as the
+readers -- the property the gate above exists to stop relying on, for one reader at a time.
 That difference is written down rather than blurred, because "reads the documented
 wire format" and "was answered by a deployment" are different measurements. The other two
 ingest paths here read what a caller already has -- `ingest/file.ts` for files,

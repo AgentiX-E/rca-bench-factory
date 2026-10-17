@@ -58,6 +58,7 @@
     "examples:verify": "node scripts/verify-example-pack.mjs",
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
     "verify:gates-are-testable": "node scripts/verify-gates-are-testable.mjs",
+    "verify:reader-against-backend": "node scripts/verify-reader-against-backend.mjs",
     "inject:stability": "node scripts/inject-stability.mjs",
     "inject:scorer-stability": "python3 scripts/injection/scorer-stability-probe.py",
     "inject:component-rule": "node scripts/inject-component-rule.mjs",

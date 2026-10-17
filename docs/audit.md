@@ -17838,3 +17838,97 @@ reap. Closing it would mean recording a name before the thing it names exists.
 
 > **A cleanup that is total is three statements, not one.** The pass that says "this cannot leak"
 > is the pass that has not looked for the third death.
+
+## Finding 175 — six readers certified by one author, and the three questions that are not the same question
+
+### The entry that would not close
+
+`docs/progress.md` carried it from pass 48: **no reader is driven against a real deployment by
+CI.** Six readers are certified by `pull.test.ts` against a fixture server, and the fixture was
+written by the same author as the readers -- so what it certifies is one reading of six APIs. Two
+of the six had been pointed at real deployments **by hand** in passes 44 and 45, and the entry's
+own note said why the third pass did not close it: it "needs either a service to point at or a way
+to stand one up inside the job".
+
+Both halves of that were assumed rather than measured. The measurement is one command:
+
+```
+$ apt-cache policy prometheus
+  Installed: 2.45.3+ds-2ubuntu0.3
+  Candidate: 2.45.3+ds-2ubuntu0.3
+```
+
+The distribution carries it, the sandbox is Ubuntu 24.04.3 -- the same distribution as
+`ubuntu-latest` -- and **2.45.3 is the version finding 154 measured by hand**. The service this
+entry kept asking for was one `apt-get` away, and nobody had looked.
+
+> **"Needs a service" is a claim about cost, and a cost is a measurement.** The entry stated the
+> requirement correctly and the price wrongly, and the price is what kept it open for three passes.
+
+### Then the gate failed, and the failure is the finding
+
+The first version waited for `/-/ready` and then asked the reader. It failed in **0.20 seconds**,
+reporting `the reader produced no signal from prometheus_build_info on a real prometheus` about a
+server that was answering correctly. Measured, the three candidate questions become true at very
+different moments:
+
+| asked | first true |
+| --- | --- |
+| `/-/ready` | **0.0 s** |
+| an instant query for the same metric, same address | **4.9 s** |
+| the range query the reader actually makes | **5.5 s** |
+
+Two gaps, and each of them is the shape this campaign has now recorded eleven times: **a check on
+the mechanism read as a check on the property.** `/-/ready` is a statement about a process having
+started; having a sample is a statement about an answer existing. The 0.6-second gap between the
+instant and range forms is a race, and the gate landed inside it.
+
+Fixing it meant waiting for **the question the gate is about to ask** -- same endpoint, same query,
+same window, same step, from one set of constants -- which leaves nothing between the wait and the
+reading for a race to hide in. And it left a second decision that the same run made visible: a
+server that answers `200` with **HTML** is not warming up, it is the wrong address. An empty window
+is worth waiting for; a body that is not JSON is a refusal to report at once, with the parse error
+as the reason.
+
+### What the gate is, and what makes its verdicts worth reading
+
+- **It starts what it measures** and stops it as a **group**, waited for until the port stops
+  answering before any verdict is printed -- finding 174's lesson, reused rather than re-learned.
+- **The version comes from the server.** It is read out of `prometheus_build_info`'s own `version`
+  label *through the reader*, so a distribution bump is reported rather than hidden, and a constant
+  typed into the script fails a test rather than passing one.
+- **The negative control is the half a fixture cannot supply.** The same series is read twice: once
+  with the `service` label the config sets, and once with `not_a_label_this_server_sets`, where the
+  reader must produce **zero signals and a quarantine**. A fixture contains the labels its author
+  chose, so it cannot fail this honestly. The very first run of this check against the real server
+  -- before the config labelled anything -- quarantined `prometheus_build_info` for exactly this
+  reason, which is what made the control possible rather than an obstacle to it.
+- **A missing binary is not a broken reader.** The failure names the package to install, because on
+  a machine without it the honest reading is "this environment cannot run the check" and not
+  "the reader is wrong".
+
+### What it does not establish, said out loud
+
+**One reader is not six.** `docs/architecture.md` now records three degrees of evidence where it
+recorded two: one reader driven against a real server by CI on every push, one measured by hand
+once, four driven only against fixtures written by the same author as the readers.
+
+That framing is the point of the change. The repository's habit is to write the strongest true
+sentence about its own evidence, and the strongest true sentence about the other five readers did
+not change at all today.
+
+> **A measurement is evidence about the thing measured, and about nothing beside it.** The gate
+> that proves Prometheus works is also the reason the sentence about Jaeger has to stay exactly as
+> weak as it was.
+
+### What this says about the method
+
+Three passes of carrying an entry, and the thing that closed it was not a decision but a
+`apt-cache policy`. Then one failed run, in a fifth of a second, produced the finding that made the
+gate correct -- and it was produced by *running the thing*, not by reading it. The gate's own
+subject, and the reason it exists, is the difference between a claim that has been answered and a
+claim that has been read.
+
+> **The fixture is not the enemy and it is not the evidence.** It answers a different question
+> thousands of times a day, and the difference between the two questions is what this pass finally
+> put in the pipeline.
