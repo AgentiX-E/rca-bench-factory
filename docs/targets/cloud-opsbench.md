@@ -111,10 +111,26 @@ different question, and a different command:
 rca-bench official --target cloud-opsbench --dir ./out
 ```
 
-It runs the published Cloud-OpsBench outcome metric (arXiv 2603.00468 §4.1.1): Joint
-RCA Accuracy, the share of episodes where the faulty component **and** the fault type
-both match. The exported answer key must score 1.0, and perturbing either half of the
-pair drops the episode.
+It runs the published Cloud-OpsBench outcome metric: Joint RCA Accuracy, the share
+of episodes where the faulty component **and** the fault type both match. The
+exported answer key must score 1.0, and perturbing either half of the pair drops
+the episode.
+
+The comparison is the evaluator's, not an equality of strings. Both sides are put
+through `normalize_text` before they are compared:
+
+```python
+re.sub(r"\s+", " ", str(value or "").strip().lower())
+```
+
+so `CheckoutService` matches `checkoutservice`, and a trailing space, a tab, a
+newline or a no-break space inside either field does not lose the episode. The
+rule is pinned by commit and by per-file digest in
+`golden-master/cloud-opsbench-evaluator.json` and replayed case by case by
+`packages/core/test/cloud-opsbench-evaluator.test.ts`; two differences from the
+upstream evaluator are declared there rather than reproduced -- an empty key
+awarding a point for an empty answer, and a non-string value being stringified
+upstream while this contract types both fields as strings.
 
 ## Failure modes
 

@@ -5939,9 +5939,9 @@ The direction is asserted, so a change that starts agreeing fails the test.
 | mechanism tests | **8**: the corpus's identity, its multi-root coverage, its difference arithmetic, the agreement set, the direction of each difference, the count gate, the assignment, and multi-block reading |
 | mutation checks | **7 of 7 CAUGHT**, each by the case named in its row |
 | `official:check` | 8 targets scored, 1 skipped by contract, all PASS |
-| `core` test suite | **148 files, 3826 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **152 files, 4012 tests passed** (as of this commit) |
+| `core` test suite | **148 files, 3826 tests passed** (as of `de7996f`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `de7996f`) |
+| repo test suite | **152 files, 4012 tests passed** (as of `de7996f`) |
 | coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
 
@@ -5949,10 +5949,165 @@ The direction is asserted, so a change that starts agreeing fails the test.
 
 - ~~**Eight score targets are still transcriptions**, and this pass established no oracle.~~ **Narrowed
   by finding 181**: OpenRCA 1.0 is now held to its evaluator over 28 cases, and seven targets are not.
-  The replacement entry is in pass 58's Open list, where the work happened.
+  **Counted by finding 182**: five now replay against released code. The replacement entry is in
+  pass 59's Open list, where the census lives.
 - **The product cannot represent a multi-fault answer**, and the official metric for such a case is
   therefore zero.
   `[open: `GroundTruth` carries one root cause, so an export answers one root for a key that may
   declare two; the scorer now computes the published number -- zero -- instead of a projection, which
   makes the reported accuracy honest but says nothing about whether the model should grow. That is a
   product decision, not a scoring one]`
+
+## Pass 59 -- nine claims of "official", counted, and the one that disagreed
+
+### The question nobody had asked
+
+After finding 176 and finding 181 the standard was written down twice in this
+document: *a rule transcribed by the author of the scorer is not an oracle.* What
+had never been counted was **how many of the nine targets had anything runnable
+behind their `source` string**. Each carries a `provenance` label -- `official` or
+`derived` -- and a citation, and two of those citations turned out to be wrong when
+somebody finally opened them. A label that has never been tested against the thing
+it names is a word, not a claim.
+
+So this pass asked one question of each target: **does an artefact upstream define
+this number, and can it be replayed here rather than transcribed?** The answers are
+in `golden-master/oracle-census.json`, one row per target, each with the probe that
+produced it.
+
+| class | meaning | targets |
+| --- | --- | --- |
+| `code` | released evaluator, replayed case by case | OpenRCA 1.0, RCAEval ×3, **Cloud-OpsBench** |
+| `rubric` | machine-readable scoring data, no evaluator code | RCA100 |
+| `prose` | only a paper or a dataset README describes it | AIOps2025 |
+| `absent` | the citation itself says no scorer is published | OpenRCA 2.0, ITBench |
+
+Two things came out of the count that were not in anybody's plan.
+
+### Finding 182a -- Cloud-OpsBench had an evaluator, and it disagrees
+
+`LLM4Ops/Cloud-OpsBench` ships `agents/cloudops_agent/evaluation.py`, whose
+`prediction_scores` computes CA, FA and JRA. Read at
+`c84f5ebd448983322b06c24022b126125c632a22` (seven files, each with a digest), the
+rule is not an equality of strings:
+
+```python
+def normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+```
+
+Both sides of both comparisons go through it. This repository compared them with
+`===`. Measured over 22 recorded pairs: **9 disagreed, every one in the same
+direction** -- an answer the benchmark counts as correct was scored wrong here.
+
+| input | upstream | here, before |
+| --- | --- | --- |
+| `CheckoutService` vs `checkoutservice` | 1 | 0 |
+| `" checkoutservice"` vs `"checkoutservice"` | 1 | 0 |
+| `"cpu\nsaturation"` vs `"cpu saturation"` | 1 | 0 |
+| `"checkout\u00a0service"` vs `"checkout service"` | 1 | 0 |
+
+A single-direction error is the rarer and more dangerous kind: it does not average
+out, it makes every number this product reports for that target an understatement
+that looks like a weak model.
+
+Two upstream behaviours are **not** reproduced, and both are declared in the corpus
+with their direction and an argument:
+
+- a key that declares nothing scores 1.0 there, because `"" == ""`. Here a facet the
+  key does not declare is not scored at all. Reproducing it would let an export of
+  empty keys report a perfect JRA.
+- `str(value)` stringifies a number, so `8080` matches `"8080"` upstream. Our export
+  contract types both fields as strings, so a number reads as absent. The difference
+  is in the reader, not in the rule.
+
+After: **22 of 24 agree**, and the two that do not are the two above.
+
+The CA and FA in the breakdown now go through the same comparison, because they are
+the same two comparisons reported apart. A `jra: 1` printed beside `ca: 0.96` is not
+a rounding difference, it is two rules in one report -- and that is exactly what the
+old breakdown would print for a corpus full of capital letters.
+
+### Finding 182b -- RCA100 has a rubric, and this repository pays 1.0 or 0
+
+The AIOps2025 and RCA100 datasets are not on GitHub: the paper points at a JiHu
+GitLab project, `aiops-live-benchmark/agenticopseval`, whose raw files are reachable
+anonymously. `RCA100/answer_key/taxonomy.json` (25,823 bytes, sha256 `840f3cfa…`) is
+not documentation -- it is the scoring rubric as data:
+
+```json
+"scoring_rubric": { "T3_exact_L3": 1.0, "T2_same_L2": 0.5, "T1_same_L1": 0.2, "T0_different": 0.0 }
+```
+
+with `hierarchy.{L1_categories, L2_to_L1, L3_to_L2}` underneath it. This repository's
+`rca100` rule pays `1` for an exact fault-type match and `0` otherwise, so a
+prediction in the right L2 family earns nothing where the published rubric pays half.
+
+That is **recorded as a `gap` on the census row rather than fixed here**, and the
+reason is the difference between this finding and 182a: 182a is *code that was
+evaluated against a corpus in one session*. 182b needs the hierarchy carried into
+the export and a tier function replayed against 28 fault types -- a change to the
+contract, not a comparison. Doing it in the same pass as 182a would have meant
+verifying neither properly.
+
+Two smaller answers from the same probe: `aiops2025`'s dataset README documents the
+data and **not** the score (`grep` finds no formula), so its rule stays `prose` --
+though the project README does state `0.40 / 0.40 / 0.10 / 0.10`, which agrees with
+this repository; and ITBench's repository contains **no evaluator at all** --
+`src/itbench` is a CLI to create, deploy and show scenarios, and its two name matches
+for `eval` are leaderboard markdown that reports **NTAM and % resolved, not pass@1**.
+Our metric is named after a quantity upstream does not tabulate.
+
+### What a census can prove, and what it cannot
+
+The nine tests behind this file assert **internal consistency**: one row per target
+and no row without a target; only the four documented classes; every `code` row
+backed by a corpus that really carries the digests the row cites; every row dated,
+with the probe that produced it; and a `gap` only on a row that has no replay.
+
+They cannot assert that the census is **true about the world**. A static inventory of
+external facts ages, and no test can re-probe GitHub from inside a suite. The only
+honest claim such a table can make about itself is that it was taken on a date, which
+is why `takenAt` and a per-row `probe` record are required fields rather than
+decoration -- and why the next pass that touches a target has to re-probe that row
+instead of trusting it.
+
+One direction **is** falsifiable, and is asserted: a row may claim `code` only with a
+corpus behind it. A future pass that quietly downgrades a target to "transcription"
+has to delete a file that another test replays.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| census | **9 rows**: 5 `code`, 1 `rubric`, 1 `prose`, 2 `absent`; every row dated and probed |
+| Cloud-OpsBench corpus | **24 pairs** from seven pinned files; **22 agree**, 2 declared differences in their direction |
+| mechanism tests | **17**: 8 on the Cloud-OpsBench corpus, 9 on the census |
+| mutation checks | **14 of 14 CAUGHT**, each by the test named in its row |
+| the rule that changed | reverting the comparison to `===` fails 9 corpus cases; dropping the lowercase, the collapse or the `\u00a0` handling each fails its own case |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **150 files, 3843 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **154 files, 4029 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.91 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 63 across 38 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **Four targets have no replay**, and the census says which for each.
+  `[open: rca100 has a rubric this rule does not use -- the fault-type term is a coin
+  flip where the published rubric pays 1.0/0.5/0.2; aiops2025 has a paper and no code;
+  openrca-2.0 and itbench have no scorer published at all. The first is implementable
+  as data and is the next pass's subject; the other three need a decision about
+  whether a `derived` metric should keep a weight it cannot test]`
+- **The census ages.** `[open: nothing re-probes it. The next pass that touches a
+  target has to fetch that row's artefact again, and the `probe.takenAt` field is
+  there to make "I checked" a claim with a date on it rather than a habit]`
+- **The product cannot represent a multi-fault answer**, carried from pass 58 and untouched here.
+  `[open: `GroundTruth` carries one root cause, so a two-root key scores zero under
+  the published rule; whether the model grows is a product decision, not a scoring one]`
+- **A kill plus a concurrent edit is still ambiguous**, carried from pass 57; this pass touched no
+  battery. `[open: the closing shape is a record written at write time rather than at start -- one
+  more IO at 25 write sites -- and it needs a decision about what a record means when the writer is
+  a person]`

@@ -18659,3 +18659,131 @@ findings on exactly that shape.
 | repo test suite | **152 files, 4012 tests passed** |
 | coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 182 — nine labels called "official", and the count
+
+### A word that had never been tested against the thing it names
+
+Every score target carries a `provenance` label (`official` or `derived`) and a
+`source` string. Two of those strings had already been wrong when opened: RCAEval's
+(finding 176) and OpenRCA 1.0's (finding 181). What had never been asked was the
+question behind the label: **is there anything runnable upstream, and does this
+repository replay it or transcribe it?**
+
+`golden-master/oracle-census.json` is the answer, one row per target, each with the
+probe that produced it and the date it was taken.
+
+| class | meaning | targets |
+| --- | --- | --- |
+| `code` | released evaluator, replayed case by case | OpenRCA 1.0, RCAEval ×3, Cloud-OpsBench |
+| `rubric` | machine-readable scoring data, no evaluator code | RCA100 |
+| `prose` | only a paper or a dataset README describes it | AIOps2025 |
+| `absent` | the citation itself says no scorer is published | OpenRCA 2.0, ITBench |
+
+### 182a -- Cloud-OpsBench: an evaluator that normalises both sides
+
+`LLM4Ops/Cloud-OpsBench` ships `agents/cloudops_agent/evaluation.py`. Its
+`prediction_scores` computes CA, FA and JRA, and the comparison is not equality:
+
+```python
+def normalize_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+```
+
+This repository compared the two strings with `===`. Measured over 22 pairs recorded
+in `golden-master/cloud-opsbench-evaluator.json`, **9 disagreed, every one in the
+same direction**:
+
+| input | upstream | here, before |
+| --- | --- | --- |
+| `CheckoutService` vs `checkoutservice` | 1 | 0 |
+| `" checkoutservice"` vs `"checkoutservice"` | 1 | 0 |
+| `"cpu\nsaturation"` vs `"cpu saturation"` | 1 | 0 |
+| `"checkout\u00a0service"` vs `"checkout service"` | 1 | 0 |
+
+A one-directional error is the worse kind. A metric that is generous in some cases
+and punitive in others is at least visible as noise; a metric that is only ever
+punitive reports a model weaker than it is, consistently, in a way that reads as a
+result. Finding 181 could be argued about because the error went both ways; this one
+cannot be argued about at all.
+
+**After:** 22 of 24 agree. The two that do not are declared, with direction and
+argument, and neither is reproduced:
+
+- a key that declares nothing scores 1.0 upstream, because `"" == ""`. Here a facet
+  the key does not declare is not scored, and a case with nothing scored is 0.
+  Reproducing the free point would let an export of empty keys report perfect JRA.
+- `str(value)` stringifies a number, so `8080` matches `"8080"` upstream. This
+  repository's export contract types both fields as strings, so a number reads as
+  absent. Reader, not rule.
+
+The breakdown changed with the rule. CA and FA are the same two comparisons reported
+apart, so they go through the same comparison -- a `jra: 1` beside `ca: 0.96` is not
+a rounding difference, it is two rules in one report.
+
+### 182b -- RCA100: the rubric was published, as data
+
+The AIOps2025 and RCA100 datasets are not on GitHub. The paper points at a JiHu
+GitLab project, `aiops-live-benchmark/agenticopseval`, whose raw files are reachable
+anonymously. `RCA100/answer_key/taxonomy.json` (25,823 bytes, sha256 `840f3cfa…`)
+carries the scoring rubric as data:
+
+```json
+"scoring_rubric": { "T3_exact_L3": 1.0, "T2_same_L2": 0.5, "T1_same_L1": 0.2, "T0_different": 0.0 }
+```
+
+with `hierarchy.{L1_categories, L2_to_L1, L3_to_L2}` beneath it. This repository's
+`rca100` rule pays `1` for an exact fault-type match and `0` otherwise: a prediction
+in the right L2 family earns nothing where the published rubric pays half, and one in
+the right L1 family earns nothing where it pays a fifth.
+
+**Recorded, not fixed.** The difference from 182a is what each one needs. 182a was a
+comparison, verifiable in one session against a corpus. 182b needs the hierarchy
+carried into the export and a tier function replayed against 28 fault types -- a
+change to the contract. Shipping both in one pass would have verified neither
+properly, and a `gap` field on the census row is the honest form for a known-wrong
+number whose fix is a separate design.
+
+### Two answers that closed other questions
+
+- `aiops2025`'s dataset README documents the data and **not** the score -- `grep` for
+  a formula finds none. Its rule is therefore `prose`, and the only upstream
+  corroboration of its weights is the project README's table
+  (`0.40 / 0.40 / 0.10 / 0.10`), which agrees with this repository.
+- **ITBench publishes no evaluator.** `src/itbench` at `b510385` is a CLI to create,
+  deploy and show scenarios; the only name matches for `eval` are
+  `LEADERBOARD_{SRE,CISO}.md`, and those report **NTAM fault localization, NTAM fault
+  propagation and % resolved**. Our metric is `itbench-pass-at-1` -- named after a
+  quantity upstream does not tabulate.
+
+### What the census can prove about itself
+
+Nine tests assert internal consistency: one row per target and no orphan row; only
+the four documented classes; every `code` row backed by a corpus that carries the
+digests the row cites; every row dated, with its probe; and a `gap` only where there
+is no replay -- because a `code` row with a gap would be a corpus that passes while
+the rule inside it is known to differ, which turns a replay into a ritual.
+
+They cannot assert that the table is **true about the world**. A static inventory of
+external facts ages, and no test re-probes GitHub from inside a suite. The only
+honest claim it makes about itself is `takenAt`, which is why the date and a per-row
+probe record are required fields.
+
+One direction **is** falsifiable and is asserted: `code` requires a corpus. A future
+pass that quietly downgrades a target to "transcription" has to delete a file that
+another test replays.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| census | 9 rows: 5 `code`, 1 `rubric`, 1 `prose`, 2 `absent`, every row probed and dated |
+| Cloud-OpsBench corpus | 24 pairs from seven pinned files; 22 agree, 2 declared |
+| mechanism tests | 17 (8 corpus, 9 census) |
+| mutation checks | **14 of 14 CAUGHT** |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **150 files, 3843 tests passed** |
+| `cli` test suite | **4 files, 186 tests passed** |
+| repo test suite | **154 files, 4029 tests passed** |
+| coverage | core **99.97 / 99.91 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

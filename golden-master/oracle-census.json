@@ -1,0 +1,267 @@
+{
+  "schema": "rca-bench-oracle-census/1",
+  "takenAt": "2026-10-18",
+  "question": "For each score target: does an artefact upstream define the number, and can it be replayed here rather than transcribed?",
+  "classes": {
+    "code": "released evaluator code; replayed case by case against a pinned corpus",
+    "rubric": "machine-readable scoring data released without evaluator code; replayable as data",
+    "prose": "only a paper or a dataset README describes the number; the rule here is a transcription",
+    "absent": "the citation's own claim is that no scorer is published"
+  },
+  "rows": [
+    {
+      "target": "openrca-1.0",
+      "metricSource": "microsoft/OpenRCA main/evaluate.py (pinned in golden-master/openrca-evaluator.json)",
+      "class": "code",
+      "cited": "microsoft/OpenRCA, `main/evaluate.py`",
+      "upstream": {
+        "kind": "github",
+        "repository": "microsoft/OpenRCA",
+        "commit": "c121a483a5a91dbae50708e5942c42a6609098b2",
+        "entrypoint": "evaluate(prediction: str, scoring_points: str) -> (passing, failing, score)",
+        "files": [
+          {
+            "path": "main/evaluate.py",
+            "bytes": 10536,
+            "sha256": "9a1c235139266c32b0e95c7e9938591b8fe014aad4cde95580f73f13a54d53f1"
+          }
+        ]
+      },
+      "corpus": "golden-master/openrca-evaluator.json",
+      "probe": {
+        "what": "GET https://api.github.com/repos/microsoft/OpenRCA/git/trees/c121a483…?recursive=0, then the contents API for main/evaluate.py",
+        "returned": "main/{evaluate.py, generate.py, prompt.py, task_specification.json}, rca/, dataset/, docs/; evaluate.py 10,536 bytes",
+        "http": 200,
+        "takenAt": "2026-10-18"
+      }
+    },
+    {
+      "target": "rcaeval-re1",
+      "metricSource": "phamquiluan/RCAEval RCAEval/benchmark/evaluation.py (pinned in golden-master/rcaeval-evaluator.json)",
+      "class": "code",
+      "cited": "phamquiluan/RCAEval, `RCAEval/benchmark/evaluation.py`",
+      "upstream": {
+        "kind": "github",
+        "repository": "phamquiluan/RCAEval",
+        "commit": "259ea4167160256a74ad30004aa3d96a998c846e",
+        "entrypoint": "Evaluator.accuracy(k) / Evaluator.average(k)",
+        "files": [
+          {
+            "path": "RCAEval/benchmark/evaluation.py",
+            "sha256": "0a9fadf6d2d58a53ae26dfa66bf680802dbfc20b82b1817989b49413cc1d2502"
+          },
+          {
+            "path": "RCAEval/classes/graph.py",
+            "sha256": "f6b40dc5031e20c8af7a8c2d283b1d1a00166a336c9e01bb463637b101b02cb3"
+          }
+        ]
+      },
+      "corpus": "golden-master/rcaeval-evaluator.json",
+      "probe": {
+        "what": "GET https://api.github.com/repos/phamquiluan/RCAEval/contents/<path>?ref=259ea416…",
+        "returned": "two files, digests recorded in the corpus provenance block",
+        "http": 200,
+        "takenAt": "2026-10-17"
+      }
+    },
+    {
+      "target": "rcaeval-re2",
+      "metricSource": "phamquiluan/RCAEval RCAEval/benchmark/evaluation.py (pinned in golden-master/rcaeval-evaluator.json)",
+      "class": "code",
+      "cited": "phamquiluan/RCAEval, `RCAEval/benchmark/evaluation.py`",
+      "upstream": {
+        "kind": "github",
+        "repository": "phamquiluan/RCAEval",
+        "commit": "259ea4167160256a74ad30004aa3d96a998c846e",
+        "entrypoint": "Evaluator.accuracy(k) / Evaluator.average(k)",
+        "files": [
+          {
+            "path": "RCAEval/benchmark/evaluation.py",
+            "sha256": "0a9fadf6d2d58a53ae26dfa66bf680802dbfc20b82b1817989b49413cc1d2502"
+          },
+          {
+            "path": "RCAEval/classes/graph.py",
+            "sha256": "f6b40dc5031e20c8af7a8c2d283b1d1a00166a336c9e01bb463637b101b02cb3"
+          }
+        ]
+      },
+      "corpus": "golden-master/rcaeval-evaluator.json",
+      "probe": {
+        "what": "GET https://api.github.com/repos/phamquiluan/RCAEval/contents/<path>?ref=259ea416…",
+        "returned": "two files, digests recorded in the corpus provenance block",
+        "http": 200,
+        "takenAt": "2026-10-17"
+      }
+    },
+    {
+      "target": "rcaeval-re3",
+      "metricSource": "phamquiluan/RCAEval RCAEval/benchmark/evaluation.py (pinned in golden-master/rcaeval-evaluator.json)",
+      "class": "code",
+      "cited": "phamquiluan/RCAEval, `RCAEval/benchmark/evaluation.py`",
+      "upstream": {
+        "kind": "github",
+        "repository": "phamquiluan/RCAEval",
+        "commit": "259ea4167160256a74ad30004aa3d96a998c846e",
+        "entrypoint": "Evaluator.accuracy(k) / Evaluator.average(k)",
+        "files": [
+          {
+            "path": "RCAEval/benchmark/evaluation.py",
+            "sha256": "0a9fadf6d2d58a53ae26dfa66bf680802dbfc20b82b1817989b49413cc1d2502"
+          },
+          {
+            "path": "RCAEval/classes/graph.py",
+            "sha256": "f6b40dc5031e20c8af7a8c2d283b1d1a00166a336c9e01bb463637b101b02cb3"
+          }
+        ]
+      },
+      "corpus": "golden-master/rcaeval-evaluator.json",
+      "probe": {
+        "what": "GET https://api.github.com/repos/phamquiluan/RCAEval/contents/<path>?ref=259ea416…",
+        "returned": "two files, digests recorded in the corpus provenance block",
+        "http": 200,
+        "takenAt": "2026-10-17"
+      }
+    },
+    {
+      "target": "cloud-opsbench",
+      "metricSource": "LLM4Ops/Cloud-OpsBench agents/cloudops_agent/evaluation.py :: prediction_scores (pinned in golden-master/cloud-opsbench-evaluator.json)",
+      "class": "code",
+      "cited": "LLM4Ops/Cloud-OpsBench, `agents/cloudops_agent/evaluation.py :: prediction_scores`",
+      "upstream": {
+        "kind": "github",
+        "repository": "LLM4Ops/Cloud-OpsBench",
+        "commit": "c84f5ebd448983322b06c24022b126125c632a22",
+        "entrypoint": "agents/cloudops_agent/evaluation.py :: prediction_scores",
+        "files": [
+          {
+            "path": "evaluation.py",
+            "bytes": 21519,
+            "sha256": "4a48089ec24446bd3b9f4838b76d557e88ce7873869ad6c6bb4e30a14bff97b7"
+          },
+          {
+            "path": "evaluation_utils/__init__.py",
+            "bytes": 867,
+            "sha256": "614f74b8dfc3d618f116f8c1e7bc9e062ed3c1beffc8347813f275cebc57da5d"
+          },
+          {
+            "path": "evaluation_utils/enumerator.py",
+            "bytes": 6696,
+            "sha256": "9811fd5c29d728b73766d1bd51bd48591df80d319618064b115db5fddfb1ec48"
+          },
+          {
+            "path": "evaluation_utils/evaluator.py",
+            "bytes": 10896,
+            "sha256": "bc86a9cfee08affdfb1568020632ac23e2a6ea462911d980db391fb6b60f8eae"
+          },
+          {
+            "path": "evaluation_utils/io.py",
+            "bytes": 3018,
+            "sha256": "b6a067d694b48d9392dce0f44ca77ca76749cfa562936d5ddd3453695722f3c7"
+          },
+          {
+            "path": "evaluation_utils/matcher.py",
+            "bytes": 7876,
+            "sha256": "d0b77a73add73823ed210e911e2c88ee385b55ce1b99f277a18ae4cab86f05af"
+          },
+          {
+            "path": "evaluation_utils/schema.py",
+            "bytes": 5243,
+            "sha256": "6c6fce8a2ccbc302975dde9e8810e42c20eb07eec83ca0eade212a1f93da41af"
+          }
+        ]
+      },
+      "corpus": "golden-master/cloud-opsbench-evaluator.json",
+      "probe": {
+        "what": "GET https://api.github.com/repos/LLM4Ops/Cloud-OpsBench/contents/<path>?ref=c84f5ebd…, then `import evaluation; evaluation.prediction_scores(...)` locally",
+        "returned": "seven files that import cleanly with only the standard library; prediction_scores returns CA, FA and JRA",
+        "http": 200,
+        "takenAt": "2026-10-18"
+      }
+    },
+    {
+      "target": "rca100",
+      "metricSource": "arXiv 2606.29193 section 5.4 (AIOps2025 / RCA100 scoring protocol)",
+      "class": "rubric",
+      "cited": "the RCA100 answer key, `answer_key/taxonomy.json`: `scoring_rubric` and a three-level fault hierarchy",
+      "upstream": {
+        "kind": "gitlab-raw",
+        "project": "aiops-live-benchmark/agenticopseval",
+        "url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/agenticopseval/-/raw/main/RCA100/answer_key/taxonomy.json",
+        "bytes": 25823,
+        "sha256": "840f3cfa8c34699e33d3aa03db3e2eb35799613827ed205af944115835f6c62b",
+        "rubric": {
+          "T3_exact_L3": 1.0,
+          "T2_same_L2": 0.5,
+          "T1_same_L1": 0.25,
+          "T0_different": 0.0
+        }
+      },
+      "corpus": null,
+      "probe": {
+        "what": "GET the raw file at the project path, twice: once as `AgenticOpsEval` (301) and once as `agenticopseval` (200)",
+        "returned": "a 25,823-byte JSON with `scoring_rubric`, `hierarchy` (L1_categories / L2_to_L1 / L3_to_L2) and `fault_definitions`",
+        "http": 200,
+        "takenAt": "2026-10-18"
+      },
+      "gap": {
+        "summary": "the fault-type term is binary here (`1` or `0`); the published rubric pays 1.0 / 0.5 / 0.2 for an exact L3, a shared L2 and a shared L1",
+        "evidence": "taxonomy.json :: scoring_rubric = {T3_exact_L3: 1.0, T2_same_L2: 0.5, T1_same_L1: 0.2, T0_different: 0.0}",
+        "next": "read the hierarchy into the export and tier the term; the rubric is data, so this is a replay rather than a transcription"
+      }
+    },
+    {
+      "target": "aiops2025",
+      "metricSource": "arXiv 2606.29193 section 4.4 (AIOps2025 scoring protocol)",
+      "class": "prose",
+      "cited": "the AIOps2025 dataset README, which describes the data and not the score; the formula is in the paper",
+      "upstream": {
+        "kind": "gitlab-raw",
+        "project": "aiops-live-benchmark/agenticopseval",
+        "url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/agenticopseval/-/raw/main/AIOps2025/README.md",
+        "bytes": 6681,
+        "sha256": "0d016b29a7c71238b5e416b86e04678e042674aa17cedbe2d622659f0d243d95"
+      },
+      "corpus": null,
+      "probe": {
+        "what": "grep -iE 'scor|0\\.4|weight' over the dataset README",
+        "returned": "no formula: the file documents the directory layout, the fault table and the citation. The only weight table found upstream is the project README, which states 0.40 / 0.40 / 0.10 / 0.10 and agrees with this repository",
+        "http": 200,
+        "takenAt": "2026-10-18"
+      },
+      "corroboration": {
+        "url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/agenticopseval/-/raw/main/README.md",
+        "bytes": 4154,
+        "sha256": "789e1bd1a0995b4927d4bf4f9ccd69dc347e1ada24f4c25d68362e88688c084c",
+        "quote": "Scoring | LA / TA / Exp. / Eff. at 0.40 / 0.40 / 0.10 / 0.10"
+      }
+    },
+    {
+      "target": "openrca-2.0",
+      "metricSource": "docs/targets/openrca-2.0.md — the official OpenRCA 2.0 scorer is not open-sourced",
+      "class": "absent",
+      "cited": "the PAVE contract; the shipment says its scorer is not open-sourced",
+      "upstream": null,
+      "corpus": null,
+      "probe": {
+        "what": "GET the tree of microsoft/OpenRCA at c121a483 and grep its README for `2.0` and `PAVE`",
+        "returned": "main/{evaluate.py, generate.py, prompt.py, task_specification.json} plus rca/, dataset/, docs/; no 2.0 or PAVE file, and neither string appears in the README",
+        "http": 200,
+        "takenAt": "2026-10-18"
+      }
+    },
+    {
+      "target": "itbench",
+      "metricSource": "arXiv 2502.05352 section 4.2 (ITBench SRE diagnosis metrics)",
+      "class": "absent",
+      "cited": "the ITBench paper; the repository ships scenarios and a deployment CLI",
+      "upstream": null,
+      "corpus": null,
+      "probe": {
+        "what": "GET the tree of IBM/itbench at b510385 and list src/, library/, schemas/, tests/, matching file names against /eval|scor|metric|judge|leaderboard/",
+        "returned": "src/itbench/{cli,models,utils} only -- commands to create, deploy and show scenarios. The two name matches are LEADERBOARD_{SRE,CISO}.md, which report NTAM and % resolved rather than pass@1",
+        "http": 200,
+        "takenAt": "2026-10-18"
+      }
+    }
+  ]
+}

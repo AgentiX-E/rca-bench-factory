@@ -158,7 +158,7 @@ const OPENRCA_METRIC: OfficialMetricSpec = {
   name: 'OpenRCA strict accuracy (with per-criterion partial credit)',
   formula: 'score = matched criteria / criteria; strict accuracy = share of cases with score 1.0',
   provenance: 'official',
-  source: 'microsoft/OpenRCA main/evaluate.py',
+  source: 'microsoft/OpenRCA main/evaluate.py (pinned in golden-master/openrca-evaluator.json)',
   quote:
     'if perm[i][\'root cause component\'] == components[i]: current_score += 1 ... ' +
     'if time_difference(times[i], perm[i][\'root cause occurrence datetime\']): current_score += 1 ... ' +
@@ -218,10 +218,15 @@ const CLOUDOPSBENCH_METRIC: OfficialMetricSpec = {
   name: 'Cloud-OpsBench Joint RCA Accuracy (JRA)',
   formula: 'JRA = share of cases where the faulty component and the fault type both match',
   provenance: 'official',
-  source: 'arXiv 2603.00468 section 4.1.1 (Cloud-OpsBench outcome correctness)',
+  // The rule is in released code, not only in the paper: `prediction_scores` in
+  // the benchmark's own evaluation module, pinned by commit and digest in
+  // `golden-master/cloud-opsbench-evaluator.json` and replayed by
+  // `packages/core/test/cloud-opsbench-evaluator.test.ts`.
+  source:
+    'LLM4Ops/Cloud-OpsBench agents/cloudops_agent/evaluation.py :: prediction_scores ' +
+    '(pinned in golden-master/cloud-opsbench-evaluator.json)',
   quote:
-    'Our primary metric is Joint RCA Accuracy (JRA), the fraction of episodes for which ' +
-    'R_hat_j = R*_j, equivalently, C_hat_j = C*_j and F_hat_j = F*_j.',
+    'component_ok = normalize_text(pred.get("fault_object")) == gt_component',
   facets: ['component', 'faultType'],
 };
 
@@ -1052,6 +1057,69 @@ function gtHasFacet(gt: OfficialGroundTruth, facet: OfficialFacet): boolean {
   }
 }
 
+/**
+ * Cloud-OpsBench's text comparison, ported from the evaluator's `normalize_text`.
+ *
+ * ```python
+ * def normalize_text(value: Any) -> str:
+ *     return re.sub(r"\s+", " ", str(value or "").strip().lower())
+ * ```
+ *
+ * Both sides of every comparison go through it, which means the published rule
+ * is *case-insensitive and whitespace-collapsing*. This repository compared the
+ * two strings with `===`, so `CheckoutService` did not match `checkoutservice`
+ * and a trailing space was enough to lose the case. Measured on the pinned
+ * evaluator over 22 recorded pairs: **9 of them disagreed, every one of them in
+ * the same direction** -- an answer that the benchmark counts as correct was
+ * scored wrong here.
+ *
+ * `\s` is the same set in JavaScript and in Python's `str` mode, so the port is
+ * character-for-character; `\u00a0` is in both. The order of strip and collapse
+ * does not matter -- collapsing cannot create leading or trailing whitespace,
+ * only preserve it -- so the JavaScript reads in the order a reader expects.
+ */
+function cloudOpsBenchText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * JRA, with the published comparison rather than an equality of strings.
+ *
+ * Written out instead of reusing `scoreFacetSubset` with a comparator: the
+ * metric declares exactly two facets, and a comparator that delegated to
+ * `facetMatched` for anything else would be a second, weaker rule sitting behind
+ * the one this target actually applies. The other three per-target scorers are
+ * explicit for the same reason.
+ *
+ * **Two upstream behaviours are deliberately not reproduced**, and both are
+ * recorded in the corpus with their direction:
+ *
+ *  - a key that declares nothing scores 1.0 there, because `"" == ""`. Here a
+ *    facet the key does not declare is not scored at all, so the case scores 0.
+ *    A benchmark that hands out a point for an empty answer to an empty key is
+ *    measuring its own bookkeeping.
+ *  - a non-string value is stringified there (`str(8080)`); here the export
+ *    contract types both fields as strings, so a number reads as absent. The
+ *    difference is in the reader, not in this function.
+ */
+function scoreCloudOpsBenchCase(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
+  const verdicts: OfficialFacetVerdict[] = [];
+  if (gt.component !== '') {
+    verdicts.push({
+      facet: 'component',
+      matched: cloudOpsBenchText(pred.component) === cloudOpsBenchText(gt.component),
+    });
+  }
+  if (gt.faultType !== '') {
+    verdicts.push({
+      facet: 'faultType',
+      matched: cloudOpsBenchText(pred.faultType) === cloudOpsBenchText(gt.faultType),
+    });
+  }
+  const score = verdicts.length === 0 ? 0 : verdicts.filter((v) => v.matched).length / verdicts.length;
+  return { caseId: gt.caseId, facets: verdicts, score, correct: score === 1 };
+}
+
 function scoreRca100Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
   const entity = pred.component === gt.component ? 1 : gt.adjacent.includes(pred.component) ? 0.5 : 0;
   const fault = pred.faultType === gt.faultType ? 1 : 0;
@@ -1143,7 +1211,7 @@ function scoreOneCase(target: ScoreTargetId, pred: OfficialPrediction, gt: Offic
     case 'aiops2025':
       return scoreAioPs2025Case(pred, gt);
     case 'cloud-opsbench':
-      return scoreFacetSubset(pred, gt, OFFICIAL_METRICS['cloud-opsbench'].facets, facetMatched);
+      return scoreCloudOpsBenchCase(pred, gt);
     case 'itbench':
       return scoreFacetSubset(pred, gt, OFFICIAL_METRICS.itbench.facets, facetMatched);
   }
@@ -1274,8 +1342,18 @@ function aggregateFor(
   }
 
   if (target === 'cloud-opsbench') {
-    const ca = mean(groundTruth.map((gt, i) => ((predictions[i]?.component ?? '') === gt.component ? 1 : 0)));
-    const fa = mean(groundTruth.map((gt, i) => ((predictions[i]?.faultType ?? '') === gt.faultType ? 1 : 0)));
+    // CA and FA are the same two comparisons JRA makes, reported apart, so they
+    // go through the same comparison. Reporting them with the exact-match rule
+    // while JRA used the published one produced a breakdown whose parts could
+    // not sum to its whole: `jra: 1` beside `ca: 0.96` is not a rounding
+    // difference, it is two rules in one report.
+    const matches = cases.map((c) => {
+      const component = c.facets.find((f) => f.facet === 'component');
+      const faultType = c.facets.find((f) => f.facet === 'faultType');
+      return { component: component?.matched ?? false, faultType: faultType?.matched ?? false };
+    });
+    const ca = mean(matches.map((m) => (m.component ? 1 : 0)));
+    const fa = mean(matches.map((m) => (m.faultType ? 1 : 0)));
     const jra = round2(strictRate);
     return { breakdown: { jra, ca: round2(ca), fa: round2(fa) }, headline: jra * 100 };
   }

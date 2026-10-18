@@ -1,0 +1,527 @@
+{
+  "schema": "rca-bench-official-corpus/1",
+  "takenAt": "2026-10-18",
+  "target": "cloud-opsbench",
+  "metric": "Joint RCA Accuracy (JRA), with CA and FA beside it",
+  "upstream": {
+    "repository": "LLM4Ops/Cloud-OpsBench",
+    "commit": "c84f5ebd448983322b06c24022b126125c632a22",
+    "committedAt": "2026-10-16T02:59:39Z",
+    "function": "agents/cloudops_agent/evaluation.py :: prediction_scores",
+    "files": {
+      "evaluation.py": {
+        "bytes": 21519,
+        "sha256": "4a48089ec24446bd3b9f4838b76d557e88ce7873869ad6c6bb4e30a14bff97b7"
+      },
+      "evaluation_utils/__init__.py": {
+        "bytes": 867,
+        "sha256": "614f74b8dfc3d618f116f8c1e7bc9e062ed3c1beffc8347813f275cebc57da5d"
+      },
+      "evaluation_utils/io.py": {
+        "bytes": 3018,
+        "sha256": "b6a067d694b48d9392dce0f44ca77ca76749cfa562936d5ddd3453695722f3c7"
+      },
+      "evaluation_utils/enumerator.py": {
+        "bytes": 6696,
+        "sha256": "9811fd5c29d728b73766d1bd51bd48591df80d319618064b115db5fddfb1ec48"
+      },
+      "evaluation_utils/evaluator.py": {
+        "bytes": 10896,
+        "sha256": "bc86a9cfee08affdfb1568020632ac23e2a6ea462911d980db391fb6b60f8eae"
+      },
+      "evaluation_utils/matcher.py": {
+        "bytes": 7876,
+        "sha256": "d0b77a73add73823ed210e911e2c88ee385b55ce1b99f277a18ae4cab86f05af"
+      },
+      "evaluation_utils/schema.py": {
+        "bytes": 5243,
+        "sha256": "6c6fce8a2ccbc302975dde9e8810e42c20eb07eec83ca0eade212a1f93da41af"
+      }
+    }
+  },
+  "method": [
+    "git clone https://github.com/LLM4Ops/Cloud-OpsBench && git checkout c84f5ebd448983322b06c24022b126125c632a22",
+    "cd agents/cloudops_agent",
+    "python3 -c \"import evaluation\" (pyyaml optional: the import falls back to None)",
+    "call evaluation.prediction_scores(predictions, ground_truth) for each case below",
+    "record CA, FA and JRA as returned",
+    "compare against `scoreOfficial(\"cloud-opsbench\", files, predictions)` in this repository"
+  ],
+  "cases": [
+    {
+      "id": "identity",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "the answer the key was written for",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "component-case-differs",
+      "predictions": [
+        {
+          "fault_object": "CheckoutService",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "a capital letter in the component: the evaluator lowercases both sides",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "fault-type-case-differs",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "CPU"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "a capital letter in the fault type",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "both-differ-in-case",
+      "predictions": [
+        {
+          "fault_object": "CheckoutService",
+          "root_cause": "CPU Saturation"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu saturation"
+      },
+      "note": "a whole answer written in title case",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "leading-space",
+      "predictions": [
+        {
+          "fault_object": " checkoutservice",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "a leading space: the evaluator strips both sides",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "trailing-space",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice ",
+          "root_cause": "cpu "
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "trailing spaces on both fields",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "double-internal-space",
+      "predictions": [
+        {
+          "fault_object": "checkout service",
+          "root_cause": "cpu  saturation"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkout service",
+        "root_cause": "cpu saturation"
+      },
+      "note": "a doubled internal space is collapsed to one",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "tab-instead-of-space",
+      "predictions": [
+        {
+          "fault_object": "checkout\tservice",
+          "root_cause": "cpu saturation"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkout service",
+        "root_cause": "cpu saturation"
+      },
+      "note": "a tab counts as whitespace, so it collapses to the space in the key",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "newline-inside-the-reason",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "cpu\nsaturation"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu saturation"
+      },
+      "note": "a newline inside the fault type",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "key-has-the-extra-space",
+      "predictions": [
+        {
+          "fault_object": "checkout service",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkout  service",
+        "root_cause": "cpu"
+      },
+      "note": "the key is normalised too, not only the answer",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "key-fault-type-needs-normalising",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "cpu saturation"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "CPU  Saturation"
+      },
+      "note": "the key's fault type carries both a case and a doubled space",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "non-breaking-space",
+      "predictions": [
+        {
+          "fault_object": "checkout\u00a0service",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkout service",
+        "root_cause": "cpu"
+      },
+      "note": "a no-break space is whitespace to Python, so it collapses",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "component-right-fault-wrong",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "memory"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "CA earned, FA and JRA not",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "fault-right-component-wrong",
+      "predictions": [
+        {
+          "fault_object": "cartservice",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "FA earned, CA and JRA not",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 1.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "both-wrong",
+      "predictions": [
+        {
+          "fault_object": "cartservice",
+          "root_cause": "memory"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "nothing earned",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "component-prefix-is-not-a-match",
+      "predictions": [
+        {
+          "fault_object": "checkout",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "the comparison is equality, not containment",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 1.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "fault-type-synonym-is-not-a-match",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "cpu usage"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "no synonym table: a longer description is a different string",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "two-predictions-first-right",
+      "predictions": [
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "cpu"
+        },
+        {
+          "fault_object": "cartservice",
+          "root_cause": "memory"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "only the first prediction is scored",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "two-predictions-second-right",
+      "predictions": [
+        {
+          "fault_object": "cartservice",
+          "root_cause": "memory"
+        },
+        {
+          "fault_object": "checkoutservice",
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "at-1 means the second prediction earns nothing",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "empty-prediction-nonempty-key",
+      "predictions": [
+        {
+          "fault_object": "",
+          "root_cause": ""
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "an empty answer to a real key earns nothing",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "empty-key-empty-prediction",
+      "predictions": [
+        {
+          "fault_object": "",
+          "root_cause": ""
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "",
+        "root_cause": ""
+      },
+      "note": "a key that declares nothing matches an answer that says nothing",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    },
+    {
+      "id": "missing-prediction-fields",
+      "predictions": [
+        {}
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "a prediction with no fields reads as the empty string",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "null-prediction-fields",
+      "predictions": [
+        {
+          "fault_object": null,
+          "root_cause": null
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "checkoutservice",
+        "root_cause": "cpu"
+      },
+      "note": "null reads as the empty string, like a missing field",
+      "upstream": {
+        "CA": 0.0,
+        "FA": 0.0,
+        "JRA": 0.0
+      }
+    },
+    {
+      "id": "numeric-component",
+      "predictions": [
+        {
+          "fault_object": 8080,
+          "root_cause": "cpu"
+        }
+      ],
+      "groundTruth": {
+        "fault_object": "8080",
+        "root_cause": "cpu"
+      },
+      "note": "a number is stringified before comparison",
+      "upstream": {
+        "CA": 1.0,
+        "FA": 1.0,
+        "JRA": 1.0
+      }
+    }
+  ],
+  "differences": [
+    {
+      "case": "empty-key-empty-prediction",
+      "upstream": 1.0,
+      "here": 0.0,
+      "why": "The evaluator compares two normalised strings, and two empty strings are equal, so a key that declares nothing awards a point for an answer that says nothing. Here a facet the key does not declare is not scored at all, and a case with nothing scored is 0. Reproducing the free point would make an export of empty keys score a perfect JRA."
+    },
+    {
+      "case": "numeric-component",
+      "upstream": 1.0,
+      "here": 0.0,
+      "why": "The evaluator stringifies with str(value), so the number 8080 matches the component '8080'. This repository's export contract types the component as a string, and a number reads as absent. The difference is in the reader rather than in the rule: a submission that stringifies its own component scores identically under both."
+    }
+  ]
+}
