@@ -26,19 +26,34 @@
       "why": "A published metric that ignores the fault kind. It is the one number this contract can compute that a facet average could not express: right service, wrong kind."
     },
     {
+      "id": "path-reachability",
+      "quote": "Path Reachability (PR) is satisfied when the agent both names at least one correct root-cause service and draws a valid path through its predicted causal graph from that service to a ground-truth alarm node, a component observed to behave abnormally during the injection window;",
+      "why": "Two conjuncts: a correct root cause, and a path in the *predicted* graph from it to an alarm node. The second is what makes PR stronger than AnySvc, and the definition of \"alarm node\" is the sentence that decides whether this contract can compute it at all."
+    },
+    {
+      "id": "pr-is-one-path",
+      "quote": "PR is the most lenient process metric: it requires only one valid path from a single correct anchor, not the full graph.",
+      "why": "PR is not a graph comparison. It is existence of one path, which is why it can be 1 while Edge F1 is near 0 -- and why it belongs beside the graph F1s instead of replacing them."
+    },
+    {
+      "id": "every-annotated-node-deviated",
+      "quote": "A candidate path π is verified only if all of (i) every node along π exhibits a deviation beyond its baseline screen, (ii) every consecutive edge conforms to R (inherited from Phase 1), and (iii) each downstream anomaly onsets no earlier than its upstream cause hold simultaneously.",
+      "why": "The clause that removes the need for a new field. An alarm node is \"a component observed to behave abnormally during the injection window\", and PAVE admits a path only if every node on it crossed its baseline screen -- so every node of the annotation is an alarm node by construction. The previous pass recorded PR as needing a field the contract does not carry; it was already here, in the chain."
+    },
+    {
+      "id": "ground-truth-is-g-star",
+      "quote": "The verified causal subgraph G ∗ (formed by the edges of all paths in Π∗ ) is the processlevel ground truth (GT) against which agent reasoning is evaluated.",
+      "why": "Names the annotated path set as the ground truth (GT) the process layer scores against, which is what licenses reading its nodes as the alarm-node set."
+    },
+    {
       "id": "graph-f1",
       "quote": "Node F1 and Edge F1 score the predicted causal graph Ĝ against G ∗ under exact matching;",
       "why": "The process layer's graph comparison. Exact matching means a node or an edge is either in both sets or in one, which is computable from the exported path without the topology -- and it is where partial credit belongs, instead of a facet average that also pays for the root cause a second time."
     },
     {
-      "id": "path-reachability",
-      "quote": "The process layer scores the agent’s reasoning: Path Reachability (PR) is satisfied when the agent both names at least one correct root-cause service and draws a valid path through its predicted causal graph from that service to a ground-truth alarm node, a component observed to behave abnormally during the injection window;",
-      "why": "The one published process metric this contract cannot compute: PR needs the set of ground-truth alarm nodes, which the PAVE annotation carries and this exporter does not. Recorded as a gap rather than approximated by the graph F1, which is a different quantity."
-    },
-    {
       "id": "ungrounded",
       "quote": "We reserve the term ungrounded diagnosis for cases that satisfy AnySvc but not PR: a correct root-cause identification not grounded in a verified causal propagation path to the observed symptom.",
-      "why": "Why the layers are reported apart. The paper's own headline finding is that a correct service named without a verified path is the common failure, and a single averaged number hides exactly that: `anySvc` 1 beside `nodeF1` 0 is the sentence."
+      "why": "Why the layers are reported apart. The paper's own headline finding is that a correct service named without a verified path is the common failure, and a single averaged number hides exactly that: `anySvc` 1 beside `pr` 0 is the sentence."
     }
   ],
   "metricSet": [
@@ -55,14 +70,11 @@
   "implemented": [
     "EM",
     "AnySvc",
+    "Path Reachability (PR)",
     "Node F1",
     "Edge F1"
   ],
   "notImplemented": [
-    {
-      "metric": "Path Reachability (PR)",
-      "why": "needs the ground-truth alarm nodes the PAVE annotation carries and this export does not; deriving them from the chain would be a different metric wearing its name"
-    },
     {
       "metric": "F1 / Precision / Recall",
       "why": "defined over a predicted pair set, and this data model carries exactly one root cause; for a one-pair submission all three equal EM, so reporting them as three more columns would be three names for one number"
@@ -70,6 +82,10 @@
     {
       "metric": "SQL Exec",
       "why": "the contract carries no SQL; the export references checkpoints, not queries"
+    },
+    {
+      "metric": "Mean Time to Diagnosis",
+      "why": "needs per-attempt timestamps; the contract carries the injection window, not the moment an agent produced its answer"
     }
   ],
   "cases": [
@@ -95,6 +111,7 @@
       "expected": {
         "em": 1,
         "anySvc": 1,
+        "pr": 1,
         "nodeF1": 1.0,
         "edgeF1": 1.0
       }
@@ -121,13 +138,14 @@
       "expected": {
         "em": 0,
         "anySvc": 1,
+        "pr": 1,
         "nodeF1": 1.0,
         "edgeF1": 1.0
       }
     },
     {
       "id": "right-service-no-path",
-      "why": "the diagnosis is right and the causal path is absent: the case is an ungrounded diagnosis",
+      "why": "the diagnosis is right and the causal path is absent: the ungrounded case",
       "prediction": {
         "component": "service:default/order",
         "faultType": "HighCPU",
@@ -144,6 +162,7 @@
       "expected": {
         "em": 1,
         "anySvc": 1,
+        "pr": 0,
         "nodeF1": 0.0,
         "edgeF1": 0.0
       }
@@ -170,6 +189,7 @@
       "expected": {
         "em": 0,
         "anySvc": 0,
+        "pr": 0,
         "nodeF1": 1.0,
         "edgeF1": 1.0
       }
@@ -197,13 +217,14 @@
       "expected": {
         "em": 1,
         "anySvc": 1,
+        "pr": 1,
         "nodeF1": 0.8571428571428571,
         "edgeF1": 0.8
       }
     },
     {
       "id": "missing-edge",
-      "why": "the predicted graph stops one hop early",
+      "why": "the predicted graph stops one hop early, which still reaches an alarm node",
       "prediction": {
         "component": "service:default/order",
         "faultType": "HighCPU",
@@ -222,8 +243,90 @@
       "expected": {
         "em": 1,
         "anySvc": 1,
+        "pr": 1,
         "nodeF1": 0.8,
         "edgeF1": 0.6666666666666666
+      }
+    },
+    {
+      "id": "wrong-first-hop",
+      "why": "the first hop leaves the annotated path, so nothing downstream is reached",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/payment"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "pr": 0,
+        "nodeF1": 0.4,
+        "edgeF1": 0.0
+      }
+    },
+    {
+      "id": "detour-that-arrives",
+      "why": "a two-hop detour that still arrives: PR is one valid path, not the whole graph",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/payment",
+          "service:default/payment->service:default/cart"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "pr": 1,
+        "nodeF1": 0.6666666666666666,
+        "edgeF1": 0.0
+      }
+    },
+    {
+      "id": "cycle-that-arrives-nowhere",
+      "why": "the predicted graph closes a loop that never touches the annotation; the walk must terminate rather than revisit the loop forever",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/payment",
+          "service:default/payment->service:default/warehouse",
+          "service:default/warehouse->service:default/payment"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "pr": 0,
+        "nodeF1": 0.3333333333333333,
+        "edgeF1": 0.0
       }
     },
     {
@@ -242,9 +345,15 @@
       "expected": {
         "em": 0,
         "anySvc": 0,
+        "pr": null,
         "nodeF1": null,
         "edgeF1": null
       }
     }
-  ]
+  ],
+  "alarmNodeBasis": {
+    "set": "the nodes of the annotated path set G*",
+    "why": "PAVE verifies a path only if every node on it deviated beyond its baseline screen, so G*'s nodes are alarm nodes by construction",
+    "direction": "G* is a subset of the paper's alarm set -- components that deviated but were not on a surviving path are absent here -- so this PR is a lower bound, not the paper's number"
+  }
 }

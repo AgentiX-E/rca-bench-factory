@@ -39,7 +39,13 @@ interface Case {
   why: string;
   prediction: { component: string; faultType: string; chain: string[] };
   groundTruth: { component: string; faultType: string; chain: string[] };
-  expected: { em: number; anySvc: number; nodeF1: number | null; edgeF1: number | null };
+  expected: {
+    em: number;
+    anySvc: number;
+    pr: number | null;
+    nodeF1: number | null;
+    edgeF1: number | null;
+  };
 }
 
 interface Corpus {
@@ -145,8 +151,8 @@ describe('the corpus is pinned to the paper that defines the metrics', () => {
     }
   });
 
-  it('quotes five clauses, and the metric’s own quote is one of them', () => {
-    expect(CORPUS.clauses).toHaveLength(5);
+  it('quotes eight clauses, and the metric’s own quote is one of them', () => {
+    expect(CORPUS.clauses).toHaveLength(8);
     for (const entry of CORPUS.clauses) {
       expect(entry.quote.length, `${entry.id} quotes nothing`).toBeGreaterThan(60);
       expect(entry.why.length, `${entry.id} argues nothing`).toBeGreaterThan(60);
@@ -163,13 +169,13 @@ describe('the corpus is pinned to the paper that defines the metrics', () => {
 });
 
 describe('the metric names the published quantities it implements, and only those', () => {
-  it('reports four of the paper’s nine, and says why the other five are absent', () => {
+  it('reports five of the paper’s nine, and says why the other four are absent', () => {
     expect(CORPUS.metricSet).toHaveLength(9);
-    expect(CORPUS.implemented).toEqual(['EM', 'AnySvc', 'Node F1', 'Edge F1']);
+    expect(CORPUS.implemented).toEqual(['EM', 'AnySvc', 'Path Reachability (PR)', 'Node F1', 'Edge F1']);
     expect(CORPUS.notImplemented.map((entry) => entry.metric)).toEqual([
-      'Path Reachability (PR)',
       'F1 / Precision / Recall',
       'SQL Exec',
+      'Mean Time to Diagnosis',
     ]);
     for (const entry of CORPUS.notImplemented) {
       expect(entry.why.length, `${entry.metric} has no reason`).toBeGreaterThan(40);
@@ -189,7 +195,7 @@ describe('the metric names the published quantities it implements, and only thos
   });
 });
 
-describe('the seven cases replay, and the layers are reported apart', () => {
+describe('the ten cases replay, and the layers are reported apart', () => {
   it('scores each case exactly as the corpus recorded it', () => {
     const scored = report();
     const observed = new Map(
@@ -198,6 +204,7 @@ describe('the seven cases replay, and the layers are reported apart', () => {
         {
           em: entry.terms?.['em'],
           anySvc: entry.terms?.['anySvc'],
+          pr: entry.terms?.['pr'],
           nodeF1: entry.terms?.['nodeF1'],
           edgeF1: entry.terms?.['edgeF1'],
         },
@@ -208,6 +215,7 @@ describe('the seven cases replay, and the layers are reported apart', () => {
       const here = observed.get(entry.id)!;
       expect(here.em, `${entry.id}: em`).toBe(entry.expected.em);
       expect(here.anySvc, `${entry.id}: anySvc`).toBe(entry.expected.anySvc);
+      expect(here.pr, `${entry.id}: pr`).toBe(entry.expected.pr ?? undefined);
       // A term with no denominator is **absent**, not 1 and not 0: a key and an
       // answer that both carry no graph have nothing to compare, and the case record
       // must not invent a perfect match for it.
@@ -218,12 +226,59 @@ describe('the seven cases replay, and the layers are reported apart', () => {
 
   it('reports the layers as different numbers for the same run', () => {
     const scored = report();
-    expect(scored.breakdown).toEqual({ em: 0.57, anySvc: 0.71, nodeF1: 0.78, edgeF1: 0.74 });
-    expect(scored.final).toBe(57);
+    expect(scored.breakdown).toEqual({ em: 0.7, anySvc: 0.8, pr: 0.56, nodeF1: 0.67, edgeF1: 0.5 });
+    expect(scored.final).toBe(70);
     // AnySvc is the lenient layer and EM the strict one, and the gap is the point:
     // the paper's own headline is that a correct service named without a verified
     // path is the common failure, and one averaged number cannot say it.
-    expect(scored.breakdown['anySvc']).toBeGreaterThan(scored.breakdown['em']!);
+    expect(scored.breakdown['anySvc']).toBeGreaterThan(scored.breakdown['pr']!);
+
+    // `pr <= anySvc` case by case, and never by comparing the two averages: PR is
+    // absent for the case whose key declares no path, so the two means have
+    // different denominators. The gap between the averages is the paper's headline,
+    // but the *property* is the per-case inequality -- two cases here are named a
+    // correct service and do not reach an alarm node.
+    const paired = scored.cases.filter((entry) => entry.terms?.['pr'] !== undefined);
+    expect(paired).toHaveLength(9);
+    expect(paired.filter((entry) => entry.terms!['pr']! > entry.terms!['anySvc']!)).toEqual([]);
+    // Sorted, because the report's order is the reader's file order and a
+    // positional expectation would break on a rename rather than on a defect.
+    expect(
+      paired
+        .filter((entry) => entry.terms!['anySvc'] === 1 && entry.terms!['pr'] === 0)
+        .map((e) => e.caseId)
+        .sort(),
+    ).toEqual(['cycle-that-arrives-nowhere', 'right-service-no-path', 'wrong-first-hop']);
+  });
+
+  it('turns the alarm nodes into a path question, not a graph question', () => {
+    // The two cases that separate PR from the F1s. `detour-that-arrives` has an
+    // edge F1 of 0 and a PR of 1 -- one valid path is all PR asks for. And
+    // `wrong-first-hop` reaches nothing while still naming the right cause: that is
+    // exactly the paper's `ungrounded diagnosis`, `anySvc: 1` beside `pr: 0`.
+    const byId = new Map(report().cases.map((entry) => [entry.caseId, entry.terms]));
+    expect(byId.get('detour-that-arrives')).toMatchObject({ pr: 1, edgeF1: 0 });
+    expect(byId.get('wrong-first-hop')).toMatchObject({ em: 1, anySvc: 1, pr: 0 });
+    expect(byId.get('right-service-no-path')).toMatchObject({ anySvc: 1, pr: 0, nodeF1: 0 });
+  });
+
+  it('terminates on a projected graph that loops, and still answers 0', () => {
+    // A submission may declare a cycle. The walk keeps one `seen` set per call, so
+    // termination is a property of the algorithm rather than of the corpus -- and
+    // the case is here so that property is executed, not merely argued.
+    const terms = report().cases.find((entry) => entry.caseId === 'cycle-that-arrives-nowhere')!.terms;
+    expect(terms).toMatchObject({ em: 1, anySvc: 1, pr: 0 });
+  });
+
+  it('holds the alarm-node set to G*, and records that this is a lower bound', () => {
+    // PR needs an alarm node, and PAVE verifies a path only if every node on it
+    // "exhibits a deviation beyond its baseline screen" -- so G* nodes *are* alarm
+    // nodes. The corpus records that the set is a subset of the paper's (a
+    // component that deviated but was on no surviving path is absent here), which
+    // makes this PR a lower bound. A claim of parity would be the defect.
+    expect(CORPUS.alarmNodeBasis.set).toContain('G*');
+    expect(CORPUS.alarmNodeBasis.why).toContain('deviated beyond its baseline screen');
+    expect(CORPUS.alarmNodeBasis.direction).toContain('lower bound');
   });
 
   it('separates a right service from a right diagnosis', () => {
@@ -242,6 +297,8 @@ describe('the seven cases replay, and the layers are reported apart', () => {
     // of empty keys reports a perfect exact match. Same defect as Cloud-OpsBench's,
     // declared there and refused here.
     const scored = report().cases.find((entry) => entry.caseId === 'empty-key-empty-answer')!;
+    // No `pr`: the key declares no edge, so there is nothing to reach and the term
+    // has no denominator rather than a free point.
     expect(scored.terms).toEqual({ em: 0, anySvc: 0 });
     expect(scored.score).toBe(0);
   });

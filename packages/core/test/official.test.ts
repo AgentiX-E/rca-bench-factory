@@ -769,7 +769,7 @@ describe('OpenRCA 2.0 outcome layer and graph F1', () => {
     const report = scoreWith('openrca-2.0', files(), [oracle]);
     expect(report.accuracy).toBe(1);
     expect(report.final).toBe(100);
-    expect(report.breakdown).toEqual({ em: 1, anySvc: 1, nodeF1: 1, edgeF1: 1 });
+    expect(report.breakdown).toEqual({ em: 1, anySvc: 1, pr: 1, nodeF1: 1, edgeF1: 1 });
     expect(report.cases[0]!.facets.map((f) => f.facet).sort()).toEqual(['component', 'faultType']);
   });
 
@@ -781,14 +781,14 @@ describe('OpenRCA 2.0 outcome layer and graph F1', () => {
     // for by also charging the root cause a second time.
     const oracle = oracleFor('openrca-2.0', files())[0]!;
     const wrongKind = scoreWith('openrca-2.0', files(), [{ ...oracle, faultType: 'network' }]).breakdown;
-    expect(wrongKind).toEqual({ em: 0, anySvc: 1, nodeF1: 1, edgeF1: 1 });
+    expect(wrongKind).toEqual({ em: 0, anySvc: 1, pr: 1, nodeF1: 1, edgeF1: 1 });
 
     const wrongService = scoreWith('openrca-2.0', files(), [{ ...oracle, component: 'service:default/payment' }])
       .breakdown;
-    expect(wrongService).toEqual({ em: 0, anySvc: 0, nodeF1: 1, edgeF1: 1 });
+    expect(wrongService).toEqual({ em: 0, anySvc: 0, pr: 0, nodeF1: 1, edgeF1: 1 });
 
     const noPath = scoreWith('openrca-2.0', files(), [{ ...oracle, chain: [] }]).breakdown;
-    expect(noPath).toEqual({ em: 1, anySvc: 1, nodeF1: 0, edgeF1: 0 });
+    expect(noPath).toEqual({ em: 1, anySvc: 1, pr: 0, nodeF1: 0, edgeF1: 0 });
     expect(scoreWith('openrca-2.0', files(), [{ ...oracle, chain: [] }]).final).toBe(100);
   });
 
@@ -799,7 +799,7 @@ describe('OpenRCA 2.0 outcome layer and graph F1', () => {
     const oracle = oracleFor('openrca-2.0', files())[0]!;
     const report = scoreWith('openrca-2.0', files(), [{ ...oracle, evidence: ['nothing|at|all'] }]);
     expect(report.accuracy).toBe(1);
-    expect(report.breakdown).toEqual({ em: 1, anySvc: 1, nodeF1: 1, edgeF1: 1 });
+    expect(report.breakdown).toEqual({ em: 1, anySvc: 1, pr: 1, nodeF1: 1, edgeF1: 1 });
   });
 });
 

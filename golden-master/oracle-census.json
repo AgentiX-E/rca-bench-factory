@@ -254,9 +254,9 @@
         "takenAt": "2026-10-18"
       },
       "gap": {
-        "summary": "four of the nine published quantities are implemented (EM, AnySvc, Node F1, Edge F1); PR needs the ground-truth alarm nodes the PAVE annotation carries and this export does not, F1/Precision/Recall collapse onto EM for a one-pair submission, and SQL Exec needs queries",
-        "evidence": "arXiv 2606.27154v2 sec. 3.2 :: \"Path Reachability (PR) is satisfied when the agent both names at least one correct root-cause service and draws a valid path through its predicted causal graph from that service to a ground-truth alarm node\"",
-        "next": "not a transcription: PR needs a field this contract does not carry, so closing it means adding the alarm-node set to the export first. Recorded in golden-master/openrca2-evaluator.json with the three metrics and why each is absent"
+        "summary": "five of the nine published quantities are implemented (EM, AnySvc, PR, Node F1, Edge F1); PR uses the annotated path nodes as the alarm-node set, which makes it a lower bound rather than the paper number, F1/Precision/Recall collapse onto EM for a one-pair submission, SQL Exec needs queries, and MTTD needs per-attempt timestamps this contract does not carry",
+        "evidence": "arXiv 2606.27154v2 sec. 2.3 :: \"A candidate path is verified only if all of (i) every node along it exhibits a deviation beyond its baseline screen\" -- so the annotated path nodes are alarm nodes by construction, and PR needed no new field",
+        "next": "the lower bound closes one of two ways: the PAVE observation graph (which would name every deviating component, not only the ones on a surviving path), or a statement that G* is the alarm set by definition. Recorded in golden-master/openrca2-evaluator.json under alarmNodeBasis, with the direction of the error"
       }
     },
     {

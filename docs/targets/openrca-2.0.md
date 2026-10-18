@@ -145,6 +145,7 @@ It reports the layers the paper publishes separately (arXiv 2606.27154v2 §3.2).
 | --- | --- | --- |
 | `em` (the headline) | the root cause **and** the fault kind both match — exact set equality over a one-pair `(service, fault_kind)` set | outcome |
 | `anySvc` | the root cause matches, ignoring the fault kind | outcome (lenient) |
+| `pr` | the root cause matches **and** the predicted graph carries a path of length ≥ 1 from it to a node of the annotated path | process |
 | `nodeF1` | F1 of the predicted node set against the annotated one | process |
 | `edgeF1` | F1 of the predicted edge set against the annotated one | process |
 
@@ -158,11 +159,19 @@ It used to be `derived`, and its `source` used to be this document — the claim
 was the document making the claim, and the sentence it quoted ("the scorer is not
 open-sourced") appears nowhere in the paper or in `microsoft/OpenRCA`'s README.
 
-Five of the paper's nine quantities are **not** implemented, and the reason is in
-`golden-master/openrca2-evaluator.json` with each one: Path Reachability needs the
-ground-truth alarm nodes the PAVE annotation carries and this export does not; F1 /
-Precision / Recall over a one-pair set are three names for `em`; SQL Exec needs queries
-this contract does not have.
+**Where the alarm nodes come from.** PR needs a ground-truth alarm node, and an earlier
+revision of this page said that set was a field the contract did not carry. It is not:
+PAVE verifies a path only if "every node along π exhibits a deviation beyond its baseline
+screen" (§2.3), so every node of the annotated path is an alarm node by construction — the
+field was the chain. The set used is G*'s nodes, which is a **subset** of the paper's
+alarm set (a component that deviated but sat on no surviving path is absent), so this `pr`
+is a **lower bound**, not the paper's number. The corpus records that direction under
+`alarmNodeBasis`.
+
+Four of the paper's nine quantities are **not** implemented, and the reason is in
+`golden-master/openrca2-evaluator.json` with each one: F1 / Precision / Recall over a
+one-pair set are three names for `em`; SQL Exec needs queries this contract does not have;
+Mean Time to Diagnosis needs per-attempt timestamps the contract does not carry.
 
 ## Failure modes
 

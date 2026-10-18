@@ -243,11 +243,19 @@ const OPENRCA_METRIC: OfficialMetricSpec = {
  *           the predicted causal graph against the annotated one under exact
  *           matching -- where partial credit belongs, rather than in a facet
  *           average that pays the root cause twice.
+ *   PR      a correct root cause *and* a path from it, in the predicted graph, to
+ *           an alarm node. Finding 187: the alarm nodes look like a missing field
+ *           and are not one. PAVE verifies a path only if "every node along π
+ *           exhibits a deviation beyond its baseline screen", so **every node of
+ *           the annotated path is an alarm node by construction** -- the field was
+ *           the chain all along. The set used here is G*'s nodes, which is a
+ *           subset of the paper's alarm set, so this PR is a lower bound.
  *
- * Five are not, and are recorded as gaps in
- * `golden-master/openrca2-evaluator.json`: PR needs the ground-truth alarm nodes
- * the PAVE annotation carries; F1/Precision/Recall over a one-pair set are three
- * names for EM; SQL Exec needs queries this contract does not have.
+ * Four are not, and are recorded as gaps in
+ * `golden-master/openrca2-evaluator.json`: F1/Precision/Recall over a one-pair set
+ * are three names for EM; SQL Exec needs queries this contract does not have; and
+ * MTTD, which the paper reports beside these but which needs timestamps this
+ * contract does not carry.
  *
  * `evidence` is no longer a scored facet: no published metric scores the
  * checkpoint references. They are validated by the structural, temporal and
@@ -256,9 +264,9 @@ const OPENRCA_METRIC: OfficialMetricSpec = {
  */
 const OPENRCA2_METRIC: OfficialMetricSpec = {
   id: 'openrca2-outcome-and-graph',
-  name: 'OpenRCA 2.0 outcome layer (EM, AnySvc) and causal-graph F1',
+  name: 'OpenRCA 2.0 outcome layer (EM, AnySvc), path reachability and causal-graph F1',
   formula:
-    'score = EM (root cause and fault kind both match); anySvc, nodeF1 and edgeF1 are ' +
+    'score = EM (root cause and fault kind both match); anySvc, pr, nodeF1 and edgeF1 are ' +
     'reported beside it because the paper reports the layers apart',
   provenance: 'transcribed',
   source: 'arXiv 2606.27154v2 section 3.2 (OpenRCA 2.0 outcome and process metrics)',
@@ -1218,6 +1226,52 @@ function setF1(predicted: ReadonlySet<string>, expected: ReadonlySet<string>): n
   return (2 * hit) / (predicted.size + expected.size);
 }
 
+/**
+ * Whether the predicted graph carries a path of **length at least one** from
+ * `from` to any node in `targets`.
+ *
+ * Length at least one is what makes PR stronger than AnySvc: a root cause that
+ * names itself and propagates nowhere has not grounded the diagnosis, which is the
+ * paper's own distinction (`ungrounded diagnosis`). The start node is therefore
+ * never a witness on its own -- it can only be reached again by an actual cycle.
+ *
+ * The walk is breadth-first over the edges the submission declares. It does not
+ * consult the answer key's edges, because the question is whether *this* graph
+ * connects the cause to an alarm node, not whether it reproduces G*.
+ */
+function reachesAny(
+  predicted: readonly string[],
+  from: string,
+  targets: ReadonlySet<string>,
+): boolean {
+  if (from === '' || targets.size === 0) return false;
+  const adjacency = new Map<string, string[]>();
+  for (const token of predicted) {
+    const [source, sink] = token.split('->');
+    if (source === undefined || sink === undefined || source === '' || sink === '') continue;
+    const out = adjacency.get(source) ?? [];
+    out.push(sink);
+    adjacency.set(source, out);
+  }
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  const enqueue = (nodes: readonly string[]): void => {
+    for (const node of nodes) queue.push(node);
+  };
+  enqueue(adjacency.get(from) ?? []);
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    if (targets.has(node)) return true;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    // One `push` per successor rather than a spread: the successor list is the
+    // submission's, so its length is not bounded by anything this file controls,
+    // and a spread would put one argument per edge on the stack.
+    for (const next of adjacency.get(node) ?? []) queue.push(next);
+  }
+  return false;
+}
+
 /** The endpoints a chain token names, as a set. */
 function chainNodes(chain: readonly string[]): Set<string> {
   const out = new Set<string>();
@@ -1242,9 +1296,14 @@ function chainNodes(chain: readonly string[]): Set<string> {
 function scoreOpenRca2Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
   const componentMatches = gt.component !== '' && pred.component === gt.component;
   const kindMatches = gt.faultType !== '' && pred.faultType === gt.faultType;
-  const node = setF1(chainNodes(pred.chain), chainNodes(gt.chain));
+  const gtNodes = chainNodes(gt.chain);
+  const node = setF1(chainNodes(pred.chain), gtNodes);
   const edge = setF1(new Set(pred.chain), new Set(gt.chain));
   const em = componentMatches && kindMatches ? 1 : 0;
+  // Absent when the annotation declares no edge: a single-node ground truth has
+  // nothing to reach, so PR has no denominator rather than a free point. The same
+  // rule the empty evidence denominator follows.
+  const pr = gt.chain.length === 0 ? undefined : componentMatches && reachesAny(pred.chain, gt.component, gtNodes) ? 1 : 0;
 
   return {
     caseId: gt.caseId,
@@ -1258,6 +1317,7 @@ function scoreOpenRca2Case(pred: OfficialPrediction, gt: OfficialGroundTruth): O
       anySvc: componentMatches ? 1 : 0,
       ...(node === undefined ? {} : { nodeF1: node }),
       ...(edge === undefined ? {} : { edgeF1: edge }),
+      ...(pr === undefined ? {} : { pr }),
     },
   };
 }
@@ -1628,10 +1688,13 @@ function aggregateFor(
     const anySvc = meanOfPresent(cases.map((c) => c.terms?.['anySvc']));
     const nodeF1 = meanOfPresent(cases.map((c) => c.terms?.['nodeF1']));
     const edgeF1 = meanOfPresent(cases.map((c) => c.terms?.['edgeF1']));
+    const pr = meanOfPresent(cases.map((c) => c.terms?.['pr']));
     return {
       breakdown: {
         em: round2(em),
         anySvc: round2(anySvc),
+        // The paper's headline number is the gap between this and `anySvc`.
+        pr: round2(pr),
         nodeF1: round2(nodeF1),
         edgeF1: round2(edgeF1),
       },

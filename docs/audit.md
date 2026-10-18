@@ -19304,3 +19304,98 @@ rather than left implicit.
 | `core` / `cli` / repo | **155 / 3901** · **4 / 187** · **159 / 4088** |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 187 — the field PR needed was already in the export
+
+### A self-correction one pass old
+
+Pass 63 closed by recording PR as blocked on a field:
+
+> **PR needs a field the contract does not carry.** `[open: closing it means adding the
+> alarm-node set to the annotation and to the export, which is a contract change…]`
+
+Both halves of that sentence are wrong. PR's second conjunct is "a valid path … from that
+service to a ground-truth alarm node, a component observed to behave abnormally during the
+injection window" — which reads like a *separate* annotation. It is not, and §2.3 says so
+three pages earlier:
+
+> A candidate path π is verified only if all of **(i) every node along π exhibits a
+> deviation beyond its baseline screen**, (ii) every consecutive edge conforms to R …,
+> and (iii) each downstream anomaly onsets no earlier than its upstream cause.
+
+An alarm node is a component observed to deviate. PAVE admits a path only if **every node
+on it** deviated. Therefore **every node of the annotated path is an alarm node by
+construction**, and the field was the chain all along. Adding `alarm_nodes` would have put a
+second copy of a fact the annotation already asserts into the export — finding 183's shape,
+in the contract rather than in the scorer.
+
+The lesson is narrow and worth writing down: **reading the definition of the metric was not
+enough; the answer was in the definition of its input.** The previous pass had the clause in
+the same PDF and quoted it for a different purpose.
+
+### What PR is here
+
+```
+pr = (named root cause == key's root cause)
+     AND (the submitted graph has a path of length >= 1 from it to a node of G*)
+```
+
+Length at least one is the distinction between PR and AnySvc: a submission that names the
+service and propagates nowhere has not grounded the diagnosis. A zero-length "path" would
+make the two metrics identical, and the paper reports 61.5% against 76.0%, so they are not.
+
+| Number | Corpus | Rule |
+| --- | --- | --- |
+| `em` | 0.70 | service **and** fault kind |
+| `anySvc` | 0.80 | the service alone |
+| `pr` | 0.56 | a correct cause and a path to an alarm node |
+| `nodeF1` | 0.67 | nodes, exact matching |
+| `edgeF1` | 0.50 | edges, exact matching |
+
+### The lower bound, stated as a direction
+
+G*'s nodes are a **subset** of the paper's alarm set: a component that deviated and sat on
+no surviving path is not in the annotation. So this `pr` is a lower bound, and the corpus
+carries `alarmNodeBasis` — the set, the clause that licenses it, and the direction of the
+error. Claiming parity would be the exact defect this document is about; claiming a lower
+bound and naming its cause is the only honest form available without the observation graph,
+which the paper describes and does not release.
+
+### Three cases that exist to stop one number from standing for another
+
+- `detour-that-arrives` — `pr: 1` with `edgeF1: 0`. PR asks for *one* valid path, and this
+  graph is wrong everywhere except the detour. A test that only compared the aggregates
+  would never see the two layers separate.
+- `wrong-first-hop` — `em: 1`, `anySvc: 1`, `pr: 0`. The paper's `ungrounded diagnosis` as
+  a fixture; before this pass the report could not express it.
+- `cycle-that-arrives-nowhere` — a predicted graph that closes a loop away from the
+  annotation. PR is 0, and the walk must terminate. Termination is a property of the
+  algorithm, not of the corpus, which is why there is a case that exercises it.
+
+### The gate that caught the first draft
+
+```ts
+queue.push(...(adjacency.get(node) ?? []));
+```
+
+The repository has a test that forbids spreading a size-dependent array into a call. The
+successor list is the *submission's*, so its length is bounded by nothing this file
+controls — a graph with 200k edges would put 200k arguments on the stack. Replaced with a
+per-successor `push`.
+
+This is the second time in this campaign that a gate written for a different reason
+corrected a change before it shipped, and both times the correction was to a claim about
+size rather than about arithmetic.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | 8 clauses (3 new, verbatim), 10 cases, `alarmNodeBasis` recorded |
+| mechanism tests | **13**, one of them the termination property |
+| mutation checks | **9 of 9 CAUGHT** |
+| the layers | em 0.70 / anySvc 0.80 / pr 0.56 / nodeF1 0.67 / edgeF1 0.50 |
+| `official:check` | 8 PASS, 1 skipped by contract |
+| `core` / `cli` / repo | **155 / 3904** · **4 / 187** · **159 / 4091** |
+| coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

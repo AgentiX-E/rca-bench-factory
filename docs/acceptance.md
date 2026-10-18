@@ -379,6 +379,11 @@ number — it is a green run that established nothing.
   paper's nine quantities — EM (the headline), AnySvc, Node F1 and Edge F1 — with the other
   five declared absent and argued, and `evidence` no longer scored by a metric no published
   metric scores it. `openrca2-evaluator.test.ts` asserts the source is not a `docs/` path.
+  **PR is implemented too, and the field it seemed to need was already there**: PAVE admits
+  a path only if every node on it deviated beyond its baseline screen, so the annotated
+  path's nodes *are* alarm nodes. The set used is a subset of the paper's, which makes the
+  reported `pr` a **lower bound** — stated in the corpus under `alarmNodeBasis`, because a
+  claim of parity would be the defect this whole campaign is about.
 - **ITBench's pass@1 is the cause alone, and the metric that used to carry that name did
   not say so.** `golden-master/itbench-evaluator.json` pins arXiv 2502.05352v1 by digest
   (4,068,098 bytes, sha256 `da47aa02…`) and records six clauses; the rule is now two numbers

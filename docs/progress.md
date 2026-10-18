@@ -6651,9 +6651,9 @@ anyone editing both: **5 replayed / 3 transcribed / 1 derived.**
 | the citation | `source` is not a `docs/` path; the invented sentence is not the quote; the negative result is recorded |
 | the layers | `anySvc: 0.71` / `em: 0.57` / `nodeF1: 0.78` / `edgeF1: 0.74` on the nine-case export |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **155 files, 3901 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **159 files, 4088 tests passed** (as of this commit) |
+| `core` test suite | **155 files, 3901 tests passed** (as of `041ca04`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `041ca04`) |
+| repo test suite | **159 files, 4088 tests passed** (as of `041ca04`) |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 63 across 38 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6675,3 +6675,113 @@ anyone editing both: **5 replayed / 3 transcribed / 1 derived.**
   redistribute, AIOps2025's TA fallback needs a model and a threshold, and ITBench's two
   NTAM metrics need weights the paper leaves tunable; each has its own entry in the pass
   that measured it, with the cost of closing it]`
+
+## Pass 64 -- the field PR needed was already in the export
+
+### A self-correction, one pass later
+
+Pass 63's Open list said:
+
+> **PR needs a field the contract does not carry.** `[open: closing it means adding the
+> alarm-node set to the annotation and to the export…]`
+
+That was wrong, and the sentence that refutes it is in §2.3 of the same paper, three
+pages before the metric definitions:
+
+> A candidate path π is verified only if all of **(i) every node along π exhibits a
+> deviation beyond its baseline screen**, (ii) every consecutive edge conforms to R …,
+> and (iii) each downstream anomaly onsets no earlier than its upstream cause.
+
+An alarm node is "a component observed to behave abnormally during the injection window".
+PAVE admits a path only if every node on it crossed its baseline screen. **So every node
+of the annotated path is an alarm node by construction** — the field was the chain all
+along, and adding one would have been inventing a second copy of a fact the annotation
+already asserts.
+
+This is the same shape as finding 180 and finding 183, one level out: not two
+implementations of a rule, and not two vocabularies for a fact, but **a missing field that
+was already present under a different name**. Reading the *definition of the input* is
+what found it; reading only the definition of the metric was not enough.
+
+### What PR is, exactly
+
+Two conjuncts, and the second is why it is stronger than `anySvc`:
+
+- the named root cause is the key's root cause, **and**
+- the submitted graph carries a path of **length at least one** from it to a node of the
+  annotated path.
+
+Length at least one is the whole distinction. A submission that names the service and
+propagates nowhere has not grounded the diagnosis — the paper's `ungrounded diagnosis` —
+and a zero-length "path" would make PR identical to AnySvc, which the reported numbers in
+the paper rule out (61.5% versus 76.0%).
+
+| Number | Corpus | Rule |
+| --- | --- | --- |
+| `em` | 0.70 | service and fault kind, the strict outcome layer |
+| `anySvc` | 0.80 | the service alone |
+| `pr` | 0.56 | a correct cause **and** a path to an alarm node |
+| `nodeF1` | 0.67 | graph nodes, exact matching |
+| `edgeF1` | 0.50 | graph edges, exact matching |
+
+### The direction of the error, recorded rather than glossed
+
+G*'s nodes are a **subset** of the paper's alarm set: a component that deviated but sat on
+no surviving path is absent from the annotation. So this `pr` is a **lower bound**, and the
+corpus carries that under `alarmNodeBasis` — the set used, the clause that licenses it, and
+the direction. A claim of parity would be exactly the defect this campaign keeps finding.
+
+### Two cases that exist because the numbers would otherwise agree
+
+`detour-that-arrives` has `edgeF1: 0` and `pr: 1` — one valid path is all PR asks for, and
+the graph is wrong everywhere else. `cycle-that-arrives-nowhere` closes a loop that never
+touches the annotation: PR must be 0, and the walk must terminate, which is a property of
+the algorithm rather than of the corpus.
+
+And `wrong-first-hop` is the paper's failure written as a fixture: `em: 1`, `anySvc: 1`,
+`pr: 0`. Before this pass the report could not say it at all.
+
+### One thing the gate caught
+
+The first draft walked the graph with `queue.push(...successors)`. The repository has a
+test that forbids spreading a size-dependent array into a call — the successor list is the
+*submission's*, so its length is unbounded by anything this file controls. Replaced with a
+per-successor `push`. That is the second time this campaign has been corrected by a gate it
+did not write for the occasion.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | **8 clauses** (3 new, all quoted verbatim), **10 cases** with `em`/`anySvc`/`pr`/`nodeF1`/`edgeF1` |
+| mechanism tests | **13** on the corpus, 1 of them the termination property |
+| mutation checks | **9 of 9 CAUGHT**, each by the test named in its row |
+| the alarm set | `alarmNodeBasis` names the set, the clause, and the direction of the error |
+| the layers | 0.70 / 0.80 / 0.56 / 0.67 / 0.50 on the ten-case export |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **155 files, 3904 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **159 files, 4091 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 63 across 38 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **`pr` is a lower bound and the corpus says so**, which is not the same as being right.
+  `[open: closing the gap needs the PAVE observation graph -- every component that deviated,
+  not only the ones on a surviving path -- which the paper describes but does not release;
+  or a decision that G* *is* the alarm set, which would make this PR the paper's definition
+  rather than a conservative reading of it]`
+- **`em` and the four reported quantities are one root cause wide.** `[open: F1, Precision
+  and Recall are defined over a predicted pair *set*, and this data model carries one pair,
+  so they collapse onto EM. Growing the model is a product decision that would also change
+  OpenRCA 1.0's multi-root behaviour]`
+- **A quote still cannot be checked mechanically**, unchanged since pass 63.
+  `[open: what is asserted is that the source is external and that the old invented
+  sentence is gone; the clause itself was pasted by hand, so the guarantee is "nobody can
+  quietly cite themselves again", not "this sentence is in that PDF"]`
+- **Three non-replayable targets still wait on decisions**, unchanged this pass.
+  `[open: RCA100's fault-type rubric is 25 KB of CC BY-NC data this project does not
+  redistribute, AIOps2025's TA fallback needs a model and a threshold, and ITBench's two
+  NTAM metrics need weights the paper leaves tunable]`
