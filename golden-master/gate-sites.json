@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 41,
+  "scanned": 42,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -116,7 +116,7 @@
     },
     {
       "script": "scripts/check-no-vendored-data.mjs",
-      "line": 174,
+      "line": 182,
       "condition": "failures.length > 0",
       "diagnostic": "See golden-master/official-assets.json and scripts/fetch-official.mjs.",
       "status": "proved",
@@ -236,6 +236,22 @@
       "diagnostic": "derive-gate-sites: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/gate-sites-are-proven.test.ts"
+    },
+    {
+      "script": "scripts/derive-openrca-archive.mjs",
+      "line": 295,
+      "condition": "archiveIndex < 0 || argv[archiveIndex + 1] === undefined",
+      "diagnostic": "usage: node scripts/derive-openrca-archive.mjs --archive <dir> [--check]",
+      "status": "proved",
+      "provedBy": "packages/core/test/derive-openrca-archive.test.ts"
+    },
+    {
+      "script": "scripts/derive-openrca-archive.mjs",
+      "line": 309,
+      "condition": "current !== text",
+      "diagnostic": "committed ${current.length} bytes, derived ${text.length} bytes",
+      "status": "proved",
+      "provedBy": "packages/core/test/derive-openrca-archive.test.ts"
     },
     {
       "script": "scripts/fetch-official.mjs",

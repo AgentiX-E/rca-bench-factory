@@ -6090,7 +6090,7 @@ has to delete a file that another test replays.
 | `cli` test suite | **4 files, 186 tests passed** (as of `37de366`) |
 | repo test suite | **154 files, 4029 tests passed** (as of `37de366`) |
 | coverage | core **99.97 / 99.91 / 100 / 99.97**, cli **100 × 4** |
-| gate sites | 63 across 38 scripts, `--check` OK |
+| gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -6236,7 +6236,7 @@ than as a fix.
 | `cli` test suite | **4 files, 186 tests passed** (as of `2444bd8`) |
 | repo test suite | **155 files, 4045 tests passed** (as of `2444bd8`) |
 | coverage | core **99.97 / 99.8 / 100 / 99.97**, cli **100 × 4** |
-| gate sites | 63 across 38 scripts, `--check` OK |
+| gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -6384,7 +6384,7 @@ the new one.
 | `cli` test suite | **4 files, 186 tests passed** (as of `5997dcc`) |
 | repo test suite | **156 files, 4061 tests passed** (as of `5997dcc`) |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
-| gate sites | 63 across 38 scripts, `--check` OK |
+| gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -6537,7 +6537,7 @@ needs.
 | `cli` test suite | **4 files, 187 tests passed** (as of `3d5d62b`) |
 | repo test suite | **158 files, 4076 tests passed** (as of `3d5d62b`) |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
-| gate sites | 63 across 38 scripts, `--check` OK |
+| gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -6655,7 +6655,7 @@ anyone editing both: **5 replayed / 3 transcribed / 1 derived.**
 | `cli` test suite | **4 files, 187 tests passed** (as of `041ca04`) |
 | repo test suite | **159 files, 4088 tests passed** (as of `041ca04`) |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
-| gate sites | 63 across 38 scripts, `--check` OK |
+| gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -6759,11 +6759,11 @@ did not write for the occasion.
 | the alarm set | `alarmNodeBasis` names the set, the clause, and the direction of the error |
 | the layers | 0.70 / 0.80 / 0.56 / 0.67 / 0.50 on the ten-case export |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **155 files, 3904 tests passed** (as of this commit) |
+| `core` test suite | **157 files, 3917 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **159 files, 4091 tests passed** (as of this commit) |
+| repo test suite | **161 files, 4104 tests passed** (as of this commit) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
-| gate sites | 63 across 38 scripts, `--check` OK |
+| gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
 ### Open
@@ -6785,3 +6785,96 @@ did not write for the occasion.
   `[open: RCA100's fault-type rubric is 25 KB of CC BY-NC data this project does not
   redistribute, AIOps2025's TA fallback needs a model and a threshold, and ITBench's two
   NTAM metrics need weights the paper leaves tunable]`
+
+---
+
+## v2.06 — the corpus nobody in this repository wrote
+
+### One thing a released artefact had, and this project had never opened
+
+`microsoft/OpenRCA` publishes four CSVs under `rca/archive/`: what a baseline agent
+submitted, the criteria the official evaluator marked passed and failed, and the score
+it wrote down. 335 rows. They are the only real OpenRCA population in existence, and
+until this pass the rule had been replayed against 25 cases composed here.
+
+The derivation is `scripts/derive-openrca-archive.mjs`; the corpus is
+`golden-master/openrca-archive.json`, 139 KB of `(roots, criteria, score)` triples with
+the four file digests beside them.
+
+### What a row gives away, and what it does not
+
+`passed` and `failed` are newline-joined values, not lists — that is what pandas does to
+a list written into one cell. Together they **are** the criterion set, because
+`file_evaluate` writes `failing_criteria = set(components+reasons+times) - set(passing)`.
+What the columns do not say is which *kind* each value belongs to.
+
+That is decided by `task_index`. `task_1`..`task_3` declare one kind, so placement is
+forced. `task_4`..`task_7` interleave three, and the flattening has lost which is which —
+unless the row names one root, in which case the `groundtruth` cell names all three values
+and the derivation *reads* the placement rather than guessing it, refusing any row whose
+key is not exactly the recovered set.
+
+| | rows | two-root |
+| --- | --- | --- |
+| `Bank` | 136 | 20 |
+| `Market-cloudbed-1` | 70 | 26 |
+| `Market-cloudbed-2` | 78 | 29 |
+| `Telecom` | 51 | **0** |
+| **all** | **335** | **75 (22.4%)** |
+
+**Telecom has none**, and the three others run between 14.7% and 37.2%. The multi-root
+branch is not a corner case that happens to exist; it is a third of two of the four
+systems, and its absence from one of them is a fact about the 30-minute conflict window
+`generate.py` uses to decide what "multi-response" means.
+
+### The number the 25-case corpus could not produce
+
+Of those 75, **33 are replayable** and 42 are not: a two-root key spread across three
+criterion kinds leaves the second root's values with no kind, and inventing one would be a
+rule written here. So they are excluded and counted, and the test asserts the count.
+
+**33 against 2.** The hand-composed corpus named two multi-root cases; the released
+population has thirty-three in the slice that can be reconstructed. Every previous claim
+about the matching rule rested on the smaller number.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | **293 cases** replayed, 42 excluded and counted, 335 rows accounted for |
+| agreement | **293 of 293** reproduce the score the official evaluator wrote |
+| partial credit | 0 ×216 · 0.33 ×9 · 0.5 ×28 · 0.67 ×2 · 1 ×38 — five distinct values, not a boolean |
+| multi-root | 33 replayed (1 full, 9 partial, 23 zero); **10 cases change score** when only the first root is kept |
+| derivation tested | both refusal branches and both failure exits, on a synthetic archive built with `renderCsv` |
+| `core` test suite | **157 files, 3917 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **161 files, 4104 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Free credit, and the second half of the same defect
+
+The derivation was wrong on its first run in a way worth recording: it mapped a criterion
+kind back to an answer-key field by stripping a plural `s`, which turns `times` into `time`
+while the field is `datetime`. Every three-kind task failed the reconstruction, and the
+failure read as *"the archive disagrees with this repository"* — 102 rows of it. The archive
+agreed with nothing; the reader could not see a field.
+
+That is the same shape as the finding this whole campaign keeps meeting: **a mismatch is
+not evidence about the other side until the reader has been checked.** The fix was one
+table instead of a string operation, and the 102 rows became replayable on the next run.
+
+### Open
+
+- **42 rows of the archive are outside the replay.** `[open: a two-root key across three
+  criterion kinds needs the second root's `groundtruth` row, which the archive does not
+  keep; recovering them would mean re-running upstream's `generate.py` over its own
+  metadata, which needs the dataset the README points at Google Drive for]`
+- **The corpus cannot be re-derived in CI.** `[open: its input is the four CSVs, which
+  `check-no-vendored-data.mjs` refuses to keep; `--check` exists and is tested, but no job
+  can supply the bytes, so the digests are the only thing tying the file to a tree]`
+- **Four v2.05 items did not move this pass**: `pr` is a lower bound, `em` is one root
+  cause wide, a quote cannot be checked mechanically, and three targets wait on decisions.
+  `[open: each carries its own reason in the v2.05 section; restating them here would be a
+  second copy of an argument, so this line only says they are still open]`

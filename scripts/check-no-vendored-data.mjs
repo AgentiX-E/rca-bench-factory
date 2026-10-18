@@ -45,6 +45,14 @@ const ALLOWED = [
   // The round-trip descriptor lists case ids and injection instants. It is a
   // derived index, not telemetry: there are no metric samples in it.
   'golden-master/rcaeval-cases.json',
+  // The archive replay corpus is a scoring index over four CSVs upstream
+  // publishes under MIT: for each row, the roots a baseline agent named, the
+  // criteria the evaluator recovered, and the score it wrote. It carries no
+  // telemetry samples, and it is exempted by path rather than by size because
+  // the reason it belongs here is what it holds, not that it happens to be
+  // small -- `scripts/derive-openrca-archive.mjs` regenerates it from the CSVs,
+  // which are fetched outside the tree.
+  'golden-master/openrca-archive.json',
   // The fault-extraction golden samples are hand-written incident texts and
   // their expected records. No incident text in it is copied from a corpus --
   // the file is authored so the M1 exit condition has a denominator that does

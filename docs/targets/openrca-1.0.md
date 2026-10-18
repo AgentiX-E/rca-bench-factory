@@ -235,6 +235,24 @@ runnable by the upstream evaluator itself:
 python -m main.evaluate -p order-prod/record.csv -q order-prod/groundtruth.csv -r report.csv
 ```
 
+### Replay evidence
+
+Two corpora stand behind that claim, and they are different in kind.
+
+`golden-master/openrca-evaluator.json` holds 25 cases whose expected scores were produced
+by importing the pinned `evaluate()` and calling it. It is an oracle for the rule, composed
+here, two of its cases multi-root.
+
+`golden-master/openrca-archive.json` holds **293 real cases** derived from the four CSVs
+upstream publishes under `rca/archive/`: a baseline agent's own submission, the criteria the
+evaluator marked passed and failed, and the score it wrote. 33 of them name two roots, out
+of 75 two-root rows in the 335-row population. The other 42 two-root rows cannot be
+reconstructed — a key spread across three criterion kinds leaves the second root's values
+with no kind — and the corpus records that count rather than dropping them quietly.
+
+`scripts/derive-openrca-archive.mjs --archive <dir> [--check]` regenerates the corpus from
+the CSVs, which are fetched outside the tree.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

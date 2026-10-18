@@ -1,0 +1,6391 @@
+{
+  "schema": "rca-bench-archive-replay/1",
+  "target": "openrca-1.0",
+  "takenAt": "2026-10-18",
+  "upstream": {
+    "kind": "github",
+    "repository": "microsoft/OpenRCA",
+    "commit": "c121a483a5a91dbae50708e5942c42a6609098b2",
+    "license": {
+      "spdx": "MIT",
+      "path": "LICENSE"
+    },
+    "files": [
+      {
+        "path": "rca/archive/agent-Bank.csv",
+        "bytes": 86802,
+        "sha256": "6737585beba0feba3145220f11d81f55fb09b7cb257a9620b9849e64c85358cd",
+        "rows": 136,
+        "twoRootRows": 20
+      },
+      {
+        "path": "rca/archive/agent-Market-cloudbed-1.csv",
+        "bytes": 50493,
+        "sha256": "2c45a455b133d46f38cd057331b4fb05bd371308c19ed8db0ab060435c024d47",
+        "rows": 70,
+        "twoRootRows": 26
+      },
+      {
+        "path": "rca/archive/agent-Market-cloudbed-2.csv",
+        "bytes": 55243,
+        "sha256": "b48645e05d3c9f76b5407eca364e0296e740f261e5778eb34b2f92e8fc6aa2f9",
+        "rows": 78,
+        "twoRootRows": 29
+      },
+      {
+        "path": "rca/archive/agent-Telecom.csv",
+        "bytes": 30272,
+        "sha256": "bfcc8c2a556b6b41bd9ae99632bc7da13c83d3ae9fe10c3b8ab43f50250c1a36",
+        "rows": 51,
+        "twoRootRows": 0
+      }
+    ]
+  },
+  "what": "A baseline agent's own submissions with the verdict the official evaluator gave them, reconstructed into the scoring points the evaluator read.",
+  "why": [
+    "The 25-case corpus in golden-master/openrca-evaluator.json is faithful and small: two of its cases are multi-root, which is the entire evidence base for a matching rule.",
+    "These 335 rows are upstream's output on its own data, 75 of them multi-root. A replay over them is a claim about the rule on cases nobody in this repository composed.",
+    "It also measures something no previous pass could: how much of a released OpenRCA population is multi-root. 75 of 335 rows (22.4%) name two roots, while this repository's export path can produce exactly one. The number is the size of that gap."
+  ],
+  "method": [
+    "GET the four files under rca/archive/ at the pinned commit; assert their bytes hash to the digests beside them.",
+    "Read each row with an RFC 4180 reader -- the cells contain embedded newlines and doubled quotes.",
+    "`passed` and `failed` are newline-joined values, not JSON lists. Together they are exactly the criteria the scoring_points block declared: file_evaluate writes `failing_criteria = set(components+reasons+times) - set(passing)` and both columns come from the same list.",
+    "Recover the kind of each criterion from `task_index`: the templates in main/task_specification.json name one to three of {datetime, component, reason}. task_1..task_3 declare one kind, so placement is forced.",
+    "For task_4..task_7 the values are interleaved and the flattened columns no longer say which is which. A single-root row still yields the placement, because its `groundtruth` column names all three values; the derivation requires that those values be exactly the recovered set, so a row that fails the test is excluded rather than placed by guess.",
+    "A two-root row on task_4..task_7 is unrecoverable: the key's second root is not in the row at all. Those rows are counted under `excluded`.",
+    "No score is computed here. `upstream` is the number the official evaluator wrote into the archive; the suite computes this repository's and requires equality."
+  ],
+  "replayable": {
+    "cases": 293,
+    "twoRootPredicted": 33,
+    "byTask": {
+      "task_1": 54,
+      "task_2": 57,
+      "task_3": 38,
+      "task_4": 34,
+      "task_5": 33,
+      "task_6": 42,
+      "task_7": 35
+    }
+  },
+  "excluded": {
+    "cases": 42,
+    "byBasis": {
+      "two-roots-three-kinds": 42
+    },
+    "byTask": {
+      "task_4": 10,
+      "task_5": 11,
+      "task_6": 13,
+      "task_7": 8
+    },
+    "why": "A two-root answer key interleaved across three criterion kinds cannot be recovered from a row that names one root and flattens the rest into newlines. Recorded with its count rather than dropped."
+  },
+  "twoRootRowsInArchive": 75,
+  "cases": [
+    {
+      "suite": "Bank",
+      "rowId": "0.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-04 14:20:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-04 14:57:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "1.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Redis02",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-04 18:11:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Redis02"
+        ],
+        "reasons": [
+          "high memory usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "2.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "reasons": [
+          "high memory usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "3.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-04 18:58:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-04 19:22:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "4.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat04"
+        ],
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "5.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-06 14:51:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat03"
+        ],
+        "times": [
+          "2021-03-06 14:46:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "6.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": "2021-03-06 18:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "apache02"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-06 18:52:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "7.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "network packet loss",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "8.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "network latency",
+          "occurredAt": "2021-03-06 23:33:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ],
+        "reasons": [
+          "network latency"
+        ],
+        "times": [
+          "2021-03-06 23:36:00"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Bank",
+      "rowId": "9.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-07 00:54:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG02"
+        ],
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "10.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "network packet loss",
+          "occurredAt": "2021-03-07 07:24:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "11.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 16:07:00"
+        },
+        {
+          "component": "MG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 16:08:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-07 16:08:00",
+          "2021-03-07 16:29:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "12.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG01",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        },
+        {
+          "component": "IG02",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01",
+          "Tomcat04"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "13.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 18:53:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network latency"
+        ],
+        "times": [
+          "2021-03-07 18:59:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "14.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "high JVM CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "15.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG01",
+          "reason": "network latency",
+          "occurredAt": "2021-03-09 08:00:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-09 08:13:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "16.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "network latency",
+          "occurredAt": "2021-03-09 08:44:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-09 09:18:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "17.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "high JVM CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "18.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG02"
+        ],
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "19.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-09 14:10:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "20.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "apache02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-09 15:22:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "times": [
+          "2021-03-09 15:25:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "21.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-09 16:36:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG02"
+        ],
+        "times": [
+          "2021-03-09 16:56:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "22.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache01",
+          "reason": "network latency",
+          "occurredAt": "2021-03-09 19:14:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-09 19:14:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "23.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-09 20:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "apache01"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-09 20:25:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "24.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "apache01"
+        ],
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "25.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "apache02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "26.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-10 10:32:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-10 10:43:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "29.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-10 16:43:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "times": [
+          "2021-03-10 16:42:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "30.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "31.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "32.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "33.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-12 14:03:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG02"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-12 14:03:00"
+        ]
+      },
+      "upstream": 0.6666666666666666
+    },
+    {
+      "suite": "Bank",
+      "rowId": "34.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "37.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-12 23:37:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-12 23:33:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "38.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "network packet loss",
+          "occurredAt": "2021-03-23 06:50:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ],
+        "times": [
+          "2021-03-23 06:42:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "39.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-23 14:10:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat04"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "40.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": "2021-03-23 14:30:18"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-23 14:50:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "41.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2021-03-23 16:14:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-23 16:54:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "42.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Redis02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-23 17:35:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-23 17:42:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "43.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-23 18:00:25"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ],
+        "reasons": [
+          "network latency"
+        ],
+        "times": [
+          "2021-03-23 18:03:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "44.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-23 21:14:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat04"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-23 21:07:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "45.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "46.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high JVM CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high JVM CPU load"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "47.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-04 21:00:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-04 21:06:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "48.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache01",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "JVM Out of Memory (OOM) Heap"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "50.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-04 21:39:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-04 22:00:00",
+          "2021-03-04 22:25:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "51.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-04 22:10:00"
+        },
+        {
+          "component": "MG01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-04 22:07:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-04 22:00:00",
+          "2021-03-04 22:25:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "53.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high JVM CPU load",
+          "occurredAt": "2021-03-06 04:30:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-06 04:56:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "54.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "network latency",
+          "occurredAt": "2021-03-06 14:54:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "IG02"
+        ],
+        "reasons": [
+          "high disk space usage"
+        ],
+        "times": [
+          "2021-03-06 15:19:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "55.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 03:23:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "times": [
+          "2021-03-07 03:21:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "56.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-07 15:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "reasons": [
+          "high disk I/O read usage"
+        ],
+        "times": [
+          "2021-03-07 15:41:00"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Bank",
+      "rowId": "57.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk I/O read usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "58.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk space usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "60.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-09 17:29:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk space usage"
+        ],
+        "times": [
+          "2021-03-09 17:39:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "61.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-10 02:42:30"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "times": [
+          "2021-03-10 02:44:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "62.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "network packet loss",
+          "occurredAt": "2021-03-10 03:53:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk space usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "63.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-10 14:03:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "64.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "",
+          "occurredAt": "2021-03-10 15:38:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "apache02"
+        ],
+        "times": [
+          "2021-03-10 15:43:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "68.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Redis01",
+          "reason": "high disk space usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "69.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "",
+          "occurredAt": "2021-03-04 20:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Redis02"
+        ],
+        "times": [
+          "2021-03-04 20:14:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "70.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-06 02:02:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Mysql01"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ],
+        "times": [
+          "2021-03-06 02:00:00"
+        ]
+      },
+      "upstream": 0.6666666666666666
+    },
+    {
+      "suite": "Bank",
+      "rowId": "71.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-06 03:37:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "IG01"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "72.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat04"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "73.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-07 01:24:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "74.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-07 06:27:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ],
+        "times": [
+          "2021-03-07 06:35:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "75.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat03",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 08:12:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat03"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "76.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 11:09:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "IG02"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "77.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "IG01"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "78.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-07 17:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ],
+        "times": [
+          "2021-03-07 17:52:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "79.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-09 09:26:36"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat04"
+        ],
+        "times": [
+          "2021-03-09 09:57:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "80.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-09 14:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ],
+        "times": [
+          "2021-03-09 14:42:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "81.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-09 18:12:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-09 18:08:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "82.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat03",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "83.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG01",
+          "reason": "network packet loss",
+          "occurredAt": "2021-03-09 22:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "84.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-10 00:19:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-10 00:19:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "85.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "86.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-10 08:33:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-10 08:30:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "88.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "",
+          "occurredAt": "2021-03-12 15:11:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ],
+        "times": [
+          "2021-03-12 15:10:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "89.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "90.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Redis01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-12 20:46:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Redis01"
+        ],
+        "times": [
+          "2021-03-12 20:46:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "91.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": "2021-03-07 12:30:08"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high memory usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "92.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "network packet loss",
+          "occurredAt": "2021-03-09 23:20:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-09 23:53:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "93.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-12 10:00:00"
+        },
+        {
+          "component": "MG01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-12 10:24:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-12 10:12:00",
+          "2021-03-12 10:24:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "94.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-23 00:00:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-23 02:36:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "95.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "network latency",
+          "occurredAt": "2021-03-23 23:04:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-23 23:04:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "96.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "apache01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-24 10:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat03"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-24 11:08:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "97.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "high CPU usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "98.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "99.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat03",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "100.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-24 19:00:02"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ],
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "101.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-24 19:52:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network latency"
+        ],
+        "times": [
+          "2021-03-24 19:50:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "102.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat03",
+          "reason": "network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "104.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "network latency",
+          "occurredAt": "2021-03-25 07:25:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "105.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat03"
+        ],
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "106.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "JVM Out of Memory (OOM) Heap",
+          "occurredAt": "2021-03-25 15:24:29"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-25 17:22:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "107.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat03",
+          "reason": "high JVM CPU load",
+          "occurredAt": "2021-03-25 18:02:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "109.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk space usage",
+          "occurredAt": "2021-03-25 20:02:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network latency"
+        ],
+        "times": [
+          "2021-03-25 20:25:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "110.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-25 20:48:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "apache01"
+        ],
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-25 20:50:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "111.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "IG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-25 22:21:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network packet loss"
+        ],
+        "times": [
+          "2021-03-25 22:01:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "112.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-07 03:45:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "JVM Out of Memory (OOM) Heap"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "113.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-09 16:00:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-09 16:23:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "114.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "network latency",
+          "occurredAt": "2021-03-10 17:26:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-10 17:51:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "115.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-23 01:01:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "MG01"
+        ],
+        "reasons": [
+          "high disk I/O read usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "116.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-23 01:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk I/O read usage"
+        ],
+        "times": [
+          "2021-03-23 01:47:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "117.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat02",
+          "reason": "high JVM CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat02"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "118.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-24 12:37:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk I/O read usage"
+        ],
+        "times": [
+          "2021-03-24 12:36:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Bank",
+      "rowId": "119.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-24 13:59:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high disk space usage"
+        ],
+        "times": [
+          "2021-03-24 14:05:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "121.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-25 02:30:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-25 02:43:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "122.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat03",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-25 09:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat01"
+        ],
+        "reasons": [
+          "high disk I/O read usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "123.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-23 00:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat03"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "124.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG02",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-23 18:35:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat03"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "125.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-24 16:49:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-24 16:47:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "126.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "apache02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-25 06:40:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-25 06:40:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "127.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "MG01",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-25 09:38:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high CPU usage"
+        ],
+        "times": [
+          "2021-03-25 09:38:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "129.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat04",
+          "reason": "high disk I/O read usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Mysql02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "131.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Mysql02",
+          "reason": "high disk I/O read usage",
+          "occurredAt": "2021-03-25 19:47:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "Tomcat04"
+        ],
+        "reasons": [
+          "high CPU usage"
+        ],
+        "times": [
+          "2021-03-25 19:40:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "132.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Redis02",
+          "reason": "high CPU usage",
+          "occurredAt": "2021-03-25 23:18:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2021-03-25 23:16:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "133.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "network latency",
+          "occurredAt": "2021-03-04 00:14:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high memory usage"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Bank",
+      "rowId": "134.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "Redis01",
+          "reason": "high memory usage",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high memory usage"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Bank",
+      "rowId": "135.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "Tomcat01",
+          "reason": "high memory usage",
+          "occurredAt": "2021-03-04 05:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "high memory usage"
+        ],
+        "times": [
+          "2021-03-04 05:31:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "0.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "shippingservice-1",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice-1"
+        ],
+        "reasons": [
+          "container read I/O load"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "1.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-3",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": "2022-03-20 09:58:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 09:54:59"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "2.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice2-0",
+          "reason": "container read I/O load",
+          "occurredAt": "2022-03-20 10:02:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 10:25:33"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "3.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node memory consumption",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-1"
+        ],
+        "reasons": [
+          "node memory consumption"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "4.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice-1"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "5.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "recommendationservice",
+          "reason": "container network packet corruption",
+          "occurredAt": "2022-03-20 11:35:48"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet corruption"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "8.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node CPU load",
+          "occurredAt": "2022-03-20 13:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-2"
+        ],
+        "times": [
+          "2022-03-20 13:13:19"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "10.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-20 13:39:00"
+        },
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-20 13:52:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 13:39:48",
+          "2022-03-20 13:51:51"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "11.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-20 14:24:00"
+        },
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-20 14:26:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 14:14:46",
+          "2022-03-20 14:23:15"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "12.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet retransmission"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "13.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend-0",
+          "reason": "container network latency",
+          "occurredAt": "2022-03-20 16:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "currencyservice-0"
+        ],
+        "times": [
+          "2022-03-20 16:31:44"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "15.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice-0",
+          "reason": "container read I/O load",
+          "occurredAt": "2022-03-20 17:18:56"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 17:40:22"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "17.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "paymentservice",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-20 18:07:00"
+        },
+        {
+          "component": "node-1",
+          "reason": "node disk write I/O consumption",
+          "occurredAt": "2022-03-20 18:01:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container memory load",
+          "container network packet corruption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "18.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "cartservice2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "frontend-2"
+        ],
+        "reasons": [
+          "container network packet retransmission"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "19.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-4"
+        ],
+        "reasons": [
+          "node disk read I/O consumption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "20.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "shippingservice2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice2-0"
+        ],
+        "reasons": [
+          "container CPU load"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "21.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "emailservice",
+          "reason": "",
+          "occurredAt": "2022-03-20 21:16:53"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "emailservice"
+        ],
+        "times": [
+          "2022-03-20 21:16:21"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "24.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "currencyservice",
+          "reason": "",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-3"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "25.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "productcatalogservice-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-20 22:45:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice-2"
+        ],
+        "reasons": [
+          "container memory load"
+        ],
+        "times": [
+          "2022-03-20 23:09:26"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "26.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": "2022-03-20 23:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "productcatalogservice"
+        ],
+        "reasons": [
+          "container CPU load"
+        ],
+        "times": [
+          "2022-03-20 23:30:10"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "28.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice2-0",
+          "reason": "container packet loss",
+          "occurredAt": ""
+        },
+        {
+          "component": "node-6",
+          "reason": "node CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "29.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "frontend-1"
+        ],
+        "reasons": [
+          "container network latency"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "30.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "paymentservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        },
+        {
+          "component": "adservice-2",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-4",
+          "paymentservice"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "31.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice-2",
+          "reason": "container memory load",
+          "occurredAt": ""
+        },
+        {
+          "component": "cartservice-2",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container CPU load",
+          "container process termination"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "32.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice",
+          "reason": "container network latency",
+          "occurredAt": "2022-03-20 15:00:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container process termination"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "33.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "currencyservice",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 00:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "cartservice"
+        ],
+        "reasons": [
+          "container network packet retransmission"
+        ],
+        "times": [
+          "2022-03-21 00:37:25"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "34.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node memory consumption",
+          "occurredAt": "2022-03-21 00:34:00"
+        },
+        {
+          "component": "node-1",
+          "reason": "node CPU spike",
+          "occurredAt": "2022-03-21 00:46:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 01:06:45",
+          "2022-03-21 01:20:30"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "36.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice2-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 01:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5"
+        ],
+        "times": [
+          "2022-03-21 01:44:35"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "37.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        },
+        {
+          "component": "node-6",
+          "reason": "node CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5",
+          "recommendationservice"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "38.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "productcatalogservice-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 03:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ],
+        "reasons": [
+          "node disk write I/O consumption"
+        ],
+        "times": [
+          "2022-03-21 03:39:14"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "39.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-1",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": "2022-03-21 04:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet retransmission"
+        ],
+        "times": [
+          "2022-03-21 04:32:44"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "40.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "currencyservice-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 04:44:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-4"
+        ],
+        "times": [
+          "2022-03-21 05:15:49"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "41.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "currencyservice-1",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 04:59:59"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 05:36:03"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "42.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice2-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 07:16:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container read I/O load"
+        ],
+        "times": [
+          "2022-03-21 07:26:56"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "43.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 07:14:00"
+        },
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 07:14:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 07:46:11",
+          "2022-03-21 07:55:02"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "45.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "shippingservice-0",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice-1"
+        ],
+        "reasons": [
+          "container CPU load"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "46.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "shippingservice-1",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 08:24:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-1"
+        ],
+        "times": [
+          "2022-03-21 08:52:45"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "48.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        },
+        {
+          "component": "node-1",
+          "reason": "node CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice",
+          "productcatalogservice"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "49.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice2-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 09:29:14"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice"
+        ],
+        "times": [
+          "2022-03-21 09:53:57"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "50.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "node CPU spike"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "52.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 10:21:00"
+        },
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 10:54:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 10:37:56",
+          "2022-03-21 10:44:52"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "53.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "currencyservice2-0",
+          "reason": "container network latency",
+          "occurredAt": "2022-03-21 11:31:19"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 11:40:30"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "54.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend-2",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "currencyservice"
+        ],
+        "reasons": [
+          "container memory load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "55.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "emailservice-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 14:00:00"
+        },
+        {
+          "component": "adservice-1",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 13:57:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container read I/O load",
+          "container write I/O load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "57.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "paymentservice-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 14:36:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "adservice"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "58.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 15:00:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 15:08:39"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "59.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-1",
+          "reason": "node CPU load",
+          "occurredAt": "2022-03-21 15:45:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "cartservice"
+        ],
+        "reasons": [
+          "container packet loss"
+        ],
+        "times": [
+          "2022-03-21 15:45:31"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "60.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "frontend-2",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container read I/O load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "61.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "paymentservice-2",
+          "reason": "container write I/O load",
+          "occurredAt": "2022-03-21 16:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5"
+        ],
+        "reasons": [
+          "node disk space consumption"
+        ],
+        "times": [
+          "2022-03-21 16:41:47"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "62.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 19:56:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 20:26:07"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "63.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node CPU load",
+          "occurredAt": "2022-03-21 20:48:20"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "node memory consumption"
+        ],
+        "times": [
+          "2022-03-21 21:52:20"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "64.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "paymentservice",
+          "reason": "container process termination",
+          "occurredAt": "2022-03-21 22:18:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "65.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node disk space consumption",
+          "occurredAt": "2022-03-21 23:00:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "node disk space consumption"
+        ],
+        "times": [
+          "2022-03-21 23:15:29"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "66.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container process termination",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-4"
+        ],
+        "reasons": [
+          "node CPU load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "67.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container network latency",
+          "occurredAt": "2022-03-21 03:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice"
+        ],
+        "reasons": [
+          "container network packet corruption"
+        ],
+        "times": [
+          "2022-03-21 03:10:48"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "68.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice-0",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "productcatalogservice"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-1",
+      "rowId": "69.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-4",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": ""
+        },
+        {
+          "component": "paymentservice-0",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container process termination",
+          "node disk write I/O consumption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "0.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice2-0",
+          "reason": "container write I/O load",
+          "occurredAt": ""
+        },
+        {
+          "component": "adservice2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6",
+          "recommendationservice2-0"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "1.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "recommendationservice2-0",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        },
+        {
+          "component": "frontend-2",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6",
+          "recommendationservice2-0"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "2.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container memory load"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "3.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "productcatalogservice",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "productcatalogservice"
+        ],
+        "reasons": [
+          "container network packet corruption"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "4.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": ""
+        },
+        {
+          "component": "productcatalogservice",
+          "reason": "container process termination",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "currencyservice-0",
+          "node-4"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "8.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "frontend-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-20 11:26:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 11:52:28"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "9.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node CPU load",
+          "occurredAt": "2022-03-20 12:07:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "currencyservice"
+        ],
+        "times": [
+          "2022-03-20 12:07:05"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "11.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container read I/O load",
+          "node CPU load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "12.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-4",
+          "reason": "node CPU load",
+          "occurredAt": "2022-03-20 12:56:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5"
+        ],
+        "times": [
+          "2022-03-20 13:12:21"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "14.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "cartservice2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container write I/O load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "15.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container process termination",
+          "occurredAt": ""
+        },
+        {
+          "component": "node-6",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container CPU load",
+          "container network packet retransmission"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "18.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-2",
+          "reason": "node CPU load",
+          "occurredAt": ""
+        },
+        {
+          "component": "emailservice-1",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-2",
+          "node-6"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "19.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "productcatalogservice-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-20 16:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "emailservice-0"
+        ],
+        "reasons": [
+          "container network packet retransmission"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "20.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-2"
+        ],
+        "reasons": [
+          "node disk space consumption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "21.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-20 19:03:54"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-3"
+        ],
+        "times": [
+          "2022-03-20 19:23:43"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "22.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "frontend2-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container memory load"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "23.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend-2",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "productcatalogservice"
+        ],
+        "reasons": [
+          "container network packet retransmission"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "24.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "25.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend2-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-20 21:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ],
+        "reasons": [
+          "node disk write I/O consumption"
+        ],
+        "times": [
+          "2022-03-20 21:58:13"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "26.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "recommendationservice2-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-20 22:00:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 22:19:51"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "27.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node disk space consumption",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet retransmission"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "28.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-20 23:03:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ],
+        "reasons": [
+          "node disk write I/O consumption"
+        ],
+        "times": [
+          "2022-03-20 23:22:28"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "29.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-20 17:32:55"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-20 17:47:45"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "30.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": "2022-03-20 16:26:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "cartservice-0"
+        ],
+        "reasons": [
+          "container network latency"
+        ],
+        "times": [
+          "2022-03-20 16:50:36"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "31.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        },
+        {
+          "component": "productcatalogservice",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice",
+          "recommendationservice"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "33.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node memory consumption",
+          "occurredAt": ""
+        },
+        {
+          "component": "checkoutservice-1",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-2",
+          "shippingservice-0"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "34.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node CPU load",
+          "occurredAt": "2022-03-21 00:24:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 00:46:49"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "35.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "currencyservice2-0",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        },
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet retransmission",
+          "container process termination"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "36.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 01:55:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-2"
+        ],
+        "times": [
+          "2022-03-21 02:08:27"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "37.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "cartservice",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 02:33:52"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "cartservice"
+        ],
+        "reasons": [
+          "container network packet corruption"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "38.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container process termination",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "39.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container read I/O load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "40.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "cartservice"
+        ],
+        "reasons": [
+          "container packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "41.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "productcatalogservice-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 05:23:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container write I/O load"
+        ],
+        "times": [
+          "2022-03-21 05:22:50"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "42.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 05:57:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "node memory consumption"
+        ],
+        "times": [
+          "2022-03-21 06:20:29"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "43.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "recommendationservice-1"
+        ],
+        "reasons": [
+          "container network packet corruption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "44.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container process termination",
+          "occurredAt": "2022-03-21 07:14:06"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "node CPU load"
+        ],
+        "times": [
+          "2022-03-21 07:47:56"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "45.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "46.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "47.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "shippingservice-1",
+          "reason": "container write I/O load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container memory load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "48.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "productcatalogservice",
+          "reason": "container memory load",
+          "occurredAt": ""
+        },
+        {
+          "component": "adservice-0",
+          "reason": "container memory load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container memory load",
+          "node CPU load"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "50.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 10:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "adservice"
+        ],
+        "times": [
+          "2022-03-21 10:52:36"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "52.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container process termination",
+          "occurredAt": ""
+        },
+        {
+          "component": "currencyservice",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice",
+          "node-6"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "53.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container process termination",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-5"
+        ],
+        "reasons": [
+          "node disk write I/O consumption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "54.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "frontend-0",
+          "reason": "container network latency",
+          "occurredAt": "2022-03-21 12:38:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice-0"
+        ],
+        "times": [
+          "2022-03-21 12:46:23"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "55.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "checkoutservice2-0",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "shippingservice-2"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "56.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-6",
+          "reason": "container packet loss",
+          "occurredAt": ""
+        },
+        {
+          "component": "node-2",
+          "reason": "node CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet retransmission",
+          "container packet loss"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "57.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container process termination",
+          "occurredAt": ""
+        },
+        {
+          "component": "productcatalogservice",
+          "reason": "container CPU load",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet retransmission",
+          "container packet loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "58.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "currencyservice2-0",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 14:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "productcatalogservice-1"
+        ],
+        "times": [
+          "2022-03-21 14:19:48"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "60.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 14:26:00"
+        },
+        {
+          "component": "",
+          "reason": "",
+          "occurredAt": "2022-03-21 14:30:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 14:39:11",
+          "2022-03-21 14:59:01"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "61.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container process termination",
+          "occurredAt": "2022-03-21 15:54:01"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-1"
+        ],
+        "reasons": [
+          "node disk space consumption"
+        ],
+        "times": [
+          "2022-03-21 16:46:50"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "62.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "frontend-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 18:10:00"
+        },
+        {
+          "component": "frontend",
+          "reason": "container process termination",
+          "occurredAt": "2022-03-21 18:00:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 18:08:02",
+          "2022-03-21 18:29:15"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "63.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "frontend",
+          "reason": "container network latency",
+          "occurredAt": ""
+        },
+        {
+          "component": "frontend",
+          "reason": "container packet loss",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet corruption",
+          "container packet loss"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "64.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 18:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ],
+        "reasons": [
+          "node memory consumption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "65.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "frontend-0",
+          "reason": "container network latency",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container memory load"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "66.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "node-4",
+          "reason": "node disk space consumption",
+          "occurredAt": "2022-03-21 19:24:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "paymentservice"
+        ],
+        "reasons": [
+          "container CPU load"
+        ],
+        "times": [
+          "2022-03-21 19:32:55"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "67.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "productcatalogservice2-0",
+          "reason": "container network packet retransmission",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice-2"
+        ],
+        "reasons": [
+          "container network packet corruption"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "68.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "checkoutservice",
+          "reason": "container network latency",
+          "occurredAt": "2022-03-21 20:42:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "node memory consumption"
+        ],
+        "times": [
+          "2022-03-21 20:34:19"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "69.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-1",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 21:19:59"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "node-6"
+        ],
+        "times": [
+          "2022-03-21 21:08:54"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "70.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "node-5",
+          "reason": "node disk read I/O consumption",
+          "occurredAt": "2022-03-21 21:31:00"
+        },
+        {
+          "component": "node-6",
+          "reason": "node memory consumption",
+          "occurredAt": "2022-03-21 21:24:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2022-03-21 21:31:51",
+          "2022-03-21 21:51:52"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "72.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "container process termination",
+          "occurredAt": "2022-03-21 22:24:01"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network packet corruption"
+        ],
+        "times": [
+          "2022-03-21 22:45:06"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "73.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "adservice-0",
+          "reason": "",
+          "occurredAt": "2022-03-21 23:14:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "checkoutservice2-0"
+        ],
+        "times": [
+          "2022-03-21 23:33:34"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "74.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "currencyservice2-0",
+          "reason": "container CPU load",
+          "occurredAt": "2022-03-21 06:26:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "container network latency"
+        ],
+        "times": [
+          "2022-03-21 07:26:32"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "76.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "paymentservice",
+          "reason": "container memory load",
+          "occurredAt": "2022-03-21 14:54:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "paymentservice"
+        ],
+        "times": [
+          "2022-03-21 15:19:45"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Market-cloudbed-2",
+      "rowId": "77.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "shippingservice-1",
+          "reason": "container read I/O load",
+          "occurredAt": "2022-03-21 03:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "recommendationservice-1"
+        ],
+        "reasons": [
+          "container process termination"
+        ],
+        "times": [
+          "2022-03-21 03:53:45"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "0.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_015",
+          "reason": "CPU fault",
+          "occurredAt": "2020-04-11 00:01:22"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "1.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "network delay",
+          "occurredAt": "2020-04-11 01:44:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ],
+        "times": [
+          "2020-04-11 01:40:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "2.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_007",
+          "reason": "db connection limit",
+          "occurredAt": "2020-04-11 02:00:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "db connection limit"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "3.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_014",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "4.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_004",
+          "reason": "db connection limit",
+          "occurredAt": "2020-04-11 04:29:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "docker_008"
+        ],
+        "reasons": [
+          "CPU fault"
+        ],
+        "times": [
+          "2020-04-11 04:40:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "5.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_003",
+          "reason": "db connection limit",
+          "occurredAt": "2020-04-11 05:45:58"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-04-11 05:45:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "6.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_011",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-22 00:11:38"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "db close"
+        ],
+        "times": [
+          "2020-05-22 00:07:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "7.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_022",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-22 00:59:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "docker_001"
+        ],
+        "reasons": [
+          "CPU fault"
+        ],
+        "times": [
+          "2020-05-22 00:48:00"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "8.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_003",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-22 01:32:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_018"
+        ],
+        "times": [
+          "2020-05-22 01:48:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "9.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "docker_003",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-22 02:22:31"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-22 02:18:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "10.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-23 00:05:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-23 00:05:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "11.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_007",
+          "reason": "db connection limit",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_003"
+        ],
+        "reasons": [
+          "db connection limit"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "12.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "network delay",
+          "occurredAt": "2020-05-23 00:54:13"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_021"
+        ],
+        "reasons": [
+          "network loss"
+        ],
+        "times": [
+          "2020-05-23 01:16:00"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "13.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_002",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-23 01:45:25"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-23 01:52:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "14.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_011",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-23 03:33:26"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-23 03:36:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "15.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "network delay",
+          "occurredAt": "2020-05-23 04:44:23"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "docker_006"
+        ],
+        "reasons": [
+          "CPU fault"
+        ],
+        "times": [
+          "2020-05-23 04:47:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "16.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_022",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-24 01:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_007"
+        ],
+        "reasons": [
+          "db close"
+        ],
+        "times": [
+          "2020-05-24 01:47:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "17.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_012",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "18.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_013",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "19.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "",
+          "reason": "network delay",
+          "occurredAt": "2020-05-25 01:47:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network delay"
+        ],
+        "times": [
+          "2020-05-25 01:47:00"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "20.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_009",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-25 03:23:57"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "21.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_008",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-25 04:44:05"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_003"
+        ],
+        "reasons": [
+          "db close"
+        ],
+        "times": [
+          "2020-05-25 04:47:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "22.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_011",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-26 01:54:25"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "db connection limit"
+        ],
+        "times": [
+          "2020-05-26 02:09:00"
+        ]
+      },
+      "upstream": 0.5
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "23.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "network delay",
+          "occurredAt": "2020-05-26 02:20:01"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-26 02:39:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "24.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "network loss",
+          "occurredAt": "2020-05-26 03:10:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network delay"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "25.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_018",
+          "reason": "network delay",
+          "occurredAt": "2020-05-26 03:40:32"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network loss"
+        ],
+        "times": [
+          "2020-05-26 03:39:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "26.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_020",
+          "reason": "network delay",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_020"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "27.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-26 04:45:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_001"
+        ],
+        "reasons": [
+          "network delay"
+        ],
+        "times": [
+          "2020-05-26 04:45:00"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "28.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_002",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-26 05:00:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "docker_002"
+        ],
+        "reasons": [
+          "CPU fault"
+        ],
+        "times": [
+          "2020-05-26 05:15:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "29.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_012",
+          "reason": "network loss",
+          "occurredAt": "2020-05-27 00:00:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network delay"
+        ],
+        "times": [
+          "2020-05-27 00:23:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "30.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_003",
+          "reason": "network delay",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_017"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "31.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_009",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-27 00:52:38"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ],
+        "times": [
+          "2020-05-27 01:23:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "32.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_022",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-27 01:24:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_003"
+        ],
+        "reasons": [
+          "db connection limit"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "33.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_007"
+        ],
+        "reasons": [
+          "db close"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "34.0",
+      "taskIndex": "task_7",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_003",
+          "reason": "db connection limit",
+          "occurredAt": "2020-05-27 02:30:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_007"
+        ],
+        "reasons": [
+          "db connection limit"
+        ],
+        "times": [
+          "2020-05-27 02:53:00"
+        ]
+      },
+      "upstream": 0.3333333333333333
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "35.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_007",
+          "reason": "db connection limit",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "docker_001"
+        ],
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "36.0",
+      "taskIndex": "task_4",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_009",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-27 05:24:03"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network delay"
+        ],
+        "times": [
+          "2020-05-27 05:39:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "37.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-28 00:30:00"
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "38.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_004",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "network loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "39.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_003",
+          "reason": "db connection limit",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "db_003"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "40.0",
+      "taskIndex": "task_2",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "docker_002",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "reasons": [
+          "CPU fault"
+        ]
+      },
+      "upstream": 1
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "41.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_018",
+          "reason": "network loss",
+          "occurredAt": "2020-05-29 03:20:00"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-29 03:41:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "42.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_002",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-30 00:07:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_021"
+        ],
+        "times": [
+          "2020-05-30 00:13:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "43.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_022",
+          "reason": "CPU fault",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_009"
+        ],
+        "reasons": [
+          "network delay"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "44.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "os_008",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-30 03:23:43"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_020"
+        ],
+        "times": [
+          "2020-05-30 03:43:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "45.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_021",
+          "reason": "network delay",
+          "occurredAt": "2020-05-30 04:06:48"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-30 04:13:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "46.0",
+      "taskIndex": "task_6",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_002",
+          "reason": "db connection limit",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_018"
+        ],
+        "reasons": [
+          "network loss"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "47.0",
+      "taskIndex": "task_3",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_003",
+          "reason": "db connection limit",
+          "occurredAt": ""
+        }
+      ],
+      "criteria": {
+        "components": [
+          "os_021"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "48.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "db_001",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-31 02:58:13"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-31 03:17:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "49.0",
+      "taskIndex": "task_1",
+      "basis": "single-kind-task",
+      "predicted": [
+        {
+          "component": "os_018",
+          "reason": "CPU fault",
+          "occurredAt": "2020-05-31 03:36:15"
+        }
+      ],
+      "criteria": {
+        "times": [
+          "2020-05-31 03:47:00"
+        ]
+      },
+      "upstream": 0
+    },
+    {
+      "suite": "Telecom",
+      "rowId": "50.0",
+      "taskIndex": "task_5",
+      "basis": "answer-key-row",
+      "predicted": [
+        {
+          "component": "db_001",
+          "reason": "",
+          "occurredAt": "2020-05-31 04:19:00"
+        }
+      ],
+      "criteria": {
+        "components": [
+          "docker_004"
+        ],
+        "times": [
+          "2020-05-31 04:17:00"
+        ]
+      },
+      "upstream": 0
+    }
+  ]
+}

@@ -112,6 +112,12 @@ const REGISTER: Record<string, Entry> = {
   'derive-backend-support.mjs': { class: 'gate' },
   'derive-fault-golden.mjs': { class: 'gate' },
   'derive-gate-sites.mjs': { class: 'gate' },
+  // A gate that cannot run in CI, like `fetch-official.mjs`: its input is the
+  // four CSVs upstream publishes under `rca/archive/`, which this repository
+  // refuses to vendor. `--check` compares the committed corpus against a fresh
+  // derivation and exits non-zero when they differ, so the verdict exists and is
+  // enumerable; what does not exist is a CI job that could supply the bytes.
+  'derive-openrca-archive.mjs': { class: 'gate' },
   'fetch-official.mjs': { class: 'gate' },
   'gen-examples.mjs': { class: 'gate' },
   'gen-rcaeval-cases.mjs': { class: 'gate' },
