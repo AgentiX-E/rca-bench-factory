@@ -6759,9 +6759,9 @@ did not write for the occasion.
 | the alarm set | `alarmNodeBasis` names the set, the clause, and the direction of the error |
 | the layers | 0.70 / 0.80 / 0.56 / 0.67 / 0.50 on the ten-case export |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
+| `core` test suite | **155 files, 3904 tests passed** (as of `39eec9d`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `39eec9d`) |
+| repo test suite | **159 files, 4091 tests passed** (as of `39eec9d`) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6846,9 +6846,9 @@ about the matching rule rested on the smaller number.
 | partial credit | 0 ×216 · 0.33 ×9 · 0.5 ×28 · 0.67 ×2 · 1 ×38 — five distinct values, not a boolean |
 | multi-root | 33 replayed (1 full, 9 partial, 23 zero); **10 cases change score** when only the first root is kept |
 | derivation tested | both refusal branches and both failure exits, on a synthetic archive built with `renderCsv` |
-| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
+| `core` test suite | **157 files, 3917 tests passed** (as of `9f18c78`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `9f18c78`) |
+| repo test suite | **161 files, 4104 tests passed** (as of `9f18c78`) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6955,9 +6955,9 @@ a solver may be shown.
 | the check | `task-carries-no-scored-value`, 5 tests: the real export, an onset cell, a component cell, a reason cell, a row with no key |
 | the blind spot | the onset-cell test asserts `answer-key-isolated` is **green** on the same input, so the two checks are provably not the same check |
 | `openRcaTimePeriod` | 5 tests: floor, both boundaries, last second of a window, midnight rollover, and "never renders the instant" |
-| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
+| `core` test suite | **157 files, 3927 tests passed** (as of `902edd5`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `902edd5`) |
+| repo test suite | **161 files, 4114 tests passed** (as of `902edd5`) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -7045,9 +7045,9 @@ also the first anchor move that a local run can catch.
 | digest vs byte count | separate assertions, separate messages |
 | why not spawn the script | a spawned run reads `dist`, which other files mutate and rebuild; the export is computed from `src` instead |
 | missing on either side | `<missing>` reported for a file the anchor omits and for one it invents |
-| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
+| `core` test suite | **158 files, 3935 tests passed** (as of `7c830b7`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `7c830b7`) |
+| repo test suite | **162 files, 4122 tests passed** (as of `7c830b7`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / `golden-master/verify.mjs` | green |
@@ -7062,3 +7062,128 @@ also the first anchor move that a local run can catch.
 - **Eight earlier items are unchanged**: v2.07's two, v2.06's two, v2.05's four.
   `[open: nothing in this pass touched any of them -- it is a list of what is still
   owed, and the argument for each one lives where it was made rather than here]`
+
+---
+
+## v2.09 — the example answered the question it was asking
+
+### The sentence
+
+Every format doc renders the same case. The task text was
+
+> The order service became slow at 08:10 UTC+8. Find the root cause.
+
+against ground truth `component: order`, `reason: CPU saturation on the order service`,
+injection at `2026-09-06 08:10:00` UTC+8. **Two of the three scored criteria are in the
+sentence**, and since v2.07 the same export prints `occurrence_window = 08:00–08:30`
+beside it — the window `main/evaluate.py` actually asks about, with the answer written
+next to it.
+
+### Why the fix is not in the exporter
+
+v2.07 put `task-carries-no-scored-value` in the structural check, and that check compares
+**cells**. It deliberately does not scan prose: a whole-word rule would flag "the order
+service became slow" when the component is `order`, which is how every incident report a
+human writes reads. **A caller's prose is the caller's business**, and a check that
+punishes it would be a check people route around.
+
+This file is the other half of that decision. The repository's own example is not a
+caller's prose — it is the artefact every doc shows as the shape to copy. So the rule is
+enforced where it can hold without a false positive: **on the fixtures this repository
+ships.**
+
+### The word boundary that was wrong
+
+The first version of the guard used `\border\b`. It fired on
+
+> A checkout request on order-prod failed.
+
+`order-prod` is the **system name**, which a task legitimately carries, and `\b` puts a
+boundary at every hyphen, so the system read as a leak of the component `order`.
+
+The rule is "the component must not appear as a token of its own", and a token may contain
+hyphens: `(?<![A-Za-z0-9_-])order(?![A-Za-z0-9_-])` matches `the order service` and
+`order.` and does not match `order-prod`. The negative test above is the one that found
+this, which is the reason it is in the file.
+
+### What replaced it
+
+Upstream's task text is template-shaped: `main/task_specification.json` asks for
+`time range: {time_period}` and `number of failures: {num}`, and the answer is three
+separate fields. The fixture now reads the same way:
+
+> A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component,
+> when it occurred within that window, and the reason.
+
+No component, no onset, no reason, and no `root cause …` token — the last one asserted
+too, because a fixture that tripped `answer-key-isolated` would show up as an export
+failure rather than as a sentence somebody wrote.
+
+### Two anchors moved, and the pass before this one named them
+
+```
+files/order-prod/query.csv         469715c7 → e1fbfec9   158 → 233 bytes
+files/order-prod/groundtruth.csv   2d6c3334 → 1136f28a   334 → 409 bytes
+```
+
+`groundtruth.csv` moves because the `instruction` column carries the same sentence. The
+verifier reported **both fields of both files** in one run — the byte count included, which
+is the comparison v2.08 added. Without it the message would have said only "the digest
+moved" for two files, and a reader would have had to work out what changed.
+
+### A gap's recorded reason was about the wrong thing
+
+v2.04 recorded, for OpenRCA 2.0, that F1 / Precision / Recall are not implemented because
+*"this data model carries exactly one root cause"*. That sentence is false, and it points a
+future reader at the wrong repair.
+
+The model is not narrow — `contract` is. `causal_path.json` carries one `root_cause`
+object, and every answer key in the corpus names one root. **A pair set of size one makes
+the three equal to EM whether or not a field exists to hold more**, so widening the model
+would change no number on any case here. What the 33 two-root rows in the OpenRCA 1.0
+archive establish is that a *format* can be wider — not that this one is.
+
+The reason now says that, and `openrca2-evaluator.test.ts` holds it to two words: it must
+contain `contract` and must not contain the sentence that blamed the model. A recorded
+reason is the only thing standing between a reader and the wrong repair, so it gets the
+same treatment as a number.
+
+### What this pass learned about the suite's own ordering
+
+`typecheck-entrypoint.test.ts` copies the working tree by applying `git diff HEAD` to a
+clean checkout. `git apply` cannot apply a binary diff without a full index line, so a
+regenerated `site/assets/rca-bench-factory-examples.tar.gz` makes that test fail **until
+the pack is committed**. The failure is not a defect in the test's subject; it is a
+statement that a binary artefact has no representation in a text patch. Recorded as an
+open item rather than worked around.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the shipped example | three fixture files, every case, no component / onset / reason / answer-key token |
+| the guard | 6 tests: three fixtures, the old sentence detected, two innocent sentences not |
+| the trap | `order-prod` is not `order`; the negative test is what found that `\b` was wrong |
+| anchors | two files, both fields, named by the verifier in one run |
+| `core` test suite | **159 files, 3941 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **163 files, 4128 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+### Open
+
+- **A binary artefact cannot be represented in `git apply`.** `[open: regenerating
+  `site/assets/rca-bench-factory-examples.tar.gz` makes `typecheck-entrypoint.test.ts` red
+  until it is committed, because the test applies a text patch of the working tree. The
+  honest options are to exclude the pack from that copy, to use `git diff --binary`, or to
+  leave it as a documented ordering constraint -- and the third is what this pass chose,
+  since the first two change what that test proves]`
+- **Widening a format is a product decision nobody has made.** `[open: the pair-set
+  metrics collapse for OpenRCA 2.0 because its contract carries one root, and the reason is
+  now recorded that way. Whether to widen the contract so a case can name two roots is a
+  separate question -- 75 of 335 released OpenRCA 1.0 submissions name two, so the failure
+  mode is real -- and it would need a target that scores a set, which none of the nine does]`
+- v2.07's two, v2.06's two, v2.05's four, and v2.08's one are unchanged.
+  `[open: none of them moved; each carries its argument where it was made]`

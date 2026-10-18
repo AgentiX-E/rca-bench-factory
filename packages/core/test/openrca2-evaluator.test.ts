@@ -180,6 +180,14 @@ describe('the metric names the published quantities it implements, and only thos
     for (const entry of CORPUS.notImplemented) {
       expect(entry.why.length, `${entry.metric} has no reason`).toBeGreaterThan(40);
     }
+    // The reason for the pair-set metrics has to name the right subject. It used to
+    // say "this data model carries exactly one root cause", which is false: the
+    // model has a `root_cause` object because the *contract* has one, and 33 real
+    // two-root submissions exist in the OpenRCA 1.0 archive. A reason that blames
+    // the model would send the next reader to widen a field that changes nothing.
+    const pairSet = CORPUS.notImplemented.find((entry) => entry.metric === 'F1 / Precision / Recall');
+    expect(pairSet?.why).toContain('contract');
+    expect(pairSet?.why).not.toContain('this data model carries exactly one root cause');
     // The id is not one of the published names, because the rule is not one of the
     // published metrics: it is EM, reported beside two graph F1s.
     expect(CORPUS.metricSet).not.toContain(OFFICIAL_METRICS['openrca-2.0'].id);

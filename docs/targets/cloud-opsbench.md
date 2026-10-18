@@ -49,7 +49,7 @@ derivable from a static per-case IR, and the factory does not pretend otherwise.
 ```json
 {
   "namespace": "order-prod",
-  "query": "The order service became slow at 08:10 UTC+8. Find the root cause.",
+  "query": "A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.",
   "difficulty": "medium",
   "result": {
     "fault_taxonomy": "Performance_Fault",

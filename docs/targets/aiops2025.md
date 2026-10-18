@@ -41,7 +41,7 @@ groundtruth.jsonl   # one compact JSON object per line: label + key observations
 [
   {
     "uuid": "case-001",
-    "description": "The order service became slow at 08:10 UTC+8. Find the root cause.",
+    "description": "A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.",
     "start_time": "2026-09-06T00:00:00.000Z",
     "end_time": "2026-09-06T00:20:00.000Z"
   }

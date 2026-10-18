@@ -69,7 +69,7 @@ criteria outright. It now carries the half-hour window instead, which is what up
 <!-- example: openrca-1.0/order-prod/query.csv -->
 ```csv
 instruction_id,query,occurrence_window
-case-001,The order service became slow at 08:10 UTC+8. Find the root cause.,2026-09-06 08:00:00 to 2026-09-06 08:30:00
+case-001,"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.",2026-09-06 08:00:00 to 2026-09-06 08:30:00
 ```
 
 ### `{system}/record.csv`
@@ -117,7 +117,7 @@ of the contract and is transcribed verbatim from `main/task_specification.json`.
 <!-- example: openrca-1.0/order-prod/groundtruth.csv -->
 ```csv
 task_index,instruction,scoring_points
-task_7,The order service became slow at 08:10 UTC+8. Find the root cause.,"The only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2026-09-06 08:10:00
+task_7,"A failure was detected between 08:00 and 08:30 UTC+8. Identify the affected component, when it occurred within that window, and the reason.","The only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2026-09-06 08:10:00
 The only predicted root cause component is order
 The only predicted root cause reason is CPU saturation on the order service
 "

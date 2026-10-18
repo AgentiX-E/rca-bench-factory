@@ -1,8 +1,8 @@
 {
   "generatedBy": "scripts/build-example-bundle.mjs",
   "file": "rca-bench-factory-examples.tar.gz",
-  "bytes": 5908,
-  "sha256": "1012c708686017fff11dc1c10a3b0df9113d19407b6b8f28b391cfe9b7b65438",
+  "bytes": 5951,
+  "sha256": "5c0130ffbd70b59c6cbf2f07ee536c712a6f3493dd014bf55bcaa1e81cb55b2f",
   "fileCount": 9,
   "paths": [
     "MANIFEST.json",

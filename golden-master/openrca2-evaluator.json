@@ -37,17 +37,17 @@
     },
     {
       "id": "every-annotated-node-deviated",
-      "quote": "A candidate path π is verified only if all of (i) every node along π exhibits a deviation beyond its baseline screen, (ii) every consecutive edge conforms to R (inherited from Phase 1), and (iii) each downstream anomaly onsets no earlier than its upstream cause hold simultaneously.",
+      "quote": "A candidate path \u03c0 is verified only if all of (i) every node along \u03c0 exhibits a deviation beyond its baseline screen, (ii) every consecutive edge conforms to R (inherited from Phase 1), and (iii) each downstream anomaly onsets no earlier than its upstream cause hold simultaneously.",
       "why": "The clause that removes the need for a new field. An alarm node is \"a component observed to behave abnormally during the injection window\", and PAVE admits a path only if every node on it crossed its baseline screen -- so every node of the annotation is an alarm node by construction. The previous pass recorded PR as needing a field the contract does not carry; it was already here, in the chain."
     },
     {
       "id": "ground-truth-is-g-star",
-      "quote": "The verified causal subgraph G ∗ (formed by the edges of all paths in Π∗ ) is the processlevel ground truth (GT) against which agent reasoning is evaluated.",
+      "quote": "The verified causal subgraph G \u2217 (formed by the edges of all paths in \u03a0\u2217 ) is the processlevel ground truth (GT) against which agent reasoning is evaluated.",
       "why": "Names the annotated path set as the ground truth (GT) the process layer scores against, which is what licenses reading its nodes as the alarm-node set."
     },
     {
       "id": "graph-f1",
-      "quote": "Node F1 and Edge F1 score the predicted causal graph Ĝ against G ∗ under exact matching;",
+      "quote": "Node F1 and Edge F1 score the predicted causal graph G\u0302 against G \u2217 under exact matching;",
       "why": "The process layer's graph comparison. Exact matching means a node or an edge is either in both sets or in one, which is computable from the exported path without the topology -- and it is where partial credit belongs, instead of a facet average that also pays for the root cause a second time."
     },
     {
@@ -77,7 +77,7 @@
   "notImplemented": [
     {
       "metric": "F1 / Precision / Recall",
-      "why": "defined over a predicted pair set, and this data model carries exactly one root cause; for a one-pair submission all three equal EM, so reporting them as three more columns would be three names for one number"
+      "why": "the (service, fault_kind) pair set in the answer key has one element: causal_path.json carries a single `root_cause` object and every released case names one root. With one pair, Precision, Recall and F1 are the same number as EM, so reporting them as three more columns would be three names for one figure. The narrow thing is the contract, not the data model: OpenRCA 1.0's released archive has 75 of 335 submissions naming two roots, so a format can be wider -- this one is not, and a field holding more pairs would not change a single number on any case in this corpus."
     },
     {
       "metric": "SQL Exec",
