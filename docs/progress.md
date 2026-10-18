@@ -6533,9 +6533,9 @@ needs.
 | the direction | every case where the old rule and the paper disagree is one-way; the reverse set is asserted empty |
 | the label | 5 `replayed` / 2 `transcribed` / 2 `derived`, derived from the census and asserted both ways |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **154 files, 3889 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **158 files, 4076 tests passed** (as of this commit) |
+| `core` test suite | **154 files, 3889 tests passed** (as of `3d5d62b`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `3d5d62b`) |
+| repo test suite | **158 files, 4076 tests passed** (as of `3d5d62b`) |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 63 across 38 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6558,3 +6558,120 @@ needs.
   whole-suite reds never reproduced, the census ageing, and the multi-fault model.
   `[open: each has its own entry in the pass that raised it; this list is not the place
   they are maintained]`
+
+## Pass 63 -- a citation that pointed at this repository, and a metric set nobody had opened
+
+### The last target with no source
+
+Pass 62 closed by naming the four targets with no replay and observing that three
+of them wait on a decision. The fourth was `openrca-2.0`, and it was the one row
+in the census whose `source` string was not merely unopened -- it was **this
+repository**:
+
+```ts
+source: 'docs/targets/openrca-2.0.md — the official OpenRCA 2.0 scorer is not open-sourced',
+quote:  'The official OpenRCA 2.0 evaluation framework and scorer are not open-sourced.',
+```
+
+That second line is `docs/targets/openrca-2.0.md:157`. It is not in the paper.
+Checked at `arXiv:2606.27154v2`: the string `open-sourced` occurs **zero** times.
+Checked at `microsoft/OpenRCA`'s README, at the commit the 1.0 evaluator is pinned
+to: `2.0` and `PAVE` occur **zero** times.
+
+> A `quote` field whose entire value is that it was not written here, holding a
+> sentence written here.
+
+This is the one defect in the campaign that no amount of replaying would have
+found, because there was nothing to replay against: the claim's evidence was the
+document making the claim. Every other finding has been "the rule disagreed with
+the artefact"; this one is "there was no artefact".
+
+### What the paper actually defines
+
+§3.2, with formal definitions in Appendix G: nine quantities across an outcome and
+a process layer.
+
+| Quantity | Computable from this contract? |
+| --- | --- |
+| EM — exact set equality over `(service, fault_kind)` pairs | yes, and it is one pair here |
+| AnySvc — a correct service, ignoring the fault kind | yes |
+| Node F1 / Edge F1 — the predicted graph against the annotated one | yes, from the exported path |
+| F1 / Precision / Recall over the pair set | degenerates to EM for a one-pair submission — three names for one number |
+| Path Reachability — needs the ground-truth **alarm nodes** | **no**: PAVE annotates them, this export does not carry them |
+| SQL Exec | no SQL in this contract |
+
+The rule that was there scored `matched facets / scored facets` over four facets.
+That is none of the nine. It paid a quarter of a case for the checkpoint
+references, which no published metric reads; and it reported a correct service with
+no verified path as **three quarters of a success**, which is the exact failure the
+paper was written to expose:
+
+> We reserve the term ungrounded diagnosis for cases that satisfy AnySvc but not
+> PR: a correct root-cause identification not grounded in a verified causal
+> propagation path to the observed symptom.
+
+The report now carries the layers apart — `em` (the headline), `anySvc`, `nodeF1`,
+`edgeF1` — so `anySvc: 1` beside `em: 0` and `em: 1` beside `nodeF1: 0` are both
+expressible. A single averaged number could say neither.
+
+### One facet that had to leave the list
+
+`chain` was declared a facet of a score that never read it, and the mutation grid
+said so before this pass did:
+
+```
+case case-001: mutating 'chain' did not lower the score (1)
+```
+
+That is the grid working. The score is EM; the graph is a *different published
+layer*, and folding it back into `score` would reproduce exactly the averaging the
+paper exists to argue against. So `facets` is `['component', 'faultType']` — what
+`score` reads — and the graph comparison is asserted case by case in
+`openrca2-evaluator.test.ts` instead, which is a stronger instrument for it than a
+mutation grid that can only ask whether *the* score moved.
+
+`evidence` left the list entirely: no published metric scores the checkpoint
+references, and paying a quarter of a case for them was inventing a fourth term.
+
+### The label moved, because the census moved
+
+`openrca-2.0` was `derived`. It is `transcribed` now — the paper defines the
+metrics, and four of the nine are replayable. The census row is `prose` rather than
+`absent`, and the registry's label is *derived from that class* by
+`provenance-matches-the-census.test.ts`, which is why the two moved together without
+anyone editing both: **5 replayed / 3 transcribed / 1 derived.**
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | paper pinned by digest (v2, 962,086 bytes, sha256 `2c8388aa…`); **5 clauses** quoted verbatim; **7 cases** with `em`/`anySvc`/`nodeF1`/`edgeF1` |
+| mechanism tests | **10** on the corpus + 2 on the census and 1 on the aggregate, all updated rather than added around |
+| mutation checks | **14 of 14 CAUGHT**, each by the test named in its row |
+| the citation | `source` is not a `docs/` path; the invented sentence is not the quote; the negative result is recorded |
+| the layers | `anySvc: 0.71` / `em: 0.57` / `nodeF1: 0.78` / `edgeF1: 0.74` on the nine-case export |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **155 files, 3901 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **159 files, 4088 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 63 across 38 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **A quote can no longer be checked mechanically, and that is the residual risk.**
+  `[open: the corpus test asserts the quote equals a clause, and the clause was pasted
+  from the paper by hand. What is now asserted is that the *source* is external and that
+  the old invented sentence is gone -- not that the new sentence is in the PDF. Doing
+  that would need the PDF in the repository, which this project does not do, or a network
+  test, which the suite does not run]`
+- **PR needs a field the contract does not carry.** `[open: closing it means adding the
+  alarm-node set to the annotation and to the export, which is a contract change and not a
+  scoring one; the paper's own headline number is the AnySvc/PR gap, so this is the most
+  valuable of the remaining gaps]`
+- **Three non-replayable targets still wait on decisions**, unchanged this pass.
+  `[open: RCA100's fault-type rubric is 25 KB of CC BY-NC data this project does not
+  redistribute, AIOps2025's TA fallback needs a model and a threshold, and ITBench's two
+  NTAM metrics need weights the paper leaves tunable; each has its own entry in the pass
+  that measured it, with the cost of closing it]`

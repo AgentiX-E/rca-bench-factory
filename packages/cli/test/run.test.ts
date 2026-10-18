@@ -812,7 +812,7 @@ describe('run - official names the cases a target could not export', () => {
     // The provenance label is per metric and it used to travel with each report and
     // never add up, so a consumer had to read nine metric specs to learn which of
     // the nine headlines had ever been compared to a second implementation. The
-    // split is 5 / 2 / 2 and it is derived from the census, not authored here --
+    // split is 5 / 3 / 1 and it is derived from the census, not authored here --
     // this asserts that the payload carries the split, and that the split is the
     // registry's.
     const dir = await makeDir();
@@ -823,7 +823,7 @@ describe('run - official names the cases a target could not export', () => {
       provenance: Record<string, number>;
       reports: Array<{ metric: { provenance: string } }>;
     };
-    expect(payload.provenance).toEqual({ replayed: 5, transcribed: 2, derived: 2 });
+    expect(payload.provenance).toEqual({ replayed: 5, transcribed: 3, derived: 1 });
     // And the total is the reports, so a skipped target cannot be counted as a
     // claim it did not make.
     const counted = payload.reports.reduce<Record<string, number>>((acc, report) => {

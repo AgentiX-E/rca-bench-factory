@@ -1,0 +1,250 @@
+{
+  "schema": "rca-bench-prose-evaluator/1",
+  "target": "openrca-2.0",
+  "takenAt": "2026-10-18",
+  "upstream": {
+    "kind": "paper",
+    "repository": "arXiv:2606.27154",
+    "title": "OpenRCA 2.0: From Outcome Labels to Causal Process Supervision",
+    "version": "v2",
+    "url": "https://arxiv.org/pdf/2606.27154v2",
+    "bytes": 962086,
+    "sha256": "2c8388aaf732b94cffd2b1f9dd6169e555ed0f8d33a051d91a2a93e2063ec3ea",
+    "retrievedAt": "2026-10-18",
+    "extraction": "pdftotext in reading order, without -layout; each quote checked verbatim against the flattened text of that extraction. The formulas are in Appendix G, which this corpus does not quote -- the definitions it does quote are the ones a reader can hold a rule to without the appendix.",
+    "releasedCode": "none found. The microsoft/OpenRCA repository at the pinned commit of the 1.0 evaluator carries evaluate.py for 1.0 only: its README does not mention 2.0 or PAVE at all, and the string 'open-sourced' appears nowhere in the paper or that README."
+  },
+  "clauses": [
+    {
+      "id": "outcome-layer",
+      "quote": "Exact Match (EM) requires the predicted set to match ground truth exactly; F1, Precision, and Recall are mean fractional scores over the (service, fault_kind) pair set;",
+      "why": "The outcome layer, in one sentence. EM is set equality over (service, fault_kind) pairs -- not a per-facet average -- and F1/Precision/Recall are defined over the same pair set, so for a submission that names exactly one root cause all four are the same number."
+    },
+    {
+      "id": "anysvc",
+      "quote": "AnySvc is the case-level rate of naming at least one correct root-cause service ignoring fault kind, the most lenient outcome score and a service-only relaxation of Recall.",
+      "why": "A published metric that ignores the fault kind. It is the one number this contract can compute that a facet average could not express: right service, wrong kind."
+    },
+    {
+      "id": "graph-f1",
+      "quote": "Node F1 and Edge F1 score the predicted causal graph Ĝ against G ∗ under exact matching;",
+      "why": "The process layer's graph comparison. Exact matching means a node or an edge is either in both sets or in one, which is computable from the exported path without the topology -- and it is where partial credit belongs, instead of a facet average that also pays for the root cause a second time."
+    },
+    {
+      "id": "path-reachability",
+      "quote": "The process layer scores the agent’s reasoning: Path Reachability (PR) is satisfied when the agent both names at least one correct root-cause service and draws a valid path through its predicted causal graph from that service to a ground-truth alarm node, a component observed to behave abnormally during the injection window;",
+      "why": "The one published process metric this contract cannot compute: PR needs the set of ground-truth alarm nodes, which the PAVE annotation carries and this exporter does not. Recorded as a gap rather than approximated by the graph F1, which is a different quantity."
+    },
+    {
+      "id": "ungrounded",
+      "quote": "We reserve the term ungrounded diagnosis for cases that satisfy AnySvc but not PR: a correct root-cause identification not grounded in a verified causal propagation path to the observed symptom.",
+      "why": "Why the layers are reported apart. The paper's own headline finding is that a correct service named without a verified path is the common failure, and a single averaged number hides exactly that: `anySvc` 1 beside `nodeF1` 0 is the sentence."
+    }
+  ],
+  "metricSet": [
+    "EM",
+    "F1",
+    "Precision",
+    "Recall",
+    "AnySvc",
+    "Path Reachability (PR)",
+    "Node F1",
+    "Edge F1",
+    "SQL Exec"
+  ],
+  "implemented": [
+    "EM",
+    "AnySvc",
+    "Node F1",
+    "Edge F1"
+  ],
+  "notImplemented": [
+    {
+      "metric": "Path Reachability (PR)",
+      "why": "needs the ground-truth alarm nodes the PAVE annotation carries and this export does not; deriving them from the chain would be a different metric wearing its name"
+    },
+    {
+      "metric": "F1 / Precision / Recall",
+      "why": "defined over a predicted pair set, and this data model carries exactly one root cause; for a one-pair submission all three equal EM, so reporting them as three more columns would be three names for one number"
+    },
+    {
+      "metric": "SQL Exec",
+      "why": "the contract carries no SQL; the export references checkpoints, not queries"
+    }
+  ],
+  "cases": [
+    {
+      "id": "oracle",
+      "why": "every layer agrees",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "nodeF1": 1.0,
+        "edgeF1": 1.0
+      }
+    },
+    {
+      "id": "right-service-wrong-kind",
+      "why": "the service is right and the fault kind is not: AnySvc yes, EM no",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "NetworkDelay",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 0,
+        "anySvc": 1,
+        "nodeF1": 1.0,
+        "edgeF1": 1.0
+      }
+    },
+    {
+      "id": "right-service-no-path",
+      "why": "the diagnosis is right and the causal path is absent: the case is an ungrounded diagnosis",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": []
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "nodeF1": 0.0,
+        "edgeF1": 0.0
+      }
+    },
+    {
+      "id": "wrong-service-right-path",
+      "why": "the path is right and the service is not",
+      "prediction": {
+        "component": "service:default/payment",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 0,
+        "anySvc": 0,
+        "nodeF1": 1.0,
+        "edgeF1": 1.0
+      }
+    },
+    {
+      "id": "extra-edge",
+      "why": "the predicted graph has one edge the annotation does not",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db",
+          "service:default/orders-db->service:default/payment"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "nodeF1": 0.8571428571428571,
+        "edgeF1": 0.8
+      }
+    },
+    {
+      "id": "missing-edge",
+      "why": "the predicted graph stops one hop early",
+      "prediction": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "faultType": "HighCPU",
+        "chain": [
+          "service:default/order->service:default/cart",
+          "service:default/cart->service:default/orders-db"
+        ]
+      },
+      "expected": {
+        "em": 1,
+        "anySvc": 1,
+        "nodeF1": 0.8,
+        "edgeF1": 0.6666666666666666
+      }
+    },
+    {
+      "id": "empty-key-empty-answer",
+      "why": "the key asserts nothing and the answer asserts nothing",
+      "prediction": {
+        "component": "",
+        "faultType": "",
+        "chain": []
+      },
+      "groundTruth": {
+        "component": "",
+        "faultType": "",
+        "chain": []
+      },
+      "expected": {
+        "em": 0,
+        "anySvc": 0,
+        "nodeF1": null,
+        "edgeF1": null
+      }
+    }
+  ]
+}

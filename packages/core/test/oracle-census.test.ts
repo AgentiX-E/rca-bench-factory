@@ -114,6 +114,18 @@ describe('every target is counted, and nothing else is', () => {
 });
 
 describe('a claim that the rule can be replayed is backed by a corpus that replays it', () => {
+  it('names a corpus only where a corpus exists', () => {
+    // `code` rows have to name one (next test). The rows that are *not* code may also name
+    // one -- a `prose` target's corpus is the set of sentences its rule is held to -- and
+    // either way the file has to be there. Before `openrca-2.0` became `prose`, no
+    // non-`code` row named a corpus, so this half was vacuous and nothing noticed a row
+    // pointing at a file nobody wrote.
+    const missing = CENSUS.rows
+      .filter((row) => row.corpus !== null && !existsSync(resolve(ROOT, row.corpus)))
+      .map((row) => `${row.target}: ${String(row.corpus)} does not exist`);
+    expect(missing).toEqual([]);
+  });
+
   it('names a corpus for every code row', () => {
     for (const row of CENSUS.rows) {
       if (row.class !== 'code') continue;
@@ -196,7 +208,7 @@ describe('every row is dated, and dates what it measured', () => {
     // row cannot change the story without changing the test that tells it.
     expect(counted('code')).toBe(5);
     expect(counted('rubric')).toBe(1);
-    expect(counted('prose')).toBe(1);
-    expect(counted('absent')).toBe(2);
+    expect(counted('prose')).toBe(2);
+    expect(counted('absent')).toBe(1);
   });
 });

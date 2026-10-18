@@ -46,7 +46,7 @@ const RCAEVAL_TARGETS = SCORE_TARGET_IDS.filter((t) => t.startsWith('rcaeval-'))
  */
 const METRIC_NAMED_IDS: Record<string, string> = {
   'openrca-1.0': 'openrca-strict-accuracy',
-  'openrca-2.0': 'openrca2-pave-verification',
+  'openrca-2.0': 'openrca2-outcome-and-graph',
 };
 
 describe('every target publishes a metric that is its own', () => {

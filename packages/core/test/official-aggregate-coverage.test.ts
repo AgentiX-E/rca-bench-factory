@@ -30,6 +30,20 @@ import { validBundle } from './fixtures.js';
  * The fallback is the defect, not merely one missing branch: the tenth target
  * added to `SCORE_TARGET_IDS` would inherit strict accuracy as its headline
  * with nothing to say so.
+ *
+ * ## What changed underneath this file
+ *
+ * That spec was itself wrong: `matched facets / scored facets` over four facets
+ * is none of the nine metrics the OpenRCA 2.0 paper defines, and the citation
+ * behind it pointed at this repository's own documentation (finding 186). The
+ * rule is now `score = EM` over the outcome layer, with the causal-graph F1s
+ * reported beside it.
+ *
+ * The *invariant* this file guards is unchanged and is the reason it is kept:
+ * **the headline a target reports must be the formula its own spec publishes**,
+ * so `final` and `accuracy` cannot describe one quantity with two numbers. What
+ * changed is the evidence -- the cases below now break the layer the rule reads
+ * and the layer it reports, instead of a facet average that no longer exists.
  */
 
 describe('aggregateFor · an unnamed target must not silently inherit a formula', () => {
@@ -45,7 +59,7 @@ describe('aggregateFor · an unnamed target must not silently inherit a formula'
     expect(report.final).toBe(100);
   });
 
-  it('gives partial credit, because the published rule does', () => {
+  it('keeps the headline equal to the mean case score, in both directions', () => {
     // Submitted explicitly rather than derived from the key: `causal_path.json`
     // *is* the answer key for this target, so weakening the file would weaken
     // the key and the oracle with it. The prediction is what a solver controls.
@@ -53,20 +67,24 @@ describe('aggregateFor · an unnamed target must not silently inherit a formula'
     const oracle = oraclePrediction(readOfficialGroundTruth('openrca-2.0', files)[0]!);
     expect(oracle.chain.length, 'the fixture key declares no chain').toBeGreaterThan(0);
 
-    // Chain intact, evidence dropped: exactly one of the four declared facets
-    // fails, so the published rule scores 0.75 and strict accuracy scores 0.
-    const partial: OfficialPrediction = { ...oracle, evidence: [] };
-    const report = scoreOfficial('openrca-2.0', files, [partial]);
-    expect(report.accuracy, `accuracy ${report.accuracy}`).toBe(0.75);
-    expect(report.final, `final ${report.final} vs accuracy ${report.accuracy}`).toBeGreaterThan(0);
-    expect(report.final).toBeCloseTo(report.accuracy * 100, 5);
+    // A partial *outcome*: the service is right, the fault kind is not. EM falls,
+    // AnySvc does not, and the headline follows EM because that is what the spec
+    // publishes -- `final` and `accuracy` still describe one quantity.
+    const wrongKind: OfficialPrediction = { ...oracle, faultType: 'network' };
+    const report = scoreOfficial('openrca-2.0', files, [wrongKind]);
+    expect(report.accuracy, `accuracy ${report.accuracy}`).toBe(0);
+    expect(report.final, `final ${report.final} vs accuracy ${report.accuracy}`).toBe(0);
+    expect(report.breakdown['anySvc']).toBe(1);
+    expect(report.breakdown['nodeF1']).toBe(1);
   });
 
-  it('declares a formula that names facets rather than a strict flag', () => {
-    // `accuracy` is the mean facet score, so a target whose spec is the mean
-    // facet score must agree with it. This is the invariant the missing branch
-    // broke, stated without reference to which branch it was.
-    expect(OFFICIAL_METRICS['openrca-2.0'].formula).toContain('matched facets / scored facets');
+  it('declares a formula naming the quantity its headline reports', () => {
+    // The invariant the missing branch broke, stated without reference to which
+    // branch it was: the headline has to be the quantity the spec names. `score =
+    // EM` is that quantity, so a case can only be worth 0 or 1, and the two
+    // layers the export also carries cannot be folded back into it.
+    expect(OFFICIAL_METRICS['openrca-2.0'].formula).toContain('score = EM');
+    expect(OFFICIAL_METRICS['openrca-2.0'].facets).toEqual(['component', 'faultType']);
   });
 });
 
@@ -76,8 +94,9 @@ describe('aggregateFor · an unnamed target is a loud failure, not a silent form
     // guard the `if` chain simply ended, so any target that no branch named fell
     // through to the trailing strict-accuracy block and reported a number under
     // a spec that advertises a different formula. `openrca-2.0` is the one that
-    // did: its spec says `matched facets / scored facets`, and it reported
-    // strict accuracy.
+    // did: its spec advertised a facet average and it reported strict accuracy.
+    // (That spec was itself wrong -- finding 186 -- which is a second reason the
+    // guard belongs at the reader rather than at the arithmetic.)
     //
     // The cast is the point of the test. `ScoreTargetId` is a closed union, so
     // an unnamed target can only arrive from outside the type system -- which is

@@ -139,10 +139,30 @@ different question, and a different command:
 rca-bench official --target openrca-2.0 --dir ./out
 ```
 
-It scores the four facets the PAVE contract carries — root cause, fault type, causal
-chain and evidence — against the exported answer key. The metric is labelled
-**derived**, not `official`, because the OpenRCA 2.0 scorer is not open-sourced; the
-label travels with every score so the distinction can never be lost.
+It reports the layers the paper publishes separately (arXiv 2606.27154v2 §3.2).
+
+| Number | Rule | Layer |
+| --- | --- | --- |
+| `em` (the headline) | the root cause **and** the fault kind both match — exact set equality over a one-pair `(service, fault_kind)` set | outcome |
+| `anySvc` | the root cause matches, ignoring the fault kind | outcome (lenient) |
+| `nodeF1` | F1 of the predicted node set against the annotated one | process |
+| `edgeF1` | F1 of the predicted edge set against the annotated one | process |
+
+`anySvc: 1` beside `em: 0` is the paper's own "ungrounded diagnosis" — a correct service
+that is not the right diagnosis. `em: 1` beside `nodeF1: 0` is a right diagnosis with no
+verified path. A single averaged number cannot say either, which is why the four are
+reported apart and only `em` decides whether a case is correct.
+
+The label is **transcribed**: the paper defines the metrics and no scorer is released.
+It used to be `derived`, and its `source` used to be this document — the claim's evidence
+was the document making the claim, and the sentence it quoted ("the scorer is not
+open-sourced") appears nowhere in the paper or in `microsoft/OpenRCA`'s README.
+
+Five of the paper's nine quantities are **not** implemented, and the reason is in
+`golden-master/openrca2-evaluator.json` with each one: Path Reachability needs the
+ground-truth alarm nodes the PAVE annotation carries and this export does not; F1 /
+Precision / Recall over a one-pair set are three names for `em`; SQL Exec needs queries
+this contract does not have.
 
 ## Failure modes
 
@@ -154,8 +174,13 @@ label travels with every score so the distinction can never be lost.
 
 ## Boundaries
 
-- **The official OpenRCA 2.0 evaluation framework and scorer are not open-sourced.**
-  This exporter emits a PAVE-semantic annotation contract, not a byte-compatible official
-  file. The field names follow the PAVE description; the on-disk layout is ours.
+- **No OpenRCA 2.0 scorer is released as code** — a statement about this repository's
+  search, not a quotation from the authors. `microsoft/OpenRCA` carries `evaluate.py` for
+  1.0 only, and neither `2.0` nor `PAVE` appears in its README. (This bullet used to be
+  cited as the metric's `quote`, which made the claim its own evidence.) The metrics
+  themselves are published in §3.2, so the rule is transcribed from them.
+- **This exporter emits a PAVE-semantic annotation contract, not a byte-compatible
+  official file.** The field names follow the PAVE description; the on-disk layout is
+  ours.
 - Cases without a causal chain are still exported, with `causal_path: []`. An empty chain
   is a statement about the data, not an error.

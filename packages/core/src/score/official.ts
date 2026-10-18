@@ -219,14 +219,60 @@ const OPENRCA_METRIC: OfficialMetricSpec = {
   facets: ['component', 'reason', 'occurredAt'],
 };
 
+/**
+ * OpenRCA 2.0's outcome layer and its graph comparison.
+ *
+ * This spec used to cite **this repository's own documentation** --
+ * `source: 'docs/targets/openrca-2.0.md'` -- and quote a sentence that appears
+ * nowhere in the paper: "The official OpenRCA 2.0 evaluation framework and scorer
+ * are not open-sourced." Checked at `arXiv:2606.27154v2`: the string
+ * `open-sourced` does not occur in the paper, and neither `2.0` nor `PAVE` occurs
+ * in `microsoft/OpenRCA`'s README at the pinned commit. A `quote` field whose
+ * value is that it was not written here, holding a sentence written here, is a
+ * citation closed on itself.
+ *
+ * The paper does define the metric set -- §3.2, with formal definitions in
+ * Appendix G -- and four of its nine quantities are computable from this
+ * contract:
+ *
+ *   EM      set equality over (service, fault_kind) pairs. One root cause here,
+ *           so it is one pair and equality is an and.
+ *   AnySvc  the service alone, ignoring the fault kind. The metric that makes an
+ *           "ungrounded diagnosis" expressible at all.
+ *   Node F1 / Edge F1
+ *           the predicted causal graph against the annotated one under exact
+ *           matching -- where partial credit belongs, rather than in a facet
+ *           average that pays the root cause twice.
+ *
+ * Five are not, and are recorded as gaps in
+ * `golden-master/openrca2-evaluator.json`: PR needs the ground-truth alarm nodes
+ * the PAVE annotation carries; F1/Precision/Recall over a one-pair set are three
+ * names for EM; SQL Exec needs queries this contract does not have.
+ *
+ * `evidence` is no longer a scored facet: no published metric scores the
+ * checkpoint references. They are validated by the structural, temporal and
+ * statistical gates, which is where they belong -- and a rule that paid for them
+ * was inventing a fourth term.
+ */
 const OPENRCA2_METRIC: OfficialMetricSpec = {
-  id: 'openrca2-pave-verification',
-  name: 'OpenRCA 2.0 PAVE causal-path verification',
-  formula: 'score = matched facets / scored facets (root cause, fault type, causal chain, evidence)',
-  provenance: 'derived',
-  source: 'docs/targets/openrca-2.0.md — the official OpenRCA 2.0 scorer is not open-sourced',
-  quote: 'The official OpenRCA 2.0 evaluation framework and scorer are not open-sourced.',
-  facets: ['component', 'faultType', 'chain', 'evidence'],
+  id: 'openrca2-outcome-and-graph',
+  name: 'OpenRCA 2.0 outcome layer (EM, AnySvc) and causal-graph F1',
+  formula:
+    'score = EM (root cause and fault kind both match); anySvc, nodeF1 and edgeF1 are ' +
+    'reported beside it because the paper reports the layers apart',
+  provenance: 'transcribed',
+  source: 'arXiv 2606.27154v2 section 3.2 (OpenRCA 2.0 outcome and process metrics)',
+  quote:
+    'Exact Match (EM) requires the predicted set to match ground truth exactly; F1, Precision, ' +
+    'and Recall are mean fractional scores over the (service, fault_kind) pair set;',
+  // The two facets `score` reads. The causal graph is *not* one of them, and that is the
+  // paper's structure rather than an omission: EM is the outcome layer, the graph F1s are the
+  // process layer, and the paper's own finding is that the two disagree -- a correct service
+  // with no verified path. Folding the graph into `score` would reproduce exactly the
+  // averaging that hides it, and declaring `chain` a facet of a score that ignores it would
+  // make `mutationsDegrade` fail, which is the grid correctly objecting. The graph comparison
+  // is asserted by `packages/core/test/openrca2-evaluator.test.ts`, case by case.
+  facets: ['component', 'faultType'],
 };
 
 function rcaevalMetric(suite: RcaEvalSuite): OfficialMetricSpec {
@@ -1164,6 +1210,58 @@ function meanOfPresent(terms: ReadonlyArray<number | undefined>): number {
   return present.reduce((sum, term) => sum + term, 0) / present.length;
 }
 
+/** Exact set F1, with `undefined` standing for "no denominator at all". */
+function setF1(predicted: ReadonlySet<string>, expected: ReadonlySet<string>): number | undefined {
+  if (predicted.size === 0 && expected.size === 0) return undefined;
+  let hit = 0;
+  for (const item of predicted) if (expected.has(item)) hit += 1;
+  return (2 * hit) / (predicted.size + expected.size);
+}
+
+/** The endpoints a chain token names, as a set. */
+function chainNodes(chain: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  for (const token of chain) {
+    const [from, to] = token.split('->');
+    if (from !== undefined && from !== '') out.add(from);
+    if (to !== undefined && to !== '') out.add(to);
+  }
+  return out;
+}
+
+/**
+ * One OpenRCA 2.0 case: the outcome layer and the two graph F1s.
+ *
+ * Both layers are computed here and carried in `terms`, because the aggregate
+ * reports both and a second computation is how findings 183 and 184 happened.
+ *
+ * `em` requires the answer key to *declare* a fault kind. Without that guard two
+ * empty strings are equal and a case that asserts nothing would score a perfect
+ * exact match -- the Cloud-OpsBench defect, third appearance.
+ */
+function scoreOpenRca2Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
+  const componentMatches = gt.component !== '' && pred.component === gt.component;
+  const kindMatches = gt.faultType !== '' && pred.faultType === gt.faultType;
+  const node = setF1(chainNodes(pred.chain), chainNodes(gt.chain));
+  const edge = setF1(new Set(pred.chain), new Set(gt.chain));
+  const em = componentMatches && kindMatches ? 1 : 0;
+
+  return {
+    caseId: gt.caseId,
+    facets: OFFICIAL_METRICS['openrca-2.0'].facets
+      .filter((facet) => gtHasFacet(gt, facet))
+      .map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) })),
+    score: em,
+    correct: em === 1,
+    terms: {
+      em,
+      anySvc: componentMatches ? 1 : 0,
+      ...(node === undefined ? {} : { nodeF1: node }),
+      ...(edge === undefined ? {} : { edgeF1: edge }),
+    },
+  };
+}
+
 /**
  * One ITBench case, scored as the strict conjunction and the published pass@1.
  *
@@ -1480,7 +1578,7 @@ function scoreOneCase(target: ScoreTargetId, pred: OfficialPrediction, gt: Offic
     case 'openrca-1.0':
       return scoreOpenRcaCase(pred, gt);
     case 'openrca-2.0':
-      return scoreFacetSubset(pred, gt, OFFICIAL_METRICS['openrca-2.0'].facets, facetMatched);
+      return scoreOpenRca2Case(pred, gt);
     case 'rcaeval-re1':
     case 'rcaeval-re2':
     case 'rcaeval-re3':
@@ -1521,17 +1619,24 @@ function aggregateFor(
   }
 
   if (target === 'openrca-2.0') {
-    // Its spec is `matched facets / scored facets`, which is the mean facet
-    // score -- `accuracy` by another name. This branch was missing, so the
-    // target fell through to the generic strict fallback below and its headline
-    // became "every facet of every case was reproduced". The two formulas agree
-    // on a perfect export and on an empty one, which is why the regression
-    // never noticed; they part company in between, where the fallback reported
-    // `final: 0` beside `accuracy: 0.75` for a prediction that reproduced three
-    // of the four declared facets.
-    const partial = round2(mean(cases.map((c) => c.score)));
-    const strict = round2(strictRate);
-    return { breakdown: { partial, strict }, headline: partial * 100 };
+    // Read from the case records, never recomputed. The headline is EM, the
+    // strictest published outcome metric; the graph F1s are reported beside it
+    // because the paper's own finding is that the two layers disagree -- a correct
+    // service with no verified path is its headline failure, and an average over
+    // four facets reports it as three quarters of a success.
+    const em = meanOfPresent(cases.map((c) => c.terms?.['em']));
+    const anySvc = meanOfPresent(cases.map((c) => c.terms?.['anySvc']));
+    const nodeF1 = meanOfPresent(cases.map((c) => c.terms?.['nodeF1']));
+    const edgeF1 = meanOfPresent(cases.map((c) => c.terms?.['edgeF1']));
+    return {
+      breakdown: {
+        em: round2(em),
+        anySvc: round2(anySvc),
+        nodeF1: round2(nodeF1),
+        edgeF1: round2(edgeF1),
+      },
+      headline: round2(em) * 100,
+    };
   }
 
   if (target === 'rcaeval-re1' || target === 'rcaeval-re2' || target === 'rcaeval-re3') {

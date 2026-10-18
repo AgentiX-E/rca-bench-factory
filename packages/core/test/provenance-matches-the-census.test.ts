@@ -98,9 +98,12 @@ describe('the label says how far the rule is from somebody else’s code', () =>
     // comment. The counts are stated so a change to the split is a change here.
     const counted = (label: OfficialProvenance): number =>
       SCORE_TARGET_IDS.filter((target) => OFFICIAL_METRICS[target].provenance === label).length;
+    // `openrca-2.0` moved from `derived` to `transcribed` in pass 63: the paper defines
+    // the metric set and four of the nine quantities are computable, so the rule is now a
+    // reading of published sentences rather than this repository's invention.
     expect(counted('replayed')).toBe(5);
-    expect(counted('transcribed')).toBe(2);
-    expect(counted('derived')).toBe(2);
+    expect(counted('transcribed')).toBe(3);
+    expect(counted('derived')).toBe(1);
   });
 
   it('does not let a target be transcribed and replayed at once', () => {

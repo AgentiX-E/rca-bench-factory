@@ -376,9 +376,13 @@ describe('OFFICIAL_METRICS', () => {
     }
   });
 
-  it('marks only the two targets without a published closed form as derived', () => {
+  it('marks only the target with no published closed form as derived', () => {
+    // `openrca-2.0` used to be here. Its spec cited this repository's own documentation
+    // and quoted a sentence the paper does not contain; once the paper was opened, four
+    // of its nine metrics turned out to be computable, which makes the target
+    // `transcribed`. See `openrca2-evaluator.test.ts` and finding 186.
     const derived = SCORE_TARGET_IDS.filter((t) => OFFICIAL_METRICS[t].provenance === 'derived');
-    expect(derived).toEqual(['openrca-2.0', 'itbench']);
+    expect(derived).toEqual(['itbench']);
   });
 
   it('scores the ranked candidate list for RCAEval and nothing else', () => {
@@ -757,22 +761,45 @@ describe('ITBench SRE diagnosis', () => {
   });
 });
 
-describe('OpenRCA 2.0 PAVE', () => {
+describe('OpenRCA 2.0 outcome layer and graph F1', () => {
   const files = () => exportOpenRca2(validBundle()).files;
 
-  it('scores the oracle 1.0 across all four declared facets', () => {
+  it('scores the oracle 100 on the outcome layer and 1.0 on both graph F1s', () => {
     const oracle = oracleFor('openrca-2.0', files())[0]!;
     const report = scoreWith('openrca-2.0', files(), [oracle]);
     expect(report.accuracy).toBe(1);
-    expect(report.cases[0]!.facets.map((f) => f.facet).sort()).toEqual(['chain', 'component', 'evidence', 'faultType']);
+    expect(report.final).toBe(100);
+    expect(report.breakdown).toEqual({ em: 1, anySvc: 1, nodeF1: 1, edgeF1: 1 });
+    expect(report.cases[0]!.facets.map((f) => f.facet).sort()).toEqual(['component', 'faultType']);
   });
 
-  it('loses a quarter of the score per broken facet', () => {
+  it('costs the case when the service or the fault kind is wrong, and only the F1s when the graph is', () => {
+    // The two layers, and the reason they are reported apart. A submission that names the
+    // right service with the wrong kind is `anySvc: 1, em: 0` -- the paper's own headline
+    // example of a diagnosis that looks right and is not. A submission with the wrong graph
+    // keeps EM and loses the F1s, which is the partial credit the facet average used to pay
+    // for by also charging the root cause a second time.
     const oracle = oracleFor('openrca-2.0', files())[0]!;
-    for (const facet of ['component', 'faultType', 'chain', 'evidence'] as const) {
-      const report = scoreWith('openrca-2.0', files(), [mutatePrediction(oracle, facet)]);
-      expect(report.accuracy, facet).toBe(0.75);
-    }
+    const wrongKind = scoreWith('openrca-2.0', files(), [{ ...oracle, faultType: 'network' }]).breakdown;
+    expect(wrongKind).toEqual({ em: 0, anySvc: 1, nodeF1: 1, edgeF1: 1 });
+
+    const wrongService = scoreWith('openrca-2.0', files(), [{ ...oracle, component: 'service:default/payment' }])
+      .breakdown;
+    expect(wrongService).toEqual({ em: 0, anySvc: 0, nodeF1: 1, edgeF1: 1 });
+
+    const noPath = scoreWith('openrca-2.0', files(), [{ ...oracle, chain: [] }]).breakdown;
+    expect(noPath).toEqual({ em: 1, anySvc: 1, nodeF1: 0, edgeF1: 0 });
+    expect(scoreWith('openrca-2.0', files(), [{ ...oracle, chain: [] }]).final).toBe(100);
+  });
+
+  it('ignores the checkpoint references, because no published metric scores them', () => {
+    // `evidence` used to be a scored facet, which paid a quarter of the case for the
+    // checkpoint list. None of the paper's nine metrics reads it; the structural, temporal
+    // and statistical gates do, and they run before this command.
+    const oracle = oracleFor('openrca-2.0', files())[0]!;
+    const report = scoreWith('openrca-2.0', files(), [{ ...oracle, evidence: ['nothing|at|all'] }]);
+    expect(report.accuracy).toBe(1);
+    expect(report.breakdown).toEqual({ em: 1, anySvc: 1, nodeF1: 1, edgeF1: 1 });
   });
 });
 

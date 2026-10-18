@@ -1,14 +1,14 @@
 {
   "core": {
-    "files": 154,
-    "tests": 3889
+    "files": 155,
+    "tests": 3901
   },
   "cli": {
     "files": 4,
     "tests": 187
   },
   "repo": {
-    "files": 158,
-    "tests": 4076
+    "files": 159,
+    "tests": 4088
   }
 }

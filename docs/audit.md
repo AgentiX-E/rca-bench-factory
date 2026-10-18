@@ -19167,3 +19167,140 @@ counted is the same kind of artefact as a test that is never run.
 | `core` / `cli` / repo | **154 / 3889** · **4 / 187** · **158 / 4076** |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 186 — a citation that pointed at this repository
+
+### The one row whose source was not external
+
+Pass 62 counted the labels and left four targets with no replay. Three of them wait
+on a decision. The fourth, `openrca-2.0`, looked like the same shape and was not:
+
+```ts
+source: 'docs/targets/openrca-2.0.md — the official OpenRCA 2.0 scorer is not open-sourced',
+quote:  'The official OpenRCA 2.0 evaluation framework and scorer are not open-sourced.',
+```
+
+That sentence is `docs/targets/openrca-2.0.md:157`, written in this repository. It
+is not in the paper:
+
+```
+arXiv:2606.27154v2, flattened text   'open-sourced'  -> 0 occurrences
+microsoft/OpenRCA README @ c121a483  '2.0'           -> 0 occurrences
+microsoft/OpenRCA README @ c121a483  'PAVE'          -> 0 occurrences
+```
+
+**A `quote` field whose entire value is that it was not written here, holding a
+sentence written here.** Every other finding in this document has the same shape --
+a rule that disagreed with an artefact -- and each was findable by replaying
+something. This one had nothing to replay: the claim's evidence was the document
+making the claim, so the loop closed and stayed closed for as long as nobody opened
+the paper.
+
+### What was there to find
+
+`arXiv 2606.27154v2` §3.2 defines nine quantities across two layers (formal
+definitions in Appendix G):
+
+> Exact Match (EM) requires the predicted set to match ground truth exactly; F1,
+> Precision, and Recall are mean fractional scores over the (service, fault_kind)
+> pair set; ... AnySvc is the case-level rate of naming at least one correct
+> root-cause service ignoring fault kind ... The process layer scores the agent's
+> reasoning: Path Reachability (PR) is satisfied when the agent both names at least
+> one correct root-cause service and draws a valid path through its predicted causal
+> graph from that service to a ground-truth alarm node ... Node F1 and Edge F1 score
+> the predicted causal graph against G* under exact matching.
+
+The rule here was `matched facets / scored facets` over four facets. That is none of
+the nine:
+
+| The rule paid for | The paper pays for |
+| --- | --- |
+| root cause | EM, AnySvc, and every F1 over the pair set |
+| fault type | EM only |
+| causal chain | Node F1 and Edge F1, as a *separate layer* |
+| checkpoint references | **nothing** — no published metric reads them |
+
+Two consequences, and the second is the one that matters:
+
+- a quarter of every case was paid for a facet nobody scores;
+- a correct service with **no verified path** scored 0.75. The paper exists to argue
+  that this case is the failure:
+
+  > We reserve the term ungrounded diagnosis for cases that satisfy AnySvc but not
+  > PR: a correct root-cause identification not grounded in a verified causal
+  > propagation path to the observed symptom.
+
+  The rule reported it as three quarters of a success, and then averaged it into one
+  number with the cases that were grounded.
+
+### What replaced it
+
+| Number | Rule | Layer |
+| --- | --- | --- |
+| `em` (headline) | service **and** fault kind — exact equality over a one-pair set | outcome |
+| `anySvc` | service, ignoring the fault kind | outcome, lenient |
+| `nodeF1` / `edgeF1` | the predicted graph against the annotated one | process |
+
+On the recorded corpus: `em 0.57`, `anySvc 0.71`, `nodeF1 0.78`, `edgeF1 0.74`. The
+gap between the first two is the paper's headline finding, and it is now a pair of
+numbers rather than a caveat.
+
+Five published quantities are **not** implemented, each with its reason in
+`golden-master/openrca2-evaluator.json`:
+
+- **PR** needs the ground-truth alarm nodes. PAVE annotates them; this export does
+  not carry them. Deriving them from the chain would be a different metric wearing
+  the name.
+- **F1 / Precision / Recall** are defined over a predicted *pair set*, and this data
+  model carries exactly one root cause. For a one-pair submission all three equal
+  EM, so reporting them would be three more columns for one number.
+- **SQL Exec** needs queries; the contract references checkpoints.
+
+### One facet the mutation grid removed before this pass did
+
+The first version kept `chain` in `facets`, and the regression failed:
+
+```
+case case-001: mutating 'chain' did not lower the score (1)
+```
+
+That is the grid doing its job. `score` is EM; the causal graph is a different
+published layer, and folding it into `score` would reproduce exactly the averaging
+the paper argues against. So `facets` declares what `score` reads --
+`['component', 'faultType']` -- and the graph comparison is asserted case by case in
+`openrca2-evaluator.test.ts`, which is a stronger instrument for it than a grid that
+can only ask whether *the* score moved.
+
+`evidence` left the list entirely. It is validated by the structural, temporal and
+statistical gates, which is where a checkpoint belongs.
+
+### The label moved with the census, without anyone editing both
+
+`openrca-2.0` was `derived`; it is `transcribed`. The census row moved from `absent`
+to `prose`. Only the census was edited by hand -- the registry's label is derived
+from the class by `provenance-matches-the-census.test.ts`, which is what pass 62's
+mapping was for. The split is now **5 replayed / 3 transcribed / 1 derived**.
+
+### The residual risk, stated
+
+A quote cannot be checked mechanically without the artefact in the repository or a
+network test, and this project does neither. What is asserted is that the `source` is
+external (`not.toContain('docs/')`), that the old sentence is gone from every clause,
+and that the metric's quote equals a recorded clause. **The clause itself was pasted
+by hand**, so the guarantee is "nobody can quietly cite themselves again", not "this
+sentence is in that PDF". That is a real limit and it is written into the Open list
+rather than left implicit.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | v2 pinned by digest (962,086 bytes, sha256 `2c8388aa…`); 5 clauses verbatim; 7 cases |
+| mechanism tests | 10 corpus + 2 census + 1 aggregate |
+| mutation checks | **14 of 14 CAUGHT** |
+| the citation | source is not a `docs/` path; the invented sentence is not the quote |
+| the layers | em 0.57 / anySvc 0.71 / nodeF1 0.78 / edgeF1 0.74 |
+| `official:check` | 8 PASS, 1 skipped by contract |
+| `core` / `cli` / repo | **155 / 3901** · **4 / 187** · **159 / 4088** |
+| coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

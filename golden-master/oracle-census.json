@@ -242,16 +242,21 @@
     },
     {
       "target": "openrca-2.0",
-      "metricSource": "docs/targets/openrca-2.0.md — the official OpenRCA 2.0 scorer is not open-sourced",
-      "class": "absent",
-      "cited": "the PAVE contract; the shipment says its scorer is not open-sourced",
+      "metricSource": "arXiv 2606.27154v2 section 3.2 (OpenRCA 2.0 outcome and process metrics)",
+      "class": "prose",
+      "cited": "arXiv 2606.27154v2 section 3.2 (outcome and process layers); no released scorer",
       "upstream": null,
-      "corpus": null,
+      "corpus": "golden-master/openrca2-evaluator.json",
       "probe": {
-        "what": "GET the tree of microsoft/OpenRCA at c121a483 and grep its README for `2.0` and `PAVE`",
-        "returned": "main/{evaluate.py, generate.py, prompt.py, task_specification.json} plus rca/, dataset/, docs/; no 2.0 or PAVE file, and neither string appears in the README",
+        "what": "GET the tree of microsoft/OpenRCA at c121a483 and grep its README for `2.0` and `PAVE`; then fetch arXiv 2606.27154v2 and grep the flattened text for the metric definitions and for the string `open-sourced`",
+        "returned": "the repository has main/{evaluate.py, generate.py, prompt.py, task_specification.json} plus rca/, dataset/, docs/ -- 1.0 only, and neither `2.0` nor `PAVE` appears in its README. The paper defines the metric set in 3.2 (EM, F1/P/R over (service, fault_kind) pairs, AnySvc, Path Reachability, Node F1, Edge F1, SQL Exec) and `open-sourced` appears nowhere in it: the sentence this row used to quote was written in this repository",
         "http": 200,
         "takenAt": "2026-10-18"
+      },
+      "gap": {
+        "summary": "four of the nine published quantities are implemented (EM, AnySvc, Node F1, Edge F1); PR needs the ground-truth alarm nodes the PAVE annotation carries and this export does not, F1/Precision/Recall collapse onto EM for a one-pair submission, and SQL Exec needs queries",
+        "evidence": "arXiv 2606.27154v2 sec. 3.2 :: \"Path Reachability (PR) is satisfied when the agent both names at least one correct root-cause service and draws a valid path through its predicted causal graph from that service to a ground-truth alarm node\"",
+        "next": "not a transcription: PR needs a field this contract does not carry, so closing it means adding the alarm-node set to the export first. Recorded in golden-master/openrca2-evaluator.json with the three metrics and why each is absent"
       }
     },
     {

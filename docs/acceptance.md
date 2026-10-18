@@ -131,7 +131,7 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     not separate the first two — which is the distinction every disagreement found in
     this repository turns on. `provenance-matches-the-census.test.ts` maps each census
     class to one label, so the registry cannot claim more than the census supports,
-    and `rca-bench official` reports the split (`5 / 2 / 2`) beside the counts.
+    and `rca-bench official` reports the split (`5 / 3 / 1`) beside the counts.
 - **OTLP ingest reads the encodings exporters actually write**, not only the one
   form the spec documents first. Five defects were reproduced here; the
   requirements below each exist because a legal document produced a wrong number
@@ -369,6 +369,16 @@ number — it is a green run that established nothing.
   **one** root cause: measured on the first 25 cases, **10 disagreed**, inflating a
   two-root key to 1.0 where upstream says 0.83 and scoring a correctly permuted
   two-root answer 0 where upstream says 1.0.
+- **No metric may cite this repository as the source of its own rule.** OpenRCA 2.0's
+  `source` was `docs/targets/openrca-2.0.md` and its `quote` was a sentence written there,
+  so the claim's evidence was the document making the claim. `golden-master/openrca2-evaluator.json`
+  pins the paper that actually defines the metrics (arXiv 2606.27154v2, 962,086 bytes,
+  sha256 `2c8388aa…`), records five clauses verbatim, and notes the negative result that
+  makes the old quote wrong: `open-sourced` occurs zero times in the paper and neither
+  `2.0` nor `PAVE` occurs in `microsoft/OpenRCA`'s README. The rule is now four of the
+  paper's nine quantities — EM (the headline), AnySvc, Node F1 and Edge F1 — with the other
+  five declared absent and argued, and `evidence` no longer scored by a metric no published
+  metric scores it. `openrca2-evaluator.test.ts` asserts the source is not a `docs/` path.
 - **ITBench's pass@1 is the cause alone, and the metric that used to carry that name did
   not say so.** `golden-master/itbench-evaluator.json` pins arXiv 2502.05352v1 by digest
   (4,068,098 bytes, sha256 `da47aa02…`) and records six clauses; the rule is now two numbers
