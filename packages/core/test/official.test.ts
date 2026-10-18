@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { exportOpenRca, buildScoringPoints, hasRootCauseElements, openRcaTaskIndex } from '../src/export/openrca.js';
+import {
+  exportOpenRca,
+  buildScoringPoints,
+  hasRootCauseElements,
+  openRcaTaskIndex,
+  openRcaTimePeriod,
+} from '../src/export/openrca.js';
 import { exportOpenRca2 } from '../src/export/openrca2.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
@@ -170,6 +176,60 @@ describe('buildScoringPoints', () => {
   it('honours a multi-fault index', () => {
     const text = buildScoringPoints('task_3', { datetime: '', component: 'cart', reason: '' }, '2-th');
     expect(text).toBe('The 2-th predicted root cause component is cart\n');
+  });
+});
+
+describe('openRcaTimePeriod', () => {
+  /**
+   * The value the task file may carry.
+   *
+   * Upstream's `generate.py` hands the solver `time range: {time_period}`, where
+   * `time_period` floors the wall clock to a half hour (`datetime.replace(minute=
+   * minute - minute % 30, second=0)`) and renders `"{start} to {end}"`. The
+   * seconds are not part of it, which is the point: `main/evaluate.py` scores the
+   * occurrence time to within 60 seconds.
+   */
+  it('floors a UTC instant to the half hour of its UTC+8 wall clock', () => {
+    // 00:10 UTC is 08:10 in UTC+8, the offset the whole format is fixed at.
+    expect(openRcaTimePeriod('2026-09-06T00:10:00.000Z')).toBe(
+      '2026-09-06 08:00:00 to 2026-09-06 08:30:00',
+    );
+  });
+
+  it('puts a boundary instant in the window that starts on it', () => {
+    expect(openRcaTimePeriod('2026-09-06T00:00:00.000Z')).toBe(
+      '2026-09-06 08:00:00 to 2026-09-06 08:30:00',
+    );
+    expect(openRcaTimePeriod('2026-09-06T00:30:00.000Z')).toBe(
+      '2026-09-06 08:30:00 to 2026-09-06 09:00:00',
+    );
+  });
+
+  it('puts the last second of a window inside it, not in the next one', () => {
+    expect(openRcaTimePeriod('2026-09-06T00:29:59.000Z')).toBe(
+      '2026-09-06 08:00:00 to 2026-09-06 08:30:00',
+    );
+  });
+
+  it('rolls over midnight, because a window is not bounded by a day', () => {
+    // 15:45 UTC is 23:45 in UTC+8: the window ends at 00:00 the next day, and a
+    // string that said `00:00` without the date change would be ambiguous.
+    expect(openRcaTimePeriod('2026-09-06T15:45:00.000Z')).toBe(
+      '2026-09-06 23:30:00 to 2026-09-07 00:00:00',
+    );
+  });
+
+  it('never renders the instant it was given, to the second', () => {
+    // The load-bearing property. A window contains a *clock* that overlaps the
+    // instant -- `08:00:00` is in the same hour as `08:00:13` -- but it must never
+    // contain the instant itself, because that string is the answer to one of the
+    // three criteria.
+    for (const minute of [0, 7, 29, 30, 44, 59]) {
+      const clock = String(minute).padStart(2, '0');
+      const window = openRcaTimePeriod(`2026-09-06T00:${clock}:13.000Z`);
+      expect(window).toContain(' to ');
+      expect(window).not.toContain(`08:${clock}:13`);
+    }
   });
 });
 

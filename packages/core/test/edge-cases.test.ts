@@ -170,7 +170,9 @@ describe('exporters with optional fields absent', () => {
     const b = validBundle({ cases: [validCase({ query: undefined })] });
     const { files } = exportOpenRca(b);
     const csv = files['order-prod/query.csv'] as string;
-    expect(csv.split('\n')[1]).toBe('case-001,,2026-09-06 08:10:00');
+    // The task file carries the half-hour window, not the onset: the occurrence
+    // time is one of the three criteria the official evaluator scores.
+    expect(csv.split('\n')[1]).toBe('case-001,,2026-09-06 08:00:00 to 2026-09-06 08:30:00');
   });
 });
 

@@ -235,7 +235,7 @@ describe('scripts/gen-examples.mjs · the doc blocks it rewrites', () => {
 
     const after = readFileSync(join(tree, 'docs', 'targets', 'openrca-1.0.md'), 'utf8');
     expect(after).not.toContain('STALE,CONTENT,FROM,A,PREVIOUS,RUN');
-    expect(after).toContain('instruction_id,query,occurrence_datetime');
+    expect(after).toContain('instruction_id,query,occurrence_window');
     // The marker survives the rewrite, so a second run is idempotent rather
     // than consuming the block it just filled.
     expect(after).toContain('<!-- example: openrca-1.0/order-prod/query.csv -->');
@@ -376,7 +376,7 @@ describe('scripts/gen-examples.mjs · the field tables, and what is not checked'
     expect(after).not.toContain('wrong on purpose');
     // The three real fields of `{system}/query.csv`, rendered from the spec.
     expect(after).toContain('`instruction_id`');
-    expect(after).toContain('`occurrence_datetime`');
+    expect(after).toContain('`occurrence_window`');
     expect(after).toContain('<!-- /fields -->');
   });
 

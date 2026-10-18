@@ -45,23 +45,31 @@ at 23:30 UTC+8 and is observed into the next day still lands in a single directo
 
 ### `{system}/query.csv`
 
-Task input. One row per case. Must never contain the root-cause answer — the
-`answer-key-isolated` structural check rejects the export if any of the literal tokens
-`root cause component`, `root cause reason` or `root cause occurrence` appear here.
-(The phrase "find the root cause" is legitimate and does **not** trip the check.)
+Task input. One row per case. Must never contain the root-cause answer, and two checks
+hold that: `answer-key-isolated` rejects the export if any of the literal tokens
+`root cause component`, `root cause reason` or `root cause occurrence` appear here (the
+phrase "find the root cause" is legitimate and does **not** trip it), and
+`task-carries-no-scored-value` compares every cell against the values `record.csv` submits.
+
+The second check exists because the first cannot see a column. This file used to carry
+`occurrence_datetime = localTime(injectTime)` — the same instant, to the second, that the
+answer key submits — while being documented as safe to hand to an agent. `main/evaluate.py`
+scores the occurrence time to within 60 seconds, so that column answered one of the three
+criteria outright. It now carries the half-hour window instead, which is what upstream's
+`generate.py` puts in the task text (`time range: {time_period}`).
 
 <!-- fields: openrca-1.0/{system}/query.csv -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
 | `instruction_id` | string | yes | `FaultCase.caseId` | Join key with `record.csv` and with the telemetry file basename. |
 | `query` | string | yes | `FaultCase.query ?? ""` | Natural-language task description. Must not contain the root-cause answer (G5 / `answer-key-isolated`). |
-| `occurrence_datetime` | string | yes | `isoUtcToOffsetIso(FaultCase.injectTime, 480)` | `YYYY-MM-DD HH:MM:SS` in UTC+8. Not the window start - it is the fault onset. |
+| `occurrence_window` | string | yes | `openRcaTimePeriod(FaultCase.injectTime)` | The half-hour window the fault falls in, `YYYY-MM-DD HH:MM:SS to YYYY-MM-DD HH:MM:SS` in UTC+8 - the same `time_period` upstream's `generate.py` puts in the task text. Deliberately not the onset: `main/evaluate.py` scores the occurrence time to within 60 seconds, so an exact onset in this file would hand the solver one of the three criteria. |
 <!-- /fields -->
 
 <!-- example: openrca-1.0/order-prod/query.csv -->
 ```csv
-instruction_id,query,occurrence_datetime
-case-001,The order service became slow at 08:10 UTC+8. Find the root cause.,2026-09-06 08:10:00
+instruction_id,query,occurrence_window
+case-001,The order service became slow at 08:10 UTC+8. Find the root cause.,2026-09-06 08:00:00 to 2026-09-06 08:30:00
 ```
 
 ### `{system}/record.csv`
@@ -210,6 +218,7 @@ rca-bench score --target openrca-1.0 --dir ./out
 | `scoring-points-present` | every row carries a `scoring_points` block the official regexes can read |
 | `row-alignment` | `query.csv`, `record.csv` and `groundtruth.csv` have the same row count, which is what the official evaluator requires |
 | `answer-key-isolated` | `query.csv` carries no answer-key tokens |
+| `task-carries-no-scored-value` | no cell of `query.csv` *equals* a value the answer key scores, read from `record.csv` |
 | `telemetry-present` | at least one metric / log / trace file |
 | `metric-header` | header is exactly `timestamp,cmdb_id,kpi_name,value` |
 | `log-header` | header is exactly `timestamp,cmdb_id,severity,message` (skipped when absent) |

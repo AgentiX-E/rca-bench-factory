@@ -171,6 +171,47 @@ function localTime(isoUtc: string): string {
   return isoUtcToOffsetIso(isoUtc, OPENRCA_OFFSET_MINUTES).slice(0, 19).replace('T', ' ');
 }
 
+/**
+ * The half-hour window a fault falls in, in UTC+8, in the shape upstream renders.
+ *
+ * This is the value the *task* may carry, and it exists because the value that
+ * used to be there was the answer.
+ *
+ * `generate.py` builds the solver-facing prompt from
+ * `main/task_specification.json`, whose first input line is
+ * `time range: {time_period}`; `time_period` comes from `timestamp2timeperiod`,
+ * which floors the wall clock to a half hour and renders
+ * `f"{start} to {end}"`. The exact onset is nowhere in the prompt, which matters
+ * because `main/evaluate.py` scores the occurrence time to within **60 seconds**:
+ * a task that states the onset to the second hands the solver one of the three
+ * criteria for free.
+ *
+ * That is exactly what this exporter used to do. `query.csv` carried
+ * `occurrence_datetime = localTime(injectTime)` -- the same instant, to the
+ * second, that `record.csv` submits as the answer -- while the file was
+ * documented as "safe to hand to the agent". The `answer-key-isolated` check
+ * could not see it: the check looked for the literal tokens `root cause
+ * component`, `root cause reason` and `root cause occurrence`, and the leak was a
+ * column.
+ *
+ * Flooring is `minute - (minute % 30)` on the wall clock rather than arithmetic
+ * on the epoch, because that is what upstream does (`datetime.replace(minute=…,
+ * second=0)`) and the two agree only while the offset is a whole number of
+ * minutes with no DST -- which is true of UTC+8 and is the offset the whole
+ * format is fixed at.
+ */
+export function openRcaTimePeriod(isoUtc: string): string {
+  const local = localTime(isoUtc);
+  const minute = Number(local.slice(14, 16));
+  const startClock = `${local.slice(0, 14)}${String(minute - (minute % 30)).padStart(2, '0')}:00`;
+  // Adding half an hour to a wall clock is done on a UTC interpretation of the
+  // same digits: the offset is fixed, so the wall clock is just a relabelled
+  // timeline and no DST rule can enter.
+  const startMs = Date.parse(`${startClock.replace(' ', 'T')}Z`);
+  const end = new Date(startMs + 30 * 60_000).toISOString().slice(0, 19).replace('T', ' ');
+  return `${startClock} to ${end}`;
+}
+
 function cmdbId(signal: TelemetrySignal): string {
   return (
     signal.resource['k8s.pod.name'] ??
@@ -289,7 +330,9 @@ export function exportOpenRca(bundle: IrBundle): ExportOutcome {
     files[`${base}/trace/${fc.caseId}.csv`] = buildTraceCsv(signals);
 
     const taskIndex = openRcaTaskIndex(elements);
-    queryRows.push([fc.caseId, fc.query ?? '', localTime(fc.injectTime)]);
+    // The task row carries the window, never the onset: the occurrence time is
+    // one of the three criteria `main/evaluate.py` scores.
+    queryRows.push([fc.caseId, fc.query ?? '', openRcaTimePeriod(fc.injectTime)]);
     recordRows.push([fc.caseId, buildPredictionJson(fc)]);
     groundTruthRows.push({
       caseId: fc.caseId,
@@ -303,7 +346,7 @@ export function exportOpenRca(bundle: IrBundle): ExportOutcome {
   for (const system of systems) {
     const ids = new Set(bundle.cases.filter((c) => c.system === system).map((c) => c.caseId));
     files[`${system}/query.csv`] = renderCsv(
-      ['instruction_id', 'query', 'occurrence_datetime'],
+      ['instruction_id', 'query', 'occurrence_window'],
       queryRows.filter((r) => ids.has(String(r[0]))),
     );
     files[`${system}/record.csv`] = renderCsv(

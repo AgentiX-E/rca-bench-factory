@@ -552,6 +552,7 @@ const TESTED = [
   'OPENRCA_TASK_INDEXES',
   'OPENRCA_SCORING_TEMPLATES',
   'openRcaTaskIndex',
+  'openRcaTimePeriod',
   'hasRootCauseElements',
   'buildScoringPoints',
   'buildGroundTruthCsv',

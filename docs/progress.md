@@ -6759,9 +6759,9 @@ did not write for the occasion.
 | the alarm set | `alarmNodeBasis` names the set, the clause, and the direction of the error |
 | the layers | 0.70 / 0.80 / 0.56 / 0.67 / 0.50 on the ten-case export |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **157 files, 3917 tests passed** (as of this commit) |
+| `core` test suite | **157 files, 3927 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **161 files, 4104 tests passed** (as of this commit) |
+| repo test suite | **161 files, 4114 tests passed** (as of this commit) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6846,9 +6846,9 @@ about the matching rule rested on the smaller number.
 | partial credit | 0 ×216 · 0.33 ×9 · 0.5 ×28 · 0.67 ×2 · 1 ×38 — five distinct values, not a boolean |
 | multi-root | 33 replayed (1 full, 9 partial, 23 zero); **10 cases change score** when only the first root is kept |
 | derivation tested | both refusal branches and both failure exits, on a synthetic archive built with `renderCsv` |
-| `core` test suite | **157 files, 3917 tests passed** (as of this commit) |
+| `core` test suite | **157 files, 3927 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **161 files, 4104 tests passed** (as of this commit) |
+| repo test suite | **161 files, 4114 tests passed** (as of this commit) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6878,3 +6878,101 @@ table instead of a string operation, and the 102 rows became replayable on the n
   cause wide, a quote cannot be checked mechanically, and three targets wait on decisions.
   `[open: each carries its own reason in the v2.05 section; restating them here would be a
   second copy of an argument, so this line only says they are still open]`
+
+---
+
+## v2.07 — the task file answered one of the three questions
+
+### The column
+
+`{system}/query.csv` has carried, since the format existed:
+
+```
+instruction_id,query,occurrence_datetime
+case-001,The order service became slow at 08:10 UTC+8. Find the root cause.,2026-09-06 08:10:00
+```
+
+`occurrence_datetime = localTime(injectTime)`. The file's own documentation says *"Task
+input. One row per case. Must never contain the root-cause answer"*, and the name of the
+directory above the code says `# tasks (safe to hand to the agent)`.
+
+`main/evaluate.py` scores three things: the component (string equality), the reason (string
+equality) and the occurrence time (**within 60 seconds**). Every case this exporter emits
+carries all three elements, so `openRcaTaskIndex` always selects `task_7`, so the time
+criterion is scored on every case. **The task file stated it, to the second, in a column.**
+
+### Why `answer-key-isolated` was green
+
+The check greps the file for the literal tokens `root cause component`, `root cause reason`
+and `root cause occurrence`. The leak was a *column named* `occurrence_datetime`. No token
+matched, because the check was looking for a sentence and the defect was a field.
+
+That is the third time in this campaign that a check has been right about the shape it was
+written for and blind to the shape that arrived. It is the same failure as the reader that
+could not see `datetime` (v2.06), one level up: **a predicate expressed in a vocabulary
+cannot see a value expressed in another.**
+
+### What upstream does, and where the sentence is
+
+`generate.py` builds the solver-facing prompt from `main/task_specification.json`, whose
+first input line is `time range: {time_period}`; `time_period` comes from
+`timestamp2timeperiod`, which floors the wall clock to a half hour and renders
+`"{start} to {end}"`. Both files are pinned here by digest (`af63c4d2…` and `113bf4b6…`),
+fetched through the contents API at the commit the evaluator is pinned at.
+
+So the question upstream asks inside a 30-minute window is *which second*, and the answer
+is worth 60 seconds of tolerance. This repository asked it inside the same window and then
+printed the answer beside it.
+
+### The fix, and the check that would have caught it
+
+The column is now `occurrence_window`, and its value is `openRcaTimePeriod(injectTime)` —
+the same half-hour bucket, in the same `A to B` shape, in UTC+8.
+
+`task-carries-no-scored-value` is new, and it is not a spelling rule. It reads the answer
+key the export already carries, collects every value the scorer awards credit for
+(component, reason, onset, across every root), and requires that **no cell of the task file
+equals one of them**. Three choices are deliberate and stated in the code:
+
+- **Whole cells only.** Whole-word matching in the prose would flag "the order service
+  became slow" when the component is `order` — which is how every incident report a human
+  writes reads. The leak this exists for is a field that holds the answer, not a sentence
+  that mentions it.
+- **Against the exported key, not a template.** A future exporter that writes the onset
+  under a new name is followed without being told.
+- **A task row with no key row is skipped.** `row-alignment` owns "these files describe the
+  same cases"; a second, differently worded verdict on the same fact is how two checks
+  start disagreeing.
+
+The report names the column that leaked and never the value: a score report is a document
+a solver may be shown.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the task file | `occurrence_window`, `2026-09-06 08:00:00 to 2026-09-06 08:30:00` for an 08:10 onset |
+| the check | `task-carries-no-scored-value`, 5 tests: the real export, an onset cell, a component cell, a reason cell, a row with no key |
+| the blind spot | the onset-cell test asserts `answer-key-isolated` is **green** on the same input, so the two checks are provably not the same check |
+| `openRcaTimePeriod` | 5 tests: floor, both boundaries, last second of a window, midnight rollover, and "never renders the instant" |
+| `core` test suite | **157 files, 3927 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **161 files, 4114 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **The example incident states its own answer.** `[open: `examples/order-prod/bundle.json`
+  and three siblings carry `"The order service became slow at 08:10 UTC+8"` as the query
+  text, which names the onset and the component of a fixture whose ground truth is those
+  two values, and the OpenRCA export now prints a window beside a sentence that says the
+  second. The check above compares cells, so it does not fire; fixing it is a fixture change
+  across nine targets and is recorded rather than folded into a contract change]`
+- **Upstream's own task format has the same shape, at 1 in 30.** `[open: a window whose
+  start is within 60 seconds of the onset hands that case's time criterion to a solver who
+  guesses the start. This repository may floor exactly as upstream does or may not; the
+  choice is not derivable from any released artefact]`
+- v2.06's two items, and v2.05's four, are unchanged.
+  `[open: each carries its own reason in its own section]`

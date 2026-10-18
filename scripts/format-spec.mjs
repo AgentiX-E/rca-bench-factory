@@ -66,11 +66,15 @@ const openrca1 = {
           notes: 'Natural-language task description. Must not contain the root-cause answer (G5 / `answer-key-isolated`).',
         },
         {
-          name: 'occurrence_datetime',
+          name: 'occurrence_window',
           type: T.str,
           required: true,
-          source: 'isoUtcToOffsetIso(FaultCase.injectTime, 480)',
-          notes: '`YYYY-MM-DD HH:MM:SS` in UTC+8. Not the window start - it is the fault onset.',
+          source: 'openRcaTimePeriod(FaultCase.injectTime)',
+          notes:
+            'The half-hour window the fault falls in, `YYYY-MM-DD HH:MM:SS to YYYY-MM-DD HH:MM:SS` ' +
+            'in UTC+8 - the same `time_period` upstream\'s `generate.py` puts in the task text. ' +
+            'Deliberately not the onset: `main/evaluate.py` scores the occurrence time to within ' +
+            '60 seconds, so an exact onset in this file would hand the solver one of the three criteria.',
         },
       ],
     },

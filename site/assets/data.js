@@ -471,11 +471,11 @@ window.RBF_DATA = {
               "notes": "Natural-language task description. Must not contain the root-cause answer (G5 / `answer-key-isolated`)."
             },
             {
-              "name": "occurrence_datetime",
+              "name": "occurrence_window",
               "type": "string",
               "required": true,
-              "source": "isoUtcToOffsetIso(FaultCase.injectTime, 480)",
-              "notes": "`YYYY-MM-DD HH:MM:SS` in UTC+8. Not the window start - it is the fault onset."
+              "source": "openRcaTimePeriod(FaultCase.injectTime)",
+              "notes": "The half-hour window the fault falls in, `YYYY-MM-DD HH:MM:SS to YYYY-MM-DD HH:MM:SS` in UTC+8 - the same `time_period` upstream's `generate.py` puts in the task text. Deliberately not the onset: `main/evaluate.py` scores the occurrence time to within 60 seconds, so an exact onset in this file would hand the solver one of the three criteria."
             }
           ]
         },
@@ -2028,7 +2028,7 @@ window.RBF_DATA = {
         "order-prod/2026_09_06/telemetry/log/case-001.csv": "timestamp,cmdb_id,severity,message\n2026-09-06 08:10:10,order,ERROR,Connection pool exhausted\n",
         "order-prod/2026_09_06/telemetry/metric/case-001.csv": "timestamp,cmdb_id,kpi_name,value\n2026-09-06 08:00:00,order-pod-1,cpu_usage,20\n2026-09-06 08:00:30,order-pod-1,cpu_usage,21\n2026-09-06 08:01:00,order-pod-1,cpu_usage,19\n2026-09-06 08:01:30,order-pod-1,cpu_usage,20\n2026-09-06 08:02:00,order-pod-1,cpu_usage,22\n2026-09-06 08:02:30,order-pod-1,cpu_usage,18\n2026-09-06 08:03:00,order-pod-1,cpu_usage,20\n2026-09-06 08:03:30,order-pod-1,cpu_usage,21\n2026-09-06 08:04:00,order-pod-1,cpu_usage,19\n2026-09-06 08:04:30,order-pod-1,cpu_usage,20\n2026-09-06 08:10:00,order-pod-1,cpu_usage,95\n2026-09-06 08:10:30,order-pod-1,cpu_usage,96\n2026-09-06 08:11:00,order-pod-1,cpu_usage,97\n2026-09-06 08:11:30,order-pod-1,cpu_usage,98\n2026-09-06 08:12:00,order-pod-1,cpu_usage,99\n",
         "order-prod/2026_09_06/telemetry/trace/case-001.csv": "timestamp,trace_id,span_id,parent_span_id,cmdb_id,span_name,duration_ms,status\n2026-09-06 08:10:15,tr-1,sp-1,,order,GET /checkout,120,OK\n2026-09-06 08:10:16,tr-1,sp-2,sp-1,order,GET /checkout,120,OK\n",
-        "order-prod/query.csv": "instruction_id,query,occurrence_datetime\ncase-001,The order service became slow at 08:10 UTC+8. Find the root cause.,2026-09-06 08:10:00\n",
+        "order-prod/query.csv": "instruction_id,query,occurrence_window\ncase-001,The order service became slow at 08:10 UTC+8. Find the root cause.,2026-09-06 08:00:00 to 2026-09-06 08:30:00\n",
         "order-prod/record.csv": "instruction_id,prediction\ncase-001,\"{\"\"1\"\":{\"\"root cause occurrence datetime\"\":\"\"2026-09-06 08:10:00\"\",\"\"root cause component\"\":\"\"order\"\",\"\"root cause reason\"\":\"\"CPU saturation on the order service\"\"}}\"\n",
         "order-prod/groundtruth.csv": "task_index,instruction,scoring_points\ntask_7,The order service became slow at 08:10 UTC+8. Find the root cause.,\"The only root cause occurrence time is within 1 minutes (i.e., <=1min) of 2026-09-06 08:10:00\nThe only predicted root cause component is order\nThe only predicted root cause reason is CPU saturation on the order service\n\"\n"
       },
@@ -2054,7 +2054,7 @@ window.RBF_DATA = {
             {
               "id": "query-header",
               "passed": true,
-              "detail": "expected 'instruction_id,query,occurrence_datetime'"
+              "detail": "expected 'instruction_id,query,occurrence_window'"
             },
             {
               "id": "record-header",
@@ -2065,6 +2065,11 @@ window.RBF_DATA = {
               "id": "answer-key-isolated",
               "passed": true,
               "detail": "query.csv carries no answer key"
+            },
+            {
+              "id": "task-carries-no-scored-value",
+              "passed": true,
+              "detail": "no task cell equals a value the answer key scores"
             },
             {
               "id": "telemetry-present",

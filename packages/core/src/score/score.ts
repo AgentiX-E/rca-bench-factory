@@ -7,7 +7,7 @@ import { ITBENCH_SCENARIO_CLASSES, ITBENCH_SRE_DOMAIN } from '../export/itbench.
 import { UMODEL_TYPES } from '../export/rca100.js';
 import { isRecord, safeJson } from '../util/json.js';
 import { parseCsvObjects } from '../util/csv.js';
-import { parseOpenRcaScoringPoints } from './official.js';
+import { parseOpenRcaScoringPoints, readOpenRcaRoots } from './official.js';
 import type { ScoreTargetId } from './targets.js';
 import { OPENRCA_GROUNDTRUTH_HEADER } from '../export/openrca.js';
 import type { RcaEvalSuite } from '../export/rcaeval.js';
@@ -66,7 +66,7 @@ export interface ScoreReport {
   checksum?: ChecksumReport;
 }
 
-const OPENRCA_QUERY_HEADER = 'instruction_id,query,occurrence_datetime';
+const OPENRCA_QUERY_HEADER = 'instruction_id,query,occurrence_window';
 const OPENRCA_RECORD_HEADER = 'instruction_id,prediction';
 const OPENRCA_METRIC_HEADER = 'timestamp,cmdb_id,kpi_name,value';
 const OPENRCA_LOG_HEADER = 'timestamp,cmdb_id,severity,message';
@@ -141,6 +141,74 @@ export function checkOpenRcaStructure(files: Record<string, string>): StructureR
   const isolated = !/root cause component|root cause reason|root cause occurrence/i.test(queryContent);
   checks.push(
     check('answer-key-isolated', isolated, isolated ? 'query.csv carries no answer key' : 'query.csv leaks the answer key'),
+  );
+
+  // A phrase check cannot see a column.
+  //
+  // `answer-key-isolated` above greps the task file for the literal tokens
+  // `root cause component`, `root cause reason` and `root cause occurrence`, which
+  // catches a hand-written `query` cell that spells one out. It does not catch a
+  // *structured* leak, and this exporter had one for as long as it existed:
+  // `query.csv` carried `occurrence_datetime = localTime(injectTime)`, the same
+  // instant to the second that `record.csv` submits as the answer, while the file
+  // was documented as "safe to hand to the agent". The header said
+  // `occurrence_datetime`, the tokens said nothing, and the check passed.
+  //
+  // The check below is not a spelling rule. It reads the answer key this export
+  // already carries, collects every value the scorer awards credit for, and
+  // requires that no cell of the task file *be* one of them. Three consequences
+  // are deliberate:
+  //
+  //  - Only whole cells are compared. Whole-word matching in the `query` prose
+  //    would flag "the order service became slow" when the component is `order`,
+  //    which is how every incident report a human writes is phrased; the leak this
+  //    exists for is a field that holds the answer, not a sentence that mentions
+  //    it.
+  //  - The comparison is against the *exported* key, not against a template. If a
+  //    future exporter writes the onset into a column under a new name, this check
+  //    follows it without being told.
+  //  - A row with no matching key row is skipped rather than failed. `row-alignment`
+  //    already owns "these files describe the same cases", and a second, differently
+  //    worded verdict on the same fact is how two checks start disagreeing.
+  // `parseCsvObjects` fills a short row with empty strings rather than leaving
+  // holes, so every cell below is a string. `??` guards here would be branches no
+  // input can take -- dead code that a coverage number would report as uncovered
+  // and that a reader would read as a real edge case.
+  const scoredByCase = new Map<string, string[]>();
+  for (const path of recordFiles) {
+    for (const row of parseCsvObjects(files[path]!)) {
+      const id = row['instruction_id']!.trim();
+      const values: string[] = [];
+      for (const root of readOpenRcaRoots(row['prediction']!)) {
+        for (const value of [root.component, root.reason, root.occurredAt]) {
+          if (value.trim() !== '') values.push(value.trim());
+        }
+      }
+      scoredByCase.set(id, values);
+    }
+  }
+
+  const leakedCells: string[] = [];
+  for (const path of queryFiles) {
+    const header = csvHeader(files[path]!).map((cell) => cell.trim());
+    for (const row of parseCsvObjects(files[path]!)) {
+      const scored = scoredByCase.get(row['instruction_id']!.trim());
+      if (scored === undefined) continue;
+      for (const column of header) {
+        if (column === 'instruction_id') continue;
+        const cell = row[column]!.trim();
+        if (cell !== '' && scored.includes(cell)) leakedCells.push(`${column}`);
+      }
+    }
+  }
+  checks.push(
+    check(
+      'task-carries-no-scored-value',
+      leakedCells.length === 0,
+      leakedCells.length === 0
+        ? 'no task cell equals a value the answer key scores'
+        : `${leakedCells.length} task cell(s) repeat the answer, in column(s) ${[...new Set(leakedCells)].join(', ')}`,
+    ),
   );
 
   const hasTelemetry = metricFiles.length > 0 || logFiles.length > 0 || traceFiles.length > 0;

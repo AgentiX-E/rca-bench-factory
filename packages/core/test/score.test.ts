@@ -69,9 +69,79 @@ describe('checkOpenRcaStructure', () => {
 
   it('fails when the answer key leaks into query.csv', () => {
     const files = openrcaFiles();
-    files['order-prod/query.csv'] = 'instruction_id,query,occurrence_datetime\ncase-001,"root cause component: order",2026-09-06 08:10:00\n';
+    files['order-prod/query.csv'] =
+      'instruction_id,query,occurrence_window\ncase-001,"root cause component: order",2026-09-06 08:00:00 to 2026-09-06 08:30:00\n';
     const report = checkOpenRcaStructure(files);
     expect(report.checks.find((c) => c.id === 'answer-key-isolated')?.passed).toBe(false);
+  });
+
+  /**
+   * The two isolation checks see different things, and the difference is the
+   * whole finding: `answer-key-isolated` reads words, `task-carries-no-scored-value`
+   * reads the answer key.
+   */
+  describe('task-carries-no-scored-value', () => {
+    const queryPath = 'order-prod/query.csv';
+
+    it('passes the real export, whose task file carries the window and not the onset', () => {
+      const files = openrcaFiles();
+      const report = checkOpenRcaStructure(files);
+      expect(report.checks.find((c) => c.id === 'task-carries-no-scored-value')?.passed).toBe(true);
+      // The file this check exists for: the column that used to hold the answer.
+      expect(files[queryPath]).toContain('occurrence_window');
+      expect(files[queryPath]).toContain('2026-09-06 08:00:00 to 2026-09-06 08:30:00');
+      expect(files[queryPath]).not.toContain('2026-09-06 08:10:00');
+    });
+
+    it('fails when a task cell repeats the onset, and the phrase check does not notice', () => {
+      const files = openrcaFiles();
+      // Exactly the shape the exporter shipped: a column named for the instant,
+      // holding the instant. No `root cause ...` token appears anywhere, so
+      // `answer-key-isolated` is green while one of three criteria is answered.
+      files[queryPath] =
+        'instruction_id,query,occurrence_window\ncase-001,"find the root cause",2026-09-06 08:10:00\n';
+      const report = checkOpenRcaStructure(files);
+      expect(report.checks.find((c) => c.id === 'answer-key-isolated')?.passed).toBe(true);
+      expect(report.checks.find((c) => c.id === 'task-carries-no-scored-value')?.passed).toBe(false);
+      expect(report.passed).toBe(false);
+    });
+
+    it('fails on the component and on the reason as well as on the time', () => {
+      for (const value of ['order', 'CPU saturation on the order service']) {
+        const files = openrcaFiles();
+        files[queryPath] = `instruction_id,query,occurrence_window\ncase-001,"find the root cause","${value}"\n`;
+        const report = checkOpenRcaStructure(files);
+        expect(
+          report.checks.find((c) => c.id === 'task-carries-no-scored-value')?.passed,
+          `${value} should not be admitted in a task cell`,
+        ).toBe(false);
+      }
+    });
+
+    it('names the column that leaked, and not the value', () => {
+      const files = openrcaFiles();
+      files[queryPath] =
+        'instruction_id,query,occurrence_window\ncase-001,"find the root cause",2026-09-06 08:10:00\n';
+      const detail = checkOpenRcaStructure(files).checks.find(
+        (c) => c.id === 'task-carries-no-scored-value',
+      )?.detail;
+      expect(detail).toContain('occurrence_window');
+      // A score report is a document a solver may be shown. It says where to look,
+      // not what the answer is.
+      expect(detail).not.toContain('2026-09-06 08:10:00');
+    });
+
+    it('skips a task row the key does not name, instead of inventing a verdict', () => {
+      // `row-alignment` compares *counts*, so an id mismatch passes it. That makes
+      // the skip here load-bearing: with no key row there is nothing to compare
+      // against, and reporting a pass would be as wrong as reporting a failure.
+      const files = openrcaFiles();
+      const path = Object.keys(files).find((p) => p.endsWith('/record.csv'))!;
+      files[path] = 'instruction_id,prediction\nother-999,"{""1"":{""root cause component"":""x""}}"\n';
+      const report = checkOpenRcaStructure(files);
+      expect(report.checks.find((c) => c.id === 'task-carries-no-scored-value')?.passed).toBe(true);
+      expect(report.checks.find((c) => c.id === 'row-alignment')?.passed).toBe(true);
+    });
   });
 
   it('fails when a ground-truth row declares no scoring points', () => {
