@@ -6759,9 +6759,9 @@ did not write for the occasion.
 | the alarm set | `alarmNodeBasis` names the set, the clause, and the direction of the error |
 | the layers | 0.70 / 0.80 / 0.56 / 0.67 / 0.50 on the ten-case export |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **157 files, 3927 tests passed** (as of this commit) |
+| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **161 files, 4114 tests passed** (as of this commit) |
+| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6846,9 +6846,9 @@ about the matching rule rested on the smaller number.
 | partial credit | 0 ×216 · 0.33 ×9 · 0.5 ×28 · 0.67 ×2 · 1 ×38 — five distinct values, not a boolean |
 | multi-root | 33 replayed (1 full, 9 partial, 23 zero); **10 cases change score** when only the first root is kept |
 | derivation tested | both refusal branches and both failure exits, on a synthetic archive built with `renderCsv` |
-| `core` test suite | **157 files, 3927 tests passed** (as of this commit) |
+| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **161 files, 4114 tests passed** (as of this commit) |
+| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6955,9 +6955,9 @@ a solver may be shown.
 | the check | `task-carries-no-scored-value`, 5 tests: the real export, an onset cell, a component cell, a reason cell, a row with no key |
 | the blind spot | the onset-cell test asserts `answer-key-isolated` is **green** on the same input, so the two checks are provably not the same check |
 | `openRcaTimePeriod` | 5 tests: floor, both boundaries, last second of a window, midnight rollover, and "never renders the instant" |
-| `core` test suite | **157 files, 3927 tests passed** (as of this commit) |
+| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **161 files, 4114 tests passed** (as of this commit) |
+| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6976,3 +6976,89 @@ a solver may be shown.
   choice is not derivable from any released artefact]`
 - v2.06's two items, and v2.05's four, are unchanged.
   `[open: each carries its own reason in its own section]`
+
+---
+
+## v2.08 — the anchor was checked in one place, and half of it at all
+
+### What CI said that the suite could not
+
+v2.07 renamed a column. `pnpm test`, `pnpm lint`, `pnpm typecheck`, `pnpm docs:check`,
+`pnpm official:check` and every example check were green locally. CI failed at one step:
+
+```
+Golden Master verification FAILED
+  - files/order-prod/query.csv: expected aec9318e… got 469715c7…
+```
+
+`golden-master/verify.mjs` re-exports the committed fixture and compares every emitted
+byte against `expected.json`. **Nothing in the suite ran it.** It was wired into CI and
+nowhere else, so the one check that exists to prove byte stability was the one check a
+local run could not fail — which is the precise drift every other guard in this
+repository was built to prevent.
+
+The anchor itself was right to fail. The export changed on purpose.
+
+### Half of the anchor was never read
+
+`expected.json` records `sha256` **and** `bytes` for every file. The verifier compared the
+digest and ignored the count. A recorded field that is never read is worse than an absent
+one: a reader takes it as checked, and the file it lives in is the one
+`check-no-vendored-data.mjs` exempts from its size rule on the strength of being an index
+rather than data — so the number is not decoration, it is how big the artefact is.
+
+Both are compared now, and each has its own failure message, so deleting one cannot hide
+behind the other.
+
+### What changed
+
+| | before | after |
+| --- | --- | --- |
+| who runs the verifier | CI only | CI **and** the suite, at the point a change is made |
+| `sha256` | compared | compared |
+| `bytes` | recorded, never read | compared, with its own message |
+| the failure branch | unreachable outside a real regression | reachable, and observed by three tests |
+| the anchor path | fixed to the shipped file | `--expected <path>`, defaulting to the shipped file |
+
+The `--expected` flag exists for the same reason `derive-backend-support.mjs` has one: a
+guard that is only ever seen passing is the defect finding 121 was written about. No CI
+step changes, because the shipped path is the default.
+
+### The anchor moved, deliberately
+
+```
+files/order-prod/query.csv
+  sha256  aec9318e1a84ece2ec05b1035dcba5a9597bc3d57aacd164d221645016d3513d
+       →  469715c78c325ae1ebf03d7907b8b01f0461edf9fdcaa9af2414a0c3dbc91d23
+  bytes   137 → 158
+```
+
+Two changes in one file: the header column name, and an onset replaced by a 30-minute
+window that is 21 bytes longer. It is exactly the diff v2.07 argued for, and it is now
+also the first anchor move that a local run can catch.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the suite runs the comparison | 8 tests: the shipped anchor, both empty-group guards, and five branch cases |
+| digest vs byte count | separate assertions, separate messages |
+| why not spawn the script | a spawned run reads `dist`, which other files mutate and rebuild; the export is computed from `src` instead |
+| missing on either side | `<missing>` reported for a file the anchor omits and for one it invents |
+| `core` test suite | **158 files, 3935 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **162 files, 4122 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / `golden-master/verify.mjs` | green |
+
+### Open
+
+- **A moved anchor is still updated by hand.** `[open: `expected.json` has no writer, and
+  giving it one would let a broken export re-anchor itself -- which is worse than the
+  manual step. What the suite now guarantees is that the step cannot be *forgotten*; it
+  cannot guarantee it was *justified*. The commit message is the only record of that, so
+  every anchor move has to be stated in one]`
+- **Eight earlier items are unchanged**: v2.07's two, v2.06's two, v2.05's four.
+  `[open: nothing in this pass touched any of them -- it is a list of what is still
+  owed, and the argument for each one lives where it was made rather than here]`
