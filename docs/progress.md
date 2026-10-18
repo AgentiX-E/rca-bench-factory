@@ -6086,9 +6086,9 @@ has to delete a file that another test replays.
 | mutation checks | **14 of 14 CAUGHT**, each by the test named in its row |
 | the rule that changed | reverting the comparison to `===` fails 9 corpus cases; dropping the lowercase, the collapse or the `\u00a0` handling each fails its own case |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **150 files, 3843 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **154 files, 4029 tests passed** (as of this commit) |
+| `core` test suite | **150 files, 3843 tests passed** (as of `37de366`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `37de366`) |
+| repo test suite | **154 files, 4029 tests passed** (as of `37de366`) |
 | coverage | core **99.97 / 99.91 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 63 across 38 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6111,3 +6111,158 @@ has to delete a file that another test replays.
   battery. `[open: the closing shape is a record written at write time rather than at start -- one
   more IO at 25 write sites -- and it needs a decision about what a record means when the writer is
   a person]`
+
+## Pass 60 -- one section of one paper, and three clauses that had been dropped
+
+### The source was a paper, and nobody had read the section the rule cited
+
+`rca100`'s metric carried `source: 'arXiv 2606.29193 section 5.4'` and a formula.
+Finding 176 had established the standard on RCAEval ("a rule transcribed by the
+author of the scorer is not an oracle") and finding 181 had applied it to OpenRCA
+1.0. This pass applied it to the one target whose source is a *paper*, and read the
+section.
+
+Three clauses were not in the rule, and one of them was in the rule as a number
+that appears nowhere:
+
+| The section says | The rule did |
+| --- | --- |
+| "A UModel entity-ID match with partial credit on topologically adjacent entities (**0.40**)." | paid **0.5** -- a number with no source in the paper, the dataset or the README |
+| "99.5% carry a `⟨comparator, value, unit⟩` numeric constraint, so the agent must match the numeric condition, **not merely mention the metric**." | compared the signal **name** alone: `error_count` with a threshold two orders of magnitude wrong scored the checkpoint |
+| "`Final_B = (0.4 Entity + 0.3 Fault + 0.3 Process) × 100`" | correct, and implemented **twice** |
+
+### The third one only surfaced because of the first
+
+Changing the adjacent credit moved the per-case score and left the report's
+breakdown at 0.5, because `aggregateFor` recomputed the three terms instead of
+reading them from the case records. The report then carried `accuracy: 0.94` beside
+`final: 95` -- **one quantity, twice, disagreeing**, inside a single report, with
+every test green.
+
+That is finding 181's shape one level down, and it is the reason the aggregate now
+averages the terms each case record carries. `Final_B` is a linear combination of
+the terms, so a headline computed from the mean of the per-case scores and a mean
+computed from the terms have to be the same number; the suite asserts they are, on
+a three-case export whose cases carry different term sets (a single-case export
+cannot tell the two apart, which is why the previous 148 files never did).
+
+The same duplication was in `aiops2025`, and there it was not merely a duplicate but
+a **contradiction**: finding 159 had fixed the aggregate's `Exp.` to answer 0 for an
+empty denominator, and the per-case rule still answered **1**. It was invisible
+because `evidenceComplete` fails such an export first, for a different reason --
+*a guard elsewhere is not a guard here*.
+
+### The token
+
+A checkpoint is now `signal|comparator|value|unit`, and a hit requires all four:
+
+```text
+order|cpu_usage|>|90|%      # the checkpoint the answer key declares
+order|cpu_usage|>|9|%       # a different threshold: not a hit
+order|cpu_usage|>|90|ms     # a different unit: not a hit
+order|cpu_usage             # the metric, named, with no condition: not a hit
+```
+
+Exact equality on the value is the literal reading of "match the numeric
+condition", and it is not forgiving -- the dataset's own ground truth carries
+`0.4964574898785425`. A tolerance is a rule the paper does not state, so inventing
+one would be the same defect pointing the other way. That consequence is an open
+item below rather than a fudge.
+
+### What the mutation grid could not see
+
+`mutatePrediction` replaces a facet **whole**: the `evidence` mutation swaps the
+list for a sentinel. A rule that keeps the signal name and drops the value therefore
+passes the grid, because the grid never keeps the part the rule should be sensitive
+to. **A mutation that changes a facet cannot test a rule that reads part of one.**
+The case-level assertions in `rca100-evaluator.test.ts` are what close that, and the
+grid was left alone rather than widened for one target.
+
+### The corpus is a set of sentences
+
+`golden-master/rca100-evaluator.json` pins the paper by digest
+(`2606.29193v1`, 2,958,887 bytes, sha256 `b8b8de83…`) and each clause by verbatim
+quote, plus the extraction method -- `pdftotext` **without** `-layout`, because the
+layout extraction reproduces the two-column grid and a sentence spanning the column
+break comes out interleaved with the other column, so the quote would not appear.
+
+It also records the dataset's own rubric -- `{T3_exact_L3: 1.0, T2_same_L2: 0.5,
+T1_same_L1: 0.2, T0_different: 0}` -- with its digest and the reason it is **not
+shipped**: 25 KB of CC BY-NC 4.0 data, and this project states that it does not
+redistribute the official datasets. So the rubric stays a pinned gap rather than a
+half-applied rule, and the census row says what closing it would cost.
+
+### Two intermittent reds, and what they turned out to be about
+
+The full suite went red twice while this pass was being finished, each time in a
+different file, each time green on every run of that file alone: `gate-test
+battery · reaches UNPARSEABLE` failed with `SyntaxError: Unexpected token '_',
+"_witnesses"... is not valid JSON`, and `check-doc-counts · refuses a document with
+no counts at all` failed on `expected null to be 1`.
+
+Both are `spawnSync` helpers, and both reported a **child that never ran** as a
+verdict about the child's subject. `spawnSync` answers `status: null` when the
+process could not be started -- and every assertion in both files reads `status`,
+so a resource failure at fork time arrives as a complaint about the battery or
+about the guard.
+
+Three things changed, and none of them is a retry of a red:
+
+- the JSON helper in the attribution file parses **stdout only**. It read
+  `stdout + stderr`, so anything Python wrote to the other stream became the "last
+  line" and the parse error named a stream the reader could not see. Both streams
+  are in the failure message now, and the parse says "the snippet printed no JSON
+  line. Last line was: …" instead of `Unexpected token`.
+- both helpers assert `error` is undefined, so a child that never started says so.
+- both retry once, **only** on `EAGAIN` / `ENOMEM` -- a process that was never
+  created observed nothing, and retrying it is not the same act as retrying an
+  assertion that failed.
+
+Four consecutive full runs were green afterwards and the two reds were not
+reproduced. That is not a diagnosis, and it is recorded as an open item rather
+than as a fix.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | paper pinned by digest; **4 clauses**, each with a verbatim quote and an argument |
+| mechanism tests | **15** on the RCA100 corpus + 1 on the AIOps2025 empty denominator |
+| mutation checks | **12 of 12 CAUGHT**, each by the test named in its row |
+| the clauses that changed | reverting the credit to 0.5, or the token to the signal name, or the aggregate to a recomputation, each turns the suite red |
+| the two numbers | `final === 100 × accuracy` on a three-case export; recomposing the headline from term means reports **93** for cases that average **85** |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **151 files, 3859 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **155 files, 4045 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.8 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 63 across 38 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **The checkpoint value is matched exactly**, and the dataset's own thresholds carry
+  full float precision.
+  `[open: "match the numeric condition" is the paper's phrase and it states no
+  tolerance, so a tolerance would be an invented rule; the cost is that a submission
+  naming the right metric and a rounded threshold scores nothing. This needs a
+  decision, not a fudge]`
+- **RCA100's fault-type rubric is still not applied**, and this pass established that
+  closing it is not a code change.
+  `[open: the rubric is 25 KB of CC BY-NC data this project does not redistribute, and
+  the exported fault type is a free-form IR string, so a tier would resolve only when
+  the data already speaks RCA100 labels. Two ways out: a licence decision, or an
+  offline fixture regenerated on demand]`
+- **Two whole-suite reds in this pass were not reproduced**, and both were `spawnSync`
+  children that reported `status: null`.
+  `[open: four full runs after the diagnostic hardening were green, and the two reds
+  came from different files, so the common cause is not established. What is
+  established is that a child which never started used to read as a verdict about its
+  subject, and that the machine is spawning ~200 child processes inside a parallel
+  suite. The next instrument is `r.error.code` from a run that reproduces]`
+- **The census ages**, carried from pass 59; this pass read a paper and did not re-probe
+  a single repository. `[open: nothing re-probes it, and the next pass that touches a
+  target has to fetch that row's artefact again rather than trusting the table]`
+- **The product cannot represent a multi-fault answer**, carried from pass 58.
+  `[open: `GroundTruth` carries one root cause, so a two-root key scores zero under the
+  published OpenRCA rule; whether the model grows is a product decision]`

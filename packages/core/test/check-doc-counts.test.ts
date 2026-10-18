@@ -93,7 +93,21 @@ function run(body: string, unmeasured?: unknown) {
   writeFileSync(doc, body);
   const argv = [SCRIPT, '--doc', doc, '--measured', MEASURED];
   if (unmeasured !== undefined) argv.push('--unmeasured', JSON.stringify(unmeasured));
-  const r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
+
+  // A spawn that never ran is not a verdict about the guard.
+  //
+  // `spawnSync` reports `status: null` when the child could not be started, and
+  // every assertion below reads `status`, so the failure arrived as "expected
+  // null to be 1" -- a complaint about the guard -- in a run where the guard was
+  // never invoked. Observed during a whole-suite run under load, green on every
+  // run of this file alone; the retry is narrow (a resource error from the
+  // kernel) because retrying a real red would be masking it.
+  let r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
+  const failure = (): string | undefined => (r.error as NodeJS.ErrnoException | undefined)?.code;
+  if (failure() === 'EAGAIN' || failure() === 'ENOMEM') {
+    r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
+  }
+  expect(r.error, `the guard could not be started: ${String(r.error)}`).toBeUndefined();
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
 

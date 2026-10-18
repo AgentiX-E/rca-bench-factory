@@ -134,6 +134,19 @@ export interface OfficialCaseScore {
   readonly score: number;
   /** `score === 1`, i.e. the case is fully correct. */
   readonly correct: boolean;
+  /**
+   * The named terms `score` was computed from, when the target's rule has them.
+   *
+   * The aggregate averages **these** instead of recomputing the rule from the
+   * predictions and the answer key. It used to recompute, and the two
+   * implementations drifted: `RCA100_ADJACENT_CREDIT` moved from 0.5 to the
+   * published 0.40 in the per-case rule, and the report then printed
+   * `accuracy: 0.94` beside `final: 95` -- the same quantity, twice, disagreeing.
+   * A term that is absent from a case (an answer key with no causal chain) is
+   * left out of the record rather than set to zero, so the aggregate can keep the
+   * "no denominator means no term" rule that `meanOfPresent` states.
+   */
+  readonly terms?: Readonly<Record<string, number>>;
 }
 
 export interface OfficialScoreReport {
@@ -447,6 +460,41 @@ function chainToken(from: string, to: string): string {
   return `${from}->${to}`;
 }
 
+/**
+ * One RCA100 observability checkpoint, as a comparable token.
+ *
+ * The published protocol is explicit that the numeric condition is the thing
+ * being checked:
+ *
+ * > 99.5% carry a `⟨comparator, value, unit⟩` numeric constraint, so the agent
+ * > must match the numeric condition, not merely mention the metric.
+ * > -- arXiv 2606.29193v1 §5.4
+ *
+ * This repository compared only the signal name, so an answer that mentioned
+ * `error_count` with a threshold two orders of magnitude wrong scored the
+ * checkpoint. The token carries all four fields, and a hit requires all four to
+ * agree: the same metric, the same direction, the same number, the same unit.
+ *
+ * **Exact equality on the value is the literal reading of "match the numeric
+ * condition"**, and it is not forgiving: the dataset's own ground truth carries
+ * values such as `0.4964574898785425`. A tolerance is a rule the paper does not
+ * state, so inventing one here would be the same defect in the other direction.
+ * The consequence is recorded as an open item rather than hidden by a fudge.
+ *
+ * A missing comparator or value reads as the empty string, which can never equal
+ * a declared one -- an unparseable checkpoint is not a hit, it is an absent
+ * claim.
+ */
+function checkpointToken(
+  signal: string,
+  comparator: string,
+  value: unknown,
+  unit: string,
+): string {
+  const valueText = typeof value === 'number' || typeof value === 'string' ? String(value) : '';
+  return [signal, comparator, valueText, unit].join('|');
+}
+
 function readOpenRca2GroundTruth(files: Record<string, string>): OfficialGroundTruth[] {
   return pathsEndingWith(files, '/causal_path.json').map((path) => {
     const id = path.slice('cases/'.length, path.length - '/causal_path.json'.length);
@@ -656,7 +704,15 @@ function readRca100GroundTruth(files: Record<string, string>): OfficialGroundTru
       for (const checkpoint of step.checkpoints) {
         if (isRecord(checkpoint)) {
           const ref = readString(checkpoint, 'signal_ref');
-          if (ref !== '') evidence.push(ref);
+          if (ref === '') continue;
+          evidence.push(
+            checkpointToken(
+              ref,
+              readString(checkpoint, 'comparator'),
+              checkpoint['value'],
+              readString(checkpoint, 'unit'),
+            ),
+          );
         }
       }
     }
@@ -1120,11 +1176,70 @@ function scoreCloudOpsBenchCase(pred: OfficialPrediction, gt: OfficialGroundTrut
   return { caseId: gt.caseId, facets: verdicts, score, correct: score === 1 };
 }
 
+/**
+ * The credit for naming a *neighbour* of the root cause, as the protocol states it.
+ *
+ * > Localization via Entity Localization. A UModel entity-ID match with partial
+ * > credit on topologically adjacent entities (0.40).
+ * > -- arXiv 2606.29193v1 §5.4
+ *
+ * This repository paid **0.5**, a number with no source: the sentence above is
+ * the only place the protocol quantifies an adjacent match. The alternative
+ * reading -- that the parenthetical repeats the dimension's 0.40 weight, two
+ * sentences after stating it -- leaves the adjacent credit undefined, which is
+ * what 0.5 was. Either way the old number was unsourced, and 0.40 is the number
+ * written down.
+ */
+export const RCA100_ADJACENT_CREDIT = 0.4;
+
+/**
+ * The three terms of Final_B for one case, and nothing else.
+ *
+ * One implementation, used by both the case scorer and the aggregate. They used
+ * to be written twice, and the second copy is what made a change to the adjacent
+ * credit move only half the report.
+ *
+ * A term with no denominator is **absent** rather than zero: `rateOf` returns
+ * `undefined` for an answer key that declares no chain, and the record simply
+ * does not carry the key. Setting it to 0 would punish an export for a thin
+ * answer key by inventing a failure; setting it to 1 is the free-denominator
+ * defect this repository has already written a finding about.
+ */
+export function rca100Terms(pred: OfficialPrediction, gt: OfficialGroundTruth): Record<string, number> {
+  const entity =
+    pred.component === gt.component
+      ? 1
+      : gt.adjacent.includes(pred.component)
+        ? RCA100_ADJACENT_CREDIT
+        : 0;
+  const terms: Record<string, number> = {
+    entity,
+    fault: pred.faultType === gt.faultType ? 1 : 0,
+  };
+  const chain = rateOf(pred.chain, gt.chain);
+  const checkpoints = rateOf(pred.evidence, gt.evidence);
+  if (chain !== undefined) terms['chain'] = chain;
+  if (checkpoints !== undefined) terms['checkpoints'] = checkpoints;
+  return terms;
+}
+
+/** The Process pillar of one record: the mean of the terms it actually carries. */
+function rca100Process(terms: Readonly<Record<string, number>> | undefined): number | undefined {
+  if (terms === undefined) return undefined;
+  const present = [terms['chain'], terms['checkpoints']].filter(
+    (term): term is number => term !== undefined,
+  );
+  return present.length === 0 ? undefined : present.reduce((sum, term) => sum + term, 0) / present.length;
+}
+
+/** Final_B for one case, from its terms and nothing else. */
+export function rca100Score(terms: Readonly<Record<string, number>>): number {
+  return 0.4 * (terms['entity'] ?? 0) + 0.3 * (terms['fault'] ?? 0) + 0.3 * (rca100Process(terms) ?? 0);
+}
+
 function scoreRca100Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
-  const entity = pred.component === gt.component ? 1 : gt.adjacent.includes(pred.component) ? 0.5 : 0;
-  const fault = pred.faultType === gt.faultType ? 1 : 0;
-  const process = meanOfPresent([rateOf(pred.chain, gt.chain), rateOf(pred.evidence, gt.evidence)]);
-  const score = 0.4 * entity + 0.3 * fault + 0.3 * process;
+  const terms = rca100Terms(pred, gt);
+  const score = rca100Score(terms);
 
   return {
     caseId: gt.caseId,
@@ -1133,6 +1248,7 @@ function scoreRca100Case(pred: OfficialPrediction, gt: OfficialGroundTruth): Off
       .map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) })),
     score,
     correct: score === 1,
+    terms,
   };
 }
 
@@ -1178,9 +1294,16 @@ function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): 
   const ta = keywordHit(pred.reason, gt.faultDescriptions) ? 1 : 0;
   // The protocol counts each cited observation by its first 20 characters.
   const cited = pred.evidence.map((e) => e.slice(0, 20));
-  const exp = gt.evidence.length === 0 ? 1 : intersectCount(cited, gt.evidence) / gt.evidence.length;
+  // An answer key that declares no observation leaves this term with no
+  // denominator, and the case record drops it rather than crediting it: `1` was
+  // the free-denominator defect finding 159 was written about, and it survived
+  // here because the aggregate had been fixed and this copy had not. The two
+  // implementations are still separate for this target -- the report's Exp. is
+  // pooled over the dataset while a case's is a rate, which is a real difference
+  // in aggregation, not a drift -- so the fix has to be applied in both places.
+  const exp = rateOf(cited, gt.evidence);
   const eff = la === 1 ? Math.min(1, Math.exp(-(pred.traceWords - 5) / 5)) : 0;
-  const score = 0.4 * la + 0.4 * ta + 0.1 * exp + 0.1 * eff;
+  const score = 0.4 * la + 0.4 * ta + 0.1 * (exp ?? 0) + 0.1 * eff;
 
   return {
     caseId: gt.caseId,
@@ -1285,25 +1408,27 @@ function aggregateFor(
   }
 
   if (target === 'rca100') {
-    const entity = mean(
-      groundTruth.map((gt, i) => {
-        const pred = predictions[i]?.component ?? '';
-        return pred === gt.component ? 1 : gt.adjacent.includes(pred) ? 0.5 : 0;
-      }),
-    );
-    const fault = mean(groundTruth.map((gt, i) => ((predictions[i]?.faultType ?? '') === gt.faultType ? 1 : 0)));
-    const chain = meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.chain ?? [], gt.chain)));
-    const checkpoints = meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.evidence ?? [], gt.evidence)));
-    const process = meanOfPresent([chain, checkpoints]);
+    // Read from the per-case terms, never recomputed. Recomputing is what let
+    // this branch keep paying 0.5 for an adjacent entity after the case rule
+    // moved to the published 0.40 -- and the report then carried two numbers for
+    // one quantity, `accuracy` from the case rule and `final` from this branch.
+    const entity = meanOfPresent(cases.map((c) => c.terms?.['entity']));
+    const fault = meanOfPresent(cases.map((c) => c.terms?.['fault']));
+    const chain = meanOfPresent(cases.map((c) => c.terms?.['chain']));
+    const checkpoints = meanOfPresent(cases.map((c) => c.terms?.['checkpoints']));
+    // The headline is the mean of the per-case scores, which is what `accuracy`
+    // already reports. Final_B is a linear combination of the terms, so for a
+    // target aggregated by mean the two are the same number -- and two numbers
+    // describing one quantity have to agree.
     return {
       breakdown: {
         entity: round2(entity),
         fault: round2(fault),
-        process: round2(process),
+        process: round2(meanOfPresent(cases.map((c) => rca100Process(c.terms)))),
         chainNodeMatch: round2(chain),
         checkpointHit: round2(checkpoints),
       },
-      headline: round2(100 * (0.4 * entity + 0.3 * fault + 0.3 * process)),
+      headline: round2(100 * mean(cases.map((c) => c.score))),
     };
   }
 

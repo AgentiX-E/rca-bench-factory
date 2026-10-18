@@ -3,6 +3,7 @@ import { exportOpenRca, buildScoringPoints, hasRootCauseElements, openRcaTaskInd
 import { exportOpenRca2 } from '../src/export/openrca2.js';
 import { exportRcaEval } from '../src/export/rcaeval.js';
 import { exportRca100 } from '../src/export/rca100.js';
+import { RCA100_ADJACENT_CREDIT } from '../src/score/official.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
 import { exportItBench } from '../src/export/itbench.js';
@@ -569,11 +570,19 @@ describe('RCA100 Final_B', () => {
   });
 
   it('gives partial entity credit for a topologically adjacent entity', () => {
+    // 0.40, not 0.5: "A UModel entity-ID match with partial credit on
+    // topologically adjacent entities (0.40)" -- arXiv 2606.29193v1 §5.4. The old
+    // 0.5 had no source.
     const oracle = oracleFor('rca100', files())[0]!;
     const adjacent: OfficialPrediction = { ...oracle, component: 'cart' };
     const report = scoreWith('rca100', files(), [adjacent]);
-    expect(report.breakdown.entity).toBe(0.5);
+    expect(report.breakdown.entity).toBe(RCA100_ADJACENT_CREDIT);
+    expect(RCA100_ADJACENT_CREDIT).toBe(0.4);
     expect(report.final).toBeLessThan(100);
+    // The two numbers in one report that describe one quantity. They disagreed
+    // while the case rule and the aggregate were two implementations of the same
+    // three terms: the case moved to 0.40 and the aggregate stayed at 0.5.
+    expect(report.final).toBe(Math.round(100 * report.accuracy));
   });
 
   it('gives no entity credit for an unrelated entity', () => {
@@ -647,6 +656,34 @@ describe('AIOps2025 Final_A', () => {
     const report = runOfficialRegression('aiops2025', files);
     expect(report.evidenceComplete).toBe(false);
     expect(report.failures.join(' ')).toContain('no evidence points');
+  });
+
+  it('does not hand the evidence tenth away in the case record when the key declares none', () => {
+    // Finding 159 fixed the aggregate's `Exp.` and not the case rule's, because
+    // they were two implementations: a case record answered 1 for an empty
+    // denominator while the report answered 0. The difference was invisible
+    // because `evidenceComplete` already failed such an export for a different
+    // reason -- a guard elsewhere is not a guard here.
+    const files = exportAioPs2025(validBundle()).files;
+    files['groundtruth.jsonl'] = JSON.stringify({
+      uuid: 'case-001',
+      fault_category: 'resource',
+      fault_type: 'cpu',
+      instance_type: 'service',
+      service: 'order',
+      instance: 'order',
+      start_time: '2026-09-06T00:00:00.000Z',
+      end_time: '2026-09-06T00:20:00.000Z',
+      key_observations: { log: [], metric: [], trace: [] },
+      key_metrics: [],
+      fault_description: 'CPU saturation on the order service',
+    });
+    const report = scoreOfficial('aiops2025', files);
+    // The evidence term is 0 and not the old free 1: localisation (0.4), fault
+    // type (0.4) and efficiency (0.1, because the trace is under the five-word
+    // budget) are earned, and the tenth that used to be handed out is not.
+    expect(report.cases[0]!.score).toBeCloseTo(0.9, 10);
+    expect(report.final).toBe(Math.round(100 * report.accuracy));
   });
 
   it('scores pod-level faults against the pod identifier, not the service', () => {
@@ -1003,7 +1040,15 @@ describe('official - degraded exports', () => {
                 steps: [
                   'nope',
                   { from_entity: 'order', to_entity: '', checkpoints: 'nope' },
-                  { from_entity: 'order', to_entity: 'cart', checkpoints: [3, { signal_ref: '' }, { signal_ref: 'm1' }] },
+                  {
+                    from_entity: 'order',
+                    to_entity: 'cart',
+                    checkpoints: [
+                      3,
+                      { signal_ref: '' },
+                      { signal_ref: 'm1', comparator: '>', value: 1, unit: '' },
+                    ],
+                  },
                 ],
               },
             }),
@@ -1011,7 +1056,11 @@ describe('official - degraded exports', () => {
         ),
       )[0]!;
       expect(gt.chain).toEqual(['order->cart']);
-      expect(gt.evidence).toEqual(['m1']);
+      // Four fields, in the order `checkpointToken` writes them. The empty unit
+      // is written as an empty field rather than dropped, so a checkpoint that
+      // declares no unit cannot collide with one that declares a unit named by
+      // shifting the separator.
+      expect(gt.evidence).toEqual(['m1|>|1|']);
     });
 
     it('ignores a raw_ground_truth that is not JSON or has no reasoning block', () => {

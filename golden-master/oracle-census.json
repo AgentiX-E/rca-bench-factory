@@ -206,7 +206,7 @@
       "gap": {
         "summary": "the fault-type term is binary here (`1` or `0`); the published rubric pays 1.0 / 0.5 / 0.2 for an exact L3, a shared L2 and a shared L1",
         "evidence": "taxonomy.json :: scoring_rubric = {T3_exact_L3: 1.0, T2_same_L2: 0.5, T1_same_L1: 0.2, T0_different: 0.0}",
-        "next": "read the hierarchy into the export and tier the term; the rubric is data, so this is a replay rather than a transcription"
+        "next": "not a code change on its own: the rubric is 25 KB of CC BY-NC data that this project states it does not redistribute, so tiering needs either a licence decision (vendor it and apply it in the reader) or an offline fixture regenerated on demand. Measured again in finding 183: the fault type this exporter writes is a free-form IR string, so a tier would resolve only when the data already speaks RCA100 labels"
       }
     },
     {

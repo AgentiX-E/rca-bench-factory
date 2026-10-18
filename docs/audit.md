@@ -18787,3 +18787,117 @@ another test replays.
 | repo test suite | **154 files, 4029 tests passed** |
 | coverage | core **99.97 / 99.91 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 183 — one section of one paper, and three clauses that had been dropped
+
+### The only target whose source is a paper
+
+`rca100`'s metric cited `arXiv 2606.29193 section 5.4`. Findings 176 and 181 taught
+this repository to open the artefact behind a citation; both times the artefact was
+code. This pass opened the section, and found that **three of its clauses were not
+in the rule**, one of them replaced by a number that appears nowhere:
+
+| §5.4 | The rule before |
+| --- | --- |
+| "A UModel entity-ID match with partial credit on topologically adjacent entities (**0.40**)." | **0.5**, with no source in the paper, the dataset, or the project README |
+| "99.5% carry a `⟨comparator, value, unit⟩` numeric constraint, so the agent must match the numeric condition, **not merely mention the metric**." | compared `signal_ref` alone |
+| "`Final_B = (0.4 Entity + 0.3 Fault + 0.3 Process) × 100`." | implemented twice, once per case and once for the report |
+
+### A number with no source
+
+The paper weighs the three pillars 0.40 / 0.30 / 0.30 and quantifies the adjacent
+match once. This repository paid 0.5. The only alternative reading — that the
+parenthetical repeats the dimension's weight two sentences after stating it —
+leaves the adjacent credit **undefined**, which is exactly what 0.5 was: a value
+somebody chose. Either way the fix is to write down the number that is written down.
+
+### The comparison the clause is about
+
+`signal_ref` names a metric. The clause is about the *condition* on it. Dropping
+comparator, value and unit means an answer that names `error_count` and asserts a
+threshold two orders of magnitude wrong scores the checkpoint — the answer is
+rewarded for the vocabulary it used, which is the metric gaming the clause exists to
+prevent.
+
+A checkpoint is now one token:
+
+```text
+order|cpu_usage|>|90|%      the checkpoint the answer key declares
+order|cpu_usage|>|9|%       a different threshold: not a hit
+order|cpu_usage|>|90|ms     a different unit: not a hit
+order|cpu_usage             the metric, named, with no condition: not a hit
+```
+
+Exact equality on the value is the literal reading, and it is unforgiving: the
+dataset's own answer keys carry `0.4964574898785425`. A tolerance is a rule the
+paper does not state, so inventing one would be this defect pointing the other way.
+The consequence is recorded as an open item.
+
+### The duplication that the first fix exposed
+
+Changing 0.5 to 0.40 moved the per-case score and left the report's breakdown at
+0.5. `aggregateFor` recomputed the three terms from the predictions and answer key
+rather than reading them off the case records, so the report printed
+`accuracy: 0.94` beside `final: 95` — **one quantity, twice, disagreeing, inside a
+single report, with 148 files green.**
+
+That is finding 181's shape one level down: two implementations of one rule, and
+nothing comparing them. The aggregate now averages the terms the case record
+carries, and the suite asserts `final === 100 × accuracy` on a three-case export
+whose cases carry different term sets. A single-case export cannot distinguish a
+mean of case scores from a re-composition of term means — which is why nothing had.
+
+The same duplication existed in `aiops2025`, where it was worse than a duplicate:
+finding 159 had fixed the aggregate's `Exp.` to answer 0 for an empty denominator,
+and the per-case rule still answered **1**. Nothing noticed because
+`evidenceComplete` fails such an export first, for a different reason. **A guard
+somewhere else is not a guard here.**
+
+### What the mutation grid cannot see, stated rather than patched
+
+`mutatePrediction` replaces a facet whole. The `evidence` mutation swaps the list
+for a sentinel, so a rule that keeps the signal name and drops the value passes the
+grid: **the grid never keeps the part the rule should be sensitive to.** A mutation
+that changes a facet cannot test a rule that reads part of one.
+
+The grid was left alone. Widening it for one target would put a target-specific
+concept (`comparator|value|unit`) into a shared mutation table, and the next rule
+that reads part of some other facet would need its own widening. The case-level
+assertions in `rca100-evaluator.test.ts` are where this belongs.
+
+### The corpus is a set of sentences, and the rubric stays out
+
+`golden-master/rca100-evaluator.json` pins `2606.29193v1` by digest (2,958,887
+bytes, sha256 `b8b8de83…`) and each clause by verbatim quote. It records the
+extraction method, including the one that failed: `pdftotext -layout` reproduces the
+two-column grid, so a sentence spanning the column break comes out interleaved with
+the other column and the quote does not appear verbatim. Reading order does, which is
+why the quotes come from the plain extraction.
+
+It also records the dataset's own rubric — `{T3_exact_L3: 1.0, T2_same_L2: 0.5,
+T1_same_L1: 0.2, T0_different: 0}` — with its digest and **the reason it is not
+shipped**: 25 KB of CC BY-NC 4.0 data, and this project states in its own acceptance
+document that it does not redistribute the official datasets. Adding the file to the
+repository, or to every export, would contradict that boundary; leaving it out means
+the tier cannot be applied in a test either. So the number stays a pinned gap, and
+the census row now says what closing it would cost: a licence decision, or an
+offline fixture regenerated on demand.
+
+A second measurement from the same pass: the fault type this exporter writes is a
+free-form IR string, so even with the rubric in hand a tier would resolve only when
+the data already speaks RCA100's own labels. **The gap is not waiting on code.**
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | paper pinned by digest; 4 clauses, each quoted and argued |
+| mechanism tests | 15 + 1 |
+| mutation checks | **12 of 12 CAUGHT** |
+| the credit | 0.40 in the constant, in the corpus and in the report |
+| the token | four fields, and a hit requires all four |
+| the two numbers | `final === 100 × accuracy`; recomposition reports 93 where the cases average 85 |
+| `official:check` | 8 PASS, 1 skipped by contract |
+| `core` / `cli` / repo | **151 / 3859** · **4 / 186** · **155 / 4045** |
+| coverage | core **99.97 / 99.8 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

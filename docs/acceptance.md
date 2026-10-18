@@ -363,6 +363,17 @@ number — it is a green run that established nothing.
   **one** root cause: measured on the first 25 cases, **10 disagreed**, inflating a
   two-root key to 1.0 where upstream says 0.83 and scoring a correctly permuted
   two-root answer 0 where upstream says 1.0.
+- **RCA100 is held to the sentences of its protocol, quoted verbatim.**
+  `golden-master/rca100-evaluator.json` pins `arXiv 2606.29193v1` by digest (2,958,887
+  bytes, sha256 `b8b8de83…`) and records four clauses from §5.4 with the argument for
+  each, and `packages/core/test/rca100-evaluator.test.ts` holds the rule to them. Three
+  clauses had been dropped: the adjacent credit was **0.5** where the section says
+  **0.40**; the checkpoint comparison kept the signal name and discarded the
+  `⟨comparator, value, unit⟩` condition it is about; and the formula was implemented
+  **twice**, so `accuracy` and `final` reported different numbers for one quantity. The
+  dataset's own fault-type rubric (1.0 / 0.5 / 0.2 for an exact L3, a shared L2 and a
+  shared L1) is recorded and **not** applied, with the reason: it is 25 KB of CC BY-NC
+  data this project does not redistribute, so the gap is pinned rather than half-closed.
 - **The case directory name preserves the hyphen.** Upstream publishes
   `dataset/ts-order-service-cpu_1/`; a component slugified to `tsorderservice` names a
   directory that does not exist. One case per system pins the exact name, and a

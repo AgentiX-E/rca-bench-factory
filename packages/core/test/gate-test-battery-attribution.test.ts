@@ -55,15 +55,52 @@ const HARNESS = [
 
 /** Run a snippet against the battery module, so these tests exercise the shipped file. */
 function python(code: string) {
-  const result = spawnSync('python3', ['-c', `${HARNESS}\n${code}`], { cwd: ROOT, encoding: 'utf8' });
-  return { code: result.status, out: `${result.stdout}${result.stderr}` };
+  const argv = ['-c', `${HARNESS}\n${code}`];
+  let result = spawnSync('python3', argv, { cwd: ROOT, encoding: 'utf8' });
+  // A child that never started is not a verdict about the battery: `status` is
+  // null and every assertion here reads `status` or its output, so the failure
+  // would read as a complaint about the battery. The retry is limited to the two
+  // kernel resource errors, because retrying a real red is masking it.
+  const failure = (): string | undefined =>
+    (result.error as NodeJS.ErrnoException | undefined)?.code;
+  if (failure() === 'EAGAIN' || failure() === 'ENOMEM') {
+    result = spawnSync('python3', argv, { cwd: ROOT, encoding: 'utf8' });
+  }
+  expect(result.error, `python3 could not be started: ${String(result.error)}`).toBeUndefined();
+  return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-/** Run a snippet that prints one JSON line as its last output line. */
+/**
+ * Run a snippet that prints one JSON line as its last output line.
+ *
+ * The parse reads **stdout only**. It used to read `stdout + stderr`, so anything
+ * Python wrote to the other stream after the JSON line -- a warning, a traceback
+ * from a thread, the tail of a nested run -- became the "last line" and the
+ * failure arrived as `SyntaxError: Unexpected token '_'` with no indication of
+ * which stream carried it. Observed once, unreproduced: `"_witnesses"... is not
+ * valid JSON` from a run in which every other assertion passed.
+ *
+ * Splitting the streams does not weaken the check: the subject is what the snippet
+ * *printed*, and a line it wrote to stderr is not its output. Both streams stay in
+ * the failure message, so a warning that was hiding a parse error is now visible
+ * as itself.
+ */
 function pythonJson(code: string) {
   const result = python(code);
-  expect(result.code, result.out).toBe(0);
-  return JSON.parse(result.out.trim().split('\n').at(-1) ?? 'null');
+  const where = `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`;
+  expect(result.code, where).toBe(0);
+  const last = result.stdout.trim().split('\n').at(-1) ?? 'null';
+  // A JSON *document* is any parseable value, including a bare number: one of the
+  // snippets below prints a count. `undefined` is the sentinel because no JSON
+  // document parses to it.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(last);
+  } catch {
+    parsed = undefined;
+  }
+  expect(parsed, `the snippet printed no JSON line. Last line was: ${last}\n${where}`).not.toBeUndefined();
+  return parsed;
 }
 
 /**
@@ -186,8 +223,10 @@ print(json.dumps([module.parses(module.INJECTIONS[0][1], source)[0]]))`);
 
   it('reconciles every injection with a witness, and the witnesses with their files', () => {
     const result = python("sys.exit(module.verify_expectations(probe=True))");
-    expect(result.out).toContain('gate-tests-battery: OK');
-    expect(result.out).toContain('with the comparator probed');
+    // The battery prints its report to stdout; `stderr` is checked separately so a
+    // half-finished line on the other stream cannot satisfy a `toContain`.
+    expect(result.stdout).toContain('gate-tests-battery: OK');
+    expect(result.stdout).toContain('with the comparator probed');
     expect(result.code).toBe(0);
   });
 

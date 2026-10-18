@@ -1,0 +1,78 @@
+{
+  "schema": "rca-bench-official-corpus/1",
+  "target": "rca100",
+  "takenAt": "2026-10-18",
+  "paper": {
+    "id": "2606.29193",
+    "version": "v1",
+    "title": "A Multi-Dataset Benchmark for Evaluating LLM Agents in Microservice Failure Diagnosis",
+    "section": "5.4 Evaluation Metric",
+    "pdf": {
+      "url": "https://arxiv.org/pdf/2606.29193v1",
+      "bytes": 2958887,
+      "sha256": "b8b8de83a516f8df764e22ed151469b3e9d9608da881b7398671ce77d7826953"
+    },
+    "extraction": [
+      "curl -L https://arxiv.org/pdf/2606.29193v1 -o rca100.pdf",
+      "sha256sum rca100.pdf  # b8b8de83...",
+      "pdftotext rca100.pdf rca100.txt  # without -layout",
+      "collapse runs of whitespace in rca100.txt",
+      "grep for each quote below; all four are contiguous in the flattened flow"
+    ],
+    "why_not_layout": "`pdftotext -layout` reproduces the two-column grid, so a sentence that spans the column break comes out interleaved with the other column and the quote would not appear verbatim. The reading-order extraction keeps each sentence contiguous."
+  },
+  "clauses": [
+    {
+      "id": "entity-adjacent-credit",
+      "term": "entity",
+      "quote": "Localization via Entity Localization. A UModel entity-ID match with partial credit on topologically adjacent entities (0.40).",
+      "value": 0.4,
+      "was": 0.5,
+      "why": "0.5 had no source. The only sentence that quantifies an adjacent match says 0.40. The alternative reading -- that the parenthetical repeats the dimension's 0.40 weight two sentences after stating it -- leaves the adjacent credit undefined, which is what 0.5 was."
+    },
+    {
+      "id": "fault-identification",
+      "term": "fault",
+      "quote": "Identification via Fault Identification. A fine-grained 28-class match against the expected fault type (0.30).",
+      "value": 1.0,
+      "was": 1.0,
+      "why": "Unchanged. Recorded because it is the clause the dataset's own rubric refines: the paper states a match against one of 28 classes, while `answer_key/taxonomy.json` pays partial credit for a coarser answer. The refinement is a gap on the census row, not something this rule can apply to a free-form IR fault type."
+    },
+    {
+      "id": "process-numeric-condition",
+      "term": "checkpoints",
+      "quote": "99.5% carry a ⟨comparator, value, unit⟩ numeric constraint, so the agent must match the numeric condition, not merely mention the metric.",
+      "value": null,
+      "was": null,
+      "why": "The clause was dropped: the reader kept only `signal_ref`, so an answer that named `error_count` with a threshold two orders of magnitude wrong scored the checkpoint. The token now carries all four fields."
+    },
+    {
+      "id": "final-formula",
+      "term": "formula",
+      "quote": "Final𝐵 = (0.4 Entity + 0.3 Fault + 0.3 Process) × 100.",
+      "weights": [0.4, 0.3, 0.3],
+      "why": "Unchanged, and now the only place the three terms are computed: the aggregate reads them off the case records instead of recomputing them."
+    }
+  ],
+  "token": {
+    "format": "signal|comparator|value|unit",
+    "separator": "|",
+    "example": "order|cpu_usage|>=|90|%",
+    "empty_unit": "a checkpoint that declares no unit ends with the separator, so it cannot collide with one whose unit is spelled by shifting the separator",
+    "value_form": "String(value) for a number or a string; absent for anything else, which can never equal a declared value"
+  },
+  "rubric": {
+    "project": "aiops-live-benchmark/agenticopseval",
+    "url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/agenticopseval/-/raw/main/RCA100/answer_key/taxonomy.json",
+    "bytes": 25823,
+    "sha256": "840f3cfa8c34699e33d3aa03db3e2eb35799613827ed205af944115835f6c62b",
+    "values": {
+      "T3_exact_L3": 1.0,
+      "T2_same_L2": 0.5,
+      "T1_same_L1": 0.2,
+      "T0_different": 0.0
+    },
+    "vendored": false,
+    "why_not_vendored": "The dataset is CC BY-NC 4.0 and this project states that it does not redistribute the official data. Copying the 25 KB taxonomy into the repository, or into every export, would contradict that boundary; leaving it out means the tier cannot be applied at test time either. So the rubric is pinned by digest and its four numbers are recorded, and the rule that would consume it is the open item rather than a half-applied one."
+  }
+}

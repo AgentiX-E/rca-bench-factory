@@ -41,9 +41,20 @@ function key(options: { steps?: unknown[] } = {}): unknown {
   };
 }
 
-/** One reasoning step carrying `to_entity` and one checkpoint. */
+/**
+ * One reasoning step carrying `to_entity` and one checkpoint.
+ *
+ * The checkpoint carries all four fields the protocol checks. A `signal_ref` on
+ * its own used to be enough, because the reader kept only the name -- see the
+ * `checkpointToken` comment in `official.ts` for the clause that made that a
+ * defect rather than a simplification.
+ */
 function step(to: string, signalRef: string): unknown {
-  return { from_entity: 'order', to_entity: to, checkpoints: [{ signal_ref: signalRef }] };
+  return {
+    from_entity: 'order',
+    to_entity: to,
+    checkpoints: [{ signal_ref: signalRef, comparator: '>=', value: 42, unit: 'count/min' }],
+  };
 }
 
 describe('a term with no denominator leaves the mean instead of counting as complete', () => {
@@ -65,6 +76,6 @@ describe('a term with no denominator leaves the mean instead of counting as comp
     // returns nothing for every key, which would be a different bug.
     const gt = readOfficialGroundTruth('rca100', rca100(key({ steps: [step('cart', 'order|cpu')] })))[0]!;
     expect(gt.chain).toEqual(['order->cart']);
-    expect(gt.evidence).toEqual(['order|cpu']);
+    expect(gt.evidence).toEqual(['order|cpu|>=|42|count/min']);
   });
 });
