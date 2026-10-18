@@ -84,6 +84,24 @@ export interface OfficialGroundTruth {
   /** Ground-truth phrasings of the fault type (AIOps2025 Type Accuracy). */
   readonly faultDescriptions: readonly string[];
   /**
+   * Other strings the protocol accepts as the *same* answer for this case.
+   *
+   * Not "similar" and not "adjacent": each entry is a value the published rule
+   * says to score as a full hit. AIOps2025 is the only target that has any, and
+   * it has them because §4.4 says so:
+   *
+   * > Two fault families need targeted relaxations: for network attacks, LA
+   * > accepts a hit on either source or destination since evidence is prominent
+   * > at both endpoints.
+   *
+   * The answer key names both endpoints in `source` and `destination`; this
+   * carries whichever of them the reader found, so the LA comparison can accept
+   * them without the reader deciding which one `service` happens to equal. Empty
+   * for every other target, and empty for a case that declares no alternative --
+   * an empty list cannot manufacture a match.
+   */
+  readonly alternatives: readonly string[];
+  /**
    * The OpenRCA `scoring_points` block, carried **only when it declares more
    * than one root**.
    *
@@ -372,6 +390,7 @@ export function readOpenRcaGroundTruth(files: Record<string, string>): OfficialG
         chain: [],
         evidence: [],
         faultDescriptions: [],
+        alternatives: [],
         // Only when the triple cannot stand for the key. A one-root block is
         // exactly the triple, and `declaredCriteria` rebuilds it.
         ...(openRcaRootCount(points) > 1 ? { scoringPoints: points } : {}),
@@ -526,6 +545,7 @@ function readOpenRca2GroundTruth(files: Record<string, string>): OfficialGroundT
       chain,
       evidence,
       faultDescriptions: [],
+      alternatives: [],
     };
   });
 }
@@ -643,6 +663,7 @@ function readRcaEvalGroundTruth(files: Record<string, string>): OfficialGroundTr
       chain: [],
       evidence: [],
       faultDescriptions: [],
+      alternatives: [],
     });
   }
   return out;
@@ -727,6 +748,7 @@ function readRca100GroundTruth(files: Record<string, string>): OfficialGroundTru
       chain,
       evidence,
       faultDescriptions: [],
+      alternatives: [],
     };
   });
 }
@@ -771,6 +793,16 @@ function readAioPs2025GroundTruth(files: Record<string, string>): OfficialGround
       chain: [],
       evidence: [...evidence],
       faultDescriptions: [readString(obj, 'fault_description')].filter((d) => d !== ''),
+      // The answer key names both endpoints of a network fault, and §4.4 accepts
+      // a hit on either. Duplicates and empties are dropped so the list is a set
+      // of *other* accepted strings rather than a second copy of `component`.
+      alternatives: [
+        ...new Set(
+          [readString(obj, 'source'), readString(obj, 'destination')].filter(
+            (endpoint) => endpoint !== '' && endpoint !== component,
+          ),
+        ),
+      ],
     });
   }
 
@@ -793,6 +825,7 @@ function readCloudOpsBenchGroundTruth(files: Record<string, string>): OfficialGr
       evidence: [],
       faultDescriptions:
         result === undefined ? [] : [readString(result, 'fault_taxonomy')].filter((t) => t !== ''),
+      alternatives: [],
     };
   });
 }
@@ -834,6 +867,7 @@ function readItBenchGroundTruth(files: Record<string, string>): OfficialGroundTr
       chain,
       evidence,
       faultDescriptions: [],
+      alternatives: [],
     };
   });
 }
@@ -1289,8 +1323,26 @@ function keywordHit(reason: string, descriptions: readonly string[]): boolean {
   });
 }
 
+/**
+ * Whether the answer named the accepted entity for this case.
+ *
+ * Strict equality, plus the one relaxation §4.4 grants:
+ *
+ * > Two fault families need targeted relaxations: for network attacks, LA accepts
+ * > a hit on either source or destination since evidence is prominent at both
+ * > endpoints.
+ *
+ * The alternatives come from the answer key's own `source` and `destination`
+ * fields, so the relaxation is applied to the cases the dataset marks as network
+ * faults and to no others. A case without them has an empty list, and an empty
+ * list cannot manufacture a match.
+ */
+function aioPs2025Localised(pred: OfficialPrediction, gt: OfficialGroundTruth): boolean {
+  return pred.component === gt.component || gt.alternatives.includes(pred.component);
+}
+
 function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
-  const la = pred.component === gt.component ? 1 : 0;
+  const la = aioPs2025Localised(pred, gt) ? 1 : 0;
   const ta = keywordHit(pred.reason, gt.faultDescriptions) ? 1 : 0;
   // The protocol counts each cited observation by its first 20 characters.
   const cited = pred.evidence.map((e) => e.slice(0, 20));
@@ -1301,6 +1353,7 @@ function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): 
   // implementations are still separate for this target -- the report's Exp. is
   // pooled over the dataset while a case's is a rate, which is a real difference
   // in aggregation, not a drift -- so the fix has to be applied in both places.
+  const hits = intersectCount(cited, gt.evidence);
   const exp = rateOf(cited, gt.evidence);
   const eff = la === 1 ? Math.min(1, Math.exp(-(pred.traceWords - 5) / 5)) : 0;
   const score = 0.4 * la + 0.4 * ta + 0.1 * (exp ?? 0) + 0.1 * eff;
@@ -1312,6 +1365,24 @@ function scoreAioPs2025Case(pred: OfficialPrediction, gt: OfficialGroundTruth): 
       .map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) })),
     score,
     correct: score === 1,
+    // All four terms, so the record explains its own score. The aggregate reads
+    // `la`, `ta` and `efficiency` from here and **recomputes** `explainability`,
+    // because the report's Exp. is pooled over the dataset (`E_m / E_t` in §4.4)
+    // while a case's is a rate, and pooling is not the mean of rates. That is the
+    // one term this target legitimately computes twice, and the two are different
+    // quantities rather than two answers to one question.
+    terms: {
+      la,
+      ta,
+      efficiency: eff,
+      ...(exp === undefined ? {} : { explainability: exp }),
+      // The count, not only the rate. The report's Exp. is pooled (`E_m / E_t`),
+      // and pooling a set of rates needs the numerators back; recomputing them in
+      // the aggregate meant a second copy of "which cited observation hit", and a
+      // mutation that removed the 20-character cut from one copy left the other
+      // standing. One count here, one sum there.
+      evidenceHits: hits,
+    },
   };
 }
 
@@ -1433,16 +1504,22 @@ function aggregateFor(
   }
 
   if (target === 'aiops2025') {
-    const la = mean(groundTruth.map((gt, i) => ((predictions[i]?.component ?? '') === gt.component ? 1 : 0)));
-    const ta = mean(groundTruth.map((gt, i) => keywordHit(predictions[i]?.reason ?? '', gt.faultDescriptions) ? 1 : 0));
+    // Three of the four terms come from the case records; Exp. is pooled below.
+    // The LA term used to be recomputed here with a bare equality, which is how a
+    // relaxation added to the case rule would have moved only half the report --
+    // the defect finding 183 fixed for rca100, avoided here before it happened.
+    const la = meanOfPresent(cases.map((c) => c.terms?.['la']));
+    const ta = meanOfPresent(cases.map((c) => c.terms?.['ta']));
     const et = groundTruth.reduce((sum, gt) => sum + gt.evidence.length, 0);
-    const em = groundTruth.reduce(
-      (sum, gt, i) => sum + intersectCount((predictions[i]?.evidence ?? []).map((e) => e.slice(0, 20)), gt.evidence),
-      0,
-    );
-    const correctTraces = groundTruth
-      .map((gt, i) => ({ gt, pred: predictions[i] }))
-      .filter(({ gt, pred }) => pred !== undefined && pred.component === gt.component)
+    // The numerator is the sum of the per-case counts, so the 20-character rule
+    // and the intersection are computed once, in the case record.
+    const em = cases.reduce((sum, c) => sum + (c.terms?.['evidenceHits'] ?? 0), 0);
+    // "APL is the mean reasoning_trace length over LA-correct cases" (§4.4), and
+    // LA-correct now includes the endpoint relaxation -- which is why this reads
+    // the case record's `la` rather than repeating the comparison.
+    const correctTraces = cases
+      .map((c, i) => ({ la: c.terms?.['la'] ?? 0, pred: predictions[i] }))
+      .filter(({ la, pred }) => la === 1 && pred !== undefined)
       .map(({ pred }) => pred!.traceWords);
     const apl = mean(correctTraces);
     const eff = correctTraces.length === 0 ? 0 : Math.min(1, Math.exp(-(apl - 5) / 5));

@@ -174,8 +174,18 @@ const REGISTER: Record<string, Entry> = {
 };
 
 function scriptNames(): string[] {
+  // Dotfiles are not scripts.
+  //
+  // `derive-gate-sites.mjs` learned this first, for the same reason: a test writes
+  // `scripts/.probe-figures-harness-type-miss.mjs` for the duration of one probe,
+  // and any reader of `scripts/` that does not skip it sees a file that was never
+  // committed, never named by `pnpm lint`, and never resolved by an operator.
+  // This reader did not skip it, so a full-suite run failed with one file too many
+  // -- and a run whose worker was killed before its `finally` left the harness on
+  // disk, which made the next run fail too. **The second reader of a directory is
+  // the one that does not know what the first one learned.**
   return readdirSync(SCRIPTS)
-    .filter((name) => name.endsWith('.mjs'))
+    .filter((name) => name.endsWith('.mjs') && !name.startsWith('.'))
     .sort();
 }
 

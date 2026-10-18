@@ -1,0 +1,125 @@
+{
+  "schema": "rca-bench-official-corpus/1",
+  "target": "aiops2025",
+  "takenAt": "2026-10-18",
+  "paper": {
+    "id": "2606.29193",
+    "version": "v1",
+    "title": "A Multi-Dataset Benchmark for Evaluating LLM Agents in Microservice Failure Diagnosis",
+    "section": "4.4 Evaluation Metric",
+    "pdf": {
+      "url": "https://arxiv.org/pdf/2606.29193v1",
+      "bytes": 2958887,
+      "sha256": "b8b8de83a516f8df764e22ed151469b3e9d9608da881b7398671ce77d7826953"
+    },
+    "extraction": "same extraction as golden-master/rca100-evaluator.json; both files pin one PDF, and the test asserts the two digests are equal so the pins cannot drift apart"
+  },
+  "dataset": {
+    "readme": {
+      "url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/agenticopseval/-/raw/main/AIOps2025/README.md",
+      "bytes": 6681,
+      "sha256": "0d016b29a7c71238b5e416b86e04678e042674aa17cedbe2d622659f0d243d95"
+    },
+    "fields": [
+      {
+        "name": "source",
+        "quote": "网络类故障特有，从source发往destination的数据包存在问题",
+        "why": "The answer key names both endpoints of a network fault, which is what makes the LA relaxation applicable to a case at all."
+      },
+      {
+        "name": "destination",
+        "quote": "网路类故障特有，从source发往destination的数据包存在问题",
+        "why": "The other endpoint."
+      },
+      {
+        "name": "key_metrics",
+        "quote": "用于赛道一 reason 字段关键词的评分，含有对应字段算对",
+        "why": "The README's own statement that a key metric is a keyword for the reason field. Exp.'s denominator is the union of this and `key_observations`, and this repository counts both."
+      },
+      {
+        "name": "fault_description",
+        "quote": "用于 reason 字段语义的评分，取语义相似度最高值",
+        "why": "The README describes the reason field as a *semantic* comparison against this description, taken at the maximum similarity. That is the second step of the two-step rule in §4.4, and it is not implemented -- see `gaps`."
+      }
+    ]
+  },
+  "clauses": [
+    {
+      "id": "la-strict",
+      "term": "la",
+      "quote": "LA is the fraction of cases whose predicted component string-matches the ground truth exactly.",
+      "implemented": true,
+      "why": "`pred.component === gt.component`, with the pod identifier used for pod-level cases and the service otherwise."
+    },
+    {
+      "id": "la-strict-example",
+      "term": "la",
+      "quote": "Strict matching distinguishes “right service” from “right instance” (e.g., emailservice ≠ emailservice-0) and prevents fuzzy-matching score inflation.",
+      "implemented": true,
+      "why": "Pinned as a case: a prefix is not a match, and neither is a container-qualified spelling."
+    },
+    {
+      "id": "la-network-relaxation",
+      "term": "la",
+      "quote": "Two fault families need targeted relaxations: for network attacks, LA accepts a hit on either source or destination since evidence is prominent at both endpoints.",
+      "implemented": true,
+      "was": false,
+      "why": "This clause was missing: the reader discarded the answer key's `source` and `destination`, so an answer naming the other endpoint of an injected network fault scored zero where the protocol pays full credit. One relaxation, applied only to cases whose key declares the fields."
+    },
+    {
+      "id": "ta-two-step",
+      "term": "ta",
+      "quote": "TA scores whether the agent’s reason field faithfully reflects the true fault type via two-step matching: keyword detection against the ground-truth fault descriptions (any hit yields full credit), with embedding-similarity fallback for unhit cases.",
+      "implemented": false,
+      "why": "The first step is implemented -- any keyword hit is full credit. The fallback is not: it needs an embedding model, and inventing a similarity threshold would be the same defect as inventing the adjacent credit was. Recorded as a gap in `gaps`, with the direction it costs."
+    },
+    {
+      "id": "ta-truncation",
+      "term": "ta",
+      "quote": "The reason field is truncated to its first 20 words to suppress keyword stuffing.",
+      "implemented": true,
+      "why": "`firstWords(reason, 20)` before the keyword comparison, so a keyword at word 21 does not count."
+    },
+    {
+      "id": "exp-definition",
+      "term": "explainability",
+      "quote": "The core metric is Explainability (0.10), measuring evidence-point coverage: E_m / E_t, where E_t is the total expected evidence points (the union of the GT’s key metrics and key observations) and E_m the count hit in any of the agent’s trace observations",
+      "implemented": true,
+      "why": "The denominator is the union of `key_metrics` and the three `key_observations` lists; the numerator counts cited observations that hit one of them."
+    },
+    {
+      "id": "exp-truncation",
+      "term": "explainability",
+      "quote": "each observation contributes only its first 20 characters, again to suppress keyword stuffing",
+      "implemented": true,
+      "why": "Both sides are cut to 20 characters, so two observations that agree on the first 20 and differ afterwards count as the same evidence point. That is the published rule, and it is pinned as a case rather than lamented."
+    },
+    {
+      "id": "eff-formula",
+      "term": "efficiency",
+      "quote": "Efficiency = min(1.0, exp(−(APL−5)/5)), where APL is the mean reasoning_trace length over LA-correct cases. Restricting to LA-correct prevents wrong-answer short-path gaming",
+      "implemented": true,
+      "why": "`min(1, exp(-(traceWords - 5) / 5))` per case, and the report takes APL over the cases whose LA is 1 -- which after this pass includes the endpoint relaxation."
+    },
+    {
+      "id": "final-formula",
+      "term": "formula",
+      "quote": "Final_A = (0.4 LA + 0.4 TA + 0.1 Exp. + 0.1 Eff.) × 100.",
+      "weights": [
+        0.4,
+        0.4,
+        0.1,
+        0.1
+      ],
+      "why": "Unchanged, and asserted as the arithmetic: the report prints the four terms and the suite recomposes 0.4 LA + 0.4 TA + 0.1 Exp. + 0.1 Eff. from them, so a term that stops being the one the headline uses fails here rather than in a benchmark reading."
+    }
+  ],
+  "gaps": [
+    {
+      "id": "ta-embedding-fallback",
+      "clause": "ta-two-step",
+      "costs": "an answer that paraphrases the fault type without using any of its description's words is scored 0 where the protocol would fall back to an embedding comparison and may credit it",
+      "next": "needs an embedding model and a similarity threshold the paper does not state. The paper says 'embedding-similarity fallback' without naming the model or the cut-off, so reproducing it means choosing both -- which is a decision, not a transcription. Every option costs something: a different model changes the number, and a threshold chosen to match the paper's reported TA is fitting the metric to its own result."
+    }
+  ]
+}

@@ -18901,3 +18901,122 @@ the data already speaks RCA100's own labels. **The gap is not waiting on code.**
 | `core` / `cli` / repo | **151 / 3859** · **4 / 186** · **155 / 4045** |
 | coverage | core **99.97 / 99.8 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 184 — the second section of the same paper, and the relaxation it grants
+
+### The target next to the one just read
+
+Pass 60 read §5.4 for RCA100. §4.4, three pages earlier, defines AIOps2025's
+Final_A — and `aiops2025` had exactly the provenance `rca100` had: a paper citation
+and a rule written from memory. Reading it produced one missing clause that changes
+a score, and one that cannot be implemented without a decision.
+
+### The clause: either endpoint
+
+> Two fault families need targeted relaxations: for network attacks, LA accepts a
+> hit on either source or destination since evidence is prominent at both endpoints.
+
+The answer key names both endpoints; the README documents the fields; the reader
+read neither. So an answer that named the **far** end of an injected network fault
+scored zero on localisation where the published rule pays full credit — the
+Cloud-OpsBench defect again, one target over: an answer the benchmark counts as
+correct, scored wrong, in one direction only.
+
+The fix is one field, not a new rule:
+
+```ts
+readonly alternatives: readonly string[];   // strings the protocol accepts as the same answer
+```
+
+and `component === predicted || alternatives.includes(predicted)`. It is
+deliberately **not** `adjacent`: `adjacent` earns *partial* credit for a topology
+neighbour (RCA100's 0.40), an alternative earns a **full** hit, and one field
+carrying both meanings is the defect finding 162 was written about.
+
+Scope is the data's, not a fault-type list: a key that declares no endpoints has an
+empty list. The suite asserts the negative case explicitly, because a relaxation
+that silently widened to "anything the topology mentions" would be a different rule
+that happens to agree on today's fixtures.
+
+### The clause that is not a transcription problem
+
+> TA scores whether the agent's reason field faithfully reflects the true fault
+> type via two-step matching: keyword detection ... **with embedding-similarity
+> fallback for unhit cases**.
+
+Step one is implemented. Step two names neither a model nor a threshold. Choosing
+one changes the number, and choosing one to reproduce the paper's reported TA is
+fitting the metric to its own result — the mistake the whole census exists to catch,
+committed by the person writing the check. So the first step stands, the direction
+of the cost is written down (a paraphrase using none of the description's words
+scores 0 here and may be credited there), and the `gaps` block says what closing it
+would need.
+
+This is the second consecutive target where "implement the published rule" is partly
+a decision. Of the four targets with no replay, **two cannot be closed by code**:
+this one needs a model and a threshold, and RCA100's rubric needs a licence
+decision.
+
+### The third copy, found by the mutation check rather than by reading
+
+Removing the 20-character cut from the case rule left every test green. The
+aggregate had its own copy of the same expression:
+
+```ts
+// aggregate, before
+const em = groundTruth.reduce((sum, gt, i) =>
+  sum + intersectCount((predictions[i]?.evidence ?? []).map((e) => e.slice(0, 20)), gt.evidence), 0);
+```
+
+Two implementations of "which cited observation hit", one of them edited. The case
+record now carries `evidenceHits` — a **count**, not a rate — and the pooled
+`Exp.` is `Σ hits / Σ denominator`. Pooling rates needs the numerators back;
+recomputing them was the second copy.
+
+Three passes, three instances of one shape:
+
+| pass | the two copies |
+| --- | --- |
+| 181 | two ways to average a rate that was rounded before averaging |
+| 183 | the case rule and the aggregate, for all three terms of Final_B |
+| 184 | the case rule and the aggregate, for one term of Final_A |
+
+The pattern is not "somebody wrote it twice". It is **"a term reported at two levels
+gets computed at the level where it is reported"** — and the level that is never
+tested is the one that is only reported. The cure is not a rule about not
+duplicating; it is that the reported level must read the computed one, which is why
+`OfficialCaseScore.terms` exists.
+
+### The second reader of a directory, found the hard way
+
+Two more whole-suite reds while finishing, in `scripts-are-classified`, with
+`scripts/` one file longer than its register. The extra file is
+`scripts/.probe-figures-harness-type-miss.mjs`: a harness one probe writes for a
+single test and removes in `finally`. `derive-gate-sites.mjs` had already been
+taught to skip dotfiles for exactly this reason, and its comment says the write
+window "is still a hazard for any *future* reader of `scripts/`".
+
+This pass added that reader — a scan filtered on `.endsWith('.mjs')` and nothing
+else. So the rule was written down once, read by one consumer, and the second
+consumer had to be corrected.
+
+Two fixes: the scan skips dotfiles with the deriver's own argument (not committed,
+not named by `pnpm lint`, never resolved by an operator), and the probe gains an
+`afterAll`, because `finally` runs on a throw and not on a kill — and a worker
+killed under the resource pressure that produced pass 60's reds leaves the file
+behind, which is why the *next* run of an already-broken tree failed too.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | paper pinned by digest and cross-checked against the RCA100 corpus's pin; dataset README pinned; 9 clauses quoted; 4 README fields |
+| mechanism tests | 16 |
+| mutation checks | **9 of 9 CAUGHT** |
+| the relaxation | either endpoint accepted, a third entity refused, a key without endpoints unchanged |
+| the truncations | keyword at word 21 does not count; twenty characters decide an evidence point |
+| the APL restriction | a long wrong answer no longer enters the efficiency average |
+| `official:check` | 8 PASS, 1 skipped by contract |
+| `core` / `cli` / repo | **152 / 3875** · **4 / 186** · **156 / 4061** |
+| coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

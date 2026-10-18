@@ -162,6 +162,19 @@ It runs the published AIOps2025 protocol (arXiv 2606.29193 §4.4):
 score 100; perturbing the localisation, the reason text, the cited observations or
 inflating the agent trace length each lowers it.
 
+Where the four terms are read, clause by clause:
+
+| Term | Rule |
+| --- | --- |
+| `LA` | the predicted component equals the key's **exactly** (`emailservice` ≠ `emailservice-0`), **or** equals one of the endpoints the key declares in `source` / `destination` — "for network attacks, LA accepts a hit on either source or destination" |
+| `TA` | a keyword from `fault_description` appears in the first **20 words** of `reason`; **the embedding-similarity fallback the section also describes is not implemented** — it names neither a model nor a threshold, so it is recorded as a gap rather than fitted |
+| `Exp.` | `E_m / E_t`, where `E_t` is the union of `key_metrics` and the three `key_observations` lists, and each cited observation contributes only its first **20 characters** |
+| `Eff.` | `min(1, exp(-(APL-5)/5))`, where APL is the mean trace length over **LA-correct** cases |
+
+The relaxation is scoped by the data, not by a list of fault types: a key that
+declares no endpoints has nothing to relax, and the suite asserts that the same
+answer still scores zero there.
+
 ## Failure modes
 
 | Symptom | Cause | Fix |

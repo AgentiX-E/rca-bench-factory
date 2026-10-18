@@ -228,6 +228,11 @@
         "http": 200,
         "takenAt": "2026-10-18"
       },
+      "gap": {
+        "summary": "the LA relaxation is implemented; the second step of TA -- \"embedding-similarity fallback for unhit cases\" -- is not, because the section names neither a model nor a threshold",
+        "evidence": "arXiv 2606.29193v1 §4.4 :: \"via two-step matching: keyword detection against the ground-truth fault descriptions (any hit yields full credit), with embedding-similarity fallback for unhit cases\"",
+        "next": "a decision rather than a transcription: choosing a model changes the number, and choosing a threshold to reproduce the paper-reported TA would fit the metric to its own result. Recorded in golden-master/aiops2025-evaluator.json with the direction it costs"
+      },
       "corroboration": {
         "url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/agenticopseval/-/raw/main/README.md",
         "bytes": 4154,

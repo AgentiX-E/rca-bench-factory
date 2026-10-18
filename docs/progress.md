@@ -6232,9 +6232,9 @@ than as a fix.
 | the clauses that changed | reverting the credit to 0.5, or the token to the signal name, or the aggregate to a recomputation, each turns the suite red |
 | the two numbers | `final === 100 × accuracy` on a three-case export; recomposing the headline from term means reports **93** for cases that average **85** |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **151 files, 3859 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **155 files, 4045 tests passed** (as of this commit) |
+| `core` test suite | **151 files, 3859 tests passed** (as of `2444bd8`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `2444bd8`) |
+| repo test suite | **155 files, 4045 tests passed** (as of `2444bd8`) |
 | coverage | core **99.97 / 99.8 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 63 across 38 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6266,3 +6266,144 @@ than as a fix.
 - **The product cannot represent a multi-fault answer**, carried from pass 58.
   `[open: `GroundTruth` carries one root cause, so a two-root key scores zero under the
   published OpenRCA rule; whether the model grows is a product decision]`
+
+## Pass 61 -- the same paper, a different section, and the relaxation it grants
+
+### The target next to the one just read
+
+Pass 60 read §5.4 for RCA100. §4.4, three pages earlier, defines AIOps2025's
+Final_A, and `aiops2025` had the same provenance as `rca100` had: a paper citation
+and a rule written from memory. Reading it found one clause missing that changes a
+score, and one that cannot be implemented without a decision.
+
+| §4.4 | The rule |
+| --- | --- |
+| "Two fault families need targeted relaxations: for network attacks, LA accepts a hit on either **source or destination** ..." | compared `component` only -- the reader discarded both endpoint fields |
+| "TA ... via two-step matching: keyword detection ... **with embedding-similarity fallback for unhit cases**" | the first step only |
+| "The reason field is truncated to its first 20 words" | correct |
+| "each observation contributes only its first 20 characters" | correct |
+| "`Efficiency = min(1.0, exp(−(APL−5)/5))`, where APL is the mean ... over **LA-correct** cases" | correct |
+| "`Final_A = (0.4 LA + 0.4 TA + 0.1 Exp. + 0.1 Eff.) × 100`" | correct |
+
+### The relaxation, and the fields it needs
+
+The dataset's answer key names both endpoints of a network fault in `source` and
+`destination` -- the README says so in as many words, and the corpus records that
+sentence next to the paper's. The reader read neither, so an answer that named the
+**far** end of an injected network fault scored zero on localisation where the
+protocol pays full credit.
+
+The fix is one field, `OfficialGroundTruth.alternatives`, and the rule is
+`component || alternatives.includes(predicted)`. It is deliberately not
+`adjacent`: `adjacent` earns *partial* credit for a topology neighbour (RCA100's
+0.40), while an alternative earns a **full** hit. One field carrying both meanings
+would be the defect this repository has a finding about.
+
+Scope is enforced by the data rather than by a fault-type list: a case whose key
+declares no endpoints has an empty list, and an empty list cannot manufacture a
+match. The suite asserts the negative case explicitly -- the same answer on a key
+without endpoints still scores zero -- because a relaxation that quietly widened
+to "anything the topology mentions" would be a different rule.
+
+### The fallback, which is not a transcription problem
+
+"Weighted ... with embedding-similarity fallback for unhit cases" names neither a
+model nor a threshold. Choosing one changes the number; choosing one to reproduce
+the paper's reported TA is fitting the metric to its own result. So the first step
+is implemented, the second is recorded as a gap with its direction -- a paraphrase
+carrying none of the description's words scores 0 here and may be credited there --
+and the `gaps` block says what closing it would take.
+
+This is the second target in a row where the honest answer to "implement the
+published rule" is "part of it is a decision". That is worth saying plainly: the
+census counts five targets as `code`, and of the remaining four, two cannot be
+closed by writing code.
+
+### The third copy of the evidence term
+
+The mutation check found it. Removing the 20-character cut from the case rule left
+every test green, because the aggregate had **its own copy**:
+
+```ts
+// before
+const em = groundTruth.reduce((sum, gt, i) =>
+  sum + intersectCount((predictions[i]?.evidence ?? []).map((e) => e.slice(0, 20)), gt.evidence), 0);
+```
+
+Two implementations of "which cited observation hit", and only one of them had been
+changed. The case record now carries `evidenceHits` -- a count, not a rate -- and the
+pooled `Exp.` is the sum of those counts over the sum of the denominators. Pooling
+rates needs the numerators back; recomputing them was the second copy.
+
+This is the third appearance of the same shape in three passes (181: two averages;
+183: case rule vs aggregate; here: case rule vs aggregate again, one term deeper).
+The pattern is not "somebody wrote it twice" but **"a term that is reported at two
+levels gets computed at the level where it is reported"**, and the level that is
+never tested is the one that is only reported.
+
+### The second reader of a directory
+
+The full suite failed twice more while this pass was finishing, this time in
+`scripts-are-classified`: `scripts/` was one file longer than the register. The
+extra file is `scripts/.probe-figures-harness-type-miss.mjs`, a harness one probe
+writes for the duration of a single test and removes in `finally` -- and
+`derive-gate-sites.mjs` had **already been taught to ignore dotfiles**, for exactly
+this reason, in an earlier pass whose comment says the window "is still a hazard for
+any *future* reader of `scripts/`".
+
+This file was that future reader. It filtered on `.endsWith('.mjs')` and nothing
+else.
+
+Two fixes, both about a claim rather than a symptom:
+
+- the scan skips dotfiles, with the reason the deriver uses: a file that is not
+  committed, not named by `pnpm lint` and never resolved by an operator is not part
+  of the tree;
+- the probe file gains an `afterAll` that removes the harness. `finally` runs on a
+  throw, not on a kill -- and a worker killed by the resource pressure that also
+  produced pass 60's two reds leaves the file behind, which is why the second run of
+  a broken tree failed too.
+
+**The second reader of a directory is the one that does not know what the first one
+learned.** That is the same shape as the duplicated terms, one level out: the fact
+was written down once and read twice, and the reading that had to be corrected was
+the new one.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | paper pinned by digest and **cross-checked against the RCA100 corpus's pin**; dataset README pinned; **9 clauses** quoted, 4 README fields |
+| mechanism tests | **16** |
+| mutation checks | **9 of 9 CAUGHT** |
+| the relaxation | either endpoint accepted; a third entity refused; a key without endpoints unchanged |
+| the truncations | a keyword at word 21 does not count; twenty characters decide an evidence point |
+| the APL restriction | a long wrong answer no longer enters the efficiency average |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **152 files, 3875 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
+| repo test suite | **156 files, 4061 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 63 across 38 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **A directory's contents are described in more than one place**, and this pass
+  found the second copy the hard way.
+  `[open: `derive-gate-sites.mjs` ignores dotfiles in `scripts/`; the classification
+  scan now does too, because a probe writes one there. Nothing enumerates the readers
+  of `scripts/`, so the next one has to learn the same rule from the same comment --
+  unless the probe stops writing into the tree at all, which needs its relative
+  imports to resolve from somewhere else]`
+- **TA's embedding fallback is not implemented**, and cannot be transcribed.
+  `[open: the paper names neither the model nor the threshold, so reproducing it
+  means choosing both; a threshold picked to match the reported TA would be fitting
+  the metric to its own result. The direction it costs is recorded: a paraphrase
+  using none of the description's words scores 0 here and may be credited there]`
+- **Three items are carried unchanged**, and this pass touched none of them: the
+  exact match on a checkpoint value, RCA100's fault-type rubric waiting on a licence
+  decision, and the two whole-suite reds that were never reproduced.
+  `[open: each has its own entry with its own reason in the pass that raised it (60,
+  60 and 60 respectively); repeating the reasons here would make this list the place
+  they are maintained, and the earlier entries the place they are read]`

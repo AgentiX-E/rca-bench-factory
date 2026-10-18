@@ -363,6 +363,17 @@ number — it is a green run that established nothing.
   **one** root cause: measured on the first 25 cases, **10 disagreed**, inflating a
   two-root key to 1.0 where upstream says 0.83 and scoring a correctly permuted
   two-root answer 0 where upstream says 1.0.
+- **AIOps2025 is held to §4.4 the same way, and one of its clauses is a relaxation the
+  rule had dropped.** `golden-master/aiops2025-evaluator.json` pins the same PDF (and the
+  suite asserts the two corpora's digests are equal) plus the dataset README, which is
+  where `source` and `destination` are described. "for network attacks, LA accepts a hit
+  on either source or destination" — the reader discarded both fields, so an answer naming
+  the far endpoint of an injected network fault scored zero where the protocol pays full
+  credit. The relaxation is one field (`OfficialGroundTruth.alternatives`) and one
+  disjunction, scoped by the key's own fields rather than by a fault-type list. The second
+  step of TA — "embedding-similarity fallback for unhit cases" — is **not** implemented and
+  is recorded as a gap: it names no model and no threshold, so choosing them would be
+  inventing the rule rather than reading it.
 - **RCA100 is held to the sentences of its protocol, quoted verbatim.**
   `golden-master/rca100-evaluator.json` pins `arXiv 2606.29193v1` by digest (2,958,887
   bytes, sha256 `b8b8de83…`) and records four clauses from §5.4 with the argument for

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -501,6 +501,16 @@ describe('the UModel figures separate shape from content', () => {
       rmSync(harness, { force: true });
     }
   };
+
+  // The two probes below write a harness into `scripts/` and remove it in
+  // `finally`. A worker killed between the two leaves it behind, and the file is
+  // then visible to every later reader of that directory -- which is how a
+  // whole-suite run failed twice with `scripts/` one file too long. `finally` runs
+  // on a throw, not on a kill; this runs on the *next* start, when the leftover is
+  // already stale.
+  afterAll(() => {
+    rmSync(resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs'), { force: true });
+  });
 
   it('carries a content reading beside the three counts, because the counts cannot move', () => {
     const figures = readFigures();
