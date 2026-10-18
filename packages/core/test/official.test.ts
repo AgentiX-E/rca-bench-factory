@@ -728,7 +728,7 @@ describe('Cloud-OpsBench JRA', () => {
   });
 });
 
-describe('ITBench pass@1', () => {
+describe('ITBench SRE diagnosis', () => {
   const files = () => exportItBench(validBundle()).files;
 
   it('takes the root cause from the head of the propagation chain', () => {
@@ -740,9 +740,19 @@ describe('ITBench pass@1', () => {
 
   it('scores the oracle 100 and drops when the chain is lost', () => {
     const oracle = oracleFor('itbench', files())[0]!;
-    expect(scoreWith('itbench', files(), [oracle]).breakdown.passAt1).toBe(1);
+    const perfect = scoreWith('itbench', files(), [oracle]);
+    expect(perfect.breakdown.passAt1).toBe(1);
+    expect(perfect.breakdown.strict).toBe(1);
+    expect(perfect.final).toBe(100);
+
+    // Losing the chain leaves the cause intact, and the two numbers separate:
+    // `strict` falls because a scored facet no longer matches, while `passAt1`
+    // stays 1 because the paper's pass@1 is the cause alone. They used to be the
+    // same number, which is how a right answer came to be reported as a pass@1
+    // failure -- see `itbench-evaluator.test.ts` for the corpus.
     const noChain = scoreWith('itbench', files(), [{ ...oracle, chain: [] }]);
-    expect(noChain.breakdown.passAt1).toBe(0);
+    expect(noChain.breakdown.passAt1).toBe(1);
+    expect(noChain.breakdown.strict).toBe(0);
     expect(noChain.breakdown.chainMatch).toBe(0);
   });
 });
@@ -843,7 +853,11 @@ describe('scoreOfficial', () => {
 
   it('keeps the metric provenance on the report', () => {
     const report = scoreOfficial('openrca-1.0', exportsByTarget()['openrca-1.0']);
-    expect(report.metric.provenance).toBe('official');
+    // `replayed`, not `transcribed`: a corpus in `golden-master/` runs the released
+    // evaluator's rule case by case. The label used to be `official`, which covered
+    // both -- and the difference between them is the one this campaign kept
+    // measuring, so `provenance-matches-the-census.test.ts` now derives it.
+    expect(report.metric.provenance).toBe('replayed');
     expect(report.metric.source).toContain('OpenRCA');
   });
 });

@@ -19020,3 +19020,150 @@ behind, which is why the *next* run of an already-broken tree failed too.
 | `core` / `cli` / repo | **152 / 3875** · **4 / 186** · **156 / 4061** |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+## Finding 185 — a metric named after a rule it did not compute, and a label with two values for three states
+
+### The last two rows of the census, and what opening one of them produced
+
+Pass 59 counted nine targets and found five `code`, one `rubric`, one `prose` and
+two `absent`. The two `absent` rows — `openrca-2.0` and `itbench` — were both
+labelled `derived`, and the question this pass set out to answer was whether either
+could be given something runnable. For `itbench` the answer is *partly*, and getting
+there exposed a second defect that had nothing to do with ITBench.
+
+### 185a — the quote was edited, and the rule was renamed instead
+
+`itbench-pass-at-1` carried a `quote`, and the quote was not verbatim:
+
+| The paper, §4.2 | The field |
+| --- | --- |
+| `pass@1(Chen et al., 2021) (i.e., identifying the cause as mentioned in ground truth), NTAM ... for root cause and fault propagation chain, and time to diagnosis` | `pass@1 (i.e., identifying the cause as mentioned in ground truth), NTAM ... for root cause and fault propagation chain` |
+
+Two deletions, and both of them removed the part that made the rule look wrong. The
+citation says the definition is standard; more importantly the final clause — "and
+time to diagnosis" — is what makes the sentence a list of **three** metrics rather
+than a description of one. Read with the clause, Table 3 of the same paper settles
+it: `SRE Diagnosis pass@1, Fault Localization, Fault Propagation Chain, Mean Time to
+Diagnosis`.
+
+So pass@1 is the **cause alone**, and the rule required the cause *and* the
+propagation chain *and* the fault conditions. Measured over nine cases in
+`golden-master/itbench-evaluator.json` (paper pinned by digest: `v1`, 4,068,098
+bytes, sha256 `da47aa02…`):
+
+```
+published=1 strict=0.33 old=0   cause-only                 <- disagreed
+published=1 strict=0.67 old=0   cause-and-chain            <- disagreed
+published=1 strict=0.67 old=0   cause-right-chain-wrong    <- disagreed
+```
+
+**Three of nine, all in one direction.** `published >= old` holds for every case,
+and the suite asserts the reverse set is empty, because an error that only ever
+subtracts is the kind that reads as a result: a low score looks like a weak model
+rather than a wrong ruler. This is the third instance — Cloud-OpsBench's
+normalisation (9 of 22, finding 182), AIOps2025's endpoints (finding 184), now this
+— and the third is where the pattern stops being a coincidence and becomes a habit
+of writing the rule from the first plausible sentence.
+
+The fix keeps both numbers and names each one:
+
+- `passAt1` — the published quantity, a case either identified the cause or it did
+  not. It is **not** derived from the case's score, which is what the old rule did.
+- `strict` — this repository's own conjunction, which is what the export's facets
+  can support and which is none of the four published metrics. The metric id is
+  `itbench-diagnosis-strict`, and a test asserts it is not one of the four.
+
+### The two metrics this pass declined to implement
+
+NTAM is described in §4.2 — a topology-aware distance, normalised to 0..1 — and it
+is still not implementable, for a reason the paper states plainly:
+
+> All the components have corresponding hyper-parameters that can be tuned to adjust
+> their contributions to the overall score.
+
+Publishable weights, absent. Any implementation chooses them, and a set of weights
+chosen to reproduce the paper's Table 4 would be the metric fitted to its own
+result — the exact error the whole census exists to catch, committed by the person
+writing the check. So `pass@1` is implemented, `FL (NTAM)` and `FPC (NTAM)` are
+declared unimplemented on the census row with that sentence as the evidence, and the
+cost is written down.
+
+Four targets now wait on something that is not code: RCA100 on a licence decision,
+AIOps2025 on a model and a threshold, ITBench on weights, OpenRCA 2.0 on a scorer its
+authors have said is not published. **A backlog that says "implement this" when the
+blocker is a decision is a backlog that will not move.**
+
+### 185b — two values for three states, and nothing read them
+
+The larger finding came from a smaller observation: `provenance` was asserted
+nowhere. One test read it, and it read the string.
+
+It had two values:
+
+```ts
+export type OfficialProvenance = 'official' | 'derived';
+```
+
+where `official` meant "transcribed from the upstream scorer **or** the paper's
+protocol". Now list what has been caught in this repository under that label:
+OpenRCA's single-root projection (10 of 25 cases), Cloud-OpsBench's `===` (9 of 22),
+RCA100's three dropped clauses, AIOps2025's missing endpoint relaxation, and
+ITBench's borrowed name. **Every one of them was `official`.** The label was never a
+lie; it was unable to say the thing a reader needed, which is whether anybody else's
+code had ever computed this number.
+
+Three states, so three values:
+
+| Label | Meaning | Targets |
+| --- | --- | --- |
+| `replayed` | a corpus in `golden-master/` runs the released artefact's rule case by case | OpenRCA 1.0, RCAEval ×3, Cloud-OpsBench |
+| `transcribed` | a published prose rule, no released code; nothing else has ever computed it | RCA100, AIOps2025 |
+| `derived` | upstream publishes neither the rule nor its constants | OpenRCA 2.0, ITBench |
+
+### The label is derived, not authored
+
+`provenance-matches-the-census.test.ts` maps each census class to exactly one label
+and asserts the registry agrees:
+
+```ts
+const LABEL_FOR = { code: 'replayed', rubric: 'transcribed', prose: 'transcribed', absent: 'derived' };
+```
+
+This is the link that was missing. Pass 59 compared the `source` **strings** between
+the two files and left `provenance` and `class` unconnected — two descriptions of one
+fact with nothing between them, which is the shape of findings 180, 183 and 184,
+one level up: not two implementations of a rule, but two vocabularies for a fact.
+
+Two directions are asserted rather than one. The mapping catches a label that claims
+too much; a second test catches the opposite — every `replayed` label has to sit on
+a `code` row, so a target cannot be *labelled* replayed while its census row says
+the upstream artifact is prose.
+
+### And the label is read
+
+`rca-bench official` now sums it:
+
+```json
+"counts":     { "passed": 9, "skipped": 0, "failed": 0 },
+"provenance": { "replayed": 5, "transcribed": 2, "derived": 2 }
+```
+
+**Five of nine.** That sentence is the honest headline of this project's
+official-metric story, and it was previously available only by reading nine metric
+specs. A label nobody sums is a label nobody needs, and a claim that is never
+counted is the same kind of artefact as a test that is never run.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | paper pinned by digest; 6 clauses quoted verbatim, each argued; 9 cases with published and previous values |
+| mechanism tests | 13 (10 corpus, 4 mapping, 1 CLI) |
+| mutation checks | **11 of 11 CAUGHT** |
+| the naming | id is not one of the paper's four; the quote is the whole sentence |
+| the direction | disagreement is one-way, asserted from both sides |
+| the label | 5 / 2 / 2, derived from the census, asserted in both directions |
+| `official:check` | 8 PASS, 1 skipped by contract |
+| `core` / `cli` / repo | **154 / 3889** · **4 / 187** · **158 / 4076** |
+| coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` | green |

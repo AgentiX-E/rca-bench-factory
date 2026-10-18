@@ -21,11 +21,16 @@ import { isRecord, readString, readStringArray, safeJson } from '../util/json.js
  *   3. `scoreOfficial` applies the published rule and reports both the headline
  *      number and every sub-metric the benchmark publishes.
  *
- * Every rule records its provenance. `official` means the rule is transcribed
- * from a published source (paper or released evaluator) and the citation is
- * carried in `source`. `derived` means the benchmark publishes the weights or
- * the pillars but not the closed form, so this repository supplies an explicit,
- * documented aggregation instead of quietly inventing one.
+ * Every rule records its provenance, and the value says **how far the rule is from
+ * somebody else's code** -- three states, because there are three, and the
+ * two-value version could not tell the first two apart.
+ *
+ * Findings 176 and 181 each found a `source` string that had never been opened,
+ * and findings 182, 183 and 184 each found a rule that disagreed with the
+ * artefact behind it -- 10 of 25 cases, 9 of 22, 3 of 4, every one of them under
+ * a label that said `official`. The label was never wrong in the sense of being a
+ * lie; it was wrong in the sense that a reader could not tell from it whether the
+ * number had ever been compared to anything.
  *
  * Every switch over `ScoreTargetId` or `OfficialFacet` is exhaustive at compile
  * time: `noImplicitReturns` is on, so adding a target or a facet without
@@ -49,7 +54,24 @@ export const OFFICIAL_FACETS: readonly OfficialFacet[] = [
   'traceLength',
 ];
 
-export type OfficialProvenance = 'official' | 'derived';
+/**
+ * How far a rule is from somebody else's code.
+ *
+ * - `replayed` -- a corpus in `golden-master/` runs the released artefact's rule
+ *   case by case, and the suite replays it. This is the only value that has been
+ *   checked against a second implementation.
+ * - `transcribed` -- the benchmark publishes a prose rule (a protocol section, a
+ *   dataset README) and no released code. The rule is a faithful reading, and
+ *   nothing has ever disagreed with it because nothing else computes it.
+ * - `derived` -- the benchmark publishes neither the rule nor the constants it
+ *   would need, so this repository supplies an explicit aggregation and says so.
+ *
+ * The value is not authored here. `packages/core/test/provenance-matches-the-census.test.ts`
+ * derives it from `golden-master/oracle-census.json` and fails when the two
+ * disagree, so the registry cannot claim more than the census supports -- and a
+ * target whose census row is downgraded cannot keep saying `replayed`.
+ */
+export type OfficialProvenance = 'replayed' | 'transcribed' | 'derived';
 
 export interface OfficialMetricSpec {
   /** Short id used in reports. */
@@ -188,7 +210,7 @@ const OPENRCA_METRIC: OfficialMetricSpec = {
   id: 'openrca-strict-accuracy',
   name: 'OpenRCA strict accuracy (with per-criterion partial credit)',
   formula: 'score = matched criteria / criteria; strict accuracy = share of cases with score 1.0',
-  provenance: 'official',
+  provenance: 'replayed',
   source: 'microsoft/OpenRCA main/evaluate.py (pinned in golden-master/openrca-evaluator.json)',
   quote:
     'if perm[i][\'root cause component\'] == components[i]: current_score += 1 ... ' +
@@ -212,7 +234,7 @@ function rcaevalMetric(suite: RcaEvalSuite): OfficialMetricSpec {
     id: `rcaeval-${suite.toLowerCase()}-avg5`,
     name: `RCAEval ${suite} AC@k / Avg@5`,
     formula: 'AC@k = share of cases whose ground-truth service is in ranks[:k]; Avg@5 = mean(AC@1..AC@5)',
-    provenance: 'official',
+    provenance: 'replayed',
     // The corpus registry and the project's own README both point at `phamquiluan/RCAEval`;
     // this string named `cruiseresearchgroup/RCAEval`, a repository whose default branch is
     // `v2`, whose last push was 2026-02-17, and which has no `main` -- a citation nobody
@@ -228,7 +250,7 @@ const RCA100_METRIC: OfficialMetricSpec = {
   id: 'rca100-final-b',
   name: 'RCA100 Final_B',
   formula: 'Final_B = (0.4 * Entity + 0.3 * Fault + 0.3 * Process) * 100',
-  provenance: 'official',
+  provenance: 'transcribed',
   source: 'arXiv 2606.29193 section 5.4 (AIOps2025 / RCA100 scoring protocol)',
   quote: 'Final_B = (0.4 Entity + 0.3 Fault + 0.3 Process) * 100',
   facets: ['component', 'faultType', 'chain', 'evidence'],
@@ -238,7 +260,7 @@ const AIOPS2025_METRIC: OfficialMetricSpec = {
   id: 'aiops2025-final-a',
   name: 'AIOps2025 Final_A',
   formula: 'Final_A = (0.4 * LA + 0.4 * TA + 0.1 * Exp. + 0.1 * Eff.) * 100',
-  provenance: 'official',
+  provenance: 'transcribed',
   source: 'arXiv 2606.29193 section 4.4 (AIOps2025 scoring protocol)',
   quote: 'Final_A = (0.4 LA + 0.4 TA + 0.1 Exp. + 0.1 Eff.) * 100',
   facets: ['component', 'reason', 'evidence', 'traceLength'],
@@ -248,7 +270,7 @@ const CLOUDOPSBENCH_METRIC: OfficialMetricSpec = {
   id: 'cloud-opsbench-jra',
   name: 'Cloud-OpsBench Joint RCA Accuracy (JRA)',
   formula: 'JRA = share of cases where the faulty component and the fault type both match',
-  provenance: 'official',
+  provenance: 'replayed',
   // The rule is in released code, not only in the paper: `prediction_scores` in
   // the benchmark's own evaluation module, pinned by commit and digest in
   // `golden-master/cloud-opsbench-evaluator.json` and replayed by
@@ -261,15 +283,43 @@ const CLOUDOPSBENCH_METRIC: OfficialMetricSpec = {
   facets: ['component', 'faultType'],
 };
 
+/**
+ * ITBench's SRE diagnosis, scored as this repository's own strict conjunction.
+ *
+ * The metric this used to be called was `itbench-pass-at-1`, and it was not
+ * pass@1. arXiv 2502.05352 defines pass@1 in one parenthesis -- "identifying the
+ * cause as mentioned in ground truth" -- and Table 3 lists it beside Fault
+ * Localization and Fault Propagation Chain as one of four separate metrics. The
+ * rule here required the cause *and* the propagation chain *and* the fault
+ * conditions, so a case with the right cause and no chain scored 0 where the
+ * published pass@1 scores 1: an undercount in one direction only, which is the
+ * Cloud-OpsBench defect (finding 182) a third time.
+ *
+ * The two NTAM metrics cannot be transcribed. The paper says their components
+ * "have corresponding hyper-parameters that can be tuned to adjust their
+ * contributions", and does not publish the values, so computing them means
+ * choosing weights. That is why this target is `derived`: the honest number
+ * available here is a strict conjunction of what the export carries, named as
+ * such, with the published pass@1 reported beside it.
+ *
+ * `golden-master/itbench-evaluator.json` pins the paper by digest, quotes the six
+ * clauses this depends on, and records eight cases -- three of which the old rule
+ * called a failure and the paper calls a pass.
+ */
 const ITBENCH_METRIC: OfficialMetricSpec = {
-  id: 'itbench-pass-at-1',
-  name: 'ITBench diagnosis pass@1 with chain and condition coverage',
-  formula: 'pass@1 = share of cases whose entities, propagation chain and fault conditions all match',
+  id: 'itbench-diagnosis-strict',
+  name: 'ITBench SRE diagnosis, strict (root cause and propagation chain and fault conditions)',
+  formula:
+    'strict = share of cases whose root cause, propagation chain and fault conditions all match; ' +
+    'the published pass@1 (root cause only) is reported beside it',
   provenance: 'derived',
-  source: 'arXiv 2502.05352 section 4.2 (ITBench SRE diagnosis metrics)',
+  source:
+    'arXiv 2502.05352 section 4.2 and table 3 (ITBench SRE diagnosis metrics; NTAM weights are ' +
+    'tunable and unpublished, so the strict conjunction is this repository\'s own)',
   quote:
-    'Diagnosis efficiency is measured using pass@1 (i.e., identifying the cause as mentioned in ' +
-    'ground truth), NTAM (Normalized Topology-Aware Metric) for root cause and fault propagation chain',
+    'Diagnosis efficiency is measured using pass@1(Chen et al., 2021) (i.e., identifying the cause ' +
+    'as mentioned in ground truth), NTAM (Normalized Topology-Aware Metric) for root cause and ' +
+    'fault propagation chain, and time to diagnosis',
   facets: ['component', 'chain', 'evidence'],
 };
 
@@ -1114,6 +1164,41 @@ function meanOfPresent(terms: ReadonlyArray<number | undefined>): number {
   return present.reduce((sum, term) => sum + term, 0) / present.length;
 }
 
+/**
+ * One ITBench case, scored as the strict conjunction and the published pass@1.
+ *
+ * Both numbers are computed here and carried in `terms`, because the aggregate
+ * reports both. Computing either one a second time in the aggregate is the defect
+ * findings 183 and 184 were written about, and this target is the third place the
+ * shape would have appeared.
+ *
+ * `passAt1` is the published quantity: a single case either identified the cause
+ * or it did not. It is deliberately **not** derived from the case's score -- that
+ * is what the old rule did, and it turned a right answer into a wrong one
+ * whenever the submission was less detailed than the answer key.
+ */
+function scoreItBenchCase(pred: OfficialPrediction, gt: OfficialGroundTruth): OfficialCaseScore {
+  const scored = OFFICIAL_METRICS.itbench.facets.filter((facet) => gtHasFacet(gt, facet));
+  const verdicts = scored.map((facet) => ({ facet, matched: facetMatched(facet, pred, gt) }));
+  const strict = scored.length === 0 ? 0 : verdicts.filter((v) => v.matched).length / scored.length;
+  const chain = rateOf(pred.chain, gt.chain);
+  const conditions = rateOf(pred.evidence, gt.evidence);
+  return {
+    caseId: gt.caseId,
+    facets: verdicts,
+    score: strict,
+    correct: strict === 1,
+    terms: {
+      // A key that names no cause cannot be identified, so it cannot be a pass
+      // either -- the same rule `gtHasFacet` applies to the conjunction.
+      passAt1: gt.component !== '' && pred.component === gt.component ? 1 : 0,
+      allMatch: strict === 1 ? 1 : 0,
+      ...(chain === undefined ? {} : { chain }),
+      ...(conditions === undefined ? {} : { conditions }),
+    },
+  };
+}
+
 function scoreFacetSubset(
   pred: OfficialPrediction,
   gt: OfficialGroundTruth,
@@ -1407,7 +1492,7 @@ function scoreOneCase(target: ScoreTargetId, pred: OfficialPrediction, gt: Offic
     case 'cloud-opsbench':
       return scoreCloudOpsBenchCase(pred, gt);
     case 'itbench':
-      return scoreFacetSubset(pred, gt, OFFICIAL_METRICS.itbench.facets, facetMatched);
+      return scoreItBenchCase(pred, gt);
   }
 }
 
@@ -1561,15 +1646,21 @@ function aggregateFor(
   }
 
   if (target === 'itbench') {
+    // Both reported numbers are read from the case records, never recomputed.
+    // `passAt1` used to be `strictRate` -- the share of cases where all three
+    // facets matched -- under a name the paper defines as the cause alone, so a
+    // submission that named the right cause and nothing else was reported as a
+    // failure of pass@1.
+    const passAt1 = meanOfPresent(cases.map((c) => c.terms?.['passAt1']));
+    const strict = meanOfPresent(cases.map((c) => c.terms?.['allMatch']));
     return {
       breakdown: {
-        passAt1: round2(strictRate),
-        chainMatch: round2(meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.chain ?? [], gt.chain)))),
-        conditionMatch: round2(
-          meanOfPresent(groundTruth.map((gt, i) => rateOf(predictions[i]?.evidence ?? [], gt.evidence))),
-        ),
+        passAt1: round2(passAt1),
+        strict: round2(strict),
+        chainMatch: round2(meanOfPresent(cases.map((c) => c.terms?.['chain']))),
+        conditionMatch: round2(meanOfPresent(cases.map((c) => c.terms?.['conditions']))),
       },
-      headline: round2(strictRate) * 100,
+      headline: round2(strict) * 100,
     };
   }
 

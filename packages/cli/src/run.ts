@@ -55,6 +55,7 @@ import type {
   FileSignalKind,
   G1Options,
   IrBundle,
+  OfficialProvenance,
   OfficialRegressionOptions,
   OfficialRegressionReport,
   PrimeCaseReport,
@@ -637,7 +638,24 @@ async function runOfficial(cmd: Extract<CliCommand, { command: 'official' }>, ct
     skipped: reports.filter((r) => r.status === 'skipped').length,
     failed: reports.filter((r) => r.status === 'failed').length,
   };
-  const payload = JSON.stringify({ passed: counts.failed === 0, counts, reports }, null, 2) + '\n';
+
+  // How far the numbers in this run are from somebody else's code.
+  //
+  // The label is per metric and it has always travelled in `reports[].metric`; what
+  // it never did was add up, so a reader had to know which of nine targets are
+  // checked against a released evaluator. That is the one thing the provenance
+  // label exists to say -- a `replayed` number has been compared to a second
+  // implementation, a `transcribed` one never has -- and a consumer deciding
+  // whether to trust a headline should not have to read nine metric specs.
+  //
+  // Counted rather than summarised, and counted from the reports rather than from
+  // the registry, so a target that was skipped is visibly absent from all three
+  // numbers instead of being counted as a claim it did not make.
+  const provenance: Record<OfficialProvenance, number> = { replayed: 0, transcribed: 0, derived: 0 };
+  for (const report of reports) provenance[report.metric.provenance] += 1;
+
+  const payload =
+    JSON.stringify({ passed: counts.failed === 0, counts, provenance, reports }, null, 2) + '\n';
 
   if (cmd.output !== undefined) {
     await writeFile(resolve(ctx.cwd, cmd.output), payload);

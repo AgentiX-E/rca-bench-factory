@@ -6380,9 +6380,9 @@ the new one.
 | the truncations | a keyword at word 21 does not count; twenty characters decide an evidence point |
 | the APL restriction | a long wrong answer no longer enters the efficiency average |
 | `official:check` | 8 targets PASS, 1 skipped by contract |
-| `core` test suite | **152 files, 3875 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 186 tests passed** (as of this commit) |
-| repo test suite | **156 files, 4061 tests passed** (as of this commit) |
+| `core` test suite | **152 files, 3875 tests passed** (as of `5997dcc`) |
+| `cli` test suite | **4 files, 186 tests passed** (as of `5997dcc`) |
+| repo test suite | **156 files, 4061 tests passed** (as of `5997dcc`) |
 | coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 63 across 38 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
@@ -6407,3 +6407,154 @@ the new one.
   `[open: each has its own entry with its own reason in the pass that raised it (60,
   60 and 60 respectively); repeating the reasons here would make this list the place
   they are maintained, and the earlier entries the place they are read]`
+
+## Pass 62 -- a label with two values for three states, and a metric named after a rule it did not compute
+
+### Two things that were both true and neither of which was checkable
+
+This pass started as the last item on the census: the two targets left with no
+replay are `openrca-2.0` and `itbench`, both labelled `derived`, and the question
+was whether either could be given a testable source. Opening the ITBench paper
+answered that and raised a second question, which turned out to be the larger one.
+
+### 185a -- `itbench-pass-at-1` was not pass@1
+
+The metric carried `id: 'itbench-pass-at-1'`, a `quote` from arXiv 2502.05352
+§4.2, and `facets: ['component', 'chain', 'evidence']`. Two things were wrong with
+that, and the first was visible in the file itself:
+
+**The quote was not verbatim.** The paper writes
+
+> Diagnosis efficiency is measured using pass@1**(Chen et al., 2021)** (i.e.,
+> identifying the cause as mentioned in ground truth), NTAM (Normalized
+> Topology-Aware Metric) for root cause and fault propagation chain, **and time to
+> diagnosis**.
+
+The field in this repository had dropped the citation and the final clause — which
+is the clause that makes the sentence a list of three metrics rather than a
+description of one. A `quote` is the one field whose whole value is that it was not
+edited, and it had been edited in the direction that made the rule look right.
+
+**And the rule computed something else.** Table 3 of the paper lists the SRE
+diagnosis metrics as "pass@1, Fault Localization, Fault Propagation Chain, Mean Time
+to Diagnosis" — four, of which pass@1 is the cause alone. The rule here required
+the cause *and* the chain *and* the conditions, so a submission that named the right
+cause and nothing else scored 0 on a quantity called pass@1.
+
+`golden-master/itbench-evaluator.json`: the paper pinned by digest (v1, 4,068,098
+bytes, sha256 `da47aa02…`), six clauses quoted verbatim, and nine cases.
+
+```
+published=1 strict=1.00 old=1   oracle
+published=1 strict=0.33 old=0   cause-only                    <- disagreed
+published=1 strict=0.67 old=0   cause-and-chain               <- disagreed
+published=1 strict=0.67 old=0   cause-right-chain-wrong       <- disagreed
+published=0 strict=0.67 old=0   wrong-cause-right-rest
+published=1 strict=1.00 old=1   key-with-no-chain
+published=0 strict=0.00 old=0   empty-key-empty-answer
+...
+```
+
+**Three of nine disagreed, every one in the same direction.** That is the third
+time: Cloud-OpsBench's normalisation (9 of 22), AIOps2025's endpoints (one direction),
+and now this. A one-directional error does not average out into noise — it makes
+every number the product reports for the target an understatement that reads as a
+weak model, which is the failure mode hardest to notice, because a low score looks
+like a result.
+
+The fix reports both numbers, each named what it is:
+
+| Number | Rule | Published? |
+| --- | --- | --- |
+| `passAt1` | predicted root cause equals the key's | yes — §4.2 |
+| `strict` | cause **and** chain **and** conditions | **no** — this repository's own conjunction, and the metric's id is `itbench-diagnosis-strict` |
+
+### The decision this pass did **not** make
+
+The two NTAM metrics could be implemented *as an approximation*, and both previous
+passes established why that is worse than not implementing them: their components
+"have corresponding hyper-parameters that can be tuned to adjust their
+contributions", the values are not published, and a set of weights chosen to
+reproduce the paper's table would be the metric fitted to its own result. So the
+census row now carries a `gap` naming the two metrics, the sentence that makes them
+un-replayable, and the direction of the cost.
+
+Of the four targets with no replay, **three are now decided rather than pending**:
+RCA100 needs a licence decision, AIOps2025's TA needs a model and a threshold,
+ITBench's NTAM needs weights. None of them is waiting for an implementer, and saying
+so is more useful than a backlog entry implying otherwise.
+
+### 185b -- `provenance` had two values for three states, and nothing read it
+
+The larger finding came from a smaller observation: **`provenance` was not asserted
+anywhere and not summed anywhere.** It travelled to the report and stopped.
+
+It had two values, `official` and `derived`, where `official` meant "transcribed
+from the upstream scorer *or* the paper's protocol". Every rule this campaign has
+caught — OpenRCA's projection (10 of 25), Cloud-OpsBench's comparison (9 of 22),
+RCA100's three dropped clauses, AIOps2025's relaxation, and now ITBench's name — was
+labelled `official`. The label was not false. It was **unable to say the one thing
+that mattered**: whether anybody else's code had ever computed this number.
+
+Three states, and the label now has three values:
+
+| Label | Meaning | Targets |
+| --- | --- | --- |
+| `replayed` | a corpus in `golden-master/` runs the released artefact's rule case by case | OpenRCA 1.0, RCAEval ×3, Cloud-OpsBench |
+| `transcribed` | a published prose rule, no released code; nothing else computes it | RCA100, AIOps2025 |
+| `derived` | upstream publishes neither the rule nor its constants | OpenRCA 2.0, ITBench |
+
+And the label is **derived rather than authored**:
+`provenance-matches-the-census.test.ts` maps each census class to exactly one label
+and fails on any drift, so the registry cannot claim more than the census supports.
+That is the link that was missing — `source` strings were compared between the two
+files (pass 59) and `provenance` and `class` were not, so two files described the
+same fact and nothing held them together.
+
+The label is also **read** now: `rca-bench official` sums it per run.
+
+```json
+"counts": { "passed": 9, "skipped": 0, "failed": 0 },
+"provenance": { "replayed": 5, "transcribed": 2, "derived": 2 },
+```
+
+Five of nine. A consumer deciding whether to trust a headline should not have to
+read nine metric specs to learn that, and a label nobody sums is a label nobody
+needs.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| corpus | ITBench paper pinned by digest; **6 clauses** quoted verbatim, each with an argument; **9 cases** with their published and previous values |
+| mechanism tests | **13**: 10 on the ITBench corpus, 4 on the provenance mapping, 1 in the CLI for the split |
+| mutation checks | **11 of 11 CAUGHT**, each by the test named in its row |
+| the naming | the metric id is not one of the four the paper publishes, and the quote is the whole sentence |
+| the direction | every case where the old rule and the paper disagree is one-way; the reverse set is asserted empty |
+| the label | 5 `replayed` / 2 `transcribed` / 2 `derived`, derived from the census and asserted both ways |
+| `official:check` | 8 targets PASS, 1 skipped by contract |
+| `core` test suite | **154 files, 3889 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **158 files, 4076 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.75 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 63 across 38 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green |
+
+### Open
+
+- **Three of the four un-replayable targets now wait on a decision, not on code**, and
+  the fourth is the same shape one step out.
+  `[open: RCA100's fault-type rubric is 25 KB of CC BY-NC data this project does not
+  redistribute; AIOps2025's TA fallback needs a model and a threshold; ITBench's two
+  NTAM metrics need weights the paper leaves tunable; OpenRCA 2.0 has announced that no
+  scorer is published. Each entry exists in the pass that measured it, with the cost of
+  closing it]`
+- **`transcribed` is a confidence level, not a measurement.** `[open: the label says no
+  released code exists, which is a fact about upstream; it cannot say how faithfully the
+  prose was read. Findings 181, 183 and 184 are three readings of three sections that
+  were wrong the first time, so the honest reading of `transcribed` is "unverified except
+  by a second reading of the same sentences"]`
+- **Four items are carried unchanged**: the exact match on a checkpoint value, the two
+  whole-suite reds never reproduced, the census ageing, and the multi-fault model.
+  `[open: each has its own entry in the pass that raised it; this list is not the place
+  they are maintained]`

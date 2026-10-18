@@ -256,7 +256,7 @@
     },
     {
       "target": "itbench",
-      "metricSource": "arXiv 2502.05352 section 4.2 (ITBench SRE diagnosis metrics)",
+      "metricSource": "arXiv 2502.05352 section 4.2 and table 3 (ITBench SRE diagnosis metrics; NTAM weights are tunable and unpublished, so the strict conjunction is this repository's own)",
       "class": "absent",
       "cited": "the ITBench paper; the repository ships scenarios and a deployment CLI",
       "upstream": null,
@@ -266,6 +266,11 @@
         "returned": "src/itbench/{cli,models,utils} only -- commands to create, deploy and show scenarios. The two name matches are LEADERBOARD_{SRE,CISO}.md, which report NTAM and % resolved rather than pass@1",
         "http": 200,
         "takenAt": "2026-10-18"
+      },
+      "gap": {
+        "summary": "pass@1 is implemented as the paper defines it -- identifying the cause -- while the two NTAM metrics are not, because their contributions are tunable and the weights are not published",
+        "evidence": "arXiv 2502.05352v1 sec. 4.2 :: \"Diagnosis efficiency is measured using pass@1(Chen et al., 2021) (i.e., identifying the cause as mentioned in ground truth), NTAM (Normalized Topology-Aware Metric) for root cause and fault propagation chain, and time to diagnosis\"; and, on NTAM itself: \"All the components have corresponding hyper-parameters that can be tuned to adjust their contributions to the overall score.\"",
+        "next": "a decision rather than a transcription: computing FL or FPC means choosing the weights the paper leaves tunable, and choosing them to reproduce a reported table would fit the metric to its own result. The strict conjunction this target reports is named as this repository's own in golden-master/itbench-evaluator.json, which also records the three of eight cases the old pass@1 rule called a failure and the paper calls a pass"
       }
     }
   ]

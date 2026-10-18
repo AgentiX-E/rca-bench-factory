@@ -123,9 +123,15 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     `never` guard. A target that no branch names used to inherit the generic
     strict formula in silence, which is how `openrca-2.0` came to report strict
     accuracy while its own spec advertises `matched facets / scored facets`.
-  - Metrics are labelled `official` (transcribed from the upstream scorer or the
-    paper's protocol) or `derived` (reconstructed because the upstream scorer is
-    not public); the label travels with every score.
+  - **Every metric is labelled by how far it is from somebody else's code, and the
+    label is derived rather than declared.** Three values: `replayed` (a corpus in
+    `golden-master/` runs the released artefact's rule case by case), `transcribed`
+    (a published prose rule with no released code) and `derived` (upstream publishes
+    neither the rule nor its constants). The two-value version this replaced could
+    not separate the first two — which is the distinction every disagreement found in
+    this repository turns on. `provenance-matches-the-census.test.ts` maps each census
+    class to one label, so the registry cannot claim more than the census supports,
+    and `rca-bench official` reports the split (`5 / 2 / 2`) beside the counts.
 - **OTLP ingest reads the encodings exporters actually write**, not only the one
   form the spec documents first. Five defects were reproduced here; the
   requirements below each exist because a legal document produced a wrong number
@@ -363,6 +369,15 @@ number — it is a green run that established nothing.
   **one** root cause: measured on the first 25 cases, **10 disagreed**, inflating a
   two-root key to 1.0 where upstream says 0.83 and scoring a correctly permuted
   two-root answer 0 where upstream says 1.0.
+- **ITBench's pass@1 is the cause alone, and the metric that used to carry that name did
+  not say so.** `golden-master/itbench-evaluator.json` pins arXiv 2502.05352v1 by digest
+  (4,068,098 bytes, sha256 `da47aa02…`) and records six clauses; the rule is now two numbers
+  — the published `passAt1` and this repository's own strict conjunction, reported as
+  `itbench-diagnosis-strict`. Measured over nine cases: **three disagreed with the old
+  pass@1, all in one direction** (right cause, missing chain, reported as a failure). The
+  two NTAM metrics are declared unimplemented rather than transcribed, because their
+  components "have corresponding hyper-parameters that can be tuned" and the weights are not
+  published — replaying them would mean choosing them.
 - **AIOps2025 is held to §4.4 the same way, and one of its clauses is a relaxation the
   rule had dropped.** `golden-master/aiops2025-evaluator.json` pins the same PDF (and the
   suite asserts the two corpora's digests are equal) plus the dataset README, which is

@@ -807,6 +807,31 @@ describe('run - official names the cases a target could not export', () => {
     expect(code).toBe(0);
     expect(JSON.parse(out.join('')).counts).toEqual({ passed: 9, skipped: 0, failed: 0 });
   });
+
+  it('says how many of the nine numbers were checked against somebody else’s code', async () => {
+    // The provenance label is per metric and it used to travel with each report and
+    // never add up, so a consumer had to read nine metric specs to learn which of
+    // the nine headlines had ever been compared to a second implementation. The
+    // split is 5 / 2 / 2 and it is derived from the census, not authored here --
+    // this asserts that the payload carries the split, and that the split is the
+    // registry's.
+    const dir = await makeDir();
+    await writeFile(join(dir, 'bundle.json'), JSON.stringify(await exampleWithCodeCase()));
+    const out: string[] = [];
+    await run(['official', '--input', 'bundle.json'], { cwd: dir, stdout: (s) => out.push(s) });
+    const payload = JSON.parse(out.join('')) as {
+      provenance: Record<string, number>;
+      reports: Array<{ metric: { provenance: string } }>;
+    };
+    expect(payload.provenance).toEqual({ replayed: 5, transcribed: 2, derived: 2 });
+    // And the total is the reports, so a skipped target cannot be counted as a
+    // claim it did not make.
+    const counted = payload.reports.reduce<Record<string, number>>((acc, report) => {
+      acc[report.metric.provenance] = (acc[report.metric.provenance] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(payload.provenance).toEqual(counted);
+  });
 });
 
 describe('run - score', () => {

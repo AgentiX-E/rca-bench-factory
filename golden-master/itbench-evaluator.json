@@ -1,0 +1,336 @@
+{
+  "schema": "rca-bench-prose-evaluator/1",
+  "target": "itbench",
+  "takenAt": "2026-10-18",
+  "upstream": {
+    "kind": "paper",
+    "repository": "arXiv:2502.05352",
+    "title": "ITBench: Evaluating AI Agents across Diverse Real-World IT Automation Tasks",
+    "version": "v1",
+    "url": "https://arxiv.org/pdf/2502.05352v1",
+    "bytes": 4068098,
+    "sha256": "da47aa02d9cf0cd2a330d3c9890e0338d4f3c3cdd89521c7b8979ab4986f932c",
+    "retrievedAt": "2026-10-18",
+    "extraction": "pdftotext in reading order, without -layout. The corpus is a set of sentences and each one was checked verbatim against the flattened text of that extraction; -layout reproduces the two-column grid, so a sentence that spans the column break comes out interleaved with the other column and no quote appears.",
+    "releasedCode": "none for the SRE diagnosis metrics: IBM/itbench ships a CLI to create, deploy and show scenarios (src/itbench), and the leaderboard pages report NTAM fault localization, NTAM fault propagation and % resolved, not pass@1."
+  },
+  "clauses": [
+    {
+      "id": "pass-at-1-is-the-cause",
+      "quote": "Diagnosis efficiency is measured using pass@1(Chen et al., 2021) (i.e., identifying the cause as mentioned in ground truth), NTAM (Normalized Topology-Aware Metric) for root cause and fault propagation chain, and time to diagnosis",
+      "why": "The definition of pass@1, in the paper's own parenthesis: identifying the cause. It is one of three named quantities in the same sentence, and the other two are named separately -- not as parts of it."
+    },
+    {
+      "id": "four-separate-metrics",
+      "quote": "SRE Diagnosis pass@1, Fault Localization, Fault Propagation Chain, Mean Time to Diagnosis",
+      "why": "Table 3's metric column for the diagnosis task. Four metrics, and pass@1 is one of them; a rule that requires the chain and the conditions to pass is scoring the second and third under the first one's name."
+    },
+    {
+      "id": "ntam-is-a-distance",
+      "quote": "we propose a new metric Normalized Topology-Aware Match (NTAM), which measures agent performance compared to ground truth via topology-aware distance calculation",
+      "why": "NTAM is not a match count. It is a distance over a topology graph, which is why this repository cannot compute it from the exported answer key alone -- and why requiring an exact chain match in its place is stricter than either published metric."
+    },
+    {
+      "id": "ntam-hyper-parameters-are-tunable",
+      "quote": "All the components have corresponding hyper-parameters that can be tuned to adjust their contributions to the overall score. The final score is normalized to be between 0 and 1, where 1 indicates a perfect match.",
+      "why": "The one clause that decides this target's provenance. A metric whose contributions are tunable has no closed form to transcribe until the weights are published, and the paper does not publish them. Reproducing a reported NTAM therefore means choosing weights -- which is a derived metric, not a transcribed one."
+    },
+    {
+      "id": "localisation-scope",
+      "quote": "For fault localization, instead of evaluating the set of all entities, only the groundtruth and predicted root-cause entities are considered.",
+      "why": "Scopes NTAM's localisation term to the root-cause entities, so the chain's other entities are not part of FL. This repository's `component` is the head of the propagation chain, which is the same entity."
+    },
+    {
+      "id": "mttd-scope",
+      "quote": "For the scenarios where an agent finishes diagnosis successfully (i.e., root cause entities are found), we calculate MTTD",
+      "why": "MTTD is conditioned on the same success test as pass@1 -- the root cause -- which is a second place the paper uses cause-only as the definition of a diagnosed case."
+    }
+  ],
+  "metricSet": [
+    "pass@1",
+    "Fault Localization (NTAM)",
+    "Fault Propagation Chain (NTAM)",
+    "Mean Time to Diagnosis"
+  ],
+  "implemented": [
+    "pass@1"
+  ],
+  "notImplemented": [
+    {
+      "metric": "Fault Localization (NTAM)",
+      "why": "needs the topology-aware distance and weights the paper leaves tunable; there is no released scorer to replay"
+    },
+    {
+      "metric": "Fault Propagation Chain (NTAM)",
+      "why": "the same distance over the chain, and the same missing weights"
+    }
+  ],
+  "cases": [
+    {
+      "id": "oracle",
+      "why": "every scored facet matches",
+      "prediction": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "published": {
+        "passAt1": 1
+      },
+      "strict": 1.0,
+      "oldRule": {
+        "passAt1": 1
+      },
+      "scoredFacets": [
+        "component",
+        "chain",
+        "evidence"
+      ]
+    },
+    {
+      "id": "cause-only",
+      "why": "the cause is right and nothing else was offered",
+      "prediction": {
+        "component": "service:default/order",
+        "chain": [],
+        "evidence": []
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "published": {
+        "passAt1": 1
+      },
+      "strict": 0.333333,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": [
+        "component",
+        "chain",
+        "evidence"
+      ]
+    },
+    {
+      "id": "cause-and-chain",
+      "why": "the cause and the propagation chain, with no fault conditions",
+      "prediction": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": []
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "published": {
+        "passAt1": 1
+      },
+      "strict": 0.666667,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": [
+        "component",
+        "chain",
+        "evidence"
+      ]
+    },
+    {
+      "id": "wrong-cause-right-rest",
+      "why": "the cause is wrong while the chain and the conditions are right",
+      "prediction": {
+        "component": "service:default/payment",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "published": {
+        "passAt1": 0
+      },
+      "strict": 0.666667,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": [
+        "component",
+        "chain",
+        "evidence"
+      ]
+    },
+    {
+      "id": "wrong-cause-only",
+      "why": "nothing matches",
+      "prediction": {
+        "component": "service:default/payment",
+        "chain": [],
+        "evidence": []
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "published": {
+        "passAt1": 0
+      },
+      "strict": 0.0,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": [
+        "component",
+        "chain",
+        "evidence"
+      ]
+    },
+    {
+      "id": "cause-right-chain-wrong",
+      "why": "the cause is right, the chain is missing, the conditions match",
+      "prediction": {
+        "component": "service:default/order",
+        "chain": [],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "published": {
+        "passAt1": 1
+      },
+      "strict": 0.666667,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": [
+        "component",
+        "chain",
+        "evidence"
+      ]
+    },
+    {
+      "id": "key-with-no-chain",
+      "why": "the key declares no chain and no conditions, so only the cause is scored",
+      "prediction": {
+        "component": "service:default/order",
+        "chain": [],
+        "evidence": []
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [],
+        "evidence": []
+      },
+      "published": {
+        "passAt1": 1
+      },
+      "strict": 1.0,
+      "oldRule": {
+        "passAt1": 1
+      },
+      "scoredFacets": [
+        "component"
+      ]
+    },
+    {
+      "id": "key-with-no-chain-wrong-cause",
+      "why": "the same key, answered wrongly",
+      "prediction": {
+        "component": "service:default/payment",
+        "chain": [
+          "service:default/order->service:default/cart"
+        ],
+        "evidence": [
+          "order|cpu_usage"
+        ]
+      },
+      "groundTruth": {
+        "component": "service:default/order",
+        "chain": [],
+        "evidence": []
+      },
+      "published": {
+        "passAt1": 0
+      },
+      "strict": 0.0,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": [
+        "component"
+      ]
+    },
+    {
+      "id": "empty-key-empty-answer",
+      "why": "the key names no cause and the answer names no cause, which is the one pair where a bare equality would award a point for saying nothing",
+      "prediction": {
+        "component": "",
+        "chain": [],
+        "evidence": []
+      },
+      "groundTruth": {
+        "component": "",
+        "chain": [],
+        "evidence": []
+      },
+      "published": {
+        "passAt1": 0
+      },
+      "strict": 0.0,
+      "oldRule": {
+        "passAt1": 0
+      },
+      "scoredFacets": []
+    }
+  ]
+}

@@ -231,9 +231,24 @@ export itself and asserts three properties per target:
 3. `unscoredFacetsInert` — a facet the official metric ignores cannot move the score.
 
 An empty export is reported as `skipped`, never as `passed`; a skip without an explicit
-`--allow-empty-reason` fails. Where no official scorer is published (ITBench NTAM,
-OpenRCA 2.0) the metric is declared `derived` — a faithful reading of the paper, not a
-claim of official parity.
+`--allow-empty-reason` fails.
+
+Every metric carries a `provenance` label, and the three values answer one question: **how
+far is this rule from somebody else's code?**
+
+| Label | Meaning | Targets |
+| --- | --- | --- |
+| `replayed` | a corpus in `golden-master/` runs the released artefact's rule case by case, and the suite replays it | OpenRCA 1.0, RCAEval ×3, Cloud-OpsBench |
+| `transcribed` | the benchmark publishes a prose rule and no released code; this is a faithful reading and nothing else computes it | RCA100, AIOps2025 |
+| `derived` | the benchmark publishes neither the rule nor the constants it needs, so this repository supplies an explicit aggregation and says so | OpenRCA 2.0, ITBench |
+
+Only `replayed` has been compared to a second implementation, and that difference is what
+the label exists to carry: every disagreement this project has found between its own rule
+and an upstream artefact (10 of 25 cases on OpenRCA, 9 of 22 on Cloud-OpsBench, 3 of 4 on
+RCA100, 3 of 9 on ITBench) was under a rule that had been written from a reading rather
+than replayed. The label is derived from the census rather than authored —
+`packages/core/test/provenance-matches-the-census.test.ts` maps each census class to one
+label and fails on any drift, so a target cannot claim more than the census supports.
 
 ## 10. T2 backends: what can be pulled from, and what cannot
 

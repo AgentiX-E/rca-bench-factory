@@ -140,10 +140,28 @@ different question, and a different command:
 rca-bench official --target itbench --dir ./out
 ```
 
-It scores the exported answer key with the ITBench diagnosis rule (arXiv 2502.05352
-§4.2): the root-cause entities, the fault-propagation chain and the fault conditions all
-have to match. The metric is labelled **derived**, not `official` — ITBench's NTAM closed
-form is stated in Appendix C.6.3, which is not public, so the pass@1 form is used.
+It reports two numbers, and the difference between them is the point.
+
+| Number | Rule | Where it comes from |
+| --- | --- | --- |
+| `passAt1` | the predicted root cause equals the key's | arXiv 2502.05352 §4.2: "pass@1 ... (i.e., identifying the cause as mentioned in ground truth)" |
+| `strict` | the root cause **and** the propagation chain **and** the fault conditions all match | this repository's own conjunction of the three facets the export carries |
+
+`strict` is the target's headline, and it is **not** a published metric: Table 3 of the
+paper lists four separate SRE diagnosis metrics and this is none of them. Its id is
+`itbench-diagnosis-strict` for that reason.
+
+The paper's `pass@1` is the first number, and it is what the metric used to be called
+while computing the second — so a submission that named the right cause and nothing else
+was reported as a pass@1 failure. Measured over the nine cases in
+`golden-master/itbench-evaluator.json`: **three disagreed, all in that one direction**.
+
+The two NTAM metrics (fault localisation and fault propagation chain) are **not
+implemented**, and not because the formula is missing — §4.2 describes it. They are not
+implemented because the paper says their components "have corresponding hyper-parameters
+that can be tuned to adjust their contributions", and does not publish the values: a
+replay would have to choose weights. That is recorded as a gap on census row `itbench`
+and in the corpus, with the direction it costs. Hence the label **derived**.
 
 ## Failure modes
 
