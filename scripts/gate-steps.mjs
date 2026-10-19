@@ -34,8 +34,9 @@
  * `gate-steps.test.ts` requires the real file to produce none.
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,171 @@ export function workflowPath() {
 }
 
 /**
+ * The interpreter a `run:` step is given, as GitHub defines it.
+ *
+ * ## Why the default is stated here at all
+ *
+ * A `run:` body is not a command line handed to `sh -c`; it is a **script written
+ * to a file** and handed to an interpreter. GitHub's default on Linux and macOS is
+ * `bash --noprofile --norc -eo pipefail {0}`. This runner used to say `sh -c`,
+ * which on every distribution whose `/bin/sh` is dash is a different program: no
+ * `pipefail`, no `[[ ]]`, no `set -o`, no `$BASH_VERSION`. A step could therefore
+ * pass here and fail there, with no key in the workflow able to explain the
+ * difference -- and the plan said nothing, because a hard-coded default is not a
+ * thing the plan had an opinion about.
+ *
+ * No shipped step currently notices. That is luck, and luck is not a plan: the
+ * default is now CI's default, and it is stated in `--list` with the number of
+ * steps that override it.
+ */
+export const DEFAULT_SHELL = 'bash --noprofile --norc -eo pipefail {0}';
+
+/**
+ * The shells `shell:` may name, and the templates they mean.
+ *
+ * Both entries are GitHub's own mappings. `bash` is the default written out, so a
+ * step that says `shell: bash` and a step that says nothing are the same step.
+ */
+export const SHELLS = {
+  bash: DEFAULT_SHELL,
+  sh: 'sh -e {0}',
+};
+
+/**
+ * Interpreters this runner can start.
+ *
+ * The list is closed because "run it through bash anyway" would be this file
+ * inventing a meaning for a step. `python {0}` and `pwsh -command {0}` are
+ * legitimate GitHub shells and different languages; a command written for one is
+ * not a command a shell runner can reproduce, and saying so is more useful than
+ * running something else and reporting its exit code as the step's verdict.
+ */
+export const SHELL_INTERPRETERS = ['bash', 'sh'];
+
+/**
+ * A YAML scalar's value, with the quoting removed.
+ *
+ * `shell: "bash"` and `shell: bash` are the same scalar; a reader that kept the
+ * quotes would refuse the first for a reason that is not about shells.
+ */
+function scalar(raw) {
+  const text = String(raw ?? '').trim();
+  const quoted =
+    text.length >= 2 && ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'")));
+  return quoted ? text.slice(1, -1).trim() : text;
+}
+
+/**
+ * Interpret a step's `shell:`, defaulting to CI's own.
+ *
+ * Returns `{ template, argv, error }`: `argv` is the command line with `{0}` left
+ * in place for whoever materialises the script, and `error` is a sentence or null.
+ * A template must contain exactly one `{0}` -- GitHub's rule -- because the count
+ * is where the script goes, and zero or two is not a shell setting but a step that
+ * would run the wrong thing.
+ */
+export function shellOf(raw) {
+  const text = scalar(raw);
+  const template = text === '' ? DEFAULT_SHELL : (SHELLS[text] ?? text);
+  const argv = template.split(/\s+/).filter((token) => token !== '');
+  const interpreter = basename(argv[0] ?? '');
+  if (!SHELL_INTERPRETERS.includes(interpreter)) {
+    return {
+      template,
+      argv,
+      error:
+        `\`shell: ${text}\` names an interpreter this runner cannot read: the body would be ${text} rather than a ` +
+        'shell script, and a plan can only make a claim about commands it can run. Write `bash`, `sh`, or a ' +
+        'template of one containing `{0}`, or make the step remote-only with a reason',
+    };
+  }
+  const slots = argv.filter((token) => token === '{0}').length;
+  if (slots !== 1) {
+    return {
+      template,
+      argv,
+      error:
+        `\`shell: ${text}\` has ${String(slots)} \`{0}\` placeholders, and GitHub's shell takes exactly one \`{0}\`: ` +
+        'the file the `run:` body is written to. With none the script goes nowhere; with two it goes to two places',
+    };
+  }
+  return { template, argv, error: null };
+}
+
+/**
+ * Interpret a step's `working-directory:`, defaulting to the repository root.
+ *
+ * A relative path inside this repository, normalised, or a sentence saying why
+ * not. Absolute paths are refused rather than accepted-and-worked-out-of-the-tree:
+ * the plan's claim is about *this repository*, and a directory this repository
+ * does not contain is a directory the plan cannot describe. `..` is refused for
+ * the same reason, after normalisation -- `packages/../../x` and `../x` are the
+ * same directory and only one of the two spellings looks like an escape.
+ */
+export function cwdOf(raw) {
+  const text = scalar(raw);
+  if (text === '') return { path: '.', error: null };
+  if (/^[|>][+-]?$/.test(text)) {
+    // `working-directory: |` puts the value on the following lines, which this
+    // reader does not collect for this key. Accepting the `|` would make a path
+    // named `|` look like a directory in this repository.
+    return {
+      path: '',
+      error:
+        `\`working-directory: ${text}\` is a block scalar, so the path is on the lines below rather than beside the ` +
+        'key. Write the path inline, or make the step remote-only',
+    };
+  }
+  if (isAbsolute(text)) {
+    return {
+      path: '',
+      error:
+        `\`working-directory: ${text}\` is an absolute path, which is a fact about one machine rather than about ` +
+        'this repository. Use a path inside the tree, or make the step remote-only',
+    };
+  }
+  const resolved = resolve(ROOT, text);
+  if (resolved !== ROOT && !resolved.startsWith(`${ROOT}${sep}`)) {
+    return {
+      path: '',
+      error:
+        `\`working-directory: ${text}\` leaves the repository. A step whose directory is outside the tree is not ` +
+        'a step this plan can describe, whatever it does there',
+    };
+  }
+  return { path: relative(ROOT, resolved) || '.', error: null };
+}
+
+/** Where a step runs, as a clause, or an empty string for the default. */
+export function whereOf(step) {
+  const parts = [];
+  const cwd = step.cwd ?? '.';
+  if (cwd !== '.') parts.push(`in ${cwd}`);
+  const shell = step.shell ?? DEFAULT_SHELL;
+  if (shell !== DEFAULT_SHELL) parts.push(shell);
+  return parts.join(', ');
+}
+
+/**
+ * Write a step's body to a file and return the command line that runs it.
+ *
+ * `{0}` is a path, not an argument to `-c`, so the body has to exist as a file
+ * before the interpreter starts. That is also why `$0` inside a step is a path
+ * rather than `bash`: the invocation is CI's, not an approximation of it.
+ *
+ * The file is removed by the caller, in a `finally`, because a failed step still
+ * wrote one.
+ */
+let materialised = 0;
+export function materialiseStep(step, dir = tmpdir()) {
+  materialised += 1;
+  const { argv } = shellOf(step.shell ?? '');
+  const file = join(dir, `verify-local-${String(process.pid)}-${String(materialised)}.sh`);
+  writeFileSync(file, `${step.run}\n`, { mode: 0o700 });
+  return { file, argv: argv.map((token) => (token === '{0}' ? file : token)) };
+}
+
+/**
  * Step keys this reader understands, and what it does with each.
  *
  * ## The rule
@@ -86,6 +252,8 @@ export const STEP_KEYS = {
   name: 'read: the key the plan is indexed by',
   run: 'read: the command, executed verbatim',
   uses: 'read: matched against the setup actions below',
+  shell: 'read: the interpreter, reproduced as the file-and-argv pair GitHub uses',
+  'working-directory': 'read: where the command runs, carried onto the step and enforced by the runner',
 
   // Tolerated anywhere, because neither changes the verdict of a command.
   id: 'tolerated: an identifier for later steps to reference',
@@ -94,9 +262,7 @@ export const STEP_KEYS = {
   // Tolerated only on a step that does not run here; refused on a local one.
   if: 'a condition on whether the step runs at all',
   env: 'environment for the command, which this runner does not reproduce',
-  shell: 'the interpreter, where this runner always uses `sh -c`',
   'continue-on-error': 'a failure that does not fail the job, which this runner reads as a failure',
-  'working-directory': 'where the command runs, where this runner always uses the repository root',
   with: 'inputs for an action; meaningful only on a `uses:` step',
 };
 
@@ -112,8 +278,23 @@ export function conditionOf(raw) {
   return unwrapped;
 }
 
-/** Keys that make a step impossible to run here, with the reason said once. */
-export const LOCAL_INCOMPATIBLE = ['if', 'env', 'shell', 'continue-on-error', 'working-directory'];
+/**
+ * Keys that make a step impossible to run here, with the reason said once.
+ *
+ * Three, and the three are the argument. `shell:` and `working-directory:` were in
+ * this list and are not any more: they made the plan's claim *incomplete* rather
+ * than false, and this file now carries both onto the step (see `shellOf` and
+ * `cwdOf`). What is left cannot be carried, because each is a semantic difference
+ * rather than a parameter:
+ *
+ *  - `if:` decides *whether* the step runs. `runSteps` stops at the first failure,
+ *    so a step that runs regardless is a step this runner would not run at all.
+ *  - `env:` supplies values, and the one the shipped workflow uses is a secret the
+ *    runner does not have.
+ *  - `continue-on-error:` means a failure is not a failure, which is exactly the
+ *    distinction a runner exists to report.
+ */
+export const LOCAL_INCOMPATIBLE = ['if', 'env', 'continue-on-error'];
 
 /** The actions a step may use. Anything else is a gate wearing a `uses:`. */
 export const SETUP_ACTIONS = {
@@ -273,9 +454,10 @@ export function readWorkflow(text) {
       if (keyMatch !== null) {
         const [, key, rest] = keyMatch;
         step.keys.push(key);
-        // The value matters for exactly one key -- `if:` -- and presence is enough
-        // for the rest. Recording it everywhere costs a string per key and makes
-        // the one that matters readable, instead of a special case in the reader.
+        // The value is recorded for every key, not only the ones this reader acts
+        // on: `shell:`, `working-directory:` and `if:` are all read by value now,
+        // and a reader that kept only the key names would have to grow a special
+        // case each time another one started to matter.
         step.values[key] = rest.trim();
       }
 
@@ -302,13 +484,21 @@ export function readWorkflow(text) {
         } else {
           step.run = value;
         }
-        break;
+        // **Not** the end of the step. Keys may be written in any order, and
+        // GitHub's own examples put `working-directory:` *after* `run:`. This
+        // reader used to `break` here, so every key below the command was
+        // invisible -- which is why honouring `working-directory:` was impossible
+        // until the loop stopped stopping. The body of a block scalar cannot be
+        // mistaken for a key: it is indented ten spaces, and the key pattern here
+        // is anchored at exactly eight.
+        continue;
       }
 
       const usesMatch = /^ {8}uses: (.+)$/.exec(inner);
       if (usesMatch !== null) {
         step.uses = usesMatch[1].trim();
-        break;
+        // Same reason: `with:` and `if:` follow `uses:` in this very workflow.
+        continue;
       }
     }
 
@@ -345,6 +535,17 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       if (!(step.uses in setupActions)) {
         errors.push(`${step.key}: \`uses: ${step.uses}\` is not a setup action, so it is a gate this plan cannot see`);
       }
+      // The two keys that describe a command line. An action has none: it decides
+      // its own interpreter and its own directory, so a `shell:` here would be a
+      // line in the workflow that nothing reads -- GitHub's own runner ignores it.
+      for (const key of ['shell', 'working-directory']) {
+        if ((step.keys ?? []).includes(key)) {
+          errors.push(
+            `${step.key}: \`${key}:\` on a \`uses:\` step does nothing -- an action chooses its own interpreter and ` +
+              'directory. A key nothing reads is a sentence a reader will believe',
+          );
+        }
+      }
       // Recorded rather than ignored: a conditional action is not a gate, but the
       // fact that the workflow uses conditions should be visible in the plan
       // rather than inferred from the plan's silence.
@@ -379,8 +580,14 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       }
     }
 
+    // Both are read for every step, local or not: a value this reader cannot
+    // understand is a fact about the step, and only the *consequence* differs by
+    // where the step runs.
+    const shell = shellOf(step.values?.shell);
+    const cwd = cwdOf(step.values?.['working-directory']);
+
     if (entry.local === true) {
-      // A key that changes whether, where or with what a local step runs makes
+      // A key that changes whether or with what a local step runs makes
       // "verify:local ran this" false, so it is refused rather than tolerated.
       const blocked = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
       for (const key of blocked) {
@@ -389,9 +596,22 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
             'Either make it remote-only with a reason, or teach the runner the key',
         );
       }
-      if (blocked.length > 0) continue;
+      // `shell:` and `working-directory:` are honoured rather than refused, so
+      // the only way they can be wrong is a value this runner cannot read. Same
+      // outcome, and it is the outcome a local claim needs: the step does not run
+      // here, and the plan says why instead of assuming it away.
+      if (shell.error !== null) errors.push(`${step.key}: ${shell.error}`);
+      if (cwd.error !== null) errors.push(`${step.key}: ${cwd.error}`);
+      if (blocked.length > 0 || shell.error !== null || cwd.error !== null) continue;
 
-      local.push({ key: step.key, job: step.job, run: step.run, note: entry.note ?? '' });
+      local.push({
+        key: step.key,
+        job: step.job,
+        run: step.run,
+        note: entry.note ?? '',
+        cwd: cwd.path,
+        shell: shell.template,
+      });
       continue;
     }
     if (typeof entry.remoteOnly === 'string') {
@@ -410,16 +630,21 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
           );
           continue;
         }
-        tolerated.push({ key: step.key, keys: conditional, condition });
-        const why = entry.remoteOnly.trim();
-        if (why.length < 40) {
-          errors.push(`${step.key}: the remote-only reason is ${String(why.length)} characters, which is not a reason`);
-          continue;
-        }
-        remote.push({ key: step.key, job: step.job, why });
-        continue;
       }
-      if (conditional.length > 0) tolerated.push({ key: step.key, keys: conditional, condition: null });
+      // A shell or directory this runner cannot read is tolerated here and only
+      // here: the step does not run on this machine, so the plan's sentence about
+      // it stays true without understanding the value.
+      const unreadable = [];
+      if (shell.error !== null) unreadable.push('shell');
+      if (cwd.error !== null) unreadable.push('working-directory');
+      const toleratedKeys = [...conditional, ...unreadable];
+      if (toleratedKeys.length > 0) {
+        tolerated.push({
+          key: step.key,
+          keys: toleratedKeys,
+          condition: conditional.includes('if') ? 'always()' : null,
+        });
+      }
       const why = entry.remoteOnly.trim();
       if (why.length < 40) {
         errors.push(`${step.key}: the remote-only reason is ${String(why.length)} characters, which is not a reason`);
@@ -457,9 +682,15 @@ export function shippedPlan(path = workflowPath()) {
  */
 export function runSteps(commands, run) {
   for (const [index, step] of commands.entries()) {
-    process.stdout.write(`\n[${String(index + 1)}/${String(commands.length)}] ${step.first}\n`);
+    // The whole step is handed over, not its text: the interpreter and the
+    // directory are part of the command, and a runner given only the text would
+    // be unable to honour either.
+    const where = whereOf(step);
+    process.stdout.write(
+      `\n[${String(index + 1)}/${String(commands.length)}] ${step.first}${where === '' ? '' : ` (${where})`}\n`,
+    );
     try {
-      run(step.run);
+      run(step);
     } catch (error) {
       return { ok: false, index, step, commands: commands.length, error };
     }
@@ -469,11 +700,21 @@ export function runSteps(commands, run) {
 
 /** The plan, printed the way a person deciding whether to trust it would read it. */
 export function describePlan(plan) {
+  const overrides = plan.local.filter((step) => whereOf(step) !== '');
   const lines = [
     `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
+    // The default is stated, and so is the number of steps that depart from it. A
+    // runner whose default is unstated has a default nobody can review, which is
+    // how `sh -c` survived ten passes.
+    `  each command runs from the repository root under \`${DEFAULT_SHELL}\`; ${String(overrides.length)} of ${String(
+      plan.local.length,
+    )} override either`,
     '',
   ];
-  for (const step of plan.local) lines.push(`  local   ${step.key}`);
+  for (const step of plan.local) {
+    const where = whereOf(step);
+    lines.push(`  local   ${step.key}${where === '' ? '' : ` — ${where}`}`);
+  }
   lines.push('');
   for (const step of plan.remote) {
     lines.push(`  remote  ${step.key}`);
@@ -498,17 +739,31 @@ export function describePlan(plan) {
  * Two jobs that both run `pnpm build` are two runners doing the same thing; on
  * one machine the second adds a minute and proves nothing, so the same command
  * text is run once and reported as already done.
+ *
+ * "The same command" is now the same **interpreter, directory and text**. It used
+ * to be the text alone, which was true while every step ran from the root under
+ * one shell and became false the moment either could differ: `pnpm lint` in
+ * `packages/core` and `pnpm lint` in `packages/cli` would have collapsed into one
+ * run, and the second step would have been reported as done by the first.
  */
 export function localCommands(local) {
   const order = [];
-  const byText = new Map();
+  const byIdentity = new Map();
   for (const step of local) {
-    if (byText.has(step.run)) {
-      byText.get(step.run).also.push(step.key);
+    const entry = {
+      run: step.run,
+      cwd: step.cwd ?? '.',
+      shell: step.shell ?? DEFAULT_SHELL,
+      first: step.key,
+      also: [],
+    };
+    const identity = [entry.cwd, entry.shell, entry.run].join('\u0000');
+    const seen = byIdentity.get(identity);
+    if (seen !== undefined) {
+      seen.also.push(step.key);
       continue;
     }
-    const entry = { run: step.run, first: step.key, also: [] };
-    byText.set(step.run, entry);
+    byIdentity.set(identity, entry);
     order.push(entry);
   }
   return order;

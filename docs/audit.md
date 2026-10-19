@@ -19399,3 +19399,183 @@ size rather than about arithmetic.
 | `core` / `cli` / repo | **155 / 3904** · **4 / 187** · **159 / 4091** |
 | coverage | core **99.97 / 99.73 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
+
+---
+
+## Finding 188 — the runner had a default of its own, and the reader stopped at the command
+
+### The claim, and the two ways it was not true
+
+`scripts/verify-local.mjs` says one sentence about itself: *run every CI step that can run
+here, from the workflow itself.* The plan behind it says a stronger one, of each step it
+lists: **"verify:local ran this step"**. Two facts made that sentence false, and neither was
+visible in the plan's output.
+
+**The interpreter.** The runner executed every step with `execFileSync('sh', ['-c', cmd])`,
+from a comment that justified it: *"sh -c rather than a split argument list because a step may
+be a small script"*. That sentence is about `-c` versus argv, and it is correct. What it
+silently decided was `sh`, and GitHub does not use `sh`: a `run:` body is written to a file
+and handed to `bash --noprofile --norc -eo pipefail {0}`. On every distribution whose
+`/bin/sh` is dash — Debian, Ubuntu, and therefore every GitHub runner and every container this
+repository is built in — those are different programs. No `pipefail`, no `[[ ]]`, no
+`set -o`, no `$BASH_VERSION`. A step could pass here and fail there with the same bytes and no
+key in the workflow able to explain it, and `--list` would have printed a plan that said
+nothing, because a hard-coded default is not a thing the plan had an opinion about.
+
+**The reader.** `readWorkflow` scanned a step's keys and `break`-ed at the first `run:` (and
+at the first `uses:`). Every key written *below* the command was invisible. GitHub's own
+documentation writes `working-directory:` after `run:`, and so does most of the world:
+
+```yaml
+      - name: Type-check
+        run: pnpm typecheck
+        working-directory: packages/core
+```
+
+This reader saw `run` and stopped, so the value never reached `classify` — which means
+v2.17's whole argument about which keys are tolerated, and v2.18's argument about `if:`
+values, were both being made about the subset of keys that happened to be written above the
+command. The shipped workflow writes `if:` and `env:` above `run:` and `with:` above `uses:`
+in the two places it uses it, so nothing in this repository ever used the other order. That
+is the reason the defect survived three passes: **the shape was not exercised, not
+undetected.**
+
+### What a `run:` body actually is
+
+A script, written to a file, plus an argv. `{0}` is that file's path — not an argument to
+`-c`, and not interchangeable with one: with a file, `$0` is a path; with `-c`, `$0` is the
+interpreter's name. So the runner materialises the body:
+
+```js
+export function materialiseStep(step, dir = tmpdir()) {
+  const { argv } = shellOf(step.shell ?? '');
+  const file = join(dir, `verify-local-${String(process.pid)}-${String(materialised)}.sh`);
+  writeFileSync(file, `${step.run}\n`, { mode: 0o700 });
+  return { file, argv: argv.map((token) => (token === '{0}' ? file : token)) };
+}
+```
+
+and removes it in a `finally`, because a failing step still wrote one.
+
+`shell:` is now read rather than refused. The grammar is GitHub's, and it is closed on
+purpose:
+
+| `shell:` | meaning |
+| --- | --- |
+| absent | `bash --noprofile --norc -eo pipefail {0}` |
+| `bash` | the default, spelled out |
+| `sh` | `sh -e {0}` |
+| a template of `bash`/`sh` with exactly one `{0}` | that argv |
+| `python {0}`, `pwsh -command {0}`, … | **refused**: a different language is not a shell this plan can read |
+
+The refusal is the point. Running `python {0}` through bash would be this file inventing a
+meaning for a step and then reporting the invented program's exit code as the step's
+verdict. A `{0}` count other than one is refused for the same kind of reason: with none the
+script goes nowhere, with two it goes to two places.
+
+`working-directory:` is read as a path **inside this repository**: normalised first, then
+checked, because `packages/../../outside` and `../outside` are the same directory and only
+one of the two spellings looks like an escape. An absolute path is refused — a directory this
+repository does not contain is a directory the plan cannot describe.
+
+### The three that are left, and why they are the argument
+
+`LOCAL_INCOMPATIBLE` was five keys. It is now three, and the three are a claim rather than a
+shortage:
+
+- `if:` decides *whether* the step runs. `runSteps` stops at the first failure, so a step
+  that runs regardless is a step this runner would not run at all.
+- `env:` supplies values, and the one the shipped workflow uses is a secret the runner does
+  not have.
+- `continue-on-error:` means a failure is not a failure — precisely the distinction a runner
+  exists to report.
+
+`shell:` and `working-directory:` never belonged in that list. They did not make "a local run
+reproduces this step" **false**; they made it **incomplete**, and a runner can complete it.
+The list's docstring now says so, and a test asserts the two keys are absent from it — so
+re-adding one has to be an argument rather than a reflex.
+
+### The identity the dedup was using
+
+`localCommands` collapsed steps by command **text**: two jobs that both run `pnpm build` are
+one run on one machine. That was true while every step ran from the root under one shell, and
+it became false the moment either could differ. `pnpm lint` in `packages/core` and
+`pnpm lint` in `packages/cli` would have collapsed into one entry, and the second step would
+have been reported as done by the first — a green run that never happened, which is the exact
+failure mode this whole file exists to remove, reintroduced by the fix.
+
+The identity is now `(cwd, shell, text)`. Three tests: different directories do not collapse,
+different interpreters do not collapse, and the same command in the same place still does.
+
+### How each new branch is reached
+
+Two of them cannot be reached by argument at all, because both claims are about a process:
+its working directory and its interpreter. So the end-to-end tests ask the process.
+
+| claim | how it is proven |
+| --- | --- |
+| the step ran in `packages/core` | the step is `pwd > <marker>`; the marker's contents are compared |
+| the interpreter is bash | `printf '%s' "${BASH_VERSION:+bash}"` — empty under dash |
+| the body was a file, not `-c` | `$0`, which ends in `.sh` only when it is a path |
+| `shell: bash -x {0}` was honoured | `--list`/run output prints `(bash -x {0})` |
+
+The fixtures are the shipped `ci.yml` with one step's command replaced and one key inserted —
+never a hand-written workflow, so a fixture cannot drift out of the parser's shapes. The
+insertion point is *below* `run:`, which is how the second defect announced itself: the first
+run of the new test failed with no shell in the plan at all, because the key was in a place
+the reader had stopped reading.
+
+### The failure the acceptance run found, which is the same rule one level down
+
+The first full-suite run of this pass went red in `gate-test-battery-attribution.test.ts` with a
+Python traceback, not an assertion:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory: 'scripts/.probe-figures-harness-type-miss.mjs'
+  ... in guard -> left = [e["path"] for e in record["entries"] if _digest(pathlib.Path(e["path"])) != e["sha256"]]
+```
+
+`_witnesses.guard()` records whole subtrees so a killed battery can be repaired, and at a normal
+exit it digests every recorded path. `type-miss-probe.test.ts` writes
+`scripts/.probe-figures-harness-type-miss.mjs` for the length of one probe and removes it in a
+`finally` — so a battery that started while that file existed recorded it, and the file was gone by
+the time the check ran. Two things are wrong there and they are not the same wrong:
+
+1. **A vanished file is a difference, not an error.** `journal.mjs`, the Node half of the same
+   mechanism, has always asked `existsSync` first. One rule, two implementations, and the one that
+   *reports* was the one without the check. The Python guard now answers `gone` or `changed`, and
+   the message carries the first five names **with their reason** -- because a count cannot be
+   looked at, and because the two reasons have opposite repairs: `gone` is somebody else's scratch,
+   `changed` is this battery's own leftovers. The Node half was taught the same distinction, so the
+   two implementations now agree in their output as well as in their rule.
+2. **A dotfile is not part of the tree.** Recording one means a kill-repair *resurrects* it, and a
+   normal exit calls its deletion a difference — both statements about scratch rather than about
+   this repository. `derive-gate-sites.mjs` adopted this rule first, in finding 202's neighbourhood,
+   for exactly this reason; the journal now says the same thing, on both sides.
+
+Two tests, and both fail before the fix: a recorded file that is deleted is reported by name with
+no traceback, and `_guarded_files` on a tree with `.hidden.mjs` and `.hidden-dir/inside.mjs`
+returns only the visible file.
+
+This is the second pass in a row where the *acceptance run* was the thing that found the defect —
+and the first where the defect was in the harness that is supposed to explain a red run. It is the
+same lesson as the file it lives in: a check that assumes its own premise is a check that stops
+speaking the moment the premise is false.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| default interpreter | CI's own, `bash --noprofile --norc -eo pipefail {0}`, asserted by value |
+| `shell:` | named, templated, quoted scalar; foreign interpreters and wrong `{0}` counts refused |
+| `working-directory:` | relative inside the tree; absolute and escaping paths refused |
+| keys below the command | read; body lines of a block scalar are not |
+| `LOCAL_INCOMPATIBLE` | 5 → **3**, and a test says which three and why |
+| dedup identity | `(cwd, shell, text)`; three tests |
+| end-to-end | cwd, bash, and file-instead-of-`-c` proven by asking the process |
+| `gate-steps.test.ts` | **69 tests** (51 before) |
+| journal guard | a vanished file is a named difference; dotfiles are not recorded (2 tests) |
+| `core` / `cli` / repo | **163 / 4056** · **4 / 187** · **167 / 4243** |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 68 across 40 scripts, `--check` OK (only three line numbers moved) |
+| `typecheck` / `lint` / `docs:check` | green |

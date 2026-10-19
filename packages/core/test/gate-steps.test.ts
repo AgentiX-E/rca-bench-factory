@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 /**
  * The scripts this file drives, declared as well as done.
  *
@@ -17,18 +17,24 @@ import { afterAll, describe, expect, it } from 'vitest';
 const DRIVES = ['scripts/verify-local.mjs', 'scripts/gate-steps.mjs'];
 
 import {
+  DEFAULT_SHELL,
   LOCAL_INCOMPATIBLE,
   ROOT,
   SETUP_ACTIONS,
+  SHELLS,
   STEP_KEYS,
   STEP_PLAN,
   classify,
   conditionOf,
+  cwdOf,
   describePlan,
   localCommands,
+  materialiseStep,
   readWorkflow,
   runSteps,
+  shellOf,
   shippedPlan,
+  whereOf,
 } from '../../../scripts/gate-steps.mjs';
 
 
@@ -148,6 +154,32 @@ describe('the workflow reader', () => {
   it('refuses a run block with no body', () => {
     const empty = WORKFLOW.replace('          set -eu\n          echo one\n          echo two', '');
     expect(readWorkflow(empty).errors.join('\n')).toContain('no body');
+  });
+
+  it('reads keys written below the command, which is where GitHub writes them', () => {
+    // The loop used to `break` at `run:`, so every key below the command was
+    // invisible -- including `working-directory:`, which GitHub's own examples
+    // place after it. The shipped workflow writes `if:` above `run:`, which is why
+    // the shape survived: nothing here used the other order, and nothing read the
+    // keys that were dropped.
+    const below = WORKFLOW.replace(
+      '        run: pnpm gate',
+      '        run: pnpm gate\n        working-directory: examples\n        if: always()',
+    );
+    const { steps, errors } = readWorkflow(below);
+    expect(errors).toEqual([]);
+    const gate = steps.find((one) => one.name === 'A gate');
+    expect(gate.keys).toEqual(['run', 'working-directory', 'if']);
+    expect(gate.values).toEqual({ run: 'pnpm gate', 'working-directory': 'examples', if: 'always()' });
+  });
+
+  it('does not mistake the body of a block scalar for keys, which is why it can continue', () => {
+    // Ten spaces of body against a key pattern anchored at exactly eight. If that
+    // distinction were wrong, the four lines above would be four keys.
+    const { steps } = readWorkflow(WORKFLOW);
+    const script = steps.find((one) => one.name === 'A script');
+    expect(script.keys).toEqual(['run']);
+    expect(script.run).toBe('set -eu\necho one\necho two');
   });
 });
 
@@ -356,6 +388,129 @@ describe('the keys a step may carry', () => {
       expect(plan.local.map((local) => local.key)).not.toContain(one.key);
     }
   });
+
+
+  it('carries both keys onto the local entry rather than refusing the step', () => {
+    // The reason these two left `LOCAL_INCOMPATIBLE`: they do not make "a local
+    // run reproduces this step" impossible, they make it incomplete, and the
+    // runner can complete it.
+    for (const key of ['shell', 'working-directory']) expect(LOCAL_INCOMPATIBLE, key).not.toContain(key);
+
+    const directory = classify(
+      [step(['run', 'working-directory'], 'pnpm gate', { 'working-directory': 'examples' })],
+      LOCAL,
+    );
+    expect(directory.errors).toEqual([]);
+    expect(directory.local[0]).toMatchObject({ cwd: 'examples', shell: DEFAULT_SHELL });
+
+    const shell = classify([step(['run', 'shell'], 'pnpm gate', { shell: 'bash -x {0}' })], LOCAL);
+    expect(shell.errors).toEqual([]);
+    expect(shell.local[0]).toMatchObject({ cwd: '.', shell: 'bash -x {0}' });
+  });
+
+  it('refuses a local step whose shell or directory it cannot honour, now that it claims to honour both', () => {
+    const shell = classify([step(['run', 'shell'], 'pnpm gate', { shell: 'python {0}' })], LOCAL).errors;
+    expect(shell.join('\n')).toContain('verify / Gate');
+    expect(shell.join('\n')).toContain('an interpreter this runner cannot read');
+
+    const directory = classify(
+      [step(['run', 'working-directory'], 'pnpm gate', { 'working-directory': '/tmp' })],
+      LOCAL,
+    ).errors;
+    expect(directory.join('\n')).toContain('absolute');
+  });
+
+  it('tolerates both keys on a step that does not run here, where they cannot mislead', () => {
+    const shell = classify([step(['run', 'shell'], 'pnpm gate', { shell: 'python {0}' })], REMOTE);
+    expect(shell.errors).toEqual([]);
+    expect(shell.tolerated).toEqual([{ key: 'verify / Gate', keys: ['shell'], condition: null }]);
+
+    const directory = classify(
+      [step(['run', 'working-directory'], 'pnpm gate', { 'working-directory': '../outside' })],
+      REMOTE,
+    );
+    expect(directory.errors).toEqual([]);
+    expect(directory.tolerated).toEqual([
+      { key: 'verify / Gate', keys: ['working-directory'], condition: null },
+    ]);
+  });
+
+  it('refuses both keys on an action, where GitHub gives them no meaning either', () => {
+    const errors = classify([step(['uses', 'shell'], null, { shell: 'bash' })], {}).errors;
+    expect(errors.join('\n')).toContain('does nothing');
+  });
+
+});
+
+describe('the interpreter and the directory a step runs in', () => {
+  it("states CI's own default interpreter, because a runner with a different one runs different commands", () => {
+    // `run:` is a script handed to an interpreter, not a string handed to `sh -c`.
+    // The runner said `sh -c`, and on every Linux whose /bin/sh is dash that is a
+    // different program: no `pipefail`, no `[[ ]]`, no `set -o`. A command could
+    // therefore pass here and fail there, with no key in the workflow able to
+    // explain the difference -- and `--list` said nothing, because a hard-coded
+    // default is not a thing the plan had an opinion about.
+    expect(DEFAULT_SHELL).toBe('bash --noprofile --norc -eo pipefail {0}');
+    expect(SHELLS['bash']).toBe(DEFAULT_SHELL);
+    expect(SHELLS['sh']).toBe('sh -e {0}');
+    expect(DEFAULT_SHELL).not.toContain('-c');
+    expect(DEFAULT_SHELL.split(' ').filter((token) => token === '{0}')).toHaveLength(1);
+  });
+
+  it('reads a named shell and a template alike, and a quoted scalar as itself', () => {
+    expect(shellOf(undefined)).toMatchObject({ template: DEFAULT_SHELL, error: null });
+    expect(shellOf('bash')).toMatchObject({ template: DEFAULT_SHELL, error: null });
+    expect(shellOf('sh').template).toBe('sh -e {0}');
+    expect(shellOf('bash -x {0}')).toMatchObject({ template: 'bash -x {0}', error: null });
+    expect(shellOf('"bash"').template).toBe(DEFAULT_SHELL);
+  });
+
+  it('refuses an interpreter it cannot read, instead of running it as a shell', () => {
+    // `python {0}` is a legitimate GitHub shell and a different language. Running
+    // it through bash would be this runner inventing a meaning for the step,
+    // which is the one thing a plan must never do.
+    const result = shellOf('python {0}');
+    expect(result.error).toContain('an interpreter this runner cannot read');
+    expect(result.error).toContain('python');
+    expect(result.error).toContain('remote-only');
+  });
+
+  it('refuses a template whose `{0}` count is not one, because the script would go nowhere', () => {
+    expect(shellOf('bash -x').error).toContain('exactly one `{0}`');
+    expect(shellOf('bash {0} {0}').error).toContain('exactly one `{0}`');
+  });
+
+  it('treats a working directory as a path inside this repository, or refuses it', () => {
+    expect(cwdOf(undefined)).toMatchObject({ path: '.', error: null });
+    expect(cwdOf('packages/core')).toMatchObject({ path: 'packages/core', error: null });
+    expect(cwdOf('./examples/')).toMatchObject({ path: 'examples', error: null });
+    expect(cwdOf('"packages/core"').path).toBe('packages/core');
+    expect(cwdOf('/tmp').error).toContain('absolute');
+    expect(cwdOf('../outside').error).toContain('leaves the repository');
+    // Normalised before the check: `packages/../../outside` is the same directory
+    // as `../outside`, and only one of the two spellings looks like an escape.
+    expect(cwdOf('packages/../../outside').error).toContain('leaves the repository');
+    // `working-directory: |` would otherwise become a directory literally named
+    // `|`, which is inside the tree and therefore accepted.
+    expect(cwdOf('|').error).toContain('block scalar');
+  });
+
+  it('runs every shipped local step under CI\'s interpreter, from the root, because none says otherwise', () => {
+    // Not an assumption but a measurement, and the measurement is the reason the
+    // default matters at all: it is the interpretation of all 36 local steps.
+    const plan = shippedPlan();
+    for (const one of plan.local) {
+      expect(one.shell, one.key).toBe(DEFAULT_SHELL);
+      expect(one.cwd, one.key).toBe('.');
+    }
+  });
+
+  it('says where a command runs only when that is not the root under the default shell', () => {
+    expect(whereOf({ cwd: '.', shell: DEFAULT_SHELL })).toBe('');
+    expect(whereOf({ cwd: 'examples', shell: DEFAULT_SHELL })).toBe('in examples');
+    expect(whereOf({ cwd: '.', shell: 'sh -e {0}' })).toBe('sh -e {0}');
+    expect(whereOf({ cwd: 'examples', shell: 'sh -e {0}' })).toBe('in examples, sh -e {0}');
+  });
 });
 
 describe('the plan as a runnable sequence', () => {
@@ -381,9 +536,9 @@ describe('the plan as a runnable sequence', () => {
 
   it('stops at the first failure and says which step it was', () => {
     const seen = [];
-    const result = runSteps(localCommands(local), (command) => {
-      seen.push(command);
-      if (command === 'pnpm lint') throw new Error('lint failed');
+    const result = runSteps(localCommands(local), (step) => {
+      seen.push(step.run);
+      if (step.run === 'pnpm lint') throw new Error('lint failed');
     });
     expect(result.ok).toBe(false);
     expect(result.step.first).toBe('a / three');
@@ -393,10 +548,98 @@ describe('the plan as a runnable sequence', () => {
 
   it('runs every command when none fails', () => {
     const seen = [];
-    const result = runSteps(localCommands(local), (command) => seen.push(command));
+    const result = runSteps(localCommands(local), (step) => seen.push(step.run));
     expect(result.ok).toBe(true);
     expect(seen).toEqual(['pnpm build', 'pnpm lint']);
     expect(result.commands).toBe(2);
+  });
+
+  it('hands the runner the whole step, because the interpreter and the directory are part of it', () => {
+    // A runner that received only the command text could not honour either key,
+    // and a test that only ever passed one would not notice.
+    const seen = [];
+    runSteps(localCommands([{ key: 'a / one', run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' }]), (step) =>
+      seen.push(step),
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' });
+  });
+
+  it('says where a command runs, when that is not the root under the default shell', () => {
+    const writes = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      runSteps(
+        localCommands([
+          { key: 'a / one', run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' },
+          { key: 'b / two', run: 'pnpm lint', cwd: '.' },
+        ]),
+        () => undefined,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    const text = writes.join('');
+    expect(text).toContain('a / one (in examples, sh -e {0})');
+    // The default is not printed: a line that restates the default on every step
+    // is a line a reader stops reading.
+    expect(text).toContain('[2/2] b / two\n');
+  });
+
+  it('does not collapse two identical commands in different directories', () => {
+    // The dedup key was the command text. Once a step can carry a working
+    // directory, two equal texts are two different runs: the second would never
+    // happen, and its step would be reported as done by the first.
+    const commands = localCommands([
+      { key: 'a / one', run: 'pnpm lint', cwd: 'packages/core' },
+      { key: 'b / two', run: 'pnpm lint', cwd: 'packages/cli' },
+    ]);
+    expect(commands).toHaveLength(2);
+    expect(commands.map((one) => one.cwd)).toEqual(['packages/core', 'packages/cli']);
+    expect(commands.map((one) => one.also)).toEqual([[], []]);
+  });
+
+  it('does not collapse two identical commands under different interpreters', () => {
+    const commands = localCommands([
+      { key: 'a / one', run: 'echo $0', shell: 'sh -e {0}' },
+      { key: 'b / two', run: 'echo $0', shell: DEFAULT_SHELL },
+    ]);
+    expect(commands).toHaveLength(2);
+    expect(commands.map((one) => one.shell)).toEqual(['sh -e {0}', DEFAULT_SHELL]);
+  });
+
+  it('still collapses the same command in the same place, which is what CI does twice', () => {
+    // The dedup is not the bug; identifying a step by its text alone was.
+    const commands = localCommands([
+      { key: 'a / one', run: 'pnpm build', cwd: 'packages/core' },
+      { key: 'b / two', run: 'pnpm build', cwd: 'packages/core' },
+    ]);
+    expect(commands).toHaveLength(1);
+    expect(commands[0].also).toEqual(['b / two']);
+  });
+});
+
+describe('the script the runner hands to the interpreter', () => {
+  it('writes the command to a file and puts that file where `{0}` says', () => {
+    // `{0}` is a path, not a `-c` argument: that is why the script is materialised
+    // rather than passed as a string, and why `$0` inside a step is a file.
+    const { file, argv } = materialiseStep({ run: 'echo one\necho two', shell: DEFAULT_SHELL }, SCRATCH);
+    expect(readFileSync(file, 'utf8')).toBe('echo one\necho two\n');
+    expect(argv).toEqual(['bash', '--noprofile', '--norc', '-eo', 'pipefail', file]);
+    expect(statSync(file).mode & 0o777).toBe(0o700);
+    rmSync(file);
+  });
+
+  it('gives every step its own file, so two steps cannot overwrite each other', () => {
+    const first = materialiseStep({ run: 'true' }, SCRATCH);
+    const second = materialiseStep({ run: 'true' }, SCRATCH);
+    expect(first.file).not.toBe(second.file);
+    expect(first.argv.at(-1)).toBe(first.file);
+    rmSync(first.file);
+    rmSync(second.file);
   });
 });
 
@@ -413,6 +656,10 @@ describe('scripts/verify-local.mjs as a command', () => {
     // would look identical to one that has none.
     expect(result.stdout).toContain('step(s) outside the plan carry a key this runner does not reproduce');
     expect(result.stdout).toContain('Publish the gate-test battery report — if (always()), env');
+    // And the interpretation every command gets: a runner whose default is not
+    // stated is a runner whose default is not reviewable.
+    expect(result.stdout).toContain(DEFAULT_SHELL);
+    expect(result.stdout).toContain('0 of 36 override either');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {
@@ -439,15 +686,19 @@ describe('the exits, reached without breaking the shipped workflow', () => {
   const scratch = SCRATCH;
 
   /** The shipped workflow with one command replaced, by exact step key. */
-  function workflowWith(key: string, command: string): string {
+  let fixtures = 0;
+  function workflowWith(key: string, command: string, extra: [string, string][] = []): string {
     const text = readFileSync(resolve(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
     const lines = text.split('\n');
     const at = lines.findIndex((line) => line === `      - name: ${key.split(' / ')[1] ?? ''}`);
     expect(at, `no step named ${key}`).toBeGreaterThan(-1);
     const runAt = lines.findIndex((line, index) => index > at && /^ {8}run: /.test(line));
     expect(runAt, `no run under ${key}`).toBeGreaterThan(at);
+    expect(lines[runAt], 'a block scalar has no line to insert an extra key after').toMatch(/^ {8}run: [^|>]/);
     lines[runAt] = `        run: ${command}`;
-    const path = join(scratch, `ci-${String(Math.abs(key.length + command.length))}.yml`);
+    lines.splice(runAt + 1, 0, ...extra.map(([name, value]) => `        ${name}: ${value}`));
+    fixtures += 1;
+    const path = join(scratch, `ci-${String(fixtures)}.yml`);
     writeFileSync(path, lines.join('\n'));
     return path;
   }
@@ -493,6 +744,45 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('verify:local: OK (1 command(s), 1 of the 36 local steps)');
     expect(result.stdout).toContain('did not run:');
+  });
+
+  it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {
+    // End to end, because the claim is about a process's working directory and
+    // no amount of argument inspection proves one. `pwd` is asked, from a step
+    // whose directory the workflow states.
+    const marker = join(scratch, 'cwd-marker.txt');
+    const path = workflowWith('verify / Type-check', `pwd > ${marker}`, [
+      ['working-directory', 'packages/core'],
+    ]);
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    // `match` rather than equality: the prefix depends on where this tree is
+    // checked out, and on macOS it may be reached through a symlink.
+    expect(readFileSync(marker, 'utf8').trim()).toMatch(/packages\/core$/);
+  });
+
+  it("runs a step under the shell the workflow names, as a file rather than a `-c` string", () => {
+    // Two facts in one command: `$BASH_VERSION` is empty under dash, so a
+    // non-empty value is proof the interpreter is bash; `$0` is the script path,
+    // so it ending in `.sh` is proof the body was materialised rather than
+    // passed with `-c`.
+    const marker = join(scratch, 'shell-marker.txt');
+    const command = `printf '%s|%s' "\${BASH_VERSION:+bash}" "$0" > ${marker}`;
+    const path = workflowWith('verify / Type-check', command, [['shell', 'bash -x {0}']]);
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('(bash -x {0})');
+    const [interpreter, script] = readFileSync(marker, 'utf8').split('|');
+    expect(interpreter).toBe('bash');
+    expect(script).toMatch(/\.sh$/);
   });
 
   it('declares the scripts it drives, in the form the inventory reads', () => {

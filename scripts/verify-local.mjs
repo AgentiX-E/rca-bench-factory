@@ -41,7 +41,17 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { ROOT, describePlan, localCommands, runSteps, shippedPlan } from './gate-steps.mjs';
+import { rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  ROOT,
+  describePlan,
+  localCommands,
+  materialiseStep,
+  runSteps,
+  shippedPlan,
+  whereOf,
+} from './gate-steps.mjs';
 
 const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
@@ -49,14 +59,24 @@ const onlyIndex = argv.indexOf('--only');
 const only = onlyIndex < 0 ? null : (argv[onlyIndex + 1] ?? null);
 
 /**
- * A runner that hands its output straight to the terminal.
+ * A runner that hands its output straight to the terminal, and does what the
+ * step says about *how* to run it.
  *
- * `sh -c` rather than a split argument list because a step may be a small script
- * -- the example-pack check is eight lines of `tar` and `diff` -- and re-parsing
- * shell text into argv would be a second interpretation of the same command.
+ * The body is written to a file and the interpreter is started on that file,
+ * because that is what GitHub does: `{0}` is a path, not an argument to `-c`. The
+ * previous version ran everything through `sh -c` from the repository root, which
+ * made the plan's claim incomplete in two ways at once -- a different program on
+ * any Linux whose `/bin/sh` is dash, and a `working-directory:` the runner could
+ * not honour. Both are now the step's own business, and the file is removed
+ * whether the step passes or fails.
  */
-export function runCommand(command) {
-  execFileSync('sh', ['-c', command], { cwd: ROOT, stdio: 'inherit' });
+export function runCommand(step) {
+  const { file, argv: command } = materialiseStep(step);
+  try {
+    execFileSync(command[0], command.slice(1), { cwd: resolve(ROOT, step.cwd), stdio: 'inherit' });
+  } finally {
+    rmSync(file, { force: true });
+  }
 }
 
 function main() {
@@ -88,11 +108,13 @@ function main() {
   const result = runSteps(commands, runCommand);
   const selected = only === null ? plan.local.length : plan.local.filter((step) => step.key.includes(only)).length;
   if (!result.ok) {
+    const where = whereOf(result.step);
     process.stderr.write(
       [
         '',
         `verify:local: FAILED at ${String(result.index + 1)}/${String(result.commands)}`,
         `  step:    ${result.step.first}`,
+        ...(where === '' ? [] : [`  where:   ${where}`]),
         `  command: ${result.step.run.split('\n')[0] ?? ''}`,
         '',
       ].join('\n'),
@@ -121,8 +143,10 @@ function main() {
   );
 }
 
-// Imported by tests for `runSteps` and `describePlan`; the same direct-call guard
-// as the counting script, so importing this file runs nothing.
+// The same direct-call guard as the counting script. Nothing imports this file
+// today -- the tests spawn it -- and the guard stays because the failure it
+// prevents is silent: `main()` running in the middle of an import looks like a
+// test that hangs rather than a test that fails.
 if (process.argv[1] !== undefined && process.argv[1].endsWith('verify-local.mjs')) {
   main();
 }
