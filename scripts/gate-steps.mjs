@@ -100,6 +100,18 @@ export const STEP_KEYS = {
   with: 'inputs for an action; meaningful only on a `uses:` step',
 };
 
+/**
+ * The condition a step declares, as one of the two spellings GitHub accepts.
+ *
+ * `if: always()` and `if: ${{ always() }}` mean the same thing; anything else is
+ * returned as written so the error can quote it back.
+ */
+export function conditionOf(raw) {
+  const text = String(raw ?? '').trim();
+  const unwrapped = text.startsWith('${{') && text.endsWith('}}') ? text.slice(3, -2).trim() : text;
+  return unwrapped;
+}
+
 /** Keys that make a step impossible to run here, with the reason said once. */
 export const LOCAL_INCOMPATIBLE = ['if', 'env', 'shell', 'continue-on-error', 'working-directory'];
 
@@ -247,7 +259,7 @@ export function readWorkflow(text) {
     }
 
     const name = stepMatch[1].trim();
-    const step = { job, name, key: `${job} / ${name}`, run: null, uses: null, keys: [] };
+    const step = { job, name, key: `${job} / ${name}`, run: null, uses: null, keys: [], values: {} };
     for (let j = i + 1; j < lines.length; j += 1) {
       const inner = lines[j];
       if (/^ {6}- /.test(inner)) break;
@@ -257,8 +269,15 @@ export function readWorkflow(text) {
       // it. A key it silently stepped over was the whole complaint against the
       // previous pass: `if:` on a local step would have made the plan claim to
       // run something CI may skip.
-      const keyMatch = /^ {8}([A-Za-z][\w-]*):/.exec(inner);
-      if (keyMatch !== null) step.keys.push(keyMatch[1]);
+      const keyMatch = /^ {8}([A-Za-z][\w-]*):(.*)$/.exec(inner);
+      if (keyMatch !== null) {
+        const [, key, rest] = keyMatch;
+        step.keys.push(key);
+        // The value matters for exactly one key -- `if:` -- and presence is enough
+        // for the rest. Recording it everywhere costs a string per key and makes
+        // the one that matters readable, instead of a special case in the reader.
+        step.values[key] = rest.trim();
+      }
 
       const runMatch = /^ {8}run: (.*)$/.exec(inner);
       if (runMatch !== null) {
@@ -330,7 +349,16 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // fact that the workflow uses conditions should be visible in the plan
       // rather than inferred from the plan's silence.
       const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
-      if (conditional.length > 0) tolerated.push({ key: step.key, keys: conditional });
+      if (conditional.length > 0) {
+        const condition = conditional.includes('if') ? conditionOf(step.values?.['if']) : null;
+        if (condition !== null && condition !== 'always()') {
+          errors.push(
+            `${step.key}: \`if: ${String(step.values?.['if'] ?? '')}\` on an action is a condition this plan cannot describe`,
+          );
+          continue;
+        }
+        tolerated.push({ key: step.key, keys: conditional, condition });
+      }
       continue;
     }
 
@@ -368,7 +396,30 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     }
     if (typeof entry.remoteOnly === 'string') {
       const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
-      if (conditional.length > 0) tolerated.push({ key: step.key, keys: conditional });
+      // A condition is the one tolerated key whose *value* can contradict the
+      // plan. `if: always()` only widens when a step runs; any other condition
+      // narrows it, which would make the reason this step does not run here part
+      // of the reason -- "needs prometheus" would be true and incomplete.
+      if (conditional.includes('if')) {
+        const condition = conditionOf(step.values?.['if']);
+        if (condition !== 'always()') {
+          errors.push(
+            `${step.key}: \`if: ${String(step.values?.['if'] ?? '')}\` is a condition this plan cannot describe. ` +
+              'Only `always()` can be tolerated on a step outside the plan, because it is the one condition ' +
+              'that widens when a step runs rather than narrowing it',
+          );
+          continue;
+        }
+        tolerated.push({ key: step.key, keys: conditional, condition });
+        const why = entry.remoteOnly.trim();
+        if (why.length < 40) {
+          errors.push(`${step.key}: the remote-only reason is ${String(why.length)} characters, which is not a reason`);
+          continue;
+        }
+        remote.push({ key: step.key, job: step.job, why });
+        continue;
+      }
+      if (conditional.length > 0) tolerated.push({ key: step.key, keys: conditional, condition: null });
       const why = entry.remoteOnly.trim();
       if (why.length < 40) {
         errors.push(`${step.key}: the remote-only reason is ${String(why.length)} characters, which is not a reason`);
@@ -431,7 +482,12 @@ export function describePlan(plan) {
   if (plan.tolerated.length > 0) {
     lines.push('');
     lines.push(`  ${String(plan.tolerated.length)} step(s) outside the plan carry a key this runner does not reproduce:`);
-    for (const step of plan.tolerated) lines.push(`    ${step.key} — ${step.keys.join(', ')}`);
+    for (const step of plan.tolerated) {
+      // The condition is shown with its value: `if (always())` says what was
+      // tolerated, where `if` alone would say only that something was.
+      const shown = step.keys.map((key) => (key === 'if' ? `if (${String(step.condition)})` : key));
+      lines.push(`    ${step.key} — ${shown.join(', ')}`);
+    }
   }
   return lines;
 }

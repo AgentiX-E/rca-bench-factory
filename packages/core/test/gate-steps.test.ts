@@ -23,6 +23,7 @@ import {
   STEP_KEYS,
   STEP_PLAN,
   classify,
+  conditionOf,
   describePlan,
   localCommands,
   readWorkflow,
@@ -218,8 +219,20 @@ describe('classify', () => {
 });
 
 describe('the keys a step may carry', () => {
-  function step(keys: string[], run: string | null = 'pnpm gate'): Record<string, unknown> {
-    return { job: 'verify', name: 'Gate', key: 'verify / Gate', run, uses: run === null ? 'actions/checkout@v4' : null, keys };
+  function step(
+    keys: string[],
+    run: string | null = 'pnpm gate',
+    values: Record<string, string> = {},
+  ): Record<string, unknown> {
+    return {
+      job: 'verify',
+      name: 'Gate',
+      key: 'verify / Gate',
+      run,
+      uses: run === null ? 'actions/checkout@v4' : null,
+      keys,
+      values,
+    };
   }
   const LOCAL = { 'verify / Gate': { local: true } };
   const REMOTE = { 'verify / Gate': { remoteOnly: 'needs a package index this machine does not have, by design' } };
@@ -237,10 +250,13 @@ describe('the keys a step may carry', () => {
     // The shipped workflow has two `if: always()` steps and both are outside the
     // plan. A tolerance that is never used is indistinguishable from a rule that
     // was never needed, so the same key is allowed exactly where it cannot lie.
-    const result = classify([step(['run', key])], REMOTE);
+    const values = key === 'if' ? { if: 'always()' } : {};
+    const result = classify([step(['run', key], undefined, values)], REMOTE);
     expect(result.errors).toEqual([]);
     expect(result.remote.map((one) => one.key)).toEqual(['verify / Gate']);
-    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: [key] }]);
+    expect(result.tolerated).toEqual([
+      { key: 'verify / Gate', keys: [key], condition: key === 'if' ? 'always()' : null },
+    ]);
   });
 
   it('refuses a key it does not know, rather than assuming it is harmless', () => {
@@ -270,9 +286,55 @@ describe('the keys a step may carry', () => {
   });
 
   it('records a conditional action, because the workflow uses conditions there too', () => {
-    const result = classify([step(['uses', 'if'], null)], {});
+    const result = classify([step(['uses', 'if'], null, { if: 'always()' })], {});
     expect(result.errors).toEqual([]);
-    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: ['if'] }]);
+    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: ['if'], condition: 'always()' }]);
+  });
+
+  it('tolerates `always()` and refuses every other condition, because only one of them widens', () => {
+    // The one tolerated key whose *value* can contradict the plan. `always()` only
+    // widens when a step runs; a branch or an event filter narrows it, and then
+    // "did not run here because it needs prometheus" is true and incomplete --
+    // the step may not run in CI either.
+    const allowed = classify([step(['run', 'if'], undefined, { if: 'always()' })], REMOTE);
+    expect(allowed.errors).toEqual([]);
+
+    const formal = classify([step(['run', 'if'], undefined, { if: '${{ always() }}' })], REMOTE);
+    expect(formal.errors).toEqual([]);
+    expect(formal.tolerated[0]?.condition).toBe('always()');
+
+    for (const condition of ["github.ref == 'refs/heads/main'", 'success()', '|']) {
+      const refused = classify([step(['run', 'if'], undefined, { if: condition })], REMOTE);
+      expect(refused.errors.join('\n'), condition).toContain('is a condition this plan cannot describe');
+      expect(refused.errors.join('\n'), condition).toContain('Only `always()` can be tolerated');
+      expect(refused.remote, condition).toEqual([]);
+    }
+  });
+
+  it('still refuses `always()` on a step marked local, and for the other reason', () => {
+    // Two different objections, and the message has to be the right one: on a
+    // local step the problem is that `runSteps` stops at the first failure, so a
+    // step that runs regardless would not run at all.
+    const errors = classify([step(['run', 'if'], undefined, { if: 'always()' })], LOCAL).errors;
+    expect(errors.join('\n')).toContain('carries `if:`');
+    expect(errors.join('\n')).not.toContain('cannot describe');
+  });
+
+  it('refuses a non-always condition on an action too', () => {
+    const errors = classify([step(['uses', 'if'], null, { if: 'failure()' })], {}).errors;
+    expect(errors.join('\n')).toContain('on an action is a condition this plan cannot describe');
+  });
+
+  it('reads a condition the way GitHub writes it', () => {
+    expect(conditionOf('always()')).toBe('always()');
+    expect(conditionOf('  ${{ always() }}  ')).toBe('always()');
+    expect(conditionOf('${{ failure() }}')).toBe('failure()');
+    expect(conditionOf(undefined)).toBe('');
+  });
+
+  it('tolerates only `always()` on the shipped workflow', () => {
+    const plan = shippedPlan();
+    expect(plan.tolerated.map((one) => one.condition)).toEqual(['always()', 'always()']);
   });
 
   it('states every key it understands, so an unknown one is a gap and not a surprise', () => {
@@ -350,7 +412,7 @@ describe('scripts/verify-local.mjs as a command', () => {
     // The tolerated keys are printed too: a plan that silently ignored an `if:`
     // would look identical to one that has none.
     expect(result.stdout).toContain('step(s) outside the plan carry a key this runner does not reproduce');
-    expect(result.stdout).toContain('Publish the gate-test battery report — if, env');
+    expect(result.stdout).toContain('Publish the gate-test battery report — if (always()), env');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {

@@ -8106,9 +8106,9 @@ ever became local, the shipped-plan test fails before CI does — which is what 
 | `with:` on `run:` | refused; `with:` on `uses:` kept |
 | the shipped plan | 0 errors, 2 tolerated conditionals named in `--list` |
 | `gate-steps.test.ts` | **46 tests** |
-| `core` test suite | **163 files, 4031 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **167 files, 4218 tests passed** (as of this commit) |
+| `core` test suite | **163 files, 4031 tests passed** (as of `079c4bf00`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `079c4bf00`) |
+| repo test suite | **167 files, 4218 tests passed** (as of `079c4bf00`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 68 across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
@@ -8129,3 +8129,86 @@ ever became local, the shipped-plan test fails before CI does — which is what 
   verdict, not about the wall clock, and the distinction is now written down but not tested]`
 - **v2.16's three items and the nineteen before them are unchanged.** `[open: this pass touched
   the reader's key handling and the plan's printed form]`
+
+---
+
+## v2.18 — the plan tolerated `if:` by its name, not by its value
+
+### The gap the previous pass recorded
+
+v2.17 ended with this open item, verbatim:
+
+> **A tolerated key is checked for presence, not for meaning.** `if: always()` and
+> `if: github.ref == 'refs/heads/main'` are both "a condition", and both are refused on a local
+> step. On a remote-only step the difference is invisible.
+
+That is a statement about the plan's *claim*, so it has an answer that is not a policy choice.
+
+The plan says of every step it does not run: **"did not run: X — needs prometheus."** For that
+sentence to be true, needing prometheus has to be *the* reason. A branch filter makes it part of
+the reason: the step also does not run on a pull request. `always()` does not — it only widens
+when a step runs ("even after a failure"), so it cannot make a reason incomplete.
+
+So the rule is one line, and it is about direction: **a condition may be tolerated only if it
+widens.** `always()` widens; `success()`, `failure()`, a branch filter and an event filter all
+narrow.
+
+### What changed
+
+`readWorkflow` now records each key's inline value, not just its name — one string per key, and
+the only key whose value is read is the one where it matters. `conditionOf` normalises the two
+spellings GitHub accepts, `always()` and `${{ always() }}`, so the plan does not pass or fail on
+whitespace.
+
+A step outside the plan carrying `if:` is now accepted only when the value normalises to
+`always()`; anything else is refused with the text quoted back:
+
+```
+verify / Gate: `if: github.ref == 'refs/heads/main'` is a condition this plan cannot describe.
+Only `always()` can be tolerated on a step outside the plan, because it is the one condition
+that widens when a step runs rather than narrowing it
+```
+
+A *local* step carrying `if:` is still refused, and by the other message — `runSteps` stops at
+the first failure, so a step that runs regardless would not run at all. Two objections, two
+messages, and a test asserts which one appears where.
+
+The tolerated line in `--list` now shows the value rather than the key:
+
+```
+    batteries / Publish the gate-test battery report — if (always()), env
+    batteries / Upload the gate-test battery report — if (always())
+```
+
+`if` alone would have said *that* something was tolerated. `if (always())` says what.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `always()` and `${{ always() }}` | tolerated on a step outside the plan |
+| any other condition | refused, quoted, on a run step and on an action |
+| a block-scalar condition | refused — `\|` is not `always()` |
+| `always()` on a local step | refused by the *local* rule, not the condition rule |
+| the shipped workflow | two tolerated conditions, both `always()`, asserted by value |
+| `gate-steps.test.ts` | **51 tests** |
+| `core` test suite | **163 files, 4036 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **167 files, 4223 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 68 across 40 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
+
+### Open
+
+- **`env:` is still tolerated by presence, and its value is a secret.** `[open: the publisher
+  carries `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, and the plan records only that `env:`
+  exists. Reading it is not the point -- the point is that no `env` value can make "needs the
+  run token" incomplete, and that argument is written in the code rather than tested]`
+- **A condition on an action is refused, though an action is not a gate.** `[open: the same
+  strictness is applied to `uses:` steps, where a narrowed condition cannot make any claim false
+  -- upload-artefact runs conditionally today and the plan says so. The cost is that a future
+  `if:` on an action needs a plan entry that does not exist, which will look like an obstacle]`
+- **v2.17's other two items and the twenty-two before them are unchanged.** `[open: the runner
+  still cannot honour `working-directory`, `shell`, `env`, `continue-on-error`; `timeout-minutes`
+  is still unenforced]`
