@@ -371,4 +371,33 @@ describe('a killed battery is repaired by the next one, and a live one is left a
       'a normal exit left a record that the next run would use to overwrite somebody’s edit',
     ).toEqual([]);
   });
+
+  it('treats a recorded file that is gone as a difference, not as a crash', () => {
+    // The record covers whole subtrees, and other processes write to those subtrees
+    // while a battery runs: `type-miss-probe.test.ts` writes a harness into
+    // `scripts/` for the length of one probe and removes it in a `finally`. This
+    // check digested every recorded path unconditionally, so a file that vanished
+    // between the two readings raised `FileNotFoundError` from inside a `finally`
+    // -- a traceback where the verdict belongs, on a run whose only fault was
+    // overlapping another part of the suite. It reproduced as one failure in one
+    // full-suite run, which is the shape a person calls flaky and stops reading.
+    //
+    // The Node half of the same mechanism has always asked whether the path exists
+    // first. One rule, two implementations, and the one that reports was the one
+    // without this test.
+    const path = subject('present when the record was taken\n');
+    const outcome = runGuard({
+      roots: [path],
+      label: 'a-battery-whose-subject-vanished',
+      body: `    pathlib.Path(${JSON.stringify(path)}).unlink()`,
+    });
+
+    expect(outcome.status, outcome.stderr).toBe(0);
+    expect(outcome.stderr).toContain('differing from its record');
+    expect(outcome.stderr, 'a missing file was reported as a traceback').not.toContain('Traceback');
+    // And it says *which* file, and *how*: a count is not something a reader can
+    // look at, and "gone" and "changed" have opposite repairs -- somebody else's
+    // scratch versus this battery's own leftovers.
+    expect(outcome.stderr).toContain(`${path} (gone)`);
+  });
 });

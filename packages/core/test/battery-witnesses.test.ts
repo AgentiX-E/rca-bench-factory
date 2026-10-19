@@ -268,4 +268,28 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
     });
     expect(callers).toHaveLength(batteries.length);
   });
+
+  it('does not record the scratch another process keeps in the tree', () => {
+    // A test that needs a module beside its subject writes it with a dot in front
+    // of the name -- `scripts/.probe-figures-harness-type-miss.mjs` exists for the
+    // length of one probe. The journal records whole subtrees, so it saw that file
+    // and then digested it after the probe had removed it: one failure in one
+    // full-suite run, in a `finally`, as a traceback.
+    //
+    // Skipping dotfiles is the rule `derive-gate-sites.mjs` adopted for the same
+    // reason and after the same kind of failure: a file that is not committed, not
+    // named by `pnpm lint` and never resolved by an operator is scratch, and
+    // scratch belongs to whoever wrote it. The contents of a scratch *directory*
+    // are scratch too, which is why the test has one.
+    const listed = pythonJson(`
+import tempfile
+root = pathlib.Path(tempfile.mkdtemp())
+(root / 'visible.mjs').write_text('x')
+(root / 'visible.txt').write_text('x')
+(root / '.hidden.mjs').write_text('x')
+(root / '.hidden-dir').mkdir()
+(root / '.hidden-dir' / 'inside.mjs').write_text('x')
+print(json.dumps([p.name for p in W._guarded_files([root])]))`);
+    expect(listed).toEqual(['visible.mjs']);
+  });
 });

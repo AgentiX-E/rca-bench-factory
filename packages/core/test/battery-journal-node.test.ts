@@ -408,7 +408,12 @@ describe('the JavaScript batteries’ journal', () => {
     expect(readFileSync(path, 'utf8'), 'a normal exit was repaired, excusing the battery').toBe(
       'left mutated\n',
     );
+    // The reason travels with the name: "changed" is this battery's own leftover,
+    // and "gone" would be somebody else's scratch, which the Python half reports
+    // for the same field. A message that said only "differing" leaves the reader
+    // to guess which repair applies.
     expect(outcome.stderr).toContain('differing from its record');
+    expect(outcome.stderr).toContain('(changed)');
     expect(journals(), 'a normal exit left a record that would overwrite an edit').toEqual([]);
   });
 

@@ -93,7 +93,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -147,7 +147,16 @@ function message(text) {
   writeSync(2, `${text}\n`);
 }
 
-/** Every file under `roots` worth recording, sorted so two runs agree. */
+/**
+ * Every file under `roots` worth recording, sorted so two runs agree.
+ *
+ * Dotfiles are skipped, and the reason is not cosmetic: a test that needs a
+ * module beside its subject writes scratch with a dot in front of it
+ * (`scripts/.probe-figures-harness-*.mjs`), it exists for the length of one
+ * probe, and a record that included it would resurrect it during a kill-repair
+ * and call its deletion a difference. `derive-gate-sites.mjs` learned this rule
+ * first, and this is the same rule: scratch belongs to whoever wrote it.
+ */
 function guardedFiles(roots) {
   const out = [];
   const walk = (path) => {
@@ -156,7 +165,7 @@ function guardedFiles(roots) {
       return;
     }
     for (const name of readdirSync(path).sort()) {
-      if (SKIP_DIRS.has(name)) continue;
+      if (SKIP_DIRS.has(name) || name.startsWith('.')) continue;
       const child = resolve(path, name);
       if (statSync(child).isDirectory()) {
         walk(child);
@@ -277,6 +286,22 @@ export function repairAbandoned() {
 }
 
 /**
+ * How a recorded file differs from the record, or `null` when it does not.
+ *
+ * A file can be **gone** by the end of the run, and that is a difference rather
+ * than an error: the record covers whole subtrees, and other tests write to them
+ * while a battery runs. The two answers are kept apart because their repairs are
+ * opposite -- "gone" is somebody else's scratch, "changed" is this battery's own
+ * leftovers -- and a message that said only "differing" would leave the reader to
+ * guess which. The Python half carries the same distinction, for the same reason
+ * and after the same failure.
+ */
+function difference(entry) {
+  if (!existsSync(entry.path)) return 'gone';
+  return digest(readFileSync(entry.path)) === entry.sha256 ? null : 'changed';
+}
+
+/**
  * Run `body` with every file it could mutate recorded on disk.
  *
  * `body` must return the battery's process status, and that status is what this
@@ -316,9 +341,9 @@ export function withJournal(label, body, options = {}) {
     if (settled) return;
     settled = true;
     process.removeListener('exit', settle);
-    const left = record.entries.filter(
-      (entry) => !existsSync(entry.path) || digest(readFileSync(entry.path)) !== entry.sha256,
-    );
+    const left = record.entries
+      .map((entry) => [entry, difference(entry)])
+      .filter((pair) => pair[1] !== null);
     try {
       unlinkSync(journal);
     } catch {
@@ -329,9 +354,17 @@ export function withJournal(label, body, options = {}) {
       // edited `golden-master/doc-counts.json` while a battery was running, and
       // the next run's repair wrote the old bytes back over the edit. A record
       // taken at start cannot tell a battery's mutation from a person's edit.
+      // Named, five of them, for the reason the Python half gives: "1 file(s)" is a
+      // count, and a count cannot be looked at. The reason travels with the name
+      // because the two repairs are opposite: a file that is **gone** was somebody
+      // else's scratch, and a file that **changed** is this battery's own leftovers.
+      const named = left
+        .slice(0, 5)
+        .map(([entry, why]) => `${relative(REPO, entry.path)} (${why})`)
+        .join(', ');
       message(
-        `journal: ${label} left ${String(left.length)} file(s) differing from its record; ` +
-          'its own restore check decides whether that is a failure',
+        `journal: ${label} left ${String(left.length)} file(s) differing from its record ` +
+          `(${named}${left.length > 5 ? ', ...' : ''}); its own restore check decides whether that is a failure`,
       );
     }
   };

@@ -393,6 +393,33 @@ def _digest(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _difference(path: pathlib.Path, digest: str) -> str | None:
+    """How `path` differs from the record, or `None` when it does not.
+
+    ## Why absence is a difference and not an error
+
+    The record covers whole subtrees, and **other processes write to those
+    subtrees while a battery runs**: `type-miss-probe.test.ts` writes a harness
+    into `scripts/` for the duration of one probe and removes it in a `finally`.
+    The end-of-phase check digested every recorded path unconditionally, so a file
+    that vanished between the two readings raised `FileNotFoundError` from inside
+    a `contextlib` exit -- a traceback standing where the verdict should be, on a
+    run whose only fault was overlapping another part of the suite. It reproduced
+    as one failure in one full-suite run, which is the shape a reader is most
+    likely to call flaky.
+
+    The Node half of this mechanism (`journal.mjs`) has always asked whether the
+    path exists first. One rule, two implementations, and the one that reports was
+    the one without the test -- the same division of labour that produced
+    findings 181, 183 and 184.
+    """
+    if not path.is_file():
+        return "gone"
+    if _digest(path) != digest:
+        return "changed"
+    return None
+
+
 def _is_battery_process(pid: int, script: str | None = None) -> bool:
     """Whether `pid` is the run that wrote a record naming `script`.
 
@@ -491,7 +518,22 @@ def _script_name() -> str | None:
 
 
 def _guarded_files(roots) -> list[pathlib.Path]:
-    """Every file under `roots` worth recording, sorted so two runs agree."""
+    """Every file under `roots` worth recording, sorted so two runs agree.
+
+    ## Dotfiles are not part of the tree
+
+    Tests that need a module beside its subject write scratch with a dot in front
+    of it -- `scripts/.probe-figures-harness-type-miss.mjs` exists for the length
+    of one probe and is removed in a `finally`. A record that included such a file
+    would resurrect it during a kill-repair (the repair writes recorded bytes back)
+    and would call its deletion a difference. Neither is a statement about this
+    repository.
+
+    `derive-gate-sites.mjs` adopted this rule first, for the same reason and after
+    the same kind of failure: a file that is not committed, not named by
+    `pnpm lint`, and never resolved by an operator is scratch, and scratch belongs
+    to whoever wrote it.
+    """
     out: list[pathlib.Path] = []
     for root in roots:
         root = pathlib.Path(root)
@@ -502,6 +544,10 @@ def _guarded_files(roots) -> list[pathlib.Path]:
             if not path.is_file():
                 continue
             if any(part in SKIP_DIRS for part in path.parts):
+                continue
+            # Relative, not `path.name`: the contents of a scratch *directory* are
+            # scratch too.
+            if any(part.startswith(".") for part in path.relative_to(root).parts):
                 continue
             if path.suffix in GUARDED_SUFFIXES:
                 out.append(path)
@@ -555,7 +601,11 @@ def guard(label: str, roots=None):
         )
         raise
 
-    left = [e["path"] for e in record["entries"] if _digest(pathlib.Path(e["path"])) != e["sha256"]]
+    left: list[tuple[str, str]] = []
+    for entry in record["entries"]:
+        why = _difference(pathlib.Path(entry["path"]), entry["sha256"])
+        if why is not None:
+            left.append((entry["path"], why))
     journal.unlink(missing_ok=True)
     if left:
         # The journal is dropped **even here**, and the reason is measured: this pass edited
@@ -567,8 +617,14 @@ def guard(label: str, roots=None):
         # Nothing is lost by dropping it: a battery whose restore failed exits non-zero from
         # its own `assert_source_restored`, which names the files. The journal exists for the
         # case where no assertion can run -- a kill -- and a normal exit is not that case.
+        #
+        # The files are **named**, five of them, because "1 file(s)" is a count and a count
+        # cannot be looked at. A reader who cannot see which file left holds a number and a
+        # note that the number is somebody else's problem.
+        named = ", ".join(f"{path} ({why})" for path, why in left[:5])
         print(
-            f"_witnesses: {label} left {len(left)} file(s) differing from its record; its own "
+            f"_witnesses: {label} left {len(left)} file(s) differing from its record "
+            f"({named}{', ...' if len(left) > 5 else ''}); its own "
             "restore check decides whether that is a failure",
             file=sys.stderr,
         )
