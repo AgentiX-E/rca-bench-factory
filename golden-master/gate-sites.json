@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 43,
+  "scanned": 45,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -489,6 +489,30 @@
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",
       "provedBy": "packages/core/test/gates-are-testable-is-enumerated.test.ts"
+    },
+    {
+      "script": "scripts/verify-local.mjs",
+      "line": 91,
+      "condition": "plan.errors.length > 0",
+      "diagnostic": "${error}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-steps.test.ts"
+    },
+    {
+      "script": "scripts/verify-local.mjs",
+      "line": 108,
+      "condition": "commands.length === 0",
+      "diagnostic": "verify:local: no step key contains \"${only}\"\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-steps.test.ts"
+    },
+    {
+      "script": "scripts/verify-local.mjs",
+      "line": 123,
+      "condition": "!result.ok",
+      "diagnostic": "verify:local: FAILED at ${String(result.index + 1)}/${String(result.commands)}",
+      "status": "proved",
+      "provedBy": "packages/core/test/gate-steps.test.ts"
     },
     {
       "script": "scripts/verify-reader-against-backend.mjs",

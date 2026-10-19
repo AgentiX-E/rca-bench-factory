@@ -1,0 +1,371 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
+/**
+ * The scripts this file drives, declared as well as done.
+ *
+ * `gate-sites-are-proven.test.ts` refuses a site that is named but never
+ * executed, so the two accounts -- this declaration and the `spawnSync` calls
+ * below -- have to agree. Two of the three exits in `verify-local.mjs` were
+ * unreachable from a test until the workflow path became overridable; the
+ * fixtures here are the shipped `ci.yml` with one thing changed, never a
+ * hand-written workflow, so they cannot drift out of the parser's shapes.
+ */
+const DRIVES = ['scripts/verify-local.mjs', 'scripts/gate-steps.mjs'];
+
+import {
+  ROOT,
+  SETUP_ACTIONS,
+  STEP_PLAN,
+  classify,
+  localCommands,
+  readWorkflow,
+  shippedPlan,
+} from '../../../scripts/gate-steps.mjs';
+import { describePlan, runSteps } from '../../../scripts/verify-local.mjs';
+
+/**
+ * The one definition of "how to check a change here".
+ *
+ * ## The defect this exists for
+ *
+ * For ten passes the local gate was `pnpm lint 2>&1 | grep -c FAIL`. It printed
+ * `0` every time, because `lint` never prints that word -- it exits 1 and says
+ * something else. The check could not fail, so it certified every change; CI then
+ * rejected two of them.
+ *
+ * A `verify:local` script that restated CI's steps would have been a copy of the
+ * workflow, and a copy drifts. So the steps are **read from `ci.yml`**, and the
+ * only hand-written thing is the classification -- which of them need something a
+ * laptop does not have. That table is checkable, and this file checks it.
+ *
+ * ## What each test is for
+ *
+ * - `shippedPlan()` clean: the workflow and the table agree *today*.
+ * - the parser on synthetic text: a step it cannot read is an error, not a
+ *   silently shorter plan.
+ * - `classify` on synthetic steps: all four ways to be wrong, because a validator
+ *   whose failure branches were never driven is a validator that does not exist.
+ * - `runSteps` with an injected runner: the failure branch, without breaking a
+ *   real gate to reach it.
+ */
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SCRIPT = resolve(ROOT, 'scripts', 'verify-local.mjs');
+
+const SCRATCH = mkdtempSync(join(tmpdir(), 'rca-verify-local-'));
+
+afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
+
+describe('the shipped workflow and the shipped plan agree', () => {
+  it('classifies every run step, with no ghost entries', () => {
+    const plan = shippedPlan();
+    expect(plan.errors).toEqual([]);
+    // A parser that quietly stopped reading would satisfy the assertion above.
+    expect(plan.steps.length).toBeGreaterThan(50);
+    expect(plan.local.length + plan.remote.length).toBeGreaterThan(40);
+    expect(plan.remote.length).toBeGreaterThan(0);
+  });
+
+  it('keeps `sudo` out of the local plan', () => {
+    // The mechanical form of "it can run here": a step that installs a package
+    // through apt is not a local step, it is a step that would fail on a laptop
+    // without a password prompt.
+    for (const step of shippedPlan().local) {
+      expect(step.run, `${step.key} asks for sudo`).not.toMatch(/\bsudo\b/);
+    }
+  });
+
+  it('gives every remote-only step a reason, and every setup action one too', () => {
+    for (const step of shippedPlan().remote) {
+      expect(step.why.length, `${step.key}`).toBeGreaterThan(40);
+    }
+    for (const [action, reason] of Object.entries(SETUP_ACTIONS)) {
+      expect(reason.length, action).toBeGreaterThan(20);
+    }
+  });
+
+  it('covers every job in the workflow', () => {
+    // A job whose steps were all classified remote-only would mean a whole job
+    // that no local run touches; that is allowed, but it has to be visible.
+    const jobs = new Set(shippedPlan().steps.map((step) => step.job));
+    const localJobs = new Set(shippedPlan().local.map((step) => step.job));
+    expect([...jobs].filter((job) => !localJobs.has(job))).toEqual([]);
+  });
+});
+
+describe('the workflow reader', () => {
+  const WORKFLOW = [
+    'name: CI',
+    'on:',
+    '  push:',
+    'jobs:',
+    '  one:',
+    '    steps:',
+    '      - name: Check out',
+    '        uses: actions/checkout@v4',
+    '',
+    '      - name: A gate',
+    '        run: pnpm gate',
+    '',
+    '      - name: A script',
+    '        run: |',
+    '          set -eu',
+    '          echo one',
+    '          echo two',
+  ].join('\n');
+
+  it('reads run, uses and a multi-line block', () => {
+    const { steps, errors } = readWorkflow(WORKFLOW);
+    expect(errors).toEqual([]);
+    expect(steps.map((step) => [step.job, step.name, step.uses, step.run])).toEqual([
+      ['one', 'Check out', 'actions/checkout@v4', null],
+      ['one', 'A gate', null, 'pnpm gate'],
+      ['one', 'A script', null, 'set -eu\necho one\necho two'],
+    ]);
+  });
+
+  it('refuses a step with neither run nor uses, instead of dropping it', () => {
+    const broken = WORKFLOW.replace('        run: pnpm gate', '        with:\n          node: 22');
+    const { steps, errors } = readWorkflow(broken);
+    expect(errors.join('\n')).toContain('has neither');
+    // The step is still reported: a shorter plan would be a quieter defect.
+    expect(steps.map((step) => step.name)).toContain('A gate');
+  });
+
+  it('refuses a workflow with no jobs block', () => {
+    expect(readWorkflow('name: CI\non: push\n').errors).toEqual(['ci.yml has no top-level `jobs:`']);
+  });
+
+  it('refuses a run block with no body', () => {
+    const empty = WORKFLOW.replace('          set -eu\n          echo one\n          echo two', '');
+    expect(readWorkflow(empty).errors.join('\n')).toContain('no body');
+  });
+});
+
+describe('classify', () => {
+  const steps = [
+    { job: 'verify', name: 'Install dependencies', key: 'verify / Install dependencies', run: 'pnpm install', uses: null },
+    { job: 'verify', name: 'Check out', key: 'verify / Check out', run: null, uses: 'actions/checkout@v4' },
+    { job: 'verify', name: 'Gate', key: 'verify / Gate', run: 'pnpm gate', uses: null },
+  ];
+  const plan = { 'verify / Install dependencies': { local: true }, 'verify / Gate': { local: true } };
+
+  it('passes a step that is in the plan and a uses that is a setup action', () => {
+    expect(classify(steps, plan).errors).toEqual([]);
+  });
+
+  it('names a step with no entry', () => {
+    const errors = classify(steps.slice(0, 1).concat(steps.slice(2)), {
+      'verify / Install dependencies': { local: true },
+    }).errors;
+    expect(errors.join('\n')).toContain('verify / Gate: no plan entry');
+  });
+
+  it('names an entry with no step', () => {
+    const errors = classify(steps.slice(0, 1), plan).errors;
+    expect(errors.join('\n')).toContain('verify / Gate: in the plan, but no such step exists');
+  });
+
+  it('refuses a reason too short to be a reason', () => {
+    const errors = classify(steps.slice(0, 1).concat(steps.slice(2)), {
+      'verify / Install dependencies': { local: true },
+      'verify / Gate': { remoteOnly: 'needs a runner' },
+    }).errors;
+    expect(errors.join('\n')).toContain('not a reason');
+  });
+
+  it('refuses an action that is not setup, because a gate could hide in one', () => {
+    const withAction = steps.concat([
+      {
+        job: 'verify',
+        name: 'A gate as an action',
+        key: 'verify / A gate as an action',
+        run: null,
+        uses: 'someone/a-gate@v1',
+      },
+    ]);
+    const errors = classify(withAction, plan).errors;
+    expect(errors.join('\n')).toContain('someone/a-gate@v1');
+    expect(errors.join('\n')).toContain('cannot see');
+  });
+
+  it('refuses an entry that is neither shape', () => {
+    const errors = classify(steps.slice(0, 1).concat(steps.slice(2)), {
+      'verify / Install dependencies': { local: true },
+      'verify / Gate': { note: 'looks local' },
+    }).errors;
+    expect(errors.join('\n')).toContain('neither');
+  });
+
+  it('lists the local and remote steps it accepted', () => {
+    const result = classify(steps, {
+      'verify / Install dependencies': { local: true },
+      'verify / Gate': { remoteOnly: 'needs a package index this machine does not have, by design' },
+    });
+    expect(result.local.map((step) => step.key)).toEqual(['verify / Install dependencies']);
+    expect(result.remote.map((step) => step.key)).toEqual(['verify / Gate']);
+    // The setup action is in neither list: it is not a step, it is a precondition.
+    expect(result.local.concat(result.remote).map((step) => step.key)).not.toContain('verify / Check out');
+  });
+});
+
+describe('the plan as a runnable sequence', () => {
+  const local = [
+    { key: 'a / one', run: 'pnpm build' },
+    { key: 'b / two', run: 'pnpm build' },
+    { key: 'a / three', run: 'pnpm lint' },
+  ];
+
+  it('runs a command once even when two jobs both run it', () => {
+    const commands = localCommands(local);
+    expect(commands.map((step) => step.run)).toEqual(['pnpm build', 'pnpm lint']);
+    expect(commands[0].first).toBe('a / one');
+    expect(commands[0].also).toEqual(['b / two']);
+  });
+
+  it('keeps the order CI uses', () => {
+    expect(localCommands(local.slice(2).concat(local.slice(0, 2))).map((step) => step.run)).toEqual([
+      'pnpm lint',
+      'pnpm build',
+    ]);
+  });
+
+  it('stops at the first failure and says which step it was', () => {
+    const seen = [];
+    const result = runSteps(localCommands(local), (command) => {
+      seen.push(command);
+      if (command === 'pnpm lint') throw new Error('lint failed');
+    });
+    expect(result.ok).toBe(false);
+    expect(result.step.first).toBe('a / three');
+    expect(result.index).toBe(1);
+    expect(seen).toEqual(['pnpm build', 'pnpm lint']);
+  });
+
+  it('runs every command when none fails', () => {
+    const seen = [];
+    const result = runSteps(localCommands(local), (command) => seen.push(command));
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(['pnpm build', 'pnpm lint']);
+    expect(result.commands).toBe(2);
+  });
+});
+
+describe('scripts/verify-local.mjs as a command', () => {
+  it('prints the plan, including every reason for not running a step', () => {
+    const result = spawnSync(process.execPath, [SCRIPT, '--list'], { cwd: ROOT, encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('run steps can run here');
+    for (const step of shippedPlan().remote) {
+      expect(result.stdout).toContain(step.key);
+      expect(result.stdout).toContain(step.why);
+    }
+  });
+
+  it('refuses a filter that selects nothing, rather than reporting success', () => {
+    // The failure mode a filter invites: `--only bateries` (a typo) would run
+    // zero commands and exit 0, which reads exactly like a green run.
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'no-such-step'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no step key contains');
+  });
+
+  it('describes the plan in the same order the run uses', () => {
+    const plan = shippedPlan();
+    const lines = describePlan(plan);
+    const locals = lines.filter((line) => line.startsWith('  local   '));
+    expect(locals).toHaveLength(plan.local.length);
+    expect(locals[0]).toContain(plan.local[0].key);
+  });
+});
+
+describe('the exits, reached without breaking the shipped workflow', () => {
+  const scratch = SCRATCH;
+
+  /** The shipped workflow with one command replaced, by exact step key. */
+  function workflowWith(key: string, command: string): string {
+    const text = readFileSync(resolve(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const lines = text.split('\n');
+    const at = lines.findIndex((line) => line === `      - name: ${key.split(' / ')[1] ?? ''}`);
+    expect(at, `no step named ${key}`).toBeGreaterThan(-1);
+    const runAt = lines.findIndex((line, index) => index > at && /^ {8}run: /.test(line));
+    expect(runAt, `no run under ${key}`).toBeGreaterThan(at);
+    lines[runAt] = `        run: ${command}`;
+    const path = join(scratch, `ci-${String(Math.abs(key.length + command.length))}.yml`);
+    writeFileSync(path, lines.join('\n'));
+    return path;
+  }
+
+  it('refuses a workflow the plan does not describe, naming the step', () => {
+    const text = readFileSync(resolve(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')
+      .replace('      - name: Type-check', '      - name: Type-check (renamed)');
+    const path = join(scratch, 'ci-renamed.yml');
+    writeFileSync(path, text);
+
+    const result = spawnSync(process.execPath, [SCRIPT, '--list'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('the plan does not match the workflow');
+    expect(result.stderr).toContain('Type-check (renamed)');
+  });
+
+  it('reports a failing step by name and command, and stops there', () => {
+    // One command replaced with `exit 3`, and `--only` selects just that step, so
+    // the failure branch is reached in a second instead of after a suite run.
+    const path = workflowWith('verify / Type-check', 'exit 3');
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('verify:local: FAILED at 1/1');
+    expect(result.stderr).toContain('verify / Type-check');
+    expect(result.stderr).toContain('command: exit 3');
+  });
+
+  it('runs the step it selected and says how many it left out', () => {
+    const path = workflowWith('verify / Type-check', 'true');
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('verify:local: OK (1 command(s), 1 of the 36 local steps)');
+    expect(result.stdout).toContain('did not run:');
+  });
+
+  it('declares the scripts it drives, in the form the inventory reads', () => {
+    expect(DRIVES).toEqual(['scripts/verify-local.mjs', 'scripts/gate-steps.mjs']);
+  });
+});
+
+describe('the plan is a claim about this repository', () => {
+  it('names steps that exist, so a renamed step cannot leave the plan quietly', () => {
+    const plan = shippedPlan();
+    const keys = new Set(plan.steps.map((step) => step.key));
+    for (const key of Object.keys(STEP_PLAN)) expect(keys.has(key), key).toBe(true);
+  });
+
+  it('has no local step whose command is empty', () => {
+    for (const step of shippedPlan().local) expect(step.run.trim(), step.key).not.toBe('');
+  });
+
+  it('agrees with `check-no-mock` about where test files live', () => {
+    // A small cross-check that the local plan and the lint guards use the same
+    // working directory: both run from the repository root, and this file is read
+    // from there by the scripts above.
+    expect(resolve(HERE, '..', '..', '..')).toBe(ROOT);
+  });
+});

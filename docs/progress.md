@@ -7823,9 +7823,9 @@ deliberately not read: it is the sum of the four terms that are.
 | the report reader | refuses the same fact, says `record` instead of `run` |
 | the snapshot | `{files, tests}` and nothing else, asserted by key list |
 | the terminal | one note per scope, only when non-zero |
-| `core` test suite | **162 files, 3985 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **166 files, 4172 tests passed** (as of this commit) |
+| `core` test suite | **162 files, 3985 tests passed** (as of `d888e3cc1`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `d888e3cc1`) |
+| repo test suite | **166 files, 4172 tests passed** (as of `d888e3cc1`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7903,3 +7903,117 @@ counterpart was a suite that never ran the verifier.
   `verify:local` target would give one exit code and would also be a second copy of CI's step
   list, which is the kind of duplicate this log keeps finding; the honest form of it has not
   been designed yet]`
+
+---
+
+## v2.16 — how to check a change here is now a command, and it reads the workflow
+
+### What the last pass left
+
+F-82's second half: *"nothing in the repository states how to check a change locally, so each
+pass invents one -- this pass invented a broken one."* The obvious repair, a `verify:local`
+script listing the commands, is a **second copy of `ci.yml`**, and a copy drifts: the day a gate
+is added to the workflow, the copy keeps saying green. That is the same defect one turn further
+out.
+
+So the commands are not written down anywhere. They are **read out of `ci.yml`**, and the only
+hand-written thing is the one thing that cannot be derived:
+
+```
+verify:local — 36 of 43 run steps can run here
+
+  local   verify / Build (core then cli; cli resolves core's dist)
+  local   verify / Test with coverage (core + cli, ≥95% per dimension, 100% functions)
+  …
+  remote  verify / Install a backend this repository did not write
+          installs prometheus through apt and binds a port
+  remote  batteries / Publish the gate-test battery report
+          writes to a GitHub artefact/annotation, which needs the run token
+```
+
+`pnpm verify:local` runs 31 distinct commands covering those 36 steps, in CI order, and stops at
+the first failure with the step's name and its command. Commands that appear in several jobs —
+`pnpm install`, `pnpm build` — run once; a second identical command on one machine proves nothing.
+
+### The table is the artifact, and it is checked four ways
+
+`scripts/gate-steps.mjs` holds `STEP_PLAN`: one entry per `run:` step, `local` or
+`remoteOnly: "<reason>"`. `gate-steps.test.ts` holds it against the workflow:
+
+| rule | what it prevents |
+| --- | --- |
+| every `run:` step has an entry | a gate added to CI and silently missing from the local plan |
+| every entry has a step | a renamed step leaving the plan quietly |
+| every `remoteOnly` reason is ≥ 40 characters | "needs a runner" as a reason |
+| every `uses:` is one of four setup actions | a gate hidden in an action, which the plan cannot see |
+
+The last one was not in the first draft and is the one worth keeping: **a `uses:` step is not
+classified by the table, so an action that decided something would be invisible to it.** The
+closed list of four — checkout, node, pnpm, artefact upload — is what makes "no gate is an
+action" checkable rather than assumed.
+
+### A closed list that closed itself
+
+Writing the table by hand, five keys came out truncated — `…(no survivors, no inert, no
+misattributed)` for a step whose name continues `mutations`. The validator reported all five as
+a pair: *"no plan entry"* and *"in the plan, but no such step exists"* — the same wrong key seen
+from both sides. That is exactly the class of error the table exists to catch, and it caught it
+before the file was ever committed.
+
+### The two exits that had no test
+
+`verify-local.mjs` has three failures: the plan does not match, the filter selects nothing, and
+a step fails. The second is easy. The other two need a workflow that differs from the shipped
+one, and a test may not edit `ci.yml` to observe a branch.
+
+`RCA_CI_WORKFLOW` is the answer, and it is not a testing hook: checking a workflow edit before
+pushing is `RCA_CI_WORKFLOW=/tmp/ci.yml pnpm verify:local --list`. With it, both branches are
+driven by **the shipped workflow with one thing changed** — a renamed step, and a command
+replaced by `exit 3`. Same shape as `golden-master/verify.mjs --expected`.
+
+### Where the tool immediately paid for itself
+
+Two spot runs, on this tree:
+
+```
+$ node scripts/verify-local.mjs --only "Documentation guards"
+  … gate-sites.json is stale: scripts/verify-local.mjs:123 …
+verify:local: FAILED at 1/2
+  step:    artefacts / Documentation guards are satisfied
+  command: pnpm docs:check
+```
+
+That is a real failure, in this pass's own files, found by a command rather than by a grep —
+which is precisely what the previous pass did not have.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the plan | 56 steps read, 43 with `run:`, 36 local, 7 remote-only, 0 errors |
+| the commands | 31 distinct, in CI order, deduplicated |
+| all four validator rules | driven by 29 tests, including a synthetic workflow per parser shape |
+| the three exits | all driven: plan mismatch, empty selection, failing step |
+| `verify:local --list` | prints every step and every reason |
+| `gate-sites` | 68 sites across 40 scripts, 68 annotated, `--check` OK |
+| `core` test suite | **163 files, 4014 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **167 files, 4201 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
+
+### Open
+
+- **A green local run is not a green CI run, and the tool says so rather than fixing it.**
+  `[open: seven steps need a runner, and no amount of local work will run them. The plan prints
+  them every time, with reasons, which is the honest form -- but "verify:local passed" will
+  still be quoted by someone as "CI will pass", and nothing in the output stops that reading]`
+- **`remoteOnly` is checked for length, not for truth.** `[open: a 60-character reason that is
+  wrong passes. The only defence is that seven entries are few enough to read, and the test
+  asserts the count is stable at seven -- adding a step that "needs a runner" for a lazy reason
+  would move that number and be visible in a diff]`
+- **The plan covers the workflow, not the workflow's `if:` conditions.** `[open: no step in
+  ci.yml is conditional today; the day one is, the plan will claim to run something CI skips,
+  and the parser will not notice because it does not read `if:`]`
+- **v2.15's four items and the fifteen before them are unchanged.** `[open: this pass added a
+  tool and its table, and touched no guard, no exporter and no corpus]`

@@ -112,6 +112,15 @@ const REGISTER: Record<string, Entry> = {
   'derive-backend-support.mjs': { class: 'gate' },
   'derive-fault-golden.mjs': { class: 'gate' },
   'derive-gate-sites.mjs': { class: 'gate' },
+  'gate-steps.mjs': {
+    class: 'data',
+    why:
+      'A reader for .github/workflows/ci.yml plus the one table that cannot be derived from it: ' +
+      'which of its steps need a runner. No main, no exit code, no verdict of its own -- ' +
+      'verify-local.mjs runs the result and gate-steps.test.ts holds the table against the workflow. ' +
+      'The alternative was a second list of commands, and a copy of the workflow keeps saying green ' +
+      'on the day a gate is added to it.',
+  },
   'doc-counts-vocabulary.mjs': {
     class: 'data',
     why:
@@ -180,6 +189,12 @@ const REGISTER: Record<string, Entry> = {
   'inject-m1-ceiling-tests.mjs': { class: 'gate' },
 
   // --- Tools: produce an artefact or serve one, with no verdict ---
+  // The aggregate gate: it decides nothing about the tree, and it fails when a
+  // gate the workflow runs fails. It is filed as a gate rather than a tool
+  // because that is what its three exits are -- and because a script with
+  // `process.exit(1)` may not be filed as a tool, which is the rule that keeps
+  // the register from being a place to hide a gate.
+  'verify-local.mjs': { class: 'gate' },
   'serve-site.mjs': {
     class: 'tool',
     why:
