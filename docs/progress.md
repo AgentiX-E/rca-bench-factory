@@ -8324,6 +8324,23 @@ It is worth naming the shape: the thing that found the last two defects was **th
 reading, and this time the defect was in the machinery whose job is to explain a red run. A check
 that assumes its own premise stops speaking exactly when the premise is false.
 
+### The split that went red, and why the log keeps it
+
+This pass landed as two commits: the journal guard first, then the runner and this document. The
+first one is **red in CI**, at exactly one step -- `Published suite counts, read from that run
+rather than taken again` -- and the reason is not a defect in what it changes. It adds two tests
+and does not move the measurement: `golden-master/doc-counts.json` and the rows in this document
+marked *as of this commit* are pinned to the tree that publishes them, so a commit that adds tests
+without carrying the number is a commit whose own gate disagrees with it.
+
+The second commit is green because it carries the numbers, and the log keeps the first one instead
+of being rewritten. Two reasons. The history is the record, and rewriting it would delete the
+evidence of a real invariant: **the measurement moves with the tests, in the same commit**. And the
+invariant is satisfiable at every commit -- v2.18's rows were already converted to *as of
+`1bcaa28`* in the second commit, which is what an intermediate commit would have had to do for
+itself. The cheap way to be sure is one commit per pass, which is what every earlier pass did and
+what this one did not.
+
 ### Acceptance
 
 | gate | result |
@@ -8337,6 +8354,7 @@ that assumes its own premise stops speaking exactly when the premise is false.
 | proven by asking the process | `pwd`, `$BASH_VERSION`, `$0` — three end-to-end spawns |
 | `gate-steps.test.ts` | **69 tests** (51 before) |
 | journal guard | a vanished file is a named difference; dotfiles are not recorded (2 tests) |
+| the split commit is red | yes, and recorded below: it adds tests without moving the measurement |
 | `core` test suite | **163 files, 4056 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
 | repo test suite | **167 files, 4243 tests passed** (as of this commit) |
