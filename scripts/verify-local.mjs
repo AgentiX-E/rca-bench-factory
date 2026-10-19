@@ -27,10 +27,21 @@
  *   node scripts/verify-local.mjs              # everything that can run here
  *   node scripts/verify-local.mjs --list       # the plan, without running it
  *   node scripts/verify-local.mjs --only docs  # steps whose key contains "docs"
+ *
+ * ## Why the loop is not here
+ *
+ * `runSteps` and `describePlan` live in `gate-steps.mjs`, with the rest of the
+ * plan. Two reasons, and the second is the one that was learned the hard way:
+ * they are pure, so a test can drive the failure branch without a runner; and
+ * **this file is a gate**, so `verify-gates-are-testable.mjs` hollows it out with
+ * `process.exit(0)`. A test that imported this module would die at import and
+ * name no failing test -- the harness reports that as unattributed, correctly,
+ * because a crashed worker is not a verdict. So this file is imported by nothing:
+ * the tests spawn it, and hollowing it makes the spawns return the wrong code.
  */
 
 import { execFileSync } from 'node:child_process';
-import { ROOT, localCommands, shippedPlan } from './gate-steps.mjs';
+import { ROOT, describePlan, localCommands, runSteps, shippedPlan } from './gate-steps.mjs';
 
 const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
@@ -46,40 +57,6 @@ const only = onlyIndex < 0 ? null : (argv[onlyIndex + 1] ?? null);
  */
 export function runCommand(command) {
   execFileSync('sh', ['-c', command], { cwd: ROOT, stdio: 'inherit' });
-}
-
-/**
- * Run the commands in order and stop at the first failure.
- *
- * The runner is a parameter so the failure branch can be driven by a test: a
- * branch that can only be reached by breaking a real gate is a branch nobody
- * exercises, which is the shape this repository keeps finding.
- */
-export function runSteps(commands, run = runCommand) {
-  for (const [index, step] of commands.entries()) {
-    process.stdout.write(`\n[${String(index + 1)}/${String(commands.length)}] ${step.first}\n`);
-    try {
-      run(step.run);
-    } catch (error) {
-      return { ok: false, index, step, commands: commands.length, error };
-    }
-  }
-  return { ok: true, index: -1, step: null, commands: commands.length, error: null };
-}
-
-/** The plan, printed the way a person deciding whether to trust it would read it. */
-export function describePlan(plan) {
-  const lines = [
-    `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
-    '',
-  ];
-  for (const step of plan.local) lines.push(`  local   ${step.key}`);
-  lines.push('');
-  for (const step of plan.remote) {
-    lines.push(`  remote  ${step.key}`);
-    lines.push(`          ${step.why}`);
-  }
-  return lines;
 }
 
 function main() {
@@ -108,7 +85,7 @@ function main() {
     process.exit(1);
   }
 
-  const result = runSteps(commands);
+  const result = runSteps(commands, runCommand);
   const selected = only === null ? plan.local.length : plan.local.filter((step) => step.key.includes(only)).length;
   if (!result.ok) {
     process.stderr.write(

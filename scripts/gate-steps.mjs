@@ -321,6 +321,41 @@ export function shippedPlan(path = workflowPath()) {
 }
 
 /**
+ * Run the commands in order and stop at the first failure.
+ *
+ * The runner is a parameter because this module has no business spawning
+ * anything: the CLI passes its own, and a test passes one that fails on demand.
+ * A branch that can only be reached by breaking a real gate is a branch nobody
+ * exercises, which is the shape this repository keeps finding.
+ */
+export function runSteps(commands, run) {
+  for (const [index, step] of commands.entries()) {
+    process.stdout.write(`\n[${String(index + 1)}/${String(commands.length)}] ${step.first}\n`);
+    try {
+      run(step.run);
+    } catch (error) {
+      return { ok: false, index, step, commands: commands.length, error };
+    }
+  }
+  return { ok: true, index: -1, step: null, commands: commands.length, error: null };
+}
+
+/** The plan, printed the way a person deciding whether to trust it would read it. */
+export function describePlan(plan) {
+  const lines = [
+    `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
+    '',
+  ];
+  for (const step of plan.local) lines.push(`  local   ${step.key}`);
+  lines.push('');
+  for (const step of plan.remote) {
+    lines.push(`  remote  ${step.key}`);
+    lines.push(`          ${step.why}`);
+  }
+  return lines;
+}
+
+/**
  * The commands to run, in the order CI runs them, without repeats.
  *
  * Two jobs that both run `pnpm build` are two runners doing the same thing; on

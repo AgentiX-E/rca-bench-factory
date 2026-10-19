@@ -21,11 +21,13 @@ import {
   SETUP_ACTIONS,
   STEP_PLAN,
   classify,
+  describePlan,
   localCommands,
   readWorkflow,
+  runSteps,
   shippedPlan,
 } from '../../../scripts/gate-steps.mjs';
-import { describePlan, runSteps } from '../../../scripts/verify-local.mjs';
+
 
 /**
  * The one definition of "how to check a change here".

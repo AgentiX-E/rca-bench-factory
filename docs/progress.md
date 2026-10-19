@@ -7971,6 +7971,26 @@ pushing is `RCA_CI_WORKFLOW=/tmp/ci.yml pnpm verify:local --list`. With it, both
 driven by **the shipped workflow with one thing changed** — a renamed step, and a command
 replaced by `exit 3`. Same shape as `golden-master/verify.mjs --expected`.
 
+### CI found the one thing this pass got wrong, and it was the shape of the fix
+
+The first push failed at `Every gate can be shown to fail`:
+
+```
+UNATTRIBUTED  verify-local.mjs  exited 1 and named no failing test
+```
+
+That harness hollows each gate with `process.exit(0)` and requires a *named* failing test. The
+gate was hollowed, `gate-steps.test.ts` failed -- but the test **imported** the hollowed module,
+so the vitest worker died at import and vitest reported a crashed file, not a failing test.
+
+The fix is a rule worth keeping: **a module that can be hollowed must not be a module a test
+imports.** `runSteps` and `describePlan` moved to `gate-steps.mjs`, which has no exit and
+therefore is never a subject of that harness; `verify-local.mjs` is now imported by nothing and
+only spawned. Hollowed, the spawns return 0 where the tests require 1, and five tests fail by
+name. Verified by doing exactly that to the file and restoring it byte-for-byte.
+
+A crashed worker is not a verdict, and the harness was right to say so.
+
 ### Where the tool immediately paid for itself
 
 Two spot runs, on this tree:
