@@ -7843,3 +7843,63 @@ deliberately not read: it is the sum of the four terms that are.
   quarantined -- only against synthetic reports]`
 - **v2.14's and v2.13's items, and the fourteen before them, are unchanged.** `[open: this
   pass touched the reader's arithmetic and its two printed forms]`
+
+---
+
+## v2.15, addendum — the gate I ran could not fail
+
+CI failed this pass on `lint:cold`, at `check-no-mock.mjs`:
+
+```
+  …/measure-doc-counts-readings.test.ts:89  // `it.skip` x3 in one file -- exit 0.
+  …/measure-doc-counts-readings.test.ts:320  // in a `describe.skip`.
+```
+
+The guard scans every `.ts` under `packages/*/test` line by line for the skip tokens and does
+not distinguish a comment from code. Two comments that *documented measured behaviour* read as
+the behaviour itself.
+
+The comments are reworded. But the part worth recording is why they were committed at all.
+
+### What I was actually running
+
+For this pass and several before it, the local gate was:
+
+```sh
+pnpm lint 2>&1 | grep -c FAIL
+```
+
+It printed `0` every time. `check-no-mock` does not print the word `FAIL` — on failure it says
+`Mock / skip usage is not allowed:` and exits 1, and `pnpm` appends `ELIFECYCLE`. So the
+number was zero because the string never occurs, not because nothing failed. **The check could
+not fail**, and it certified ten passes of lint that it never looked at.
+
+The correct gate is one line longer and says something:
+
+```sh
+pnpm lint >/dev/null; echo $?
+```
+
+This is the same defect this whole campaign is about, one level up: a predicate expressed in a
+vocabulary the record does not use. Every other guard in this repository was checked against
+the thing it claims to measure; the check *on* those guards was a grep for a word, run by hand,
+recorded as "green".
+
+### What caught it
+
+CI, which runs the exit code. That is the second time in ten passes that the remote job
+reported something a local run had already "verified" — v2.08 was the first, and its
+counterpart was a suite that never ran the verifier.
+
+### Not fixed here
+
+- **`check-no-mock` still reads comments as code.** `[open: the alternative is a comment
+  stripper in front of the scan, and a commented-out skip is arguably dead code that the guard
+  is right to refuse. What it costs is that a test cannot explain a skip in its own words --
+  the explanation has to live somewhere the guard does not read, which is why the captured
+  shapes are documented in the script instead]`
+- **The verification recipe is still prose.** `[open: nothing in the repository states how to
+  check a change locally, so each pass invents one -- this pass invented a broken one. A
+  `verify:local` target would give one exit code and would also be a second copy of CI's step
+  list, which is the kind of duplicate this log keeps finding; the honest form of it has not
+  been designed yet]`

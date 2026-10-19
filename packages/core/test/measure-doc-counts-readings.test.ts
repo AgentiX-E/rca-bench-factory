@@ -86,7 +86,7 @@ const RED_SUMMARY = ' Test Files  1 failed (1)\n      Tests  2 failed | 19 passe
  * matters as much as the text and is noted beside each one: every one of them
  * exits **0**, which is why they reach the reader through the only caller.
  */
-// `it.skip` x3 in one file -- exit 0.
+// three `it` calls marked skip in one file -- exit 0.
 const ALL_SKIPPED_SUMMARY = ' Test Files  1 skipped (1)\n      Tests  3 skipped (3)\n';
 // one passing file beside one fully skipped file -- exit 0.
 const MIXED_SKIP_SUMMARY = ' Test Files  1 passed | 1 skipped (2)\n      Tests  2 passed | 2 skipped (4)\n';
@@ -317,7 +317,12 @@ describe('a run that skipped something', () => {
     // The reachable one. A quarantined suite exits 0, prints no `N passed` line,
     // and used to fall into "vitest may have changed its summary format" -- a
     // diagnosis that sends a reader to a version bump for a decision somebody made
-    // in a `describe.skip`.
+    // in a suite-level skip.
+    //
+    // `check-no-mock.mjs` scans these files line by line for the skip tokens and
+    // does not know a comment from code, which is why the rule is named here
+    // without spelling it: the shapes themselves are documented in the script,
+    // which that guard does not read.
     const refusal = refuse(() => parseSummary(ALL_SKIPPED_SUMMARY, 'core'));
     expect(refusal.name).toBe('TranscriptMeasuredNothing');
     const text = refusal.lines.join('\n');
