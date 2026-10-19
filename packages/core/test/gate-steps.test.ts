@@ -17,8 +17,10 @@ import { afterAll, describe, expect, it } from 'vitest';
 const DRIVES = ['scripts/verify-local.mjs', 'scripts/gate-steps.mjs'];
 
 import {
+  LOCAL_INCOMPATIBLE,
   ROOT,
   SETUP_ACTIONS,
+  STEP_KEYS,
   STEP_PLAN,
   classify,
   describePlan,
@@ -215,6 +217,85 @@ describe('classify', () => {
   });
 });
 
+describe('the keys a step may carry', () => {
+  function step(keys: string[], run: string | null = 'pnpm gate'): Record<string, unknown> {
+    return { job: 'verify', name: 'Gate', key: 'verify / Gate', run, uses: run === null ? 'actions/checkout@v4' : null, keys };
+  }
+  const LOCAL = { 'verify / Gate': { local: true } };
+  const REMOTE = { 'verify / Gate': { remoteOnly: 'needs a package index this machine does not have, by design' } };
+
+  it.each(LOCAL_INCOMPATIBLE)('refuses `%s:` on a step marked local', (key) => {
+    // Each of these changes whether, where or with what the command runs, so
+    // "verify:local ran this step" would be false. The message has to name the
+    // key and offer the two ways out, because the repair differs per key.
+    const errors = classify([step(['run', key])], LOCAL).errors;
+    expect(errors.join('\n')).toContain(`carries \`${key}:\``);
+    expect(errors.join('\n')).toContain('make it remote-only');
+  });
+
+  it.each(LOCAL_INCOMPATIBLE)('tolerates `%s:` on a step that does not run here', (key) => {
+    // The shipped workflow has two `if: always()` steps and both are outside the
+    // plan. A tolerance that is never used is indistinguishable from a rule that
+    // was never needed, so the same key is allowed exactly where it cannot lie.
+    const result = classify([step(['run', key])], REMOTE);
+    expect(result.errors).toEqual([]);
+    expect(result.remote.map((one) => one.key)).toEqual(['verify / Gate']);
+    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: [key] }]);
+  });
+
+  it('refuses a key it does not know, rather than assuming it is harmless', () => {
+    const errors = classify([step(['run', 'strategy'])], LOCAL).errors;
+    expect(errors.join('\n')).toContain('does not know what `strategy:` does to a step');
+  });
+
+  it('tolerates `id:` and `timeout-minutes:` on a local step', () => {
+    // Neither can change the verdict: one is a name, the other is a resource
+    // bound. A slower step on this machine still fails the same way.
+    const result = classify([step(['run', 'id', 'timeout-minutes'])], LOCAL);
+    expect(result.errors).toEqual([]);
+    expect(result.local).toHaveLength(1);
+    expect(result.tolerated).toEqual([]);
+  });
+
+  it('refuses `with:` on a `run:` step, which GitHub does not allow either', () => {
+    const errors = classify([step(['run', 'with'])], LOCAL).errors;
+    expect(errors.join('\n')).toContain('a `run:` step with `with:`');
+  });
+
+  it('keeps `with:` on a `uses:` step, which is what it is for', () => {
+    // An action is not in the plan at all -- it is a precondition -- so the plan
+    // passed here is empty on purpose: an entry for it would be a ghost.
+    const result = classify([step(['uses', 'with'], null)], {});
+    expect(result.errors).toEqual([]);
+  });
+
+  it('records a conditional action, because the workflow uses conditions there too', () => {
+    const result = classify([step(['uses', 'if'], null)], {});
+    expect(result.errors).toEqual([]);
+    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: ['if'] }]);
+  });
+
+  it('states every key it understands, so an unknown one is a gap and not a surprise', () => {
+    const known = Object.keys(STEP_KEYS);
+    for (const key of LOCAL_INCOMPATIBLE) expect(known, key).toContain(key);
+    for (const key of ['run', 'uses', 'name', 'with', 'id', 'timeout-minutes']) expect(known, key).toContain(key);
+  });
+
+  it('uses the tolerance on the shipped workflow, and says where', () => {
+    // The point of the last pass: the two `if: always()` steps are outside the
+    // plan, and both are. If one of them ever became local, this fails before CI
+    // does -- which is exactly what a plan is for.
+    const plan = shippedPlan();
+    expect(plan.tolerated.map((one) => one.key)).toEqual([
+      'batteries / Publish the gate-test battery report',
+      'batteries / Upload the gate-test battery report',
+    ]);
+    for (const one of plan.tolerated) {
+      expect(plan.local.map((local) => local.key)).not.toContain(one.key);
+    }
+  });
+});
+
 describe('the plan as a runnable sequence', () => {
   const local = [
     { key: 'a / one', run: 'pnpm build' },
@@ -266,6 +347,10 @@ describe('scripts/verify-local.mjs as a command', () => {
       expect(result.stdout).toContain(step.key);
       expect(result.stdout).toContain(step.why);
     }
+    // The tolerated keys are printed too: a plan that silently ignored an `if:`
+    // would look identical to one that has none.
+    expect(result.stdout).toContain('step(s) outside the plan carry a key this runner does not reproduce');
+    expect(result.stdout).toContain('Publish the gate-test battery report — if, env');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {

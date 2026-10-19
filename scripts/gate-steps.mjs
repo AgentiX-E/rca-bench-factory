@@ -63,6 +63,46 @@ export function workflowPath() {
   return override === undefined || override === '' ? WORKFLOW : resolve(ROOT, override);
 }
 
+/**
+ * Step keys this reader understands, and what it does with each.
+ *
+ * ## The rule
+ *
+ * A key that changes *whether*, *where* or *with what* a step runs makes the
+ * plan's claim false, and the plan's claim is the only thing this file produces.
+ * So every key is either acted on, tolerated on a step that does not run here, or
+ * refused. There is no fourth case, and before this pass there was: `if:` was
+ * stepped over in silence, and a conditional step marked local would have been
+ * reported as something `verify:local` runs.
+ *
+ * Two of the shipped steps carry `if: always()`, and both are outside the local
+ * plan -- the battery report publisher (needs the run token) and the artefact
+ * upload (an action). That is why the tolerance exists rather than a blanket
+ * refusal: the key is a fact about the step, and whether it matters is a question
+ * about the plan.
+ */
+export const STEP_KEYS = {
+  // Acted on.
+  name: 'read: the key the plan is indexed by',
+  run: 'read: the command, executed verbatim',
+  uses: 'read: matched against the setup actions below',
+
+  // Tolerated anywhere, because neither changes the verdict of a command.
+  id: 'tolerated: an identifier for later steps to reference',
+  'timeout-minutes': 'tolerated: a resource bound, not a condition -- a step that is slower here still fails the same way',
+
+  // Tolerated only on a step that does not run here; refused on a local one.
+  if: 'a condition on whether the step runs at all',
+  env: 'environment for the command, which this runner does not reproduce',
+  shell: 'the interpreter, where this runner always uses `sh -c`',
+  'continue-on-error': 'a failure that does not fail the job, which this runner reads as a failure',
+  'working-directory': 'where the command runs, where this runner always uses the repository root',
+  with: 'inputs for an action; meaningful only on a `uses:` step',
+};
+
+/** Keys that make a step impossible to run here, with the reason said once. */
+export const LOCAL_INCOMPATIBLE = ['if', 'env', 'shell', 'continue-on-error', 'working-directory'];
+
 /** The actions a step may use. Anything else is a gate wearing a `uses:`. */
 export const SETUP_ACTIONS = {
   'actions/checkout@v4': 'checks the tree out; nothing is decided by it',
@@ -207,11 +247,18 @@ export function readWorkflow(text) {
     }
 
     const name = stepMatch[1].trim();
-    const step = { job, name, key: `${job} / ${name}`, run: null, uses: null };
+    const step = { job, name, key: `${job} / ${name}`, run: null, uses: null, keys: [] };
     for (let j = i + 1; j < lines.length; j += 1) {
       const inner = lines[j];
       if (/^ {6}- /.test(inner)) break;
       if (/^ {2}[A-Za-z][\w-]*:\s*$/.test(inner)) break;
+
+      // Every key at the step's own indent, whether or not this reader acts on
+      // it. A key it silently stepped over was the whole complaint against the
+      // previous pass: `if:` on a local step would have made the plan claim to
+      // run something CI may skip.
+      const keyMatch = /^ {8}([A-Za-z][\w-]*):/.exec(inner);
+      if (keyMatch !== null) step.keys.push(keyMatch[1]);
 
       const runMatch = /^ {8}run: (.*)$/.exec(inner);
       if (runMatch !== null) {
@@ -271,6 +318,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
   const errors = [];
   const local = [];
   const remote = [];
+  const tolerated = [];
   const seen = new Set();
 
   for (const step of steps) {
@@ -278,6 +326,11 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       if (!(step.uses in setupActions)) {
         errors.push(`${step.key}: \`uses: ${step.uses}\` is not a setup action, so it is a gate this plan cannot see`);
       }
+      // Recorded rather than ignored: a conditional action is not a gate, but the
+      // fact that the workflow uses conditions should be visible in the plan
+      // rather than inferred from the plan's silence.
+      const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
+      if (conditional.length > 0) tolerated.push({ key: step.key, keys: conditional });
       continue;
     }
 
@@ -288,11 +341,34 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     }
     seen.add(step.key);
 
+    if (step.run !== null && (step.keys ?? []).includes('with')) {
+      errors.push(`${step.key}: a \`run:\` step with \`with:\`, which GitHub does not allow -- one of the two is not doing what it looks like`);
+    }
+
+    for (const key of step.keys ?? []) {
+      if (!(key in STEP_KEYS)) {
+        errors.push(`${step.key}: this reader does not know what \`${key}:\` does to a step, so it cannot say whether the plan holds`);
+      }
+    }
+
     if (entry.local === true) {
+      // A key that changes whether, where or with what a local step runs makes
+      // "verify:local ran this" false, so it is refused rather than tolerated.
+      const blocked = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
+      for (const key of blocked) {
+        errors.push(
+          `${step.key}: marked local, but carries \`${key}:\` -- ${String(STEP_KEYS[key])}. ` +
+            'Either make it remote-only with a reason, or teach the runner the key',
+        );
+      }
+      if (blocked.length > 0) continue;
+
       local.push({ key: step.key, job: step.job, run: step.run, note: entry.note ?? '' });
       continue;
     }
     if (typeof entry.remoteOnly === 'string') {
+      const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
+      if (conditional.length > 0) tolerated.push({ key: step.key, keys: conditional });
       const why = entry.remoteOnly.trim();
       if (why.length < 40) {
         errors.push(`${step.key}: the remote-only reason is ${String(why.length)} characters, which is not a reason`);
@@ -310,7 +386,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     }
   }
 
-  return { errors, local, remote };
+  return { errors, local, remote, tolerated };
 }
 
 /** The workflow as it ships, parsed and classified. */
@@ -351,6 +427,11 @@ export function describePlan(plan) {
   for (const step of plan.remote) {
     lines.push(`  remote  ${step.key}`);
     lines.push(`          ${step.why}`);
+  }
+  if (plan.tolerated.length > 0) {
+    lines.push('');
+    lines.push(`  ${String(plan.tolerated.length)} step(s) outside the plan carry a key this runner does not reproduce:`);
+    for (const step of plan.tolerated) lines.push(`    ${step.key} — ${step.keys.join(', ')}`);
   }
   return lines;
 }

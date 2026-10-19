@@ -8016,9 +8016,9 @@ which is precisely what the previous pass did not have.
 | the three exits | all driven: plan mismatch, empty selection, failing step |
 | `verify:local --list` | prints every step and every reason |
 | `gate-sites` | 68 sites across 40 scripts, 68 annotated, `--check` OK |
-| `core` test suite | **163 files, 4014 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **167 files, 4201 tests passed** (as of this commit) |
+| `core` test suite | **163 files, 4014 tests passed** (as of `5647737e5`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `5647737e5`) |
+| repo test suite | **167 files, 4201 tests passed** (as of `5647737e5`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
 
@@ -8037,3 +8037,95 @@ which is precisely what the previous pass did not have.
   and the parser will not notice because it does not read `if:`]`
 - **v2.15's four items and the fifteen before them are unchanged.** `[open: this pass added a
   tool and its table, and touched no guard, no exporter and no corpus]`
+
+---
+
+## v2.17 — the plan read three keys and stepped over seven
+
+### What the previous pass could not see
+
+`readWorkflow` looked for `run:` and `uses:` inside a step block and ignored every other key.
+The shipped workflow has thirteen `with:`, two `if:` and one `env:` — and the reader noticed none
+of them.
+
+Two of those three matter, and one nearly did:
+
+- `if: always()` on **Publish the gate-test battery report** and on **Upload** — both outside the
+  local plan, so the ignore was harmless *by luck*.
+- `env: GITHUB_TOKEN: …` on the publisher — also outside the plan.
+
+The failure mode was one edit away. `if:` on a step marked local would have made `verify:local`
+report `[4/31] verify / Something` for a step CI skips on most runs, and nothing in the output
+would have said so. **A key that is not read is not absent; it is unchecked.**
+
+### Read, tolerate, or refuse — and no fourth case
+
+`STEP_KEYS` now states what this reader does with each key, and `LOCAL_INCOMPATIBLE` names the
+ones that change *whether*, *where* or *with what* a command runs:
+
+| key | on a local step |
+| --- | --- |
+| `if:` | refused — the condition decides whether the step runs at all |
+| `env:` | refused — the runner does not reproduce the environment |
+| `shell:` | refused — the runner always uses `sh -c` |
+| `continue-on-error:` | refused — a failure that does not fail the job, read here as a failure |
+| `working-directory:` | refused — the runner always uses the repository root |
+| `with:` | refused on a `run:` step, which GitHub does not allow either |
+
+The same keys are **tolerated on a step that does not run here**, because there they cannot make
+the claim false — and the tolerance is now *printed*:
+
+```
+  2 step(s) outside the plan carry a key this runner does not reproduce:
+    batteries / Publish the gate-test battery report — if, env
+    batteries / Upload the gate-test battery report — if
+```
+
+Ignoring and tolerating look identical in a diff. One of them is a decision and the other is a
+gap, so the plan says which.
+
+Two keys are tolerated anywhere, for a stated reason: `id:` is a name, and `timeout-minutes:` is a
+resource bound — a step that is slower on this machine still fails in the same way.
+
+An unknown key is an error. `strategy:` today means a matrix, and a matrix would make "the plan"
+mean several runs; the reader says it does not know rather than guessing it is harmless.
+
+### The tolerance is used, which is how it was tested
+
+A rule that permits something the tree never does is a rule nobody has exercised. The shipped
+workflow carries `if:` twice, both outside the plan, so `gate-steps.test.ts` asserts exactly that:
+those two keys, those two steps, and that neither appears among the local ones. If one of them
+ever became local, the shipped-plan test fails before CI does — which is what a plan is for.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the ten key rules | each driven both ways: refused on a local step, tolerated on a remote one |
+| unknown key | refused, with the key named |
+| `with:` on `run:` | refused; `with:` on `uses:` kept |
+| the shipped plan | 0 errors, 2 tolerated conditionals named in `--list` |
+| `gate-steps.test.ts` | **46 tests** |
+| `core` test suite | **163 files, 4031 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **167 files, 4218 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 68 across 40 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
+
+### Open
+
+- **A tolerated key is checked for presence, not for meaning.** `[open: `if: always()` and
+  `if: github.ref == 'refs/heads/main'` are both "a condition", and both are refused on a local
+  step -- but on a remote-only one the difference is invisible. That is acceptable while the only
+  tolerated conditions are `always()`, and it stops being acceptable the first time one is not]`
+- **The runner still cannot honour any of the five.** `[open: each refusal offers two repairs --
+  make it remote-only, or teach the runner the key. Teaching it `working-directory` is a `cwd`
+  per command and teaching it `shell` is a shell per command; neither is hard, and neither has a
+  caller today. Building them before there is a step that needs them would be inventing a
+  feature to satisfy a test]`
+- **`timeout-minutes:` is tolerated without being enforced.** `[open: a step that hangs locally
+  hangs for as long as the machine allows, where CI would kill it. The tolerance is about the
+  verdict, not about the wall clock, and the distinction is now written down but not tested]`
+- **v2.16's three items and the nineteen before them are unchanged.** `[open: this pass touched
+  the reader's key handling and the plan's printed form]`
