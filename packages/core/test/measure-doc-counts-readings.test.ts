@@ -70,6 +70,14 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const CORE_SUMMARY = ' Test Files  1 passed (1)\n      Tests  20 passed (20)\n';
 const CLI_SUMMARY = ' Test Files  1 passed (1)\n      Tests  135 passed (135)\n';
 
+/**
+ * The same run, failed -- in vitest's own layout.
+ *
+ * `failed` comes first on both lines, which is the whole reason the transcript
+ * reader never counted a red run: its pattern is anchored on `passed`.
+ */
+const RED_SUMMARY = ' Test Files  1 failed (1)\n      Tests  2 failed | 19 passed (21)\n';
+
 let counter = 0;
 
 /**
@@ -230,6 +238,52 @@ describe('the summary line and the report agree about one run', () => {
     const both = countsFromReports([report('core'), report('cli')]);
     expect(both.core.tests + both.cli.tests).toBe(both.repo.tests);
     expect(both.repo.files).toBe(both.core.files + both.cli.files);
+  });
+});
+
+describe('the transcript reading, held to the same verdict', () => {
+  it('refuses a red summary instead of calling it an unreadable format', () => {
+    // Before this, a red transcript fell through to the "could not read" branch and
+    // was reported as a possible change to vitest's output format. The counts were
+    // unreadable; the diagnosis was wrong, and it sent a reader to the wrong file.
+    const refusal = refuse(() => parseSummary(RED_SUMMARY, 'core'));
+    expect(refusal.name).toBe('TranscriptRecordsFailures');
+    const text = refusal.lines.join('\n');
+    expect(text).toContain('records a failing run');
+    expect(text).toContain('1 test file(s) failed, 2 test(s) failed');
+    expect(text).toContain(COUNT_UNAVAILABLE);
+    expect(text).not.toContain('summary format');
+  });
+
+  it('refuses a green block that is followed by a red one, instead of returning the green half', () => {
+    // The reachable shape: `pnpm test` is `core && cli`, so a transcript can hold
+    // one block that passed and one that did not. The anchored pattern matched the
+    // first and stopped, which returned 1 file and 20 tests for a run in which a
+    // file failed -- the same silent dropping `--from` was doing, one format over.
+    const mixed = `${CORE_SUMMARY} Test Files  1 failed (1)\n      Tests  2 failed | 3 passed (5)\n`;
+    const refusal = refuse(() => parseSummary(mixed, 'repo'));
+    expect(refusal.name).toBe('TranscriptRecordsFailures');
+    expect(refusal.lines.join('\n')).toContain('1 test file(s) failed, 2 test(s) failed');
+  });
+
+  it('says the format may have changed only when there is no summary at all', () => {
+    const refusal = refuse(() => parseSummary('nothing that looks like a summary\n', 'core'));
+    expect(refusal.name).toBe('MeasurementUnavailable');
+    expect(refusal.lines.join('\n')).toContain('vitest may have changed its summary format');
+  });
+
+  it('neither reader yields a count for a red record, and both say why in one sentence', () => {
+    // Two mechanisms, one conclusion. The transcript reader cannot match a red
+    // line; the report reader can, and has to refuse. The sentence is shared so
+    // that a reader who meets either one recognises the other.
+    const transcript = refuse(() => parseSummary(RED_SUMMARY, 'core'));
+    const red = report('core', (parsed) => {
+      parsed.testResults[0]!.status = 'failed';
+    });
+    const record = refuse(() => countsFromReports([red, report('cli')]));
+    expect(transcript.lines).toContain(COUNT_UNAVAILABLE);
+    expect(record.lines).toContain(COUNT_UNAVAILABLE);
+    expect(transcript.name).not.toBe(record.name);
   });
 });
 

@@ -170,4 +170,41 @@ describe('scripts/measure-doc-counts.mjs against a red suite', () => {
     expect(result.stderr).not.toContain('Error: Command failed');
     expect(result.stderr).not.toContain('at checkChildProcessResult');
   });
+
+  it('refuses a transcript that says it failed even when the exit code says 0', () => {
+    // The exit code is the caller's verdict, and it is the reason `measure()` never
+    // met a red transcript: `execFileSync` throws before the summary is parsed. A
+    // child that exits 0 while printing `2 failed` is the one way that assumption
+    // breaks -- a wrapper, a `|| true`, a reporter that swallows the status -- and
+    // the reader's own verdict is what catches it. So the reader has to have one.
+    const bin = scratch();
+    const fake = join(bin, 'pnpm');
+    writeFileSync(
+      fake,
+      [
+        '#!/bin/sh',
+        "cat <<'OUT'",
+        '   × test/alpha.test.ts > keeps the invariant',
+        ' Test Files  1 failed (1)',
+        '      Tests  2 failed | 3 passed (5)',
+        'OUT',
+        'exit 0',
+        '',
+      ].join('\n'),
+    );
+    chmodSync(fake, 0o755);
+
+    const result = spawnSync(process.execPath, [SCRIPT], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:${process.env['PATH'] ?? ''}` },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('transcript records a failing run');
+    expect(result.stderr).toContain('1 test file(s) failed, 2 test(s) failed');
+    expect(result.stderr).toContain('A count is what passed');
+    // Not the format diagnosis: the transcript was read, and it said what it said.
+    expect(result.stderr).not.toContain('summary format');
+  });
 });

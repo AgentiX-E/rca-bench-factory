@@ -93,6 +93,20 @@
  * writer both read this function's output, which is why the refusal is here
  * rather than at either call site.
  *
+ * ## And the verdict the transcript was getting for free
+ *
+ * The third reader -- `parseSummary`, which reads the printed summary -- had the
+ * same rule without anyone writing it: a red line reads
+ * `Test Files  2 failed | 1 passed (3)`, and the pattern is anchored on `passed`,
+ * so it could never match. **The layout of the line was doing the guarding.** Two
+ * consequences, both now written down in that function: a red transcript was
+ * diagnosed as a possible format change, and a transcript holding one green block
+ * and one red one returned the green half.
+ *
+ * All three readers now refuse a record that shows a failure, and they say it in
+ * one sentence. The mechanisms differ because the evidence does: an exit code, a
+ * `status` field, a summary line.
+ *
  * ## What `--from` asserts that the spawn cannot
  *
  * `pnpm test` runs whatever the root script filters to, and that filter is a
@@ -141,21 +155,67 @@ function argValue(flag) {
  * match is summed. `skipped` and `todo` are deliberately not added: a count of
  * tests that did not run is not a count of tests, and measuring the suite that
  * passed is what the published rows claim.
+ *
+ * ## The accident this function was living on
+ *
+ * A red summary line reads `Test Files  2 failed | 1 passed (3)`. The pattern
+ * below is anchored on `Test Files` followed by a number and then `passed`, and
+ * the first number on a red line is the **failed** count -- so the pattern cannot
+ * match it. A red transcript was therefore never counted, and nobody had written
+ * that rule: **the layout of the line was doing the guarding.**
+ *
+ * Two things follow, and both are defects of a kind this file has already met:
+ *
+ *  - The protection was invisible. A red transcript was reported as *"could not
+ *    read the counts … vitest may have changed its summary format"*, which is
+ *    the wrong diagnosis for a run that failed. A reader chasing a format change
+ *    would not look at the failing test.
+ *  - It only held for a line that is *entirely* red. A transcript with one green
+ *    block and one red block -- `core` passed, `cli` did not -- matched the green
+ *    block, summed it, and returned `{files: 1, tests: 20}` while the red block
+ *    sat in the same string. That is the same silent dropping `--from` was doing,
+ *    one format over.
+ *
+ * So the refusal is written down now, and it is the same refusal: a record that
+ * shows a failure is not a measurement, in the same words the other two paths
+ * use.
  */
 export function parseSummary(out, scope) {
+  const failedFiles = [...out.matchAll(/Test Files\s+(\d+)\s+failed/g)].map((m) => Number(m[1]));
+  const failedTests = [...out.matchAll(/Tests\s+(\d+)\s+failed/g)].map((m) => Number(m[1]));
+  if (failedFiles.length > 0 || failedTests.length > 0) {
+    const parts = [];
+    if (failedFiles.length > 0) parts.push(`${String(sum(failedFiles))} test file(s) failed`);
+    if (failedTests.length > 0) parts.push(`${String(sum(failedTests))} test(s) failed`);
+    throw new TranscriptRecordsFailures(scope, [
+      `the ${scope} transcript records a failing run, so it is not a measurement:`,
+      `  ${parts.join(', ')}`,
+      COUNT_UNAVAILABLE,
+      'Take the measurement from a run that passed.',
+    ]);
+  }
+
   const files = [...out.matchAll(/Test Files\s+(\d+)\s+passed/g)].map((m) => Number(m[1]));
   const tests = [...out.matchAll(/Tests\s+(\d+)\s+passed/g)].map((m) => Number(m[1]));
   if (!files.length || !tests.length) {
-    fail([
+    // No failure is recorded and there is no summary either: this is the one case
+    // where "the format may have changed" is the right thing to say.
+    throw new MeasurementUnavailable(`the ${scope} summary cannot be read`, [
       `could not read ${scope} counts from vitest output.`,
-      'Expected a `Test Files N passed` line and a `Tests N passed` line.',
-      'vitest may have changed its summary format, or the run failed before it printed one.',
+      'Expected a `Test Files N passed` line and a `Tests N passed` line, and found neither',
+      'a failing run nor a green one -- so vitest may have changed its summary format, or the',
+      'run stopped before it printed a summary.',
     ]);
   }
   return {
-    files: files.reduce((a, b) => a + b, 0),
-    tests: tests.reduce((a, b) => a + b, 0),
+    files: sum(files),
+    tests: sum(tests),
   };
+}
+
+/** Sum every occurrence; a workspace filter can print more than one pair. */
+function sum(values) {
+  return values.reduce((a, b) => a + b, 0);
 }
 
 /**
@@ -322,6 +382,15 @@ export class MeasurementUnavailable extends Error {
     super(reason);
     this.name = 'MeasurementUnavailable';
     this.lines = lines;
+  }
+}
+
+/** A transcript whose summary line records a failure. */
+export class TranscriptRecordsFailures extends MeasurementUnavailable {
+  constructor(scope, lines) {
+    super(`the ${scope} transcript records a failure`, lines);
+    this.name = 'TranscriptRecordsFailures';
+    this.scope = scope;
   }
 }
 

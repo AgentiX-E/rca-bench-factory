@@ -7594,9 +7594,9 @@ The word *green* is load-bearing: it is the difference between advice and a work
 | `--write-doc --from <red>` | exits 1, writes **neither** file, prints no `row(s) updated` |
 | the old assertion | replaced by the refusal it should have been; the arithmetic it endorsed is named in the test |
 | the diagnosis | names `--from`, the word `green`, and both report paths |
-| `core` test suite | **162 files, 3974 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **166 files, 4161 tests passed** (as of this commit) |
+| `core` test suite | **162 files, 3974 tests passed** (as of `e6709c32b`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `e6709c32b`) |
+| repo test suite | **166 files, 4161 tests passed** (as of `e6709c32b`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7623,3 +7623,118 @@ run's report. **They agree**, which is the only reason either number may be publ
 - v2.12's first item, and the fourteen items before it, are unchanged. `[open: this pass
   touched one function's verdict and the sentence next to it; every argument is where it
   was made]`
+
+---
+
+## v2.14 — the transcript was being guarded by its own layout
+
+### The rule nobody wrote
+
+A red vitest summary line reads:
+
+```
+Test Files  1 failed (1)
+      Tests  2 failed | 19 passed (21)
+```
+
+The pattern this repository reads a transcript with is anchored on `Test Files` followed by a
+number and then `passed`. On a red line the first number is the **failed** count, so the
+pattern cannot match. A red transcript was therefore never counted.
+
+**Nobody had written that rule.** The layout of the line was doing the guarding, which is the
+same thing as saying there was no guard: nobody could point at it, nobody had tested it, and
+the next person to relax the pattern would not know they were removing one.
+
+Two defects were living behind it.
+
+### The diagnosis was about the wrong thing
+
+A red transcript fell through to `could not read <scope> counts … vitest may have changed its
+summary format`. The counts were indeed unreadable, and the sentence sent the reader to look
+at a version bump rather than at a failing test. A message is a hypothesis, and this one was
+usually false.
+
+### It only held for a line that was entirely red
+
+```
+ Test Files  1 passed (1)          ← matched, summed
+      Tests  20 passed (20)
+ Test Files  1 failed (1)          ← matched by nothing, invisible
+      Tests  2 failed | 3 passed (5)
+```
+
+This returned `{files: 1, tests: 20}`. A transcript with one green block and one red block is
+exactly what `pnpm test` produces when the first workspace passes and the second does not —
+and that is **the same silent dropping `--from` was doing in v2.13, one format over**.
+
+### Reachability, stated honestly
+
+`measure()` never sees a red transcript today: `execFileSync` throws on the exit code before
+the summary is parsed. So the shape above is unreachable **through this script's only caller**.
+
+It is not unreachable in principle, because the exit code is a claim about a process, not a
+fact about the output: a wrapper script, a `|| true`, a reporter that swallows the status, or
+a caller that feeds captured output from an earlier run all break it. `parseSummary` is
+exported and documented as *the* reading of a transcript, and the program it lives in already
+had two other readers with their own verdicts.
+
+So the reader got one. The end-to-end test in `measure-doc-counts-red-run.test.ts` puts a fake
+`pnpm` on `PATH` that prints
+
+```
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+```
+
+and **exits 0**. The script exits 1 anyway, having read the transcript and disagreed with the
+process:
+
+```
+measure-doc-counts: FAILED
+  the core transcript records a failing run, so it is not a measurement:
+    1 test file(s) failed, 2 test(s) failed
+  A count is what passed; a failed run has no number to publish.
+  Take the measurement from a run that passed.
+```
+
+**The exit code is not the record**, and the reader that exists to read the record needs its
+own opinion of it.
+
+### The branch that could only be observed by exiting
+
+`parseSummary` reported both of its failures with `fail()`, which ends the process. A refusal
+that can only be observed by exiting is the shape finding 121 was written about — and it is
+why the "could not read" message had never been asserted anywhere. Both refusals are thrown
+now (`TranscriptRecordsFailures`, `MeasurementUnavailable`) and are driven directly by four
+tests, including one that asserts a *negative*: the format sentence must not appear when the
+transcript clearly says what happened.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| a red summary | refused, with the failed counts on their own line, and no format diagnosis |
+| green block then red block | refused — it used to return the green half (`{1, 20}`) |
+| no summary at all | still says the format may have changed, because that is when it is true |
+| exit code 0, transcript red | the script exits 1 on the reader's verdict, not the process's |
+| the shared sentence | `COUNT_UNAVAILABLE` is said by all three refusals; the two readers are asserted to be different mechanisms |
+| `core` test suite | **162 files, 3979 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **166 files, 4166 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+### Open
+
+- **Three readers, one sentence, three mechanisms.** `[open: an exit code, a `status` field
+  and a summary line are three different kinds of evidence, so the three refusals cannot share
+  a body -- only the sentence and the conclusion. Sharing the sentence is what makes them
+  recognisable as one rule; it does not make them one implementation, and this campaign has
+  already been wrong once about which of two copies was the tested one]`
+- **`skipped` is still not a failure and still not a count.** `[open: a run whose files are
+  all skipped prints no `N passed` line, so it is refused as unreadable rather than counted as
+  zero. That is the same answer by a different route, and it is not asserted anywhere]`
+- **The rest of the open list is untouched.** `[open: v2.13's three, v2.12's first, and the
+  fourteen before them; this pass changed one function's two refusals and the sentence they
+  say]`
