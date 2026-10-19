@@ -38,6 +38,19 @@
  *   node scripts/measure-doc-counts.mjs --out /tmp/doc-counts.json
  *   node scripts/measure-doc-counts.mjs --check   # fail if the committed file is stale
  *   node scripts/measure-doc-counts.mjs --check --from <report>[,<report>]
+ *   node scripts/measure-doc-counts.mjs --write-doc [--doc <path>] [--from ...]
+ *
+ * ## `--write-doc`, and the two-step update it removes
+ *
+ * The snapshot and the published row in `docs/progress.md` used to be refreshed
+ * separately: one by this command, the other by a hand `str.replace` on a
+ * 7000-line file. Doing one without the other is green **locally** and red only at
+ * the CI step that compares them -- and the two steps are not equally obvious.
+ *
+ * `--write-doc` performs one measurement and writes both. Nothing is written until
+ * both can be: a failure between the two writes would leave exactly the half-state
+ * the flag exists to remove. Rows that are *not* marked as current are never
+ * touched, because they are dated records and are supposed to differ from today.
  *
  * `--check` against a missing `--out` fails before measuring anything. The
  * comparison could not have succeeded, so the three suites are not worth
@@ -79,11 +92,13 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const DEFAULT_OUT = resolve(ROOT, 'golden-master', 'doc-counts.json');
+const PROGRESS = resolve(ROOT, 'docs', 'progress.md');
 
 const SCOPES = [
   { name: 'core', filter: '@rca-bench-factory/core', args: ['--filter', '@rca-bench-factory/core', 'test'] },
@@ -339,9 +354,107 @@ function serialise(counts) {
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }
 
+/**
+ * Rewrite the rows that claim to describe the state at this commit.
+ *
+ * ## Why a writer and a checker both need this predicate
+ *
+ * `check-doc-counts.mjs` refuses a current-state row that does not equal the
+ * measurement. This function replaces the numbers in exactly those rows, so the
+ * two agree by construction -- one definition of "current", in
+ * `doc-counts-vocabulary.mjs`, read by both.
+ *
+ * ## Why it refuses rather than guesses
+ *
+ * Every branch below is a refusal with a line number, because the failure mode of
+ * a rewriting tool is worse than the failure mode of a checking one: a checker
+ * that guesses wrong prints a red line a person can argue with, and a writer that
+ * guesses wrong *edits the record* and reports success. Three shapes are refused:
+ *
+ *  - a current-state row whose label names no scope (which numbers would it take?)
+ *  - a second current-state row for a scope already rewritten (which one is real?)
+ *  - a scope with no current-state row at all (where would the number go?)
+ *
+ * The third is the one that matters most in practice: adding a scope to `SCOPES`
+ * without adding its row would otherwise publish two counts and silently drop the
+ * third on the floor.
+ *
+ * ## Why the whole file is not regenerated
+ *
+ * Because it is a record. `docs/progress.md` is 7000 lines of dated measurements,
+ * arguments and open items; a writer that produced the file from a template would
+ * have to reproduce all of that, and the day it could not, the content would be
+ * lost instead of the numbers being wrong. This function touches only the digits
+ * in rows that say they describe now.
+ */
+export function rewritePublishedRows(text, counts) {
+  const lines = text.split('\n');
+  const errors = [];
+  const rewritten = [];
+  const seen = new Set();
+
+  // The shape `check-doc-counts.mjs` reads: `N files, M tests passed`.
+  const shape = /(\d+)(\s*files?[,\s]+)(\d+)(\s*(?:tests?\s*)?passed)/;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!CURRENT_MARKERS.some((marker) => line.includes(marker))) continue;
+    // A *row*, not a sentence. The phrase "as of this commit" appears in this
+    // document's prose and in other tables that quote it -- both the first live
+    // run of this function and the checker's own history say so. Only a table row
+    // can carry the counts, and only a table row is what the checker reads.
+    if (!line.trimStart().startsWith('|')) continue;
+
+    // The same predicate the checker uses, over the same cell it reads. A writer
+    // that matched on backticks instead would skip the `repo` row, whose label in
+    // the shipped document is written without them -- and would skip it silently,
+    // reporting success over a stale number.
+    const scope = scopeOf(line.split('|')[1] ?? '');
+    const carriesCounts = shape.test(line);
+
+    // A row is a *claim about the counts* when it names a scope or publishes the
+    // shape. A row that does neither is some other table quoting the phrase (a
+    // change log mentioning "the `as of this commit` rows"), and rewriting it
+    // would be editing a sentence because of a word in it.
+    if (scope === null && !carriesCounts) continue;
+
+    if (scope === null || counts[scope] === undefined) {
+      errors.push(`line ${i + 1}: a current-state row names no scope: ${line.trim()}`);
+      continue;
+    }
+    if (seen.has(scope)) {
+      errors.push(`line ${i + 1}: a second current-state row for '${scope}'`);
+      continue;
+    }
+    seen.add(scope);
+
+    if (!carriesCounts) {
+      errors.push(`line ${i + 1}: '${scope}' row is not in the 'N files, M tests passed' shape: ${line.trim()}`);
+      continue;
+    }
+    const next = line.replace(shape, `${counts[scope].files}$2${counts[scope].tests}$4`);
+    if (next !== line) rewritten.push({ scope, line: i + 1 });
+    lines[i] = next;
+  }
+
+  for (const scope of Object.keys(counts)) {
+    if (!seen.has(scope)) errors.push(`no current-state row for '${scope}'; nothing to write it into`);
+  }
+  return { text: lines.join('\n'), errors, rewritten };
+}
+
 function main() {
   const out = argValue('--out') ?? DEFAULT_OUT;
+  const docPath = argValue('--doc') ?? PROGRESS;
   const checking = process.argv.includes('--check');
+  const writing = process.argv.includes('--write-doc');
+
+  if (checking && writing) {
+    // Two verdicts that cannot both hold: one refuses a difference and the other
+    // removes it. A tool that silently prefers one of them is a tool whose exit
+    // code stops meaning anything.
+    fail(['--check and --write-doc contradict each other.', 'Run one of them.']);
+  }
 
   /**
    * The existence precondition is checked *before* the measurement.
@@ -394,6 +507,28 @@ function main() {
         ? `measure-doc-counts: OK (${out} matches the suite)`
         : `measure-doc-counts: OK (${out} matches the run these reports describe: ${from})`,
     );
+    return;
+  }
+
+  if (writing) {
+    // Both computations before either write. A failure between the two writes
+    // would leave the snapshot advanced and the document stale -- the exact
+    // half-state this flag exists to remove.
+    const result = rewritePublishedRows(readFileSync(docPath, 'utf8'), measured);
+    if (result.errors.length > 0) {
+      fail([
+        'the published rows cannot be rewritten, so nothing was written:',
+        ...result.errors.map((line) => `  ${line}`),
+      ]);
+    }
+    writeFileSync(out, text);
+    writeFileSync(docPath, result.text);
+    for (const scope of SCOPES) {
+      const c = measured[scope.name];
+      console.log(`${scope.name.padEnd(5)} ${c.files} files, ${c.tests} tests`);
+    }
+    const touched = result.rewritten.length;
+    console.log(`written to ${out} and ${relative(ROOT, docPath)} (${touched} row(s) updated)`);
     return;
   }
 

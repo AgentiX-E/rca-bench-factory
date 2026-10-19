@@ -100,6 +100,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -126,7 +127,7 @@ const SCOPES = {
 // historical by construction, and reading them as "now" made the guard fire the
 // moment any test was added anywhere. A guard that fires on ordinary work is a
 // nuisance, and a nuisance gets disabled -- which is how a check stops being one.
-const CURRENT_MARKERS = ['as of this commit', 'current state'];
+// See `doc-counts-vocabulary.mjs` for why this list is not restated here.
 
 /**
  * The shapes that publish a count of files and tests.
@@ -221,21 +222,9 @@ function isTableRow(line) {
   return !/^\s*\|[\s|:-]*\|?\s*$/.test(line);
 }
 
-/**
- * Which scope a count declares, read from the row's own label cell.
- *
- * This is deliberately textual and narrow: it looks for the scope word in the
- * label cell of the same row, so a row that names core cannot be read as repo.
- */
-function scopeOf(label) {
-  const lower = label.toLowerCase();
-  if (/\bcore\b/.test(lower)) return 'core';
-  if (/\bcli\b/.test(lower)) return 'cli';
-  if (/\brepo\b|\bevery workspace\b/.test(lower)) return 'repo';
-  // A bare "test suite" is ambiguous, which is the defect. Treat it as
-  // undeclared so the reader must say which scope it means.
-  return null;
-}
+// `scopeOf` lives in `doc-counts-vocabulary.mjs` beside the marker list, because
+// `measure-doc-counts.mjs` has to answer the same question to decide which row to
+// rewrite. A second copy would let the writer pick a row this guard never reads.
 
 /**
  * The clause a count phrase sits in, with its digits normalised.

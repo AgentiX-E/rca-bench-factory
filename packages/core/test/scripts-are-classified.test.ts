@@ -112,6 +112,15 @@ const REGISTER: Record<string, Entry> = {
   'derive-backend-support.mjs': { class: 'gate' },
   'derive-fault-golden.mjs': { class: 'gate' },
   'derive-gate-sites.mjs': { class: 'gate' },
+  'doc-counts-vocabulary.mjs': {
+    class: 'data',
+    why:
+      'One exported array, read by two scripts that face the same predicate from opposite sides: ' +
+      'check-doc-counts.mjs refuses a row that claims to describe this commit, and ' +
+      'measure-doc-counts.mjs rewrites exactly those rows. A writer and a checker that disagree ' +
+      'about which rows are current are wrong in opposite, silent directions -- one edits a dated ' +
+      'record, the other reports success over a stale number. There is no main and no exit.',
+  },
   // A gate that cannot run in CI, like `fetch-official.mjs`: its input is the
   // four CSVs upstream publishes under `rca/archive/`, which this repository
   // refuses to vendor. `--check` compares the committed corpus against a fresh

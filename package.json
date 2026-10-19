@@ -56,6 +56,7 @@
     "docs:check:cold": "node scripts/check-l4-status.mjs && node scripts/check-doc-counts.mjs && node scripts/check-open-list.mjs && node scripts/check-backend-support.mjs && node scripts/check-roundtrip-record.mjs && node scripts/check-data-model-vocabularies.mjs && node scripts/derive-gate-sites.mjs --check",
     "docs:counts": "node scripts/measure-doc-counts.mjs",
     "docs:counts:check": "node scripts/measure-doc-counts.mjs --check",
+    "docs:counts:write": "node scripts/measure-doc-counts.mjs --write-doc",
     "examples:verify": "node scripts/verify-example-pack.mjs",
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
     "verify:gates-are-testable": "node scripts/verify-gates-are-testable.mjs",

@@ -7370,9 +7370,9 @@ the process is the shape finding 121 was written about.
 | the diagnosis | 6 unit tests: red, no transcript, cap, dedupe, re-run hint, never-started |
 | end to end | a fake `pnpm` on `PATH`; exit 1, the three sentences, no stack |
 | the old behaviour | asserted absent by name (`Error: Command failed`) |
-| `core` test suite | **161 files, 3954 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **165 files, 4141 tests passed** (as of this commit) |
+| `core` test suite | **161 files, 3954 tests passed** (as of `711185be2`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `711185be2`) |
+| repo test suite | **165 files, 4141 tests passed** (as of `711185be2`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7392,3 +7392,106 @@ the process is the shape finding 121 was written about.
   v2.07's two, v2.06's two, v2.05's four. `[open: this pass narrowed to one tool's failure
   message and touched no contract, no exporter and no corpus, so every one of them is
   exactly where the previous section left it]`
+
+---
+
+## v2.12 — the counts were updated in two steps, and only one of them was a command
+
+### The two steps
+
+`doc-counts.json` was written by `pnpm docs:counts`. The row in `docs/progress.md` was
+written by a hand `str.replace` on a 7000-line file. The guard compares the row against the
+snapshot, so **doing one without the other is green locally** and red only at the CI step
+that runs `measure-doc-counts --check --from <report>`.
+
+The two steps are not equally obvious. One is a command with a name; the other is a
+transformation a person performs in an editor, and every pass in this log that added tests
+had to remember it. Three of the last six passes got it wrong the first time, which is what
+"remember to" looks like when measured.
+
+### One command, one measurement, both files
+
+```
+pnpm docs:counts:write
+  core  162 files, 3967 tests
+  cli   4 files, 187 tests
+  repo  166 files, 4154 tests
+  written to golden-master/doc-counts.json and docs/progress.md (2 row(s) updated)
+```
+
+That is a real run on this tree. The diff it produced was **two lines** — `core` and repo —
+because the `cli` row already carried `4 files, 187 tests` and its digits did not move.
+Reporting that as three updated rows would be reporting a change the tool did not make.
+
+Nothing is written until both writes can succeed. A failure between them would leave
+exactly the half-state the flag exists to remove, so the document is rewritten in memory
+first and both files are written after.
+
+### Which rows are "current" is now one predicate, read twice
+
+`check-doc-counts.mjs` refuses a row that claims to describe this commit and does not match
+the measurement. `measure-doc-counts.mjs` rewrites the rows that claim it. If the two
+disagree, the failure is silent in one direction and destructive in the other: a writer
+whose predicate is too wide **edits a dated record** — the numbers a past pass measured,
+which are supposed to differ — and a writer whose predicate is too narrow reports success
+over a stale number.
+
+So `CURRENT_MARKERS` and `scopeOf` moved into `scripts/doc-counts-vocabulary.mjs`, a data
+module with no `main` and nothing to prove, read by both.
+
+The `scopeOf` move was not cosmetic. The checker reads the scope from a row's label cell;
+the first writer matched on `` `core` `` with backticks and therefore **skipped the `repo`
+row**, whose label in this document is written without them. That version would have
+updated two rows of three and printed success.
+
+### The first live run refused, correctly
+
+Against the shipped document it reported five lines and wrote nothing:
+
+```
+line 837: a current-state row names no scope: false as a description of the workflow's current state: …
+line 3980: a current-state row names no scope: | `check-doc-counts` | refused the change first: pass 39's
+           and pass 40's `as of this commit` rows were dated …
+```
+
+The predicate was "a line containing a current-state phrase". The *document* uses that
+phrase in prose, in blockquotes, and in a change-log table that quotes it. So the rule is
+narrowed to what the checker actually reads — **a table row that either names a scope or
+publishes the count shape** — and a row that only quotes the phrase is left alone. A writer
+that cannot tell a claim from a sentence about a claim edits sentences.
+
+That regression is now a test, and the case that found it is the fixture: a change-log row
+quoting `as of this commit` must survive untouched.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the rewrite | 10 unit tests: three rows, digits only, idempotent, four refusals, marker wording, a quoting row |
+| end to end | synthetic vitest reports; snapshot and document both written from one measurement |
+| the half-state | a document with no current row writes **neither** file, and says so |
+| contradiction | `--check --write-doc` exits 1 rather than picking a verdict |
+| a live run | `pnpm docs:counts:write` on this tree: 2 rows moved, `cli` correctly untouched |
+| `core` test suite | **162 files, 3967 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **166 files, 4154 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+### Open
+
+- **Starting a new pass still means dating the old rows by hand.** `[open: the writer
+  maintains "the rows that say they are current", and a new pass turns the previous pass's
+  rows into a dated record -- which is an edit no tool can infer, because it is a statement
+  about what that pass measured. Two lines per pass, and getting them wrong is caught by
+  `check-doc-counts` on the next run]`
+- **A red suite still blocks the write.** `[open: `--write-doc` takes its measurement by
+  running the suite, so a red suite means no measurement and no write. That is correct --
+  a count of what passed is meaningless for a failed run -- but it means the tool cannot
+  repair the document when the document is what made the suite red. Escaping that needs the
+  write to accept `--from <reports>`, which it already does; the tool does not say so when
+  it refuses]`
+- v2.11's two, v2.10's two, v2.09's three, v2.08's one, v2.07's two, v2.06's two, and
+  v2.05's four are unchanged. `[open: this pass touched the counting tool and nothing else;
+  each argument is where it was made]`
