@@ -244,6 +244,53 @@ describe('scripts/measure-doc-counts.mjs --write-doc', () => {
     expect(result.stderr).toContain('contradict each other');
   });
 
+  it('writes neither file when the report it was given describes a red run', () => {
+    // A writer that publishes the passing half of a red run would put a number in
+    // the record that no run ever printed, and the next green run would look like
+    // a jump. The refusal has to come before the first write, not between them.
+    const dir = scratch();
+    const doc = join(dir, 'progress.md');
+    const out = join(dir, 'doc-counts.json');
+    writeFileSync(doc, DOC);
+    writeFileSync(out, '{"original":true}\n');
+
+    const red = join(dir, 'red.json');
+    writeFileSync(
+      red,
+      JSON.stringify({
+        testResults: [
+          {
+            name: join(ROOT, 'packages', 'core', 'test', 'epsilon.test.ts'),
+            status: 'failed',
+            assertionResults: [{ status: 'passed' }, { status: 'failed' }],
+          },
+        ],
+      }),
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        SCRIPT,
+        '--write-doc',
+        '--doc',
+        doc,
+        '--out',
+        out,
+        '--from',
+        `${red},${report('cli', 'zeta', 1)}`,
+      ],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('records a failure, so it is not a measurement');
+    expect(result.stderr).toContain('epsilon.test.ts');
+    expect(result.stderr).not.toContain('row(s) updated');
+    expect(readFileSync(out, 'utf8')).toBe('{"original":true}\n');
+    expect(readFileSync(doc, 'utf8')).toBe(DOC);
+  });
+
   it('writes neither file when the document cannot be rewritten', () => {
     // The half-state this flag exists to remove: a snapshot that moved and a
     // document that did not. Neither is written unless both can be.

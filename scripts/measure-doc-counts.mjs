@@ -77,6 +77,22 @@
  * predicate is exactly how this repository has twice ended up with two numbers
  * that were both green.
  *
+ * ## The verdict `--from` has to read for itself
+ *
+ * The spawn path knows a run failed because `execFileSync` throws: the exit code
+ * is the verdict, and `parseSummary` never sees a red transcript's summary line.
+ * A report has no exit code. The verdict is *in* the record -- `status: 'failed'`
+ * on a file, `status: 'failed'` on an assertion -- and for one pass this mode did
+ * not read it. It published the passing half of `N failed | M passed`: the
+ * failing file dropped from the file count, its passing assertions kept in the
+ * test count. That number is printed by nothing at all, and it went straight into
+ * `docs/progress.md` through `--write-doc`.
+ *
+ * So a report that records a failure is refused, in the same words the spawn
+ * path uses (`COUNT_UNAVAILABLE`), because it is the same fact. A checker and a
+ * writer both read this function's output, which is why the refusal is here
+ * rather than at either call site.
+ *
  * ## What `--from` asserts that the spawn cannot
  *
  * `pnpm test` runs whatever the root script filters to, and that filter is a
@@ -209,6 +225,7 @@ export function countsFromReports(paths) {
     if (!Array.isArray(report.testResults)) {
       fail([`${path} has no testResults array, so it is not a vitest report.`]);
     }
+    const failures = [];
     for (const result of report.testResults) {
       const file = resolve(result.name ?? '');
       const owner = packages.find((p) => file === p.dir || file.startsWith(`${p.dir}${sep}`));
@@ -220,6 +237,25 @@ export function countsFromReports(paths) {
         ]);
       }
       contributed.add(owner.name);
+      // The verdict the spawn path reads from the exit code, read here from the
+      // record instead. Both halves are checked, because either one alone leaves a
+      // report that a reader would call red and this function would call counted:
+      // a file marked `passed` can still carry a failing assertion, and a file
+      // marked `failed` may declare no assertions at all (a collection error).
+      //
+      // A failing file is named once and its assertions are not repeated: the file
+      // is what has to be opened. Assertions are named only when the file claims
+      // to have passed, which is the one case where the file name alone would
+      // point at a file that does not look broken.
+      if (result.status === 'failed') {
+        failures.push(relative(ROOT, file));
+      } else {
+        for (const assertion of result.assertionResults ?? []) {
+          if (assertion.status !== 'failed') continue;
+          const title = assertion.fullName ?? assertion.title ?? 'an unnamed assertion';
+          failures.push(`${relative(ROOT, file)} > ${title}`);
+        }
+      }
       // `Test Files N passed` counts files with no failing test, and a failing
       // file exits non-zero anyway; `Tests N passed` counts assertions that
       // passed and excludes skipped, pending and todo.
@@ -232,6 +268,24 @@ export function countsFromReports(paths) {
         counts[scope.name].files += files;
         counts[scope.name].tests += tests;
       }
+    }
+
+    if (failures.length > 0) {
+      // Two assertions with the same title in one file would otherwise be printed
+      // twice, and a list whose length is not its information is a list a reader
+      // stops trusting.
+      const unique = [...new Set(failures)];
+      const shown = unique.slice(0, 5);
+      throw new ReportRecordsFailures(path, [
+        `the report at ${path} records a failure, so it is not a measurement:`,
+        ...shown.map((name) => `  ${name}`),
+        ...(unique.length > shown.length ? [`  … and ${unique.length - shown.length} more`] : []),
+        COUNT_UNAVAILABLE,
+        "What this function would produce is the passing half of vitest's `N failed | M passed`",
+        'line -- the failing file dropped from the file count, its passing assertions kept in',
+        'the test count -- which is a number neither reading prints.',
+        'Fix the failure and take the measurement from a run that passed.',
+      ]);
     }
   }
 
@@ -247,18 +301,50 @@ export function countsFromReports(paths) {
 }
 
 /**
- * A run that did not succeed, carrying the lines a reader needs.
+ * The one sentence both refusal paths say, because they refuse the same thing.
+ *
+ * `--from` used to accept a report of a red run and publish the count of what
+ * passed in it. The spawn path refuses that number in these words, so the report
+ * path publishing one was the tool contradicting itself: one rule, two
+ * implementations, and the untested one was the one that wrote to the document.
+ */
+export const COUNT_UNAVAILABLE = 'A count is what passed; a failed run has no number to publish.';
+
+/**
+ * A measurement that does not exist, carrying the lines a reader needs.
  *
  * Thrown instead of calling `fail()` so that a test can observe it: `fail()` ends
  * the process, and a branch that can only be observed by exiting is the shape
  * finding 121 was written about.
  */
-export class SuiteFailed extends Error {
+export class MeasurementUnavailable extends Error {
+  constructor(reason, lines) {
+    super(reason);
+    this.name = 'MeasurementUnavailable';
+    this.lines = lines;
+  }
+}
+
+/** The suite exited non-zero, so there is no count to take. */
+export class SuiteFailed extends MeasurementUnavailable {
   constructor(scope, lines) {
-    super(`the ${scope} suite is red`);
+    super(`the ${scope} suite is red`, lines);
     this.name = 'SuiteFailed';
     this.scope = scope;
-    this.lines = lines;
+  }
+}
+
+/**
+ * A report that records a failure, so it is not a measurement of a passing run.
+ *
+ * The spawn path learns this from the exit code. A report has no exit code: the
+ * verdict is *in* the record, and it has to be read out of it. Nothing did.
+ */
+export class ReportRecordsFailures extends MeasurementUnavailable {
+  constructor(path, lines) {
+    super(`${path} records a failure`, lines);
+    this.name = 'ReportRecordsFailures';
+    this.path = path;
   }
 }
 
@@ -291,7 +377,7 @@ export function diagnoseRedRun(scope, error) {
   const status = error?.status;
   const lines = [
     `the ${scope} suite is red, so its counts cannot be measured.`,
-    'A count is what passed; a failed run has no number to publish.',
+    COUNT_UNAVAILABLE,
   ];
 
   if (status === undefined && error?.code !== undefined) {
@@ -318,7 +404,15 @@ export function diagnoseRedRun(scope, error) {
   if (unique.length > shown.length) {
     lines.push(`  … and ${unique.length - shown.length} more`);
   }
-  lines.push(`the full run is above; re-run it with \`pnpm ${SCOPES.find((s) => s.name === scope)?.args.join(' ') ?? 'test'}\`.`);
+  lines.push(
+    `the full run is above; re-run it with \`pnpm ${SCOPES.find((s) => s.name === scope)?.args.join(' ') ?? 'test'}\`.`,
+    // Not an escape from the failure -- the failing tests still have to be fixed,
+    // and a report of *this* run would now be refused. It is the way not to take
+    // the same measurement twice when a green run already wrote one: the suite
+    // takes about 80 s, and `--from` reads the same numbers in 0.1 s.
+    'If a green coverage run already wrote its report, `--from <report>[,<report>]` reuses that run instead of a second one:',
+    '  --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json',
+  );
   return lines;
 }
 
@@ -484,7 +578,7 @@ function main() {
   } catch (error) {
     // A red run is a diagnosis, not a crash. `fail()` is still the exit, so the
     // verdict reads like every other one this script prints.
-    if (error instanceof SuiteFailed) fail(error.lines);
+    if (error instanceof MeasurementUnavailable) fail(error.lines);
     throw error;
   }
   const text = serialise(measured);

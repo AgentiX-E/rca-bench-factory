@@ -57,10 +57,12 @@ interface Counts {
  * suites nor rewrites the committed measurement.
  */
 const library = (await import(pathToFileURL(SCRIPT).href)) as {
+  COUNT_UNAVAILABLE: string;
   countsFromReports: (paths: string[]) => Record<'core' | 'cli' | 'repo', Counts>;
   parseSummary: (out: string, scope: string) => Counts;
 };
 const { countsFromReports, parseSummary } = library;
+const COUNT_UNAVAILABLE = library.COUNT_UNAVAILABLE;
 
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -77,6 +79,17 @@ let counter = 0;
  * assertions and failed files are driven: they are applied to a *real* capture
  * rather than to a shape invented for the test.
  */
+/** Run something that must refuse, and return the refusal's own lines. */
+function refuse(work: () => unknown): { name: string; lines: string[] } {
+  try {
+    work();
+  } catch (error) {
+    const refusal = error as { name?: string; lines?: string[] };
+    return { name: String(refusal.name), lines: refusal.lines ?? [] };
+  }
+  throw new Error('expected a refusal, but the call returned a count');
+}
+
 function report(fixture: 'core' | 'cli', edit?: (report: Report) => void): string {
   counter += 1;
   const parsed = JSON.parse(
@@ -91,6 +104,8 @@ function report(fixture: 'core' | 'cli', edit?: (report: Report) => void): strin
 
 interface Assertion {
   status: string;
+  title?: string;
+  fullName?: string;
 }
 
 interface Result {
@@ -132,16 +147,83 @@ describe('the summary line and the report agree about one run', () => {
     });
   });
 
-  it('does not count a skipped assertion or a failed file as a pass', () => {
+  it('does not count a skipped assertion as a pass', () => {
     const editSkipped = report('core', (parsed) => {
       (parsed.testResults[0]!.assertionResults ?? [])[0]!.status = 'skipped';
     });
     expect(countsFromReports([editSkipped, report('cli')]).core).toEqual({ files: 1, tests: 19 });
+  });
 
-    const editFailed = report('core', (parsed) => {
+  it('refuses a report of a red run instead of counting the half that passed', () => {
+    // This file used to assert the opposite: a failed file was said to count as
+    // zero *files* while its passing assertions still counted as *tests*, and
+    // that number was published. It is neither of the two readings vitest prints
+    // -- `N failed | M passed` is what a reader sees -- it is the passing half of
+    // both, which nothing prints. The spawn path refuses such a run with
+    // `COUNT_UNAVAILABLE`; the report path publishing a number for it made the
+    // tool contradict itself in the one direction that writes to a document.
+    const red = report('core', (parsed) => {
       parsed.testResults[0]!.status = 'failed';
     });
-    expect(countsFromReports([editFailed, report('cli')]).core.files).toBe(0);
+    const refusal = refuse(() => countsFromReports([red, report('cli')]));
+    expect(refusal.lines.join('\n')).toContain('records a failure, so it is not a measurement');
+    expect(refusal.lines.join('\n')).toContain('time.test.ts');
+    expect(refusal.lines.join('\n')).toContain(COUNT_UNAVAILABLE);
+  });
+
+  it('refuses a failing assertion in a file that calls itself passed', () => {
+    // The report format lets the two disagree, and only one of them is read by
+    // anything else here. Checking the file status alone would call this report
+    // green and publish the count of the assertions that survived.
+    const red = report('core', (parsed) => {
+      const assertions = parsed.testResults[0]!.assertionResults ?? [];
+      assertions[0]!.status = 'failed';
+      assertions[0]!.fullName = 'time.parse > reads an offset';
+    });
+    const refusal = refuse(() => countsFromReports([red, report('cli')]));
+    expect(refusal.name).toBe('ReportRecordsFailures');
+    expect(refusal.lines.join('\n')).toContain('time.test.ts > time.parse > reads an offset');
+  });
+
+  it('caps the list and names an assertion however the report spells it', () => {
+    // Three spellings, all of which a vitest report can contain: `fullName` for a
+    // nested test, `title` alone, and neither -- a collection error. Dropping the
+    // last two would leave a line that says a file failed without saying where.
+    // The cap is five, as in the run diagnosis, because the point is to name the
+    // work rather than to reproduce the report.
+    const red = report('core', (parsed) => {
+      const assertions = parsed.testResults[0]!.assertionResults ?? [];
+      assertions[0]!.status = 'failed';
+      assertions[0]!.title = 'reads an offset';
+      assertions[0]!.fullName = undefined;
+      assertions[1]!.status = 'failed';
+      assertions[1]!.title = undefined;
+      assertions[1]!.fullName = undefined;
+      for (let index = 2; index < 9; index += 1) {
+        assertions[index]!.status = 'failed';
+        assertions[index]!.fullName = `case ${String(index)}`;
+      }
+    });
+    const lines = refuse(() => countsFromReports([red, report('cli')])).lines.join('\n');
+    expect(lines).toContain('time.test.ts > reads an offset');
+    expect(lines).toContain('time.test.ts > an unnamed assertion');
+    expect(lines).toContain('case 2');
+    expect(lines).not.toContain('case 7');
+    expect(lines).toContain('… and 4 more');
+  });
+
+  it('names each failing file once, however many assertions failed in it', () => {
+    // A collection error gives a file with no assertions at all; a normal failure
+    // gives a file with several failing ones. Both have to produce one line per
+    // file, because the file is what someone opens.
+    const red = report('core', (parsed) => {
+      parsed.testResults[0]!.status = 'failed';
+      for (const assertion of parsed.testResults[0]!.assertionResults ?? []) {
+        assertion.status = 'failed';
+      }
+    });
+    const lines = refuse(() => countsFromReports([red, report('cli')])).lines.join('\n');
+    expect(lines.match(/time\.test\.ts/g)).toHaveLength(1);
   });
 
   it('attributes each file to the package that owns it, and repo to all of them', () => {
@@ -184,6 +266,22 @@ describe('what --from refuses', () => {
     const outcome = run(['--check', '--from', join(scratch, 'absent.json')]);
     expect(outcome.status, outcome.stderr).not.toBe(0);
     expect(outcome.stderr).toContain('no vitest report at');
+  });
+
+  it('refuses a report of a red run, and does not go on to compare it', () => {
+    // The comparison is meaningless for a red run, so the message must be about
+    // the run rather than about the committed snapshot being stale. Printing
+    // "stale" here would send a reader to update a file with a number that does
+    // not exist.
+    const red = report('core', (parsed) => {
+      parsed.testResults[0]!.status = 'failed';
+    });
+    const outcome = run(['--check', '--from', `${red},${report('cli')}`]);
+    expect(outcome.status, outcome.stderr).not.toBe(0);
+    expect(outcome.stderr).toContain('records a failure, so it is not a measurement');
+    expect(outcome.stderr).toContain(COUNT_UNAVAILABLE);
+    expect(outcome.stderr).not.toContain('is stale');
+    expect(outcome.stderr).not.toContain('OK (');
   });
 
   it('refuses a file that is not a report at all', () => {

@@ -7472,9 +7472,9 @@ quoting `as of this commit` must survive untouched.
 | the half-state | a document with no current row writes **neither** file, and says so |
 | contradiction | `--check --write-doc` exits 1 rather than picking a verdict |
 | a live run | `pnpm docs:counts:write` on this tree: 2 rows moved, `cli` correctly untouched |
-| `core` test suite | **162 files, 3967 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **166 files, 4154 tests passed** (as of this commit) |
+| `core` test suite | **162 files, 3967 tests passed** (as of `4ebcec791`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `4ebcec791`) |
+| repo test suite | **166 files, 4154 tests passed** (as of `4ebcec791`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7495,3 +7495,131 @@ quoting `as of this commit` must survive untouched.
 - v2.11's two, v2.10's two, v2.09's three, v2.08's one, v2.07's two, v2.06's two, and
   v2.05's four are unchanged. `[open: this pass touched the counting tool and nothing else;
   each argument is where it was made]`
+
+---
+
+## v2.13 — the report carried a verdict, and nothing read it
+
+### Two paths, one verdict, one reader
+
+The spawn path knows a run failed because `execFileSync` throws. The exit code **is** the
+verdict, and `parseSummary` never sees the summary line of a red transcript.
+
+A report has no exit code. The verdict is *in* the record — `status: 'failed'` on a file,
+`status: 'failed'` on an assertion — and `countsFromReports` did not read either. It read
+only two things: whether a file said `passed` (to count files) and whether an assertion
+said `passed` (to count tests). Both are the *right* readings of a green run. On a red one
+they compose into a number nothing prints:
+
+```
+Test Files  1 failed | 1 passed (2)      →  files: 1
+     Tests  20 passed | 3 failed (23)    →  tests: 20
+```
+
+That is the passing half of both lines at once: the failing file dropped from the file
+count, its passing assertions kept in the test count. A file count that says almost nothing
+ran, beside a test count that says twenty did.
+
+### The tool contradicted itself
+
+v2.11 taught the spawn path to say, in one sentence, that a red run has no count:
+
+> A count is what passed; a failed run has no number to publish.
+
+The report path, in the same file, published one. **One rule, two implementations, and the
+untested one was the one that writes into the document** — `--write-doc --from <red report>`
+put that number into `docs/progress.md` and printed success.
+
+### A test asserted the arithmetic and never asked whether the number should exist
+
+`measure-doc-counts-readings.test.ts` had this:
+
+```ts
+const editFailed = report('core', (parsed) => { parsed.testResults[0]!.status = 'failed'; });
+expect(countsFromReports([editFailed, report('cli')]).core.files).toBe(0);
+```
+
+It is named "does not count a skipped assertion or a failed file as a pass", and it checks
+exactly what the name says: the failed file is not counted as a file. It never asks what the
+count is *for*. The test was green for eleven passes while the number it endorsed was
+unpublishable, which is the same shape as v2.06's reader that could not see a `datetime`
+field: **a check is only as good as the question it was written to answer.**
+
+### What the refusal says
+
+```
+measure-doc-counts: FAILED
+  the report at …/core.json records a failure, so it is not a measurement:
+    packages/core/test/beta.test.ts
+  A count is what passed; a failed run has no number to publish.
+  What this function would produce is the passing half of vitest's `N failed | M passed`
+  line -- the failing file dropped from the file count, its passing assertions kept in
+  the test count -- which is a number neither reading prints.
+  Fix the failure and take the measurement from a run that passed.
+```
+
+Both halves of the record are read, because either alone leaves a report that a person would
+call red and this function would call counted: a file can say `passed` while carrying a
+failed assertion, and a file can say `failed` while carrying none at all (a collection
+error). A failing file is named **once**, and its assertions are not repeated — the file is
+what someone opens. Assertions are named only when the file claims to have passed, which is
+the one case where the file name alone points at something that does not look broken.
+Duplicates are removed and the list is capped at five, as in the run diagnosis.
+
+`COUNT_UNAVAILABLE` is now one exported constant, said by both paths, because they refuse
+the same fact. Two copies of that sentence would drift the way the two readings did.
+
+### The refusal also had to say what the flag is for
+
+v2.12's open list ended with: *"the tool does not say so when it refuses"*. It does now, and
+it had to be worded carefully, because `--from` is **not** a way around a failure — a report
+of *this* run is refused. What it saves is the second 80-second run when a green one already
+wrote its report:
+
+```
+If a green coverage run already wrote its report, `--from <report>[,<report>]` reuses that run instead of a second one:
+  --from packages/core/node_modules/.cache/vitest-report.json,packages/cli/node_modules/.cache/vitest-report.json
+```
+
+The word *green* is load-bearing: it is the difference between advice and a workaround.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| a red file in a report | refused; the file named once, `COUNT_UNAVAILABLE` present |
+| a red assertion in a file that says `passed` | refused; `file > fullName` named |
+| list shape | capped at five, deduplicated, `fullName` / `title` / neither all named |
+| `--check --from <red>` | exits 1 and does **not** print `is stale` or `OK (` |
+| `--write-doc --from <red>` | exits 1, writes **neither** file, prints no `row(s) updated` |
+| the old assertion | replaced by the refusal it should have been; the arithmetic it endorsed is named in the test |
+| the diagnosis | names `--from`, the word `green`, and both report paths |
+| `core` test suite | **162 files, 3974 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **166 files, 4161 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+The two readings were held against each other once more, on this tree: `pnpm docs:counts:write`
+took 162/3974 from a spawned `pnpm test`, and `--check --from` read 162/3974 from the coverage
+run's report. **They agree**, which is the only reason either number may be published.
+
+### Open
+
+- **Starting a new pass still means dating the previous pass's rows by hand.** `[open: the
+  writer maintains "the rows that say they are current"; turning yesterday's into a dated
+  record is a statement about what that pass measured, and no tool can infer it. Two lines
+  per pass, and getting them wrong is caught by `check-doc-counts` on the next run]`
+- **A red suite still blocks the write, and that is correct.** `[open: `--write-doc` takes
+  its measurement by running the suite, so a red suite means no measurement and no write.
+  `--from` lets a green report stand in for the run; nothing lets a red one, which is the
+  point of this pass]`
+- **`diagnoseRedRun` and the report refusal are two diagnoses with one sentence.** `[open:
+  they share `COUNT_UNAVAILABLE` and nothing else -- the run names tests from a terminal
+  transcript, the report names files from a record, and neither can produce the other's
+  evidence. That is two implementations of one *claim* rather than of one rule, but it is
+  the shape this campaign keeps finding, so it is recorded rather than declared safe]`
+- v2.12's first item, and the fourteen items before it, are unchanged. `[open: this pass
+  touched one function's verdict and the sentence next to it; every argument is where it
+  was made]`

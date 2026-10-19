@@ -107,6 +107,19 @@ describe('diagnoseRedRun', () => {
     expect(lines).toContain('re-run it with `pnpm test`');
   });
 
+  it('names the flag that saves a second run, and says which run it may reuse', () => {
+    // The tool refuses, correctly. What it did not say is the one thing a reader
+    // can do about the cost: `pnpm test:coverage` already writes a report, and
+    // `--from` reads the same numbers from it in 0.1 s instead of spawning the
+    // suite again. It is not offered as a way around the failure -- a report of
+    // *this* run is refused now -- so the line has to say which run qualifies.
+    const lines = diagnoseRedRun('core', childFailed(TRANSCRIPT)).join('\n');
+    expect(lines).toContain('--from');
+    expect(lines).toContain('green coverage run');
+    expect(lines).toContain('packages/core/node_modules/.cache/vitest-report.json');
+    expect(lines).toContain('packages/cli/node_modules/.cache/vitest-report.json');
+  });
+
   it('distinguishes a run that exited non-zero from one that never started', () => {
     // A missing binary, a signal, a bad cwd: each has a different repair, and
     // none of them is "your tests failed". Reporting the second as the first is
