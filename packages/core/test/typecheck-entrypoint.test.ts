@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { carryUncommitted } from './uncommitted-carry.js';
 
 /**
  * The contract the root typecheck script publishes to a human who runs it.
@@ -126,10 +127,12 @@ function coldCopy(): { sandbox: string; copied: string[]; attempted: string[] } 
   execFileSync('git', ['worktree', 'add', '--detach', sandbox, 'HEAD'], { cwd: ROOT });
   // Carry the uncommitted working tree across, so the assertion is about the
   // revision a developer is looking at and not the one they last committed.
-  const diff = execFileSync('git', ['diff', 'HEAD'], { cwd: ROOT, encoding: 'utf8' });
-  if (diff.length > 0) {
-    execFileSync('git', ['apply', '--whitespace=nowarn', '-'], { cwd: sandbox, input: diff });
-  }
+  // `--binary` is load-bearing: without it a regenerated example pack is
+  // described rather than patched, and `git apply` refuses the description. The
+  // flag lives in `carryUncommitted` because the carry step is part of what this
+  // fixture asserts, and a defect in it is indistinguishable from a defect in the
+  // subject.
+  carryUncommitted(ROOT, sandbox);
   // The half of the working tree that `git diff` does not describe.
   //
   // ## The race this loop ran into

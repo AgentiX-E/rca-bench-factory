@@ -7165,9 +7165,9 @@ open item rather than worked around.
 | the guard | 6 tests: three fixtures, the old sentence detected, two innocent sentences not |
 | the trap | `order-prod` is not `order`; the negative test is what found that `\b` was wrong |
 | anchors | two files, both fields, named by the verifier in one run |
-| `core` test suite | **159 files, 3941 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **163 files, 4128 tests passed** (as of this commit) |
+| `core` test suite | **159 files, 3941 tests passed** (as of `2a6f872`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `2a6f872`) |
+| repo test suite | **163 files, 4128 tests passed** (as of `2a6f872`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7187,3 +7187,116 @@ open item rather than worked around.
   mode is real -- and it would need a target that scores a set, which none of the nine does]`
 - v2.07's two, v2.06's two, v2.05's four, and v2.08's one are unchanged.
   `[open: none of them moved; each carries its argument where it was made]`
+
+---
+
+## v2.10 — the copy step could not carry a binary, and the failure looked like the subject
+
+### The error
+
+`typecheck-entrypoint.test.ts` builds a cold worktree and replays the uncommitted working
+tree onto it, so the assertion is about the revision a developer is looking at rather than
+the one they last committed. That replay was two inline commands:
+
+```
+git diff HEAD | git apply --whitespace=nowarn -
+```
+
+Regenerating `site/assets/rca-bench-factory-examples.tar.gz` made it fail:
+
+```
+error: cannot apply binary patch to 'site/assets/rca-bench-factory-examples.tar.gz'
+       without full index line
+```
+
+and the file stayed red **until the artefact was committed**. Nothing was wrong with the
+subject — the cold-tree typecheck was fine. **The fixture could not describe its own
+inputs**, and reported that as a verdict about the thing it measures.
+
+### What the old command pair actually produced
+
+`git diff` without `--binary` writes, for every binary file:
+
+```
+Binary files a/site/assets/…tar.gz and b/site/assets/…tar.gz differ
+```
+
+That is a *description of a change*, not a patch: no bytes, no index line. `git apply`
+refuses it, correctly. Measured on this tree, one appended byte:
+
+```
+$ git diff HEAD --stat  -- site/assets/…tar.gz
+  Bin 5951 -> 5952 bytes
+$ git diff HEAD --binary -- site/assets/…tar.gz | head -4
+  index 1a7fca73…..aeb3f81d… 100644
+  GIT binary patch
+  delta 9
+```
+
+The flag is the difference between a sentence about a change and the change.
+
+### The fix is a function, and the test is in a throwaway repository
+
+`carryUncommitted(source, destination)` now lives in `packages/core/test/uncommitted-carry.ts`
+and passes `--binary` to both commands (`git apply --binary` is a documented no-op on
+current git; passing it states the intent instead of hoping). `maxBuffer` is raised because
+a diff of a large binary is bigger than the default, and the failure would be an opaque
+`maxBuffer exceeded` rather than a statement about the copy.
+
+The tests **do not touch this repository**. They build a throwaway one, write a text file
+and a file with a NUL byte in it, commit, and replay. A test whose setup mutates the tree it
+is measuring can leave that tree broken, which is the defect class this pass is about.
+
+### The control is the point
+
+One of the six tests runs the **old** command pair and requires it to fail, with `binary` in
+its stderr, and requires the destination to be untouched — which is what made the original
+failure silent: the copy simply lacked the change.
+
+> A flag whose necessity nobody has observed is a flag the next edit can delete.
+
+That test also caught a defect in itself first: without `encoding: 'utf8'` the thrown
+error carries stderr as a `Uint8Array`, and `toContain('binary')` compared a string to bytes
+and failed for a reason that had nothing to do with git.
+
+### The end-to-end proof
+
+The unit tests prove the mechanism in a small repository. The claim being made is about
+*this* repository, so the heavy fixture was run once in the failing configuration: one byte
+appended to the pack, then
+
+```
+Tests  4 passed (4)
+```
+
+and the byte removed. Before the fix that run failed at `collect`, with no tests.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the carry function | 6 tests: text, binary, both, the control, an empty diff, an untracked file |
+| the control | the old pair fails, names `binary`, and leaves the destination untouched |
+| end-to-end | the heavy fixture passes with a modified binary in the working tree |
+| `core` test suite | **160 files, 3947 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **164 files, 4134 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+### Open
+
+- **`measure-doc-counts` dies with a stack when the suite is red.** `[open: it spawns
+  `pnpm test`, and an `execFileSync` that exits non-zero propagates as an unhandled error,
+  so the tool prints a captured transcript and a Node stack instead of saying "the suite is
+  red, counts cannot be measured". It is the one tool whose output a person reads while
+  something else is already wrong]`
+- **The counts snapshot can drift from the suite.** `[open: `check-doc-counts` compares the
+  documented counts against `golden-master/doc-counts.json`, not against a run -- which is
+  deliberate, because it must work in a cold tree. CI closes the loop with
+  `measure-doc-counts --check --from <report>`; a local edit that adds tests and refreshes
+  neither file stays green locally until that CI step. The two-step update is the cost of a
+  guard that never runs the suite from inside the suite]`
+- v2.09's three, v2.08's one, v2.07's two, v2.06's two, and v2.05's four are unchanged.
+  `[open: none of them moved this pass; each carries its argument where it was made]`
