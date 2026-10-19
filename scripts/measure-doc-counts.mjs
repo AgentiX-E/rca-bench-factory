@@ -107,6 +107,21 @@
  * one sentence. The mechanisms differ because the evidence does: an exit code, a
  * `status` field, a summary line.
  *
+ * ## Skipped, and the difference between a smaller number and no number
+ *
+ * A skipped test is not a pass, so it is not in the published count -- that is
+ * what the row claims, and `Test Files  1 passed | 1 skipped (2)` has to read as
+ * one file. But a skip used to be invisible twice over: the skipped file simply
+ * vanished from the file count, and a suite skipped *entirely* printed no
+ * `N passed` line at all, which fell into "vitest may have changed its summary
+ * format". Both of those runs exit **0**, so both reached the reader.
+ *
+ * The rule now: a run in which nothing passed is not a measurement of anything --
+ * zero is what an empty suite and a quarantined one both report, and a published
+ * row cannot tell them apart from a suite that failed to be collected. A run in
+ * which *something* passed is measured, and the amount skipped is carried beside
+ * the count and printed, so that a number which moved has a reason attached.
+ *
  * ## What `--from` asserts that the spawn cannot
  *
  * `pnpm test` runs whatever the root script filters to, and that filter is a
@@ -181,12 +196,27 @@ function argValue(flag) {
  * use.
  */
 export function parseSummary(out, scope) {
-  const failedFiles = [...out.matchAll(/Test Files\s+(\d+)\s+failed/g)].map((m) => Number(m[1]));
-  const failedTests = [...out.matchAll(/Tests\s+(\d+)\s+failed/g)].map((m) => Number(m[1]));
-  if (failedFiles.length > 0 || failedTests.length > 0) {
+  const fileLines = [...out.matchAll(/^ *Test Files\s+(.+)$/gm)].map((m) => m[1]);
+  const testLines = [...out.matchAll(/^ *Tests\s+(.+)$/gm)].map((m) => m[1]);
+
+  if (fileLines.length === 0 || testLines.length === 0) {
+    // Neither a failure nor a skip nor a summary: this is the one case where "the
+    // format may have changed" is the right thing to say.
+    throw new MeasurementUnavailable(`the ${scope} summary cannot be read`, [
+      `could not read ${scope} counts from vitest output.`,
+      'Expected a `Test Files` line and a `Tests` line, and found neither a failing run,',
+      'a skipped one, nor a green one. So vitest may have changed its summary format,',
+      'or the run stopped before it printed a summary.',
+    ]);
+  }
+
+  const files = tally(fileLines);
+  const tests = tally(testLines);
+
+  if (files.failed > 0 || tests.failed > 0) {
     const parts = [];
-    if (failedFiles.length > 0) parts.push(`${String(sum(failedFiles))} test file(s) failed`);
-    if (failedTests.length > 0) parts.push(`${String(sum(failedTests))} test(s) failed`);
+    if (files.failed > 0) parts.push(`${String(files.failed)} test file(s) failed`);
+    if (tests.failed > 0) parts.push(`${String(tests.failed)} test(s) failed`);
     throw new TranscriptRecordsFailures(scope, [
       `the ${scope} transcript records a failing run, so it is not a measurement:`,
       `  ${parts.join(', ')}`,
@@ -195,22 +225,81 @@ export function parseSummary(out, scope) {
     ]);
   }
 
-  const files = [...out.matchAll(/Test Files\s+(\d+)\s+passed/g)].map((m) => Number(m[1]));
-  const tests = [...out.matchAll(/Tests\s+(\d+)\s+passed/g)].map((m) => Number(m[1]));
-  if (!files.length || !tests.length) {
-    // No failure is recorded and there is no summary either: this is the one case
-    // where "the format may have changed" is the right thing to say.
-    throw new MeasurementUnavailable(`the ${scope} summary cannot be read`, [
-      `could not read ${scope} counts from vitest output.`,
-      'Expected a `Test Files N passed` line and a `Tests N passed` line, and found neither',
-      'a failing run nor a green one -- so vitest may have changed its summary format, or the',
-      'run stopped before it printed a summary.',
-    ]);
+  const skipped = { files: files.skipped + files.todo, tests: tests.skipped + tests.todo };
+  if (files.passed === 0 && tests.passed === 0 && (skipped.files > 0 || skipped.tests > 0)) {
+    // A quarantined suite is not a broken reporter, and it is not a zero either.
+    throw measuredNothing(scope, skipped);
   }
-  return {
-    files: sum(files),
-    tests: sum(tests),
-  };
+
+  return { files: files.passed, tests: tests.passed, skipped };
+}
+
+/**
+ * Every `N <status>` token on one summary line, summed.
+ *
+ * One parser for both lines and all four statuses, because the alternative is a
+ * regex per status per line -- and each of those is a separate reading of the
+ * same record, which is how two numbers that disagree get born.
+ *
+ * The shapes it has to read, all captured from this vitest rather than imagined:
+ *
+ *   `162 passed (162)`             `1 skipped (1)`
+ *   `1 passed | 1 skipped (2)`     `2 failed | 3 passed (5)`
+ *   `19 passed | 1 skipped (20)`   `1 passed | 1 todo (2)`
+ *
+ * The parenthesised total is deliberately not read: it is `passed + failed +
+ * skipped + todo` and every term is already here.
+ */
+function tally(lines) {
+  const totals = { passed: 0, failed: 0, skipped: 0, todo: 0 };
+  for (const line of lines) {
+    for (const match of line.matchAll(/(\d+)\s+(passed|failed|skipped|todo)\b/g)) {
+      totals[match[2]] += Number(match[1]);
+    }
+  }
+  return totals;
+}
+
+/**
+ * The refusal for a run in which nothing ran.
+ *
+ * ## Why this is not a zero
+ *
+ * A suite where every test is marked `skip` exits **0**, so nothing upstream
+ * objects, and the honest count of what passed is `0 files, 0 tests`. Publishing
+ * that is publishing a number that looks exactly like a measurement: it would
+ * rewrite the core row from 3979 to 0, and the guard would then agree with it
+ * for as long as the quarantine lasted. The number is not wrong; it is a
+ * statement about a suite nobody ran, filed in a column that claims to say how
+ * much of the suite passes.
+ *
+ * ## Why it used to say something else
+ *
+ * A fully skipped run prints no `N passed` line, so this reader fell through to
+ * "could not read the counts -- vitest may have changed its summary format",
+ * which points at a version bump. It reached that branch through the only caller
+ * there is: the run exits 0.
+ */
+function measuredNothing(scope, skipped) {
+  return new TranscriptMeasuredNothing(scope, measuredNothingLines(scope, skipped, 'run'));
+}
+
+/**
+ * One body for both readers, one word for what told them.
+ *
+ * `run` is a summary line, `record` is a `status` field. That is the only
+ * difference there is -- the fact, the consequence and the repair are the same --
+ * so it is a parameter rather than a second copy. The word matters because it is
+ * what a reader would use to find the evidence again.
+ */
+function measuredNothingLines(scope, skipped, evidence) {
+  return [
+    `the ${scope} ${evidence} passed nothing, so it is not a measurement:`,
+    `  ${String(skipped.files)} test file(s) and ${String(skipped.tests)} test(s) are marked skip or todo`,
+    'Zero is what an empty suite and a quarantined one both report, and a published row',
+    'cannot tell those apart from a suite that failed to be collected.',
+    'Un-skip the suite, or count something else -- there is no number here to publish.',
+  ];
 }
 
 /** Sum every occurrence; a workspace filter can print more than one pair. */
@@ -266,7 +355,7 @@ function workspacePackages() {
 export function countsFromReports(paths) {
   const packages = workspacePackages();
   const counts = {};
-  for (const scope of SCOPES) counts[scope.name] = { files: 0, tests: 0 };
+  for (const scope of SCOPES) counts[scope.name] = { files: 0, tests: 0, skipped: { files: 0, tests: 0 } };
 
   const contributed = new Set();
   for (const path of paths) {
@@ -319,14 +408,22 @@ export function countsFromReports(paths) {
       // `Test Files N passed` counts files with no failing test, and a failing
       // file exits non-zero anyway; `Tests N passed` counts assertions that
       // passed and excludes skipped, pending and todo.
+      //
+      // Skips are counted too, and separately. They are not part of the published
+      // number -- a skipped test is not a pass -- but a skip that nobody reports is
+      // a published count that moved for no visible reason, and `--from` would
+      // agree with it because it reads the same record.
       const files = result.status === 'passed' ? 1 : 0;
-      const tests = (result.assertionResults ?? []).filter((a) => a.status === 'passed').length;
-      counts.repo.files += files;
-      counts.repo.tests += tests;
+      const skippedFiles = result.status === 'skipped' ? 1 : 0;
+      const assertions = result.assertionResults ?? [];
+      const tests = assertions.filter((a) => a.status === 'passed').length;
+      const skippedTests = assertions.filter((a) => a.status === 'skipped' || a.status === 'todo').length;
       const scope = SCOPES.find((s) => s.filter === owner.name);
-      if (scope !== undefined) {
-        counts[scope.name].files += files;
-        counts[scope.name].tests += tests;
+      for (const target of scope === undefined ? [counts.repo] : [counts.repo, counts[scope.name]]) {
+        target.files += files;
+        target.tests += tests;
+        target.skipped.files += skippedFiles;
+        target.skipped.tests += skippedTests;
       }
     }
 
@@ -346,6 +443,18 @@ export function countsFromReports(paths) {
         'the test count -- which is a number neither reading prints.',
         'Fix the failure and take the measurement from a run that passed.',
       ]);
+    }
+  }
+
+  // A scope where nothing passed is not a measurement of that scope, for the same
+  // reason a fully skipped transcript is not one: zero is what an empty suite and a
+  // quarantined one both report. `repo` is exempt from the *per-scope* rule only in
+  // the sense that it is checked like any other scope, and it will be zero exactly
+  // when every package is.
+  for (const scope of SCOPES) {
+    const measured = counts[scope.name];
+    if (measured.files === 0 && (measured.skipped.files > 0 || measured.skipped.tests > 0)) {
+      throw new ReportMeasuredNothing(scope.name, measuredNothingLines(scope.name, measured.skipped, 'record'));
     }
   }
 
@@ -382,6 +491,25 @@ export class MeasurementUnavailable extends Error {
     super(reason);
     this.name = 'MeasurementUnavailable';
     this.lines = lines;
+  }
+}
+
+/** A report whose scope passed nothing because everything was skipped. */
+export class ReportMeasuredNothing extends MeasurementUnavailable {
+  constructor(scope, lines) {
+    super(`the ${scope} record passed nothing`, lines);
+    this.name = 'ReportMeasuredNothing';
+    this.lines = lines;
+    this.scope = scope;
+  }
+}
+
+/** A run in which nothing passed because everything was skipped. */
+export class TranscriptMeasuredNothing extends MeasurementUnavailable {
+  constructor(scope, lines) {
+    super(`the ${scope} run passed nothing`, lines);
+    this.name = 'TranscriptMeasuredNothing';
+    this.scope = scope;
   }
 }
 
@@ -513,8 +641,31 @@ function measure() {
  */
 function serialise(counts) {
   const ordered = {};
-  for (const scope of SCOPES) ordered[scope.name] = counts[scope.name];
+  for (const scope of SCOPES) {
+    // The two numbers the document claims, chosen here rather than inherited from
+    // whatever the reader returned. The reader now also returns how much was
+    // skipped; a snapshot that grew that key would change the committed shape of
+    // `doc-counts.json` as a side effect of a diagnostic.
+    const { files, tests } = counts[scope.name];
+    ordered[scope.name] = { files, tests };
+  }
   return `${JSON.stringify(ordered, null, 2)}\n`;
+}
+
+/**
+ * One scope's line for the terminal, including what it left out.
+ *
+ * A skip is not counted -- a published row says how many tests passed -- but a
+ * count that drops because six tests were marked `skip` looks exactly like a
+ * count that dropped for no reason at all, and the guard can only report the
+ * difference. This is where the reason is said out loud, and only when there is
+ * one.
+ */
+function describeCount(scope, count) {
+  const base = `${scope.padEnd(5)} ${String(count.files)} files, ${String(count.tests)} tests`;
+  const skipped = count.skipped ?? { files: 0, tests: 0 };
+  if (skipped.files === 0 && skipped.tests === 0) return base;
+  return `${base}  (${String(skipped.files)} file(s) and ${String(skipped.tests)} test(s) skipped, not counted)`;
 }
 
 /**
@@ -686,20 +837,14 @@ function main() {
     }
     writeFileSync(out, text);
     writeFileSync(docPath, result.text);
-    for (const scope of SCOPES) {
-      const c = measured[scope.name];
-      console.log(`${scope.name.padEnd(5)} ${c.files} files, ${c.tests} tests`);
-    }
+    for (const scope of SCOPES) console.log(describeCount(scope.name, measured[scope.name]));
     const touched = result.rewritten.length;
     console.log(`written to ${out} and ${relative(ROOT, docPath)} (${touched} row(s) updated)`);
     return;
   }
 
   writeFileSync(out, text);
-  for (const scope of SCOPES) {
-    const c = measured[scope.name];
-    console.log(`${scope.name.padEnd(5)} ${c.files} files, ${c.tests} tests`);
-  }
+  for (const scope of SCOPES) console.log(describeCount(scope.name, measured[scope.name]));
   console.log(`written to ${out}`);
 }
 

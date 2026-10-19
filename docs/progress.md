@@ -7718,9 +7718,9 @@ transcript clearly says what happened.
 | no summary at all | still says the format may have changed, because that is when it is true |
 | exit code 0, transcript red | the script exits 1 on the reader's verdict, not the process's |
 | the shared sentence | `COUNT_UNAVAILABLE` is said by all three refusals; the two readers are asserted to be different mechanisms |
-| `core` test suite | **162 files, 3979 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **166 files, 4166 tests passed** (as of this commit) |
+| `core` test suite | **162 files, 3979 tests passed** (as of `7d980bf4c`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `7d980bf4c`) |
+| repo test suite | **166 files, 4166 tests passed** (as of `7d980bf4c`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7738,3 +7738,108 @@ transcript clearly says what happened.
 - **The rest of the open list is untouched.** `[open: v2.13's three, v2.12's first, and the
   fourteen before them; this pass changed one function's two refusals and the sentence they
   say]`
+
+---
+
+## v2.15 — a skipped file was subtracted, and a skipped suite was called a format change
+
+### Three shapes, captured
+
+Every line below came from this vitest, on a scratch project, rather than from memory. The
+exit code is beside each, because it decides whether the reader ever sees it.
+
+| shape | summary lines | exit |
+| --- | --- | --- |
+| one file, all `it.skip` | `Test Files  1 skipped (1)` / `Tests  3 skipped (3)` | **0** |
+| one passing file, one file all skipped | `Test Files  1 passed \| 1 skipped (2)` / `Tests  2 passed \| 2 skipped (4)` | **0** |
+| one passing test, one `it.todo` | `Test Files  1 passed (1)` / `Tests  1 passed \| 1 todo (2)` | **0** |
+
+All three exit 0, so none of them is caught by an exit code — and all three reached this
+repository's readers.
+
+### What the readers did with them
+
+**The whole-suite case was misdiagnosed.** `Test Files  1 skipped (1)` contains no
+`N passed`, so it fell through to *"could not read the counts … vitest may have changed its
+summary format"*. That sentence was written for a shape nobody had seen; a quarantined suite
+is not a shape change, it is a decision somebody made in a `describe.skip`, and the message
+sent the reader to the wrong file.
+
+**The partial case was silently subtracted.** `Test Files  1 passed | 1 skipped (2)` matched
+the `1 passed`, summed it, and returned one file. The skipped file vanished from a count that
+claims to say how much of the suite passes — the second file was simply not in the number, and
+nothing said so. `--from` agreed, because it reads the same record and a skipped file has
+`status: 'skipped'`, which is neither a pass nor a failure.
+
+That agreement is what made it invisible: **two independent readers producing the same wrong
+number look like a cross-check.**
+
+### The rule, decided once
+
+A skipped test is not a pass, so it does not belong in the published count — the row says how
+many tests *passed*, and `1 passed | 1 skipped (2)` has to read as one file. The defect was
+never the arithmetic; it was that the arithmetic had no voice.
+
+So:
+
+- **A run in which nothing passed is not a measurement.** Zero is what an empty suite, a
+  quarantined one and a suite that failed to be collected all report, and a published row
+  cannot tell those three apart. Refused, on both readers, in one body with one differing
+  word: `run` for a summary line, `record` for a `status` field.
+- **A run in which something passed is measured**, and the amount skipped travels beside the
+  number:
+
+```
+core  162 files, 3985 tests  (1 file(s) and 2 test(s) skipped, not counted)
+```
+
+That line prints only when there is something to say, so a count that moves because six tests
+were skipped now has its reason on the same line — which is the difference between a number a
+person can check and a number they have to trust.
+
+### Three things the snapshot must not learn
+
+`doc-counts.json` is a committed contract read by `check-doc-counts.mjs`, `--check` and the
+document rewrite. The reader now returns a third key, and `serialise` chooses `{files, tests}`
+explicitly rather than copying whatever the reader returned — so a diagnostic cannot change
+the file's shape as a side effect. The end-to-end test asserts the written file has exactly
+those two keys, and that the note appears once per scope on the terminal.
+
+### One parser, not eight regexes
+
+The first version of this pass added two more `matchAll` calls to the four already there: one
+per status, per line. That is how the two readings of "a passing test" got born in v2.13 — the
+same record read by parallel copies of one idea. `tally()` now scans a summary line once for
+`N (passed|failed|skipped|todo)` and sums into one object, and the parenthesised total is
+deliberately not read: it is the sum of the four terms that are.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| a fully skipped suite | refused as *passed nothing*, with the skip counts, and **no** format diagnosis |
+| a partially skipped run | counted as what passed, with the skip counts carried beside it |
+| a `todo` | counted as skipped, never as a pass |
+| the report reader | refuses the same fact, says `record` instead of `run` |
+| the snapshot | `{files, tests}` and nothing else, asserted by key list |
+| the terminal | one note per scope, only when non-zero |
+| `core` test suite | **162 files, 3985 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **166 files, 4172 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+### Open
+
+- **A skip is now reported, not prevented.** `[open: nothing stops a passing test from
+  becoming `it.skip` -- the count drops, the guard calls it stale, and the note explains why.
+  Whether the guard should *refuse* a drop that is entirely explained by skips is a policy
+  question about whether quarantine may change a published baseline, and this repository has
+  no answer in any document]`
+- **The `0 passed` rule is per scope, and `repo` is a scope.** `[open: a fully skipped `cli`
+  refuses `cli` and therefore `repo`, so `--write-doc` cannot run; that is the intended
+  consequence, and it has not been exercised against a real two-package tree with one package
+  quarantined -- only against synthetic reports]`
+- **v2.14's and v2.13's items, and the fourteen before them, are unchanged.** `[open: this
+  pass touched the reader's arithmetic and its two printed forms]`

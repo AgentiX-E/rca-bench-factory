@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -78,6 +78,21 @@ const CLI_SUMMARY = ' Test Files  1 passed (1)\n      Tests  135 passed (135)\n'
  */
 const RED_SUMMARY = ' Test Files  1 failed (1)\n      Tests  2 failed | 19 passed (21)\n';
 
+/**
+ * Three skip shapes, captured from this vitest rather than imagined.
+ *
+ * Each was produced by `vitest run --root <scratch>` over a one- or two-file
+ * project, and the text below is the summary block byte for byte. The exit code
+ * matters as much as the text and is noted beside each one: every one of them
+ * exits **0**, which is why they reach the reader through the only caller.
+ */
+// `it.skip` x3 in one file -- exit 0.
+const ALL_SKIPPED_SUMMARY = ' Test Files  1 skipped (1)\n      Tests  3 skipped (3)\n';
+// one passing file beside one fully skipped file -- exit 0.
+const MIXED_SKIP_SUMMARY = ' Test Files  1 passed | 1 skipped (2)\n      Tests  2 passed | 2 skipped (4)\n';
+// one passing test and one `it.todo` -- exit 0.
+const TODO_SUMMARY = ' Test Files  1 passed (1)\n      Tests  1 passed | 1 todo (2)\n';
+
 let counter = 0;
 
 /**
@@ -131,13 +146,16 @@ describe('the summary line and the report agree about one run', () => {
     // Both halves come from the same captured run, so this is not two
     // measurements -- it is one measurement read two ways, which is exactly the
     // claim `--from` makes when it replaces the spawn in CI.
-    expect(parseSummary(CORE_SUMMARY, 'core')).toEqual({ files: 1, tests: 20 });
-    expect(parseSummary(CLI_SUMMARY, 'cli')).toEqual({ files: 1, tests: 135 });
+    const none = { files: 0, tests: 0 };
+    expect(parseSummary(CORE_SUMMARY, 'core')).toEqual({ files: 1, tests: 20, skipped: none });
+    expect(parseSummary(CLI_SUMMARY, 'cli')).toEqual({ files: 1, tests: 135, skipped: none });
 
+    // `skipped` is carried beside the two published numbers: neither run skipped
+    // anything, and saying so is what makes a later non-zero visible.
     expect(countsFromReports([report('core'), report('cli')])).toEqual({
-      core: { files: 1, tests: 20 },
-      cli: { files: 1, tests: 135 },
-      repo: { files: 2, tests: 155 },
+      core: { files: 1, tests: 20, skipped: none },
+      cli: { files: 1, tests: 135, skipped: none },
+      repo: { files: 2, tests: 155, skipped: none },
     });
   });
 
@@ -152,6 +170,9 @@ describe('the summary line and the report agree about one run', () => {
     expect(parseSummary(' Test Files  1 passed (1)\n      Tests  19 passed | 1 skipped (20)\n', 'core')).toEqual({
       files: 1,
       tests: 19,
+      // The skipped one is counted, and counted separately: it is not a pass, but a
+      // count that drops by one for this reason should be able to say why.
+      skipped: { files: 0, tests: 1 },
     });
   });
 
@@ -159,7 +180,11 @@ describe('the summary line and the report agree about one run', () => {
     const editSkipped = report('core', (parsed) => {
       (parsed.testResults[0]!.assertionResults ?? [])[0]!.status = 'skipped';
     });
-    expect(countsFromReports([editSkipped, report('cli')]).core).toEqual({ files: 1, tests: 19 });
+    expect(countsFromReports([editSkipped, report('cli')]).core).toEqual({
+      files: 1,
+      tests: 19,
+      skipped: { files: 0, tests: 1 },
+    });
   });
 
   it('refuses a report of a red run instead of counting the half that passed', () => {
@@ -284,6 +309,97 @@ describe('the transcript reading, held to the same verdict', () => {
     expect(transcript.lines).toContain(COUNT_UNAVAILABLE);
     expect(record.lines).toContain(COUNT_UNAVAILABLE);
     expect(transcript.name).not.toBe(record.name);
+  });
+});
+
+describe('a run that skipped something', () => {
+  it('refuses a run where nothing passed, instead of blaming the format', () => {
+    // The reachable one. A quarantined suite exits 0, prints no `N passed` line,
+    // and used to fall into "vitest may have changed its summary format" -- a
+    // diagnosis that sends a reader to a version bump for a decision somebody made
+    // in a `describe.skip`.
+    const refusal = refuse(() => parseSummary(ALL_SKIPPED_SUMMARY, 'core'));
+    expect(refusal.name).toBe('TranscriptMeasuredNothing');
+    const text = refusal.lines.join('\n');
+    expect(text).toContain('the core run passed nothing');
+    expect(text).toContain('1 test file(s) and 3 test(s) are marked skip or todo');
+    expect(text).toContain('there is no number here to publish');
+    expect(text).not.toContain('summary format');
+  });
+
+  it('counts what passed and reports what was skipped, rather than losing it', () => {
+    // The quiet one: `Test Files 1 passed | 1 skipped (2)` parses to one file, and
+    // before this the second file simply disappeared. The published number is still
+    // the count of what passed -- that is what the row claims -- but the drop now
+    // has a name attached to it.
+    expect(parseSummary(MIXED_SKIP_SUMMARY, 'repo')).toEqual({
+      files: 1,
+      tests: 2,
+      skipped: { files: 1, tests: 2 },
+    });
+  });
+
+  it('treats a todo as skipped, not as a pass', () => {
+    expect(parseSummary(TODO_SUMMARY, 'core')).toEqual({
+      files: 1,
+      tests: 1,
+      skipped: { files: 0, tests: 1 },
+    });
+  });
+
+  it('refuses the same fact from a report, in the same words', () => {
+    // Same conclusion, different evidence: a `status` field instead of a summary
+    // line. `records` is the word that names it, and it is the only difference
+    // between the two messages.
+    const allSkipped = report('core', (parsed) => {
+      parsed.testResults[0]!.status = 'skipped';
+      for (const assertion of parsed.testResults[0]!.assertionResults ?? []) {
+        assertion.status = 'skipped';
+      }
+    });
+    const refusal = refuse(() => countsFromReports([allSkipped, report('cli')]));
+    expect(refusal.name).toBe('ReportMeasuredNothing');
+    expect(refusal.lines.join('\n')).toContain('the core record passed nothing');
+  });
+
+  it('says on the terminal how much it left out, and keeps it out of the snapshot', () => {
+    // The two halves of the same decision. The published file must not grow a
+    // `skipped` key -- its shape is a committed contract -- and the person running
+    // the measurement must be told that the number they are about to publish is
+    // smaller than the suite, and why.
+    const bin = join(scratch, 'bin');
+    mkdirSync(bin, { recursive: true });
+    const fake = join(bin, 'pnpm');
+    writeFileSync(
+      fake,
+      `#!/bin/sh\ncat <<'OUT'\n${MIXED_SKIP_SUMMARY}OUT\nexit 0\n`,
+    );
+    chmodSync(fake, 0o755);
+
+    const out = join(scratch, 'counts-from-skip.json');
+    const result = spawnSync(process.execPath, [SCRIPT, '--out', out], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${bin}:${process.env['PATH'] ?? ''}` },
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    const note = '(1 file(s) and 2 test(s) skipped, not counted)';
+    expect(result.stdout.split(note)).toHaveLength(4); // three scopes, three notes
+    const written = JSON.parse(readFileSync(out, 'utf8')) as Record<string, object>;
+    expect(Object.keys(written['core']!)).toEqual(['files', 'tests']);
+    expect(written['core']).toEqual({ files: 1, tests: 2 });
+  });
+
+  it('carries the skip count through the report reader as well', () => {
+    const partial = report('core', (parsed) => {
+      (parsed.testResults[0]!.assertionResults ?? [])[0]!.status = 'skipped';
+    });
+    expect(countsFromReports([partial, report('cli')]).core).toEqual({
+      files: 1,
+      tests: 19,
+      skipped: { files: 0, tests: 1 },
+    });
   });
 });
 
