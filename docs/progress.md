@@ -7278,9 +7278,9 @@ and the byte removed. Before the fix that run failed at `collect`, with no tests
 | the carry function | 6 tests: text, binary, both, the control, an empty diff, an untracked file |
 | the control | the old pair fails, names `binary`, and leaves the destination untouched |
 | end-to-end | the heavy fixture passes with a modified binary in the working tree |
-| `core` test suite | **160 files, 3947 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **164 files, 4134 tests passed** (as of this commit) |
+| `core` test suite | **160 files, 3947 tests passed** (as of `488d3b1`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `488d3b1`) |
+| repo test suite | **164 files, 4134 tests passed** (as of `488d3b1`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
@@ -7300,3 +7300,95 @@ and the byte removed. Before the fix that run failed at `collect`, with no tests
   guard that never runs the suite from inside the suite]`
 - v2.09's three, v2.08's one, v2.07's two, v2.06's two, and v2.05's four are unchanged.
   `[open: none of them moved this pass; each carries its argument where it was made]`
+
+---
+
+## v2.11 — the tool that counts answered a failure with a stack trace
+
+### What it printed
+
+`measure-doc-counts.mjs` spawns `pnpm test` once per scope. The spawn had no `catch`, so a
+red suite became an uncaught exception:
+
+```
+Error: Command failed: pnpm --filter @rca-bench-factory/core test
+
+  ✓ test/agent-browser…  (thousands of lines)
+
+    at checkChildProcessResult (node:internal/child_process:324:7)
+```
+
+Someone asked for three numbers and received a transcript with a stack attached. **The one
+fact they needed — the suite is red, and a count of what passed does not exist for a failed
+run — was the only sentence not printed.**
+
+That is worse than an ugly message because of *when* this tool runs. It is what a person
+reaches for **after** something else has already gone wrong. A tool that answers a second
+failure with a third is how a debugging session loses its place.
+
+### Three sentences instead
+
+```
+measure-doc-counts: FAILED
+  the core suite is red, so its counts cannot be measured.
+  A count is what passed; a failed run has no number to publish.
+  first failing test(s):
+    test/alpha.test.ts > keeps the invariant
+  the full run is above; re-run it with `pnpm --filter @rca-bench-factory/core test`.
+```
+
+The transcript is not replayed: `stdio` already sends vitest's own output to the terminal,
+so the full text is one scroll up. The list is capped at five and deduplicated, because the
+point is to name the work, not to reproduce the log.
+
+### The distinction that keeps a broken environment from looking like a broken test
+
+`execFileSync` fails in two different ways and they want different repairs:
+
+- **exited non-zero** — the suite ran and something in it failed
+- **never started** — `ENOENT` for `pnpm`, a signal, a working directory that is not there
+
+Reporting the second as the first sends a reader hunting for a failing test that does not
+exist. They are separate branches, and both are asserted.
+
+### Why the diagnosis is a function
+
+`diagnoseRedRun(scope, error)` is pure: it takes the captured error and returns lines. The
+branch that used to be unreachable is now driven five ways, and the *end-to-end* path is
+proven by putting a fake `pnpm` on `PATH` that exits 1 with a vitest-shaped transcript —
+which is the only way to show the text reaches a terminal. The negative assertion is the
+one that matters: **`Error: Command failed` must not appear**.
+
+`SuiteFailed` is thrown rather than calling `fail()` directly, for the same reason
+`derive-backend-support.mjs` takes `--out`: a branch that can only be observed by exiting
+the process is the shape finding 121 was written about.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the diagnosis | 6 unit tests: red, no transcript, cap, dedupe, re-run hint, never-started |
+| end to end | a fake `pnpm` on `PATH`; exit 1, the three sentences, no stack |
+| the old behaviour | asserted absent by name (`Error: Command failed`) |
+| `core` test suite | **161 files, 3954 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **165 files, 4141 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 65 across 39 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
+
+### Open
+
+- **The counts snapshot still updates in two steps.** `[open: `doc-counts.json` and the
+  published row are both hand-refreshed, and doing one without the other is green locally
+  until CI's `--check --from` step. Making it one command would mean the guard running the
+  suite, which is what the split exists to avoid; the honest repair is a `--write-doc` mode
+  that rewrites both from a single run, and it is a design decision rather than a fix]`
+- **A red suite is still a red suite.** `[open: this pass made the *report* honest, not the
+  failure. Nothing short-circuits the measurement when a scope fails; the first failing
+  scope stops the run, which is correct, but the two scopes after it are simply not
+  measured rather than reported as unmeasured]`
+- **Twelve earlier items are still owed**: v2.10's two, v2.09's three, v2.08's one,
+  v2.07's two, v2.06's two, v2.05's four. `[open: this pass narrowed to one tool's failure
+  message and touched no contract, no exporter and no corpus, so every one of them is
+  exactly where the previous section left it]`

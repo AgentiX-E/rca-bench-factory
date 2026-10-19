@@ -231,15 +231,96 @@ export function countsFromReports(paths) {
   return counts;
 }
 
+/**
+ * A run that did not succeed, carrying the lines a reader needs.
+ *
+ * Thrown instead of calling `fail()` so that a test can observe it: `fail()` ends
+ * the process, and a branch that can only be observed by exiting is the shape
+ * finding 121 was written about.
+ */
+export class SuiteFailed extends Error {
+  constructor(scope, lines) {
+    super(`the ${scope} suite is red`);
+    this.name = 'SuiteFailed';
+    this.scope = scope;
+    this.lines = lines;
+  }
+}
+
+/**
+ * Turn a failed run's captured output into a diagnosis.
+ *
+ * ## What this used to do
+ *
+ * Nothing. `execFileSync` was called without a `catch`, so a non-zero exit
+ * became an uncaught exception, and Node printed
+ *
+ *     Error: Command failed: pnpm --filter @rca-bench-factory/core test
+ *     <the whole captured stdout>
+ *     at checkChildProcessResult …
+ *
+ * for a tool whose whole job is to print three numbers. The reader was left with
+ * a stack trace and a transcript, and had to work out that the *suite* was red —
+ * which is not a fact about the counts at all, but the reason there are none.
+ *
+ * ## What it says now
+ *
+ * Three things, in the order a reader needs them: that the run failed, that a
+ * count of what passed does not exist for a failed run, and which tests failed.
+ * The transcript is cut to the failing test names and capped, because the point
+ * is to name the work, not to reproduce the log — `stdio` already sends vitest's
+ * own output to the terminal, so the full text is one scroll up.
+ */
+export function diagnoseRedRun(scope, error) {
+  const stdout = typeof error?.stdout === 'string' ? error.stdout : '';
+  const status = error?.status;
+  const lines = [
+    `the ${scope} suite is red, so its counts cannot be measured.`,
+    'A count is what passed; a failed run has no number to publish.',
+  ];
+
+  if (status === undefined && error?.code !== undefined) {
+    // No exit status at all: the child never ran. A missing `pnpm`, a signal, or
+    // a working directory that is not there -- each is a different repair, and
+    // none of them is "the suite failed".
+    lines.push(`the run did not start (${String(error.code)}): ${String(error.message ?? '')}`.trimEnd());
+    return lines;
+  }
+
+  const failing = [...stdout.matchAll(/^\s*(?:×|FAIL)\s+(.+?)\s*$/gm)].map((m) => m[1]);
+  const unique = [...new Set(failing)];
+  if (unique.length === 0) {
+    lines.push(
+      `the run exited ${String(status ?? 'without a status')} and named no failing test;`,
+      'vitest prints `FAIL <file> > <test>` for each one, so this is not a test failure:',
+      'read the run itself for the reason.',
+    );
+    return lines;
+  }
+
+  const shown = unique.slice(0, 5);
+  lines.push('first failing test(s):', ...shown.map((name) => `  ${name}`));
+  if (unique.length > shown.length) {
+    lines.push(`  … and ${unique.length - shown.length} more`);
+  }
+  lines.push(`the full run is above; re-run it with \`pnpm ${SCOPES.find((s) => s.name === scope)?.args.join(' ') ?? 'test'}\`.`);
+  return lines;
+}
+
 function measure() {
   const counts = {};
   for (const scope of SCOPES) {
     process.stderr.write(`measuring ${scope.name} (pnpm ${scope.args.join(' ')}) ...\n`);
-    const out = execFileSync('pnpm', scope.args, {
-      cwd: ROOT,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'inherit'],
-    });
+    let out;
+    try {
+      out = execFileSync('pnpm', scope.args, {
+        cwd: ROOT,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
+    } catch (error) {
+      throw new SuiteFailed(scope.name, diagnoseRedRun(scope.name, error));
+    }
     counts[scope.name] = parseSummary(out, scope.name);
   }
   return counts;
@@ -282,9 +363,17 @@ function main() {
   }
 
   const from = argValue('--from');
-  const measured = from === undefined
-    ? measure()
-    : countsFromReports(from.split(',').map((p) => resolve(ROOT, p.trim())).filter(Boolean));
+  let measured;
+  try {
+    measured = from === undefined
+      ? measure()
+      : countsFromReports(from.split(',').map((p) => resolve(ROOT, p.trim())).filter(Boolean));
+  } catch (error) {
+    // A red run is a diagnosis, not a crash. `fail()` is still the exit, so the
+    // verdict reads like every other one this script prints.
+    if (error instanceof SuiteFailed) fail(error.lines);
+    throw error;
+  }
   const text = serialise(measured);
 
   if (checking) {
