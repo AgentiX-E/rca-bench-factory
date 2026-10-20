@@ -40,18 +40,8 @@
  * the tests spawn it, and hollowing it makes the spawns return the wrong code.
  */
 
-import { execFileSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
-import { resolve } from 'node:path';
-import {
-  ROOT,
-  describePlan,
-  localCommands,
-  materialiseStep,
-  runSteps,
-  shippedPlan,
-  whereOf,
-} from './gate-steps.mjs';
+import { describePlan, failureReport, localCommands, runSteps, shippedPlan } from './gate-steps.mjs';
+import { runStep } from './step-process.mjs';
 
 const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
@@ -59,34 +49,18 @@ const onlyIndex = argv.indexOf('--only');
 const only = onlyIndex < 0 ? null : (argv[onlyIndex + 1] ?? null);
 
 /**
- * A runner that hands its output straight to the terminal, and does what the
- * step says about *how* to run it.
+ * The runner is `runStep`, and this file's only job is to decide *which* steps.
  *
- * The body is written to a file and the interpreter is started on that file,
- * because that is what GitHub does: `{0}` is a path, not an argument to `-c`. The
- * previous version ran everything through `sh -c` from the repository root, which
- * made the plan's claim incomplete in two ways at once -- a different program on
- * any Linux whose `/bin/sh` is dash, and a `working-directory:` the runner could
- * not honour. Both are now the step's own business, and the file is removed
- * whether the step passes or fails.
+ * It used to be a function here, which was the shape this repository keeps
+ * finding: a gate that a test may not import, holding the one piece of logic
+ * worth testing. `scripts/step-process.mjs` holds it now -- the same code, in a
+ * module the suite can drive -- and this file passes it straight through.
+ *
+ * What the runner owes each step is in that module: the step's own shell, its
+ * directory, its environment, and the job's budget.
  */
-export function runCommand(step) {
-  const { file, argv: command } = materialiseStep(step);
-  try {
-    execFileSync(command[0], command.slice(1), {
-      cwd: resolve(ROOT, step.cwd),
-      // The step's own environment, on top of this one: a step that sets
-      // `NODE_OPTIONS` means it here too, and dropping it would be a difference
-      // between this run and CI that no key in the workflow explains.
-      env: { ...process.env, ...(step.env ?? {}) },
-      stdio: 'inherit',
-    });
-  } finally {
-    rmSync(file, { force: true });
-  }
-}
 
-function main() {
+async function main() {
   const plan = shippedPlan();
 
   if (plan.errors.length > 0) {
@@ -112,20 +86,14 @@ function main() {
     process.exit(1);
   }
 
-  const result = runSteps(commands, runCommand);
+  const result = await runSteps(commands, runStep);
   const selected = only === null ? plan.local.length : plan.local.filter((step) => step.key.includes(only)).length;
   if (!result.ok) {
-    const where = whereOf(result.step);
-    process.stderr.write(
-      [
-        '',
-        `verify:local: FAILED at ${String(result.index + 1)}/${String(result.commands)}`,
-        `  step:    ${result.step.first}`,
-        ...(where === '' ? [] : [`  where:   ${where}`]),
-        `  command: ${result.step.run.split('\n')[0] ?? ''}`,
-        '',
-      ].join('\n'),
-    );
+    // The block is built by `failureReport`, which is pure and tested with both
+    // shapes -- a step that exited non-zero and a step that ran past its bound.
+    // The timeout branch is the reason: reaching it from here would cost fifteen
+    // minutes, so a branch only a test can reach is the only branch that gets one.
+    process.stderr.write(`${failureReport(result).join('\n')}\n`);
     process.exit(1);
   }
 
@@ -155,5 +123,10 @@ function main() {
 // prevents is silent: `main()` running in the middle of an import looks like a
 // test that hangs rather than a test that fails.
 if (process.argv[1] !== undefined && process.argv[1].endsWith('verify-local.mjs')) {
-  main();
+  main().catch((error) => {
+    // A rejection that reached here is a defect in this file rather than a step's
+    // verdict: every step failure is already a value by the time the loop returns.
+    process.stderr.write(`verify:local: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  });
 }

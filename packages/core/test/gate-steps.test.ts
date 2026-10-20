@@ -29,10 +29,13 @@ import {
   cwdOf,
   describePlan,
   envOf,
+  failureReport,
   localCommands,
   materialiseStep,
   readWorkflow,
   runSteps,
+  timeoutOf,
+  JOB_KEYS,
   shellOf,
   shippedPlan,
   whereOf,
@@ -209,6 +212,87 @@ describe('the workflow reader', () => {
     const gate = steps.find((one) => one.name === 'A gate');
     expect(gate.values.env).toBe('{A: b}');
     expect(gate.env).toBeUndefined();
+  });
+
+  it('reads the bound a job gives every step in it, which this reader had never looked for', () => {
+    // `timeout-minutes:` stands on all four jobs of the shipped workflow, and this
+    // reader walked past it for four passes: it only ever looked at step keys. The
+    // line is the budget CI enforces, and the plan neither stated nor applied it.
+    const withJob = [
+      'jobs:',
+      '  one:',
+      '    runs-on: ubuntu-latest',
+      '    timeout-minutes: 15',
+      '    steps:',
+      '      - name: Gate',
+      '        run: pnpm gate',
+    ].join('\n');
+    const { steps, errors } = readWorkflow(withJob);
+    expect(errors).toEqual([]);
+    expect(steps[0].jobTimeout).toBe('15');
+  });
+
+  it('reads a job key written below `steps:`, because keys may be in any order', () => {
+    // The reason the value is stored per job and attached after the walk: a job may
+    // declare its budget above the block or below it, and only one of the two reads
+    // naturally. The plan should not depend on which.
+    const below = [
+      'jobs:',
+      '  one:',
+      '    steps:',
+      '      - name: Gate',
+      '        run: pnpm gate',
+      '    timeout-minutes: 20',
+    ].join('\n');
+    expect(readWorkflow(below).steps[0].jobTimeout).toBe('20');
+  });
+
+  it('refuses a job key that would make every step in it a different step', () => {
+    // Four keys change *what* runs rather than *where*: a matrix multiplies the
+    // job, `defaults:` changes every step's shell and directory, a job-level
+    // environment is not collected, and a container is another machine. Each of
+    // those makes the plan's sentence about its steps false.
+    const cases: [string, string][] = [
+      ['    strategy:', 'matrix multiplies the job'],
+      ['    defaults:', 'changes the shell and directory of every step'],
+      ['    env:', 'not collected'],
+      ['    container:', 'image this machine does not have'],
+      ['    services:', 'services this machine does not run'],
+    ];
+    for (const [line, phrase] of cases) {
+      const text = ['jobs:', '  one:', '    runs-on: ubuntu-latest', line, '    steps:', '      - name: Gate', '        run: pnpm gate'].join('\n');
+      const errors = readWorkflow(text).errors.join('\n');
+      expect(errors, line).toContain(phrase);
+    }
+  });
+
+  it('tolerates the job keys that say where the runner is, and no more', () => {
+    const text = [
+      'jobs:',
+      '  one:',
+      '    name: a job',
+      '    runs-on: ubuntu-latest',
+      '    needs: another',
+      '    permissions:',
+      '      contents: read',
+      '    steps:',
+      '      - name: Gate',
+      '        run: pnpm gate',
+    ].join('\n');
+    expect(readWorkflow(text).errors).toEqual([]);
+  });
+
+  it('tolerates a job condition only when it widens, exactly as at step level', () => {
+    const base = ['jobs:', '  one:', '    runs-on: ubuntu-latest', '    steps:', '      - name: Gate', '        run: pnpm gate'];
+    const narrow = base.toSpliced(3, 0, '    if: github.ref == \'refs/heads/main\'');
+    expect(readWorkflow(narrow.join('\n')).errors.join('\n')).toContain('condition this plan cannot describe');
+    const wide = base.toSpliced(3, 0, '    if: always()');
+    expect(readWorkflow(wide.join('\n')).errors).toEqual([]);
+  });
+
+  it('refuses a job key it does not know, rather than assuming it is harmless', () => {
+    const text = ['jobs:', '  one:', '    fancy: true', '    steps:', '      - name: Gate', '        run: pnpm gate'].join('\n');
+    expect(readWorkflow(text).errors.join('\n')).toContain('does not know what `fancy:` does to a job');
   });
 
   it('does not read a `run:` block body as an `env:` entry when `env:` comes first', () => {
@@ -524,6 +608,37 @@ describe('the keys a step may carry', () => {
     expect(errors.join('\n')).toContain('flow');
   });
 
+  it('carries the job\'s bound onto the step, because that is the budget CI would apply', () => {
+    const one = step(['run'], 'pnpm gate') as Record<string, unknown>;
+    one.jobTimeout = '15';
+    const result = classify([one], LOCAL);
+    expect(result.errors).toEqual([]);
+    expect(result.local[0]).toMatchObject({ timeoutMinutes: 15, timeoutFrom: 'job' });
+  });
+
+  it('lets the step narrow the job\'s bound, which is the only direction GitHub allows', () => {
+    const one = step(['run', 'timeout-minutes'], 'pnpm gate', { 'timeout-minutes': '5' }) as Record<string, unknown>;
+    one.jobTimeout = '15';
+    expect(classify([one], LOCAL).local[0]).toMatchObject({ timeoutMinutes: 5, timeoutFrom: 'step' });
+  });
+
+  it('refuses a local step whose bound it cannot enforce, quoting it', () => {
+    const errors = classify(
+      [step(['run', 'timeout-minutes'], 'pnpm gate', { 'timeout-minutes': 'soon' })],
+      LOCAL,
+    ).errors;
+    expect(errors.join('\n')).toContain('not a whole number of minutes');
+  });
+
+  it('tolerates an unreadable bound outside the plan, where nothing is enforced anyway', () => {
+    const result = classify(
+      [step(['run', 'timeout-minutes'], 'pnpm gate', { 'timeout-minutes': '${{ inputs.minutes }}' })],
+      REMOTE,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.tolerated[0].keys).toContain('timeout-minutes');
+  });
+
   it('tolerates any `env:` outside the plan, where its value cannot mislead', () => {
     // The publisher is the case in the shipped workflow: `GITHUB_TOKEN` is a
     // secret, and the reason the step does not run here is still the run token.
@@ -638,6 +753,34 @@ describe('the values an `env:` block declares', () => {
   });
 });
 
+describe('the budget a step is given', () => {
+  it('takes the step\'s own bound, and the job\'s when the step says nothing', () => {
+    // The inheritance GitHub applies, read from the line the workflow already has.
+    expect(timeoutOf('5', '15')).toMatchObject({ minutes: 5, from: 'step', error: null });
+    expect(timeoutOf(undefined, '15')).toMatchObject({ minutes: 15, from: 'job', error: null });
+    expect(timeoutOf('', '')).toMatchObject({ minutes: null, from: null, error: null });
+  });
+
+  it('refuses anything that is not a whole positive number of minutes, quoting it', () => {
+    // A bound this reader half-understood would be a bound it could not enforce,
+    // and enforcing the wrong one is worse than enforcing none: a step killed at
+    // the wrong moment reports a timeout CI would not have reported.
+    for (const value of ['0', '1.5', 'soon', '-5']) {
+      const result = timeoutOf(value, undefined);
+      expect(result.minutes, value).toBeNull();
+      expect(result.error, value).toBeTruthy();
+    }
+    expect(timeoutOf('1.5', undefined).error).toContain('not a whole number of minutes');
+    expect(timeoutOf('0', undefined).error).toContain('below one minute');
+  });
+
+  it('refuses an expression, because a bound it cannot compute is one it cannot enforce', () => {
+    const result = timeoutOf('${{ inputs.minutes }}', undefined);
+    expect(result.error).toContain('cannot evaluate');
+    expect(result.error).toContain('remote-only');
+  });
+});
+
 describe('the plan as a runnable sequence', () => {
   const local = [
     { key: 'a / one', run: 'pnpm build' },
@@ -659,9 +802,9 @@ describe('the plan as a runnable sequence', () => {
     ]);
   });
 
-  it('stops at the first failure and says which step it was', () => {
+  it('stops at the first failure and says which step it was', async () => {
     const seen = [];
-    const result = runSteps(localCommands(local), (step) => {
+    const result = await runSteps(localCommands(local), (step) => {
       seen.push(step.run);
       if (step.run === 'pnpm lint') throw new Error('lint failed');
     });
@@ -671,33 +814,52 @@ describe('the plan as a runnable sequence', () => {
     expect(seen).toEqual(['pnpm build', 'pnpm lint']);
   });
 
-  it('runs every command when none fails', () => {
+  it('runs every command when none fails', async () => {
     const seen = [];
-    const result = runSteps(localCommands(local), (step) => seen.push(step.run));
+    const result = await runSteps(localCommands(local), (step) => seen.push(step.run));
     expect(result.ok).toBe(true);
     expect(seen).toEqual(['pnpm build', 'pnpm lint']);
     expect(result.commands).toBe(2);
   });
 
-  it('hands the runner the whole step, because the interpreter and the directory are part of it', () => {
+  it('reports a step that ran past its bound as timed out, which is a different verdict', async () => {
+    // The repair differs -- a step that exited 1 has something wrong with it, and a
+    // step that ran for fifteen minutes has something wrong with it *or* with the
+    // bound -- so the difference is carried in the result rather than flattened.
+    const result = await runSteps(localCommands(local), (step) => {
+      if (step.run === 'pnpm lint') throw Object.assign(new Error('the step ran past its bound'), { timedOut: true });
+    });
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+  });
+
+  it('reports an ordinary failure as not timed out', async () => {
+    const result = await runSteps(localCommands(local), () => {
+      throw new Error('exit 1');
+    });
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(false);
+  });
+
+  it('hands the runner the whole step, because the interpreter and the directory are part of it', async () => {
     // A runner that received only the command text could not honour either key,
     // and a test that only ever passed one would not notice.
     const seen = [];
-    runSteps(localCommands([{ key: 'a / one', run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' }]), (step) =>
+    await runSteps(localCommands([{ key: 'a / one', run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' }]), (step) =>
       seen.push(step),
     );
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' });
   });
 
-  it('says where a command runs, when that is not the root under the default shell', () => {
+  it('says where a command runs, when that is not the root under the default shell', async () => {
     const writes = [];
     const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
       writes.push(String(chunk));
       return true;
     });
     try {
-      runSteps(
+      await runSteps(
         localCommands([
           { key: 'a / one', run: 'pnpm gate', cwd: 'examples', shell: 'sh -e {0}' },
           { key: 'b / two', run: 'pnpm lint', cwd: '.' },
@@ -761,6 +923,36 @@ describe('the plan as a runnable sequence', () => {
     expect(commands[0].also).toEqual(['b / two']);
   });
 
+  it('runs one command under the tighter of the budgets its steps were given', () => {
+    // CI would run both and the one that fails first is the one that decides, so
+    // the local run stands in for both at the tighter bound. The bound travels with
+    // the step that supplied it, so a timeout names the right step.
+    const later = localCommands([
+      { key: 'a / one', run: 'pnpm build', timeoutMinutes: 30 },
+      { key: 'b / two', run: 'pnpm build', timeoutMinutes: 15 },
+    ]);
+    expect(later).toHaveLength(1);
+    expect(later[0].timeoutMs).toBe(15 * 60_000);
+    expect(later[0].timeoutFrom).toBe('b / two');
+
+    const earlier = localCommands([
+      { key: 'a / one', run: 'pnpm build', timeoutMinutes: 15 },
+      { key: 'b / two', run: 'pnpm build', timeoutMinutes: 30 },
+    ]);
+    expect(earlier[0].timeoutFrom).toBe('a / one');
+  });
+
+  it('gives a merged command the bound one of its steps had, when the other had none', () => {
+    // A bounded step merged with an unbounded one is bounded: the step that has a
+    // budget is the one that can time out in CI.
+    const commands = localCommands([
+      { key: 'a / one', run: 'pnpm build', timeoutMinutes: null },
+      { key: 'b / two', run: 'pnpm build', timeoutMinutes: 10 },
+    ]);
+    expect(commands[0].timeoutMs).toBe(10 * 60_000);
+    expect(commands[0].timeoutFrom).toBe('b / two');
+  });
+
   it('still collapses the same command in the same place, which is what CI does twice', () => {
     // The dedup is not the bug; identifying a step by its text alone was.
     const commands = localCommands([
@@ -793,6 +985,55 @@ describe('the script the runner hands to the interpreter', () => {
   });
 });
 
+describe('what a failed run says', () => {
+  /** The shape `runSteps` returns, built by hand so both branches can be read. */
+  function failed(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      ok: false,
+      timedOut: false,
+      index: 2,
+      commands: 31,
+      step: {
+        first: 'a / one',
+        run: 'pnpm build\necho second line',
+        cwd: '.',
+        shell: DEFAULT_SHELL,
+        timeoutMs: 15 * 60_000,
+        timeoutFrom: 'b / two',
+      },
+      error: new Error('x'),
+      ...overrides,
+    };
+  }
+
+  it('names the step, where it ran and the first line of the command', () => {
+    const text = failureReport(failed()).join('\n');
+    expect(text).toContain('verify:local: FAILED at 3/31');
+    expect(text).toContain('  step:    a / one');
+    expect(text).toContain('  command: pnpm build');
+    // One line: the rest of a script is in the workflow, and a failure block that
+    // reprinted it would bury the line that matters.
+    expect(text).not.toContain('echo second line');
+    // No bound on an ordinary failure: the step exited, so its budget was not the
+    // thing that ran out.
+    expect(text).not.toContain('bound:');
+  });
+
+  it('names the bound and the step that set it when the budget ran out', () => {
+    // The reason this is a pure function: reaching this branch from the CLI costs
+    // fifteen minutes, so it is reached here instead.
+    const text = failureReport(failed({ timedOut: true })).join('\n');
+    expect(text).toContain('verify:local: TIMED OUT at 3/31');
+    expect(text).toContain('  bound:   15m, set on b / two');
+  });
+
+  it('says where the command ran when that is not the root', () => {
+    const result = failed();
+    (result.step as Record<string, unknown>).cwd = 'examples';
+    expect(failureReport(result).join('\n')).toContain('  where:   in examples');
+  });
+});
+
 describe('scripts/verify-local.mjs as a command', () => {
   it('prints the plan, including every reason for not running a step', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--list'], { cwd: ROOT, encoding: 'utf8' });
@@ -810,6 +1051,11 @@ describe('scripts/verify-local.mjs as a command', () => {
     // stated is a runner whose default is not reviewable.
     expect(result.stdout).toContain(DEFAULT_SHELL);
     expect(result.stdout).toContain('0 of 36 override the shell, the directory or the environment');
+    // And the budget, which every job of the shipped workflow declares and which
+    // this runner now enforces: the range is the jobs' own numbers.
+    expect(result.stdout).toContain('each command is bounded by `timeout-minutes:`');
+    expect(result.stdout).toContain('15m to 30m here');
+    expect(result.stdout).toContain('verify / Type-check — 15m');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {
@@ -861,6 +1107,22 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     writeFileSync(path, lines.join('\n'));
     return path;
   }
+
+  it('turns a rejection that reached the top into one line and a non-zero exit', () => {
+    // `main` is async now, because a runner that enforces a bound has to be. The
+    // one exit that fact adds is the rejection path: an unreadable workflow makes
+    // `shippedPlan` throw before any step runs, and an unhandled rejection would
+    // print a stack with no verdict in it.
+    const result = spawnSync(process.execPath, [SCRIPT, '--list'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: 'no-such-workflow.yml' },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('verify:local:');
+    expect(result.stderr).toContain('ENOENT');
+    expect(result.stderr).not.toContain('UnhandledPromiseRejection');
+  });
 
   it('refuses a workflow the plan does not describe, naming the step', () => {
     const text = readFileSync(resolve(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')

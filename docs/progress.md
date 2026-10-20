@@ -8467,9 +8467,9 @@ empty string, and the failure would name the value rather than a map.
 | dedup identity | `(cwd, shell, env-sorted, text)`; two tests |
 | `--list` | `0 of 36 override the shell, the directory or the environment` |
 | `gate-steps.test.ts` | **80 tests** (69 before) |
-| `core` test suite | **163 files, 4067 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **167 files, 4254 tests passed** (as of this commit) |
+| `core` test suite | **163 files, 4067 tests passed** (as of `6808449`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `6808449`) |
+| repo test suite | **167 files, 4254 tests passed** (as of `6808449`) |
 | gate sites | 68 across 40 scripts, `--check` OK (three line numbers moved again) |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -8488,3 +8488,134 @@ empty string, and the failure would name the value rather than a map.
 - **A step may still declare an environment the *shell* overrides.** `[open: a literal `env:` entry
   is passed through, and a command that then runs `export FOO=bar` changes it for its own children
   only; that is the command's business, not the runner's, but nothing says so in the plan's output]`
+
+## v2.21 — the budget was in the workflow and the runner could not be stopped
+
+### What the previous pass recorded
+
+v2.20's Open list carried this, unchanged since v2.16:
+
+> **`timeout-minutes:` is still tolerated and unenforced.** `[open: a step that hangs hangs here
+> for as long as the terminal is patient, where CI would kill the job; enforcing it means a timer
+> around a child process and a decision about what part of a step's output survives]`
+
+The entry was honest about the gap and wrong about where the bound was. It reads as though the
+workflow says nothing and the runner would have to invent a budget. The workflow says it four
+times — 15, 30, 15, 20 — and one of them carries its own reason:
+
+```yaml
+    # Not a performance assertion: a job that hangs has to be reported as a budget
+    # being spent rather than six hours later.
+    timeout-minutes: 15
+```
+
+`readWorkflow` had never looked at a job-level key. It read `  job:` to know which job it was in
+and `- name:` to find steps; a key at four spaces was passed over in silence. **Third pass in a
+row where the field was in the file and not in the reader**, after `working-directory:` below
+`run:` and `env:`'s map.
+
+### Job keys are classified now
+
+| class | keys |
+| --- | --- |
+| read | `timeout-minutes` |
+| tolerated | `name`, `runs-on`, `needs`, `permissions`, `steps` |
+| refused | `strategy`, `defaults`, `env`, `container`, `services` |
+| tolerated only as `always()` | `if` |
+
+The five refusals are one argument: each changes *what* runs rather than *where*. A matrix
+multiplies the job; `defaults.run` rewrites the shell and directory of every step; a job-level
+environment applies to every step and is not collected; a container and a service are another
+machine. An unknown job key is an error with the same message it gets at step level.
+
+### What enforcing it costs
+
+A `run:` body is not one process: `pnpm test` starts vitest, which starts workers. Killing the
+process that was spawned would leave them running and the terminal busy — the failure the bound
+exists to prevent. So the child is spawned `detached` (its own group), the bound expires into
+`SIGTERM` to the group, and `SIGKILL` two seconds later.
+
+`detached` hides the child from the terminal, so Ctrl-C no longer reached it. A runner that
+swallowed the operator's interrupt would be worse than one with no bound, so `SIGINT`/`SIGTERM`
+are forwarded to the group and an `exit` handler sweeps it. The loop had to become **async** for
+that to be possible at all: a blocking `spawnSync` cannot forward a signal while it blocks.
+
+### A third verdict
+
+A step that ran past its bound is not a step that failed. The repair differs, so the difference
+travels in the result (`timedOut`), and `failureReport` prints it:
+
+```
+verify:local: TIMED OUT at 3/31
+  step:    batteries / Doc-count shape battery
+  bound:   30m, set on batteries / Doc-count shape battery
+  command: pnpm inject:doc-counts
+```
+
+`failureReport` is pure and lives in `gate-steps.mjs` because **the branch cannot be reached from
+the CLI without waiting fifteen minutes**, and a branch reachable only by waiting is a branch
+nobody exercises. The CLI calls the function; the test hands it the shape a timeout produces.
+
+### The seam had to move
+
+`runCommand` lived in `verify-local.mjs`, which `verify-gates-are-testable.mjs` hollows out — so
+no test may import it, and the one piece of logic worth testing sat inside an untestable file.
+The runner is now `scripts/step-process.mjs`, driven by `step-process.test.ts` against real
+processes, and registered in `scripts-are-classified.test.ts` as a `data` module. The tests use a
+**400-millisecond** bound: the conversion from minutes happens where the plan is built, so the
+runner has one unit and no test waits a minute to check a kill.
+
+### The bound does not join the identity
+
+`localCommands` deduplicates on `(cwd, shell, env, text)`. Adding the budget would run `pnpm build`
+four times — once per job — to save nothing, so the entry takes the **tighter** bound of the steps
+it stands in for and records which step supplied it. That is also the correct bound: CI runs both,
+and the one that fails first is the one the local run replaces.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| job-level keys | read; the five that change what runs are refused |
+| `timeout-minutes` | inherited, narrowable, whole minutes only |
+| a bound it cannot compute | refused on a local step, tolerated outside the plan |
+| enforcement | the **group**: SIGTERM, then SIGKILL after 2s |
+| the operator's interrupt | forwarded, because `detached` hides it |
+| the verdict | `TIMED OUT` with bound and owner; `FAILED` without either |
+| `--list` | `each command is bounded by timeout-minutes: — 15m to 30m here` |
+| `gate-steps.test.ts` | **101 tests** (80 before) |
+| `step-process.test.ts` | **8 tests**, against real processes -- one of them sends a signal |
+| `core` test suite | **164 files, 4096 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **168 files, 4283 tests passed** (as of this commit) |
+| gate sites | **69** across 40 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **A step can still be killed for the wrong reason.** `[open: the bound is the job's, and a job's
+  bound is a budget for *all* its steps together -- `verify` has 15 minutes for build, types,
+  lint, coverage and mutation. Applying 15 to each step locally is more generous than CI, so a
+  local run can pass where CI would have spent the budget; modelling the job budget as a pool is a
+  larger change than this pass, and no shipped step is near its bound]`
+- **`continue-on-error:` is still refused on a local step.** `[open: a local step could run and
+  report its failure as a note, which is a small change to the loop; it is not made because no
+  shipped step uses the key, so honouring it would give the runner a second notion of "failed"
+  with nothing exercising it]`
+- **`if:` on a local step is still refused rather than honoured.** `[open: the loop stops at the
+  first failure, so `always()` would change its shape rather than its arguments; no shipped step
+  has one, so the change would be exercised by fixtures alone]`
+- **One full-suite run died in a way this pass could not explain.** `[open: the first coverage run
+  after the timeout work reported seven files failing at *collection* with `STACK_TRACE_ERROR` and
+  no stack, which is what a killed worker looks like; five consecutive coverage runs and a full
+  `verify:local` afterwards were clean, `/sys/fs/cgroup/memory.events` reports `oom_kill 0` and
+  `max 0`, and `memory.peak` was 7.99 GB against an 8 GB ceiling. Two candidates remain and
+  neither is proved: the cgroup headroom (vitest.config.ts already documents this signature for
+  exactly that cause) and a signal this module sends. The measurement that would settle it is a
+  loop of coverage runs recording `memory.events max` deltas per run, which is a pass of its own]`
+- **A forwarded signal ends the runner, which no caller can recover from.** `[open: the handler
+  removes itself and re-raises the signal, because installing it replaced the default action and a
+  forwarder that did not die would be SIGKILLed later with its supervisor's queue; that is right
+  for a CLI and wrong for a future caller that wanted to clean up around a delegated step. There is
+  no such caller today, and inventing one to justify a returned value would be a fixture with no
+  subject]`

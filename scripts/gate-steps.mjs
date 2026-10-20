@@ -247,6 +247,85 @@ export function envOf(step) {
   return { literals, expressions, error: null };
 }
 
+/**
+ * The keys a **job** may carry, and what this reader does with each.
+ *
+ * ## Why job-level keys exist in this file at all
+ *
+ * `timeout-minutes:` is written on the job in `.github/workflows/ci.yml`, four
+ * times, and this reader had never looked above the step. So the bound CI applies
+ * to every step of a job -- 15 minutes for `verify`, 30 for `batteries` -- was a
+ * fact the plan neither stated nor enforced: a hung step here hung for as long as
+ * the operator was patient, while CI would have killed the job and said so. That
+ * is the same shape as `working-directory:` below `run:`: a field that was in the
+ * file and not in the reader.
+ *
+ * The other job keys are classified rather than ignored, for the reason
+ * `STEP_KEYS` gives one level down: a key that changes *whether*, *where* or *with
+ * what* the job runs makes the plan's claim false, and only three of them do.
+ */
+export const JOB_KEYS = {
+  'timeout-minutes': 'read: the budget every step of this job is given',
+  name: 'tolerated: a label for the run page',
+  'runs-on': 'tolerated: which machine CI uses, which is already why some steps are remote-only',
+  needs: 'tolerated: ordering between jobs, which the local plan keeps by running CI order',
+  permissions: 'tolerated: token scopes, which no local step can spend',
+  steps: 'structural: the block this reader collects',
+
+  // The four that would make every step in the job a different step.
+  strategy: 'refused: a matrix multiplies the job, and the plan describes one run',
+  defaults: 'refused: `defaults.run` changes the shell and directory of every step in the job',
+  env: 'refused: a job-level environment is not collected, and it would apply to every step',
+  container: 'refused: the job would run inside an image this machine does not have',
+  services: 'refused: the job would expect services this machine does not run',
+  // Tolerated only in the one spelling that widens, exactly as at step level.
+  if: 'refused unless `always()`: a job condition decides whether every step in it runs',
+};
+
+/**
+ * The bound a step inherits, in minutes, and where it came from.
+ *
+ * `timeout-minutes` is a whole number of minutes, and GitHub accepts a positive
+ * integer only. Everything else is refused with the value quoted: a bound this
+ * reader half-understood would be a bound it could not enforce, and enforcing the
+ * wrong one is worse than not enforcing any -- a step killed at the wrong moment
+ * reports a timeout that CI would not have reported.
+ */
+export function timeoutOf(raw, jobRaw) {
+  const own = scalar(raw);
+  const inherited = scalar(jobRaw);
+  const chosen = own === '' ? inherited : own;
+  const from = own === '' ? 'job' : 'step';
+  if (chosen === '') return { minutes: null, from: null, error: null };
+  if (/\$\{\{/.test(chosen)) {
+    return {
+      minutes: null,
+      from,
+      error:
+        `\`timeout-minutes: ${chosen}\` is an expression, and this machine cannot evaluate it, so it cannot ` +
+        'enforce the bound either. Write a number of minutes, or make the step remote-only with a reason',
+    };
+  }
+  if (!/^[0-9]+$/.test(chosen)) {
+    return {
+      minutes: null,
+      from,
+      error:
+        `\`timeout-minutes: ${chosen}\` is not a whole number of minutes, which is the only form GitHub accepts ` +
+        'and the only form this runner can enforce',
+    };
+  }
+  const minutes = Number(chosen);
+  if (minutes < 1) {
+    return {
+      minutes: null,
+      from,
+      error: `\`timeout-minutes: ${chosen}\` is below one minute, and GitHub's smallest bound is one`,
+    };
+  }
+  return { minutes, from, error: null };
+}
+
 /** Where a step runs, as a clause, or an empty string for the default. */
 export function whereOf(step) {
   const parts = [];
@@ -305,10 +384,10 @@ export const STEP_KEYS = {
   uses: 'read: matched against the setup actions below',
   shell: 'read: the interpreter, reproduced as the file-and-argv pair GitHub uses',
   'working-directory': 'read: where the command runs, carried onto the step and enforced by the runner',
+  'timeout-minutes': 'read: the budget, inherited from the job unless the step narrows it, and enforced by the runner',
 
-  // Tolerated anywhere, because neither changes the verdict of a command.
+  // Tolerated anywhere, because it changes nothing about the verdict of a command.
   id: 'tolerated: an identifier for later steps to reference',
-  'timeout-minutes': 'tolerated: a resource bound, not a condition -- a step that is slower here still fails the same way',
 
   // Tolerated only on a step that does not run here; refused on a local one.
   if: 'a condition on whether the step runs at all',
@@ -470,6 +549,8 @@ export function readWorkflow(text) {
 
   const steps = [];
   const errors = [];
+  /** Job-level values, keyed by job and key, read before the steps are classified. */
+  const jobValues = new Map();
   let job = null;
 
   for (let i = jobsIndex + 1; i < lines.length; i += 1) {
@@ -481,6 +562,43 @@ export function readWorkflow(text) {
     const jobMatch = /^ {2}([A-Za-z][\w-]*):\s*$/.exec(line);
     if (jobMatch !== null) {
       job = jobMatch[1];
+      continue;
+    }
+
+    // A key at four spaces belongs to the job, and every one of them is
+    // classified: `timeout-minutes` is read, the five that describe *where* the
+    // job runs are tolerated, and the four that would make every step in it a
+    // different step are refused. Silence here is what let `timeout-minutes:`
+    // stand in the workflow, unread, for four passes.
+    const jobKey = /^ {4}([A-Za-z][\w-]*):(.*)$/.exec(line);
+    if (jobKey !== null && job !== null) {
+      const [, key, rest] = jobKey;
+      const value = rest.trim();
+      if (!(key in JOB_KEYS)) {
+        errors.push(
+          `line ${String(i + 1)}: this reader does not know what \`${key}:\` does to a job, so it cannot say ` +
+            'whether the plan holds',
+        );
+        continue;
+      }
+      if (key === 'if') {
+        // The same rule as at step level, one level up: `always()` only widens
+        // when the job runs, and anything else narrows what the plan describes.
+        if (conditionOf(value) !== 'always()') {
+          errors.push(
+            `line ${String(i + 1)}: \`if: ${value}\` on job "${job}" is a condition this plan cannot describe. ` +
+              'Only `always()` can be tolerated, because it is the one condition that widens',
+          );
+        }
+        continue;
+      }
+      if (String(JOB_KEYS[key]).startsWith('refused')) {
+        errors.push(`line ${String(i + 1)}: \`${key}:\` on job "${job}" -- ${String(JOB_KEYS[key])}`);
+        continue;
+      }
+      if (key === 'timeout-minutes') {
+        jobValues.set(`${job}\u0000timeout-minutes`, value);
+      }
       continue;
     }
 
@@ -597,6 +715,14 @@ export function readWorkflow(text) {
   }
 
   if (steps.length === 0) errors.push('ci.yml parsed to zero steps');
+  // Resolved after the whole file, not while walking it: a job may declare its
+  // bound above `steps:` or below it, and only one of those orders reads
+  // naturally. Storing the raw value per job and attaching it at the end keeps
+  // both orders equal, which is what "keys may be written in any order" already
+  // means at step level.
+  for (const step of steps) {
+    step.jobTimeout = jobValues.get(`${step.job}\u0000timeout-minutes`) ?? '';
+  }
   return { steps, errors };
 }
 
@@ -680,6 +806,10 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     const shell = shellOf(step.values?.shell);
     const cwd = cwdOf(step.values?.['working-directory']);
     const env = envOf(step);
+    // The bound is the step's own if it has one, and the job's otherwise -- the
+    // same inheritance GitHub applies, read from the line the workflow already
+    // carries.
+    const timeout = timeoutOf(step.values?.['timeout-minutes'], step.jobTimeout);
 
     if (entry.local === true) {
       // A key that changes whether or with what a local step runs makes
@@ -700,6 +830,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // `env:` is the same question one level down: an entry is either a literal
       // this machine can pass through or a value it has no inputs for.
       if (env.error !== null) errors.push(`${step.key}: ${env.error}`);
+      if (timeout.error !== null) errors.push(`${step.key}: ${timeout.error}`);
       if (env.expressions.length > 0) {
         const [first] = env.expressions;
         errors.push(
@@ -709,7 +840,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         );
       }
       if (blocked.length > 0 || shell.error !== null || cwd.error !== null || env.error !== null) continue;
-      if (env.expressions.length > 0) continue;
+      if (env.expressions.length > 0 || timeout.error !== null) continue;
 
       local.push({
         key: step.key,
@@ -719,6 +850,8 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         cwd: cwd.path,
         shell: shell.template,
         env: env.literals,
+        timeoutMinutes: timeout.minutes,
+        timeoutFrom: timeout.from,
       });
       continue;
     }
@@ -749,7 +882,12 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // runner could reproduce it and simply does not run the step. An entry it
       // could *not* reproduce is, because that is the fact the plan is about.
       const envBeyond = env.error !== null || env.expressions.length > 0;
-      const toleratedKeys = [...conditional, ...(envBeyond ? ['env'] : []), ...unreadable];
+      const toleratedKeys = [
+        ...conditional,
+        ...(envBeyond ? ['env'] : []),
+        ...(timeout.error !== null ? ['timeout-minutes'] : []),
+        ...unreadable,
+      ];
       if (toleratedKeys.length > 0) {
         tolerated.push({
           key: step.key,
@@ -792,27 +930,32 @@ export function shippedPlan(path = workflowPath()) {
  * A branch that can only be reached by breaking a real gate is a branch nobody
  * exercises, which is the shape this repository keeps finding.
  */
-export function runSteps(commands, run) {
+export async function runSteps(commands, run) {
   for (const [index, step] of commands.entries()) {
-    // The whole step is handed over, not its text: the interpreter and the
-    // directory are part of the command, and a runner given only the text would
-    // be unable to honour either.
+    // The whole step is handed over, not its text: the interpreter, the
+    // directory, the environment and the budget are part of the command, and a
+    // runner given only the text would be unable to honour any of them.
     const where = whereOf(step);
     process.stdout.write(
       `\n[${String(index + 1)}/${String(commands.length)}] ${step.first}${where === '' ? '' : ` (${where})`}\n`,
     );
     try {
-      run(step);
+      await run(step);
     } catch (error) {
-      return { ok: false, index, step, commands: commands.length, error };
+      // A step that ran past its bound is a different verdict from a step that
+      // exited non-zero, and the two have different repairs -- so the difference
+      // is carried in the result rather than flattened into "failed".
+      return { ok: false, timedOut: error?.timedOut === true, index, step, commands: commands.length, error };
     }
   }
-  return { ok: true, index: -1, step: null, commands: commands.length, error: null };
+  return { ok: true, timedOut: false, index: -1, step: null, commands: commands.length, error: null };
 }
 
 /** The plan, printed the way a person deciding whether to trust it would read it. */
 export function describePlan(plan) {
   const overrides = plan.local.filter((step) => whereOf(step) !== '');
+  const bounds = plan.local.map((step) => step.timeoutMinutes).filter((minutes) => minutes !== null);
+  const unbounded = plan.local.length - bounds.length;
   const lines = [
     `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
     // The defaults are stated, and so is the number of steps that depart from them.
@@ -821,11 +964,23 @@ export function describePlan(plan) {
     `  each command runs from the repository root under \`${DEFAULT_SHELL}\`; ${String(overrides.length)} of ${String(
       plan.local.length,
     )} override the shell, the directory or the environment`,
+    // The budget, stated the same way. `unbounded` is named rather than left to be
+    // inferred from a missing number: a step with no bound is the one that can hang
+    // for as long as the operator is patient.
+    unbounded === 0
+      ? `  each command is bounded by \`timeout-minutes:\` — ${String(Math.min(...bounds))}m to ${String(
+          Math.max(...bounds),
+        )}m here; a step that runs past its bound is killed and reported as timed out`
+      : `  ${String(bounds.length)} of ${String(plan.local.length)} commands are bounded by \`timeout-minutes:\`; ` +
+        `${String(unbounded)} are not, because their job declares no budget (CI's own six-hour default is not ` +
+        'applied: a local run that waited six hours would not have learned anything sooner)',
     '',
   ];
   for (const step of plan.local) {
-    const where = whereOf(step);
-    lines.push(`  local   ${step.key}${where === '' ? '' : ` — ${where}`}`);
+    const clauses = [whereOf(step), step.timeoutMinutes === null ? '' : `${String(step.timeoutMinutes)}m`].filter(
+      (clause) => clause !== '',
+    );
+    lines.push(`  local   ${step.key}${clauses.length === 0 ? '' : ` — ${clauses.join(', ')}`}`);
   }
   lines.push('');
   for (const step of plan.remote) {
@@ -846,6 +1001,33 @@ export function describePlan(plan) {
 }
 
 /**
+ * The block a failed run prints, as lines.
+ *
+ * Pure, and a function rather than five lines inside the CLI, for two reasons: the
+ * timeout case would otherwise be a branch only reachable by waiting fifteen
+ * minutes, and the whole point of this pass is that such a branch must be
+ * exercised. A test can hand it both shapes and read what a person would see.
+ */
+export function failureReport(result) {
+  const step = result.step;
+  const where = whereOf(step);
+  const minutes = step.timeoutMs === null || step.timeoutMs === undefined ? null : Math.round(step.timeoutMs / 60_000);
+  const lines = [
+    '',
+    `${result.timedOut ? 'verify:local: TIMED OUT' : 'verify:local: FAILED'} at ${String(result.index + 1)}/${String(
+      result.commands,
+    )}`,
+    `  step:    ${step.first}`,
+  ];
+  if (result.timedOut) {
+    lines.push(`  bound:   ${String(minutes)}m, set on ${String(step.timeoutFrom)}`);
+  }
+  if (where !== '') lines.push(`  where:   ${where}`);
+  lines.push(`  command: ${step.run.split('\n')[0] ?? ''}`, '');
+  return lines;
+}
+
+/**
  * The commands to run, in the order CI runs them, without repeats.
  *
  * Two jobs that both run `pnpm build` are two runners doing the same thing; on
@@ -853,9 +1035,14 @@ export function describePlan(plan) {
  * text is run once and reported as already done.
  *
  * "The same command" is now the same **interpreter, directory, environment and
- * text**. It used to be the text alone, which was true while every step ran from
- * the root under one shell with no environment, and became false the moment any of
- * those could differ: `pnpm lint` in `packages/core` and `pnpm lint` in
+ * text** -- but **not** the same budget, and that asymmetry is deliberate. Two
+ * steps running `pnpm build` are one run here; the bound that governs it is the
+ * tighter of the two, because CI runs both and the one that fails first is the
+ * one whose verdict the local run is standing in for. Including the bound in the
+ * identity instead would run `pnpm build` four times on this repository, once per
+ * job, and save nothing. It used to be the text alone, which was true while every
+ * step ran from the root under one shell with no environment, and became false
+ * the moment any of those could differ: `pnpm lint` in `packages/core` and `pnpm lint` in
  * `packages/cli` would have collapsed into one run, and the second step would have
  * been reported as done by the first. The environment was the third instance of the
  * same mistake, which is why the identity is written as a tuple rather than added
@@ -866,11 +1053,15 @@ export function localCommands(local) {
   const byIdentity = new Map();
   for (const step of local) {
     const env = step.env ?? {};
+    const bound =
+      step.timeoutMinutes === null || step.timeoutMinutes === undefined ? null : step.timeoutMinutes * 60_000;
     const entry = {
       run: step.run,
       cwd: step.cwd ?? '.',
       shell: step.shell ?? DEFAULT_SHELL,
       env,
+      timeoutMs: bound,
+      timeoutFrom: step.key,
       first: step.key,
       also: [],
     };
@@ -885,6 +1076,15 @@ export function localCommands(local) {
     const seen = byIdentity.get(identity);
     if (seen !== undefined) {
       seen.also.push(step.key);
+      // Two steps that run the same command under different budgets are one run
+      // under the **tighter** of the two: CI would run both, and the one that
+      // fails first is the one that decides. The tighter bound is recorded with
+      // the step that supplied it, so a timeout names the step whose budget it
+      // actually was rather than the first one that happened to appear.
+      if (bound !== null && (seen.timeoutMs === null || bound < seen.timeoutMs)) {
+        seen.timeoutMs = bound;
+        seen.timeoutFrom = step.key;
+      }
       continue;
     }
     byIdentity.set(identity, entry);

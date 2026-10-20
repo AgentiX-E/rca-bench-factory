@@ -19709,3 +19709,150 @@ fails with the value, not with a map comparison.
 | `gate-steps.test.ts` | **80 tests** (69 before) |
 | `core` / `cli` / repo | **163 / 4067** · **4 / 187** · **167 / 4254** |
 | gate sites | 68 across 40 scripts (three line numbers moved again) |
+
+---
+
+## Finding 190 — the budget was in the workflow all along, and the runner could not be stopped
+
+### The key that was "tolerated"
+
+`timeout-minutes:` has been in `STEP_KEYS` since v2.16, with this entry:
+
+> `timeout-minutes`: tolerated: a resource bound, not a condition -- a step that is slower here
+> still fails the same way
+
+The sentence is true of a step that **ends**. It says nothing about a step that does not, and
+that is the case the key exists for. Meanwhile `.github/workflows/ci.yml` had been declaring the
+bound on all four jobs — 15, 30, 15, 20 — with its own reason written above one of them:
+
+```yaml
+    # Not a performance assertion: a job that hangs has to be reported as a budget
+    # being spent rather than six hours later.
+    timeout-minutes: 15
+```
+
+The local runner could not report that, because it had never read the line. `readWorkflow`
+looked at `  job:` to learn which job it was in and then at `- name:` to find steps; a key at
+four spaces was passed over in silence. So the plan printed 36 local steps, none of them
+bounded, and a hung step hung for as long as the operator was patient.
+
+This is the third field in three passes that was **in the file and not in the reader** —
+`working-directory:` below `run:`, `env:`'s map, and now every job-level key. The shape is the
+same each time: absence from the plan reads exactly like absence from the workflow.
+
+### Job keys are classified, not scanned
+
+Silence is what allowed this, so the other job keys are classified the way step keys are:
+
+| class | keys |
+| --- | --- |
+| read | `timeout-minutes` |
+| tolerated | `name`, `runs-on`, `needs`, `permissions`, `steps` |
+| refused | `strategy`, `defaults`, `env`, `container`, `services` |
+| tolerated only as `always()` | `if` |
+
+The five refusals are one argument: each changes *what* runs rather than *where* it runs. A
+matrix multiplies the job; `defaults.run` changes the shell and directory of every step in it; a
+job-level environment would apply to every step and is not collected; a container and a service
+are another machine. Any of them makes the plan's sentence about its steps false, and a plan may
+not be false quietly. A key the reader has never heard of is an error too, with the same message
+it gets at step level.
+
+### What "enforce" costs
+
+A `run:` body is not one process. `pnpm test` starts vitest, which starts workers. Killing the
+process that was spawned leaves the workers running and the terminal busy — the exact failure the
+bound exists to prevent. So the child is spawned `detached` (its own group, `setsid()`), and the
+bound expires into `kill(-pid, 'SIGTERM')`, then `SIGKILL` two seconds later:
+
+```js
+    timer = setTimeout(() => {
+      timedOut = true;
+      signalGroup('SIGTERM');
+      grace = setTimeout(() => signalGroup('SIGKILL'), GRACE_MS);
+    }, bound);
+```
+
+`detached` has a cost, and it is not small: the terminal's Ctrl-C no longer reaches the child.
+A runner that swallowed the operator's interrupt would be worse than one with no bound, so
+`SIGINT` and `SIGTERM` are forwarded to the group, and a last-resort `exit` handler sweeps it.
+
+The handler **re-raises the signal**, and that half is not a detail. Installing a listener replaces
+the signal's default action, so a runner that only forwarded would ignore the SIGTERM a supervisor
+sends and be killed with SIGKILL later — taking every file that supervisor had queued behind it.
+Removing itself and re-raising lets the default action happen, so the process dies *of* the signal
+rather than exiting with `143` standing in for one; and it keeps this module free of a
+`process.exit`, which is what the register says of it. The test spawns a real runner, waits for its
+step to start, sends SIGTERM, and asserts both halves: the process died of `SIGTERM`, and the
+step's grandchild is gone.
+
+The loop had to become **async** to make that possible. A synchronous `spawnSync` cannot forward
+a signal while it blocks, and Node's own `timeout` option kills only the process it started.
+
+### A third verdict, and a branch that can be reached
+
+A step that ran past its bound is not a step that failed: the repair differs, because a step that
+exited 1 has something wrong with it and a step that ran for fifteen minutes has something wrong
+with it *or* with the budget. So the difference travels:
+
+```js
+      return { ok: false, timedOut: error?.timedOut === true, index, step, commands: commands.length, error };
+```
+
+and `failureReport` — pure, in `gate-steps.mjs`, tested with both shapes — prints `TIMED OUT` with
+the bound and **the step that set it**, or `FAILED` without either.
+
+That function exists because of the other half of this pass: **the timeout branch cannot be
+reached from the CLI without waiting fifteen minutes**, and a branch reachable only by waiting is
+a branch nobody exercises. So the CLI calls one pure function, and the test hands it the shape a
+timeout produces.
+
+### The seam had to move
+
+`runCommand` used to live in `verify-local.mjs`, which is a gate: `verify-gates-are-testable.mjs`
+hollows it out with `process.exit(0)`, so no test may import it — a suite that dies at import
+reports an unattributed crash instead of a failing test. That rule kept the one piece of logic
+worth testing inside an untestable file.
+
+The runner is now `scripts/step-process.mjs`: importable, driven by `step-process.test.ts` against
+real processes, and called by the CLI. It is registered in `scripts-are-classified.test.ts` as a
+`data` module — a thing imported rather than run — which is the same class `gate-steps.mjs` holds.
+
+The tests use a **400-millisecond** bound, because the conversion from minutes happens where the
+plan is built: `localCommands` carries `timeoutMs`, so the runner has one unit and a test does not
+wait a minute for the privilege of checking a kill.
+
+### The bound does not join the identity, and that asymmetry is the decision
+
+`localCommands` deduplicates on `(cwd, shell, env, text)`. Putting the budget in that tuple would
+run `pnpm build` four times on this repository — once per job — to save nothing. So the tuple stays
+and the merged entry takes the **tighter** bound, recording which step supplied it:
+
+```js
+      if (bound !== null && (seen.timeoutMs === null || bound < seen.timeoutMs)) {
+        seen.timeoutMs = bound;
+        seen.timeoutFrom = step.key;
+      }
+```
+
+The tighter bound is also the right one: CI runs both steps, and the one that fails first is the
+one the local run is standing in for. A timeout therefore names `b / two` rather than whichever
+step appeared first, which is why `failureReport` prints `set on`.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| job-level keys | read, and the four that change what runs are refused |
+| `timeout-minutes` | inherited from the job, narrowed by the step, whole minutes only |
+| a bound it cannot compute | refused on a local step, tolerated outside the plan |
+| enforcement | process **group** killed: SIGTERM, then SIGKILL after 2s |
+| the operator's interrupt | forwarded to the group, because `detached` hides it from the terminal |
+| the verdict | `TIMED OUT` with the bound and the step that set it; `FAILED` without either |
+| a branch nobody can reach in time | `failureReport` is pure and tested with both shapes |
+| dedup | tighter bound wins, with the step that supplied it; three tests |
+| the shipped plan | 36 of 36 local steps bounded, 15m to 30m — the jobs' own numbers |
+| `gate-steps.test.ts` | **101 tests** (80 before) |
+| `step-process.test.ts` | **8 tests**, against real processes, one of them a signal |
+| `core` / `cli` / repo | **164 / 4096** · **4 / 187** · **168 / 4283** |
+| gate sites | **69** across 40 scripts — one more, the CLI's rejection path, and proved |

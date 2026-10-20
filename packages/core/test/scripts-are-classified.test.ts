@@ -121,6 +121,17 @@ const REGISTER: Record<string, Entry> = {
       'The alternative was a second list of commands, and a copy of the workflow keeps saying green ' +
       'on the day a gate is added to it.',
   },
+  'step-process.mjs': {
+    class: 'data',
+    why:
+      'The runner: spawn one step under its own shell, directory, environment and budget, and kill ' +
+      'the group it started when the budget is spent. Imported by verify-local.mjs and by the suite, ' +
+      'never run directly, so there is no exit of its own to enumerate. It lives here rather than ' +
+      'inside verify-local.mjs because that file is a gate -- hollowed out by ' +
+      'verify-gates-are-testable.mjs, so no test may import it -- and the one piece of logic worth ' +
+      'testing was inside it. step-process.test.ts drives this module against real processes: a ' +
+      'step that hangs, a step that backgrounds a grandchild, and a step that exits non-zero.',
+  },
   'doc-counts-vocabulary.mjs': {
     class: 'data',
     why:
