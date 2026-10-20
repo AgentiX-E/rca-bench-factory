@@ -1097,8 +1097,8 @@ describe('the plan as a runnable sequence', () => {
     expect(result.timedOut).toBe(true);
     expect(notedFailures(result.outcomes)).toEqual([]);
     // A spent budget ends the job, so nothing after it runs -- not even a step
-    // whose condition widens.
-    expect(result.outcomes).toHaveLength(1);
+    // whose condition widens -- and the step that met the ending is recorded.
+    expect(result.outcomes.map((one) => one.status)).toEqual(['timed-out', 'skipped']);
   });
 
   it('runs a step whose condition widens past a failure, and skips the ones it does not cover', async () => {
@@ -1314,6 +1314,118 @@ describe('the plan as a runnable sequence', () => {
       () => t,
     );
     expect(result.outcomes.map((one) => one.status)).toEqual(['passed', 'skipped']);
+  });
+
+  it('keeps running the other jobs when one of them fails, because the jobs are independent', async () => {
+    // `needs:` is the only thing that orders jobs. A red `verify` does not stop
+    // `batteries`, so a runner that stopped would leave work undone that CI would
+    // have done -- and would report it as skipped, which reads like a decision.
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'v / one', run: 'one', job: 'verify' },
+        { key: 'v / two', run: 'two', job: 'verify' },
+        { key: 'b / one', run: 'three', job: 'batteries' },
+        { key: 'b / two', run: 'four', job: 'batteries' },
+      ]),
+      (step) => {
+        seen.push(step.run);
+        if (step.run === 'two') throw new Error('the step exited 1');
+      },
+    );
+    expect(seen).toEqual(['one', 'two', 'three', 'four']);
+    expect(result.ok).toBe(false);
+    expect(result.outcomes.map((one) => one.status)).toEqual(['passed', 'failed', 'passed', 'passed']);
+    expect(result.failedJobs).toEqual(['verify']);
+  });
+
+  it('skips the rest of the job that failed, and names the job', async () => {
+    const result = await runSteps(
+      localCommands([
+        { key: 'v / one', run: 'one', job: 'verify' },
+        { key: 'v / two', run: 'two', job: 'verify' },
+        { key: 'v / three', run: 'three', job: 'verify' },
+      ]),
+      (step) => {
+        if (step.run === 'two') throw new Error('the step exited 1');
+      },
+    );
+    expect(result.outcomes.map((one) => one.status)).toEqual(['passed', 'failed', 'skipped']);
+    expect(result.outcomes[2].why).toContain('job "verify" has failed');
+  });
+
+  it('fails a step that spent its own bound, and lets the job continue to its `always()` steps', async () => {
+    // GitHub kills the process and fails the step; the job carries on, and the
+    // steps that ask to run regardless do. Only a spent **job** budget ends a job,
+    // and conflating the two made every step timeout look like a cancelled run.
+    let t = 0;
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'v / one', run: 'one', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 15 },
+        { key: 'v / two', run: 'two', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 15, condition: 'always' },
+      ]),
+      (step) => {
+        seen.push(step.run);
+        if (step.run === 'one') {
+          t += 60_000;
+          throw Object.assign(new Error('the step ran past its bound'), { timedOut: true });
+        }
+      },
+      () => t,
+    );
+    expect(seen).toEqual(['one', 'two']);
+    expect(result.timedOut).toBe(true);
+    expect(result.outcomes.map((one) => one.status)).toEqual(['timed-out', 'passed']);
+    expect(result.cancelledJobs).toEqual([]);
+  });
+
+  it('cancels the job whose budget was spent, and only that job', async () => {
+    // The other ending behind the same word: a job budget is cancelled in CI, so
+    // nothing more runs in it -- not even `always()` -- while the other jobs carry
+    // on with their own clocks.
+    let t = 0;
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'v / one', run: 'one', job: 'verify', timeoutMinutes: 15, jobBudgetMinutes: 1 },
+        { key: 'v / two', run: 'two', job: 'verify', timeoutMinutes: 15, jobBudgetMinutes: 1, condition: 'always' },
+        { key: 'b / one', run: 'three', job: 'batteries', timeoutMinutes: 30, jobBudgetMinutes: 30 },
+      ]),
+      (step) => {
+        seen.push(step.run);
+        if (step.run === 'one') {
+          t += 60_000;
+          throw Object.assign(new Error('the budget ran out'), { timedOut: true });
+        }
+      },
+      () => t,
+    );
+    expect(seen).toEqual(['one', 'three']);
+    expect(result.outcomes.map((one) => one.status)).toEqual(['timed-out', 'skipped', 'passed']);
+    expect(result.outcomes[1].why).toContain('job "verify" was cancelled');
+    expect(result.cancelledJobs).toEqual(['verify']);
+  });
+
+  it('lets `continue-on-error` differ between the jobs a merged command stands in for', async () => {
+    // The key is per step, and a merged command has one per member. A failure that
+    // is a note in `batteries` is still a failure in `verify`, and the two jobs then
+    // diverge -- which is what CI would have done with the same command twice.
+    const result = await runSteps(
+      localCommands([
+        { key: 'v / one', run: 'shared', job: 'verify' },
+        { key: 'b / one', run: 'shared', job: 'batteries', continueOnError: true },
+        { key: 'b / two', run: 'after', job: 'batteries' },
+      ]),
+      (step) => {
+        if (step.run === 'shared') throw new Error('the step exited 1');
+      },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failedJobs).toEqual(['verify']);
+    expect(result.outcomes.map((one) => one.status)).toEqual(['failed', 'passed']);
+    // The failure is fatal, so the block says which job it was fatal in.
+    expect(result.outcomes[0].step).toBeDefined();
   });
 
   it('reports a step that ran past its bound as timed out, which is a different verdict', async () => {
@@ -1661,18 +1773,21 @@ describe('what a failed run says', () => {
     expect(text).toContain('  tolerated: d / four — the step exited 5');
   });
 
-  it('says how many steps a spent budget stopped, since nothing after it may run', () => {
-    // A timeout is the one ending that is not a condition: in CI the job dies, so
-    // the steps after it -- including the ones that asked to run regardless -- did
-    // not run. Silence there would look like an `always()` step that was skipped.
+  it('names the other jobs that failed too, because one verdict line is not the whole run', () => {
+    // Four jobs can be red and only one of them can be the line this block starts
+    // with. A reader who fixes one and re-runs has spent a full gate on half the
+    // news.
     const result = failed({
-      timedOut: true,
-      commands: 3,
-      outcomes: [{ step: { first: 'a / one' }, status: 'timed-out', error: new Error('bound') }],
+      jobs: [
+        { job: 'verify', failed: true, cancelled: null },
+        { job: 'batteries', failed: true, cancelled: null },
+        { job: 'artefacts', failed: false, cancelled: null },
+      ],
     });
+    (result.step as Record<string, unknown>).job = 'verify';
     const text = failureReport(result).join('\n');
-    expect(text).toContain('  stopped: 2 step(s) after it did not run');
-    expect(text).toContain('ends the job');
+    expect(text).toContain('  also failed: batteries');
+    expect(text).not.toContain('artefacts');
   });
 
   it('says where the command ran when that is not the root', () => {

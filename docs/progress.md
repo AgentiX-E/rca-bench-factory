@@ -8921,7 +8921,7 @@ The first gate run with pools enforced passed, and said only `OK`. One minute to
 are the same verdict and different facts, and only one of them is about to break:
 
 ```
-  budget:  verify 1m of 15m, batteries 17m of 30m, artefacts 19s of 15m, cold-tree 2s of 20m
+  budget:  verify 58s of 15m, batteries 17m of 30m, artefacts 19s of 15m, cold-tree 2s of 20m
 ```
 
 It is also the only evidence that the pool code ran on the real gate at all, rather than being
@@ -8948,12 +8948,12 @@ Per job, because per step was the false statement: a line that printed `15m` bes
 | the owner | named: step, remaining pool, or a pool that was already gone |
 | the clock | injected; exact in tests, real in production |
 | enforcement | unchanged, still tested against a real process |
-| the verdict | `budget: verify 1m of 15m, batteries 17m of 30m, …` |
+| the verdict | `budget: verify 58s of 15m, batteries 17m of 30m, …` (the seconds vary by run) |
 | `--list` | one line per job |
 | `gate-steps.test.ts` | **144 tests** (131 before) |
-| `core` test suite | **164 files, 4139 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **168 files, 4326 tests passed** (as of this commit) |
+| `core` test suite | **164 files, 4139 tests passed** (as of `879dd02d5`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `879dd02d5`) |
+| repo test suite | **168 files, 4326 tests passed** (as of `879dd02d5`) |
 | the shipped gate | passes with the pools enforced: `batteries 17m of 30m` is the closest any job comes |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -8973,3 +8973,102 @@ Per job, because per step was the false statement: a line that printed `15m` bes
   clock, so two builds at once on this laptop charge each other. That is also true of CI, which is
   why the runner is only as honest as its own load -- and the `budget:` line is what makes the
   difference visible rather than theoretical]`
+
+## v2.25 — four jobs were walked as one sequence, and two endings shared one word
+
+### The sequence that was not there
+
+v2.24's Open list opened with this:
+
+> **A failure in one job still skips the remaining steps of every job.** `[open: CI's jobs are
+> independent -- `needs:` is the only ordering -- so a red `verify` would not stop `batteries`. This
+> runner walks one sequence, so it stops. The direction is safe: fewer steps run than CI would run,
+> never more, and every one of them is recorded as skipped with the reason.]`
+
+The direction being safe is why it survived. But "skipped" reads like a decision, and this was a
+shortfall: the plan's sentence is about what ran **here**, and a `batteries` step skipped because a
+`verify` step failed is a sentence about the wrong job.
+
+`runSteps` now keeps a failure latch *and* a cancellation **per job**, and evaluates each command
+against the members it stands in for — the steps the dedupe merged, each with its own job, condition
+and `continue-on-error`:
+
+```js
+    const wanted = members.filter((member) => {
+      const job = jobOf(member);
+      if (cancelledJobs.has(job)) return false;
+      return runsGiven(member.condition ?? 'success', failedJobs.has(job));
+    });
+```
+
+A command runs when **any** member wants it. That is the only rule that cannot skip work CI would
+have done, and it also unwinds an earlier simplification: `continue-on-error` used to be merged to a
+single `and` across jobs, so a command that was a note in `batteries` and fatal in `verify` was
+treated as fatal for both. Now the failure is fatal only for the members that did not ask for a
+note, and the two jobs diverge — which is what CI would have done with the same command twice.
+
+The dedupe still forces one execution point, so the **ordering** between jobs is not CI's. The
+outcomes, the latches and the budgets are. Stated, not silent.
+
+### The word that covered two endings
+
+Implementing that turned up something older. Since v2.21 the runner said *a timeout stops
+everything*, and v2.24 kept it. Both are wrong, and differently:
+
+| the bound that ran out | what CI does |
+| --- | --- |
+| the **step's** `timeout-minutes` | kills the process, fails the step, and the job carries on — its `always()` steps still run |
+| the **job's** `timeout-minutes` | cancels the job; nothing more runs in it, not even `always()` |
+
+One word, two endings, and the runner had been reporting the second for both — which is the same
+mistake as a key-level refusal: **the noun was wrong, so the consequence was wrong.** `boundScope`
+already existed, so the distinction was one branch:
+
+```js
+      for (const member of wanted) failedJobs.add(jobOf(member));
+      if (scope === 'pool') cancelledJobs.set(jobOf(owner), 'budget');
+```
+
+### What the report gained, and lost
+
+`also failed: batteries` — a run has four jobs and one verdict line, and naming only the first
+failure sends a reader off to fix one thing while another is red. The `stopped: N step(s)` line is
+gone: it counted steps the loop never reached, and the loop no longer returns at a timeout.
+
+Skip reasons name the subject where there is one, and fall back to `an earlier step failed` for the
+unnamed job the fixtures use — `job ""` is not a name.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| job independence | a failing step in one job leaves the other jobs running |
+| per-job latches | the rest of the failed job is skipped, naming the job |
+| per-member conditions | a merged command runs for every job that still wants it |
+| per-member `continue-on-error` | a note in one job, fatal in another; the jobs diverge |
+| a step bound | fails the step; the job continues and its `always()` steps run |
+| a job budget | cancels the job; other jobs untouched |
+| the report | `also failed: batteries`; no more `stopped:` |
+| `gate-steps.test.ts` | **149 tests** (144 before) |
+| `core` test suite | **164 files, 4144 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **168 files, 4331 tests passed** (as of this commit) |
+| the shipped gate | passes; the `budget:` line is unchanged in shape and per job |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **The order between jobs is still the dedupe's, not CI's.** `[open: a command serving two jobs
+  runs once, at the position the first of them gives it, so its cost is charged to the second job
+  earlier than CI would have charged it. The outcomes, latches and budgets are exact; the interleaving
+  is not. Fixing it means either running shared commands twice -- the dedupe's whole point gone -- or a
+  scheduler that can hold a command until every job that wants it has reached it, which would make
+  `batteries` wait for `verify` and be slower than CI in the other direction]`
+- **`needs:` is still tolerated rather than modelled.** `[open: the reader says the key is a label it
+  does not use, and the shipped workflow has no `needs:`. A workflow that used it would get the
+  independent-jobs model anyway, which is right for a graph with no edges and wrong for one with
+  them]`
+- **A cancelled job's remaining steps are reported one line each.** `[open: after `verify` is
+  cancelled, its five remaining steps print five `skipped` lines. They are true and they are noise;
+  collapsing them into one line is a presentation change, and a count that hides a step is the thing
+  this file exists to avoid]`

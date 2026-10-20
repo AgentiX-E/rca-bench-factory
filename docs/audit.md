@@ -20152,7 +20152,7 @@ spare and a run that passed with fourteen produce the same verdict and different
 of them is about to break. So the verdict carries a measurement:
 
 ```
-  budget:  verify 1m of 15m, batteries 17m of 30m, artefacts 19s of 15m, cold-tree 2s of 20m
+  budget:  verify 58s of 15m, batteries 17m of 30m, artefacts 19s of 15m, cold-tree 2s of 20m
 ```
 
 This is also the only evidence that the pool code ran at all on the real gate rather than being
@@ -20183,4 +20183,89 @@ Per job, because per step was the false statement: a line that printed `15m` bes
 | `--list` | one line per job, because per step was the false statement |
 | `gate-steps.test.ts` | **144 tests** (131 before) |
 | `core` / `cli` / repo | **164 / 4139** · **4 / 187** · **168 / 4326** |
-| the shipped gate | passes with the pools enforced: `verify 1m of 15m, batteries 17m of 30m` |
+| the shipped gate | passes with the pools enforced: `batteries 17m of 30m` is the closest any job comes |
+
+---
+
+## Finding 194 — four jobs were walked as one sequence, and two endings shared one word
+
+### The sequence that was not there
+
+CI's jobs run independently. `needs:` is the only thing that orders them, and the shipped workflow
+uses it nowhere. So a red `verify` does not stop `batteries`, and the runner — which walks one list
+and stops at the first failure — was leaving work undone that CI would have done.
+
+The direction was safe: fewer steps ran than CI would have run, never more, and each one was
+recorded as `skipped` with a reason. **But "skipped" reads like a decision, and this was a
+shortfall.** The plan's sentence is about what ran here; the moment a job-2 step is skipped because
+a job-1 step failed, that sentence is about the wrong job.
+
+### What per-job state costs, and what it buys
+
+`runSteps` now keeps a failure latch *and* a cancellation per job, and evaluates each command
+against the **members** it stands in for — the steps the dedupe merged, each with its own job, its
+own condition and its own `continue-on-error`:
+
+```js
+    const wanted = members.filter((member) => {
+      const job = jobOf(member);
+      if (cancelledJobs.has(job)) return false;
+      return runsGiven(member.condition ?? 'success', failedJobs.has(job));
+    });
+```
+
+A command runs when **any** member wants it, which is the only rule that cannot skip work CI would
+have done. Its bound is the tightest across the members that want it, and its `continue-on-error`
+is no longer merged to a single `and`: a failure is fatal only for the members that did not ask for
+a note, so a command that is a note in `batteries` and fatal in `verify` fails `verify` and leaves
+`batteries` running. That is what CI would have done with the same command twice.
+
+The dedupe still forces one execution point: a command serving two jobs runs once, at the position
+the first of them gives it. So the **ordering** between jobs is not CI's — the outcomes, the
+latches and the budgets are. That is a stated approximation rather than a silent one.
+
+### The word that covered two endings
+
+Implementing the above turned up something older. Since v2.21 the runner said *a timeout stops
+everything*, and v2.24 kept that when it made budgets into pools. Both are wrong, and differently:
+
+| the bound that ran out | what CI does |
+| --- | --- |
+| the **step's** `timeout-minutes` | kills the process, fails the step, and the job carries on — its `always()` steps still run |
+| the **job's** `timeout-minutes` | cancels the job; nothing more runs in it, not even `always()` |
+
+One word, two endings, and the runner had been reporting the second for both. `boundScope` already
+existed — it is what `failureReport` uses to say whose bound it was — so the distinction was one
+branch away:
+
+```js
+      for (const member of wanted) failedJobs.add(jobOf(member));
+      if (scope === 'pool') cancelledJobs.set(jobOf(owner), 'budget');
+```
+
+A step bound fails the job it belongs to; a pool bound fails it *and* cancels it. Other jobs are
+untouched either way.
+
+### What the report gained, and lost
+
+`also failed: batteries` — a run has four jobs and one verdict line, and naming only the first
+failure sends a reader off to fix one thing while another is red. The `stopped: N step(s)` line is
+gone: it counted steps the loop never reached, and the loop no longer returns.
+
+Skip reasons now name the subject where there is one: `job "verify" has failed, and this step
+declares no condition that widens past a failure`; for the unnamed job every fixture uses, the older
+sentence — `an earlier step failed` — because `job ""` is not a name.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| job independence | a failing step in one job leaves the other jobs running |
+| per-job latches | the rest of the failed job is skipped, naming the job |
+| per-member conditions | a merged command runs for every job that still wants it |
+| per-member `continue-on-error` | a note in one job, fatal in another, and the jobs diverge |
+| a step bound | fails the step; the job continues and its `always()` steps run |
+| a job budget | cancels the job; nothing more runs in it, and other jobs are untouched |
+| the report | `also failed: batteries`; no more `stopped:` |
+| `gate-steps.test.ts` | **149 tests** (144 before) |
+| `core` / `cli` / repo | **164 / 4144** · **4 / 187** · **168 / 4331** |
