@@ -326,6 +326,36 @@ export function timeoutOf(raw, jobRaw) {
   return { minutes, from, error: null };
 }
 
+/**
+ * Read a `continue-on-error:` value, which GitHub spells as a boolean.
+ *
+ * `yes` and `1` are where this matters: YAML 1.1 reads `yes` as true and YAML 1.2
+ * reads it as a string, so a reader that guessed could disagree with the runner
+ * about whether a failure stops the job -- the one thing this key exists to say.
+ * The value is refused instead, with the spelling that works.
+ */
+export function booleanOf(raw) {
+  const text = scalar(raw);
+  if (text === '') return { value: false, error: null };
+  if (/\$\{\{/.test(text)) {
+    return {
+      value: false,
+      error:
+        `\`${text}\` is an expression, and this machine cannot evaluate it, so it cannot honour the flag either. ` +
+        'Write `true` or `false`, or make the step remote-only with a reason',
+    };
+  }
+  const lowered = text.toLowerCase();
+  if (lowered === 'true') return { value: true, error: null };
+  if (lowered === 'false') return { value: false, error: null };
+  return {
+    value: false,
+    error:
+      `\`${text}\` is not a boolean. GitHub reads this key as YAML, where \`yes\` is true in one version and a ` +
+      'string in the next, so this reader accepts only `true` and `false`',
+  };
+}
+
 /** Where a step runs, as a clause, or an empty string for the default. */
 export function whereOf(step) {
   const parts = [];
@@ -385,6 +415,7 @@ export const STEP_KEYS = {
   shell: 'read: the interpreter, reproduced as the file-and-argv pair GitHub uses',
   'working-directory': 'read: where the command runs, carried onto the step and enforced by the runner',
   'timeout-minutes': 'read: the budget, inherited from the job unless the step narrows it, and enforced by the runner',
+  'continue-on-error': 'read: `true` means a failure here is a note, and the run carries on',
 
   // Tolerated anywhere, because it changes nothing about the verdict of a command.
   id: 'tolerated: an identifier for later steps to reference',
@@ -411,24 +442,25 @@ export function conditionOf(raw) {
 /**
  * Keys that make a step impossible to run here, with the reason said once.
  *
- * Three, and the three are the argument. `shell:` and `working-directory:` were in
- * this list and are not any more: they made the plan's claim *incomplete* rather
- * than false, and this file now carries both onto the step (see `shellOf` and
- * `cwdOf`). What is left cannot be carried, because each is a semantic difference
- * rather than a parameter:
+ * **One key is left**, and the five that left did so for the same reason: they made
+ * the plan's claim *incomplete* rather than false, and an incomplete claim can be
+ * completed by carrying the fact onto the step.
  *
- *  - `if:` decides *whether* the step runs. `runSteps` stops at the first failure,
- *    so a step that runs regardless is a step this runner would not run at all.
- *  - `continue-on-error:` means a failure is not a failure, which is exactly the
- *    distinction a runner exists to report.
+ *  - `shell:` and `working-directory:` (v2.19) -- the interpreter and the directory.
+ *  - `env:` (v2.20) -- and its departure is the sharpest: what a runner cannot
+ *    reproduce is not the **key** but certain **values**. `envOf` separates a
+ *    literal from a secret, where a key-level refusal could not tell
+ *    `NODE_OPTIONS: --max-old-space-size=4096` from `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
+ *  - `timeout-minutes:` (v2.21) -- a budget is a number this machine can spend.
+ *  - `continue-on-error:` (v2.22) -- "a failure here is a note" is a fact about the
+ *    loop, and the loop can say it.
  *
- * `env:` left with this pass, and the way it left is the point: what a runner
- * cannot reproduce is not the **key** but certain **values** -- a secret, the run
- * context -- and `envOf` separates those from literals, which are passed through.
- * A key-level refusal could not tell `NODE_OPTIONS: --max-old-space-size=4096` from
- * `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, and it refused both.
+ * What is left cannot be carried: `if:` decides *whether* the step runs, and this
+ * runner runs the plan in CI order and stops at the first failure that is not a
+ * note. A step that runs "regardless" would have to run after a stop, which is a
+ * different program from the one that reports the stop.
  */
-export const LOCAL_INCOMPATIBLE = ['if', 'continue-on-error'];
+export const LOCAL_INCOMPATIBLE = ['if'];
 
 /** The actions a step may use. Anything else is a gate wearing a `uses:`. */
 export const SETUP_ACTIONS = {
@@ -810,6 +842,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     // same inheritance GitHub applies, read from the line the workflow already
     // carries.
     const timeout = timeoutOf(step.values?.['timeout-minutes'], step.jobTimeout);
+    const flag = booleanOf(step.values?.['continue-on-error']);
 
     if (entry.local === true) {
       // A key that changes whether or with what a local step runs makes
@@ -831,6 +864,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // this machine can pass through or a value it has no inputs for.
       if (env.error !== null) errors.push(`${step.key}: ${env.error}`);
       if (timeout.error !== null) errors.push(`${step.key}: ${timeout.error}`);
+      if (flag.error !== null) errors.push(`${step.key}: \`continue-on-error: ${String(step.values?.['continue-on-error'] ?? '')}\` -- ${flag.error}`);
       if (env.expressions.length > 0) {
         const [first] = env.expressions;
         errors.push(
@@ -840,7 +874,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         );
       }
       if (blocked.length > 0 || shell.error !== null || cwd.error !== null || env.error !== null) continue;
-      if (env.expressions.length > 0 || timeout.error !== null) continue;
+      if (env.expressions.length > 0 || timeout.error !== null || flag.error !== null) continue;
 
       local.push({
         key: step.key,
@@ -852,6 +886,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         env: env.literals,
         timeoutMinutes: timeout.minutes,
         timeoutFrom: timeout.from,
+        continueOnError: flag.value,
       });
       continue;
     }
@@ -886,6 +921,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         ...conditional,
         ...(envBeyond ? ['env'] : []),
         ...(timeout.error !== null ? ['timeout-minutes'] : []),
+        ...(flag.error !== null ? ['continue-on-error'] : []),
         ...unreadable,
       ];
       if (toleratedKeys.length > 0) {
@@ -931,6 +967,8 @@ export function shippedPlan(path = workflowPath()) {
  * exercises, which is the shape this repository keeps finding.
  */
 export async function runSteps(commands, run) {
+  /** Failures the workflow said not to stop for, in the order they happened. */
+  const tolerated = [];
   for (const [index, step] of commands.entries()) {
     // The whole step is handed over, not its text: the interpreter, the
     // directory, the environment and the budget are part of the command, and a
@@ -945,10 +983,18 @@ export async function runSteps(commands, run) {
       // A step that ran past its bound is a different verdict from a step that
       // exited non-zero, and the two have different repairs -- so the difference
       // is carried in the result rather than flattened into "failed".
-      return { ok: false, timedOut: error?.timedOut === true, index, step, commands: commands.length, error };
+      const timedOut = error?.timedOut === true;
+      // A note is a note only while the job has budget left: in CI the bound
+      // belongs to the job, so a step that spends it ends the job, and
+      // `continue-on-error` has nothing left to continue to.
+      if (!timedOut && step.continueOnError === true) {
+        tolerated.push({ step, error });
+        continue;
+      }
+      return { ok: false, timedOut, index, step, commands: commands.length, error, tolerated };
     }
   }
-  return { ok: true, timedOut: false, index: -1, step: null, commands: commands.length, error: null };
+  return { ok: true, timedOut: false, index: -1, step: null, commands: commands.length, error: null, tolerated };
 }
 
 /** The plan, printed the way a person deciding whether to trust it would read it. */
@@ -977,9 +1023,11 @@ export function describePlan(plan) {
     '',
   ];
   for (const step of plan.local) {
-    const clauses = [whereOf(step), step.timeoutMinutes === null ? '' : `${String(step.timeoutMinutes)}m`].filter(
-      (clause) => clause !== '',
-    );
+    const clauses = [
+      whereOf(step),
+      step.timeoutMinutes === null ? '' : `${String(step.timeoutMinutes)}m`,
+      step.continueOnError ? 'continue-on-error' : '',
+    ].filter((clause) => clause !== '');
     lines.push(`  local   ${step.key}${clauses.length === 0 ? '' : ` — ${clauses.join(', ')}`}`);
   }
   lines.push('');
@@ -1023,7 +1071,14 @@ export function failureReport(result) {
     lines.push(`  bound:   ${String(minutes)}m, set on ${String(step.timeoutFrom)}`);
   }
   if (where !== '') lines.push(`  where:   ${where}`);
-  lines.push(`  command: ${step.run.split('\n')[0] ?? ''}`, '');
+  lines.push(`  command: ${step.run.split('\n')[0] ?? ''}`);
+  // The notes that came before the stop are part of what this run learned. A
+  // reader fixing the step that stopped the run would otherwise never learn that
+  // two earlier steps are broken and were allowed to be.
+  for (const one of result.tolerated ?? []) {
+    lines.push(`  tolerated: ${one.step.first} — ${one.error.message}`);
+  }
+  lines.push('');
   return lines;
 }
 
@@ -1062,6 +1117,7 @@ export function localCommands(local) {
       env,
       timeoutMs: bound,
       timeoutFrom: step.key,
+      continueOnError: step.continueOnError === true,
       first: step.key,
       also: [],
     };
@@ -1085,6 +1141,11 @@ export function localCommands(local) {
         seen.timeoutMs = bound;
         seen.timeoutFrom = step.key;
       }
+      // `and`, not `or`: the merged run stands in for both steps, so a failure is a
+      // note only when every step that merges into it says so. One fatal step is
+      // enough to make the merge fatal, which is the only direction that cannot
+      // report a green run CI would have made red.
+      seen.continueOnError = seen.continueOnError === true && step.continueOnError === true;
       continue;
     }
     byIdentity.set(identity, entry);

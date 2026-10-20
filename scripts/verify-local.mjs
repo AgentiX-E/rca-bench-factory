@@ -97,6 +97,10 @@ async function main() {
     process.exit(1);
   }
 
+  // A tolerated failure is the one thing that makes "OK" less than it sounds, so
+  // it is stated in the verdict line and then listed. The exit code stays zero
+  // because CI's job would have stayed green, which is the fact being reproduced.
+  const tolerated = result.tolerated.length === 0 ? '' : `, with ${String(result.tolerated.length)} tolerated failure(s)`;
   const runStepsTotal = plan.local.length + plan.remote.length;
   // What ran, then what the plan covers. The two are the same only for a full
   // run, and reporting the plan's size after `--only` would let a one-step check
@@ -110,8 +114,11 @@ async function main() {
   process.stdout.write(
     [
       '',
-      `verify:local: OK (${coverage})`,
+      `verify:local: OK (${coverage})${tolerated}`,
       ...(only === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
+      ...result.tolerated.map(
+        (one) => `  tolerated: ${one.step.first} — ${one.error.message}; the workflow says that is a note`,
+      ),
       ...plan.remote.map((step) => `  did not run: ${step.key} — ${step.why}`),
       '',
     ].join('\n'),

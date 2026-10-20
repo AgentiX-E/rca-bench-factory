@@ -19856,3 +19856,93 @@ step appeared first, which is why `failureReport` prints `set on`.
 | `step-process.test.ts` | **8 tests**, against real processes, one of them a signal |
 | `core` / `cli` / repo | **164 / 4096** · **4 / 187** · **168 / 4283** |
 | gate sites | **69** across 40 scripts — one more, the CLI's rejection path, and proved |
+
+---
+
+## Finding 191 — `continue-on-error` was refused as impossible, and it is only a fact about the loop
+
+### The list is down to one, and the pattern is now the finding
+
+`LOCAL_INCOMPATIBLE` has lost four entries in four passes:
+
+| left | pass | why it could be carried |
+| --- | --- | --- |
+| `shell:`, `working-directory:` | v2.19 | they name an interpreter and a directory, and the runner has both |
+| `env:` | v2.20 | the key is not the problem — certain *values* are |
+| `timeout-minutes:` | v2.21 | a budget is a number this machine can spend |
+| `continue-on-error:` | v2.22 | "a failure here is a note" is a fact about the **loop**, and the loop can say it |
+
+Each departure had the same shape: the entry was not *false*, it was **incomplete** — and an
+incomplete claim is completed by carrying the fact onto the step rather than by refusing the key.
+What remains is `if:`, and it is the one that cannot be carried: the runner walks the plan in CI
+order and stops at the first failure that is not a note, so "run regardless" would have to run
+after a stop, which is a different program from the one that reports the stop.
+
+### What CI means by the key
+
+A step with `continue-on-error: true` **runs**, **fails**, is shown as failed, and the job still
+concludes `success`. Two facts follow, and both are easy to get half-right:
+
+- the run does not stop, so `runSteps` must record the failure and continue;
+- the run's verdict is still a pass, so the exit code is **zero** — and then "OK" would be a lie,
+  so the verdict line says how many failures it contains and each one is listed:
+
+```
+verify:local: OK (1 command(s), 1 of the 36 local steps), with 1 tolerated failure(s)
+  tolerated: verify / Type-check — the step exited 3; the workflow says that is a note
+```
+
+### Two decisions the key forced, and why each went the way it did
+
+**A step that spent the job's budget is never a note.** In CI the bound belongs to the *job*: a
+step that runs for fifteen minutes has spent what every later step needed, and the job is killed.
+`continue-on-error` then has nothing left to continue to. Reproducing the note without reproducing
+the death would be the worse half of both, so a timeout stops the run whatever the flag says.
+
+**A merged command is a note only if every step merging into it is.** `localCommands` collapses two
+identical commands into one run. With `continue-on-error` in play, the merge must be an `and`: one
+fatal step is enough to make the merged run fatal, because the other direction reports a green run
+that CI would have made red — the one error a reproducing tool may not make.
+
+**A run that stops still says what it noted first.** The failure block lists the tolerated failures
+that came before the stop, because a reader will fix the step that stopped the run and would
+otherwise learn the other two by running again.
+
+### The boolean is refused rather than guessed
+
+`continue-on-error: yes` is `true` under YAML 1.1 and the string `"yes"` under 1.2. GitHub's parser
+picks one; a reader that picked the other would disagree with the runner about whether a failure
+stops the job — which is the only thing the key says. So `booleanOf` accepts `true` and `false`
+(any case, quoted or not), refuses everything else with the value quoted, and refuses `${{ … }}`
+because a flag this machine cannot evaluate is one it cannot honour.
+
+### The measurement that closed the previous pass's open item
+
+v2.21 ended with a full-suite run that died with seven files failing at *collection*, and two
+candidate causes. Both are now eliminated by measurement rather than by argument:
+
+| candidate | measurement | verdict |
+| --- | --- | --- |
+| the cgroup ceiling | five runs of the exact CI command, `memory.events max` delta `0` every time; `memory.peak` 8.394 GB against a 8.590 GB limit | the limit was never touched |
+| a signal reaching a recycled pid | `/proc/sys/kernel/pid_max` = 4 194 304, 43 processes alive: a recycled pid would need four million allocations | the group kill cannot reach a foreign group |
+| my own overlapping runners | killed a runner mid-suite and looked for survivors: none | the harness kills the group |
+
+What is left is an event with no reproduction in thirteen subsequent runs, and one structural change
+that removes the only mechanism this pass could have contributed: the signal handler now **re-raises**
+instead of swallowing, so a worker can no longer be left deaf to a supervisor's SIGTERM. The item
+stays open, with what was eliminated written next to it.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `continue-on-error: true` | carried; a failure is recorded and the run continues |
+| `continue-on-error: false` | carried as false, not as absent |
+| `yes`, `1`, `${{ … }}` | refused, quoting the value |
+| the verdict | exit 0, `with N tolerated failure(s)`, each one listed |
+| a timeout | stops the run whatever the flag says |
+| a merged entry | a note only when every step that merges into it is |
+| `LOCAL_INCOMPATIBLE` | **2 → 1**, and the survivor is argued |
+| `gate-steps.test.ts` | **111 tests** (101 before) |
+| `core` / `cli` / repo | **164 / 4106** · **4 / 187** · **168 / 4293** |
+| gate sites | **69** across 40 scripts |

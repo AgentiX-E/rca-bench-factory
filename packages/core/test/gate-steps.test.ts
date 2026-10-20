@@ -27,6 +27,7 @@ import {
   classify,
   conditionOf,
   cwdOf,
+  booleanOf,
   describePlan,
   envOf,
   failureReport,
@@ -630,6 +631,34 @@ describe('the keys a step may carry', () => {
     expect(errors.join('\n')).toContain('not a whole number of minutes');
   });
 
+  it('carries `continue-on-error: true` onto a local step, because a note is something a runner can reproduce', () => {
+    expect(LOCAL_INCOMPATIBLE).toEqual(['if']);
+    const result = classify(
+      [step(['run', 'continue-on-error'], 'pnpm gate', { 'continue-on-error': 'true' })],
+      LOCAL,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.local[0]).toMatchObject({ continueOnError: true });
+  });
+
+  it('carries an explicit `false` as false, rather than as absent', () => {
+    // The two are the same verdict today and different facts about the workflow;
+    // a plan that collapsed them could not later explain why a step stopped.
+    const result = classify(
+      [step(['run', 'continue-on-error'], 'pnpm gate', { 'continue-on-error': 'false' })],
+      LOCAL,
+    );
+    expect(result.local[0]).toMatchObject({ continueOnError: false });
+  });
+
+  it('refuses a local step whose flag it cannot read', () => {
+    const errors = classify(
+      [step(['run', 'continue-on-error'], 'pnpm gate', { 'continue-on-error': 'yes' })],
+      LOCAL,
+    ).errors;
+    expect(errors.join('\n')).toContain('not a boolean');
+  });
+
   it('tolerates an unreadable bound outside the plan, where nothing is enforced anyway', () => {
     const result = classify(
       [step(['run', 'timeout-minutes'], 'pnpm gate', { 'timeout-minutes': '${{ inputs.minutes }}' })],
@@ -781,6 +810,33 @@ describe('the budget a step is given', () => {
   });
 });
 
+describe('the flag that turns a failure into a note', () => {
+  it('reads the two booleans GitHub accepts, and no values at all as no', () => {
+    expect(booleanOf(undefined)).toEqual({ value: false, error: null });
+    expect(booleanOf('')).toEqual({ value: false, error: null });
+    expect(booleanOf('true')).toEqual({ value: true, error: null });
+    expect(booleanOf('false')).toEqual({ value: false, error: null });
+    // YAML 1.1 spells booleans in three cases, and GitHub's parser follows it.
+    expect(booleanOf('True').value).toBe(true);
+    expect(booleanOf('"true"').value).toBe(true);
+  });
+
+  it('refuses a value that is not a boolean, quoting it', () => {
+    // `continue-on-error: yes` parses as a string in YAML 1.2 and as a boolean in
+    // 1.1, so a reader that guessed would disagree with the runner about whether a
+    // failure stops the job. It is refused instead.
+    for (const value of ['yes', '1', 'maybe']) {
+      const result = booleanOf(value);
+      expect(result.value, value).toBe(false);
+      expect(result.error, value).toContain('not a boolean');
+    }
+  });
+
+  it('refuses an expression, because a flag it cannot evaluate is one it cannot honour', () => {
+    expect(booleanOf('${{ inputs.strict }}').error).toContain('cannot evaluate');
+  });
+});
+
 describe('the plan as a runnable sequence', () => {
   const local = [
     { key: 'a / one', run: 'pnpm build' },
@@ -820,6 +876,62 @@ describe('the plan as a runnable sequence', () => {
     expect(result.ok).toBe(true);
     expect(seen).toEqual(['pnpm build', 'pnpm lint']);
     expect(result.commands).toBe(2);
+  });
+
+  it('carries on past a failure the workflow says is a note, and records it', async () => {
+    // `continue-on-error: true` is a statement about the job, not about the
+    // command: CI runs the step, marks it failed, and finishes the job green. A
+    // runner that stopped would refuse work CI would have done.
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'a / one', run: 'pnpm lint', continueOnError: true },
+        { key: 'b / two', run: 'pnpm build' },
+      ]),
+      (step) => {
+        seen.push(step.run);
+        if (step.run === 'pnpm lint') throw new Error('the step exited 1');
+      },
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(['pnpm lint', 'pnpm build']);
+    expect(result.tolerated.map((one) => one.step.first)).toEqual(['a / one']);
+    expect(result.tolerated[0].error.message).toContain('exited 1');
+  });
+
+  it('does not carry on past a failure the workflow says is a failure', async () => {
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'a / one', run: 'pnpm lint' },
+        { key: 'b / two', run: 'pnpm build' },
+      ]),
+      (step) => {
+        seen.push(step.run);
+        if (step.run === 'pnpm lint') throw new Error('the step exited 1');
+      },
+    );
+    expect(result.ok).toBe(false);
+    expect(seen).toEqual(['pnpm lint']);
+    expect(result.tolerated).toEqual([]);
+  });
+
+  it('does not carry on past a step that spent the job\'s budget, whatever the flag says', async () => {
+    // In CI the bound belongs to the job: a step that spends it ends the job,
+    // and `continue-on-error` has nothing left to continue to. Reproducing the
+    // note without reproducing the death would be the worse half of both.
+    const result = await runSteps(
+      localCommands([
+        { key: 'a / one', run: 'pnpm lint', continueOnError: true },
+        { key: 'b / two', run: 'pnpm build' },
+      ]),
+      (step) => {
+        if (step.run === 'pnpm lint') throw Object.assign(new Error('bound'), { timedOut: true });
+      },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(result.tolerated).toEqual([]);
   });
 
   it('reports a step that ran past its bound as timed out, which is a different verdict', async () => {
@@ -921,6 +1033,23 @@ describe('the plan as a runnable sequence', () => {
     ]);
     expect(commands).toHaveLength(1);
     expect(commands[0].also).toEqual(['b / two']);
+  });
+
+  it('takes a merged command as fatal unless every step that merges into it is a note', () => {
+    // The merged run stands in for both steps. If either one's failure would stop
+    // the job, the local run must stop too -- `and`, not `or`, and not "the first
+    // one wins".
+    const both = localCommands([
+      { key: 'a / one', run: 'pnpm build', continueOnError: true },
+      { key: 'b / two', run: 'pnpm build', continueOnError: true },
+    ]);
+    expect(both[0].continueOnError).toBe(true);
+
+    const mixed = localCommands([
+      { key: 'a / one', run: 'pnpm build', continueOnError: true },
+      { key: 'b / two', run: 'pnpm build' },
+    ]);
+    expect(mixed[0].continueOnError).toBe(false);
   });
 
   it('runs one command under the tighter of the budgets its steps were given', () => {
@@ -1027,6 +1156,20 @@ describe('what a failed run says', () => {
     expect(text).toContain('  bound:   15m, set on b / two');
   });
 
+  it('lists the notes that came before the stop, because a reader will fix one step', () => {
+    // A run that tolerates two failures and then stops would otherwise report only
+    // the stop, and the two broken steps it already knows about would be learned
+    // the hard way -- by running again.
+    const result = failed();
+    result.tolerated = [
+      { step: { first: 'c / three' }, error: new Error('the step exited 4') },
+      { step: { first: 'd / four' }, error: new Error('the step exited 5') },
+    ];
+    const text = failureReport(result).join('\n');
+    expect(text).toContain('  tolerated: c / three — the step exited 4');
+    expect(text).toContain('  tolerated: d / four — the step exited 5');
+  });
+
   it('says where the command ran when that is not the root', () => {
     const result = failed();
     (result.step as Record<string, unknown>).cwd = 'examples';
@@ -1107,6 +1250,22 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     writeFileSync(path, lines.join('\n'));
     return path;
   }
+
+  it('passes a step the workflow calls a note, and says so without claiming a clean run', () => {
+    // `--only` selects one step, so the continuation half is `runSteps`' own test;
+    // what this proves is the verdict a person reads: exit zero, and a line naming
+    // the failure rather than a green run that quietly contained one.
+    const path = workflowWith('verify / Type-check', 'exit 3', [['continue-on-error', 'true']]);
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('with 1 tolerated failure(s)');
+    expect(result.stdout).toContain('tolerated: verify / Type-check');
+    expect(result.stdout).toContain('the workflow says that is a note');
+  });
 
   it('turns a rejection that reached the top into one line and a non-zero exit', () => {
     // `main` is async now, because a runner that enforces a bound has to be. The

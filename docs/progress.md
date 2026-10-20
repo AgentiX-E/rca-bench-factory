@@ -8585,9 +8585,9 @@ and the one that fails first is the one the local run replaces.
 | `--list` | `each command is bounded by timeout-minutes: — 15m to 30m here` |
 | `gate-steps.test.ts` | **101 tests** (80 before) |
 | `step-process.test.ts` | **8 tests**, against real processes -- one of them sends a signal |
-| `core` test suite | **164 files, 4096 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **168 files, 4283 tests passed** (as of this commit) |
+| `core` test suite | **164 files, 4096 tests passed** (as of `efa8bd3`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `efa8bd3`) |
+| repo test suite | **168 files, 4283 tests passed** (as of `efa8bd3`) |
 | gate sites | **69** across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -8619,3 +8619,100 @@ and the one that fails first is the one the local run replaces.
   for a CLI and wrong for a future caller that wanted to clean up around a delegated step. There is
   no such caller today, and inventing one to justify a returned value would be a fixture with no
   subject]`
+
+## v2.22 — `continue-on-error` was impossible, and it was a fact about the loop
+
+### What the list looked like
+
+v2.21's Open list carried:
+
+> **`continue-on-error:` is still refused on a local step.** `[open: a local step could run and report
+> its failure as a note, which is a small change to the loop; it is not made because no shipped step
+> uses the key, so honouring it would give the runner a second notion of "failed" with nothing
+> exercising it]`
+
+The reason for not doing it was honest and the phrasing was too generous: it called the change
+"small" and the second notion of failure a liability. Both are true, and neither is a reason to
+refuse a key whose meaning the runner can state exactly.
+
+`LOCAL_INCOMPATIBLE` has now lost four entries in four passes — `shell:`/`working-directory:` in
+v2.19, `env:` in v2.20, `timeout-minutes:` in v2.21, and this one. Every departure had the same
+shape: the entry was not false, it was **incomplete**, and the completion is to carry the fact onto
+the step instead of refusing the key.
+
+### What the flag actually says
+
+A step with `continue-on-error: true` runs, fails, is shown as failed, and the job still concludes
+`success`. So the run does not stop — and the run's verdict is still a pass, which means "OK" alone
+would be a lie:
+
+```
+verify:local: OK (1 command(s), 1 of the 36 local steps), with 1 tolerated failure(s)
+  tolerated: verify / Type-check — the step exited 3; the workflow says that is a note
+```
+
+### Two decisions the key forced
+
+**A step that spent the job's budget is never a note.** In CI the budget belongs to the job; a step
+that used fifteen minutes has spent what the later steps needed, and the job is killed. The flag has
+nothing left to continue to. Reproducing the note without the death would be the worse half of both.
+
+**A merged command is a note only if every step merging into it is.** `localCommands` collapses two
+identical commands into one run, so the flag merges as `and`. `or` would report a green run that CI
+would have made red — the one direction a reproducing tool may not get wrong.
+
+### The boolean is refused rather than guessed
+
+`continue-on-error: yes` is `true` in YAML 1.1 and the string `"yes"` in 1.2. A reader that picked
+the other version would disagree with the runner about whether a failure stops the job. So
+`booleanOf` takes `true`/`false` in any case and quoted or not, and refuses the rest with the value
+quoted — including `${{ … }}`, because a flag this machine cannot evaluate is one it cannot honour.
+
+### The previous pass's open item, measured
+
+v2.21 ended with a run that died with seven files failing at *collection*. Three candidates, three
+measurements, all of them negative:
+
+| candidate | measurement | verdict |
+| --- | --- | --- |
+| cgroup ceiling | five runs of the exact CI command: `memory.events max` delta `0` each time; `memory.peak` 8.394 GB vs a 8.590 GB limit | never touched |
+| a signal reaching a recycled pid | `pid_max` = 4 194 304 with 43 processes alive | would need 4 million allocations |
+| my own overlapping runners | killed a runner mid-suite and looked for survivors | none |
+
+One structural change did come out of it: the signal handler now **re-raises** instead of swallowing
+its listener, so a worker can no longer be left deaf to a supervisor's SIGTERM. The item stays open
+— an event with no reproduction in thirteen runs is still an event — but what was eliminated is now
+written next to it.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `continue-on-error: true` | carried; failure recorded; run continues |
+| `false` | carried as false, not as absent |
+| `yes` / `1` / expression | refused, value quoted |
+| the verdict | exit 0, tolerated count, each failure listed |
+| a timeout | stops the run whatever the flag says |
+| a merged entry | a note only when every step merging into it is |
+| `LOCAL_INCOMPATIBLE` | **2 → 1**, survivor argued |
+| `gate-steps.test.ts` | **111 tests** (101 before) |
+| `core` test suite | **164 files, 4106 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **168 files, 4293 tests passed** (as of this commit) |
+| gate sites | **69** across 40 scripts, `--check` OK |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **`if:` is the last key, and it is not a matter of effort.** `[open: a local step with `if:
+  always()` should run even after a failure, but this runner stops at the first failure that is not
+  a note -- "run regardless" would have to run after a stop, which is a different program from the
+  one that reports the stop. Honouring it means the loop collects failures instead of returning at
+  the first, which changes what `runSteps` returns and what every caller may assume]`
+- **A tolerated failure has no owner in the plan's own output.** `[open: `--list` shows that a step
+  carries `continue-on-error`, and the run lists what failed; nothing connects the two for a step
+  that passed *because* the failure was noted -- which is the case a reader most wants named]`
+- **The unexplained worker death is bounded, not explained.** `[open: thirteen runs since, three
+  candidate causes measured and eliminated; the handler that could have left a worker deaf now
+  re-raises. What would settle it is a loop of runs that records `memory.events max` *and* the
+  worker's exit signal per run, which is a pass of its own]`
