@@ -121,6 +121,29 @@ const REGISTER: Record<string, Entry> = {
       'it, and a test that imports the emptied file dies at its first statement: the meta-gate reported ' +
       'exactly that ("exited 1 and named no failing test") until the two halves were separated.',
   },
+  'progress-volumes.mjs': {
+    class: 'data',
+    why:
+      'What the progress log split means: contiguous volume numbering, a byte budget, a volume that ' +
+      'begins at a round, one order across two naming eras, and an index row whose count and labels are ' +
+      'the file\'s. No main and no exit -- check-progress-volumes.mjs holds the verdict and is spawned, ' +
+      'because a gate that a test imports cannot be proved by emptying it.',
+  },
+  'docs-corpus.mjs': {
+    class: 'data',
+    why:
+      'The progress log as a corpus -- the index and every volume in reading order -- for the three ' +
+      'guards that read published counts and open lists out of it. It exists because the split silently ' +
+      'shrank their scope to 69 KB of 521 KB; a reader that names one path cannot see a document that ' +
+      'became four files.',
+  },
+  'check-progress-volumes.mjs': {
+    class: 'gate',
+    why:
+      'The verdict for the progress log\'s split: volume numbering, byte budget, a boundary between two ' +
+      'rounds rather than inside one, the order across the Pass and v2 eras, the index row, and no round ' +
+      'left behind in the index.',
+  },
   'check-open-list.mjs': { class: 'gate' },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },

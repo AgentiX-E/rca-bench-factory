@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 49,
+  "scanned": 52,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -70,7 +70,7 @@
     },
     {
       "script": "scripts/check-doc-counts.mjs",
-      "line": 211,
+      "line": 222,
       "diagnostic": "check-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-doc-counts.test.ts"
@@ -187,11 +187,19 @@
     },
     {
       "script": "scripts/check-open-list.mjs",
-      "line": 211,
+      "line": 245,
       "condition": "check() !== 0",
       "diagnostic": "check-open-list: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-open-list.test.ts"
+    },
+    {
+      "script": "scripts/check-progress-volumes.mjs",
+      "line": 28,
+      "condition": "process.argv[1] !== undefined && process.argv[1].endsWith('check-progress-volumes.mjs')",
+      "diagnostic": "${error}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/progress-volumes.test.ts"
     },
     {
       "script": "scripts/check-readme-sample.mjs",
@@ -333,7 +341,7 @@
     },
     {
       "script": "scripts/measure-doc-counts.mjs",
-      "line": 157,
+      "line": 158,
       "diagnostic": "measure-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/probe-built-module-guards.test.ts"

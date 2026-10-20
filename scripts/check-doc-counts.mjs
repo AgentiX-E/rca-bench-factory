@@ -98,14 +98,25 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
+import { progressCorpus } from './docs-corpus.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const PROGRESS = resolve(ROOT, 'docs', 'progress.md');
+
+/** The corpus: the index and every volume, in reading order. */
+function corpusFiles() {
+  const single = argValue('--doc');
+  // `--doc` still names one file: the tests drive this script over fixtures, and a
+  // fixture is one file. The default is the corpus, because that is what the
+  // document became.
+  if (single !== undefined) return [{ label: relative(ROOT, single), path: single, text: readFileSync(single, 'utf8') }];
+  return progressCorpus();
+}
 
 // Scopes a published count may declare. A count that declares none is refused,
 // because the whole defect this guard exists for was an undeclared scope.
@@ -263,7 +274,7 @@ function phraseShape(row, start, end) {
  * names a scope and carries a count-bearing phrase -- the second case is what
  * rule 4 refuses, and a reader that returned only its matches could not see it.
  */
-function readCounts(text) {
+function readCounts(text, where = 'docs/progress.md') {
   const out = [];
   text.split('\n').forEach((line, i) => {
     if (!isTableRow(line)) return;
@@ -297,6 +308,7 @@ function readCounts(text) {
     if (shape === null && (scope === null || phrases.length === 0)) return;
 
     out.push({
+      where,
       line: i + 1,
       text: line,
       label,
@@ -382,9 +394,9 @@ function exemptions() {
 }
 
 function main() {
-  const docPath = argValue('--doc') ?? PROGRESS;
-  const text = readFileSync(docPath, 'utf8');
-  const rows = readCounts(text);
+  const rows = corpusFiles().flatMap((file) => readCounts(file.text, file.label));
+  /** Where a row was read from: a line number is not actionable in a five-file corpus. */
+  const at = (row) => `${row.where}:${String(row.line)}`;
   if (rows.length === 0) {
     fail([
       'no file/test counts found in docs/progress.md.',
@@ -402,7 +414,7 @@ function main() {
   for (const row of read) {
     if (row.scope === null) {
       problems.push(
-        `line ${row.line}: publishes ${row.files} files / ${row.tests} tests without naming ` +
+        `${at(row)}: publishes ${row.files} files / ${row.tests} tests without naming ` +
           `its scope. Say which one it measured (${Object.keys(SCOPES).join(', ')}) -- ` +
           `"108 files, 3059 tests" is true of core and false of the repo, and that is how ` +
           `two rows labelled "test suite" came to disagree.`,
@@ -415,14 +427,14 @@ function main() {
   for (const row of read) {
     if (row.files !== null && row.files > row.tests) {
       problems.push(
-        `line ${row.line}: ${row.files} files exceeds ${row.tests} tests, which cannot be a suite.`,
+        `${at(row)}: ${row.files} files exceeds ${row.tests} tests, which cannot be a suite.`,
       );
     }
     if (row.scope === null) continue;
     const prev = lastByScope.get(row.scope);
     if (prev && row.tests < prev.tests) {
       problems.push(
-        `line ${row.line}: ${row.scope} tests fell from ${prev.tests} (line ${prev.line}) to ` +
+        `${at(row)}: ${row.scope} tests fell from ${prev.tests} (${at(prev)}) to ` +
           `${row.tests}. A suite that lost tests is a regression or a mislabelled scope; ` +
           `either way it should not pass unremarked.`,
       );
@@ -438,7 +450,7 @@ function main() {
     const live = measured[row.scope];
     if (!live) {
       problems.push(
-        `line ${row.line}: no live measurement for scope '${row.scope}'. Rows marked as the ` +
+        `${at(row)}: no live measurement for scope '${row.scope}'. Rows marked as the ` +
           `current state must name a scope the measurement covers ` +
           `(${Object.keys(SCOPES).join(', ')}), so add the scope to SCOPES and retake.`,
       );
@@ -456,7 +468,7 @@ function main() {
     // that is what `allows a dated record to differ from the live count` pins.
     if (row.files !== live.files || row.tests !== live.tests) {
       problems.push(
-        `line ${row.line}: declares the current state of '${row.scope}' as ` +
+        `${at(row)}: declares the current state of '${row.scope}' as ` +
           `${row.files} files / ${row.tests} tests, but the suite has ` +
           `${live.files} / ${live.tests}. A row marked as the current state has one ` +
           `correct value; retake the measurement, or drop the marker if this is a ` +
@@ -478,7 +490,7 @@ function main() {
         continue;
       }
       problems.push(
-        `line ${row.line}: the '${row.scope}' row publishes "${phrase.text}" in a shape this guard ` +
+        `${at(row)}: the '${row.scope}' row publishes "${phrase.text}" in a shape this guard ` +
           `cannot read, so rules 1 to 3 do not apply to it. Either write the count in one of the ` +
           `shapes it reads (${PAIR_SHAPES.map((s) => s.name).join('; ')}; or ` +
           `"${BARE_TESTS.source}" on a row that names a scope), or add the shape ` +

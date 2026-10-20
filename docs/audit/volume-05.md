@@ -134,3 +134,97 @@ shape added, with the reason written where the next author will read it.
 | coverage | core 99.97 statements / 99.74 branches / 100 functions / 99.97 lines; cli 100 ×4 |
 | `verify:local` | **OK** — 31 commands covering 36 of 43 run steps; `verify 59s of 15m`, `batteries 17m of 30m` |
 | the audit log | 5 volumes, findings 1–196, this one the first entry of `volume-05.md` |
+
+## Finding 197 — a document split by run order, and three readers that did not notice
+
+`docs/progress.md` reached 519,758 bytes: the same size at which `docs/audit.md`
+stopped being a document (finding 195), reached one document later. Splitting it
+looked like the same job. It was not, and the difference is the whole finding.
+
+**The audit log was split by size because a finding is cited by number.** A number
+does not care which volume holds it, so a boundary at 280,000 bytes is invisible to
+every reader. A round is not cited by number; it is **read in sequence**. "The fix
+did not work, the guard passed on a no-op, and two correct rules met in one branch"
+means what it says only because the round before it described the fix. A boundary
+drawn for size can therefore separate a sentence from its subject.
+
+So the rule is **run order**: a volume holds a contiguous run of rounds, boundaries
+fall between two `## ` headings, and the volumes **tile** the log — concatenated,
+they are the body that was moved, byte for byte. That last clause is the migration's
+proof rather than its claim: it was asserted by the script that did the move
+(`concat == body: True`), and the guard now holds the consequence, not the claim.
+
+### The four volumes, and why the boundaries are where they are
+
+| volume | rounds | bytes | opens with | closes with |
+| --- | --- | --- | --- | --- |
+| 01 | 20 | 102,903 | Pass 14 | Pass 34 |
+| 02 | 16 | 92,309 | Pass 35 | Pass 48 |
+| 03 | 16 | 126,949 | Pass 49 | Pass 64 |
+| 04 | 23 | 130,230 | v2.06 | v2.27 |
+
+The budget is 200,000 — smaller than the audit log's 280,000 on purpose. A round
+costs 2–15 KB and arrives far more often than a finding, so the number that matters
+is not how much fits but how many rounds of headroom: about fifteen, where the audit
+volumes have about one.
+
+`v2.26` and `v2.27` moved into a volume as well, which is worth saying: an index that
+kept "the recent entries" would be a fourth naming scheme, and the log already had
+two (`## Pass N` and `## v2.NN`) that took a guard to keep in order.
+
+### The guard, and the two rules a sequence can break
+
+`check-progress-volumes.mjs` (verdict) over `progress-volumes.mjs` (reading), for the
+reason v2.27 recorded: a gate that a test imports cannot be proved by emptying it.
+Five rules:
+
+1. volumes `volume-NN.md`, contiguous from `01`;
+2. each ≤ 200,000 bytes;
+3. each **begins at a `## ` heading** — a volume that starts mid-round is a boundary
+   drawn through a sentence, which is the one thing this split exists to prevent;
+4. one order across both eras: `Pass N` strictly increasing, `vX.YY` non-decreasing,
+   `v2.15, addendum` the only entry allowed to share a version, and no `Pass` after
+   the first `v2.`;
+5. the index row's count and first/last labels are the file's rather than the row's
+   claim, and **no round is left behind in the index**.
+
+Rule 5's second half is what says the body actually moved. It is checked with a
+fence flag, because `v2.26` quotes four old heading forms and `v2.27` quotes a
+verdict block: a census that counted them would report rounds the volume does not
+hold — the audit guard was wrong about its own example first.
+
+### The three readers whose scope shrank
+
+The split moved 452,394 bytes out of a 519,758-byte file. Three guards read that
+document, and each one named **one path**:
+
+| reader | what it does | what the split did to it |
+| --- | --- | --- |
+| `check-doc-counts.mjs` | holds 179 published counts to the measurement | **went red** — "no file/test counts found", because the rows lived in the body |
+| `measure-doc-counts.mjs --write-doc` | rewrites those rows to the new measurement | **would have reported success over nothing** — it wrote one path, found no rows, and printed `no row needed changing` |
+| `check-open-list.mjs` | reads the `### Open` lists | would have found 1 list in the index and 46 in the volumes |
+
+The first is a gate doing its job. **The second is the one that matters**: a writer
+that opens the wrong file cannot be caught by a red gate, because its verdict is a
+sentence it prints itself. That is the same asymmetry `blocker-claims.test.ts` closed
+for the audit log — a check whose scope shrank while its verdict stayed green — one
+level further out, at the *writer* rather than the reader.
+
+All three now read `scripts/docs-corpus.mjs`: the index and every volume in *reading*
+order, because the monotonicity rule over published counts ("a suite that lost tests
+is a regression or a mislabelled scope") is only meaningful if the rows are read in
+the order they were written. The writer keeps its single-file message word for word
+when `--doc` names one file, and names each file and its own row count over the
+corpus, because "3 row(s) updated" over five files says nothing about which.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the migration | 79 headings → 75 rounds (four were fenced quotations); `concat == body: True` |
+| the index | 69,216 bytes, naming four volumes once each; `check-progress-volumes: OK — 4 volume(s), 75 round(s); largest 130,230 of 200,000 bytes` |
+| the guard | `progress-volumes.test.ts` **22 tests**: 3 labels, 6 volume rules, 5 order rules, 5 index rules, 2 spawns |
+| the three readers | `check-doc-counts` 179 counts over the corpus; the writer writes the file the row lives in; `check-open-list` OK — 146 entries across 47 sections |
+| `core` / `cli` / repo | **167 / 4190** · **4 / 187** · **171 / 4377** |
+| site inventory | **72** sites across 42 scripts, every one proved or exempted |
+| cold tree | `check-progress-volumes.mjs` measured with `packages/core/dist` moved aside: `OK — 4 volume(s), 75 round(s)`, exit 0 |

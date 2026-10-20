@@ -138,6 +138,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
+import { progressCorpus } from './docs-corpus.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -701,7 +702,7 @@ function describeCount(scope, count) {
  * lost instead of the numbers being wrong. This function touches only the digits
  * in rows that say they describe now.
  */
-export function rewritePublishedRows(text, counts) {
+export function rewritePublishedRows(text, counts, { requireAllScopes = true } = {}) {
   const lines = text.split('\n');
   const errors = [];
   const rewritten = [];
@@ -751,10 +752,16 @@ export function rewritePublishedRows(text, counts) {
     lines[i] = next;
   }
 
-  for (const scope of Object.keys(counts)) {
-    if (!seen.has(scope)) errors.push(`no current-state row for '${scope}'; nothing to write it into`);
+  // A corpus makes this a *collective* claim: the row for a scope lives in the
+  // volume that was being written when the scope was introduced, so one file
+  // holding three of the four scopes is normal and only the union can say whether
+  // every scope still has a home.
+  if (requireAllScopes) {
+    for (const scope of Object.keys(counts)) {
+      if (!seen.has(scope)) errors.push(`no current-state row for '${scope}'; nothing to write it into`);
+    }
   }
-  return { text: lines.join('\n'), errors, rewritten };
+  return { text: lines.join('\n'), errors, rewritten, seen: [...seen] };
 }
 
 function main() {
@@ -828,18 +835,47 @@ function main() {
     // Both computations before either write. A failure between the two writes
     // would leave the snapshot advanced and the document stale -- the exact
     // half-state this flag exists to remove.
-    const result = rewritePublishedRows(readFileSync(docPath, 'utf8'), measured);
-    if (result.errors.length > 0) {
+    // The counts moved with the split: the rows lived in the body, and the body is
+    // now four volumes. A writer that opened one path would rewrite nothing and
+    // report success, which is the defect `check-doc-counts` was fixed for on the
+    // same day -- one document, two readers, and the writer is the reader that
+    // cannot be caught by a red gate.
+    const files = argValue('--doc') === undefined
+      ? progressCorpus()
+      : [{ label: relative(ROOT, docPath), path: docPath, text: readFileSync(docPath, 'utf8') }];
+    const problems = [];
+    const written = [];
+    const seen = new Set();
+    for (const file of files) {
+      const result = rewritePublishedRows(file.text, measured, { requireAllScopes: false });
+      for (const problem of result.errors) problems.push(`${file.label}: ${problem}`);
+      for (const scope of result.seen) seen.add(scope);
+      if (result.text !== file.text) {
+        written.push(`${file.label} (${String(result.rewritten.length)} row(s) updated)`);
+        if (file.path !== out) writeFileSync(file.path, result.text);
+      }
+    }
+    for (const scope of SCOPES) {
+      if (!seen.has(scope.name)) {
+        problems.push(`no current-state row for '${scope.name}' in the corpus; nothing to write it into`);
+      }
+    }
+    if (problems.length > 0) {
       fail([
         'the published rows cannot be rewritten, so nothing was written:',
-        ...result.errors.map((line) => `  ${line}`),
+        ...problems.map((line) => `  ${line}`),
       ]);
     }
     writeFileSync(out, text);
-    writeFileSync(docPath, result.text);
     for (const scope of SCOPES) console.log(describeCount(scope.name, measured[scope.name]));
-    const touched = result.rewritten.length;
-    console.log(`written to ${out} and ${relative(ROOT, docPath)} (${touched} row(s) updated)`);
+    // The single-file sentence is kept word for word: `--doc` names one file, and a
+    // message that changed shape for the common case would be a message every
+    // reader has to learn twice. The corpus case names each file and its own count,
+    // because "3 row(s) updated" over five files says nothing about which.
+    console.log(
+      `written to ${out} and ` +
+        (written.length === 0 ? 'no row needed changing' : written.join(', ')),
+    );
     return;
   }
 

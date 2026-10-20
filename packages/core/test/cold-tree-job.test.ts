@@ -150,6 +150,12 @@ const COLD_AGGREGATES: ReadonlyMap<string, readonly string[]> = new Map([
       // and `stat`s the volumes, which is an argument for why it should be safe and
       // not evidence that it is.
       'check-audit-volumes.mjs',
+      // Measured cold-safe before being added: with `packages/core/dist` moved aside,
+      // `node scripts/check-progress-volumes.mjs` printed
+      // `OK — 4 volume(s), 75 round(s); largest 130,230 of 200,000 bytes` and exited 0.
+      // Its subject is markdown and `stat`, which is an argument for why it should be safe
+      // and not evidence that it is -- the same sentence the line above carries.
+      'check-progress-volumes.mjs',
       'check-backend-support.mjs',
       'check-roundtrip-record.mjs',
       // Measured cold-safe before being added, the way every member here was: with

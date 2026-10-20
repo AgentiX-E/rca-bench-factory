@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { progressCorpus } from '../../../scripts/docs-corpus.mjs';
 
 /**
  * The Open list has now had three entries stop meaning anything, and the sentence
@@ -160,7 +161,7 @@ describe('docs · the Open list says which entries are work and which are histor
     // instead held to the document's own headings, counted here from the file, and the
     // entry count to the two parts it is made of.
     const summary = shipped.stdout.match(
-      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md: (\d+) open with a reason, (\d+) closed by a finding\)/,
+      /check-open-list: OK \((\d+) entry\(ies\) across (\d+) section\(s\) of docs\/progress\.md(?: and its volumes)?: (\d+) open with a reason, (\d+) closed by a finding\)/,
     );
     expect(summary, `the guard's summary changed shape: ${shipped.stdout}`).not.toBeNull();
     const numbers = (summary ?? []).slice(1).map(Number);
@@ -168,8 +169,11 @@ describe('docs · the Open list says which entries are work and which are histor
     const sections = numbers[1] ?? 0;
     const open = numbers[2] ?? 0;
     const closed = numbers[3] ?? 0;
-    const headings = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8')
-      .split('\n')
+    // The corpus, not one path: the lists moved into the volumes with the rounds
+    // they belong to (finding 197), and a test that counted headings in the index
+    // alone would compare the guard's 47 against the index's 1.
+    const headings = progressCorpus()
+      .flatMap((file) => file.text.split('\n'))
       .filter((line) => line.trim() === '### Open').length;
     expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);

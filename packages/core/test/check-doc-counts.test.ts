@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { progressCorpus } from '../../../scripts/docs-corpus.mjs';
 
 /**
  * The scripts this file executes.
@@ -45,6 +46,19 @@ const DRIVES = [
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+/**
+ * The shipped document, as one text.
+ *
+ * `docs/progress.md` is an index and four volumes since finding 197, and the
+ * current-state rows live in the volume that was being written when each scope was
+ * introduced. A test that read the index alone would find no rows and fail -- which
+ * is the good outcome; the bad one, a test that found *one* row and passed, is why
+ * this reads the corpus.
+ */
+function corpusText(): string {
+  return progressCorpus().map((file) => file.text).join('\n');
+}
 const SCRIPT = resolve(ROOT, 'scripts', 'check-doc-counts.mjs');
 
 /**
@@ -248,7 +262,7 @@ describe('check-doc-counts', () => {
   // suite -- only that the committed measurement and the document that quotes it
   // say the same thing.
   it('holds the same counts as the shipped document it mirrors', () => {
-    const doc = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8');
+    const doc = corpusText();
     const live = JSON.parse(MEASURED) as Record<string, { files: number; tests: number }>;
 
     // Only rows carrying the current-state marker, because those are the only
@@ -410,7 +424,7 @@ describe('check-doc-counts -- the shapes it can read, and the ones it refuses', 
   // otherwise the shape is tested only by fixtures and the guard could stop
   // reading it without any test noticing.
   it('reads the newly supported shape where the shipped document uses it', () => {
-    const doc = readFileSync(resolve(ROOT, 'docs', 'progress.md'), 'utf8');
+    const doc = corpusText();
     const rows = [
       ...doc.matchAll(/\|\s*`?core`?[^|]*\|\s*\*\*(\d+) passed \((\d+) files\)\*\*/g),
     ];

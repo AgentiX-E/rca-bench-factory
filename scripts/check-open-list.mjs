@@ -52,6 +52,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { progressCorpus } from './docs-corpus.mjs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -121,10 +122,41 @@ function entries(lines) {
   return out;
 }
 
+/**
+ * The files one document is spread over.
+ *
+ * `docs/progress.md` became an index and four volumes (finding 197), and the `###
+ * Open` lists went with the rounds they belong to. Reading the index alone would
+ * find **no** list and one list respectively -- the first is a red gate, the second
+ * is the dangerous one: a scope that shrank while the verdict stayed green, which is
+ * the same defect the audit split produced in `blocker-claims.test.ts` and the same
+ * one `check-doc-counts` was fixed for an hour earlier.
+ */
+function filesOf(doc) {
+  // `--doc` names one file and is not expanded: the tests drive this guard over
+  // fixtures, and a fixture is one document. Expanding it to a corpus would make
+  // every fixture test read the repository's own log instead of its subject.
+  if (process.argv.includes('--doc')) return [source(doc.path)];
+  if (doc.path !== 'docs/progress.md') return [source(doc.path)];
+  return progressCorpus().map((file) => ({ path: file.path, label: file.label }));
+}
+
 function check() {
   const problems = [];
   for (const doc of DOCS) {
-    const from = source(doc.path);
+    const files = filesOf(doc);
+    // Document-wide, not per section: the second list is usually written by copying
+    // the first one's shape, so a sentence shared between them is the cheapest thing
+    // to leave behind, and a per-section map would not see it. Document-wide now
+    // means corpus-wide, because one round's list and another round's list are the
+    // same list read at two times.
+    const reasons = new Map();
+    let total = 0;
+    let closed = 0;
+    let sectionsSeen = 0;
+    let headings = 0;
+    let labelled = files[0].label;
+    for (const from of files) {
     let text;
     try {
       text = readFileSync(from.path, 'utf8');
@@ -133,16 +165,10 @@ function check() {
       continue;
     }
     const found = sections(text, doc.heading);
-    if (found.length === 0) {
-      problems.push(`${from.label} has no \`${doc.heading}\` heading; the list this guard reads is gone`);
-      continue;
-    }
-    // Document-wide, not per section: the second list is usually written by copying
-    // the first one's shape, so a sentence shared between them is the cheapest thing
-    // to leave behind, and a per-section map would not see it.
-    const reasons = new Map();
-    let total = 0;
-    let closed = 0;
+    if (found.length === 0) continue;
+    headings += 1;
+    sectionsSeen += found.length;
+    labelled = from.label;
     found.forEach((lines, index) => {
       const items = entries(lines);
       if (items.length === 0) {
@@ -183,10 +209,18 @@ function check() {
         reasons.set(reason, first);
       }
     });
+    }
+    if (headings === 0) {
+      problems.push(
+        `${files[0].label} has no \`${doc.heading}\` heading, in the index or in any volume; the list ` +
+          'this guard reads is gone',
+      );
+      continue;
+    }
     // The section count is printed beside the entry count, so a document that gains a
     // list cannot do it silently: the number of lists is part of the evidence.
     console.log(
-      `check-open-list: OK (${total} entry(ies) across ${found.length} section(s) of ${from.label}: ` +
+      `check-open-list: OK (${total} entry(ies) across ${sectionsSeen} section(s) of ${files.length > 1 ? 'docs/progress.md and its volumes' : labelled}: ` +
         `${total - closed} open with a reason, ${closed} closed by a finding)`,
     );
   }
