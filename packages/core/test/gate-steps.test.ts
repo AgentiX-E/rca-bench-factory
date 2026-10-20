@@ -29,6 +29,7 @@ import {
   cwdOf,
   booleanOf,
   describePlan,
+  duration,
   envOf,
   failureReport,
   localCommands,
@@ -43,6 +44,7 @@ import {
   shippedPlan,
   whereOf,
 } from '../../../scripts/gate-steps.mjs';
+import { runStep, StepTimeout } from '../../../scripts/step-process.mjs';
 
 
 /**
@@ -705,6 +707,24 @@ describe('the keys a step may carry', () => {
     expect(result.local[0]).toMatchObject({ timeoutMinutes: 15, timeoutFrom: 'job' });
   });
 
+  it('carries the job\'s own budget beside the step\'s bound, because the job\'s is a pool', () => {
+    // The two numbers are different facts. `timeoutMinutes` is what this step may
+    // spend; `jobBudgetMinutes` is what the whole job has, and every step in it
+    // draws from the same pool. GitHub enforces the second one -- a job that runs
+    // fifteen minutes in total is killed whatever its steps declared.
+    const one = step(['run'], 'pnpm gate') as Record<string, unknown>;
+    one.jobTimeout = '15';
+    expect(classify([one], LOCAL).local[0]).toMatchObject({ timeoutMinutes: 15, jobBudgetMinutes: 15 });
+
+    const narrowed = step(['run', 'timeout-minutes'], 'pnpm gate', { 'timeout-minutes': '5' }) as Record<string, unknown>;
+    narrowed.jobTimeout = '15';
+    expect(classify([narrowed], LOCAL).local[0]).toMatchObject({ timeoutMinutes: 5, jobBudgetMinutes: 15 });
+
+    // No job budget at all: CI's six-hour default applies there, and this runner
+    // states no number rather than inventing one.
+    expect(classify([step(['run'], 'pnpm gate')], LOCAL).local[0]).toMatchObject({ jobBudgetMinutes: null });
+  });
+
   it('lets the step narrow the job\'s bound, which is the only direction GitHub allows', () => {
     const one = step(['run', 'timeout-minutes'], 'pnpm gate', { 'timeout-minutes': '5' }) as Record<string, unknown>;
     one.jobTimeout = '15';
@@ -1149,6 +1169,153 @@ describe('the plan as a runnable sequence', () => {
     expect(writes.join('')).toContain('skipped');
   });
 
+  /**
+   * Commands of one job, each of which the runner will charge `spend` milliseconds.
+   *
+   * The clock is the test's, not the wall's: pool arithmetic is the thing under
+   * test, and a test that measured real seconds to check a fifteen-minute budget
+   * would be a test nobody runs.
+   */
+  function shared(job: string, minutes: number, runs: string[]): Record<string, unknown>[] {
+    return runs.map((run) => ({ key: `${job} / ${run}`, run, job, timeoutMinutes: minutes, jobBudgetMinutes: minutes }));
+  }
+
+  it('narrows each step to what is left of its job, because the budget is shared', async () => {
+    // GitHub's `timeout-minutes` on a job is a budget for the whole job. This
+    // runner gave every step the full amount, so a local run could pass a plan CI
+    // would have killed half-way through -- the last known way "verify:local ran
+    // this" was more generous than the truth.
+    let t = 0;
+    const seen = [];
+    const result = await runSteps(
+      localCommands(shared('verify', 1, ['one', 'two', 'three'])),
+      (step) => {
+        seen.push(step.timeoutMs);
+        t += 20_000;
+      },
+      () => t,
+    );
+    expect(seen).toEqual([60_000, 40_000, 20_000]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('does not start a step whose job has spent its budget, and fails the run', async () => {
+    // A step that starts with nothing left is a step CI would have killed at its
+    // first instruction. Reporting it as skipped would say the run was fine.
+    let t = 0;
+    const seen = [];
+    const result = await runSteps(
+      localCommands(shared('verify', 1, ['one', 'two', 'three', 'four'])),
+      (step) => {
+        seen.push(step.run);
+        t += 30_000;
+      },
+      () => t,
+    );
+    expect(seen).toEqual(['one', 'two']);
+    // The first step that meets a spent budget is the job's ending, and it says so.
+    // The one after it is skipped, because the run has already failed -- CI would
+    // not have started it either, the job being dead.
+    expect(result.outcomes.map((one) => one.status)).toEqual(['passed', 'passed', 'exhausted', 'skipped']);
+    expect(result.ok).toBe(false);
+    expect(result.exhausted).toBe(true);
+    // The verdict is the first thing that ended the job, not the last.
+    expect(result.step.run).toBe('three');
+  });
+
+  it('charges a merged command to every job that needs it, because each would have paid it', async () => {
+    // One local run stands in for one command in each job, and CI would have run it
+    // twice -- once per job, each paying the full duration. Charging once would
+    // overstate both budgets, which is the one direction a reproducing tool may not
+    // take.
+    let t = 0;
+    const commands = localCommands([
+      { key: 'v / one', run: 'shared', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 1 },
+      { key: 'b / one', run: 'shared', job: 'batteries', timeoutMinutes: 1, jobBudgetMinutes: 1 },
+      { key: 'v / two', run: 'only-verify', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 1 },
+    ]);
+    const seen = [];
+    const result = await runSteps(
+      commands,
+      (step) => {
+        seen.push([step.run, step.timeoutMs]);
+        t += 40_000;
+      },
+      () => t,
+    );
+    expect(commands).toHaveLength(2);
+    expect(seen).toEqual([
+      ['shared', 60_000],
+      ['only-verify', 20_000],
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('names the step when its own bound is the tighter one', async () => {
+    let t = 0;
+    const seen = [];
+    await runSteps(
+      localCommands([{ key: 'v / one', run: 'one', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 15 }]),
+      (step) => {
+        seen.push([step.timeoutMs, step.boundScope, step.timeoutFrom]);
+      },
+      () => t,
+    );
+    expect(seen).toEqual([[60_000, 'step', 'v / one']]);
+  });
+
+  it('names the job, what it had, and what it had spent when the pool is the tighter one', async () => {
+    // The three numbers a reader needs to judge the ending: whose budget, how big,
+    // and how much of it was already gone. Without the third, "2m left" looks like
+    // a bound somebody chose.
+    let t = 0;
+    const seen = [];
+    await runSteps(
+      localCommands(shared('verify', 15, ['one', 'two'])),
+      (step) => {
+        seen.push({
+          bound: step.timeoutMs,
+          scope: step.boundScope,
+          job: step.boundJob,
+          budget: step.boundBudgetMs,
+          spent: step.boundSpentMs,
+        });
+        t += 780_000;
+      },
+      () => t,
+    );
+    expect(seen[0]).toEqual({ bound: 900_000, scope: 'step', job: null, budget: null, spent: null });
+    expect(seen[1]).toEqual({ bound: 120_000, scope: 'pool', job: 'verify', budget: 900_000, spent: 780_000 });
+  });
+
+  it('reports what each job spent, because staying inside a budget is not the same as being close to it', async () => {
+    let t = 0;
+    const result = await runSteps(
+      localCommands(shared('verify', 15, ['one', 'two'])),
+      () => {
+        t += 300_000;
+      },
+      () => t,
+    );
+    expect(result.budgets).toEqual([{ job: 'verify', totalMs: 900_000, spentMs: 600_000 }]);
+  });
+
+  it('spends no budget on a command the workflow skipped', async () => {
+    let t = 0;
+    const commands = localCommands([
+      { key: 'v / one', run: 'one', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 1 },
+      { key: 'v / two', run: 'two', job: 'verify', timeoutMinutes: 1, jobBudgetMinutes: 1, condition: 'failure' },
+    ]);
+    const result = await runSteps(
+      commands,
+      (step) => {
+        if (step.run === 'one') t += 30_000;
+      },
+      () => t,
+    );
+    expect(result.outcomes.map((one) => one.status)).toEqual(['passed', 'skipped']);
+  });
+
   it('reports a step that ran past its bound as timed out, which is a different verdict', async () => {
     // The repair differs -- a step that exited 1 has something wrong with it, and a
     // step that ran for fifteen minutes has something wrong with it *or* with the
@@ -1267,6 +1434,28 @@ describe('the plan as a runnable sequence', () => {
     expect(mixed[0].continueOnError).toBe(false);
   });
 
+  it('gives a command one pool per job that needs it, because a job\'s budget is shared', () => {
+    // `timeout-minutes` on a job is a budget for all of its steps together, and a
+    // command merged out of two jobs draws from both. One pool per job, deduped by
+    // the job name: two steps of the same job are one pool, not two.
+    const commands = localCommands([
+      { key: 'a / one', run: 'pnpm build', job: 'verify', timeoutMinutes: 15, jobBudgetMinutes: 15 },
+      { key: 'b / two', run: 'pnpm build', job: 'batteries', timeoutMinutes: 30, jobBudgetMinutes: 30 },
+    ]);
+    expect(commands).toHaveLength(1);
+    expect(commands[0].pools).toEqual([
+      { job: 'verify', minutes: 15 },
+      { job: 'batteries', minutes: 30 },
+    ]);
+  });
+
+  it('states no pool for a job that declares no budget', () => {
+    // CI applies six hours there. This runner states nothing rather than inventing
+    // a number, and an absent pool means "not bounded by a job".
+    const commands = localCommands([{ key: 'a / one', run: 'pnpm build', job: 'verify', jobBudgetMinutes: null }]);
+    expect(commands[0].pools).toEqual([]);
+  });
+
   it('lets a merged command run whenever any of its steps would have', () => {
     // The opposite direction from `continue-on-error`, and for the same reason:
     // the merged run stands in for all of them. A command one of them needs under
@@ -1354,6 +1543,18 @@ describe('the script the runner hands to the interpreter', () => {
   });
 });
 
+describe('a duration as a person reads it', () => {
+  it('speaks in minutes once there are minutes, and never rounds a number away', () => {
+    // The budget line is arithmetic somebody will check: "60s of 15m" is a unit that
+    // does not belong beside minutes, and "0m" is the one value a reader cannot tell
+    // from "no budget at all".
+    expect(duration(0)).toBe('0s');
+    expect(duration(1_200)).toBe('1s');
+    expect(duration(59_900)).toBe('1m');
+    expect(duration(900_000)).toBe('15m');
+  });
+});
+
 describe('what a failed run says', () => {
   /** The shape `runSteps` returns, built by hand so both branches can be read. */
   function failed(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -1394,6 +1595,40 @@ describe('what a failed run says', () => {
     const text = failureReport(failed({ timedOut: true })).join('\n');
     expect(text).toContain('verify:local: TIMED OUT at 3/31');
     expect(text).toContain('  bound:   15m, set on b / two');
+  });
+
+  it('names the job and what it had already spent when a pool ran out', () => {
+    // "3m left" looks like a bound somebody chose. The three numbers together say
+    // it was arithmetic: the job's budget, what was gone, and what remained.
+    const result = failed({
+      timedOut: true,
+      outcomes: [{ step: { first: 'a / one' }, status: 'timed-out', error: new Error('x') }],
+    });
+    const step = result.step as Record<string, unknown>;
+    step.boundScope = 'pool';
+    step.boundJob = 'verify';
+    step.boundBudgetMs = 900_000;
+    step.boundSpentMs = 780_000;
+    step.timeoutMs = 120_000;
+    const text = failureReport(result).join('\n');
+    expect(text).toContain('bound:   the last 2m of job "verify"\'s 15m budget (13m already spent)');
+    expect(text).not.toContain('set on');
+  });
+
+  it('says a step never started because its job had spent its budget', () => {
+    // The other ending: nothing ran, so there is no duration to speak of and no
+    // step that could have declared it.
+    const result = failed({
+      timedOut: true,
+      exhausted: true,
+      commands: 4,
+      outcomes: [{ step: { first: 'a / one' }, status: 'exhausted', why: 'spent' }],
+    });
+    (result.step as Record<string, unknown>).boundJob = 'verify';
+    (result.step as Record<string, unknown>).boundBudgetMs = 900_000;
+    const text = failureReport(result).join('\n');
+    expect(text).toContain('bound:   job "verify" spent its whole 15m budget before this step');
+    expect(text).toContain('verify:local: TIMED OUT');
   });
 
   it('lists the notes that came before the stop, because a reader will fix one step', () => {
@@ -1466,8 +1701,12 @@ describe('scripts/verify-local.mjs as a command', () => {
     expect(result.stdout).toContain('0 of 36 override the shell, the directory or the environment');
     // And the budget, which every job of the shipped workflow declares and which
     // this runner now enforces: the range is the jobs' own numbers.
-    expect(result.stdout).toContain('each command is bounded by `timeout-minutes:`');
-    expect(result.stdout).toContain('15m to 30m here');
+    // The budget, stated as what it is: a pool per job. A line that said "15m" on
+    // every step of `verify` would be read as fifteen minutes each, which is the
+    // number CI does not enforce.
+    expect(result.stdout).toContain('`timeout-minutes:` is a budget for the whole job, not for each step');
+    expect(result.stdout).toContain('verify 15m across 7 step(s)');
+    expect(result.stdout).toContain('batteries 30m across 16 step(s)');
     // And the condition, which is the last default this runner had to state: a step
     // runs only after the ones before it have passed, which is GitHub's default and
     // is what makes a failure meaningful.
@@ -1639,6 +1878,10 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('verify:local: OK (1 command(s), 1 of the 36 local steps)');
     expect(result.stdout).toContain('did not run:');
+    // And what the run spent, so the budget is a measurement rather than a limit
+    // nobody looks at until it fires.
+    expect(result.stdout).toContain('budget:  verify');
+    expect(result.stdout).toContain('of 15m');
   });
 
   it('runs a step in the directory the workflow names, which is the whole claim about that key', () => {

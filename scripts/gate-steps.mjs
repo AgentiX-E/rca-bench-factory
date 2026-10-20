@@ -924,6 +924,11 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         env: env.literals,
         timeoutMinutes: timeout.minutes,
         timeoutFrom: timeout.from,
+        // The job's own number, beside the step's bound. They answer different
+        // questions -- what this step may spend, and what the whole job has -- and
+        // GitHub enforces the second: a job that runs fifteen minutes in total is
+        // killed whatever its steps declared.
+        jobBudgetMinutes: timeoutOf(undefined, step.jobTimeout).minutes,
         continueOnError: flag.value,
         condition: condition.mode,
         conditionSpelled: condition.spelled,
@@ -1003,7 +1008,7 @@ export function shippedPlan(path = workflowPath()) {
  * A branch that can only be reached by breaking a real gate is a branch nobody
  * exercises, which is the shape this repository keeps finding.
  */
-export async function runSteps(commands, run) {
+export async function runSteps(commands, run, now = Date.now) {
   /**
    * What happened to each command, in the order they were reached.
    *
@@ -1016,6 +1021,21 @@ export async function runSteps(commands, run) {
    */
   const outcomes = [];
   let failed = false;
+
+  /**
+   * Milliseconds spent, per job, and the budget each job declared.
+   *
+   * `timeout-minutes:` on a job is a budget for the **job**, not for each step:
+   * `verify` has 15 minutes for build, types, lint, coverage and mutation
+   * together. Handing every step the full amount made this runner more generous
+   * than CI in the one direction that matters -- a local run could pass a plan CI
+   * would have killed half-way through.
+   */
+  const spent = new Map();
+  const budget = new Map();
+  for (const command of commands) {
+    for (const pool of command.pools ?? []) budget.set(pool.job, pool.minutes * 60_000);
+  }
 
   for (const [index, step] of commands.entries()) {
     // The whole step is handed over, not its text: the interpreter, the
@@ -1040,45 +1060,123 @@ export async function runSteps(commands, run) {
       continue;
     }
 
-    try {
-      await run(step);
-      outcomes.push({ step, status: 'passed' });
-    } catch (error) {
-      const timedOut = error?.timedOut === true;
-      if (timedOut) {
-        // The bound belongs to the job, so a step that spends it ends the job:
-        // nothing after it runs, not even a step that asked to run regardless.
-        // Stopping here rather than walking on is the one place the loop may
-        // return, and the report says how many steps it cost.
-        outcomes.push({ step, status: 'timed-out', error });
-        return { ok: false, timedOut: true, index, step, commands: commands.length, error, outcomes };
-      }
-      if (step.continueOnError === true) {
-        // A note is a note only while the job has budget left -- the timeout above
-        // is checked first for exactly that reason.
-        process.stdout.write(`  noted -- ${error.message}; the workflow says that is a note\n`);
-        outcomes.push({ step, status: 'noted', error });
-        continue;
-      }
-      process.stdout.write(`  failed -- ${error.message}\n`);
-      outcomes.push({ step, status: 'failed', error });
+    // What is left of each job that needs this command. A job whose budget is gone
+    // is not a job this command can run in; if every job that needs it is gone, the
+    // command cannot run at all.
+    const pools = (step.pools ?? []).map((pool) => {
+      const total = budget.get(pool.job) ?? pool.minutes * 60_000;
+      const used = spent.get(pool.job) ?? 0;
+      return { job: pool.job, total, used, left: total - used };
+    });
+    if (pools.length > 0 && pools.every((pool) => pool.left <= 0)) {
+      const [first] = pools;
+      const why = `job "${first.job}" has spent its whole ${duration(first.total)} budget`;
+      process.stdout.write(`  not run -- ${why}\n`);
+      // Not `skipped`: a step that starts with nothing left is a step CI would have
+      // killed at its first instruction, and reporting it as skipped would say the
+      // run was fine. It is the job's ending, recorded on the step that met it.
+      outcomes.push({
+        step: { ...step, timeoutMs: 0, boundScope: 'pool', boundJob: first.job, boundBudgetMs: first.total, boundSpentMs: first.used },
+        status: 'exhausted',
+        why,
+      });
       failed = true;
-      // And on it goes, because a later step may declare `always()` or `failure()`
-      // and CI would have run it. Every step this skips is recorded as skipped, so
-      // the run accounts for the whole plan instead of stopping mid-sentence.
+      continue;
     }
+
+    // The tighter of the step's own bound and what its jobs have left. The owner
+    // travels with the number, because a bound of 3 minutes means one thing when a
+    // step declared it and another when a job has 3 left.
+    const own = step.timeoutMs ?? null;
+    const tightest = pools.reduce((best, pool) => (best === null || pool.left < best.left ? pool : best), null);
+    const byPool = tightest !== null && (own === null || tightest.left < own);
+    const handed = {
+      ...step,
+      timeoutMs: byPool ? tightest.left : own,
+      boundScope: byPool ? 'pool' : 'step',
+      boundJob: byPool ? tightest.job : null,
+      boundBudgetMs: byPool ? tightest.total : null,
+      boundSpentMs: byPool ? tightest.used : null,
+    };
+
+    const started = now();
+    let failure = null;
+    try {
+      await run(handed);
+    } catch (error) {
+      failure = error;
+    }
+    // Charged whatever the outcome: the time was spent, and a job that died in a
+    // step has still spent what it spent.
+    const elapsed = Math.max(0, now() - started);
+    for (const pool of pools) spent.set(pool.job, (spent.get(pool.job) ?? 0) + elapsed);
+
+    if (failure === null) {
+      outcomes.push({ step, status: 'passed' });
+      continue;
+    }
+    const timedOut = failure?.timedOut === true;
+    if (timedOut) {
+      // A spent budget ends the job: nothing after it runs, not even a step that
+      // asked to run regardless. Stopping here is the one place the loop returns,
+      // and the report says how many steps it cost.
+      outcomes.push({ step: handed, status: 'timed-out', error: failure });
+      return { ok: false, timedOut: true, exhausted: false, index, step: handed, commands: commands.length, error: failure, outcomes };
+    }
+    if (step.continueOnError === true) {
+      // A note is a note only while the job has budget left -- the timeout above
+      // is checked first for exactly that reason.
+      process.stdout.write(`  noted -- ${failure.message}; the workflow says that is a note\n`);
+      outcomes.push({ step, status: 'noted', error: failure });
+      continue;
+    }
+    process.stdout.write(`  failed -- ${failure.message}\n`);
+    outcomes.push({ step, status: 'failed', error: failure });
+    failed = true;
+    // And on it goes, because a later step may declare `always()` or `failure()`
+    // and CI would have run it. Every step this skips is recorded as skipped, so
+    // the run accounts for the whole plan instead of stopping mid-sentence.
   }
 
-  const first = outcomes.find((one) => one.status === 'failed' || one.status === 'timed-out') ?? null;
+  const first =
+    outcomes.find(
+      (one) => one.status === 'failed' || one.status === 'timed-out' || one.status === 'exhausted',
+    ) ?? null;
+  // What each job spent, not only that it stayed inside its budget. A run that
+  // passed with one minute to spare and a run that passed with fourteen are the
+  // same verdict and different facts, and only one of them is about to break.
+  const budgets = [...budget.entries()].map(([job, totalMs]) => ({
+    job,
+    totalMs,
+    spentMs: spent.get(job) ?? 0,
+  }));
   return {
+    budgets,
     ok: first === null,
-    timedOut: first?.status === 'timed-out',
+    timedOut: first?.status === 'timed-out' || first?.status === 'exhausted',
+    exhausted: first?.status === 'exhausted',
     index: first === null ? -1 : outcomes.indexOf(first),
     step: first?.step ?? null,
     commands: commands.length,
     error: first?.error ?? null,
     outcomes,
   };
+}
+
+/**
+ * A duration as a person reads it: minutes when there are minutes to speak of,
+ * seconds otherwise.
+ *
+ * Pool arithmetic runs on milliseconds, and a budget that is nearly spent is a
+ * number of seconds. Rounding everything to minutes would print "0m left", which
+ * is the one number a reader cannot tell from "no budget at all".
+ */
+export function duration(ms) {
+  // Rounded to the unit first, then converted: 59.9 seconds is 60 seconds, and a
+  // message that said `60s of 15m` would be arithmetic a reader has to redo.
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds >= 60) return `${String(Math.round(seconds / 60))}m`;
+  return `${String(seconds)}s`;
 }
 
 /**
@@ -1096,9 +1194,28 @@ export function notedFailures(outcomes) {
 /** The plan, printed the way a person deciding whether to trust it would read it. */
 export function describePlan(plan) {
   const overrides = plan.local.filter((step) => whereOf(step) !== '');
-  const bounds = plan.local.map((step) => step.timeoutMinutes).filter((minutes) => minutes !== null);
-  const unbounded = plan.local.length - bounds.length;
   const conditioned = plan.local.filter((step) => step.conditionSpelled != null).length;
+  // One line per job, because the budget is per job: a reader who sees "15m" on
+  // every step of `verify` would reasonably think each of them has fifteen minutes.
+  const pools = new Map();
+  for (const step of plan.local) {
+    const entry = pools.get(step.job) ?? { minutes: step.jobBudgetMinutes ?? null, steps: 0 };
+    entry.steps += 1;
+    pools.set(step.job, entry);
+  }
+  const pooled = [...pools.entries()].filter(([, one]) => one.minutes !== null);
+  const poolLine =
+    plan.local.length === 0
+      ? // No local step at all: the header already says so, and `Math.min()` of
+        // nothing is `Infinity`, which would print "Infinitym to -Infinitym".
+        '  no command runs here, so there is no budget to state'
+      : pooled.length === 0
+        ? `  no job declares \`timeout-minutes:\`, so nothing here is bounded (CI's six-hour default is not ` +
+          'applied: a local run that waited six hours would not have learned anything sooner)'
+        : `  \`timeout-minutes:\` is a budget for the whole job, not for each step: ${pooled
+            .map(([job, one]) => `${job} ${String(one.minutes)}m across ${String(one.steps)} step(s)`)
+            .join(', ')} — a run that spends one is killed at whatever step is running` +
+          (pooled.length === pools.size ? '' : ` (${String(pools.size - pooled.length)} job(s) declare none)`);
   const lines = [
     `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
     // The defaults are stated, and so is the number of steps that depart from them.
@@ -1107,20 +1224,8 @@ export function describePlan(plan) {
     `  each command runs from the repository root under \`${DEFAULT_SHELL}\`; ${String(overrides.length)} of ${String(
       plan.local.length,
     )} override the shell, the directory or the environment`,
-    // The budget, stated the same way. `unbounded` is named rather than left to be
-    // inferred from a missing number: a step with no bound is the one that can hang
-    // for as long as the operator is patient.
-    bounds.length === 0
-      ? // No local step at all: the header already says so, and `Math.min()` of
-        // nothing is `Infinity`, which would print "Infinitym to -Infinitym".
-        '  no command runs here, so there is no budget to state'
-      : unbounded === 0
-        ? `  each command is bounded by \`timeout-minutes:\` — ${String(Math.min(...bounds))}m to ${String(
-            Math.max(...bounds),
-          )}m here; a step that runs past its bound is killed and reported as timed out`
-        : `  ${String(bounds.length)} of ${String(plan.local.length)} commands are bounded by \`timeout-minutes:\`; ` +
-          `${String(unbounded)} are not, because their job declares no budget (CI's own six-hour default is not ` +
-          'applied: a local run that waited six hours would not have learned anything sooner)',
+    // The budget, stated as a pool per job rather than a number per step.
+    poolLine,
     // The third default, and the last one this runner had left to state. It is what
     // makes a failure mean something, and it is invisible in a workflow that never
     // mentions it.
@@ -1186,7 +1291,21 @@ export function failureReport(result) {
     `  step:    ${step.first}`,
   ];
   if (result.timedOut) {
-    lines.push(`  bound:   ${String(minutes)}m, set on ${String(step.timeoutFrom)}`);
+    // Three endings, three sentences, because "the bound" is three different facts:
+    // a number a step declared, what was left of a job's budget, and a budget that
+    // was already gone before the step could start.
+    if (result.exhausted === true) {
+      lines.push(
+        `  bound:   job "${String(step.boundJob)}" spent its whole ${duration(step.boundBudgetMs)} budget before this step`,
+      );
+    } else if (step.boundScope === 'pool') {
+      lines.push(
+        `  bound:   the last ${duration(step.timeoutMs)} of job "${String(step.boundJob)}"'s ` +
+          `${duration(step.boundBudgetMs)} budget (${duration(step.boundSpentMs)} already spent)`,
+      );
+    } else {
+      lines.push(`  bound:   ${String(minutes)}m, set on ${String(step.timeoutFrom)}`);
+    }
   }
   if (where !== '') lines.push(`  where:   ${where}`);
   lines.push(`  command: ${step.run.split('\n')[0] ?? ''}`);
@@ -1214,6 +1333,23 @@ export function failureReport(result) {
   }
   lines.push('');
   return lines;
+}
+
+/**
+ * The budget pools a set of steps draws from, one per job.
+ *
+ * Deduped by job name: two steps of the same job are one budget, not two. A job
+ * that declares no `timeout-minutes` contributes nothing -- CI applies six hours
+ * there, and this runner states no number rather than inventing one.
+ */
+function poolsFor(steps) {
+  const byJob = new Map();
+  for (const step of steps) {
+    if (step.job === undefined || step.job === null) continue;
+    if (step.jobBudgetMinutes === null || step.jobBudgetMinutes === undefined) continue;
+    byJob.set(step.job, { job: step.job, minutes: step.jobBudgetMinutes });
+  }
+  return [...byJob.values()];
 }
 
 /**
@@ -1256,8 +1392,15 @@ export function localCommands(local) {
       timeoutFrom: step.key,
       continueOnError: step.continueOnError === true,
       condition: step.condition ?? 'success',
+      // The budgets this command draws from, one per job that needs it. A command
+      // merged out of two jobs is run once here and would have been run twice in
+      // CI, each time paying its full duration -- so it is charged to both, which
+      // is the only accounting that cannot overstate what a job has left.
+      pools: poolsFor([step]),
       first: step.key,
       also: [],
+      /** The steps this entry stands in for. `also` is their keys, for display. */
+      members: [step],
     };
     // The environment is compared by **content**, sorted: two steps that declare
     // the same pair in two orders are one run, and `JSON.stringify` of two objects
@@ -1290,6 +1433,11 @@ export function localCommands(local) {
       // `failure()` are the two halves of it, and a command both halves need is a
       // command that runs either way.
       if (seen.condition !== (step.condition ?? 'success')) seen.condition = 'always';
+      // Its pools are the union of the merged steps': the command is needed by
+      // every job that ever asked for it, and only the steps themselves know which
+      // jobs those are -- a key is a label, not a fact about a budget.
+      seen.members.push(step);
+      seen.pools = poolsFor(seen.members);
       continue;
     }
     byIdentity.set(identity, entry);

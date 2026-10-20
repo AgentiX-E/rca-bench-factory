@@ -8829,9 +8829,9 @@ repository's oldest shape: one rule, two implementations, and the one that repor
 | `LOCAL_INCOMPATIBLE` | **deleted**; a sweep asserts every known key is carried locally |
 | the table | no duplicate rows; every description classified |
 | `gate-steps.test.ts` | **131 tests** (111 before) |
-| `core` test suite | **164 files, 4126 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **168 files, 4313 tests passed** (as of this commit) |
+| `core` test suite | **164 files, 4126 tests passed** (as of `a20605dd0`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `a20605dd0`) |
+| repo test suite | **168 files, 4313 tests passed** (as of `a20605dd0`) |
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 69 across 40 scripts, `--check` OK (one line number moved) |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
@@ -8858,3 +8858,118 @@ repository's oldest shape: one rule, two implementations, and the one that repor
   candidate causes measured and eliminated; the handler that could have left a worker deaf re-raises.
   What would settle it is a loop of runs recording `memory.events max` and the worker's exit signal
   per run, which is a pass of its own]`
+
+## v2.24 — the budget was a pool, and every step was told it was a limit
+
+### What the previous pass recorded
+
+v2.23's Open list closed with the same item v2.21 had opened, one level up:
+
+> **A condition on a step that does not run here is still only checked for widening.** `[open: …]`
+
+No — the item that mattered was older. v2.21 read `timeout-minutes:` off the job and v2.22 handed the
+number to each step as its bound. Both were right about the number and wrong about the noun.
+
+GitHub's `timeout-minutes` on a job is a budget for **the job**: `verify` has fifteen minutes for
+build, types, lint, coverage and mutation *together*. Giving every step fifteen made this runner more
+generous than CI in the one direction that matters — a local run could pass a plan CI would have
+killed at the fourth step. That was the last known way *"`verify:local` ran this step"* was true here
+and false on the runner, and it was never a key that went unread. It was arithmetic that was never
+done.
+
+### Pools, and who pays for a merged command
+
+`localCommands` merges identical commands across jobs, so one local run can stand in for work in four
+jobs. CI would have run it four times, each paying the full duration, so the charge is the full
+duration to **each** pool. Charging once would overstate what every job has left, which is the
+direction that lets the gate pass a plan CI would kill.
+
+The bound a command gets is the tighter of its own `timeout-minutes` and what its jobs have left, and
+the owner travels with the number:
+
+| the tighter one | what a reader is told |
+| --- | --- |
+| the step declared it | `bound: 5m, set on verify / Type-check` |
+| the job has that much left | `bound: the last 2m of job "verify"'s 15m budget (13m already spent)` |
+| the job had nothing left | `bound: job "verify" spent its whole 15m budget before this step` |
+
+The third is a new outcome, `exhausted`, and it is deliberately not a skip: a step that starts with
+nothing left is a step CI would have killed at its first instruction, and calling that a skip would
+say the run was fine.
+
+### The clock had to become a parameter
+
+Pool arithmetic asks how long something took. A test that answered by waiting fifteen minutes is a
+test nobody runs; one that asserted on `Date.now()` differences would be the flakiest thing in the
+suite. So `runSteps(commands, run, now = Date.now)`, and the tests advance a clock they own from
+inside their own `run` callback:
+
+```js
+    const result = await runSteps(localCommands(shared('verify', 1, ['one', 'two', 'three'])), (step) => {
+      seen.push(step.timeoutMs);
+      t += 20_000;
+    }, () => t);
+    expect(seen).toEqual([60_000, 40_000, 20_000]);
+```
+
+Enforcement stays real, proven where it already was: `step-process.test.ts` kills a process group at
+whatever `timeoutMs` says. Two tested halves rather than one untested whole.
+
+### Enforcing a budget silently is the same mistake one level down
+
+The first gate run with pools enforced passed, and said only `OK`. One minute to spare and fourteen
+are the same verdict and different facts, and only one of them is about to break:
+
+```
+  budget:  verify 1m of 15m, batteries 17m of 30m, artefacts 19s of 15m, cold-tree 2s of 20m
+```
+
+It is also the only evidence that the pool code ran on the real gate at all, rather than being
+skipped by an empty list.
+
+### What the plan says now
+
+```
+  `timeout-minutes:` is a budget for the whole job, not for each step: verify 15m across 7 step(s),
+  batteries 30m across 16 step(s), artefacts 15m across 9 step(s), cold-tree 20m across 4 step(s)
+  — a run that spends one is killed at whatever step is running
+```
+
+Per job, because per step was the false statement: a line that printed `15m` beside every step of
+`verify` was read — by anyone who read it — as fifteen minutes each.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| job budget | a pool; each command charged in full to every job that needs it |
+| the bound | tighter of the step's own and what its jobs have left |
+| a spent pool | `exhausted`: the run fails, the step does not start, the rest are skipped |
+| the owner | named: step, remaining pool, or a pool that was already gone |
+| the clock | injected; exact in tests, real in production |
+| enforcement | unchanged, still tested against a real process |
+| the verdict | `budget: verify 1m of 15m, batteries 17m of 30m, …` |
+| `--list` | one line per job |
+| `gate-steps.test.ts` | **144 tests** (131 before) |
+| `core` test suite | **164 files, 4139 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **168 files, 4326 tests passed** (as of this commit) |
+| the shipped gate | passes with the pools enforced: `batteries 17m of 30m` is the closest any job comes |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **A failure in one job still skips the remaining steps of every job.** `[open: CI's jobs are
+  independent -- `needs:` is the only ordering -- so a red `verify` would not stop `batteries`. This
+  runner walks one sequence, so it stops. The direction is safe: fewer steps run than CI would run,
+  never more, and every one of them is recorded as skipped with the reason. Modelling four
+  independent sequences would mean four clocks and four failure latches, which is a different
+  program from the one that reports a single verdict]`
+- **The dedupe's one run is charged in full to each job, and the ordering is still sequential.**
+  `[open: the arithmetic matches what each job would have paid, but the *interleaving* does not --
+  CI runs the four jobs at once, so a slow step that would have overlapped with another job here
+  blocks it. The totals are right; the wall clock is not]`
+- **A loaded machine spends budget for reasons that are not the step's.** `[open: the pool is wall
+  clock, so two builds at once on this laptop charge each other. That is also true of CI, which is
+  why the runner is only as honest as its own load -- and the `budget:` line is what makes the
+  difference visible rather than theoretical]`

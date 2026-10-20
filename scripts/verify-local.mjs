@@ -40,7 +40,15 @@
  * the tests spawn it, and hollowing it makes the spawns return the wrong code.
  */
 
-import { describePlan, failureReport, localCommands, notedFailures, runSteps, shippedPlan } from './gate-steps.mjs';
+import {
+  describePlan,
+  duration,
+  failureReport,
+  localCommands,
+  notedFailures,
+  runSteps,
+  shippedPlan,
+} from './gate-steps.mjs';
 import { runStep } from './step-process.mjs';
 
 const argv = process.argv.slice(2);
@@ -122,6 +130,16 @@ async function main() {
       '',
       `verify:local: OK (${coverage})${notes}`,
       ...(only === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
+      // The budgets, spent against declared. The pool is enforced above; printing it
+      // here is what turns "still inside" from an assumption into a measurement,
+      // and a step that quietly doubled is visible before it breaks the gate.
+      ...(result.budgets.length === 0
+        ? []
+        : [
+            `  budget:  ${result.budgets
+              .map((one) => `${one.job} ${duration(one.spentMs)} of ${duration(one.totalMs)}`)
+              .join(', ')}`,
+          ]),
       ...skipped.map((one) => `  skipped: ${one.step.first} — ${one.why}`),
       ...noted.map(
         (one) => `  tolerated: ${one.step.first} — ${one.error.message}; the workflow says that is a note`,

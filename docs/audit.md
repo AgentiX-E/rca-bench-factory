@@ -20081,3 +20081,106 @@ that reports is the one that goes stale.
 | `gate-steps.test.ts` | **131 tests** (111 before) |
 | `core` / `cli` / repo | **164 / 4126** · **4 / 187** · **168 / 4313** |
 | gate sites | 69 across 40 scripts, one line number moved |
+
+---
+
+## Finding 193 — the budget was a pool, and every step was told it was a limit
+
+### What v2.21 and v2.22 read, and what they did with it
+
+v2.21 taught the reader to see `timeout-minutes:` on a job, and v2.22 handed that number to the
+runner as each step's bound. Both were right about the number and wrong about the noun. GitHub's
+`timeout-minutes` on a job is a budget for **the job**: `verify` has fifteen minutes for build,
+types, lint, coverage and mutation *together*. Giving every step fifteen made this runner more
+generous than CI in the one direction that matters — a local run could pass a plan CI would have
+killed at the fourth step.
+
+That was the last known way the sentence *"`verify:local` ran this step"* was true locally and false
+on the runner. It is not a key that was unread; it is a key whose arithmetic was never done.
+
+### Pools, and who pays for a merged command
+
+`localCommands` merges identical commands across jobs, so one local run can stand in for work in
+four jobs. CI would have run it four times, each job paying the full duration, so the charge is
+full duration to **each** pool:
+
+```js
+    // Charged whatever the outcome: the time was spent, and a job that died in a
+    // step has still spent what it spent.
+    const elapsed = Math.max(0, now() - started);
+    for (const pool of pools) spent.set(pool.job, (spent.get(pool.job) ?? 0) + elapsed);
+```
+
+Charging once would overstate what every job has left — the direction that lets the gate pass a plan
+CI would kill. The bound a command gets is the tighter of its own `timeout-minutes` and what its
+jobs have left, and the owner travels with the number:
+
+| the tighter one | what a reader is told |
+| --- | --- |
+| the step declared it | `bound: 5m, set on verify / Type-check` |
+| the job has that much left | `bound: the last 2m of job "verify"'s 15m budget (13m already spent)` |
+| the job had nothing left | `bound: job "verify" spent its whole 15m budget before this step` |
+
+The third is a new outcome, `exhausted`, and it is not a skip. A step that starts with nothing left
+is a step CI would have killed at its first instruction, so reporting it as skipped would say the
+run was fine. It fails the run, and the steps after it are skipped — the run has already failed.
+
+### The clock had to be a parameter
+
+Pool arithmetic asks "how long did that take", and the honest answer comes from a clock. A test that
+verified a fifteen-minute budget by waiting fifteen minutes is a test nobody runs, and one that
+asserted on `Date.now()` differences would be the flakiest thing in the suite.
+
+So `runSteps(commands, run, now = Date.now)`. The arithmetic is driven by a clock the **test**
+advances from inside its own `run` callback, which makes every assertion exact:
+
+```js
+    const result = await runSteps(localCommands(shared('verify', 1, ['one', 'two', 'three'])), (step) => {
+      seen.push(step.timeoutMs);
+      t += 20_000;
+    }, () => t);
+    expect(seen).toEqual([60_000, 40_000, 20_000]);
+```
+
+Enforcement stays real, and is proven where it already was: `step-process.test.ts` kills a process
+group at whatever `timeoutMs` says. The chain is two tested halves, not one untested whole.
+
+### Enforcing a budget silently is the same mistake one level down
+
+The first full gate run with pools passed, and said only `OK`. A run that passed with one minute to
+spare and a run that passed with fourteen produce the same verdict and different facts, and only one
+of them is about to break. So the verdict carries a measurement:
+
+```
+  budget:  verify 1m of 15m, batteries 17m of 30m, artefacts 19s of 15m, cold-tree 2s of 20m
+```
+
+This is also the only evidence that the pool code ran at all on the real gate rather than being
+skipped by an empty list.
+
+### What the plan now says
+
+```
+  `timeout-minutes:` is a budget for the whole job, not for each step: verify 15m across 7 step(s),
+  batteries 30m across 16 step(s), artefacts 15m across 9 step(s), cold-tree 20m across 4 step(s)
+  — a run that spends one is killed at whatever step is running
+```
+
+Per job, because per step was the false statement: a line that printed `15m` beside every step of
+`verify` was read — by anyone who read it — as fifteen minutes each.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| job budget | modelled as a pool; each command charged in full to every job that needs it |
+| the bound | tighter of the step's own and what its jobs have left |
+| a spent pool | `exhausted`: the run fails, the step does not start, the steps after it are skipped |
+| the owner | named: step, remaining pool, or a pool that was already gone |
+| the clock | injected, so pool arithmetic is exact in tests and real in production |
+| enforcement | unchanged and still tested against a real process |
+| the verdict | `budget: verify 9m of 15m, …` — spent, not only allowed |
+| `--list` | one line per job, because per step was the false statement |
+| `gate-steps.test.ts` | **144 tests** (131 before) |
+| `core` / `cli` / repo | **164 / 4139** · **4 / 187** · **168 / 4326** |
+| the shipped gate | passes with the pools enforced: `verify 1m of 15m, batteries 17m of 30m` |
