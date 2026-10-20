@@ -1,1 +1,1 @@
-gate-test battery, run 39363428009 on ce390783e: 24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant (expected); 103.9s; restore_status=0
+gate-test battery, run 39369202322 on 1236fd646: 24 caught, 0 survived, 0 inert, 0 timed out, 1 redundant (expected); 101.8s; restore_status=0
