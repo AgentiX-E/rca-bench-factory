@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,6 @@ const DRIVES = ['scripts/verify-local.mjs', 'scripts/gate-steps.mjs'];
 
 import {
   DEFAULT_SHELL,
-  LOCAL_INCOMPATIBLE,
   ROOT,
   SETUP_ACTIONS,
   SHELLS,
@@ -26,6 +25,7 @@ import {
   STEP_PLAN,
   classify,
   conditionOf,
+  conditionOn,
   cwdOf,
   booleanOf,
   describePlan,
@@ -33,8 +33,10 @@ import {
   failureReport,
   localCommands,
   materialiseStep,
+  notedFailures,
   readWorkflow,
   runSteps,
+  runsGiven,
   timeoutOf,
   JOB_KEYS,
   shellOf,
@@ -406,26 +408,71 @@ describe('the keys a step may carry', () => {
   const LOCAL = { 'verify / Gate': { local: true } };
   const REMOTE = { 'verify / Gate': { remoteOnly: 'needs a package index this machine does not have, by design' } };
 
-  it.each(LOCAL_INCOMPATIBLE)('refuses `%s:` on a step marked local', (key) => {
-    // Each of these changes whether, where or with what the command runs, so
-    // "verify:local ran this step" would be false. The message has to name the
-    // key and offer the two ways out, because the repair differs per key.
-    const errors = classify([step(['run', key])], LOCAL).errors;
-    expect(errors.join('\n')).toContain(`carries \`${key}:\``);
-    expect(errors.join('\n')).toContain('make it remote-only');
+  // A value for each key the vocabulary knows, so the sweep below can carry it.
+  const SAMPLE: [string, string][] = [
+    ['name', 'Gate'],
+    ['id', 'gate'],
+    ['shell', 'bash'],
+    ['working-directory', '.'],
+    ['env', ''],
+    ['if', 'always()'],
+    ['timeout-minutes', '5'],
+    ['continue-on-error', 'true'],
+  ];
+
+  it('carries every key it knows onto a local step, because no key is impossible any more', () => {
+    // `LOCAL_INCOMPATIBLE` is gone, and this test is where its absence is checked.
+    // It held five keys in v2.18 -- `shell`, `working-directory`, `env`,
+    // `timeout-minutes`, `continue-on-error` -- and every one of them turned out to
+    // be a fact the runner had not collected yet rather than a thing a runner
+    // cannot do. A list that shrank once per pass was never a list of
+    // impossibilities; it was a list of unfinished work, and it is finished.
+    for (const [key, value] of SAMPLE) {
+      const result = classify([step(['run', key], 'pnpm gate', { [key]: value })], LOCAL);
+      expect(result.errors, key).toEqual([]);
+      expect(result.local, key).toHaveLength(1);
+    }
+    // Total, so a key added to the vocabulary has to be given a value here -- and
+    // therefore has to be decided about, rather than defaulting to "carried" or
+    // "refused" because nobody looked.
+    const swept = new Set([...SAMPLE.map(([key]) => key), 'run', 'uses', 'with']);
+    for (const key of Object.keys(STEP_KEYS)) expect(swept, `${key} is not in the sweep`).toContain(key);
   });
 
-  it.each(LOCAL_INCOMPATIBLE)('tolerates `%s:` on a step that does not run here', (key) => {
+  it('carries a condition onto a local step, because whether a step runs is the loop\'s to decide', () => {
+    // The last key, and the one that changes the loop rather than the step: a step
+    // with `always()` has to run after a failure, which a runner that returned at
+    // the first failure could not do.
+    const result = classify([step(['run', 'if'], 'pnpm gate', { if: 'always()' })], LOCAL);
+    expect(result.errors).toEqual([]);
+    expect(result.local[0]).toMatchObject({ condition: 'always', conditionSpelled: 'always()' });
+
+    // The default is a condition too, and it is spelled `null` because the
+    // workflow did not say it. Carrying the default as if it had been written
+    // would make `--list` claim a sentence the file does not contain.
+    const plain = classify([step(['run'], 'pnpm gate')], LOCAL);
+    expect(plain.local[0]).toMatchObject({ condition: 'success', conditionSpelled: null });
+  });
+
+  it('refuses a local condition whose inputs this machine does not have, quoting it', () => {
+    const errors = classify([step(['run', 'if'], 'pnpm gate', { if: "github.ref == 'refs/heads/main'" })], LOCAL).errors;
+    expect(errors.join('\n')).toContain("github.ref == 'refs/heads/main'");
+    expect(errors.join('\n')).toContain('always()');
+  });
+
+  it('tolerates `always()` on a step that does not run here, and nothing narrower', () => {
     // The shipped workflow has two `if: always()` steps and both are outside the
     // plan. A tolerance that is never used is indistinguishable from a rule that
-    // was never needed, so the same key is allowed exactly where it cannot lie.
-    const values = key === 'if' ? { if: 'always()' } : {};
-    const result = classify([step(['run', key], undefined, values)], REMOTE);
+    // was never needed, so the same value is allowed exactly where it cannot lie.
+    const result = classify([step(['run', 'if'], undefined, { if: 'always()' })], REMOTE);
     expect(result.errors).toEqual([]);
     expect(result.remote.map((one) => one.key)).toEqual(['verify / Gate']);
-    expect(result.tolerated).toEqual([
-      { key: 'verify / Gate', keys: [key], condition: key === 'if' ? 'always()' : null },
-    ]);
+    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: ['if'], condition: 'always()' }]);
+
+    // `failure()` narrows: a step outside the plan that only runs on failure may
+    // not run in CI either, and then the reason it does not run here is incomplete.
+    const narrow = classify([step(['run', 'if'], undefined, { if: 'failure()' })], REMOTE);
+    expect(narrow.errors.join('\n')).toContain('cannot describe');
   });
 
   it('refuses a key it does not know, rather than assuming it is harmless', () => {
@@ -480,18 +527,31 @@ describe('the keys a step may carry', () => {
     }
   });
 
-  it('still refuses `always()` on a step marked local, and for the other reason', () => {
-    // Two different objections, and the message has to be the right one: on a
-    // local step the problem is that `runSteps` stops at the first failure, so a
-    // step that runs regardless would not run at all.
-    const errors = classify([step(['run', 'if'], undefined, { if: 'always()' })], LOCAL).errors;
-    expect(errors.join('\n')).toContain('carries `if:`');
-    expect(errors.join('\n')).not.toContain('cannot describe');
+  it('carries a local condition rather than mentioning it as tolerated', () => {
+    // A tolerated key is one the plan cannot act on and therefore only reports. A
+    // condition on a local step is acted on -- the loop decides whether the step
+    // runs -- so listing it as tolerated would be the plan saying it does not
+    // reproduce something it does.
+    const result = classify([step(['run', 'if'], 'pnpm gate', { if: 'always()' })], LOCAL);
+    expect(result.tolerated).toEqual([]);
   });
 
   it('refuses a non-always condition on an action too', () => {
     const errors = classify([step(['uses', 'if'], null, { if: 'failure()' })], {}).errors;
     expect(errors.join('\n')).toContain('on an action is a condition this plan cannot describe');
+  });
+
+  it('says why a condition on an action is refused, rather than only that it is', () => {
+    // Two different refusals on the same branch: one for a condition it understands
+    // and will not honour there (`failure()`), one for a condition it cannot
+    // evaluate at all. The second has to carry its own reason, or the message would
+    // say "only `always()` widens" about a value that is not a widening question.
+    const understood = classify([step(['uses', 'if'], null, { if: 'failure()' })], {}).errors.join('\n');
+    expect(understood).toContain('only `always()` widens when it runs');
+
+    const unreadable = classify([step(['uses', 'if'], null, { if: "${{ github.ref == 'refs/heads/main' }}" })], {}).errors.join('\n');
+    expect(unreadable).toContain('cannot evaluate');
+    expect(unreadable).not.toContain('only `always()` widens');
   });
 
   it('reads a condition the way GitHub writes it', () => {
@@ -508,8 +568,40 @@ describe('the keys a step may carry', () => {
 
   it('states every key it understands, so an unknown one is a gap and not a surprise', () => {
     const known = Object.keys(STEP_KEYS);
-    for (const key of LOCAL_INCOMPATIBLE) expect(known, key).toContain(key);
-    for (const key of ['run', 'uses', 'name', 'with', 'id', 'timeout-minutes']) expect(known, key).toContain(key);
+    for (const key of ['run', 'uses', 'name', 'with', 'id', 'timeout-minutes', 'if']) expect(known, key).toContain(key);
+  });
+
+  it('describes each key once, because a duplicate row is silent and the later one wins', () => {
+    // Found while this pass was rewriting the table: `env` and `continue-on-error`
+    // each stood twice -- once under "read" and once under an older heading -- and
+    // an object literal keeps the last. So the table said `continue-on-error` "does
+    // not fail the job, which this runner reads as a failure" for two passes after
+    // the runner had learned to read it, and nothing could see it: the duplicate is
+    // gone by the time anything parses the object.
+    const source = readFileSync(resolve(ROOT, 'scripts', 'gate-steps.mjs'), 'utf8');
+    const block = /export const STEP_KEYS = \{([\s\S]*?)\n\};/.exec(source);
+    expect(block, 'the STEP_KEYS literal was not found').not.toBeNull();
+    const keys = [...(block?.[1] ?? '').matchAll(/^ {2}'?([a-z][\w-]*)'?:/gm)].map((match) => match[1]);
+    expect(keys.length).toBeGreaterThan(5);
+    expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([]);
+  });
+
+  it('keeps every description to the classes it claims, so no key is silently unclassified', () => {
+    // Two classes and no third. If a key's description starts with anything else,
+    // the table is saying something the code does not do.
+    for (const [key, description] of Object.entries(STEP_KEYS)) {
+      expect(String(description), key).toMatch(/^(read|tolerated):/);
+    }
+  });
+
+  it('says there is no budget when nothing runs here, rather than printing an infinity', () => {
+    // `Math.min()` of an empty list is `Infinity`, and the header branch for "every
+    // command is bounded" is reached precisely when nothing is unbounded -- which
+    // includes the case where nothing is bounded either. A plan that runs nothing
+    // is not the shipped plan, and it is one `remoteOnly` away.
+    const text = describePlan({ local: [], remote: [], tolerated: [] }).join('\n');
+    expect(text).toContain('no command runs here');
+    expect(text).not.toContain('Infinity');
   });
 
   it('uses the tolerance on the shipped workflow, and says where', () => {
@@ -528,11 +620,8 @@ describe('the keys a step may carry', () => {
 
 
   it('carries both keys onto the local entry rather than refusing the step', () => {
-    // The reason these two left `LOCAL_INCOMPATIBLE`: they do not make "a local
-    // run reproduces this step" impossible, they make it incomplete, and the
-    // runner can complete it.
-    for (const key of ['shell', 'working-directory']) expect(LOCAL_INCOMPATIBLE, key).not.toContain(key);
-
+    // They do not make "a local run reproduces this step" impossible; they make it
+    // incomplete, and the runner can complete it.
     const directory = classify(
       [step(['run', 'working-directory'], 'pnpm gate', { 'working-directory': 'examples' })],
       LOCAL,
@@ -578,11 +667,10 @@ describe('the keys a step may carry', () => {
   });
 
   it('carries a literal `env:` onto a local step, because data is not a condition', () => {
-    // `env:` was in `LOCAL_INCOMPATIBLE` and is not any more. The key was never the
-    // problem: a literal value is data the runner can pass to the child process
-    // exactly as written. What the runner cannot supply is a value only the runner
-    // can compute -- and that is a fact about the **value**, not about the key.
-    expect(LOCAL_INCOMPATIBLE).not.toContain('env');
+    // The key was never the problem: a literal value is data the runner can pass to
+    // the child process exactly as written. What the runner cannot supply is a value
+    // only the runner can compute -- and that is a fact about the **value**, not
+    // about the key.
     const result = classify(
       [step(['run', 'env'], 'pnpm gate', { env: '' }, { NODE_OPTIONS: '--max-old-space-size=4096' })],
       LOCAL,
@@ -632,7 +720,6 @@ describe('the keys a step may carry', () => {
   });
 
   it('carries `continue-on-error: true` onto a local step, because a note is something a runner can reproduce', () => {
-    expect(LOCAL_INCOMPATIBLE).toEqual(['if']);
     const result = classify(
       [step(['run', 'continue-on-error'], 'pnpm gate', { 'continue-on-error': 'true' })],
       LOCAL,
@@ -837,6 +924,59 @@ describe('the flag that turns a failure into a note', () => {
   });
 });
 
+describe('the condition that decides whether a step runs at all', () => {
+  it('reads the three functions whose only input is what already happened in this run', () => {
+    // GitHub's `if:` is an expression language, and exactly three of its functions
+    // take no input this machine does not have: `success()` (the default),
+    // `failure()` and `always()`. Everything else -- a branch, an event, a matrix,
+    // an input -- is a fact about the run that a local process cannot know.
+    expect(conditionOn(undefined)).toEqual({ mode: 'success', spelled: null, error: null });
+    expect(conditionOn('')).toEqual({ mode: 'success', spelled: null, error: null });
+    expect(conditionOn('always()')).toEqual({ mode: 'always', spelled: 'always()', error: null });
+    expect(conditionOn('${{ always() }}')).toEqual({ mode: 'always', spelled: 'always()', error: null });
+    expect(conditionOn('failure()')).toMatchObject({ mode: 'failure' });
+    expect(conditionOn('success()')).toMatchObject({ mode: 'success', spelled: 'success()' });
+    expect(conditionOn('"always()"')).toMatchObject({ mode: 'always' });
+  });
+
+  it('refuses a condition it cannot evaluate, quoting it and naming the three it can', () => {
+    // The difference from every other key so far: the *value* is the problem, and
+    // it is a different kind of value -- not a secret but a fact about the run.
+    for (const value of ["github.ref == 'refs/heads/main'", '${{ inputs.strict }}', 'success() && github.event_name == \'push\'']) {
+      const result = conditionOn(value);
+      expect(result.error, value).toContain('cannot evaluate');
+      expect(result.error, value).toContain(value.replace(/^\$\{\{ | \}\}$/g, '').trim());
+      expect(result.error, value).toContain('always()');
+    }
+  });
+
+  it('refuses `cancelled()`, which names a state this runner does not have', () => {
+    // CI would skip the step in a cancelled run; a local run has no cancellation,
+    // so the honest answer is not "never runs" -- it is that the condition
+    // describes a state that never occurs here.
+    expect(conditionOn('cancelled()').error).toContain('cancelled');
+  });
+});
+
+describe('whether a condition lets a step run, given what has happened', () => {
+  it('lets the default condition through only while nothing has failed', () => {
+    // The default is `success()`, and it is the reason a run stops being useful
+    // after a failure: every later step without a condition is skipped by CI too.
+    expect(runsGiven('success', false)).toBe(true);
+    expect(runsGiven('success', true)).toBe(false);
+  });
+
+  it('lets `always()` through either way, which is the whole point of it', () => {
+    expect(runsGiven('always', false)).toBe(true);
+    expect(runsGiven('always', true)).toBe(true);
+  });
+
+  it('lets `failure()` through only after a failure', () => {
+    expect(runsGiven('failure', false)).toBe(false);
+    expect(runsGiven('failure', true)).toBe(true);
+  });
+});
+
 describe('the plan as a runnable sequence', () => {
   const local = [
     { key: 'a / one', run: 'pnpm build' },
@@ -895,8 +1035,8 @@ describe('the plan as a runnable sequence', () => {
     );
     expect(result.ok).toBe(true);
     expect(seen).toEqual(['pnpm lint', 'pnpm build']);
-    expect(result.tolerated.map((one) => one.step.first)).toEqual(['a / one']);
-    expect(result.tolerated[0].error.message).toContain('exited 1');
+    expect(notedFailures(result.outcomes).map((one) => one.step.first)).toEqual(['a / one']);
+    expect(notedFailures(result.outcomes)[0].error.message).toContain('exited 1');
   });
 
   it('does not carry on past a failure the workflow says is a failure', async () => {
@@ -912,8 +1052,12 @@ describe('the plan as a runnable sequence', () => {
       },
     );
     expect(result.ok).toBe(false);
+    // Nothing after the failure ran, and each of them is recorded as skipped with
+    // the reason -- a step that silently disappears is indistinguishable from one
+    // the plan never had.
     expect(seen).toEqual(['pnpm lint']);
-    expect(result.tolerated).toEqual([]);
+    expect(notedFailures(result.outcomes)).toEqual([]);
+    expect(result.outcomes.slice(1).map((one) => one.status)).toEqual(['skipped']);
   });
 
   it('does not carry on past a step that spent the job\'s budget, whatever the flag says', async () => {
@@ -931,7 +1075,78 @@ describe('the plan as a runnable sequence', () => {
     );
     expect(result.ok).toBe(false);
     expect(result.timedOut).toBe(true);
-    expect(result.tolerated).toEqual([]);
+    expect(notedFailures(result.outcomes)).toEqual([]);
+    // A spent budget ends the job, so nothing after it runs -- not even a step
+    // whose condition widens.
+    expect(result.outcomes).toHaveLength(1);
+  });
+
+  it('runs a step whose condition widens past a failure, and skips the ones it does not cover', async () => {
+    // The shape `if:` forces on the loop. CI does not walk past a failing step, so
+    // the loop may only continue for the steps that asked to run anyway -- and it
+    // has to say, of each one it did not run, that CI would not have run it either.
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'a / one', run: 'pnpm lint' },
+        { key: 'b / two', run: 'pnpm build' },
+        { key: 'c / three', run: 'pnpm report', condition: 'always' },
+        { key: 'd / four', run: 'pnpm collect-logs', condition: 'failure' },
+      ]),
+      (step) => {
+        seen.push(step.run);
+        if (step.run === 'pnpm lint') throw new Error('the step exited 1');
+      },
+    );
+    expect(result.ok).toBe(false);
+    // The step that stopped the run, then only what widened past it.
+    expect(seen).toEqual(['pnpm lint', 'pnpm report', 'pnpm collect-logs']);
+    expect(result.outcomes.map((one) => one.status)).toEqual(['failed', 'skipped', 'passed', 'passed']);
+    expect(result.outcomes[1].why).toContain('an earlier step failed');
+    // The verdict is the first failure, not the last thing that ran.
+    expect(result.step.first).toBe('a / one');
+  });
+
+  it('skips a `failure()` step in a green run, rather than running it for symmetry', async () => {
+    // Its condition is a fact about the run, and in a green run the fact is false.
+    // Running it anyway would be doing work CI would not do -- and reporting a
+    // step as done that CI never ran.
+    const seen = [];
+    const result = await runSteps(
+      localCommands([
+        { key: 'a / one', run: 'pnpm lint' },
+        { key: 'b / two', run: 'pnpm collect-logs', condition: 'failure' },
+      ]),
+      (step) => seen.push(step.run),
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(['pnpm lint']);
+    expect(result.outcomes.map((one) => one.status)).toEqual(['passed', 'skipped']);
+    expect(result.outcomes[1].why).toContain('failure()');
+  });
+
+  it('says so when a skip happened, so a green run does not hide a step it never ran', async () => {
+    // Everything passed and one step did not run. "OK" alone would be true and
+    // incomplete: the plan covers 36 steps and this run covered 35 of them.
+    const writes = [];
+    const spy = (chunk: string) => {
+      writes.push(chunk);
+      return true;
+    };
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = spy as typeof process.stdout.write;
+    try {
+      await runSteps(
+        localCommands([
+          { key: 'a / one', run: 'pnpm lint' },
+          { key: 'b / two', run: 'pnpm collect-logs', condition: 'failure' },
+        ]),
+        () => undefined,
+      );
+    } finally {
+      process.stdout.write = original;
+    }
+    expect(writes.join('')).toContain('skipped');
   });
 
   it('reports a step that ran past its bound as timed out, which is a different verdict', async () => {
@@ -1052,6 +1267,31 @@ describe('the plan as a runnable sequence', () => {
     expect(mixed[0].continueOnError).toBe(false);
   });
 
+  it('lets a merged command run whenever any of its steps would have', () => {
+    // The opposite direction from `continue-on-error`, and for the same reason:
+    // the merged run stands in for all of them. A command one of them needs under
+    // `always()` is needed after a failure, so the merge widens.
+    const same = localCommands([
+      { key: 'a / one', run: 'pnpm build', condition: 'always' },
+      { key: 'b / two', run: 'pnpm build', condition: 'always' },
+    ]);
+    expect(same[0].condition).toBe('always');
+
+    const mixed = localCommands([
+      { key: 'a / one', run: 'pnpm build', condition: 'success' },
+      { key: 'b / two', run: 'pnpm build', condition: 'failure' },
+    ]);
+    expect(mixed[0].condition).toBe('always');
+
+    // A default and `success()` are the same condition, written twice.
+    const equivalent = localCommands([
+      { key: 'a / one', run: 'pnpm build' },
+      { key: 'b / two', run: 'pnpm build', condition: 'success' },
+    ]);
+    expect(equivalent).toHaveLength(1);
+    expect(equivalent[0].condition).toBe('success');
+  });
+
   it('runs one command under the tighter of the budgets its steps were given', () => {
     // CI would run both and the one that fails first is the one that decides, so
     // the local run stands in for both at the tighter bound. The bound travels with
@@ -1161,13 +1401,43 @@ describe('what a failed run says', () => {
     // the stop, and the two broken steps it already knows about would be learned
     // the hard way -- by running again.
     const result = failed();
-    result.tolerated = [
-      { step: { first: 'c / three' }, error: new Error('the step exited 4') },
-      { step: { first: 'd / four' }, error: new Error('the step exited 5') },
+    result.outcomes = [
+      { step: { first: 'c / three' }, status: 'noted', error: new Error('the step exited 4') },
+      { step: { first: 'd / four' }, status: 'noted', error: new Error('the step exited 5') },
     ];
     const text = failureReport(result).join('\n');
     expect(text).toContain('  tolerated: c / three — the step exited 4');
     expect(text).toContain('  tolerated: d / four — the step exited 5');
+  });
+
+  it('names the steps that ran anyway, because their conditions widen past the failure', () => {
+    // Without this, a reader sees a FAILED at step 3 and a screenful of output from
+    // steps 4 and 5 with nothing in the verdict connecting them.
+    const result = failed({ outcomes: [] });
+    result.outcomes = [
+      { step: { first: 'a / one' }, status: 'passed' },
+      { step: { first: 'b / two' }, status: 'skipped', why: 'an earlier step failed' },
+      { step: { first: 'a / one' }, status: 'failed', error: new Error('x') },
+      { step: { first: 'c / three' }, status: 'passed' },
+      { step: { first: 'd / four' }, status: 'noted', error: new Error('the step exited 5') },
+    ];
+    const text = failureReport(result).join('\n');
+    expect(text).toContain('  still ran: c / three, d / four (their conditions widen past a failure)');
+    expect(text).toContain('  tolerated: d / four — the step exited 5');
+  });
+
+  it('says how many steps a spent budget stopped, since nothing after it may run', () => {
+    // A timeout is the one ending that is not a condition: in CI the job dies, so
+    // the steps after it -- including the ones that asked to run regardless -- did
+    // not run. Silence there would look like an `always()` step that was skipped.
+    const result = failed({
+      timedOut: true,
+      commands: 3,
+      outcomes: [{ step: { first: 'a / one' }, status: 'timed-out', error: new Error('bound') }],
+    });
+    const text = failureReport(result).join('\n');
+    expect(text).toContain('  stopped: 2 step(s) after it did not run');
+    expect(text).toContain('ends the job');
   });
 
   it('says where the command ran when that is not the root', () => {
@@ -1198,6 +1468,11 @@ describe('scripts/verify-local.mjs as a command', () => {
     // this runner now enforces: the range is the jobs' own numbers.
     expect(result.stdout).toContain('each command is bounded by `timeout-minutes:`');
     expect(result.stdout).toContain('15m to 30m here');
+    // And the condition, which is the last default this runner had to state: a step
+    // runs only after the ones before it have passed, which is GitHub's default and
+    // is what makes a failure meaningful.
+    expect(result.stdout).toContain('a step runs only after the ones before it have passed');
+    expect(result.stdout).toContain('none of the 36 declares a condition');
     expect(result.stdout).toContain('verify / Type-check — 15m');
   });
 
@@ -1265,6 +1540,46 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     expect(result.stdout).toContain('with 1 tolerated failure(s)');
     expect(result.stdout).toContain('tolerated: verify / Type-check');
     expect(result.stdout).toContain('the workflow says that is a note');
+  });
+
+  it('does not run a step whose condition is `failure()` in a green run, and counts it', () => {
+    // The condition is false, so the step does not run -- and the verdict says so
+    // instead of reporting thirty-six steps and meaning thirty-five.
+    const marker = join(scratch, 'condition-marker.txt');
+    const path = workflowWith('verify / Type-check', `printf '%s' ran > ${marker}`, [['if', 'failure()']]);
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(marker), 'a step whose condition was false ran anyway').toBe(false);
+    expect(result.stdout).toContain('1 skipped because the condition was not met');
+    expect(result.stdout).toContain('skipped: verify / Type-check');
+  });
+
+  it('runs a step whose condition is `always()`, and lists the condition in the plan', () => {
+    const marker = join(scratch, 'always-marker.txt');
+    const path = workflowWith('verify / Type-check', `printf '%s' ran > ${marker}`, [['if', 'always()']]);
+
+    const listed = spawnSync(process.execPath, [SCRIPT, '--list'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(listed.status, listed.stderr).toBe(0);
+    // One step declares a condition, and the line says which -- a default that is
+    // only stated in a header would leave a reader unable to find the exception.
+    expect(listed.stdout).toContain('1 of 36 declare a condition that changes it');
+    expect(listed.stdout).toContain('verify / Type-check — 15m, if (always())');
+
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(marker, 'utf8')).toBe('ran');
   });
 
   it('turns a rejection that reached the top into one line and a non-zero exit', () => {

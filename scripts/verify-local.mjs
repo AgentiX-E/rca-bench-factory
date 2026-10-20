@@ -40,7 +40,7 @@
  * the tests spawn it, and hollowing it makes the spawns return the wrong code.
  */
 
-import { describePlan, failureReport, localCommands, runSteps, shippedPlan } from './gate-steps.mjs';
+import { describePlan, failureReport, localCommands, notedFailures, runSteps, shippedPlan } from './gate-steps.mjs';
 import { runStep } from './step-process.mjs';
 
 const argv = process.argv.slice(2);
@@ -97,10 +97,16 @@ async function main() {
     process.exit(1);
   }
 
-  // A tolerated failure is the one thing that makes "OK" less than it sounds, so
-  // it is stated in the verdict line and then listed. The exit code stays zero
-  // because CI's job would have stayed green, which is the fact being reproduced.
-  const tolerated = result.tolerated.length === 0 ? '' : `, with ${String(result.tolerated.length)} tolerated failure(s)`;
+  // Two things make "OK" less than it sounds, and both are stated in the verdict
+  // line and then listed: a failure the workflow called a note, and a step that did
+  // not run at all. The exit code stays zero because CI's job would have stayed
+  // green, which is the fact being reproduced.
+  const noted = notedFailures(result.outcomes);
+  const skipped = result.outcomes.filter((one) => one.status === 'skipped');
+  const notes = [
+    skipped.length === 0 ? '' : `, ${String(skipped.length)} skipped because the condition was not met`,
+    noted.length === 0 ? '' : `, with ${String(noted.length)} tolerated failure(s)`,
+  ].join('');
   const runStepsTotal = plan.local.length + plan.remote.length;
   // What ran, then what the plan covers. The two are the same only for a full
   // run, and reporting the plan's size after `--only` would let a one-step check
@@ -114,9 +120,10 @@ async function main() {
   process.stdout.write(
     [
       '',
-      `verify:local: OK (${coverage})${tolerated}`,
+      `verify:local: OK (${coverage})${notes}`,
       ...(only === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
-      ...result.tolerated.map(
+      ...skipped.map((one) => `  skipped: ${one.step.first} — ${one.why}`),
+      ...noted.map(
         (one) => `  tolerated: ${one.step.first} — ${one.error.message}; the workflow says that is a note`,
       ),
       ...plan.remote.map((step) => `  did not run: ${step.key} — ${step.why}`),

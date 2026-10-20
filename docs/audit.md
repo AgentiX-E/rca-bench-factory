@@ -19946,3 +19946,138 @@ stays open, with what was eliminated written next to it.
 | `gate-steps.test.ts` | **111 tests** (101 before) |
 | `core` / `cli` / repo | **164 / 4106** · **4 / 187** · **168 / 4293** |
 | gate sites | **69** across 40 scripts |
+
+---
+
+## Finding 192 — the last key was the shape of the loop, and the table had been lying about two of them
+
+### The list that turned out to be a to-do list
+
+`LOCAL_INCOMPATIBLE` held five keys in v2.18. It held one at the end of v2.22, and this pass
+deleted it. Every departure was argued the same way — *the claim was incomplete, not false* — and
+after five passes the argument had consumed the whole category:
+
+| left | pass | what was actually missing |
+| --- | --- | --- |
+| `shell:`, `working-directory:` | v2.19 | the interpreter and the directory, as values |
+| `env:` | v2.20 | the distinction between a literal and a secret |
+| `timeout-minutes:` | v2.21 | a budget, and a way to spend it |
+| `continue-on-error:` | v2.22 | a second verdict for the loop |
+| `if:` | **v2.23** | the loop's **shape** |
+
+A list that shrinks by exactly one entry per pass is not a list of impossibilities. It is a list of
+work not done, written in the grammar of a limitation — and the grammar is what made it survive:
+"a runner cannot honour `if:`" sounds like a fact about runners, and the fact was about *this*
+runner's loop, which returned at the first failure.
+
+### What `if:` forced
+
+Two things, and neither is a parameter:
+
+- a step may run **because** something failed (`always()`, `failure()`);
+- a step may be **skipped in a green run** (`failure()` with nothing failed yet).
+
+The old loop could do neither. It returned `{ ok: false, ... }` at the first failure, so "the steps
+after it" did not exist, and a step that did not run was simply not mentioned. So the loop now
+collects:
+
+```js
+      outcomes.push({ step, status: 'failed', error });
+      failed = true;
+      // And on it goes, because a later step may declare `always()` or `failure()`
+      // and CI would have run it.
+```
+
+and the verdict becomes a view of what it collected rather than a thing returned early. The one
+place it still returns is a timeout, because a spent budget ends the *job* in CI: nothing after it
+runs, not even a step that asked to run regardless. That asymmetry is the reason `failureReport`
+prints how many steps a timeout cost.
+
+### Exactly three conditions, and the reason for the boundary
+
+`if:` is a general expression language over `github`, `env`, `matrix`, `inputs`, `needs`, `steps`.
+Three functions take no input this machine does not have, and they are exactly the three the loop
+already knows:
+
+| written | runs when |
+| --- | --- |
+| absent | no earlier step has failed |
+| `success()` | the same thing, said out loud |
+| `failure()` | an earlier step has failed |
+| `always()` | either way |
+
+`cancelled()` is refused rather than mapped to "never runs", and the distinction matters: "never
+runs" is a claim about the step, while the truth is a claim about this runner — nothing here can be
+cancelled. Everything else is refused with the value quoted, which is the same trade `envOf` and
+`timeoutOf` make: a value this machine cannot compute is an error with a repair, never a guess.
+
+### The default had to be stated, third time running
+
+`--list` now says, of the shipped plan:
+
+```
+  a step runs only after the ones before it have passed, which is GitHub's default; none of the 36 declares a condition
+```
+
+Three passes, three defaults: the interpreter (`bash --noprofile --norc -eo pipefail {0}`), the
+budget (`15m to 30m here`), and now the condition. Each was invisible because it was implicit, and
+each was wrong to leave implicit for the same reason — **a default nobody states is a default
+nobody can review**. This one is what makes a failure mean anything: it is the rule that turns a
+non-zero exit into a stopped job.
+
+### The table had two rows that lied, and the later one won
+
+Rewriting `STEP_KEYS` to give `if:` its new description turned up this:
+
+```js
+  'continue-on-error': 'read: `true` means a failure here is a note, and the run carries on',
+  ...
+  'continue-on-error': 'a failure that does not fail the job, which this runner reads as a failure',
+```
+
+The second line was a leftover from the section it used to live in, and an object literal keeps the
+**last** one. So for two passes the table described `continue-on-error` as a key the runner does not
+read — after v2.22 had taught it to read the key — and for two passes nothing could see it, because
+by the time anything parses the object the duplicate is gone. `env:` had the same pair of rows.
+
+The fix is not "be careful": it is a test that reads the literal as **text** and counts:
+
+```ts
+    const keys = [...(block?.[1] ?? '').matchAll(/^ {2}'?([a-z][\w-]*)'?:/gm)].map((match) => match[1]);
+    expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([]);
+```
+
+A second test holds the two classes the table claims, so a key cannot be added with a description
+that says nothing about what happens to it.
+
+### The open item about ownership, closed by the shape change
+
+v2.22 left: *"a tolerated failure has no owner in the plan's own output"*. With a run recorded as
+`outcomes`, that is a filter rather than a second field:
+
+```js
+export function notedFailures(outcomes) {
+  return outcomes.filter((one) => one.status === 'noted');
+}
+```
+
+One function, two readers — `failureReport` and the CLI. Two filters over the same status string
+would have been this repository's oldest shape again: one rule, two implementations, and the one
+that reports is the one that goes stale.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `if:` on a local step | carried as `success` / `failure` / `always`; anything else refused by value |
+| `cancelled()` | refused, and the message says why it is not "never runs" |
+| the loop | collects outcomes; the verdict is derived |
+| a step after a failure | runs when its condition widens, skipped otherwise — both recorded |
+| a `failure()` step in a green run | skipped, counted, and named in the verdict line |
+| a timeout | stops everything, including `always()`, and says how many steps it cost |
+| `--list` | states the default condition and the number of steps that override it |
+| `LOCAL_INCOMPATIBLE` | **deleted**; a test asserts every known key is carried by a local step |
+| the table | no duplicate rows (parsed as text), and every description classified |
+| `gate-steps.test.ts` | **131 tests** (111 before) |
+| `core` / `cli` / repo | **164 / 4126** · **4 / 187** · **168 / 4313** |
+| gate sites | 69 across 40 scripts, one line number moved |

@@ -8696,9 +8696,9 @@ written next to it.
 | a merged entry | a note only when every step merging into it is |
 | `LOCAL_INCOMPATIBLE` | **2 → 1**, survivor argued |
 | `gate-steps.test.ts` | **111 tests** (101 before) |
-| `core` test suite | **164 files, 4106 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **168 files, 4293 tests passed** (as of this commit) |
+| `core` test suite | **164 files, 4106 tests passed** (as of `b399ff1`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `b399ff1`) |
+| repo test suite | **168 files, 4293 tests passed** (as of `b399ff1`) |
 | gate sites | **69** across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -8716,3 +8716,145 @@ written next to it.
   candidate causes measured and eliminated; the handler that could have left a worker deaf now
   re-raises. What would settle it is a loop of runs that records `memory.events max` *and* the
   worker's exit signal per run, which is a pass of its own]`
+
+## v2.23 — the last key was the shape of the loop, and the table had two rows that lied
+
+### What the previous pass recorded
+
+v2.22's Open list opened with:
+
+> **`if:` is the last key, and it is not a matter of effort.** `[open: a local step with
+> `if: always()` should run even after a failure, but this runner stops at the first failure that is
+> not a note -- "run regardless" would have to run after a stop, which is a different program from
+> the one that reports the stop]`
+
+That sentence is right about the work and wrong about what it implies. It reads as though the runner
+and CI were two programs that could not be the same one. They can: what stood between them was not a
+capability but a **shape** — the loop returned at the first failure, so "the steps after it" did not
+exist to run.
+
+`LOCAL_INCOMPATIBLE` is gone. It held five keys in v2.18 and lost one per pass: `shell:` and
+`working-directory:` (v2.19), `env:` (v2.20), `timeout-minutes:` (v2.21), `continue-on-error:`
+(v2.22), and now `if:`. **A list that shrinks by exactly one entry per pass is not a list of
+impossibilities — it is a list of work not done, written in the grammar of a limitation.**
+
+### What `if:` forced on the loop
+
+Two facts the old loop could not represent:
+
+- a step may run **because** something failed (`always()`, `failure()`);
+- a step may be **skipped in a green run** (`failure()` with nothing failed yet).
+
+So a run is now a sequence of outcomes, and the verdict is a view of them:
+
+| status | meaning |
+| --- | --- |
+| `passed` | ran, exited zero |
+| `noted` | ran, failed, and the workflow says that is a note |
+| `failed` | ran, failed, and the job is now failing |
+| `skipped` | did not run, with the reason |
+| `timed-out` | spent the job's budget, which ends the job |
+
+The loop keeps walking after a fatal failure, because a later step may declare `always()` and CI
+would have run it; every step it then skips is recorded rather than omitted. The one place it still
+returns is a timeout, because a spent budget ends the *job*: nothing after it runs, not even a step
+that asked to run regardless. That asymmetry is why `failureReport` now prints how many steps a
+timeout cost.
+
+### Three conditions, and the boundary is the point
+
+| written | runs when |
+| --- | --- |
+| absent | no earlier step has failed |
+| `success()` | the same thing, said out loud |
+| `failure()` | an earlier step has failed |
+| `always()` | either way |
+
+Everything else in GitHub's expression language asks about the branch, the event, the matrix or the
+inputs — facts a local process does not have — and is refused with the value quoted. `cancelled()`
+is refused too, and for a different reason worth stating: mapping it to "never runs" would be a claim
+about the step, when the truth is a claim about this runner.
+
+### The third default had to be stated too
+
+```
+  a step runs only after the ones before it have passed, which is GitHub's default; none of the 36 declares a condition
+```
+
+Three passes, three defaults: the interpreter, the budget, the condition. Each was invisible because
+it was implicit, and this one is what turns a non-zero exit into a stopped job.
+
+### The table had two rows that lied
+
+Rewriting `STEP_KEYS` to describe `if:` properly turned this up:
+
+```js
+  'continue-on-error': 'read: `true` means a failure here is a note, and the run carries on',
+  ...
+  'continue-on-error': 'a failure that does not fail the job, which this runner reads as a failure',
+```
+
+An object literal keeps the **last** one, so for two passes the table described a key as unread after
+the runner had been taught to read it — and nothing could see it, because by the time anything parses
+the object the duplicate is gone. `env:` had the same pair.
+
+The repair is a test that reads the literal as **text** and counts rows, plus one that holds each
+description to the two classes the table claims. "Be careful" is not a repair.
+
+### One rule, two readers, again
+
+v2.22 left *"a tolerated failure has no owner in the plan's own output"*. The outcome list answers
+it without a second field:
+
+```js
+export function notedFailures(outcomes) {
+  return outcomes.filter((one) => one.status === 'noted');
+}
+```
+
+`failureReport` and the CLI both call it. Two filters over the same status string would have been the
+repository's oldest shape: one rule, two implementations, and the one that reports goes stale.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `if:` on a local step | carried as one of three modes; anything else refused by value |
+| `cancelled()` | refused, with the reason it is not "never runs" |
+| the loop | collects outcomes; the verdict is derived from them |
+| after a failure | widening steps run, the rest are skipped and recorded |
+| a `failure()` step in a green run | skipped, counted, named in the verdict line |
+| a timeout | stops everything, including `always()`, and counts what it cost |
+| `--list` | states the default condition and the override count |
+| `LOCAL_INCOMPATIBLE` | **deleted**; a sweep asserts every known key is carried locally |
+| the table | no duplicate rows; every description classified |
+| `gate-steps.test.ts` | **131 tests** (111 before) |
+| `core` test suite | **164 files, 4126 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **168 files, 4313 tests passed** (as of this commit) |
+| coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
+| gate sites | 69 across 40 scripts, `--check` OK (one line number moved) |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **A condition on a step that does not run here is still only checked for widening.**
+  `[open: a remote-only step with `if: failure()` is refused, because its absence from the plan would
+  otherwise be explained twice -- "needs prometheus" and "only runs on failure". That refusal is
+  right, and it means a workflow cannot narrow a remote step without also saying so in its reason.
+  No shipped step does it, so the alternative -- folding the condition into the reason text -- has no
+  subject]`
+- **A `failure()` step that runs and passes leaves the run red, and that is correct but unstated.**
+  `[open: the job status is a latch: once a step fails, a later `always()` step succeeding does not
+  clear it, and CI would have concluded failure. The run says `FAILED at n` and lists what still ran;
+  nothing says that a green `always()` step cannot turn that verdict back, and a reader who sees it
+  pass may expect it to]`
+- **`steps.<id>.outcome` cannot be expressed.** `[open: `if: steps.build.outcome == 'failure'` is a
+  condition over a named step, which this reader refuses like any other expression -- and unlike the
+  branch or the event, this one *could* be evaluated, because the runner has the outcomes. It is not
+  done because it needs `id:` to become a lookup rather than a tolerated name, and no shipped step
+  uses the form]`
+- **The unexplained worker death is still bounded, not explained.** `[open: fourteen runs since, three
+  candidate causes measured and eliminated; the handler that could have left a worker deaf re-raises.
+  What would settle it is a loop of runs recording `memory.events max` and the worker's exit signal
+  per run, which is a pass of its own]`

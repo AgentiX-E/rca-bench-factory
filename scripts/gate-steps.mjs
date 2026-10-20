@@ -205,8 +205,8 @@ export function cwdOf(raw) {
  *
  * ## Why the key stopped being the unit
  *
- * `env:` was in `LOCAL_INCOMPATIBLE`, which said a step carrying it cannot run
- * here. That is true of `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and false of
+ * `env:` was once in a list of keys said to make a local step impossible. That is
+ * true of `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and false of
  * `NODE_OPTIONS: --max-old-space-size=4096`, and the difference is in the **value**,
  * not in the key. A literal is data the runner can hand to the child process
  * exactly as written; an expression is a computation whose inputs (secrets, the
@@ -390,48 +390,10 @@ export function materialiseStep(step, dir = tmpdir()) {
 }
 
 /**
- * Step keys this reader understands, and what it does with each.
- *
- * ## The rule
- *
- * A key that changes *whether*, *where* or *with what* a step runs makes the
- * plan's claim false, and the plan's claim is the only thing this file produces.
- * So every key is either acted on, tolerated on a step that does not run here, or
- * refused. There is no fourth case, and before this pass there was: `if:` was
- * stepped over in silence, and a conditional step marked local would have been
- * reported as something `verify:local` runs.
- *
- * Two of the shipped steps carry `if: always()`, and both are outside the local
- * plan -- the battery report publisher (needs the run token) and the artefact
- * upload (an action). That is why the tolerance exists rather than a blanket
- * refusal: the key is a fact about the step, and whether it matters is a question
- * about the plan.
- */
-export const STEP_KEYS = {
-  // Acted on.
-  name: 'read: the key the plan is indexed by',
-  run: 'read: the command, executed verbatim',
-  uses: 'read: matched against the setup actions below',
-  shell: 'read: the interpreter, reproduced as the file-and-argv pair GitHub uses',
-  'working-directory': 'read: where the command runs, carried onto the step and enforced by the runner',
-  'timeout-minutes': 'read: the budget, inherited from the job unless the step narrows it, and enforced by the runner',
-  'continue-on-error': 'read: `true` means a failure here is a note, and the run carries on',
-
-  // Tolerated anywhere, because it changes nothing about the verdict of a command.
-  id: 'tolerated: an identifier for later steps to reference',
-
-  // Tolerated only on a step that does not run here; refused on a local one.
-  if: 'a condition on whether the step runs at all',
-  env: 'read: a literal value is passed to the command; a value only the runner can compute is refused',
-  'continue-on-error': 'a failure that does not fail the job, which this runner reads as a failure',
-  with: 'inputs for an action; meaningful only on a `uses:` step',
-};
-
-/**
- * The condition a step declares, as one of the two spellings GitHub accepts.
+ * The condition a step declares, normalized.
  *
  * `if: always()` and `if: ${{ always() }}` mean the same thing; anything else is
- * returned as written so the error can quote it back.
+ * returned as written so an error can quote it back.
  */
 export function conditionOf(raw) {
   const text = String(raw ?? '').trim();
@@ -440,27 +402,100 @@ export function conditionOf(raw) {
 }
 
 /**
- * Keys that make a step impossible to run here, with the reason said once.
+ * The three conditions whose only input is what already happened in this run.
  *
- * **One key is left**, and the five that left did so for the same reason: they made
- * the plan's claim *incomplete* rather than false, and an incomplete claim can be
- * completed by carrying the fact onto the step.
+ * GitHub's `if:` is an expression language, and almost all of it asks questions a
+ * laptop cannot answer: which branch, which event, which matrix entry, which
+ * input. Three functions ask only about the run's own history, and those three are
+ * exactly what the loop already knows:
  *
- *  - `shell:` and `working-directory:` (v2.19) -- the interpreter and the directory.
- *  - `env:` (v2.20) -- and its departure is the sharpest: what a runner cannot
- *    reproduce is not the **key** but certain **values**. `envOf` separates a
- *    literal from a secret, where a key-level refusal could not tell
- *    `NODE_OPTIONS: --max-old-space-size=4096` from `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
- *  - `timeout-minutes:` (v2.21) -- a budget is a number this machine can spend.
- *  - `continue-on-error:` (v2.22) -- "a failure here is a note" is a fact about the
- *    loop, and the loop can say it.
+ * | written | runs when |
+ * | --- | --- |
+ * | absent (the default) | no earlier step has failed |
+ * | `success()` | the same thing, said out loud |
+ * | `failure()` | an earlier step has failed |
+ * | `always()` | either way |
  *
- * What is left cannot be carried: `if:` decides *whether* the step runs, and this
- * runner runs the plan in CI order and stops at the first failure that is not a
- * note. A step that runs "regardless" would have to run after a stop, which is a
- * different program from the one that reports the stop.
+ * `cancelled()` is refused rather than mapped to "never": it names a state this
+ * runner cannot be in, and "this step never runs" would be a claim about the step
+ * instead of a claim about the runner.
  */
-export const LOCAL_INCOMPATIBLE = ['if'];
+export const CONDITIONS = {
+  'success()': 'success',
+  'failure()': 'failure',
+  'always()': 'always',
+};
+
+/**
+ * Read an `if:` value as one of the three modes, or refuse it.
+ *
+ * `spelled` is the normalized text and is `null` for the default, because the
+ * difference between "the workflow said `success()`" and "the workflow said
+ * nothing" is a fact `--list` has to be able to state without inventing a line.
+ */
+export function conditionOn(raw) {
+  const body = conditionOf(scalar(raw));
+  if (body === '') return { mode: 'success', spelled: null, error: null };
+  const mode = CONDITIONS[body];
+  if (mode !== undefined) return { mode, spelled: body, error: null };
+  if (body === 'cancelled()') {
+    return {
+      mode: 'success',
+      spelled: body,
+      error:
+        `\`if: ${body}\` names a cancelled run, which is a state this runner cannot be in -- nothing here can be ` +
+        'cancelled. A step with this condition would be reported as never running, which is a claim about the step ' +
+        'rather than about the runner. Write `always()`, `failure()` or `success()`',
+    };
+  }
+  return {
+    mode: 'success',
+    spelled: body,
+    error:
+      `\`if: ${body}\` is a condition this machine cannot evaluate: its inputs are the run's branch, event, matrix ` +
+      'or inputs, and a local process has none of them. Write `always()`, `failure()` or `success()`, or make the ' +
+      'step remote-only with a reason',
+  };
+}
+
+/** Whether a condition lets a step run, given whether anything has failed yet. */
+export function runsGiven(mode, failed) {
+  if (mode === 'always') return true;
+  if (mode === 'failure') return failed;
+  return !failed;
+}
+
+/**
+ * Every key a step may carry, and what this reader does with it.
+ *
+ * Two classes, and a third that no longer exists. A key is **read** (carried onto
+ * the step and acted on) or **tolerated** (it cannot change the verdict of a
+ * command). There used to be a third: `LOCAL_INCOMPATIBLE`, five keys that made a
+ * local step impossible. After five passes it held nothing, because every one of
+ * its members turned out to be a fact this runner had not collected yet rather
+ * than a thing a runner cannot do -- the interpreter, the directory, the
+ * environment, the budget, and finally the condition. Refusal still exists, but it
+ * is a judgement about a **value** (`python {0}`, `/tmp`, a secret, `yes`), never
+ * about a key.
+ *
+ * A test parses this literal and checks that no key appears twice, because a
+ * duplicate row is silent and the *later* one wins: `continue-on-error` was
+ * described here as "a failure that does not fail the job" for two passes after
+ * the runner had learned to read it.
+ */
+export const STEP_KEYS = {
+  name: 'read: the key the plan is indexed by',
+  run: 'read: the command, executed verbatim',
+  uses: 'read: matched against the setup actions below',
+  shell: 'read: the interpreter, reproduced as the file-and-argv pair GitHub uses',
+  'working-directory': 'read: where the command runs, carried onto the step and enforced by the runner',
+  'timeout-minutes': 'read: the budget, inherited from the job unless the step narrows it, and enforced by the runner',
+  'continue-on-error': 'read: `true` means a failure here is a note, and the run carries on',
+  if: 'read: `success()` (the default), `failure()` or `always()`; any other condition is refused by value',
+  env: 'read: a literal value is passed to the command; a value only the runner can compute is refused',
+  id: 'tolerated: an identifier for later steps to reference',
+  with: 'tolerated: inputs for an action, meaningful only on a `uses:` step',
+};
 
 /** The actions a step may use. Anything else is a gate wearing a `uses:`. */
 export const SETUP_ACTIONS = {
@@ -795,22 +830,26 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // Recorded rather than ignored: a conditional action is not a gate, but the
       // fact that the workflow uses conditions should be visible in the plan
       // rather than inferred from the plan's silence.
-      const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
+      const hasCondition = (step.keys ?? []).includes('if');
+      const condition = conditionOn(step.values?.if);
       // `env:` on an action is legal -- the action's own environment -- so the same
       // rule applies as on a step outside the plan: it is worth mentioning only
       // when the value is one this machine could not have supplied.
       const actionEnv = envOf(step);
       const envBeyond = actionEnv.error !== null || actionEnv.expressions.length > 0;
-      const declared = [...conditional, ...(envBeyond ? ['env'] : [])];
+      const declared = [...(hasCondition ? ['if'] : []), ...(envBeyond ? ['env'] : [])];
       if (declared.length > 0) {
-        const condition = conditional.includes('if') ? conditionOf(step.values?.['if']) : null;
-        if (condition !== null && condition !== 'always()') {
+        // Only the widening condition is tolerable here, for the reason the
+        // remote case gives below: anything narrower and the action's absence from
+        // the plan is explained by a condition rather than by being an action.
+        if (hasCondition && condition.mode !== 'always') {
           errors.push(
-            `${step.key}: \`if: ${String(step.values?.['if'] ?? '')}\` on an action is a condition this plan cannot describe`,
+            `${step.key}: \`if: ${String(condition.spelled)}\` on an action is a condition this plan cannot describe` +
+              (condition.error === null ? ': only `always()` widens when it runs' : ` -- ${condition.error}`),
           );
           continue;
         }
-        tolerated.push({ key: step.key, keys: declared, condition });
+        tolerated.push({ key: step.key, keys: declared, condition: hasCondition ? condition.spelled : null });
       }
       continue;
     }
@@ -843,38 +882,37 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     // carries.
     const timeout = timeoutOf(step.values?.['timeout-minutes'], step.jobTimeout);
     const flag = booleanOf(step.values?.['continue-on-error']);
+    // The condition decides *whether* the step runs, which is not a fact about the
+    // command but a fact about the loop -- so it is read here and honoured there.
+    const condition = conditionOn(step.values?.if);
 
     if (entry.local === true) {
-      // A key that changes whether or with what a local step runs makes
-      // "verify:local ran this" false, so it is refused rather than tolerated.
-      const blocked = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
-      for (const key of blocked) {
-        errors.push(
-          `${step.key}: marked local, but carries \`${key}:\` -- ${String(STEP_KEYS[key])}. ` +
-            'Either make it remote-only with a reason, or teach the runner the key',
-        );
-      }
-      // `shell:` and `working-directory:` are honoured rather than refused, so
-      // the only way they can be wrong is a value this runner cannot read. Same
-      // outcome, and it is the outcome a local claim needs: the step does not run
-      // here, and the plan says why instead of assuming it away.
-      if (shell.error !== null) errors.push(`${step.key}: ${shell.error}`);
-      if (cwd.error !== null) errors.push(`${step.key}: ${cwd.error}`);
-      // `env:` is the same question one level down: an entry is either a literal
-      // this machine can pass through or a value it has no inputs for.
-      if (env.error !== null) errors.push(`${step.key}: ${env.error}`);
-      if (timeout.error !== null) errors.push(`${step.key}: ${timeout.error}`);
-      if (flag.error !== null) errors.push(`${step.key}: \`continue-on-error: ${String(step.values?.['continue-on-error'] ?? '')}\` -- ${flag.error}`);
-      if (env.expressions.length > 0) {
-        const [first] = env.expressions;
-        errors.push(
-          `${step.key}: \`env: ${first.name}: ${first.value}\` is a value only the runner can supply -- this ` +
-            'machine has no secrets and no run context to evaluate it with. Use a literal value, or make the ' +
+      // Nothing is refused by *key*. What is left is refused by **value**, and each
+      // refusal names the value so the reader looks at the line that is wrong:
+      // an interpreter this machine cannot start, a directory outside the tree, a
+      // secret, a bound that is not a number, a flag that is not a boolean, a
+      // condition whose inputs are the run's.
+      //
+      // Gathered into one list rather than pushed as each one is computed -- the
+      // previous shape pushed some and then had two `continue` conditions to keep
+      // in step, which is a pair of lists that drift.
+      const refusals = [
+        shell.error,
+        cwd.error,
+        env.error,
+        timeout.error,
+        flag.error === null
+          ? null
+          : `\`continue-on-error: ${String(step.values?.['continue-on-error'] ?? '')}\` -- ${flag.error}`,
+        condition.error,
+        env.expressions.length === 0
+          ? null
+          : `\`env: ${env.expressions[0].name}: ${env.expressions[0].value}\` is a value only the runner can supply -- ` +
+            'this machine has no secrets and no run context to evaluate it with. Use a literal value, or make the ' +
             'step remote-only with a reason',
-        );
-      }
-      if (blocked.length > 0 || shell.error !== null || cwd.error !== null || env.error !== null) continue;
-      if (env.expressions.length > 0 || timeout.error !== null || flag.error !== null) continue;
+      ].filter((reason) => reason !== null);
+      for (const reason of refusals) errors.push(`${step.key}: ${reason}`);
+      if (refusals.length > 0) continue;
 
       local.push({
         key: step.key,
@@ -887,25 +925,24 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         timeoutMinutes: timeout.minutes,
         timeoutFrom: timeout.from,
         continueOnError: flag.value,
+        condition: condition.mode,
+        conditionSpelled: condition.spelled,
       });
       continue;
     }
     if (typeof entry.remoteOnly === 'string') {
-      const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
+      const hasCondition = (step.keys ?? []).includes('if');
       // A condition is the one tolerated key whose *value* can contradict the
       // plan. `if: always()` only widens when a step runs; any other condition
       // narrows it, which would make the reason this step does not run here part
       // of the reason -- "needs prometheus" would be true and incomplete.
-      if (conditional.includes('if')) {
-        const condition = conditionOf(step.values?.['if']);
-        if (condition !== 'always()') {
-          errors.push(
-            `${step.key}: \`if: ${String(step.values?.['if'] ?? '')}\` is a condition this plan cannot describe. ` +
-              'Only `always()` can be tolerated on a step outside the plan, because it is the one condition ' +
-              'that widens when a step runs rather than narrowing it',
-          );
-          continue;
-        }
+      if (hasCondition && condition.mode !== 'always') {
+        errors.push(
+          `${step.key}: \`if: ${String(step.values?.['if'] ?? '')}\` is a condition this plan cannot describe. ` +
+            'Only `always()` can be tolerated on a step outside the plan, because it is the one condition ' +
+            'that widens when a step runs rather than narrowing it',
+        );
+        continue;
       }
       // A shell or directory this runner cannot read is tolerated here and only
       // here: the step does not run on this machine, so the plan's sentence about
@@ -918,7 +955,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // could *not* reproduce is, because that is the fact the plan is about.
       const envBeyond = env.error !== null || env.expressions.length > 0;
       const toleratedKeys = [
-        ...conditional,
+        ...(hasCondition ? ['if'] : []),
         ...(envBeyond ? ['env'] : []),
         ...(timeout.error !== null ? ['timeout-minutes'] : []),
         ...(flag.error !== null ? ['continue-on-error'] : []),
@@ -928,7 +965,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         tolerated.push({
           key: step.key,
           keys: toleratedKeys,
-          condition: conditional.includes('if') ? 'always()' : null,
+          condition: hasCondition ? condition.spelled : null,
         });
       }
       const why = entry.remoteOnly.trim();
@@ -967,34 +1004,93 @@ export function shippedPlan(path = workflowPath()) {
  * exercises, which is the shape this repository keeps finding.
  */
 export async function runSteps(commands, run) {
-  /** Failures the workflow said not to stop for, in the order they happened. */
-  const tolerated = [];
+  /**
+   * What happened to each command, in the order they were reached.
+   *
+   * A run is a sequence of outcomes, not a single verdict. The previous shape
+   * returned at the first failure and carried the notes in a second field beside
+   * it, which was enough while every step ran unconditionally: a failure meant the
+   * run was over. `if:` breaks that in both directions -- a step may run *because*
+   * something failed, and a step may be skipped in a green run -- so the loop
+   * collects, and the verdict is a view of what it collected.
+   */
+  const outcomes = [];
+  let failed = false;
+
   for (const [index, step] of commands.entries()) {
     // The whole step is handed over, not its text: the interpreter, the
-    // directory, the environment and the budget are part of the command, and a
-    // runner given only the text would be unable to honour any of them.
+    // directory, the environment, the budget and the condition are part of the
+    // command, and a runner given only the text would be unable to honour any.
     const where = whereOf(step);
     process.stdout.write(
       `\n[${String(index + 1)}/${String(commands.length)}] ${step.first}${where === '' ? '' : ` (${where})`}\n`,
     );
+
+    const condition = step.condition ?? 'success';
+    if (!runsGiven(condition, failed)) {
+      // The reason differs by which condition said no, and the difference is what
+      // a reader needs: one is "CI would not have run this either", the other is
+      // "this step asked to run only when something failed, and nothing has".
+      const why =
+        condition === 'failure'
+          ? 'its condition is `failure()` and no step has failed'
+          : 'an earlier step failed and this step declares no condition that widens past one';
+      process.stdout.write(`  skipped -- ${why}\n`);
+      outcomes.push({ step, status: 'skipped', why });
+      continue;
+    }
+
     try {
       await run(step);
+      outcomes.push({ step, status: 'passed' });
     } catch (error) {
-      // A step that ran past its bound is a different verdict from a step that
-      // exited non-zero, and the two have different repairs -- so the difference
-      // is carried in the result rather than flattened into "failed".
       const timedOut = error?.timedOut === true;
-      // A note is a note only while the job has budget left: in CI the bound
-      // belongs to the job, so a step that spends it ends the job, and
-      // `continue-on-error` has nothing left to continue to.
-      if (!timedOut && step.continueOnError === true) {
-        tolerated.push({ step, error });
+      if (timedOut) {
+        // The bound belongs to the job, so a step that spends it ends the job:
+        // nothing after it runs, not even a step that asked to run regardless.
+        // Stopping here rather than walking on is the one place the loop may
+        // return, and the report says how many steps it cost.
+        outcomes.push({ step, status: 'timed-out', error });
+        return { ok: false, timedOut: true, index, step, commands: commands.length, error, outcomes };
+      }
+      if (step.continueOnError === true) {
+        // A note is a note only while the job has budget left -- the timeout above
+        // is checked first for exactly that reason.
+        process.stdout.write(`  noted -- ${error.message}; the workflow says that is a note\n`);
+        outcomes.push({ step, status: 'noted', error });
         continue;
       }
-      return { ok: false, timedOut, index, step, commands: commands.length, error, tolerated };
+      process.stdout.write(`  failed -- ${error.message}\n`);
+      outcomes.push({ step, status: 'failed', error });
+      failed = true;
+      // And on it goes, because a later step may declare `always()` or `failure()`
+      // and CI would have run it. Every step this skips is recorded as skipped, so
+      // the run accounts for the whole plan instead of stopping mid-sentence.
     }
   }
-  return { ok: true, timedOut: false, index: -1, step: null, commands: commands.length, error: null, tolerated };
+
+  const first = outcomes.find((one) => one.status === 'failed' || one.status === 'timed-out') ?? null;
+  return {
+    ok: first === null,
+    timedOut: first?.status === 'timed-out',
+    index: first === null ? -1 : outcomes.indexOf(first),
+    step: first?.step ?? null,
+    commands: commands.length,
+    error: first?.error ?? null,
+    outcomes,
+  };
+}
+
+/**
+ * The failures the workflow said not to stop for.
+ *
+ * One function rather than a filter at each reader: `failureReport` and the CLI
+ * both need this list, and two filters over the same status string is the shape
+ * this repository keeps finding -- one rule, two implementations, and the one that
+ * reports is the one that goes stale.
+ */
+export function notedFailures(outcomes) {
+  return outcomes.filter((one) => one.status === 'noted');
 }
 
 /** The plan, printed the way a person deciding whether to trust it would read it. */
@@ -1002,6 +1098,7 @@ export function describePlan(plan) {
   const overrides = plan.local.filter((step) => whereOf(step) !== '');
   const bounds = plan.local.map((step) => step.timeoutMinutes).filter((minutes) => minutes !== null);
   const unbounded = plan.local.length - bounds.length;
+  const conditioned = plan.local.filter((step) => step.conditionSpelled != null).length;
   const lines = [
     `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
     // The defaults are stated, and so is the number of steps that depart from them.
@@ -1013,13 +1110,27 @@ export function describePlan(plan) {
     // The budget, stated the same way. `unbounded` is named rather than left to be
     // inferred from a missing number: a step with no bound is the one that can hang
     // for as long as the operator is patient.
-    unbounded === 0
-      ? `  each command is bounded by \`timeout-minutes:\` — ${String(Math.min(...bounds))}m to ${String(
-          Math.max(...bounds),
-        )}m here; a step that runs past its bound is killed and reported as timed out`
-      : `  ${String(bounds.length)} of ${String(plan.local.length)} commands are bounded by \`timeout-minutes:\`; ` +
-        `${String(unbounded)} are not, because their job declares no budget (CI's own six-hour default is not ` +
-        'applied: a local run that waited six hours would not have learned anything sooner)',
+    bounds.length === 0
+      ? // No local step at all: the header already says so, and `Math.min()` of
+        // nothing is `Infinity`, which would print "Infinitym to -Infinitym".
+        '  no command runs here, so there is no budget to state'
+      : unbounded === 0
+        ? `  each command is bounded by \`timeout-minutes:\` — ${String(Math.min(...bounds))}m to ${String(
+            Math.max(...bounds),
+          )}m here; a step that runs past its bound is killed and reported as timed out`
+        : `  ${String(bounds.length)} of ${String(plan.local.length)} commands are bounded by \`timeout-minutes:\`; ` +
+          `${String(unbounded)} are not, because their job declares no budget (CI's own six-hour default is not ` +
+          'applied: a local run that waited six hours would not have learned anything sooner)',
+    // The third default, and the last one this runner had left to state. It is what
+    // makes a failure mean something, and it is invisible in a workflow that never
+    // mentions it.
+    conditioned === 0
+      ? `  a step runs only after the ones before it have passed, which is GitHub's default; none of the ${String(
+          plan.local.length,
+        )} declares a condition`
+      : `  a step runs only after the ones before it have passed, which is GitHub's default; ${String(
+          conditioned,
+        )} of ${String(plan.local.length)} declare a condition that changes it`,
     '',
   ];
   for (const step of plan.local) {
@@ -1027,6 +1138,7 @@ export function describePlan(plan) {
       whereOf(step),
       step.timeoutMinutes === null ? '' : `${String(step.timeoutMinutes)}m`,
       step.continueOnError ? 'continue-on-error' : '',
+      step.conditionSpelled == null ? '' : `if (${step.conditionSpelled})`,
     ].filter((clause) => clause !== '');
     lines.push(`  local   ${step.key}${clauses.length === 0 ? '' : ` — ${clauses.join(', ')}`}`);
   }
@@ -1060,6 +1172,12 @@ export function failureReport(result) {
   const step = result.step;
   const where = whereOf(step);
   const minutes = step.timeoutMs === null || step.timeoutMs === undefined ? null : Math.round(step.timeoutMs / 60_000);
+  const outcomes = result.outcomes ?? [];
+  // A spent budget is the one ending that is not a condition: CI kills the job, so
+  // the steps after it did not run -- including the ones that asked to run
+  // regardless. Counting them here is the only place that fact is stated, because
+  // the loop returned instead of recording them as skipped.
+  const stopped = result.timedOut ? result.commands - outcomes.length : 0;
   const lines = [
     '',
     `${result.timedOut ? 'verify:local: TIMED OUT' : 'verify:local: FAILED'} at ${String(result.index + 1)}/${String(
@@ -1075,8 +1193,24 @@ export function failureReport(result) {
   // The notes that came before the stop are part of what this run learned. A
   // reader fixing the step that stopped the run would otherwise never learn that
   // two earlier steps are broken and were allowed to be.
-  for (const one of result.tolerated ?? []) {
+  for (const one of notedFailures(outcomes)) {
     lines.push(`  tolerated: ${one.step.first} — ${one.error.message}`);
+  }
+  // And so are the steps that ran after the failure, which is what `if: always()`
+  // and `if: failure()` are for. A screenful of output with nothing in the verdict
+  // connecting it to the failure is the shape a reader cannot read.
+  const after = outcomes
+    .slice(result.index + 1)
+    .filter((one) => one.status === 'passed' || one.status === 'noted')
+    .map((one) => one.step.first);
+  if (after.length > 0) {
+    lines.push(`  still ran: ${after.join(', ')} (their conditions widen past a failure)`);
+  }
+  if (stopped > 0) {
+    lines.push(
+      `  stopped: ${String(stopped)} step(s) after it did not run -- a step that spends the job's budget ends the ` +
+        'job, even for `always()` steps',
+    );
   }
   lines.push('');
   return lines;
@@ -1090,7 +1224,10 @@ export function failureReport(result) {
  * text is run once and reported as already done.
  *
  * "The same command" is now the same **interpreter, directory, environment and
- * text** -- but **not** the same budget, and that asymmetry is deliberate. Two
+ * text** -- but **not** the same budget and **not** the same condition, and those
+ * asymmetries are deliberate: both are merged rather than identified by (the
+ * tighter bound, the wider condition), because the merged run has to stand in for
+ * every step that needs it. Two
  * steps running `pnpm build` are one run here; the bound that governs it is the
  * tighter of the two, because CI runs both and the one that fails first is the
  * one whose verdict the local run is standing in for. Including the bound in the
@@ -1118,6 +1255,7 @@ export function localCommands(local) {
       timeoutMs: bound,
       timeoutFrom: step.key,
       continueOnError: step.continueOnError === true,
+      condition: step.condition ?? 'success',
       first: step.key,
       also: [],
     };
@@ -1146,6 +1284,12 @@ export function localCommands(local) {
       // enough to make the merge fatal, which is the only direction that cannot
       // report a green run CI would have made red.
       seen.continueOnError = seen.continueOnError === true && step.continueOnError === true;
+      // The opposite direction, and for the same reason. The merged run stands in
+      // for all of them, so a command one of them needs under `always()` is needed
+      // after a failure too. Any disagreement widens to `always()`: `success()` and
+      // `failure()` are the two halves of it, and a command both halves need is a
+      // command that runs either way.
+      if (seen.condition !== (step.condition ?? 'success')) seen.condition = 'always';
       continue;
     }
     byIdentity.set(identity, entry);
