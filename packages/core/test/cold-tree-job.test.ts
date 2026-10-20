@@ -144,6 +144,12 @@ const COLD_AGGREGATES: ReadonlyMap<string, readonly string[]> = new Map([
     [
       'check-l4-status.mjs',
       'check-doc-counts.mjs',
+      // Measured before being added, the way every member here was: with
+      // `packages/core/dist` moved aside, `node scripts/check-audit-volumes.mjs`
+      // printed `OK — 4 volume(s), 191 finding(s)` and exited 0. It reads markdown
+      // and `stat`s the volumes, which is an argument for why it should be safe and
+      // not evidence that it is.
+      'check-audit-volumes.mjs',
       'check-backend-support.mjs',
       'check-roundtrip-record.mjs',
       // Measured cold-safe before being added, the way every member here was: with

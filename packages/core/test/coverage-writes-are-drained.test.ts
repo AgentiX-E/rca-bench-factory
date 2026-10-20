@@ -197,6 +197,13 @@ describe('coverage · the reporter drains its writes before it resets', () => {
       const joined =
         /\.on\(\s*['"](?:close|exit|error)['"]\s*,/.test(code)
         || /await\s+new\s+Promise[\s\S]{0,400}?\.on\(/.test(code)
+        // The third spelling, and it is the same join: `events.once` *is* a
+        // one-shot `.on(...)` plus a promise, and `await once(child, 'exit')` is
+        // the shorter way to write the two shapes above. The list had two entries
+        // because two were in the tree; `tree-repair.test.ts` joins a `sleep` this
+        // way, and reporting it as an offender would be the scan describing its own
+        // vocabulary rather than the rule.
+        || /await\s+once\(\s*[\w$]+\s*,\s*['"](?:close|exit|error)['"]/.test(code)
         || /await\s+(?:done|child|proc|process|run)[\w$]*\s*;/.test(code);
       if (!joined) offenders.push(name);
     }

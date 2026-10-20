@@ -103,6 +103,24 @@ const REGISTER: Record<string, Entry> = {
   'check-no-secrets.mjs': { class: 'gate' },
   'check-no-unsafe-shell.mjs': { class: 'gate' },
   'check-no-vendored-data.mjs': { class: 'gate' },
+  'check-audit-volumes.mjs': {
+    class: 'gate',
+    why:
+      'The audit log is one index and four volumes, and this is what holds the split: one heading form, ' +
+      'one numbering, one size budget per volume, and an index that names every volume. It is also the ' +
+      'reason the log cannot drift back into four heading forms, which is how a census of it came to ' +
+      'report 127 entries where there were 191.',
+  },
+  'audit-volumes.mjs': {
+    class: 'data',
+    why:
+      'What the audit log split means, as functions: contiguous volume numbering, a byte budget per ' +
+      'volume, one heading form, and an index row per volume whose range and count are read from the ' +
+      'file. It has no main and no exit because the verdict is check-audit-volumes.mjs -- and the ' +
+      'reading had to leave that gate, because verify-gates-are-testable.mjs proves a gate by emptying ' +
+      'it, and a test that imports the emptied file dies at its first statement: the meta-gate reported ' +
+      'exactly that ("exited 1 and named no failing test") until the two halves were separated.',
+  },
   'check-open-list.mjs': { class: 'gate' },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },
@@ -112,6 +130,14 @@ const REGISTER: Record<string, Entry> = {
   'derive-backend-support.mjs': { class: 'gate' },
   'derive-fault-golden.mjs': { class: 'gate' },
   'derive-gate-sites.mjs': { class: 'gate' },
+  'tree-repair.mjs': {
+    class: 'data',
+    why:
+      'The gate session\'s preflight: run the injection batteries\' repair before the first step reads ' +
+      'anything, so a tree a killed battery was holding is put back rather than measured. No main and ' +
+      'no exit -- verify-local.mjs decides what to do with the three states, and it is a gate, so the ' +
+      'decision lives here where tree-repair.test.ts can drive it against a fixture cache.',
+  },
   'gate-steps.mjs': {
     class: 'data',
     why:

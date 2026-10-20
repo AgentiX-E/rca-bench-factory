@@ -1,0 +1,5145 @@
+# Audit · volume 01
+
+Findings 1–82. The index, the scope and the retractions are in [`../audit.md`](../audit.md).
+
+## Finding 1 — The regression graded its own answer key
+
+`runOfficialRegression` built its predictions with
+`groundTruth.map(oraclePrediction)` instead of reading the submission the export
+publishes. `readOfficialSubmission` was exported, tested, and never called on
+this path.
+
+The consequence is that the check compared the answer key against itself. A
+`record.csv` that had been corrupted or deleted still reported `passed`. Four
+injections — wrong component, wrong reason, wrong datetime, deleted submission —
+were all silent.
+
+**Fix**: read `readOfficialSubmission(target, files)`, the same artefact an
+external evaluator consumes.
+
+**Guard**: `test/official-submission.test.ts` corrupts each of the four and
+asserts the regression fails, plus a case-for-case agreement check against
+`scoreOfficial`. Injecting the old line back fails 5 tests.
+
+## Finding 2 — An empty denominator scored as a perfect match
+
+```ts
+function rateOf(predicted, expected) {
+  if (expected.length === 0) return 1;   // before
+  return intersectCount(predicted, expected) / expected.length;
+}
+```
+
+`1` for an empty `expected` makes "the key asked nothing" and "the prediction
+answered everything" the same number. An RCA100 key declaring no chain and no
+checkpoint collected the full 0.3 process weight, identically to a key that
+declared both and had them matched.
+
+Measured: a case with an empty chain and empty checkpoint list produced
+`{"process":1,"chainNodeMatch":1,"checkpointHit":1}` and a headline of 100.
+
+**Fix**: return `undefined`, and let a new `meanOfPresent` average only the terms
+that have a denominator. When no term has one the answer is 0, not 1.
+
+**Guard**: `test/official-empty-denominator.test.ts`. Injecting `return 1` back
+fails 3 tests.
+
+## Finding 3 — The checksum rate divided by the anchor set
+
+```ts
+const total = matched + mismatched.length + missing.length;   // before
+```
+
+With `extra` — files the anchors never mention — left out, the numerator and the
+denominator were both about anchors, so an unanchored file was neither verified
+nor held against the rate. One anchor out of twenty-two produced `score: 100`
+beside `passed: false`, which is the worst pair to hand an operator: the number
+says the export is perfect, the flag says it is not, and the number is the half
+people read.
+
+The existing test asserted `passed` and `extra`, not `score`, which is why it
+survived beside its own comment saying the problem must be visible.
+
+**Fix**: add `extra.length` to the denominator. A comparison set is a claim about
+the whole export.
+
+**Guard**: `test/score-anchor-denominator.test.ts`, including a monotonicity case
+(more unanchored files must lower the score). Injecting the old line fails 2
+tests.
+
+## Finding 4 — `openrca-2.0` silently inherited strict accuracy
+
+`aggregateFor` was a chain of `if (target === …)` blocks with nine targets and
+six branches. `openrca-2.0` was never named, so it fell through to the generic
+strict-accuracy block and reported the share of cases where *every* facet was
+reproduced exactly — a different function from the one its own spec advertises
+(`matched facets / scored facets`).
+
+The two formulas agree on a perfect export and on an empty one, which is why the
+regression never noticed. They part company in between: measured `accuracy: 0.75`
+beside `final: 0` for a prediction that reproduced three of the four declared
+facets.
+
+**Fix**: name the branch, and end the chain in a `never` guard so a tenth target
+stops the build instead of inheriting a formula.
+
+**Guard**: `test/official-aggregate-coverage.test.ts`. Injecting the missing
+branch back fails 1 test.
+
+## Finding 5 — An empty AIOps2025 corpus was fully explained
+
+```ts
+const explainability = et === 0 ? 1 : em / et;   // before
+```
+
+`et` is the total number of evidence points the corpus declares. Answering `1`
+when there are none handed an export that declared no evidence at all a free
+tenth of the score. Measured: an empty AIOps2025 export scored `final: 10` while
+the other eight targets scored 0. It was the only target with a non-zero score on
+a nonexistent export.
+
+The other three terms in the same formula already answered 0 with nothing to
+average (`la`, `ta`, `eff`), so explainability was the outlier.
+
+**Fix**: `et === 0 ? 0 : em / et`.
+
+**Guard**: `test/official-no-denominator.test.ts` and a corrected assertion in
+`test/official.test.ts`. Injecting `? 1` back fails 2 tests.
+
+## Finding 6 — A vacuous structure report earned half the score
+
+Found while building the guard for finding 2. `scoreExport` averages the
+structure rate and the checksum rate, and the structure rate was credited
+unconditionally. Four of the thirteen OpenRCA checks pass on an empty export
+because there is nothing for them to inspect:
+
+- `answer-key-isolated` — "query.csv carries no answer key" holds when there is
+  no query.csv;
+- `log-header` and `trace-header` — both explicitly accept an absent telemetry
+  directory (Telecom ships no logs, so this is deliberate);
+- `row-alignment` — zero rows equals zero rows.
+
+That is a structure rate of 0.31, and an empty export reported `score: 15` while
+`passed` was correctly `false`.
+
+**Fix**: credit the structure rate only when the structure report passes. The
+report's own `passed` flag already answers this correctly; the rate is only
+meaningful once the verdict is.
+
+**Guard**: a case in `test/score-anchor-denominator.test.ts` asserting an empty
+export scores 0. Injecting the unconditional rate back fails it.
+
+## Finding 7 — A legal integer data point was quarantined as having no value
+
+```ts
+const asInt = dp['asInt'];
+if (typeof asInt === 'string' && asInt !== '') { ... }   // before
+```
+
+`asInt` and `asDouble` are both numbers on the wire. The OTLP JSON mapping
+documents int64 as a string so a 64-bit value survives a language with no such
+integer, but protojson — which is what most exporters actually use — also admits
+the numeric form. A document carrying `asInt: 42` is a legal document.
+
+Measured: that document produced `signals: []` and one quarantine,
+
+```json
+{ "index": 1, "reason": "data point has no numeric value (asDouble/asInt)",
+  "record": "{\"timeUnixNano\":\"1735689600000000000\",\"asInt\":42}" }
+```
+
+That is a quarantine reason that contradicts its own record: the record plainly
+contains a numeric value.
+
+**Fix**: accept a safe integer in either form; the two encodings now agree.
+
+**Guard**: `test/otlp-fidelity.test.ts`, plus a case that still rejects a
+non-numeric `asInt` and a non-finite `asDouble` so the widening did not become a
+hole. Injecting the string-only reader back fails 1 test.
+
+## Finding 8 — Nanoseconds were scaled by a float
+
+```ts
+const n = Number(raw);
+return Number.isFinite(n) ? n * 1e-6 : undefined;   // before
+```
+
+`n * 1e-6` is a float multiply, and at nanosecond magnitudes it does not agree
+with exact integer division. Measured over 4000 consecutive millisecond pairs:
+**2500 disagreed**, worst case `1.000244140625` reported for a span that was
+exactly 1 ms long. Individually:
+
+| true duration | reported |
+| --- | --- |
+| 1 ms | `0.999755859375` |
+| 2 ms | `1.999755859375` |
+| 17 ms | `16.999755859375` |
+| 1001 ms | `1000.999755859375` |
+
+A duration wrong by a fraction of a millisecond, in a benchmark whose whole
+purpose is measuring durations. Nothing downstream could flag it: the value is
+finite, positive, and plausible.
+
+**Fix**: divide in `BigInt` before narrowing. `Number(raw)` cannot be used first
+because it already loses nanoseconds at these magnitudes, so the division has to
+happen while the value is still exact.
+
+**Guard**: `test/otlp-fidelity.test.ts` asserts the four exact values above, plus
+the 4000-pair sweep. Injecting `n * 1e-6` back fails 4 tests.
+
+## Finding 9 — A span status delivered by enum name was dropped in silence
+
+```ts
+if (typeof rawCode === 'number') {           // before
+  status = SPAN_STATUS_CODE[rawCode];
+  ...
+}
+```
+
+The OTLP JSON mapping writes enums as their **names**, not their numbers. The
+reader matched numbers only, so `{ status: { code: 'STATUS_CODE_ERROR' } }` fell
+past the branch entirely: no `status` on the payload and no quarantine entry.
+
+Measured: an error span ingested as a healthy-looking one —
+
+```json
+{ "kind": "trace", "traceId": "t1", "spanId": "s1", "spanName": "op",
+  "durationMs": 1000 }
+```
+
+This is the worst shape a defect can take here. It is silent, and the direction it
+fails in is always the same: an error span that loses its status is
+indistinguishable from a healthy one, so the corpus looks *better* than it is.
+Zero-loss accounting could not catch it, because a dropped field is not a dropped
+record.
+
+**Fix**: read both encodings — the enum name and the numeric form, whether the
+number arrives as a number or as a string — and quarantine a code that is present
+but unreadable, so the two failure modes ("carries none" versus "carries
+something we cannot read") stop being the same outcome.
+
+**Guard**: seven cases in `test/otlp-fidelity.test.ts` covering all five
+encodings plus an unrecognised name and an unrecognised number. Injecting the
+number-only reader back fails 4 tests.
+
+## Finding 10 — An empty severity was reported as an invalid one
+
+```ts
+if (rawSeverity !== undefined && severityText === undefined) {   // before
+  quarantine.push({ index, reason: `invalid severity '${rawSeverity}'`, ... });
+```
+
+`normalizeSeverity` already treats `''` and `undefined` alike and returns
+`undefined` for both, but the guard compared the *token* rather than the raw
+field. So `severityText: ''` was quarantined as `invalid severity ''`.
+
+Measured: one legal log record became zero signals and one quarantine entry, for a
+field the schema calls optional.
+
+An absent severity and an unrecognisable one are different claims about different
+documents, and only the second is a data problem. Collapsing them inflates the
+quarantine count with records that were never at fault.
+
+**Fix**: compare the raw field, so only a non-empty unreadable spelling is
+quarantined.
+
+**Guard**: four cases in `test/otlp-fidelity.test.ts`. Injecting the token
+comparison back fails 1 test.
+
+## Finding 11 — A sub-millisecond inverted span truncated to a legal zero
+
+```ts
+const durationMs = endMs - startMs;
+if (durationMs < 0) { ... }                  // before
+```
+
+Once finding 8 made durations exact, both operands were truncated to whole
+milliseconds before being compared. A span whose end precedes its start by **one
+nanosecond** therefore produced `durationMs === 0` and passed as a legal
+zero-length span.
+
+A negative duration is the inverted-timestamp signature of a broken clock — the
+one thing this corpus must never contain — and truncation was hiding it for every
+inversion smaller than a millisecond.
+
+**Fix**: compare the exact nanosecond instants as well as the truncated
+difference. Both checks are kept: the nanosecond comparison is the precise one,
+and the millisecond comparison documents the invariant at the unit the IR uses.
+
+**Guard**: a case asserting a `-1 ns` span is quarantined. Injecting the
+truncated comparison back fails 1 test.
+
+## Finding 12 — Only the first choice was ever read
+
+`openai-compat.ts` had **no test file at all** — 0 test references for 98 source
+lines — while being the shared transport under both the DeepSeek and OpenAI
+adapters, so every LLM-dependent path in the factory ran through it.
+
+```ts
+const first = choices[0] as Record<string, unknown>;
+const message = first.message as Record<string, unknown> | undefined;
+const content = message?.content;
+if (typeof content !== 'string') {
+  throw new Error(`${name} response choice has no string content`);
+}
+return content;
+```
+
+An OpenAI-compatible server returns a leading choice that carries no text for a
+refusal or a content-filtered turn, with a usable completion behind it. Reading
+only `choices[0]` discarded that answer and reported the whole response as
+unusable.
+
+Measured: two choices, the first with `content: null`, the second with
+`"second"`:
+
+```
+THREW: Error: X response choice has no string content
+```
+
+**Fix**: inspect every choice in order; the first usable text wins.
+
+**Guard**: `test/openai-compat.test.ts` (18 tests). Injecting the first-choice-only
+read back fails 3 tests.
+
+## Finding 13 — A null choice leaked a raw `TypeError`
+
+The same two lines dereferenced `choices[0]` without checking it is an object.
+Every other malformed shape in this parser produces a named message —
+`is not valid JSON`, `is not a JSON object`, `has no choices` — but a `null`
+element escaped as an internal error:
+
+```
+THREW: TypeError: Cannot read properties of null (reading 'message')
+```
+
+Measured for `{"choices":[null]}`. The failure is not that it threw; it is *what*
+it threw. A `TypeError` names a JavaScript operation, not a response shape, so an
+operator reading it learns nothing about what the server sent.
+
+**Fix**: check the element is an object before touching it, at every position, and
+report the position.
+
+**Guard**: two cases asserting the named message and, explicitly, that a
+`TypeError` is **not** what comes out. Injecting the unchecked dereference back
+fails 2 tests.
+
+## Finding 14 — `''` was accepted as a completion
+
+The declared return type is `string`, and a choice whose content is the empty
+string satisfied `typeof content === 'string'`. Measured: `content: ''` returned
+`''` as a successful completion, so no caller could tell an empty answer from a
+real one — and the surrounding comment claims the function throws "so a malformed
+or empty response surfaces as an explicit error", which it did not.
+
+**Fix**: the empty string is not usable text; a whitespace-only completion still
+is, because that is a real answer a model can give.
+
+**Guard**: two cases, including the whitespace case that must **keep** working.
+Injecting `typeof content === 'string'` back fails 1 test.
+
+## Finding 15 — The prompt never stated the rule the parser enforced
+
+This one is not inside a function. It lives between two of them.
+
+`buildFaultExtractionPrompt` advertised the category vocabulary as a bare field
+placeholder:
+
+```
+"category": "resource | network | runtime | middleware | code | config | dependency"
+```
+
+Nothing in the prompt says the value must be **one of** that list, and nothing
+anywhere says the match is case- or space-sensitive. `parseFaultExtractionResponse`
+then stored whatever string came back, and `parseFaultSpec` matches the category
+by exact value.
+
+Measured end to end, for an incident the prompt itself was built from:
+
+```
+parse    -> { ok: true,  extracted: { category: "NETWORK" } }
+validate -> { valid: false, reasons: ["invalid fault category 'NETWORK'"] }
+```
+
+So a correctly-extracted fault was rejected, and the H3 reviewer was told the
+**category** was wrong when it was the **casing** that was wrong — a diagnosis
+pointing at the model's judgement instead of at the contract.
+
+**Fix**, in both halves, because either alone would be a half-measure:
+
+- the prompt now says `"one of: …"` and states that the match is
+  case-insensitive and that any other value is rejected;
+- the parser trims and case-folds before the vocabulary check, and rejects an
+  out-of-vocabulary value **at the point it was read**, naming the offending
+  string, instead of deferring to a validator that reports it as a category error.
+
+A synonym such as `net` is still rejected. Deciding that `net` means `network` is
+a judgement, not a normalisation, and H3 is where that judgement belongs.
+
+**Guard**: `test/importer-contract.test.ts` (12 tests), including the full
+ticket-text → prompt → parse → validate pipeline as one assertion. Injecting the
+verbatim read back fails 3 tests; dropping the prompt's rule sentence fails 1;
+removing the early rejection fails 2.
+
+## Finding 16 — A layout field outside the contract was dropped, not rejected
+
+```ts
+if (typeof value !== 'string') { ... }
+if (key === 'semanticType') { ... } else { (layoutFields as ...)[key] = value; }
+// no check that `key` is an IR field at all
+```
+
+`parseRulegenResponse` copied every string-valued key into the layout and never
+asked whether the name was one the IR declares. A model that answered `timstamp`
+— `timestamp` with the `e` lost — therefore produced a layout that was silently
+missing `timestamp` while the parser reported success:
+
+```json
+{"ok":true,"generated":{"layout":{"timstamp":"time","metricName":"kpi","metricValue":"val"},"confidence":0.9,"rationale":"typo"}}
+```
+
+The failure then appears one stage later, as `missing required field 'timestamp'`.
+The parser accepted the layout, and the validator blamed the answer for a missing
+field when the actual event was a rejected name — the same shape as finding 15,
+where the diagnosis pointed at the model's judgement instead of at the contract.
+
+**Fix**: reject any key that is not in this signal kind's field list, naming it and
+listing what was expected. A per-kind check, not a global one (finding 17).
+
+**Guard**: `test/rulegen.test.ts`. Injecting the `continue` back fails 6 tests.
+
+## Finding 17 — A cross-kind field name passed the membership check
+
+Found while building the guard for finding 16. The obvious guard — "is this key a
+field somewhere in the IR?" — accepts `spanName` in a *metric* layout, because
+`spanName` is a real trace field. It would have left the same typo-blindness in
+place for every name a model can borrow across kinds, and the metric rules are
+where a borrowed trace field is most likely to appear, since a model mapping
+metrics has just been shown the whole contract family.
+
+**Fix**: check against `IR_FIELDS[signalKind]`, the same list the prompt prints for
+that kind, so the advertised contract and the enforced one are one object.
+
+**Guard**: two cases, a trace field in a metric layout and a metric field in a log
+layout. Injecting the union-of-all-kinds check back fails 3 tests.
+
+## Finding 18 — `semanticType` was cast, not checked
+
+```ts
+layoutFields.semanticType = value as MetricPayload['semanticType'];   // before
+```
+
+`semanticType` is an enum, not a source column name, and the only validation was a
+TypeScript cast — which is erased at runtime and, in a function whose input arrived
+as JSON from a model, guarantees nothing. Measured:
+`"semanticType":"not-a-real-semantic-type"` parsed as `ok: true` and travelled into
+the IR, where the schema rejected the **whole signal**. One hallucinated enum
+member therefore discarded an otherwise valid record, and the reason named the
+payload rather than the field.
+
+The enum was an inline union inside `MetricPayload`, which is why no consumer could
+read it at runtime. That is what made the cast the only option available.
+
+**Fix**: `METRIC_SEMANTIC_TYPES` moves into `ir/types.ts` as an `as const` tuple
+with the type derived from it, matching `LOG_SEVERITIES`, `SPAN_STATUSES`,
+`SIGNAL_KINDS` and `FAULT_CATEGORIES`; the parser checks membership by name and
+rejects at the point it was read. An empty string is rejected too — it is not a
+member, and defaulting it would hide a missing field behind a plausible one.
+
+**Guard**: five cases covering the invalid value, the empty value, all six legal
+values, and the cross-kind case. Injecting the cast back fails 2 tests.
+
+## Finding 19 — An empty sample set validated as a pass
+
+```ts
+return { valid: reasons.length === 0, reasons };   // before
+```
+
+The replay over the source samples is the entire check
+`validateGeneratedLayout` performs. With `samples` empty the loop body never runs,
+no reason is pushed, and the function returns `{"valid":true}` — success reported
+for having had no input, which is the one result a guard must never produce.
+
+This is reachable in practice: the caller samples a source before mapping it, and a
+source whose sample window contains only blank rows yields no samples. The
+signature then reads as "this layout was verified", and the layout has been
+verified against nothing.
+
+**Fix**: report the missing evidence as a reason. It is pushed **after** the
+structural reasons, so a caller iterating on a layout is told what is wrong with
+the layout first and only then told that the evidence was absent.
+
+**Guard**: three cases, including one asserting the structural reasons survive
+alongside the new one. Injecting the unconditional return back fails 3 tests.
+
+## Finding 20 — The prompt never named the semantic-type vocabulary
+
+Found while building the guard for finding 18. The prompt printed the field list,
+and `semanticType` was in it, but the prompt never said the field's value had to
+come from a fixed set. So the one field the parser cannot accept by name was also
+the one field the prompt described only as a name:
+
+```
+IR fields for signal kind 'metric': timestamp, service, …, metricUnit, semanticType
+```
+
+A model asked to fill `semanticType` from that line has to guess whether it wants a
+column or a class, and if it guesses class, which classes exist. The prompt is the
+only place that can answer either question, and it answered neither.
+
+**Fix**: print the vocabulary beside the field, and only for signal kinds that
+have the field — asking a log layout for a semantic type would be a second defect
+in the same sentence.
+
+**Guard**: four cases, including one asserting the vocabulary does **not** appear
+for `log`. Injecting the sentence's removal fails 1 test; dropping the closed-list
+sentence fails 1 more.
+
+## Finding 21 — Only `content[0]` was read
+
+```ts
+const first = content[0] as Record<string, unknown>;
+const text = first.type === 'text' ? first.text : undefined;
+if (typeof text !== 'string') { throw ... }                    // before
+```
+
+Anthropic returns `content` as an array of typed blocks, and the completion is the
+concatenation of the `text` blocks. Reading only the first threw on any response
+that led with something else. Measured, for a leading `tool_use` block with a
+usable text block behind it:
+
+```
+THREW: Error: Anthropic response content has no string text
+```
+
+A leading `tool_use` or `thinking` block is not an edge case: it is what a server
+returns for a turn that used a tool or produced reasoning, and the answer was
+present in both.
+
+**Fix**: concatenate every text block. A non-text block is **skipped**, not
+rejected — it is a legitimate part of a response that simply carries no completion —
+and a text block with no usable string is skipped for the same reason.
+
+**Guard**: six cases across `test/anthropic.test.ts` (27 tests in the file).
+Injecting the first-block-only read back fails 6 tests.
+
+## Finding 22 — A completion split across blocks was truncated
+
+Found while building the guard for finding 21, and a separate defect with a
+separate fix: reading every block only helps if every block's text is used.
+
+Measured: `[{type:'text',text:'first'},{type:'text',text:'second'}]` returned
+`'first'`.
+
+For this module the consequence is worse than a short string. Every prompt it
+serves asks for JSON, so a truncated completion is not obviously truncated — it is
+a body that fails to parse, and the caller reports **"malformed JSON"**, blaming
+the model's formatting for a parser that discarded half its output. A diagnosis
+naming the wrong component is what makes this worth its own entry.
+
+**Fix**: join the parts. A whitespace-only result is not a completion, because a
+caller cannot act on it; surrounding whitespace on a non-blank completion is
+preserved, because trimming it would edit the model's answer.
+
+**Guard**: three cases (the join, the blank rejection, the preserved whitespace).
+Injecting the first-block-only read fails 6 tests; injecting the removal of the
+blank check fails 1.
+
+## Finding 23 — A null content block leaked a raw `TypeError`
+
+`content[0]` was dereferenced without a shape check. Every other malformed shape in
+this parser gets a named message — `is not valid JSON`, `is not a JSON object`,
+`has no content`, `content has no string text` — but a `null` element escaped as an
+internal error:
+
+```
+THREW: TypeError: Cannot read properties of null (reading 'type')
+```
+
+Measured for `{"content":[null]}`. The defect is not that it threw; it is *what* it
+threw. A `TypeError` names a JavaScript operation rather than a response shape, so
+an operator reading it learns nothing about which server sent what.
+
+A non-array `content` field was also collapsed into the empty-array case, so
+`{"content":"a plain string"}` and `{"content":[]}` produced the same message. They
+are different claims about different responses.
+
+**Fix**: check each block is an object and report its **position**; separate the
+non-array case from the empty case.
+
+**Guard**: four cases, one of which asserts explicitly that the thrown error is not
+a `TypeError`. Injecting the unchecked dereference back fails 2 tests; collapsing
+the non-array case back fails 1.
+
+## Finding 24 — `--cases` was checked for JSON-ness, not for the shape it feeds
+
+`--cases` is declared on two commands and means something different on each:
+
+| Command | Placeholder | Contract |
+| --- | --- | --- |
+| `evolve stale` | `<json>` | an inline JSON array of case descriptors |
+| `ingest` | `<file>` | the path to a JSON file holding them |
+
+The defect is on `evolve stale`, where `runEvolveStale` consumes the value by
+calling `.map` and the parser checked only that the text parsed as JSON.
+
+```
+$ rca-bench evolve stale --input p.json --cases '{"not":"array"}'
+ok: true                          # parser's verdict
+--cases must be a JSON array      # runEvolveStale, after the command started
+```
+
+Two modules were enforcing two halves of one contract: the parser said the value
+was valid, the consumer said it was not, and the caller learned which from an
+error raised mid-command. A caller that validates its own input before invoking
+cannot reproduce the parser's verdict either, because that verdict was not about
+the thing it needed.
+
+The first draft of this finding claimed the defect was on `ingest` and cited
+`ingest --cases '{"not":"array"}'`. A probe refuted it: that argv is accepted,
+and it *should* be, because on `ingest` the value is a file name and a file may
+legitimately be called `{"not":"array"}`. **A criterion refuted by measurement is
+more dangerous than no criterion** — it invites someone to "fix" correct
+behaviour. The finding and its acceptance criteria are now stated per command.
+
+**Fix**: `parseJsonArray`, applied to the flag whose placeholder says `<json>`.
+Every JSON flag that feeds an array names that shape at the boundary, and no flag
+whose value is a path is parsed as JSON.
+
+**Guard**: `a JSON flag must be the shape its consumer needs`, which loops
+`evolve stale` over five non-array JSON values, plus a case asserting that
+`ingest --cases` still treats its value as a file name. Injecting the JSON-only
+check back fails 1 test.
+
+## Finding 25 — `--anchors` checked the outer object, not its entries
+
+`--anchors` is a claim that specific files were verified against committed
+SHA-256 hashes. `readAnchors` verified only that the value was a JSON object.
+
+```
+$ rca-bench score --target rcaeval-re2 --dir d --anchors '{"a.txt":123}'
+ok: true                          # a number can never equal a hex digest
+$ rca-bench score --target rcaeval-re2 --dir d --anchors '{"a.txt":"abc123"}'
+ok: true                          # six characters, not a SHA-256
+$ rca-bench score --target rcaeval-re2 --dir d --anchors '{"":""}'
+ok: true                          # an entry naming no file
+```
+
+Each of these is worse than a plain validation gap, because the comparison can
+only ever fail. A number never equals a digest, so the hash check reports a
+mismatch; and a mismatch is exactly what a tampered file produces. The flag
+exists to make "these bytes are verified" trustworthy, and it was accepting input
+for which the answer is always "not verified" — indistinguishable from real
+corruption. An entry with an empty file name is the same error: it asserts a
+verification of nothing.
+
+**Fix**: each entry must be a non-blank file name paired with a 64-character hex
+string; `SHA256_HEX` names that shape once.
+
+**Guard**: three cases, one per rejected shape. Injecting the outer-object-only
+check back fails 2 tests, loosening the digest pattern to `[0-9a-fA-F]+` fails 1,
+and re-accepting the empty object fails 1.
+
+## Finding 26 — `--assume-offset-minutes` was any finite number
+
+The flag overrides the offset applied when a timestamp carries no zone. It was
+validated with `Number.isFinite`.
+
+```
+$ rca-bench source --path f.csv --assume-offset-minutes 1e21
+ok: true                          # parser's verdict
+RangeError: Invalid time value    # core, from inside Date.toISOString()
+```
+
+A number the parser accepts and core cannot honour is a validation gap, not a
+caller error. The caller sees a `RangeError` naming a JavaScript `Date`
+operation, which describes nothing about the flag; the actual mistake — an
+offset no timezone has, or no real number at all — is not in the message. The
+same field also accepted `5.5` minutes and `9007199254740992`, the latter because
+`Number.isFinite` is true for it and it is not the literal that was typed.
+
+**Fix**: `parseInteger('assume-offset-minutes', …, -720, 840)`. UTC-12:00 and
+UTC+14:00 are the real extremes; anything outside them cannot describe a zone,
+and a fractional minute is not one either.
+
+**Guard**: four cases: an unusable magnitude, a fractional value, a value
+outside the representable UTC range, and — the other direction — every real
+offset including both extremes. Injecting the finite-only check back fails 3
+tests; dropping the range while keeping the integer check fails 5.
+
+## Finding 27 — The window flags used `/^\d+$/` and `Number()`
+
+`--lead-ms` and `--lag-ms` size the observation window around an injection. They
+were checked with a digit pattern and converted with `Number()`.
+
+```
+$ rca-bench ingest --source d --target rcaeval --cases c.json \
+    --lead-ms 99999999999999999999
+ok: true, leadMs: 100000000000000000000
+```
+
+This is the worst shape a defect can take in a parser: **it does not throw.**
+`/^\d+$/` accepts any number of digits, `Number()` rounds the 20-digit literal to
+`1e20` without complaint, and `1e20` milliseconds is about three billion years.
+Nothing downstream rejects it either — the window is simply used, and every
+signal in the slice is included. A caller who typed twenty digits meant a
+number the flag cannot hold; silently substituting a different one is the failure
+mode this whole pass exists to eliminate.
+
+**Fix**: the window flags go through the same `parseInteger` as the offset, with
+`MAX_WINDOW_MS` (one day) as the ceiling. The round trip `String(n) === text` is
+what makes the precision loss observable: without it, `Number.isSafeInteger` is
+false for `1e20` and true for `1e15`, and a 16-digit literal that rounds would
+still pass.
+
+**Guard**: five cases, including the acceptance boundary at exactly one day.
+Reverting to the digit pattern fails 3 tests. Dropping the round trip fails
+**0** — and that is a finding, not a gap in the guards: see "A check the matrix
+proved is redundant, kept on purpose" above.
+
+## Finding 28 — A path flag rejected `''` but not `'   '`
+
+```
+$ rca-bench source --path "   "
+ok: true, path: "   "             # then: ENOENT, no such file or directory
+```
+
+An empty string was already refused. Three spaces are the same mistake typed
+differently, and the difference the caller sees is not a message about the flag
+but an `ENOENT` naming a file that looks empty in the terminal. Every path flag
+in the table had the identical gap, because they shared one reader.
+
+**Fix**: `asNonBlank` tests blankness **after** trimming and returns `undefined`
+for absent versus `null` for blank, so a caller distinguishes "not given" from
+"given something unusable" and reports the right one. Applied to every path flag
+— `source`, `export`, `score`, `transform`, `case`, `gate`, `report`, `pack`,
+`ingest` and the four `evolve` actions.
+
+**Guard**: a per-command sweep plus a case asserting that *meaningful*
+surrounding whitespace is stripped rather than rejected, and one asserting an
+internal space is preserved. Injecting the untrimmed comparison back fails 5
+tests; removing the blankness test entirely fails 7.
+
+## Finding 29 — `caseDirName` deleted the hyphens, so the round trip read a path that cannot exist
+
+```
+$ node -e "console.log(caseDirName('ts-order-service','cpu'))"
+tsorderservice-cpu          # RCAEval publishes dataset/ts-order-service-cpu_1/
+```
+
+`caseDirName` exists to build the directory name RCAEval uses, and it stripped every
+character outside `[A-Za-z0-9_]` — which is what a slugifier does. Component names in
+all three systems are hyphenated: `ts-order-service`, `adservice`, `checkoutservice`,
+`ts-travel-service`. The function therefore produced a name for a directory that
+upstream does not publish.
+
+Nothing detected it for as long as the only consumers were our own exporter and our
+own verifier, because both call `caseDirName` and both compare the results to each
+other. The defect lived in the shape of the **agreement**, not in either side of it:
+two functions that share one naming rule cannot disagree about it. It became
+observable the moment a real path entered the picture — `check-official.mjs
+--official-dir` reads a directory the operator did not name, and the round trip
+failed on a missing path rather than on a wrong number.
+
+**Fix**: preserve the hyphen; the pattern is a pass-through for the characters
+upstream uses rather than a replacement set for the ones it does not.
+
+**Guard**: a case per system asserting the exact upstream directory name for a
+hyphenated component, plus a case asserting a genuinely illegal character is still
+removed — so the fix is not "delete the check". Reverting to the stripping pattern
+fails 4 tests.
+
+This finding is why the fourth anchor is not redundant with the first three. An
+anchor-1..3 failure is a bug in one function; an anchor-4 failure can be a bug in
+the *contract between* functions, which no amount of internal consistency can
+reveal.
+
+## Finding 30 — An unconditional `unzip` blamed the archive format for a CSV
+
+The fetch path extracted every asset as an archive, because the corpora are
+archives. Two registry entries are not: `rcaeval-baro-simple` is a bare
+`simple_data.csv`, and its `extractsTo` is `null` — a field that already said so and
+was read by nothing.
+
+Measured on that asset, the failure was `unzip: cannot find zipfile directory in …
+simple_data.csv`, and the message named neither the asset id nor the reason. The
+operator's next move is to suspect a corrupt download and re-fetch a file that was
+never an archive.
+
+An `extractsTo: null` that nothing consults is the same class of defect as findings
+24 and 25: a field that records a fact and does not enforce it.
+
+**Fix**: the archive step runs only when the registry says the asset extracts, and a
+non-archive asset is moved into place under the name the registry gives it. The
+error for a genuinely corrupt archive now names the asset id.
+
+**Guard**: one case per registry shape, driving the real script against a local
+server; and a registry-wide case asserting that every entry with `extractsTo: null`
+is treated as a file while every entry with a value is treated as an archive.
+Ignoring `extractsTo` again fails 2 tests.
+
+## Finding 31 — The generator swallowed its own warnings when it found nothing
+
+```
+$ node scripts/gen-rcaeval-cases.mjs --official-dir corpus --out cases.json
+# exit 0, empty cases.json, and no output at all
+```
+
+The generator warned per skipped case — a directory with no `inject_time.txt`, an
+unparseable directory name — and printed the collected warnings only on the branch
+that had also found cases. A corpus where *every* case was skipped therefore
+produced an empty descriptor file, no diagnostics, and a zero exit, which is
+indistinguishable from a corpus that legitimately contains nothing to report.
+
+That is the worst possible shape for this particular tool: its output feeds the round
+trip, so an empty descriptor set silently turns the check into a no-op. A check that
+has nothing to check must not report success by saying nothing.
+
+**Fix**: warnings are emitted before the empty-result decision, and finding zero
+cases is itself an error naming the path and the reason. `--check` mode reports a
+descriptor file that disagrees with the corpus as a failure rather than a diff to
+eyeball.
+
+**Guard**: cases for the all-skipped corpus, the partly-skipped corpus, and the
+`--check` agreement path. Moving the warning print back below the early return fails
+2 tests.
+
+The instrument-defect rule from pass 2 applies directly here: this defect was found
+*because* a test asserted on stderr, and that test could only see stderr once it
+stopped using `execFileSync`. The instrument was fixed and the defect it was pointing
+at became visible in the same change.
+
+## Finding 32 — The test fixture was malformed exactly where the script was suspected
+
+The fetch test built a synthetic archive in-process to avoid a network dependency.
+`unzip` rejected it four times, and each rejection was initially read as a defect in
+`fetch-official.mjs`:
+
+```
+End-of-central-directory signature not found
+invalid zip file with overlapped components (possible zip bomb)
+The value of "value" is out of range. Received -2119958528
+```
+
+The last three were all the fixture, and the second is worth recording by name: the
+central directory's field offsets are **not** the local header's. The local header
+runs `[signature, version-needed, flags, method]`; the central directory runs
+`[signature, version-made-by, version-needed, flags, method]`, one field later. The
+fixture wrote the local layout into both, so `unzip` read `version = 0` from the
+central directory and, among other things, dropped the directory prefix from the
+entry name — producing a fixture that could not represent the layout the script under
+test was written to handle.
+
+The third rejection was a separate mistake of the same kind: a Unix mode written as
+`0o100644 << 16` overflows into the sign bit and must be coerced with `>>> 0`.
+
+**Fix**: the fixture writes a single entry with the full path `dataset/case/metrics.json`
+and the correct layout in each header, and `execFileSync` was replaced with
+`spawnSync` (see finding 31) so a *successful* extraction can be read back.
+
+**Guard**: the fixture now has its own tests, which run the system `unzip` against it
+and assert the extracted path and contents. This is the point — a fixture with no
+test of its own can be wrong in a way that presents as a bug in the code it feeds,
+and the debugging cost lands on the wrong file.
+
+## Finding 33 — A byte count was recorded without a digest, and the fetch would have enforced it
+
+```
+$ node scripts/check-official-registry.mjs
+check-official-registry: FAILED
+  asset 'rcaeval-baro-simple' records bytes without sha256.
+```
+
+`rcaeval-baro-simple` carried `bytes: 570409` beside `sha256: null`. The number was
+a placeholder written when the registry was first authored, and it is the most
+dangerous shape a pin can take, for two reasons that compound:
+
+- `bytes` is *enforced* by `fetch-official.mjs` — `if (asset.bytes !== null && bytes !== asset.bytes) fail(...)`.
+  A digit typed wrong here does not sit quietly, it fails every fetch of that asset
+  with a message saying the download is the wrong size.
+- `sha256` is the field that would have caught the mistake, and it was `null`, so
+  nothing cross-checked the number.
+
+The registry guard was built in the same pass and found this on its first run
+against the shipped file. That is the intended relationship between a guard and the
+thing it guards: a check that has never failed is a check nobody has verified.
+
+**Fix**: both fields go to `null` together. The measured values arrive from a fetch
+that actually ran, which is what `--report-pins` and `apply-pins.mjs` now carry.
+
+**Guard**: `scripts/check-official-registry.mjs` fails when exactly one of the pair
+is recorded, and it runs in `pnpm lint` on every push.
+
+## Finding 34 — The registry named a cross-repository cache read that cannot work
+
+The `notFetchable` entry for OpenRCA 1.0 offered, as its alternative to fetching,
+"reach it through the AgentiX-E/openrca-* shard repositories instead, which already
+cache it on a runner". Both halves of that sentence are false, and they were
+measured:
+
+```
+$ for r in openrca-{telecom,bank,market}-{dates-early,dates-late,cloudbed-1,cloudbed-2}; do
+    gh api /repos/AgentiX-E/$r/actions/caches --jq .total_count
+  done
+0 0 0 0 0 0
+```
+
+- **The caches do not exist.** All six shards report `total_count: 0`. Their last
+  successful `cache-dataset.yml` run was 2026-08-02, and Actions caches expire after
+  30 days of no access.
+- **And they would not have been readable anyway.** A GitHub Actions cache is scoped
+  to the repository that wrote it. `actions/cache` resolves a key against the calling
+  repository's cache scope, so a cache written by `openrca-telecom-dates-early` is
+  invisible to `rca-bench-factory` even while it exists and is fresh.
+
+The second fact is the one that matters, because it is not a matter of waiting for
+the cache to be repopulated: the mechanism was wrong, not merely empty. A round trip
+built on it would have reported "no data" — a state this project has repeatedly
+treated as meaning *the corpus is not there* rather than *we looked in the wrong
+place*.
+
+What is true is that the shards are the right place to *perform* the download: they
+already read the Google Drive folder with `gdown` and filter it by date, which is
+what makes the OpenRCA telemetry obtainable at all. What is not true is that they are
+a source this repository can read. Making them one means having them publish an
+artifact instead of populating a cache, which is a change in those repositories.
+
+**Fix**: the entry now says what was measured — that the route does not work, why it
+does not work, and what the shards are actually good for.
+
+**Guard**: there is none, and that is stated rather than implied. Cross-repository
+cache liveness is not decidable from this repository's working tree, so no local
+check can assert it; the `--check` mode in `official-data.yml` covers only the assets
+this repository fetches itself. The entry is prose that a reader has to evaluate, and
+the honest thing is to say so instead of leaving a fabricated alternative in a
+machine-readable field.
+
+## Finding 35 — A retraction: the backoff guard was accused of a defect it did not have
+
+This finding was **withdrawn after measurement**, and it is recorded rather than
+deleted because the first version of it was written with confidence, was wrong, and
+the way it was wrong is the failure mode this document exists to catch.
+
+The observation was real. The failure path of `fetch-official.mjs` was timed rather
+than read, and it did this:
+
+```
+$ time RCA_BENCH_FETCH_BACKOFF=0 node scripts/fetch-official.mjs --anchor rcaeval-re2 \
+      --out /tmp/bo --registry /tmp/registry-probe.json
+RETRYING  probe: attempt 1/3 after 3.0s: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms
+RETRYING  probe: attempt 2/3 after 3.0s: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms
+SKIPPED   probe: attempt 3/3 after 3.0s: curl: (7) Failed to connect to 127.0.0.1 port 9 after 0 ms
+
+0.05s user 0.03s system 0% cpu 9.074 total
+```
+
+The connection was refused in **zero milliseconds** and the command took **9.074
+seconds**. The backoff override was set, and 6 of those seconds were spent waiting.
+
+The inference was wrong. `2 ** attempt * 1000 * BACKOFF` and
+`BACKOFF === 0 ? 0 : 2 ** attempt * 1000 * BACKOFF` are **equivalent** — `0` times
+any factor is already `0`, so the ternary changed nothing and the blame was misplaced:
+
+```
+$ node -e "const B=0; const a=2; console.log(2**a*1000*B, B===0?0:2**a*1000*B)"
+0 0
+```
+
+Injecting the guard back — the check that would have caught this before the finding
+was written — turns no test red, because there is nothing to catch. The 9 seconds came
+entirely from `--retry-connrefused`, which **this pass had added to the curl
+invocation minutes earlier** (see finding 36).
+
+The method failure is worth naming precisely, because it is new to this audit. Every
+previous finding was found by running a probe and reading the number, and the rule
+that worked was "do not trust the reading of the code". This finding was produced by
+running the same kind of probe and then *attributing* the number to the nearest
+suspicious-looking code, which is the reading of the code wearing the probe's
+authority. The number was measured; the cause was assumed. The check that separates
+them is cheap and was skipped: **remove the suspected cause and see whether the number
+returns.** Restoring the ternary moved 9.074s to 9.075s, and removing
+`--retry-connrefused` moved it to 0.067s.
+
+**Fix**: the ternary is gone, as dead weight rather than as a defect, and the comment
+at that line says so and points at the real cause. The test written for this finding
+is kept, with its comment rewritten to say what it does and does not establish, since
+the property it asserts — that the override is honoured — was genuinely asserted
+nowhere before.
+
+## Finding 36 — Two retry mechanisms multiplied, and the elapsed time measured the wrong one
+
+The same probe that produced finding 35 reported `after 3.0s` for a connection
+refused in 0 ms, and this is where the three seconds and the six seconds of waiting
+actually came from. `--retry 2` was in the original argument list, and this pass had
+added `--retry-connrefused` alongside it on the reasoning that the outer loop should
+own the retries and curl should repeat only the transport-level ones. That is exactly
+backwards. `--retry-connrefused` implies its own retry count, so a refused connection
+was attempted by curl three times and by the loop three times — nine requests for
+three reported attempts — and the elapsed time recorded curl's internal backoff as
+though it were the duration of the transfer.
+
+Measured by removal, which is the check that would have saved finding 35:
+
+| curl arguments | `BACKOFF=0`, connection refused in 0 ms |
+| --- | --- |
+| `--retry 2 --retry-connrefused` | **9.075s**, each attempt `after 3.0s` |
+| `--retry 2` | **0.063s**, each attempt `after 0.0s` |
+| neither | **0.067s**, each attempt `after 0.0s` |
+
+The middle row is the one that identifies the cause: `--retry 2` on its own does not
+retry a refused connection — curl only repeats that class when asked to — so it is
+`--retry-connrefused`, and only that flag, that produced the delay and the invented
+duration.
+
+This matters beyond the six seconds, because the elapsed time is the *entire*
+diagnostic on that line. It is the one fact that separates "the URL is not answered"
+from "the transfer started and died", and those two have opposite fixes. A number that
+measures something else is worse than no number, because it is still read as a
+measurement.
+
+**Fix**: `--retry` is dropped rather than narrowed. One curl invocation is one
+attempt, so the number on the line is the time that attempt really took. The loop
+retries and only the loop does; each attempt is now named with its number, its
+duration and curl's message, so a three-attempt failure shows whether all three burned
+the same time — which is what distinguishes a transfer dying partway from a host that
+never answered.
+
+**Guard**: two tests, and their fixture had to change for them to be worth anything.
+The first version pointed both at the fixture's socket-destroying route and passed
+with the defect injected — because that route produces curl's exit code **52**, and
+`--retry-connrefused` repeats only code **7**. A server cannot produce code 7, since
+the failure is that no server exists, so the fixture now binds a port, releases it,
+and uses the dead port as the URL. With the flag injected the two tests fail at
+9.08s each — the defect's own signature — and against the fix they pass at 1.1s
+combined. Without that fixture change the regression would have been unreachable and
+the tests would have been theatre.
+
+## Finding 37 — `--fail` collapses every HTTP error into one exit code, so the classifier could not tell a 404 from a 500
+
+The first version of `classifyFailure` keyed on curl's exit status. Measured against
+a local server that returns each status in turn:
+
+```
+status 404 -> exit 22 | stderr: "curl: (22) The requested URL returned error: 404"
+status 500 -> exit 22 | stderr: "curl: (22) The requested URL returned error: 500"
+status 503 -> exit 22 | stderr: "curl: (22) The requested URL returned error: 503"
+```
+
+Identical exit codes. `--fail` maps the whole 4xx and 5xx range onto 22, so a
+classifier reading the code cannot separate the two failure classes an operator is
+choosing between: *the asset moved, edit the registry* and *the server is unwell,
+retry*. The only place the HTTP status appears is curl's message text.
+
+A test caught this rather than the reading, and only because the fixture serves both
+statuses. The test asserting that a 5xx is not classified as a stale URL failed with
+`curl: (22) The requested URL returned error: 500` classified as "the asset is not at
+this URL any more" — a confident instruction to edit a URL that is correct.
+
+Two further corrections came from the same round of measuring:
+
+- **`curl: (7)` is not what a mid-request reset looks like.** The fixture destroys
+  the socket, which curl reports as code **52**, "Empty reply from server". Code 7 is
+  a connection refused outright. Both mean no bytes moved and they are named
+  separately, because one means nothing is listening and the other means something is
+  listening and refusing to serve.
+- **The exit status is not spelled `exited 7`.** curl prints `curl: (7)`, so a rule
+  matching only the shell's phrasing matched nothing the real tool emits. Both
+  spellings are accepted now.
+
+**Fix**: the HTTP status is parsed out of the message and checked before the transport
+codes. `--fail` is still in place — it is what makes a 4xx an error at all — but
+nothing downstream reads its exit code as though it identified the response.
+
+**Guard**: the 404 case and the 500 case assert opposite classifications against one
+fixture, so collapsing the two fails one of them. The 500 case is the one that fails
+loudest, since it is the direction that tells an operator to edit a URL that is
+correct.
+
+## Finding 38 — The corpus summary counted directories under the word "file"
+
+`check-official.mjs` printed one number for the corpus it read:
+
+```
+ROUNDTRIP declared 1 case(s), found 2 file(s)
+```
+
+`readTree` returned a flat `path -> text` map of files, and the line counted
+`Object.keys(files).length`. That was correct — and it was only correct because
+nothing had ever asked it to count a directory. This pass needed a directory count so
+that a corpus which extracted to the wrong depth can be told from one that never
+arrived, and adding the count to the same number is what the line's own label already
+invited: the reader is told `file(s)` and the value would have been files plus
+directories, moving whenever the archive layout changed.
+
+The two numbers answer different questions and one is not derivable from the other. A
+download that unpacked a level too deep has both, under a different root. One that
+unpacked a level too shallow has directories and no files. The existing test asserted
+`/found \d+ file/`, which matches any number and cannot distinguish the two
+implementations — so it would have passed either way.
+
+**Fix**: `readTree` returns `{ files, directories }`, and the summary names both.
+`--official-dir`'s own root is not counted, because it is the argument the caller
+passed rather than something the download produced.
+
+**Guard**: the new test asserts the exact values — `/found 2 file\(s\)/` and
+`/, 1 directory\(ies\)/` for a one-case corpus — rather than the presence of a number.
+
+## Finding 39 — A 2.8 GB download was verified with a function that cannot read above 2 GiB
+
+The fourth anchor's first *successful* fetch, run `35482150957` on `07a0001f`, died
+here:
+
+```
+RangeError [ERR_FS_FILE_TOO_LARGE]: File size (2801345134) is greater than 2 GiB
+    at tryCreateBuffer (node:fs:402:13)
+    at readFileSync (node:fs:455:14)
+    at sha256Of (.../scripts/fetch-official.mjs:277:38)
+    at fetchAsset (.../scripts/fetch-official.mjs:338:18)
+```
+
+Two assets had already been measured clean:
+
+```
+UNPINNED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36c...7513
+UNPINNED  rcaeval-re2-ss: bytes=245629018  sha256=7aff9a3a...e295
+```
+
+Both are under 2 GiB. `RE2-TT.zip` is 2 801 345 134 bytes and is not, so the
+third asset reached a limit that the first two could never have revealed. The
+download itself had worked — the file on disk was the right file — and the
+*verification* of it was what could not handle the size. That distinction is the
+whole finding: `sha256Of` was `readFileSync`, which materialises the file, and a
+function whose input is "a file we just downloaded from a corpus host" cannot
+assume the file fits in a `Buffer`.
+
+This also explains the *first* failure, run `35480663989` on `98fdf601`, which
+took 12.35 minutes and reported nothing: the two smaller archives download in
+about 3 minutes between them and the third spends the rest. The 12.35 minutes was
+never evidence of unreachability — it was a large file being transferred
+successfully and then refused by its own verifier.
+
+**Fix:** digest off the stream, in 8 MiB chunks (`createReadStream` +
+`for await`), so the ceiling is structural rather than raised. There is no buffer
+the size of the file, so there is no size the file can be. The `for await` form is
+deliberate: an 'error' event on a stream nobody is listening to is a hang, and the
+form that rejects is the form that reports.
+
+**Test:** `digests a download larger than 2 GiB instead of failing on the file
+size`. It streams 2 GiB + 1 byte over loopback — the smallest input that still
+reproduces the production failure, not a stress test — and asserts the digest and
+byte count both come back, plus that the file on disk is exactly that many bytes.
+The fixture never allocates the body: it writes fixed 4 MiB chunks and re-enters
+the pump on `drain`.
+
+The fixture had this defect itself first, and it is worth recording because it is
+the same defect one level down. The first version returned from the pump when
+`res.write` signalled backpressure instead of resuming on `drain`, so the server
+sent 4 MB of a 2 GiB body and then ended the response. The download succeeded, was
+short, and *both digests agreed* — with each other and with a wrong number. The
+test's byte-count assertion is what would have caught it, and only because it
+pins the exact value rather than the shape.
+
+**Injection:** restoring `readFileSync` turns the test red with the original
+`ERR_FS_FILE_TOO_LARGE` and the original 2147483649.
+
+**Verified at the failing size.** The unit test uses 2 GiB + 1 because that is the
+smallest input that reproduces the failure; the asset that actually failed is
+2 801 345 134 bytes. The same streamed digest was run against a file of exactly that
+size under a 192 MiB heap cap:
+
+```
+file bytes   : 2801345134
+shipped      : 282d6ed7b0a03b3ba95893d22e0abc9ee9773838aa85022a3eb4ddcd8486a2c7
+independent  : 282d6ed7b0a03b3ba95893d22e0abc9ee9773838aa85022a3eb4ddcd8486a2c7
+MATCH        : true
+peak rss     : 126 MiB
+```
+
+The independent value comes from a separate process with a different chunk size
+(1 MiB against the shipped 8 MiB), so the agreement is about the file rather than
+about a shared constant. The heap cap is the load-bearing part: the old
+implementation could not have produced any number here at all, and the new one
+produces the right one while using 126 MiB. That is the difference between raising
+a ceiling and removing it.
+
+## Finding 40 — A retraction: the partial run did write its report, and the discarding happened elsewhere
+
+I claimed, from the same run's log tail, that `RE2-OB` and `RE2-SS` — both measured
+clean — were printed and then thrown away because the process exited non-zero. I
+wrote that from the fetch step's failure and the `Compare the measured pins` step's
+`no pin report was written; the fetch did not complete` line, both of which are
+real. The inference between them is not, and this is the second time in two passes
+that I have attributed a number to the nearest suspicious code instead of measuring.
+
+Measured, with a registry holding one reachable and one 500-answering asset:
+
+```
+EXIT: 1
+REPORT EXISTS: true
+REPORT ASSETS: [{"id":"b-live","url":"...","bytes":19,"sha256":"7bce5166..."}]
+STDERR: 1 of 2 asset(s) could not be reached. ...
+```
+
+The report is written. `--report-pins` runs *before* the exit code is decided, which
+the caller's own comment says, and the code does what the comment says. A partial
+run has always produced a complete file for every asset it measured.
+
+The real cause is narrower and I had the mechanism wrong in both directions. Node's
+stack overflow did `process.exit(1)` **immediately from inside `fetchAsset`**, before
+the loop reached `RE2-OB`'s report write... except `RE2-OB` and `RE2-SS` were written
+in order, and `RE2-TT` was third — so the report for the first two was never reached
+because the process died in the middle of building `results`, not after it. The
+report is written once, after the loop over all assets, and a hard death inside that
+loop loses everything before it.
+
+So the *defect* I described — "a run that cannot finish discards the part it did
+finish" — is real, and the location is different from where I put it. The report is
+not written and then suppressed by an exit code. It is not written at all, because
+writing it is a single act after all the fetching, and a crash inside the fetching
+means there is no after.
+
+That is worth fixing for the reason I gave, and the fix is at the layer I named second:
+measure incrementally. But the finding as first written describes a code path that
+does not exist, and a report that keeps a wrong mechanism next to a right conclusion
+is worse than one that is merely terse — the next reader would go looking for an
+exit-code problem in a script that does not have one.
+
+**What is established:** the digest ceiling (finding 39) is the whole of the observed
+failure. Everything else in the run's log follows from it.
+
+**What is not established:** that the pins were recoverable from this run. They were
+not, and the reason is process death mid-loop rather than a wrong exit code.
+
+**Retained from the original finding, now separated from the false claim:** a long
+fetch should write what it has measured as it goes, because the crash that motivated
+this pass is exactly the class of failure that a single write-at-the-end cannot
+survive. That is a design change and is listed as such in `docs/progress.md`, not
+presented here as a repair of a defect that was observed.
+
+## Finding 41 — Every fixture was smaller than one digest chunk, so the digest could have covered a prefix
+
+Found by injection, not by reading. Replacing the chunked digest with
+`hash.update(chunk); break;` — a digest of the first 8 MiB of the file — left all
+30 tests green.
+
+Measured, on a 40 MiB body:
+
+```
+injected:  UNPINNED  big: bytes=41943040 sha256=042e995365a46153f8d3a1327d986e2fec93554ed9d6b8126cecc7965ecf3be6
+restored:  UNPINNED  big: bytes=41943040 sha256=b0e8b99ffb4175ecd69a767e8e4e4c35df2b6d09246fcb67bc4f3a8d9abb2dc3
+```
+
+Two different numbers, an identical `bytes=` on both lines, and a green suite.
+
+The cause is the fixture population, and it is worth stating as a general rule
+because it is not specific to this function: **every fixture in the file was a few
+dozen bytes, so "the whole file" and "the first chunk" were the same bytes.** The
+suite could not distinguish the two implementations because it never presented an
+input where they differ. The 2 GiB test added in finding 39 does go past one chunk
+— but it only asserts that the digest is 64 hex characters and that the byte count
+is right, and a truncated digest is still 64 hex characters. `bytes=` comes from
+`statSync`, not from the hash, so it cannot see this either.
+
+This is the failure mode the pin exists to prevent, arriving from the inside. The
+digest is the *only* thing `golden-master/official-assets.json` records. A pin
+covering a prefix is not a slightly wrong number; it is a number that verifies
+nothing while being recorded as though it verified something, and a subsequent run
+would download a substituted file and report `VERIFIED`.
+
+**Fix:** a `/chunked` fixture of 3 × 8 MiB + 1 bytes of *non-uniform* content, and a
+test that asserts the reported digest equals an in-process hash of the same buffer.
+The size is chosen against the chunk boundary: over one chunk so "first chunk" is
+unambiguously wrong, and not a whole multiple of it so a one-chunk-short read also
+disagrees. The content is a byte counter rather than a repeated byte, because a
+uniform buffer makes "first chunk" and "whole file" differ only in length and a
+defect hashing a fixed-size prefix of the right length would still agree.
+
+**Injections, both now caught:** `break` after the first `hash.update` (digest of
+the first chunk), and an `end:` bound of two chunks (digest of a prefix). Before
+this finding, the first of those was caught by nothing.
+
+### A note on which fixture sizes this file now needs
+
+Three sizes, each earning its place:
+
+| fixture | size | the only thing it can catch |
+| --- | --- | --- |
+| `PAYLOAD` | 27 B | everything about parsing and pinning |
+| `/chunked` | 24 MiB + 1 | a digest that stops before the end of the file |
+| `/huge` | 2 GiB + 1 | a digest that cannot read past Node's 2 GiB ceiling |
+
+The middle one is new and exists because the two outside it are silent about it.
+That is the shape of the gap: not a missing assertion, but a missing *input*.
+
+---
+
+## Finding 42 — The corpus layout was assumed rather than read, and the assumption came from our own exporter
+
+Found by the third real run, at the step after the fetch. The fetch itself passed
+— finding 39's fix held, all three assets downloaded and digested — and the job
+then failed on:
+
+```
+error: no RCAEval case directories found under '/tmp/official'. Expected names of
+the form {RE1|RE2|RE3}-{service}-{fault}_{instance} each holding inject_time.txt.
+```
+
+over a tree that plainly held the corpus.
+
+### What was wrong
+
+`parseRcaEvalDirectory` parsed `^(RE[123])-(.*)-([A-Za-z0-9]+)_(\d+)$`, and
+`gen-rcaeval-cases.mjs` walked the tree testing each *directory name* against it.
+The corpus contains no such name at any level. Its real layout is nested:
+
+```text
+{suite}-{system}/{service}_{fault}/{run}/inject_time.txt
+  e.g. RE2-OB/checkoutservice_cpu/1/
+```
+
+so a case is three path components and no single component carries it. Every layer
+was tested against the regex and none matched:
+
+```
+RE2-OB                    -> no  (fused suite+system, not a flat case)
+checkoutservice_cpu       -> no  (service_fault, no suite prefix, no instance)
+1                         -> no  (bare run index)
+```
+
+### Why every in-repo check missed it
+
+**The pattern came from our own exporter.** `caseDirName` writes
+`RE2-{service}-{fault}_{instance}`, and `parseRcaEvalDirectory` read it back. The
+reader and the writer agreed with each other, and the unit tests exercised exactly
+that pair — so the suite was measuring self-consistency and calling it correctness.
+This is the same failure shape as finding 29 (where `caseDirName` stripped hyphens
+and `oraclePrediction` read the stripped name back), one level up: then the two
+sides shared a wrong alphabet, here they share a wrong *layout*.
+
+The documentation reinforced it rather than catching it. `docs/targets/rcaeval.md`
+described the layout in terms of what we emit, and the upstream README's
+`{benchmark}_{service}_{fault}_{instance}` line — which describes the HuggingFace
+Parquet copy's case **identifier**, not a path on disk — read as confirmation.
+
+### The evidence that settled it
+
+Two independent statements in upstream *code*, not prose. `main.py` finds the cases
+by globbing `**/data.csv` and reads the labels back out of the path:
+
+```python
+data_dir = dirname(data_path)                                       # …/{service}_{fault}/{run}
+service, metric = basename(dirname(dirname(data_path))).split("_")   # service, fault
+case = basename(dirname(data_path))                                  # {run}
+```
+
+and `docs/TORAI.md` prints the tree for the RE2 conversion, which is the same
+corpus re-exported:
+
+```text
+data/torai-OB/{service}_{fault_type}/{run}/inject_time.txt
+```
+
+Both agree, and both disagree with the assumption. The second is what makes the
+`{suite}-{system}` top level certain rather than inferred.
+
+### What was changed
+
+1. **`parseRcaEvalPath`** — a new parser for the nested layout, anchored on the
+   three components a case has. `parseRcaEvalDirectory` is kept unchanged and
+   separate: the flat name is still what we emit, and a single function that
+   guessed between two incompatible layouts would hide the next mismatch instead
+   of reporting it.
+2. **`readRcaEvalGroundTruth`** now tries both, because one file map can hold the
+   corpus *and* our own export. Reading only one layout makes the other silently
+   score zero cases, and zero cases is not an empty answer — it is a run
+   reporting success over data it never looked at.
+3. **`gen-rcaeval-cases.mjs`** now finds cases by the file only a case has
+   (`inject_time.txt`) and parses the path that file sits on, instead of testing
+   directory names. This also bounds the walk: the previous recursive descent was
+   unbounded, and since `{service}_{fault}` matched nothing it descended into real
+   cases looking for cases below them.
+4. **The suite counts** are rendered from what was found rather than from a
+   hard-coded `['RE1','RE2','RE3']`, which would have printed `RE1=0 RE2=0 RE3=0`
+   for an RE3 corpus while counting every case in it.
+
+### The service/fault split, and which side is allowed to be ambiguous
+
+The split is at the **last** underscore. This is a decision with a right answer, not
+a style choice: RE2's fault vocabulary is six single tokens (`cpu`, `mem`, `disk`,
+`delay`, `loss`, `socket`), while service names routinely contain underscores and
+hyphens. Splitting at the first underscore reads `ts-order-service_cpu` as service
+`ts-order` — not a service that exists — which is the same class of error as
+finding 29.
+
+The cost is stated rather than hidden: an underscore *inside* the fault would be
+read as part of the service. The corpus never produces one, and the test that
+covers this says so explicitly instead of implying the split is lossless.
+
+### The injection that found a second, larger gap
+
+Restoring the pre-fix reader —
+
+```ts
+const parsed = parseRcaEvalDirectory(dir);   // no parseRcaEvalPath attempt
+```
+
+— left **107 of 107 tests green**. The new parser had tests; the *reader that uses
+it* had none that presented it a corpus-shaped path. Every existing RCAEval
+ground-truth assertion fed the flat name our exporter writes, so the reader was
+only ever measured against its own writer's output — the same defect as the one
+being fixed, still present in the test population.
+
+Three tests were added:
+
+| test | what it pins |
+| --- | --- |
+| reads the corpus nested layout, not only the flat name it writes | the reader finds `RE2-OB/checkoutservice_cpu/1` at all |
+| keeps a hyphenated service intact when reading the nested layout | and reads `ts-order-service`, not `ts-order` |
+| reads both layouts from one file map | a map holding the corpus and our export scores both |
+
+All three go red under that injection; nothing else in the suite does.
+
+### Verification
+
+Fixtures rebuilt in the corpus's real layout, and the full chain run end to end
+against a corpus shaped like the download:
+
+```
+Wrote /tmp/realistic.json
+  108 case(s): RE1=0 RE2=108 RE3=0          # 90 RE2-OB + 18 RE2-TT, decoy __MACOSX ignored
+
+ROUNDTRIP declared 2 case(s), found 4 file(s), 4 directory(ies)
+ROUNDTRIP PASS   1/2 RE2-OB/checkoutservice_cpu/1  target=rcaeval-re2  oracle=1.00 signals=3600
+ROUNDTRIP PASS   2/2 RE2-OB/checkoutservice_cpu/2  target=rcaeval-re2  oracle=1.00 signals=3600
+ROUNDTRIP PASSED (2 case(s) round-tripped through the official layout)
+```
+
+Three injections, each confirmed to fail:
+
+| injection | caught by |
+| --- | --- |
+| walk accepts only run `1` | 4 case-derivation tests |
+| service/fault split at the first underscore | 1 parser test |
+| reader drops the nested parse | 3 reader tests (added for this) |
+
+### A note on what this cost
+
+Two runs were spent before this one on a fetch that was reported as a failure and
+was not; this run was spent on a step that failed for a reason the log stated
+plainly. The step message was correct, complete, and printed the expected pattern —
+which is why the useful response was to ask whether *the expectation* was right,
+not to widen the search. The answer was in upstream code, one `grep` away, and had
+been the whole time.
+
+## Finding 43 — The typecheck entry point required a build it did not perform
+
+**Defect.** The root `typecheck` script ran two `tsc --noEmit` invocations in
+sequence, core then cli. `packages/cli` imports `@rca-bench-factory/core`, which
+pnpm links to the core *package root*; resolution therefore goes through core's
+`exports` map to `dist/index.d.ts`. Core's `tsconfig` writes to `dist`, so on a
+check-out where no build had run that file does not exist.
+
+**Command that demonstrated it.**
+
+```
+$ rm -rf packages/core/dist packages/cli/dist
+$ pnpm typecheck
+src/run.ts(38,8): error TS2307: Cannot find module '@rca-bench-factory/core' ...
+src/run.ts(337,16): error TS18046: 'q' is of type 'unknown'.
+src/run.ts(441,44): error TS7006: Parameter 'target' implicitly has an 'any' type.
+src/run.ts(449,23): error TS7031: Binding element 'target' implicitly has an 'any' type.
+src/run.ts(673,70): error TS2366: Function lacks ending return statement ...
+Exit status 2
+```
+
+**Observed number.** 15 errors, all reported in `cli/src/run.ts`, none of which
+named core's missing `dist`.
+
+**Why CI never saw it.** `.github/workflows/ci.yml` orders the steps
+`Install → Build → Type-check`. By the time `Type-check` ran, `dist` existed, so
+the step was satisfied by the step before it. Every measurement the project had
+taken of this script was taken warm.
+
+**The failure mode, stated at the right level.** The messages point at a file the
+operator has not modified and describe types that are `unknown` only because the
+module they come from failed to resolve. The cause is one step earlier in a
+different package. A check whose verdict depends on what a previous command left
+on disk is not a check.
+
+**Fix.** A `pretypecheck` hook on the root package that builds core.
+
+```json
+"pretypecheck": "pnpm --filter @rca-bench-factory/core build",
+```
+
+`pnpm` runs `pre<script>` automatically, so every entry point — the script, a bare
+`pnpm run typecheck`, and CI's step — gets the precondition without any caller
+having to remember it. The alternative considered and rejected was a `paths`
+mapping in `cli/tsconfig.json` pointing at core's `src`: it would type-check cli
+against core's source while the build links against core's declarations, which is
+two answers to "what is core's public type" and the one that differs is the one
+that ships.
+
+**Guard.** `test/typecheck-entrypoint.test.ts` creates a detached git worktree,
+applies the working tree's diff into it, installs, removes both `dist` directories,
+and runs the real root script, requiring exit 0 and no `error TS` in the output.
+The worktree is deliberate: `rm -rf dist` in the developer's own tree would make
+the test destructive.
+
+**Injections.**
+
+| Injection | Tests that fail |
+| --- | --- |
+| `pretypecheck` hook removed from `package.json` | 2 |
+| NEGATIVE CONTROL — comment edit in the test file | 0 (stays green) |
+
+**Two corrections inside this finding, both worth recording.**
+
+The first version of the fixture ran the script in a worktree taken from `HEAD`,
+which executed the *previous commit's* `package.json`. It reported the injected
+precondition missing from a tree that had it. The fix is `git diff HEAD \| git
+apply`, and the lesson is that a test which reads history instead of the working
+tree inverts its own verdict.
+
+The first full run then reported the suite as failing while the file passed in
+isolation: vitest's five-second default timeout is shorter than one `pnpm install`
+plus one `pnpm typecheck`. Both assertions now carry an explicit 180-second budget.
+A green test that only passes when run alone is a statement about scheduling.
+
+## Finding 44 — Three reachable branch positions the coverage number did not include
+
+**Defect.** `progress.md` reported branches at 99.93%. The measurement was 99.86%.
+The gap was not a stale decimal: three branch positions in `parseRcaEvalPath`
+(`packages/core/src/score/official.ts`) were reachable by ordinary path strings and
+no test took them.
+
+**Command that demonstrated it.**
+
+```
+$ pnpm --filter @rca-bench-factory/core test:coverage
+All files  |  99.95 |  99.86 |  100 |  99.95 |
+ src/cli    |  100   |  99.72 |  100 |  100   | 194
+ src/score  |  99.79 |  99.55 |  100 |  99.79 | 1098-1100
+```
+
+Reading the raw coverage JSON rather than the summary line named the positions:
+
+```
+$ python3 -c "...coverage-final.json..."
+== packages/core/src/score/official.ts
+  line 454 type=branch counts=[0]   loc 454:26-454:43
+  line 456 type=branch counts=[0]   loc 456:61-456:78
+  line 1079 type=branch counts=[0]  loc 1079:2-1100:1
+```
+
+**Observed number.** 2977 of 2981 branch positions, 99.8656%.
+
+**Two measurement errors made on the way to this, both mine.**
+
+The first was reading `line 454` from the *summary's* uncovered-line column and
+concluding the position was inside `if (headMatch === null)`. It is — but I then
+concluded the two positions on line 456 were `underscore <= 0` and `underscore ===
+labelled.length - 1`, and wrote a test for each, and the coverage did not move to
+cover the first. The reason is that `if (A || B)` is compiled to positions per
+sub-expression, and `RE2-OB/_cpu/1` satisfies `A`, so `B` is never evaluated and
+the row stays at zero *while a test that looks like it covers it passes*. A
+disjunction whose left side is true on every input hides its right side from the
+instrument.
+
+The second was transcription: the summary column prints the line of the *statement*
+the branch belongs to, so `454` and `456` are not the lines I assumed. The
+authoritative view is `branchMap` in `coverage-final.json`, which carries
+`loc.start.column` and `loc.end.column` per position. Every conclusion in this
+finding comes from that view.
+
+**Fix.** Three tests in `test/official.test.ts`, one per position:
+
+| Position | Input | Test |
+| --- | --- | --- |
+| `headMatch === null` | `RE4-OB/checkoutservice_cpu/1` | rejects a suite the vocabulary does not name |
+| `headMatch === null`, no system | `RE2/checkoutservice_cpu/1` | rejects a head segment with no system at all |
+| `underscore === labelled.length - 1` | `RE2-OB/cpu_/1` | rejects a labelled segment that ends with the split underscore |
+| `underscore <= 0` | `RE2-OB/_cpu/1` | rejects a labelled segment that starts with the split underscore |
+
+**Guard.** The aggregate moved 99.86% → **99.93%**, which is the figure
+`progress.md` had been reporting all along. The document was not wrong about the
+target; it was wrong about the measurement having been taken.
+
+**Injections.**
+
+| Injection | Tests that fail |
+| --- | --- |
+| `if (headMatch === null) return undefined;` deleted | 2 |
+| the `underscore <= 0` half of the disjunction deleted | 1 |
+| the `underscore === labelled.length - 1` half deleted | 1 |
+| NEGATIVE CONTROL — comment edit above `parseRcaEvalPath` | 0 (stays green) |
+
+**Retraction of a count, not of a conclusion.** `progress.md` said the residual was
+"two statements and two branches". v8 counts a branch *position* — one record per
+outcome of a conditional — and the two `never` guards alone account for three, so
+the enumeration was a list of *sites* quoted against a figure the tool derives from
+*positions*. The revised text gives both and states which is which. No guard was
+changed: both remain compile-time backstops, and the argument for keeping them is
+the one already recorded in `acceptance.md` §2.39.
+
+## Finding 45 — The derive step skipped a path the scoring step then insisted on reading
+
+Found by re-reading the fourth anchor's run history rather than by running
+anything. The workflow has been dispatched **eleven** times. Two of those runs
+failed, and both failed at the *same* step; three earlier ones were cancelled by
+each other and produced nothing. The previous account in `progress.md` said the
+failure "has moved down the job three times", which was true of the five runs it
+listed and false as a description of the workflow's current state: the failure had
+stopped moving and was sitting still in one place.
+
+That distinction is not pedantic. "Failing at different stages" asks for a fault
+taxonomy; "failing at one step, repeatedly" asks for a fix. Reading it as the
+former is what kept this open.
+
+### What the run actually prints
+
+Steps 8, 9 and 10 of `official-data.yml` all pass:
+
+```
+VERIFIED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36cdcad8a6ae0107f2357c9c91ecee2c4ab5d72579bffea0372d9747513
+VERIFIED  rcaeval-re2-ss: bytes=245629018  sha256=7aff9a3a0df7e2febbce4f75f0b7ba332da943aacadbffe6d5113a588ef6e295
+VERIFIED  rcaeval-re2-tt: bytes=2801345134 sha256=6706311d2c00d9f5a335f73f6a11f4ad4417522abed7e7ee8c88b8e898088805
+REPORT    /tmp/pins.json: 3 pin(s) measured
+Fetched 3 asset(s) into /tmp/official
+apply-pins: OK (3 pin(s) agree with the report; nothing written)
+```
+
+Then step 10, which is the last thing to succeed:
+
+```
+warning: skipped RE2-OB/checkoutservice_cpu/multi-source-data: path does not carry the case layout
+Wrote /tmp/rcaeval-cases.json
+  270 case(s): RE1=0 RE2=270 RE3=0
+  1 path(s) skipped; each is named above with its reason
+```
+
+And then step 11, which dies on the first case it tries to read:
+
+```
+ROUNDTRIP corpus /tmp/official
+ROUNDTRIP declared 270 case(s), found 2978 file(s), 364 directory(ies)
+Error: ENOENT: no such file or directory, open
+    '/tmp/official/RE2-OB/checkoutservice_cpu/1/metrics.json'
+    at Object.openSync (node:fs:560:18)
+    at readFileSync (node:fs:444:35)
+    at adaptCase (.../scripts/check-official.mjs:236:17)
+    at .../scripts/check-official.mjs:381:19
+  errno: -2,
+  code: 'ENOENT',
+##[error]Process completed with exit code 1.
+```
+
+### What was wrong
+
+Two scripts hold two different opinions about which directories are cases, and
+nothing between them says so.
+
+`gen-rcaeval-cases.mjs` requires a case directory to contain `inject_time.txt`, and
+when it finds a directory that does not, it records the skip and moves on:
+
+```js
+const injectTimePath = join(casePath, 'inject_time.txt');
+if (!existsSync(injectTimePath) || !statSync(injectTimePath).isFile()) continue;
+```
+
+The skipped path is `RE2-OB/checkoutservice_cpu/multi-source-data`. Its third
+component is `multi-source-data`, not a run index, so it is not a case in the
+corpus's `{suite}-{system}/{service}_{fault}/{run}` layout — the skip is correct.
+
+`check-official.mjs` does not consult that rule. It takes the descriptor list and
+reads one file per descriptor:
+
+```js
+function adaptCase(root, entry) {
+  const path = join(root, entry.caseId, 'metrics.json');
+  const bytes = readFileSync(path);
+```
+
+`entry.caseId` here resolves to the **parent** of the skipped directory --
+`RE2-OB/checkoutservice_cpu/1`. So the derive step excluded a path and the scoring
+step dereferenced it anyway, and the two disagreed by exactly one entry: 270
+declared, 271 read.
+
+### Why every in-repo check missed it
+
+The same shape as finding 42, one layer up. `gen-rcaeval-cases.mjs` has a test that
+it skips a non-case directory, and `check-official.mjs` has a test that it reads the
+`metrics.json` a descriptor names. Both are true. **Neither tests the composition**
+— that every skipped path is also a path the reader will not ask for — and no
+fixture contains a directory that is deliberately *not* a case, so no fixture can
+express the disagreement.
+
+This is the third time in this repository that two components have agreed with
+themselves and disagreed with each other: 42 (writer vs reader of the case
+directory name), 43 (the coverage number vs its denominator) and now 45 (the
+deriver vs the reader of the case set). The pattern is consistent enough to name:
+**a component tested only against its own contract certifies its own assumption.**
+
+What made this survive is that step 10 *reported* the skip. A `warning:` line went
+into the log on every run, was read as informational, and was in fact the exact
+precondition of the crash two seconds later.
+
+```text
+warning: skipped RE2-OB/checkoutservice_cpu/multi-source-data: path does not carry the case layout
+                                     ^ this path                        ^ and this is why
+```
+
+### The fix
+
+Three parts, and the third is the one that generalises.
+
+1. **One rule, one place.** The predicate "is this directory a case" moves out of
+   both callers into shared code that both import, so a path can no longer be a
+   case for one and not the other.
+
+2. **The reader asks before it opens.** `adaptCase` resolves the descriptor through
+   the same predicate and reports a descriptor it cannot resolve as a named
+   failure, rather than opening a path it has no reason to believe exists. `ENOENT`
+   on a descriptor is a corpus-or-derived-data defect and says so; it is not an
+   `openSync` crash.
+
+3. **The count becomes an assertion.** Step 10 currently prints a number and a
+   warning and exits 0 either way. It now has to account for every path it walked:
+   `declared == skipped + derived`, and every case a descriptor names must resolve
+   to a readable `metrics.json`. A mismatch fails the step.
+
+   This is the judgement `progress.md` already states and this finding is the
+   second time it has paid off: **a threshold gate prevents regression, an
+   enumeration gate discovers omission.** A warning is neither. It is a threshold
+   gate with the threshold set to infinity — it cannot fail, so it cannot inform.
+
+### What is still unmeasured
+
+The corpus cannot be fetched from this session (`zenodo.org` does not resolve
+here), so this finding is from the runner's log and not from a local reproduction.
+The failing step has therefore **not** been re-run with the fix. Until it is, the
+honest status of the fourth anchor is *"the failure is identified and the fix is
+argued, not verified"* — which is a weaker claim than the fix being in, and is the
+claim being made.
+
+The log itself was readable by the route `progress.md` records: the API answers 302
+to `productionresultssa11.blob.core.windows.net`, and the signed URL in that
+redirect is a plain HTTPS host that a fetch tool can read even though the shell
+cannot reach it. The earlier note that this log was unreadable was, once again, a
+limitation of one instrument reported as a property of the thing measured.
+
+## Finding 46 — Finding 45 named the wrong mechanism, and the guard it added had no test
+
+Finding 45 is right that the fourth anchor dies on its first case and wrong about
+why. It blamed `multi-source-data`: the derive step skips that directory, the
+scoring step dereferences it, and the two disagree by one entry. That reading is
+consistent with the log and is not what the log says.
+
+The crash line names the path:
+
+```
+'/tmp/official/RE2-OB/checkoutservice_cpu/1/metrics.json'
+                                  ^ this is a case, not the skipped directory
+```
+
+`.../1` is a case. It carries the `{suite}-{system}/{service}_{fault}/{run}` shape
+exactly, and `gen-rcaeval-cases.mjs` emitted a descriptor for it, which is how it
+reached the reader at all. So the derive step did not skip it, the scoring step
+did not dereference something the derive step had excluded, and 270 declared
+against 271 read is not what happened. Finding 45's mechanism was a second
+invention laid over the first one: finding 45 corrected "the failure has moved
+down the job three times" and then repeated the same error one level in.
+
+### What the mechanism actually is
+
+The run artifact settles it. `rcaeval-rcaeval-re2-round-trip.zip` was downloaded
+from the workflow run (5502 bytes, via the Azure Blob redirect route finding 45
+records) and holds the descriptor the failing step consumed:
+
+```
+counts: { RE1: 0, RE2: 270, RE3: 0 }
+RE2-OB/checkoutservice_cpu/1  injectTime=2024-01-15T21:36:06.000Z
+RE2-OB/checkoutservice_cpu/2  injectTime=2024-01-15T21:37:06.000Z
+RE2-OB/checkoutservice_cpu/3  injectTime=2024-01-15T21:38:06.000Z
+```
+
+Three cases under `checkoutservice_cpu`, in sequence, with real injection times,
+and **zero** cases under `multi-source`. The skip in step 10 is unrelated to the
+crash in step 11.
+
+The defect is a name. `check-official.mjs` read every case as `metrics.json`:
+
+```js
+const path = join(root, entry.caseId, 'metrics.json');
+```
+
+`metrics.json` is the name **our exporter** writes. The corpus does not. Upstream's
+own harness locates its cases by globbing `**/data.csv` and reading the labels back
+out of the path, which `docs/targets/rcaeval.md` records, and which
+`gen-rcaeval-cases.mjs` already relies on when it tests for `inject_time.txt`
+rather than for the payload. The reader was asserting a name that only one side of
+the exchange had agreed to.
+
+So the descriptor's existence proves `inject_time.txt` exists under
+`checkoutservice_cpu/1`, and the crash proves `metrics.json` does not. Both are
+true, and only one of them is about the corpus.
+
+This is finding 42 again — writer and reader disagreeing about a name — one layer
+down and in the opposite direction. Finding 42 was a reader that invented a name
+the corpus did not use; this is the same reader inventing a second one, after
+finding 42's fix taught it to stop inventing the first.
+
+### Why the fix in finding 45 did not catch it
+
+Finding 45's part 2 is "the reader asks before it opens", and the reasoning is
+sound: `ENOENT` from `openSync` names a syscall rather than a corpus, and an
+operator cannot act on it. But the guard it added asked the **wrong question**. It
+asked whether the *directory* was a case, a predicate the directory already
+satisfied, rather than whether the *payload* it was about to open existed. A guard
+on the wrong predicate fails open in exactly the case that was crashing.
+
+The fix is to resolve the payload by name before opening it, and to report a case
+that carries none of the known names by listing the names it looked under and the
+names it found. Both halves are needed: the error has to say what was missing
+*and* what was there, because "the download is truncated" and "the layout moved"
+are different findings that call for different responses.
+
+### The guard had no test, and no test could have noticed
+
+This is the part worth writing down. Finding 45's part 3 added an enumeration gate
+to `check-official.mjs`: it counts the cases that round-tripped and refuses to print
+`ROUNDTRIP PASSED` unless that count equals the number of cases the descriptor
+declared. Correct in substance, and **zero tests touched it.**
+
+Removing the gate and running the file left all 27 tests green. Removing the gate
+*and* diverting two cases past the count left them green as well. The only way to
+show the gate does anything was a controlled experiment kept outside the suite:
+
+| gate | per-case lines | counted | verdict | exit |
+|---|---|---|---|---|
+| present | `PASS 1/2`, `PASS 2/2` | 0 | `ROUNDTRIP FAILED` | 1 |
+| removed | `PASS 1/2`, `PASS 2/2` | 0 | `ROUNDTRIP PASSED (0 case(s) ...)` | **0** |
+
+Identical per-case output, and only the gate distinguishes 0-of-2 from 2-of-2.
+Without it the script certifies an empty run as a pass. A defence that does this is
+worse than no defence, because it is read as evidence — which is finding 45's own
+sentence about warnings and thresholds, now demonstrated against the gate that
+finding 45 added to fix it.
+
+**A threshold gate prevents regression, an enumeration gate discovers omission,
+and a gate with no test is neither.** The third clause is new and was expensive.
+
+### The fix, and what it cost to verify
+
+`check-official.mjs` now resolves the payload against a named set
+(`CASE_PAYLOAD_NAMES`), reports an unresolvable case with the names tried and the
+names found, and continues rather than aborting at the first — so a corpus with a
+systematically different payload name is enumerated by one dispatch instead of one
+dispatch per case. Six tests cover it, including the accepting half (`data.csv` is
+read) and a negative control, so a reader that refused everything cannot pass.
+
+Two tests now cover the enumeration gate: that a fully counted corpus is accepted,
+and that the declared and counted figures are reported as separate numbers with the
+missing case named. Both fail if the gate is removed.
+
+The reproduction is local. The earlier note that this step costs a 90-minute runner
+dispatch to observe is no longer true, and the byte-identical stack is:
+
+```
+Error: ENOENT: no such file or directory, open
+    '/tmp/redcheck/RE2-OB/checkoutservice_cpu/1/metrics.json'
+    at readFileSync (node:fs:472:19)
+    at adaptCase (.../scripts/check-official.mjs:286:17)
+```
+
+— same file, same function, one frame from the CI log's `adaptCase`.
+
+### What is still unmeasured
+
+The fix has not been through the step that failed. It is verified against a
+fixture in the official layout, the layout itself is verified against
+`docs/targets/rcaeval.md` and the run artifact, and the artifact is the real one.
+None of that is the same as step 11 of `official-data.yml` going green on the real
+corpus, and the honest status stays *"the failure is identified, reproduced locally,
+and the fix is argued and locally verified — not verified in CI"*.
+
+The remaining unknown is whether `data.csv` under `.../1/` holds the metric
+samples in a shape `assertRcaevalMetrics` accepts. The descriptor records no
+payload name, so this is not derivable from the artifact; it is the first thing the
+next dispatch will say.
+
+## Finding 47 — Three gates had no test, and the test written for them was a false green
+
+Finding 46 ended on a rule: *a threshold gate prevents regression, an enumeration
+gate discovers omission, and a gate with no test is neither.* This finding is what
+happens when that rule is applied to the rest of the repository, and it found more
+than expected in two directions.
+
+### What was measured
+
+Every script that can exit 1 is a gate by definition -- it is a process whose only
+output is a pass or a refusal. The suite was asked, for each of them, whether
+anything makes it fail:
+
+| gate | exit(1) sites | tests referencing it |
+|---|---|---|
+| `check-no-mock.mjs` | 1 | 1 (by name only) |
+| `check-no-secrets.mjs` | 1 | **0** |
+| `check-cli-reference.mjs` | 2 | **0** |
+| `check-readme-sample.mjs` | 2 | **0** |
+| `build-example-bundle.mjs` | 1 | **0** |
+| `gen-examples.mjs` | 2 | **0** |
+| `verify-example-pack.mjs` | 4 | 1 |
+| `check-official.mjs` | 6 | 2 |
+| `check-no-vendored-data.mjs` | 1 | 1 |
+
+"Mentioned by name" was not the question that mattered, so it was re-asked as an
+experiment. Two probes, both in the real tree:
+
+1. A banned construct was appended to a test file. `check-no-mock.mjs` exited 1 and
+   named the file and line -- **and the entire suite stayed green**, so nothing in
+   1967 tests would have noticed the gate being removed.
+2. The gate was then broken outright (`if (false && ...)`). It printed
+   `check-no-mock: OK` on a tree that violates it, and the suite stayed green again.
+
+That is the finding-46 pattern with a larger radius: the gates that guard the
+repository's own standards were themselves unguarded, and the failure is silent in
+exactly the way that matters -- a hollowed gate and a working gate print the same
+line.
+
+### The new file, and the mistake in its first version
+
+`packages/core/test/gates-are-testable.test.ts` asserts the floor: each gate is run
+against the repository as it stands (must pass) and against a synthesised violation
+in a throwaway copy of the tree (must fail). The copy matters -- a committed
+violation would fail `main` and the gate would be deleted rather than fixed.
+
+The first version derived every fixture from the gate's own source. It read as
+elegant, and it was self-defeating:
+
+```
+### one banned pattern DELETED ###
+      Tests  9 passed (9)
+```
+
+Deleting `jest.mock` from the gate **deleted that pattern's test along with it**. A
+derived list catches *drift* -- a pattern quietly rewritten -- and cannot catch
+*deletion*, because the test definition shrinks with the thing it tests. The suite
+stayed green while the gate stopped banning something, which is finding 46 exactly,
+reproduced inside the file written to prevent it.
+
+The fix is two lists with different jobs: `requiredConstructs` is written
+independently and is the deletion guard, while `bannedPatterns` is read from the
+gate and is the drift guard. Both are needed; neither alone is sufficient.
+
+### The second mistake: a test that passed for the wrong reason
+
+The `check-cli-reference.mjs` test asserted `status === 1` on a reference with no
+command table. It passed. Removing the guard under test **also left it passing**,
+because the gate then fell through to `execFileSync` on a CLI the fixture tree does
+not contain and crashed on a missing module -- exit 1, same code, different cause:
+
+```
+CLI reference check FAILED: no command table found in docs/cli-reference.md
+node:internal/modules/cjs/loader:1247
+Error: Cannot find module '/tmp/crtree/packages/cli/dist/main.js'
+```
+
+A false green is worse than a missing test, because it occupies the place where a
+test should be. The assertion now names the reason -- the gate's own diagnostic
+present, a module-resolution crash absent -- so a gate that reports nothing and dies
+cannot satisfy it.
+
+### The three negatives, after the fixes
+
+Each injection is applied to the real tree and the meta-gate is required to go red:
+
+| injection | result |
+|---|---|
+| `if (failures.length > 0)` → `if (false && ...)` | **2 red** |
+| delete the `jest.mock` pattern from `BANNED` | **3 red**, naming it |
+| empty the `BANNED` array | **4 red** |
+| hollow `check-no-secrets.mjs` | **2 red** |
+| remove `check-cli-reference.mjs`'s no-table guard | **1 red** |
+
+### What this does not cover
+
+The meta-gate is a floor, not a ceiling, and the distinction is worth stating rather
+than leaving to be inferred. It proves no gate can be *hollowed out*. It does not
+prove every *branch* of every gate is exercised: `check-no-vendored-data.mjs` has
+failure paths that need a whole synthetic git repository, and those live in
+`check-no-vendored-data.test.ts`, which builds exactly that. Five gates above still
+have no test naming them -- `check-readme-sample.mjs`, `build-example-bundle.mjs`,
+`gen-examples.mjs`, and the second exits of `check-cli-reference.mjs` and
+`gen-rcaeval-cases.mjs`. They are covered by CI running them against the real tree,
+which is a weaker claim than a test that forces them to fail, and it is the honest
+status.
+
+`progress.md`'s P1-6 tracks the remainder.
+
+---
+
+## Finding 48 — The enumeration gate was written, and it could not see what it enumerated
+
+Finding 47 ended with the claim that an expectation must come from outside the thing
+it measures. This finding is that claim failing a third time, in the file written to
+enforce it — and then a fourth time after the first fix, which is the part worth
+recording in detail.
+
+### What P1-2 asked for
+
+`09-推进进度追踪.md` P1-2: thresholds cannot see omission. Every coverage number in
+this repository is 99.9x against a 95% gate, and that number describes the files v8
+loaded. A module that *is* reached but whose exported symbols nobody calls reports
+full statements, full branches, a satisfied threshold, and a dead export. The fix is
+to assert the other direction — every export must be named by something outside its
+own tests.
+
+`packages/core/test/export-surface-enumerated.test.ts` does that for the four
+directories the plan names: `ir/`, `score/`, `export/`, `gates/`.
+
+### The gate passed. The gate was wrong.
+
+The first version scanned a hand-written list of 17 modules and asserted, per symbol,
+that some non-test file names it. Against the real tree it reported:
+
+```
+✓ 151 passed
+× names at least one symbol per enumerated module
+    AssertionError: expected 26 to be greater than or equal to 30
+```
+
+Two things in that output matter. The 151 green cases are the substance: **every
+export of every enumerated module is already named by a non-test sibling.** That is
+a real result about the codebase and it was not assumed — it is measured, and it is
+the first time it has been measured.
+
+The single red is my own fault and I am recording it rather than quietly raising the
+constant: I wrote `toBeGreaterThanOrEqual(30)` without counting, the real number is
+26, and a threshold chosen by feel inside a file whose purpose is to replace feel with
+enumeration is a poor advertisement for itself. The assertion now reads `toBe(26)`,
+with the reason in place of the number's authority.
+
+### Injection 1 — the module list could not see a new module
+
+The 17 modules were named by hand, and a module outside the list is never scanned.
+Appending this to `export/guard.ts`:
+
+```ts
+/** INJECTION PROBE - an export no non-test module names. */
+export function injectedDeadSymbol(): string { return 'x'; }
+```
+
+produced `Tests 153 passed (153)`. Not a failure, not a mention — the injected symbol
+was **invisible to the test whose entire purpose is to find symbols nothing names**.
+
+This is finding 47's defect in a new place. There, the expectation shrank with the
+thing it measured because it was derived from the gate's own `BANNED` array. Here, the
+expectation is a hand-written list, and its blind spot is *additions to the tree*
+rather than *deletions from the gate*. Same shape: the measurement is closed under the
+operations that matter.
+
+The fix is `UNENUMERATED`, and the direction of the closure is what makes it work.
+A glob would have been enough to *see* new modules, but a glob cannot state which
+modules are deliberately outside the enumerated four. So every module in `src/` must
+appear in exactly one of two places:
+
+- `ENUMERATED_MODULES` — scanned for un-named exports, 17 entries, 137 export names.
+- `UNENUMERATED` — not scanned, with a written reason, 28 entries.
+
+Both directions are asserted: a module in neither list is red, and a path in
+`ENUMERATED_MODULES` that no longer exists is red. One alone admits a list that has
+drifted from the tree.
+
+`UNENUMERATED` also has to be a measurement rather than an escape hatch, or the fix
+trades one blind spot for a worse one. Its reasons all say "reached through X", so
+those claims are checked: every exempted module except the package entry point must
+be imported by some module. An exemption that certified dead code as fine would be a
+hole wearing a reason.
+
+That check had its own bug, found by it going red: I matched the importer's text
+against `'./llm/openai-compat.js'`, but `file` is package-relative (`src/llm/deepseek.ts`),
+so the specifier a sibling actually writes is `'./openai-compat.js'`. The module is
+imported twice and the check said zero times. Resolving specifiers properly would mean
+reimplementing Node's resolution rules, and a wrong implementation fails open — so the
+match is now on the bare specifier, which cannot be wrong about the question being
+asked: does this name appear in an import.
+
+### Injection 2 — the module list was fixed, and the same injection still passed
+
+`injectedDeadSymbol` went back in after the module-list fix. The module list now
+covered `export/guard.ts`, so the symbol was reachable. The suite reported:
+
+```
+Tests 184 passed (184)
+```
+
+Because the per-symbol cases were a `const cases = …` at describe scope. `it.each`
+materialises that array once, during collection, so the test table was a snapshot of
+the exports as they existed when the file was read — and a symbol added afterwards is
+not merely unchecked, it is absent from the list of things to check. **The file had
+learned to enumerate modules and still enumerated symbols too early.**
+
+The fixture had shrunk, again, and this time the shrink was in time rather than in
+content. It is the same defect as finding 47 and the same defect as injection 1, and
+it took three attempts in one file to get the lifetime of the expectation right.
+
+The fix moves the resolution inside the assertion body (`exportPairs()`), and — since
+this is the third time — adds a test for the property itself rather than trusting it:
+
+```ts
+it('every enumeration here is read at run time, not frozen at collection time', () => {
+  const before = exportPairs().length;
+  const target = join(SRC, 'export', 'guard.ts');
+  const original = readFileSync(target, 'utf8');
+  try {
+    writeFileSync(target, original + `\nexport const runTimeProbe${Date.now()} = 1;\n`);
+    expect(exportPairs().length).toBe(before + 1);
+  } finally {
+    writeFileSync(target, original);
+  }
+  expect(exportPairs().length).toBe(before);
+});
+```
+
+It appends to a real file, requires the count to move, and restores the file in a
+`finally`. A collection-time constant cannot pass it.
+
+### The injection matrix
+
+Each row is one real execution against the tree.
+
+| injection | before | after |
+|---|---|---|
+| append an un-named export to a scanned module | `153 passed` | **red, naming `injectedDeadSymbol`** |
+| append the same export after only the module-list fix | `184 passed` | **red** |
+| create a brand-new module under `src/util/` | — | **red**, `neither enumerated nor explained: util/injected-module.ts` |
+| delete a module still listed in `ENUMERATED_MODULES` | — | **red** (`stale entry`) |
+| exempt a module that nothing imports | — | **red** (`no module imports it`) |
+| three negative controls (tree unchanged) | — | green |
+
+### Result, and what it does not cover
+
+137 export names across the four directories, and **every one of them is named by a
+module outside `test/`**. Nothing dead was found; the value delivered here is that the
+question is now asked on every run instead of never.
+
+Two honest limits:
+
+- **Symbols, not call sites.** The failure message says "no file outside test/ names
+  it", which is what was observed. A symbol reached only through a computed property
+  or a dynamic import would be a false positive, and none exists today.
+- **Four directories, not the package.** `cli/`, `ingest/`, `transform/`, `pack/`,
+  `util/`, `llm/`, `fault/`, `evolution/`, `report/` and `entity/` are exempted with
+  reasons. Their reasons point at other mechanisms — the CLI reference gate, the
+  structure-dispatch tests, the vocabulary single-source tests — and the importer
+  check confirms they are reached. Extending enumeration to them is the remainder of
+  P1-2 and is tracked in `progress.md`.
+
+## Finding 49 — Signal validity: a verifier that said yes to everything, and the two defects the coverage pass found under it
+
+P1-1, the only real competitive gap in `06-竞品分析.md` (D-10). Every other benchmark in
+the survey scores a submission against ground truth. This one additionally asks the prior
+question — given a run's own telemetry, did the fault it claims to have injected actually
+happen? A benchmark that scores submissions against unverified injections measures nothing
+about the submission.
+
+The deliverable is `packages/core/src/gates/validity.ts`, wired into `checkG3Validity`
+behind an opt-in `validity` option so that enabling it is a decision rather than a silent
+change to every existing result.
+
+### The three verdicts
+
+`valid` / `invalid` / `unverifiable`, and the third is the one that makes the module
+honest. An absence of evidence is not a finding, and a verifier with two verdicts has to
+report "we could not check" as "it did not happen" — which is a claim the data cannot
+support. Every downstream check reports alongside rather than instead of G3's statistical
+half, which is asserted by a coexistence test.
+
+### Defect 1 — the pre-existing-anomaly check could never fire
+
+`no-preexisting-anomaly` asks whether a metric was already anomalous *before* the
+injection. The first implementation compared every baseline sample against statistics
+computed from all of them, which makes a pre-existing anomaly self-cancelling: ten samples
+of 95% followed by ten of 96% have a tiny sigma, so nothing is anomalous and the check
+passes. It could not fail. The fixture that exposed it had six normal samples and four
+saturated ones, and the check still passed, because the four saturated samples were inside
+the very baseline used to judge them.
+
+The repair is a baseline split: the first `minSustainedSamples` samples *establish* normal,
+and the remainder is *judged* against it. An anomaly cannot hide inside the statistics that
+judge it.
+
+The immediate consequence was a false positive — `stddev([20,21,19])` is exactly 1.0, so
+values of 22 and 18 sit at precisely |Z| = 2.000 and were reported as pre-existing. Hence
+`preexistingMinAbsZ` (4.0), deliberately above `minAbsZ` (2.0): "was it already broken" is a
+stronger claim than "did it move".
+
+### Defect 2 — a two-sample baseline certified every fault it was shown
+
+The comment above the baseline slice read:
+
+> With fewer than that there is nothing to establish a baseline from, and the caller treats
+> the case as unverifiable rather than guessing.
+
+**The caller did no such thing.** Nothing enforced it. A bundle with two baseline samples
+and a saturated tail was reported `valid`, all six checks green, "first sustained anomaly at
++0s" — because `stddev([20,21])` is 0.707, so a later value of 99 sits at |Z| = 111 and any
+injected fault at all clears the threshold. The check was not testing whether the fault
+happened; it was testing whether two numbers happened to be close together.
+
+This was found by the coverage pass, not by the suite. Chasing the last unreachable branch
+required reading where the baseline is constructed, and the contradiction between the
+comment and the code was in the same twelve lines.
+
+### Defect 3 — the fix for defect 2 downgraded a real `invalid`
+
+The first repair keyed the verdict on whether any series matched the expectation. That
+conflated two different absences, and two pre-existing tests caught it:
+
+- **no series matched** — a `cpu` fault whose telemetry is entirely latency has *shown*
+  that the CPU fault did not manifest. `invalid`.
+- **series matched but their baselines were too thin** — nothing is shown either way.
+  `unverifiable`.
+
+The second attempt over-corrected in the other direction and reported a case with *no
+telemetry at all* as `invalid`, which broke three more tests. The distinction that holds is
+drawn on what was **observed** (`target-observed`), not on what matched:
+
+| Situation | Verdict |
+|---|---|
+| the service emitted no metric series | `unverifiable` |
+| it emitted series, none matching the mechanism | `invalid` |
+| matching series whose baselines were too thin | `unverifiable` |
+| the ground truth names an entity absent from the graph | `invalid` (survives the guard) |
+
+Both wrong versions are recorded because the pair is the finding: the two obvious
+conditions are each wrong, in opposite directions, and only the third is right.
+
+### Dead code removed rather than covered
+
+The onset detail carried `` ${onsetOffsetSeconds >= 0 ? '+' : ''} ``, a ternary for a
+negative offset. `onsetMs` is drawn only from samples at or after `injectMs`, so an anomaly
+starting earlier is in the baseline window and can never be the onset — the offset is
+never negative and the branch is unreachable. Two attempts to write a test for it failed
+before that was understood. Removed, with a test pinning the invariant that made it dead.
+
+### The leak that presented as thirteen unrelated failures
+
+Running the suite filled the disk to 100%. Thirteen script tests failed — `check-official`,
+`check-no-vendored-data`, `apply-pins`, `fetch-official` — none of which touch anything in
+this change. The cause was **1422** leftover `/tmp/rca-bench-out-*` directories at 2.1 GB
+each: the 2 GiB digest test calls `mkdtempSync` 22 times and nothing ever removed any of
+them.
+
+This is worth recording for its shape. A leak that reports as thirteen unrelated defects in
+unrelated modules is worse than the leak, because the failure mode invites each failure to
+be diagnosed separately. The fix is at the point of creation — a `makeOut()` helper that
+registers each directory for removal — rather than a list of directories someone has to
+remember to extend.
+
+### Verification
+
+Coverage on `validity.ts` is measured **on the module, not the package**. The package
+average is what hid this: the first full run read `99.95 | 99.93 | 100 | 99.95` while
+`validity.ts` itself was `93.7 | 89.24 | 100 | 93.7`. Both statement and branch dimensions
+were under the 95% floor and the package number did not move.
+
+Final: `validity.ts` at **`100 | 100 | 100 | 100`**.
+
+Falsification matrix — every check made to fail, source restored and diffed clean after
+each row:
+
+| injection | result |
+|---|---|
+| `target-resolves` always passes | **1 failed** |
+| `target-observed` always passes | **2 failed** |
+| `mechanism-manifested` always passes | **5 failed** |
+| `onset-precision` always passes | **2 failed** |
+| `sustained-duration` always passes | **2 failed** |
+| `no-preexisting-anomaly` always passes | **2 failed** |
+| thin-baseline guard forced true | **4 failed** |
+| negative control (restored) | 0 (green) |
+
+### What this does not cover
+
+- **The mechanism table is hand-written.** It is a table of what each fault category should
+  move, derived from the taxonomy, and nothing derives it from the data. A category whose
+  real signature differs from the table would be judged wrongly. It is at least
+  totality-checked against `FAULT_CATEGORIES`, so a new category cannot be added silently.
+- **It verifies the injection, not the label.** A case whose telemetry genuinely shows a CPU
+  fault passes, whether or not the CPU fault was the one intended. Distinguishing two real
+  faults from one another is not attempted.
+- **Signals other than metrics contribute nothing.** `signalKinds`, `logSeverities` and the
+  trace expectations are recorded in the table but only metric series are read, so a
+  fault whose only manifestation is an error log is `unverifiable`.
+
+## Finding 50 — The exemption list was the same defect a third time, and the injection matrix found a fourth
+
+P1-2's remainder. The export enumeration covered four directories and exempted the
+other ten module by module in `UNENUMERATED`, each with a reason: "reached through
+the CLI command table", "reached through the provider registry", "reached through
+the pack CLI path".
+
+### What the exemptions were actually worth
+
+Before touching them I probed all 26 non-trivial exempted modules for exports that
+no file outside `test/` names. **Zero.** Every export of every exempted module
+already had a consumer.
+
+That result is the finding, not a disappointment. The exemptions were not hiding
+dead code -- they were hiding the *question*. Each was a reason about one or two
+entry points standing in for a scan of every export the module declares, and that
+mismatch had never been measured. It is why the promotion is verifiable rather than
+hopeful: the export surface is byte-for-byte the same set of names before and after,
+so any failure the promotion caused would be a failure of the *mechanism*, not of
+the tree.
+
+### The defect: an exemption wider than its argument
+
+`UNENUMERATED` was keyed by **module**. The reason for `cli/args.ts` was about the
+CLI command table; the exemption covered the module's entire surface. A symbol added
+there next month would have been excused by a sentence written about a different
+symbol -- and the sentence would still have read as true, because it was.
+
+This is finding 47 for the third time in one file: the expectation no longer covers
+the thing it measures. The first two were a shrinking expectation (derived from the
+gate itself) and a frozen one (materialised at collection time). This one is an
+expectation whose **scope is wrong**: correct, specific, and attached to something
+larger than itself. A defect that has not fired yet reads as a design.
+
+### The repair
+
+- `ENUMERATED_MODULES` now holds all **45** modules. There is no `UNENUMERATED`.
+  A module added tomorrow is red until it is listed; exempting a module from
+  *scanning* is no longer expressible.
+- `EXEMPT_EXPORTS` is keyed `module::symbol`, so the scope of an exemption equals the
+  scope of its argument. Only three entries survive, and only two arguments are
+  admissible: the symbol erases at runtime, or the package manifest installs it.
+- The `llm/provider.ts::*` wildcard is allowed, and constrained by a precondition:
+  a wildcard is legal only for a module with no runtime export. Otherwise `*` would
+  be the module-wide exemption again, wearing a symbol key.
+
+Measured effect: **18 → 45 modules, 140 → 516 exports** under assertion. Test cases
+in this file: 68 → 148.
+
+> **Those are this pass's figures, not the tree's.** At the revision that added finding 54
+> the list holds **47 modules and 538 runtime exports**, with **37 exemption entries of
+> which two are runtime**. The three numbers above stayed correct for two passes and then
+> quietly became three different wrong answers across three documents — which is finding
+> 54, and the reason this paragraph now carries a date-scoped qualifier.
+
+### The fourth instance, found by the injection matrix
+
+Row 3 of the matrix grants `index.ts` a wildcard. It stayed **green**.
+
+The precondition read `namedExports(text)` -- `export function`/`const`/`class` --
+and `index.ts` is 41 `export { … } from` statements with **zero** named declarations.
+The array was empty, so the assertion passed no matter what the module published. An
+expectation that cannot see the thing it measures, in the check I had just written to
+prevent exactly that.
+
+The repair asks the runtime question instead of the syntactic one: compare the
+module's whole declared surface -- named declarations, inline `export { a, b }`, and
+`export { x } from './y.js'` -- against its type-only declarations. A module
+qualifies for `*` only when every symbol it publishes erases. Re-run, row 3 is red
+with `index.ts publishes IR_VERSION, …, renderScore at runtime`, and the legitimate
+`llm/provider.ts` wildcard stays green.
+
+The same bug had a mirror image. I first pointed the stale-exemption check at
+`namedExports` too, which made `ir/types.ts::SignalKind` red for an export that does
+exist -- as a type. Two kinds of exemption are checked against two kinds of
+declaration, so the check now unions them and says so in the failure message.
+
+### The injection matrix
+
+Each row is one real execution against the tree; source restored and diffed clean
+after every row.
+
+| injection | result |
+|---|---|
+| a new module under `src/util/` | **2 failed** -- not enumerated |
+| an un-named export in a **promoted** module (`transform/strategies.ts`) | **2 failed** -- names `injectedDeadExport` |
+| grant `index.ts` a wildcard (it publishes 240 runtime symbols) | **1 failed** -- precondition (was green before the repair) |
+| a stale exemption naming a symbol that does not exist | **1 failed** -- `does not declare, at runtime or as a type` |
+| a stale module path in `ENUMERATED_MODULES` | **9 failed** |
+| delete a real name from `TESTED` | **1 failed** |
+| rename `util/hash.ts` so nothing can import it | **10 failed** |
+| NEGATIVE CONTROL (tree restored) | 0 (green) |
+
+Rows 2 and 7 are the ones that matter for the P1-2 claim specifically: row 2 shows
+the promoted directories are now genuinely scanned rather than argued about, and row
+7 shows the importer check that survived the exemptions still holds every module.
+
+### Result
+
+- `validity.ts` and every module in the ten promoted directories: **100 | 100 | 100 | 100**.
+- Package: **`99.95 | 99.93 | 100 | 99.95`** across 75 files; the only file below 100%
+  is `score/official.ts` at `99.64 | 99.77`, which is a pre-existing and separately
+  tracked gap.
+- Core tests **`2106 → 2186 passed`**; all 11 gates green; mutation `26`; the official
+  anchors byte-stable.
+
+### What this does not cover
+
+- **Symbols, not call sites.** The failure message says "no file outside `test/` names
+  it", which is what was observed. A symbol reached only through a computed property
+  or a dynamic import would be a false positive; none exists today.
+- **The importer check proves a module is reached, not that its exports are called.**
+  Those are different properties and neither implies the other. A dead module whose
+  symbols appear in a comment and a live module exporting an unused helper are both
+  invisible to this file.
+- **`index.ts` is checked as a module, not as a surface.** Its 240 re-exported names
+  are verified to have consumers at their *sources*; the file re-exporting them is not
+  itself asserted to be complete, which is what `pack-manifest-completeness` and the
+  package `exports` field cover.
+
+## Finding 51 — Active injection: a planner that is honest about being a planner, and the trap in the DELAY mapping
+
+P1-3. The milestone asks for the five Chaos Mesh fault kinds — CPU, MEM, DISK, DELAY,
+LOSS — each verified through the full chain to the official scorer. This finding records
+what was built, and, more importantly, what was **not**, because the gap between the two
+is the deliverable.
+
+### The boundary, stated first
+
+`packages/core/src/fault/injector.ts` is a **planner and a reader**. It contains no
+`fetch`, no `exec`, no `kubectl`, no `child_process`, no filesystem access — a probe over
+the source returns two matches and both are inside comments.
+
+```
+planInjection()        ->  a Chaos Mesh document        (pure, no I/O)
+[cluster applies it -- not this module]
+readInjectionStatus()  <-  what the controller reported   (pure, no I/O)
+```
+
+That is not a shortcut. A module that shells out to `kubectl` is a module whose tests need
+a Kubernetes API server, and **a test that needs a cluster is a test that does not run in
+CI**. The deterministic core can own the document and the reading; it cannot own the
+apply. What P1-3 delivers is therefore the *half that is testable here*, and the milestone
+row stays **partially met** until a cluster run produces five real cases. Claiming
+otherwise would be the exact failure this repository's V-01 risk names.
+
+### The trap: DELAY looks like TimeChaos and must not be
+
+Chaos Mesh has a `TimeChaos` whose action reads like a delay. Mapping the DELAY fault onto
+it produces a **clock skew**, and the consequence is subtle enough to be worth spelling
+out: `gates/validity.ts` verifies a delay fault by reading network latency series, which a
+clock skew does not move — so the verifier would ask for a network signal, find none, and
+report `invalid`, discarding a case whose injection was never a network delay in the first
+place. The fault would be attributed to the system under test.
+
+Both DELAY and LOSS are therefore pinned to `NetworkChaos`, and a test asserts `TimeChaos`
+appears nowhere in the manifest for any of the five kinds.
+
+### The other four mappings, and why they are not uniform
+
+| kind | Chaos Mesh kind | action | why not the obvious alternative |
+|---|---|---|---|
+| `cpu` | `StressChaos` | — | — |
+| `memory` | `StressChaos` | — | shares the kind with `cpu`; discriminated by the `stressors` block |
+| `disk` | `IOChaos` | `fault` | a disk fault implemented as a memory burn is not a disk fault |
+| `delay` | `NetworkChaos` | `delay` | `TimeChaos` is the trap above |
+| `loss` | `NetworkChaos` | `loss` | — |
+
+`disk` uses `fault` rather than `latency` because it is the only IOChaos action that makes
+I/O **fail** rather than merely slow, and a failure is what a service's error rate and log
+severity respond to. A slowdown would be indistinguishable from load in the metrics.
+
+### Three verdicts on the controller's report, for the same reason as everywhere else
+
+`readInjectionStatus` returns `applied: true | false | 'unverifiable'`. The third value is
+the point: a controller that did not report is **not** evidence that the fault was not
+injected. Collapsing it to `false` would let one broken observability path silently
+disqualify every case it touched, which is worse than not checking at all — the same
+argument `validity.ts` makes for telemetry, applied one layer upstream.
+
+The phase table is read in both directions. `AllInjected`/`Injected` mean applied.
+`AllRecovered`/`Recovered` **also** mean applied: a case whose telemetry window closed
+after the fault recovered has proof the fault was on, and reading it as "never injected"
+would discard a good case. Only explicitly-named failure phases (`NotInjected`, `Failed`,
+`Paused`) produce `false`. An unrecognised phase is `unverifiable` **and names the phase**,
+so an upstream rename shows up as a readable message rather than as silence.
+
+### The dead branch, measured rather than covered
+
+The first version derived its `FaultSpec` through `parseFaultSpec` and branched on
+`!parsed.ok`. Coverage reported lines 242–243 uncovered and branch at `85.18`.
+
+`parseFaultSpec` has exactly four rejection reasons: input is not an object; the type is
+missing or blank; the category is not in the vocabulary; `parameters` is not an object.
+An exhaustive probe over the exact call shape — all five kinds × four parameter inputs —
+returned `ok: true` every time, because `planInjection` has already validated all four
+before the call. **The branch is unreachable.** It was removed and the import narrowed to
+type-only, rather than given a test that pretends to exercise it. `spec` is now assembled
+directly, and a separate test asserts `inferFaultCategory` agrees with the module's own
+category table for all five kinds, so the two cannot drift.
+
+### Branch coverage: nine ternaries that were only ever read one way
+
+Removing the dead branch left `100 | 85.89 | 100 | 100`, and the uncovered positions were
+nine ternaries in the manifest builders — the caller-supplied side of every CRD parameter.
+Each is a real experiment's parameter: a memory fault with no `size` burns 256Mi, a `loss`
+fault with no percentage drops **everything**.
+
+The `loss` default is deliberate and is now commented as such: a fault type named `loss`
+whose default dropped 1% of packets would be a fault that does not reliably manifest, and
+`validity.ts` would then discard the case for the planner's choice rather than for
+anything about the system under test.
+
+One of those nine stayed uncovered even after the block that was written to cover them:
+line 332, the `correlation` default of the `loss` block. The test asserted the `loss` key
+against a default and the `correlation` key against a supplied value, so **neither side of
+that one branch was ever read**. A test that names one key of a two-key object leaves the
+other key's default unasserted. Corrected to assert both keys on both sides.
+
+Final: **`100 | 100 | 100 | 100`** on `injector.ts`.
+
+### The injection matrix
+
+Ten rows, each a real execution against the tree; source restored and diffed byte-identical
+after every row.
+
+| injection | result |
+|---|---|
+| DELAY routed through `TimeChaos` (the trap) | **5 failed** |
+| DISK becomes a `StressChaos` memory burn | **6 failed** |
+| `mode: all` instead of `mode: one` | **1 failed** |
+| `unverifiable` collapsed into `false` | **2 failed** |
+| recovered injection stops counting as applied | **1 failed** |
+| unknown kind coerced instead of refused | **2 failed** |
+| blank target accepted | **1 failed** |
+| zero/negative duration accepted | **2 failed** |
+| window silently defaults instead of refusing | **1 failed** |
+| category table drifts from the collector | **1 failed** |
+| NEGATIVE CONTROL (tree restored) | 0 (green) |
+
+Two of these are worth naming as behavioural rather than structural. **Row 3**: the CRD
+default is `mode: all`, which injects into every pod matching the selector and turns a
+single-fault experiment into a multi-fault one, making the ground truth ambiguous —
+`mode: one` is pinned and asserted. **Row 7**: a blank target with a selector built from it
+would produce a label selector matching nothing, so the experiment would apply cleanly,
+report success, and inject into no pod at all. The refusal is what makes that impossible.
+
+### What this does not cover
+
+- **Nothing was applied to a cluster.** The milestone's exit condition — five kinds, each
+  with at least one case, through the full chain to the official scorer — is **not met**.
+  What is met is that the document for each kind is correct, refusable, and asserted
+  against Chaos Mesh's API shape. The remaining work is a cluster runner.
+- **The manifest is checked against a hand-written table, not against Chaos Mesh.** The
+  mapping was derived from the CRD documentation and is asserted for internal consistency
+  and for the `TimeChaos` trap specifically; no test validates it against a live
+  `kubectl apply --dry-run=server`. A CRD field renamed upstream would not be caught here.
+- **`applied: true` is not the same claim as "the fault manifested".** This module reads
+  the controller's opinion. Whether the injected fault changed the system's telemetry is
+  the question `gates/validity.ts` answers, and the two are deliberately separate: a
+  controller can report `AllInjected` for a fault that the application absorbed without
+  visible effect.
+- **Only the five kinds are planned.** `pod-kill`, `time-skew`, DNS and partition faults
+  are real chaos experiments in the taxonomy's other categories and are refused rather
+  than coerced — the refusal is asserted, but it does mean the planner covers a minority
+  of what a production campaign would need.
+
+## Finding 52 — The fourth anchor: a retry loop whose scope was narrower than its name
+
+P0-1/P1-4. `official-data.yml` has run **twelve times** since it was added and has
+**never once produced a measurement**. This finding is the first half of fixing that: the
+root cause of the step-8 failure, the repair, and the injection matrix that shows the
+repair is load-bearing. The second half — the measurement itself — is the point of the
+workflow and is recorded separately.
+
+### What the log said, and why it was not enough
+
+Every failed run ended the same way: a digest comparison that did not match, then `fail()`,
+then the job stops. The obvious reading is "the download was corrupted", and the obvious
+fix is to retry. **Both were wrong**, and the reason is visible only in the source.
+
+### The defect
+
+`scripts/fetch-official.mjs` had a retry loop. It read like this:
+
+```js
+for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  const { code, stderr, elapsedMs } = await download(asset.url, destination);
+  if (code === 0) { lastError = ''; break; }
+  lastError = `attempt ${attempt}/${MAX_ATTEMPTS} ...`;
+  if (attempt < MAX_ATTEMPTS) { await sleep(...); }
+}
+if (lastError !== '') { return { status: 'skipped', ... }; }
+
+const bytes = statSync(destination).size;      // ← outside the loop
+const digest = await sha256Of(destination);    // ← outside the loop
+if (asset.bytes !== null && bytes !== asset.bytes) { fail(...); }
+if (asset.sha256 !== null && digest !== asset.sha256) { fail(...); }
+```
+
+**The loop protects "can we get bytes", never "are the bytes right".** `statSync`,
+`sha256Of` and both comparisons sit after the loop, so a transfer that returns HTTP 200
+and a truncated body is not a bad *attempt* — it is a bad *result*, and it goes straight to
+`fail()`, which under `set -eu` ends the job.
+
+The mechanism had a name that promised retry and a scope that provided one attempt. That is
+the shape this audit has now recorded five times: findings 47, 49, 50 and 51 are all
+"an expectation whose scope is narrower than the reader would assume", and this is the
+same defect at the process level rather than inside a test.
+
+### Why a bigger retry count would not have helped
+
+Because there are two failure classes and they need **opposite** actions:
+
+| class | what it means | retryable? |
+|---|---|---|
+| the file is **short** | the transfer died mid-flight; the bytes existed and a second attempt can recover them | **yes** |
+| the file is the **right length, wrong digest** | the transfer completed; this is a *different file* (upstream substitution, or a mis-transcribed pin) | **no** |
+
+Retrying the second class is not merely useless — it spends the job's budget downloading
+the same wrong bytes. And both classes surfaced as the identical string "verification
+failed", which is why a year of red runs produced no diagnosis.
+
+### The repair, in two halves
+
+Verification moved **inside** the loop, so a bad transfer is a bad *attempt* and the loop
+still has chances left to spend:
+
+```js
+  // The transport succeeded, which is not the same as the file being right.
+  // Measuring here rather than after the loop is the whole fix.
+  const bytes = statSync(destination).size;
+  const digest = await sha256Of(destination);
+  const problem = classifyVerification(asset, { bytes, digest });
+  if (problem === null) { lastError = ''; break; }
+  lastError = `attempt ${attempt}/${MAX_ATTEMPTS} ...: ${problem.reason}`;
+  pinProblem = problem.pinProblem;
+  if (!problem.retryable) { break; }   // retrying cannot turn one file into another
+```
+
+and the two classes got separate exit codes, so the *status* carries the diagnosis the log
+used to bury:
+
+| exit | meaning | what to change |
+|---|---|---|
+| `1` | an asset could not be reached at all | re-run; the host may be back |
+| `2` | an asset downloaded fine and does not match the pin | **not** a network problem — inspect the registry or the upstream asset |
+
+`official-data.yml` now names all three statuses (`124`/`2`/`1`) in the step summary
+instead of printing `Failed with exit status N`.
+
+### A real defect, caught by the new tests before it shipped
+
+`classifyVerification` first set `pinProblem: !!bytesMismatch` — so *every* byte-count
+mismatch, including an over-long file, was routed to the "unreachable, retry it" branch.
+An over-long file cannot be a truncation; there are no missing bytes for a second attempt
+to recover, and the log would have blamed a host that had answered. The two flags now
+derive from one predicate:
+
+```js
+const short = actual.bytes < asset.bytes;
+return { retryable: short, reason: ..., pinProblem: !short };
+```
+
+### The injection matrix
+
+Twelve rows for the scorer, five for the fetch layer. Source restored and `diff`-confirmed
+byte-identical after every row. The fetch rows are the checked-in battery at
+`scripts/injection/fetch-official-retry.py`; the scorer rows are in finding 53.
+
+| injection | result |
+|---|---|
+| verification moved back outside the loop (the pre-fix shape) | **6 failed** |
+| the pin mismatch exits 1 instead of 2 | **3 failed** |
+| an over-long file is treated as short | **1 failed** |
+| the digest comparison always agrees | **2 failed** |
+| the byte-count comparison always agrees | **4 failed** |
+
+The first row is the one that matters: reverting to the original shape turns **exactly** the
+six tests that encode the corrected semantics red, which is the "delete it and a test goes
+red" guarantee this repository asks of every fix.
+
+**The other four rows were misreported when this table first appeared** — as three rows
+reading 2/1/2 plus one at 1. The battery had only been run ad hoc, so the figures were
+reconstructed from memory. Writing it to a script and re-running produced the five measured
+values above. The failure mode is worth naming because it is the same one as the finding
+itself: **an unpersisted measurement is retold in a stronger, tidier form than it had** —
+three plausible rows instead of five, each with a plausible count. The repair is a script.
+
+### What this does not cover
+
+- **The measurement still does not exist.** This finding makes the fetch survivable; it
+  does not make it succeed. Whether the twelve failures were truncations, a bad pin, or
+  both is **not yet known** — the new exit code is what will say, on the next run. Claiming
+  a root cause beyond the code-level defect would be inventing evidence.
+- **`classifyVerification` is tested against a loopback server, not against Zenodo.** The
+  classification logic is pinned; the real upstream's behaviour is not.
+- **The 1.19 GB asset is not exercised end to end.** The tests use small served payloads
+  and a synthetic >2 GiB sparse file for the digest path, so a defect that appears only at
+  real corpus scale would not be caught here.
+
+## Finding 53 — The M1 exit condition had no measurement, and the scorer that gives it one
+
+P1-4. `docs/product.md` states M1's exit condition in terms of extraction accuracy: the
+historical-fault channel must recover the fault type and category from an incident text at
+a **strict all-fields rate of at least 70%**. Until this work, that condition had nothing
+behind it but a number in a document. The pipeline existed — `importer.ts` builds the
+prompt, parses the response and validates the spec — and **nobody had ever run it against
+known ground truth**, so the accuracy was whatever the reader assumed it was.
+
+### The measurement is on a runner, not in the sandbox
+
+The honest constraint first: this development sandbox has no reachable model endpoint and no
+key, and a scoring run that substitutes a stub for the model measures the stub. So the
+measurement runs in `.github/workflows/fault-extraction-accuracy.yml`, on a runner with
+general internet access and the organization-level DeepSeek key. That is the same reasoning
+that made P0-1 possible, and the same reasoning the fourth anchor exists on.
+
+`.github/workflows/fault-extraction-accuracy.yml` is the **first `secrets.*` reference in
+this repository.** The key reaches exactly one step, is never written to a file, is never
+echoed (the presence check prints its *length*, not its value), and never reaches the
+artefact. `scripts/check-no-secrets.mjs` is the backstop; the workflow's own header states
+the intent.
+
+### The key is not visible to this repository, and the run said so
+
+The workflow was dispatched on 2026-09-26 (run `36201115545`) and **failed at step 8,
+`Check the key is present`**. Steps 1-7 were `success` -- including *"Validate the golden
+dataset before spending a request"*, which reported `19 sample(s), schema
+rca-bench-fault-golden/1` -- and steps 9 and 10, the derivation and the scoring, were
+`skipped`. The job uploaded no artefact. `secrets.RCA_BENCH_LLM_API_KEY` is therefore not
+visible to `AgentiX-E/rca-bench-factory`.
+
+Two things are worth separating, because conflating them is how this becomes a story about
+the environment rather than about a setting.
+
+**It is not a network problem.** `curl https://api.deepseek.com` from inside the development
+sandbox returns `401`. A `401` is the endpoint answering; an isolation failure would look
+like a connection error. The sandbox that "has no reachable model endpoint" can in fact
+reach the endpoint -- what it does not have is the credential. The runner has neither
+restriction, so the missing piece is exactly one configuration value.
+
+**It is not an unreadable failure, and that is the point.** The fourth anchor failed twelve
+times and, at the time, nobody could say from the status which layer had broken -- the
+reason was buried in a step that had already been retried, and the record of it was wrong
+twice before finding 52 corrected it. This run failed once and named its own cause: the
+step is called `Check the key is present`, and its message says which secret is empty and
+where to set it. The guard is also placed **before** the first model request, so a
+credential problem costs nothing.
+
+> A broken instrument and an instrument that says where it is broken are different
+> artefacts. The twelfth consecutive red run on the anchor was the first kind. This is the
+> second. Neither is a measurement, and neither may be reported as progress towards one.
+
+The lesson finding 52 drew -- *a mechanism whose scope is narrower than its name* -- has a
+counterpart in what to do about it. That finding's repair was to widen the retry loop and
+**split the exit codes so the failure class is visible**. The same instinct produced this
+workflow's key check, and it is the reason this run is a two-line diagnosis instead of
+another unread red X.
+
+### Four states, not two
+
+The first design decision, and the one the obvious implementation gets wrong. An extraction
+can end in four places:
+
+| state | meaning | charges the model? |
+|---|---|---|
+| `unparseable` | the response carried no usable JSON | yes — this is the model's failure |
+| `unvalidated` | parsed, but `validateExtractedFault` refused it | **no** — usually a pipeline defect |
+| `unverifiable` | valid, but the fault's expected signal is not in the corpus | **no** — an absence of evidence |
+| `graded` | a scoreable answer | yes |
+
+`unvalidated` is the interesting one. `importer.ts` accepted the spec and `collector.ts`
+refused it, so **one of the two is wrong** — and folding that into "wrong answer" is how a
+real bug in the validator hides behind a bad accuracy number. `unverifiable` is the rule
+this repository already applies in `gates/validity.ts`: an absence of evidence is not a
+finding, so it is not a miss either. Both were folded away in the first draft, which read
+`validation.valid` and stopped there — that version reported a **hit** for a sample nothing
+had checked.
+
+### Layered rates, with their own denominators
+
+A ratio without its denominator cannot be audited, and "type accuracy 100%" is a different
+claim at 2/2 than at 200/200. Every rate is `{ hits, total, rate }`, the same shape
+`coverage.ts` uses for its per-signal figures.
+
+Every per-field figure is reported **twice**, because they answer different questions:
+
+- **`graded`** — of the samples that produced a scoreable answer, how many got this field
+  right. The model's accuracy, conditioned on the pipeline having worked.
+- **`overall`** — of **all** samples, how many got this field right. What a caller running
+  the channel end to end actually observes, because an unparseable response costs them the
+  field too.
+
+Collapsing the two is what makes an accuracy number arguable: a run whose real problem is a
+40% parse failure can be quoted as "93% type accuracy" and nobody has lied.
+
+### An empty cell is not a zero
+
+A rate over zero samples is **`null`, never `0`**. `0` is a claim about the model; `null` is
+a statement that nothing was measured. The same rule applies one level down, to a single
+field: a sample that omits `category` is not scored as a *wrong* category.
+
+That field-level rule has a trap behind it, and it is a trap I walked into. The rule is:
+
+- the sample states **no** expectation for the field → `null`, excluded from the denominator;
+- the sample **does** state one and the model omitted it → `false`, a real miss;
+- otherwise → compare.
+
+`validateExtractedFault` **infers** a category from the type when the model omitted one. So
+a scorer that read the *validated* spec back would find `resource` sitting there and credit
+the inference to the model. The scorer reads the **raw** extraction for exactly this reason,
+and my first test of this behaviour asserted `null` on a fixture where the sample *did*
+expect `resource` — so `false` was correct and my reasoning, though right, was attached to
+the wrong fixture. Corrected into two tests that pin both directions.
+
+### The injection matrix
+
+Twelve rows, source restored and re-run green after each.
+
+| injection | result |
+|---|---|
+| `unverifiable` collapsed into `graded` | **2 failed** |
+| `unvalidated` graded as if valid | **4 failed** |
+| `unparseable` graded instead of skipped | **8 failed** |
+| an empty denominator reported as 0 instead of null | **6 failed** |
+| an omitted optional field scored `false` instead of excluded | **13 failed** |
+| the sample-id pairing check removed | **1 failed** |
+| the strict rate computed over all samples instead of graded ones | **3 failed** |
+| the M1 threshold relaxed to accept an unmeasured rate | **3 failed** |
+| a duplicate sample id accepted | **1 failed** |
+| an unexpected schema version read optimistically | **1 failed** |
+| an empty dataset accepted | **1 failed** |
+| case folding dropped from the comparison | **2 failed** |
+
+**One injection did not survive being written, and the reason is worth recording.** I first
+replaced `graded` with `verdicts` in the per-field loop, expecting the layered denominators
+to come apart — and the suite stayed green. Investigated rather than assumed: the three
+ungraded states all return the **all-null** field record, so `fields[field] !== null`
+already implies `state === 'graded'` and the two expressions are equal. **The injection was
+a no-op, not a hole.** The finding is that the original code carried two filters where one
+carries the information, and the repair is a comment stating which one is load-bearing and
+why the other is implied — not a removal, because the next reader will look for the
+`state === 'graded'` test and should be told where it went.
+
+The battery is checked in at `scripts/injection/fault-extraction-scoring.py` so this table
+can be re-derived rather than trusted.
+
+### The second injection matrix
+
+A separate battery targets the fetch layer, at
+`scripts/injection/fetch-official-retry.py`. It is deliberately **not** merged with the
+matrix above: the two target different files and are never run as one unit, and a single
+table covering both would describe a joint battery that does not exist. Five rows, source
+restored and `diff`-confirmed byte-identical after each.
+
+| injection | result |
+|---|---|
+| **verification moved back outside the retry loop** | **6 failed** |
+| a pin mismatch exits 1 instead of 2 | **3 failed** |
+| an over-long file classified as short | **1 failed** |
+| the digest comparison always agrees | **2 failed** |
+| the byte-count comparison always agrees | **4 failed** |
+
+The first row is the one that matters, because it does not remove a guard — it restores the
+**shape of the defect**. Six tests go red for it: four from the retry layer itself, and two
+that encode the short/over-long directions of a digest pin. A mechanism whose scope changes
+from "one chance" to "three chances" is visible to six independent assertions.
+
+**This table's numbers were wrong on first publication, and the reason is the same defect as
+finding 52.** The first version reported 1/1/3/2 across six rows, because the battery was
+run ad hoc and the figures were written from memory afterwards. Checking it in and re-running
+produced 6/3/1/2/4 across five. An unpersisted measurement gets retold in a stronger form
+than it actually had — which is why the fix is a script, not a correction.
+
+### The golden dataset
+
+`golden-master/fault-extraction/samples.json` — **19 hand-written incident texts**, one per
+fault, covering all seven categories (`code`, `config`, `dependency`, `middleware`,
+`network`, `resource`, `runtime`). Each is written to sound like a real support ticket while
+naming **exactly one** fault, so the expected record is decidable from the text alone. None
+is copied from any corpus: the file is authored, reviewable, and small, which is why it is
+exempted by path in `check-no-vendored-data.mjs` rather than by size.
+
+The dataset is the denominator of the whole report, so it is validated **before any request
+is spent** — a malformed sample file would otherwise be discovered at scoring time, after
+nineteen paid calls. `parseGoldenDataset` names the sample and the field on every failure,
+because a sample silently dropped there changes every rate in the report.
+
+### Three exit codes, because the fourth anchor taught that two are not enough
+
+`score-fault-extraction.mjs` is deliberately not a pass/fail gate:
+
+| exit | meaning | what to do |
+|---|---|---|
+| `0` | M1 exit condition met | — |
+| `2` | a measurement exists and misses the threshold | the model is not good enough yet; this is a **result** |
+| `3` | no graded sample | the pipeline produced no usable answer; read the **parse** rate |
+
+`2` and `3` call for different work, and collapsing them is precisely how the fourth anchor
+ran red twelve times with nobody able to tell from the status whether the data was wrong or
+the wiring was. **Failing the job on `2` would make an honest 65% look like an outage**, so
+the workflow reports the verdict and does not gate on it.
+
+### What this does not cover
+
+- **The number does not exist yet.** The scorer, the dataset, the scripts and the workflow
+  are in place and locally verified against synthetic predictions; the first real run has
+  not happened, so **there is no measured extraction accuracy to report**. This finding is
+  the instrument, not the reading.
+- **The runner's verdict is not yet observed.** Every exit path is pinned by a contract test
+  against the loopback-free local scripts (`25` tests in `fault-extraction-scripts.test.ts`),
+  but the workflow's own YAML has not executed.
+- **`--verifiable` is never set by the derive script.** The state exists, is unit-tested, and
+  currently nothing produces it. That is deliberate — wiring a "can the verifier check this"
+  answer from the model is a judgement the H3 reviewer makes — but it means the `unverifiable`
+  path is exercised only by hand-written predictions today.
+- **19 samples is a small denominator.** A 70% threshold over 19 samples moves in steps of
+  5.3 percentage points, so the figure will be noisy at the granularity of the threshold. A
+  larger dataset is future work, and the honest readout of the current one is coarse.
+- **One provider.** DeepSeek is the only backend wired into the workflow. The provider
+  abstraction is respected (the base URL and model come from repository variables), but no
+  second provider has been run against this dataset.
+
+---
+
+## Finding 54 — A count written down three times, and wrong in all three
+
+This one was not found by a test, an injection or a coverage gap. It was found by
+trying to write a new sentence and needing the number it contained.
+
+### The defect
+
+Three documents stated how large the enumerated export surface is, and all three
+disagreed:
+
+| where | said | actual |
+|---|---|---|
+| `export-surface-enumerated.test.ts`, in its own comment | 43 modules | 47 |
+| `audit.md`, finding 50 | 45 modules, 516 exports | 47, 538 |
+| `progress.md`, the L3 headline row | 46 modules, 516 symbols | 47, 538 |
+
+All three were correct when written. The list grew by four modules across passes 12
+and 13 and none of the three was re-read. This is the same decay the Repository table
+in `progress.md` already names for itself, but in prose rather than in a table, and
+prose has no column header to remind a reader that it is a measurement.
+
+### Why it matters more than three wrong numbers
+
+The surface enumeration is the mechanism this repository uses to make "the export
+surface is fully tested" a *claim* rather than a *truism*. Its whole design is that
+`ENUMERATED_MODULES` is asserted equal to the modules on disk, so the list cannot
+drift. That guarantee is real and it holds — the list is correct.
+
+What drifted was the **description** of the list. So the mechanism was doing its job
+perfectly while three separate narrative claims about it were stale. Anyone auditing
+this repository would have read "45 modules" and then read a list containing 47, and
+would have had to decide which to believe. The correct answer is the list, but that
+is only obvious to someone who already knows how the gate works.
+
+**A count that describes a list must be read from the list, or it is a second source
+of truth, and a second source of truth is a source of disagreement.**
+
+### The repair
+
+- The test file no longer states a count at all. It says why, and points at the
+  assertion that makes the list authoritative.
+- The two dated figures in the docs are marked as measurements of the pass that
+  produced them, with the current values given alongside.
+- The runtime-export count (**538**) and the exemption breakdown (**37 entries: 2
+  runtime, 35 type aliases**) are stated once, in one place, derived by probe rather
+  than recalled.
+
+### What this does not cover
+
+- **Nothing prevents the next literal.** This is the third instance in this
+  repository of a number outliving its measurement, and the repair is again local.
+  The general fix would be to generate the counts into the docs the way
+  `gen-examples.mjs` generates the field tables, which is P2-4 and still open.
+- **`538` is a probe count, not a gate count.** It was obtained by re-implementing the
+  gate's own extraction over `src/`, because the gate's helpers are not exported. If
+  the gate's definition of "runtime export" differs by a symbol or two from the
+  probe's, the probe's figure is the one that is wrong. The defensible claim is
+  "roughly 538, and exactly as many as the gate scans" — and making it exact is a
+  small, separate piece of work.
+
+---
+
+## Finding 55 — "The sandbox has internet access" was an assumption, and it is wrong
+
+The development sandbox this repository is built in has been described, in this
+audit and in the workflows' own comments, as having internet access. That phrasing
+has been load-bearing: it is the stated reason the fourth anchor runs on a runner
+rather than locally, and it is why the extraction measurement was put on a runner
+too. It was never measured until now.
+
+| host | HTTP | |
+|---|---|---|
+| `api.deepseek.com` | **`401`** | reachable — the endpoint answered without a key |
+| `ollama.com` | `200` | reachable |
+| `api.github.com` | `200` | reachable |
+| `api.openai.com` | `000` | **unreachable** |
+| `api.anthropic.com` | `000` | **unreachable** |
+| `generativelanguage.googleapis.com` | `000` | **unreachable** |
+| `registry.npmjs.org` | `000` | **unreachable** |
+| `pypi.org` | `000` | **unreachable** |
+
+Measured 2026-09-26. The shape of the result is not "networking is broken" -- three
+hosts answer normally. It is that egress is **allow-listed, and the list is narrow**:
+among model APIs, exactly one is reachable, and it is the one this project already
+targets.
+
+### Why the wrong assumption survived this long
+
+Because it was never load-bearing in a way that could fail. Every operation that
+depended on the outside world ran on a runner. Locally, the only thing that actually
+needed the network was installing dependencies, and `registry.npmjs.org` returning
+`000` does not break that:
+
+```
+pnpm install --frozen-lockfile --offline   ->  Done in 529ms
+```
+
+The store was already warm. A cached install looks exactly like a successful online
+install, so the absence of a route stayed invisible. This is the same shape as
+findings 47, 49, 50, 51 and 52 -- *a mechanism whose scope is narrower than its
+name* -- except the mechanism here is a **belief**, and the name it is narrower than
+is "internet access".
+
+### Two consequences worth writing down
+
+**New dependencies may not be installable.** Anything that needs a package not
+already in the store will fail, and it will fail in a way that looks like a typo or
+a version conflict rather than a blocked route. Any plan of the form "install X and
+try it" must first confirm the host it fetches from is reachable.
+
+**There is one reachable model endpoint, and the measurement still cannot run on
+it.** `api.deepseek.com` answers `401`, so a local derivation would need exactly one
+thing this sandbox does not have: a key. The adapter is already in the core package,
+the dataset is checked in, and both scripts' exit-code paths have now been exercised
+end to end. So the local route is *one secret away* from producing a number.
+
+It should still not produce *the* number, and finding 53's reasoning is why. A local
+run would use `deepseek-chat`, an alias that points at whatever backend the vendor
+is serving that week -- the workflow passes the model through a repository variable
+precisely so it can be pinned, and that variable is currently unset. It would also
+reach the endpoint through a different edge (`...eo.dnse1.com`) than a runner
+likely would. Two runs whose model is not pinned and whose network path is not
+compared do not measure the same thing, and a number that looks the same is not
+evidence that they did.
+
+> A number's value depends on its denominator and on whether its source is pinned.
+> Nineteen samples, an unpinned model alias and an unverified edge together are
+> enough to make a passing score unauditable -- and an unauditable pass is worse
+> than an honest failure, because nothing about it invites a second look.
+
+---
+
+## Finding 56 — An injection battery mutates a checked-in file, and that is not compatible with a concurrent reader
+
+### What was observed
+
+A local gate run went red on a test that could not be red:
+
+```
+FAIL  test/llm/workflow-provider.test.ts > the workflow forwards the registry-owned
+variable names > keeps the endpoint and model optional and out of the file
+AssertionError: expected '...' to match /RCA_BENCH_LLM_BASE_URL:\s*${{ vars./
+```
+
+The assertion is that the endpoint comes from a repository variable rather than a
+hard-coded vendor URL. The workflow does exactly that, in every revision ever
+committed, and still does:
+
+```
+$ grep -n 'RCA_BENCH_LLM_BASE_URL' .github/workflows/fault-extraction-accuracy.yml
+200:          RCA_BENCH_LLM_BASE_URL: ${{ vars.RCA_BENCH_LLM_BASE_URL }}
+```
+
+So the file on disk matched the assertion, and the test that read it failed. Those
+two facts cannot both be true of the same bytes, which means the test did not read
+the file that is on disk.
+
+It had not. The injection battery for this workflow
+(`scripts/injection/fault-extraction-workflow.py`) works by writing a fault into
+the workflow, running the gate, and restoring it -- and it was running at the same
+time as `pnpm test:coverage`. The reader observed an injected revision.
+
+### Why this was not "flaky" and should not have been treated as such
+
+The tempting reading is that a test raced a file and the fix is to re-run it. That
+reading is wrong twice over.
+
+First, **the failure was self-inflicted and fully deterministic in cause**. There is
+no nondeterminism in *whether* the battery exposes a non-pristine revision -- it
+must, that is its purpose. The only variable is whether a reader happens to look
+during the window. A test that fails when an unrelated process is doing its job is
+not flaky; it is *correctly reporting a real shared-state conflict*.
+
+Second, and worse than a wrong red: the window included an **empty file**.
+
+```
+$ python3 /tmp/race-probe.py          # reader polling while the battery ran
+distinct states observed by the concurrent reader: 11
+  5c3861a96222459f  x1238   NON-PRISTINE
+  ...
+  e3b0c44298fc1c14  x4      NON-PRISTINE   <-- sha256 of the empty string
+```
+
+`e3b0c44298fc1c14` is the sha256 of zero bytes. `Path.write_text` opens with
+`O_TRUNC` and then writes, so between the truncate and the write the file is empty,
+and a reader that lands in that window sees nothing at all. Four reads of zero
+bytes in one battery run.
+
+That changes the failure mode from *misleading* to *undiagnosable*. A reader that
+observes a wrong-but-valid revision fails on a plausible assertion and sends
+someone to look at the wrong thing. A reader that observes an empty file fails to
+`SyntaxError` or a schema error, and then re-reads the file, finds it intact, and
+concludes the failure was spurious -- because it was. Nobody investigating that
+would suspect a race they have no evidence for.
+
+### The repair, and the measurement that showed it was incomplete
+
+Every mutation was routed through one helper that writes a temporary file in the
+destination directory, fsyncs it, and `os.replace`s it into position. On POSIX that
+rename is atomic, so a reader observes one revision or the other and never a
+mixture.
+
+Re-running the reader probe showed the empty-file state was gone and non-pristine
+revisions were still observable -- which is correct, and is the distinction the
+first version of this finding got wrong:
+
+- **Visibility of an injected revision cannot be eliminated.** The battery's purpose
+  is to make a fault visible to the gate. That is by design.
+- **Visibility of a truncated or empty file can be eliminated**, and must be.
+
+The probe said the fix had *not* eliminated it:
+
+```
+--- run 2 ---
+reads: 23196
+zero-byte observations: 1        <-- still there
+```
+
+One zero-byte read survived. The cause was the site the fix had not touched:
+the final crash-recovery restore, which used `shutil.copyfile`. Measured in
+isolation, with a reader polling a large file:
+
+```
+shutil.copyfile                    reads=      18 zero-byte=2
+os.replace                         reads=      13 zero-byte=0
+```
+
+`copyfile` truncates its destination too. Routing only `write_text` through the
+helper had produced a file that *looked* fully repaired -- the obvious pattern was
+gone -- while one `O_TRUNC` writer remained. The first fix was found by reading the
+diff; the remaining hole was found only by re-measuring.
+
+Five runs after routing that last site through the helper, ~116,000 reads:
+
+```
+run 1..5:  zero-byte observations: 0   truncated (<20 lines): 0   distinct revisions: 10
+```
+
+### What the two gates are, and how they were verified
+
+The battery now has two subjects, and both are gated:
+
+| Gate | Subject | Injections | Result |
+|---|---|---|---|
+| `test/llm/workflow-provider.test.ts` | the workflow cannot drift from the provider registry | 9 | 9 caught, control green |
+| `test/injection-write-discipline.test.ts` | every mutation goes through the atomic helper | 2 | 2 caught, control green |
+
+The second gate is asserted against the battery's **source**, not by racing it. A
+race-based test would pass on the broken version whenever the reader missed the
+window, and a test that fails one run in ten is worse than no test. The two
+injections restore a direct `write_text` and reinstate `shutil.copyfile`; both go
+red.
+
+### The rule this adds
+
+> A test that reads a checked-in file is not isolated from a process that rewrites
+> that file, and neither atomicity nor a green re-run makes it so. Atomicity bounds
+> the damage from *unreadable* to *readable but wrong*; it cannot make the reader
+> see the revision it expected, because there is no expected revision while a
+> battery is mid-injection.
+
+The operational consequence: **an injection battery is not run concurrently with
+the suite.** `package.json` does not express that, and nothing enforces it, so the
+mitigation is written at the top of the battery and the residual exposure stays on
+the unmeasured list rather than being declared solved.
+
+### What this does not cover
+
+- **Concurrent execution is mitigated, not prevented.** A guard that lets the
+  battery take a lock, or makes the suite refuse to start while one is held, would
+  close it. Not implemented; the exposure is a wrong red whose cause is now
+  documented.
+- **Other checked-in files are not audited for this.** The battery mutates one file.
+  Whether any other script mutates a tracked file while tests read it was not
+  surveyed.
+- **The non-pristine window is unquantified.** Ten distinct revisions were observed,
+  and how long each is in place was not measured, so "a reader can see one" is
+  established but "how likely" is not.
+
+---
+
+## Finding 57 — The measurement ran, and its number is unreadable from here
+
+### What is established
+
+`fault-extraction-accuracy.yml` was dispatched against `842daee` (run `36216622078`)
+and **every step succeeded**, including the three that had never executed:
+
+```
+  8. Resolve the LLM provider                         success
+  9. Select the key for the resolved provider         success
+ 10. Derive the extractions                           success
+ 11. Score the run                                    success
+ 12. Upload the predictions and the report            success
+ 13. State the verdict                                success
+```
+
+The artefact is no longer empty: 3378 bytes against `total_count: 0` on both prior
+runs, with digest `sha256:729ed7bc...`.
+
+So the provider-registry repair worked end to end. The organisation's existing key
+was used without being duplicated under a second name, which was the whole point.
+
+### What is *not* established, and why the green is not the reading
+
+**The run produced a measurement. It did not necessarily meet the threshold, and I
+cannot read which.**
+
+That is not a hedge -- it is forced by the scorer's exit contract. Step 11 exits `1`
+on `3` (no measurement) and on `1` (unreadable), and the step would therefore be red.
+It is green, so the score exit was **`0` (met) or `2` (measured, not met)**. Both are
+possible; the resolution between them is exactly the number, and the number is what
+is missing.
+
+The paths to it, and why each failed:
+
+| Path | Result |
+|---|---|
+| job log body (`/actions/jobs/<id>/logs`) | 302 → `productionresultssa17.blob.core.windows.net` → `http=000` |
+| artefact zip (`/actions/artifacts/<id>/zip`) | 302 → `productionresultssa7.blob.core.windows.net` → `http=000` |
+| job summary via REST | no such endpoint (`404`) |
+| run page HTML | renders, but loads the summary dynamically; the body is absent |
+| run page via a fetch tool | same, plus the artefact appears only as a digest |
+
+The blob host resolves to `198.18.0.36`. That is inside `198.18.0.0/15`, the same
+sinkhole range finding 55 measured for the CI log host, so this is the egress
+allowlist rather than a transient fault. It is the **fifth** consecutive round in
+which a CI log body was unreachable, and the **first** in which an artefact was also
+unreachable.
+
+### The distinction this pass must not blur
+
+Three states have been confused at least once each in this repository's history, and
+keeping them apart is the whole content of this finding:
+
+| Statement | Status |
+|---|---|
+| the workflow reaches the model | **established** -- steps 8-11 all succeeded |
+| a measurement exists | **downgraded by finding 58** -- see the correction below |
+| the threshold is met | **not established** -- this is `0` vs `2`, and both are consistent with a green job |
+| the value of the rate | **not established** -- the artefact carrying it is unreachable |
+
+> "The run succeeded" is not a reading, and it is not a failure either. It is the
+> statement that the instrument worked, which is a different claim from the one the
+> instrument exists to make.
+
+#### Correction (finding 58): the run was configured with a disabled model name
+
+This finding originally recorded `a measurement exists` as **established**. That was
+too strong, and the reason is worse than a missing check.
+
+`RCA_BENCH_LLM_MODEL` was set to `deepseek-chat` for this run. That alias was
+**disabled on 2026-07-24**, two months before the dispatch. The run therefore sent
+nineteen requests to a model name that the provider rejects.
+
+The step timings say the requests did not come back as answers:
+
+```
+10. Derive the extractions                           23.0s
+```
+
+Nineteen samples at a 250ms serialisation gap is 4.75s of pure pacing, leaving
+18.25s for nineteen HTTP round trips -- **0.96s each**. A real completion for these
+prompts takes seconds per call, not one; a rejected request returns in a fraction of
+a second. The run very likely spent most of that step waiting on the pacing sleep
+rather than on the provider.
+
+Step 11 still succeeded, and the check run carries no `No measurement` error
+annotation, so `score_exit` was `0` or `2` rather than `1` or `3` -- meaning at least
+one sample was graded. What cannot be claimed is that the graded answer came from a
+model. The honest statement is narrower than the original one:
+
+| Statement | Corrected status |
+|---|---|
+| the workflow reached the provider | **established** |
+| the provider accepted the request | **no** -- the model name was disabled |
+| a measurement was computed | **established** (a rate was produced from at least one graded sample) |
+| the number describes model behaviour | **not established** -- it describes a run configured against a retired alias |
+
+The lesson is not "check the model name". It is that **the run was reported green and
+I read the green as a successful measurement**, when the one field that would have
+exposed the problem -- the model actually used -- was never validated against the
+vendor's live list. A constant chosen from memory, in a repository whose whole subject
+is measurement discipline.
+
+### What would close it
+
+The model name is corrected to `deepseek-flash` and pinned as a repository variable,
+so a re-dispatch asks a model that exists. The figures are also now repeated as a
+check-run annotation, which the REST API serves, so the reading is obtainable from an
+allow-listed sandbox rather than only from the UI or a blob host.
+
+Until a re-dispatch lands, "M1 met or not" stays open, and `09` must not tick it.
+
+### What this does not cover
+
+- **Nothing about the model's quality.** Whether the rate is 40% or 80% is unknown
+  here; and the number the previous run produced is not a reading of model behaviour
+  at all, per the correction above.
+- **The name is pinned, but the model behind it is not.** `deepseek-flash` currently
+  serves DeepSeek-V4.1-Flash, and the vendor states that the previously-accepted
+  `deepseek-v4-flash` is itself retired and routed to the same model. Pinning the
+  *current* name is the correct choice -- `deepseek-v4-flash` would have been one
+  deprecation away from this identical failure -- but it does not freeze the weights.
+  A vendor model update changes the number without changing configuration, and the
+  only defence is that the artefact records the name, so a shift is at least
+  attributable to a window.
+
+---
+
+## Finding 58 — The model name was a disabled alias, and I read a green run as a measurement
+
+### What was wrong
+
+`RCA_BENCH_LLM_MODEL` was set to `deepseek-chat`. That name, and `deepseek-reasoner`,
+were **disabled on 2026-07-24 15:59 UTC** — two months before the dispatch. The run
+therefore sent nineteen requests to a model the provider rejects.
+
+`DEEPSEEK_DEFAULT_MODEL` was the same string, so the defect was not confined to a
+variable an operator had set: **any run that omitted the variable failed the same way**.
+
+### Why the green job hid it
+
+Every step succeeded, and I reported that as "the workflow reached the model". The
+step timings refute the stronger reading:
+
+```
+10. Derive the extractions                           23.0s
+```
+
+19 samples × 250ms pacing = 4.75s of pure delay, leaving 18.25s for nineteen HTTP
+round trips — **0.96s each**. A real completion takes seconds; a rejected request takes
+a fraction of one. The step spent most of its budget asleep.
+
+| Statement | Corrected status |
+|---|---|
+| the workflow reached the provider | established |
+| the provider accepted the request | **no** — the model name was disabled |
+| a rate was computed | established (step 11 was green, so exit `0` or `2`) |
+| that rate describes model behaviour | **not established** |
+
+The lesson is not "check the model name". It is that **a green run was read as a
+successful measurement**, when the one column that would have exposed the problem —
+the model actually used — was never validated against the vendor's live list. A
+constant chosen from memory, in a repository whose subject is measurement discipline.
+
+### The replacement, and why it is not the obvious one
+
+`deepseek-flash`. Not `deepseek-v4-flash`: that name is **itself retired** — kept only
+as a compatibility route to V4.1-Flash since 2026-09-10 — so pinning it would have
+bought a few months and a second identical incident. `deepseek-flash` is the name
+DeepSeek's own documentation instructs callers to use.
+
+`registry.ts`'s `'deepseek-chat': 'deepseek'` is **unchanged**. That is a *provider*
+alias, not a model name — the line that lets an organisation keep its existing
+variable name. Two occurrences of the same string with different meanings is why this
+fix had to be classified entry by entry rather than replaced globally.
+
+---
+
+## Finding 59 — The reading exists, and M1 is not met: strict 0/19
+
+### The reading
+
+Run `36226968552` against `dec77b3`, dispatched with `RCA_BENCH_LLM_MODEL=deepseek-flash`.
+Every step succeeded, and for the first time the number came back **through the REST
+API** — as a check-run annotation, which is the channel this sandbox can actually read:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=0/19 (0.0%)
+m1=NOT MET (>= 70% strict)
+```
+
+**M1 is not met.** Strict all-fields is 0%.
+
+### Why that is two results, not one
+
+The two rates disagree, and the disagreement is the finding:
+
+| Layer | Value | What it says |
+|---|---|---|
+| graded | **19/19 (100%)** | every sample parsed *and* validated — the pipeline is not broken |
+| strict | **0/19 (0%)** | every graded sample missed at least one scored field |
+
+A single blended figure could not express this, which is the argument finding 53 made
+for layered rates and this run is the first evidence for it.
+
+It also rules out the reading that would have been wrong twice: **this is not "the
+pipeline produced nothing"** (exit `3`, which would have turned step 11 red) and it is
+not "the model is correct" (exit `0`). It is a model that answers in a readable shape
+and gets no sample fully right.
+
+### What is established, and what is not
+
+| Statement | Status |
+|---|---|
+| the run reached the model, and the model answered | **established** — 19 graded samples |
+| the pipeline parses and validates its answers | **established** — 100% |
+| strict all-fields meets the 70% threshold | **not met** — 0/19 |
+| *which* field fails, and why | **not yet established** |
+
+The last row is the open question, and it is answerable: the report prints a per-field
+breakdown, so the score step now echoes those four rows as a second annotation. The
+headline said *that* it failed; the breakdown says *where*.
+
+### The channel, separately
+
+The previous three rounds could not read the number at all, and every documented route
+had a structural reason: `GITHUB_STEP_SUMMARY` is not a field on the run or job
+object, the job-log endpoint 302s to a blob host inside `198.18.0.0/15`, and the
+artefact zip does the same. `GET /check-runs/{id}` was found by probing endpoints
+rather than by assuming they would fail, and it serves annotations over REST.
+
+That this worked is worth separating from the result it delivered. The instrument
+being readable is what makes "M1 not met" a finding rather than a fourth
+inconclusive round.
+
+---
+
+## Finding 60 — The per-field breakdown, and why 0/19 is three problems not one
+
+### The reading
+
+Run `36227614249` against `262fc0d` carried the per-field annotation added in finding 59:
+
+```
+type=5/19  category=11/19  component=3/19  description=0/0
+```
+
+with the headline unchanged:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=0/19 (0.0%)
+m1=NOT MET (>= 70% strict)
+```
+
+### What it changes
+
+`strict=0/19` was a true but unactionable statement: it said no sample was fully
+correct without saying why. The breakdown resolves it into three separable problems,
+and they have different fixes:
+
+| Field | Graded | Rate | Reading |
+|---|---|---|---|
+| `type` | 5/19 | **26.3%** | the model's fault-type label rarely matches ours |
+| `category` | 11/19 | **57.9%** | partially aligned — the vocabulary works, but not reliably |
+| `component` | 3/19 | **15.8%** | the worst field; naming conventions diverge |
+| `description` | 0/0 | n/a | correctly excluded — no sample states an expectation |
+
+Three things follow that the single number could not have told us:
+
+1. **It is not one broken field.** All three scored fields are weak, so `0/19` is the
+   arithmetic consequence of three sub-threshold fields, not of a single outlier.
+   Fixing `category` alone would still leave `strict` at 0.
+2. **The prompt is not being ignored.** `category` at 57.9% is well above chance across
+   seven vocabulary values, so the model is reading the schema and attempting to comply.
+   The failure is vocabulary alignment, not instruction-following.
+3. **`description` being excluded is correct, not a gap.** Zero samples state an
+   expectation for it, and scoring a model for an omission the ground truth made is the
+   error finding 53 warned about. Its `0/0` is the mechanism working.
+
+### This reproduces, which matters more than the value
+
+Two runs, seven minutes and one revision apart, agree exactly on both rates:
+
+| Run | sha | graded | strict |
+|---|---|---|---|
+| `36226968552` | `dec77b3` | 19/19 | 0/19 |
+| `36227614249` | `262fc0d` | 19/19 | 0/19 |
+
+The consistency is evidence that this is a stable property of the configuration rather
+than sampling noise, which is what makes the per-field rates worth acting on. A single
+`0/19` could have been an unlucky run; two identical `0/19`s with a stable `19/19`
+graded rate cannot.
+
+### What this does not establish
+
+- **Whether the misses are normalisation gaps or genuine model errors.** This is the
+  next question and it is a code-versus-prompt decision. It needs the predictions
+  themselves, which are in the sinkholed artefact; the rate alone cannot distinguish
+  "the model said `network-ap-saturation` and we wanted `network`" from "the model
+  said `disk-full`". The distinction has to be settled by reading answers, not rates.
+- **Whether 70% is reachable by prompt work at all.** Every field is far below it, and
+  `component` at 15.8% suggests a naming-convention gap that a prompt change may not
+  close.
+
+---
+
+## Finding 61 — The component field's ceiling: 5 of 19 samples cannot be matched without guessing
+
+### Why this was checked without the predictions
+
+Finding 60 named the open question precisely and could not answer it: are the
+`component` misses normalisation gaps (a code fix) or naming-convention divergences
+(a prompt fix)? The predictions live in the sinkholed artefact, so the plan was to
+go and fetch them.
+
+The dataset answers part of it on its own, and it was not being asked. For every
+sample, is the *expected* `component` a string that appears in the incident text
+the model was shown?
+
+| Relationship between the expected `component` and its incident text | Count |
+|---|---|
+| Appears verbatim (`checkout-api`, `order-service`, ...) | 5/19 |
+| Appears only as spaced prose (`billing-service` vs "the billing service") | 9/19 |
+| **Does not appear in any form** | **5/19** |
+
+The five in the last row are not paraphrases of something in the text. They name a
+component the text never identifies under that name:
+
+| Sample | Expected `component` | What the text actually says |
+|---|---|---|
+| `network-delay-cart-to-inventory` | `cart-service` | "Cart-to-inventory calls got slow" |
+| `middleware-redis-latency-cache` | `session-cache` | "the session Redis" |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | "Consumer group order-events" |
+| `config-feature-flag-checkout` | `checkout-ui` | "the storefront" |
+| `middleware-mysql-replica-lag-analytics` | `analytics-replica` | "The analytics dashboard" |
+
+### The middle row is not a gap — this was checked, not assumed
+
+It is tempting to file the 9 spaced-prose cases under "normalisation gap" and stop.
+They are not, and the check is one line against the shipped build:
+
+```
+"billing-service"      "billing service"          MATCH
+"checkout-ui"          "checkout UI"              MATCH
+"analytics-replica"    "the analytics replica"    MISS
+"session-cache"        "the session Redis"        MISS
+"cart-service"         "Cart-to-inventory"        MISS
+```
+
+`normalizeFaultType` lower-cases and collapses whitespace to hyphens, and `sameValue`
+applies it to **both** sides. So a model that answers `billing service` already scores
+a hit. The hyphen convention was never the problem, and "add a hyphen-insensitive
+comparator" would have been a fix for a defect that does not exist — the exact class
+of change that finds work for itself.
+
+### What this establishes, and what it does not
+
+**Establishes:** `component`'s ceiling from this dataset is **14/19 (73.7%)**, not
+19/19. Five samples require the model to produce an identifier that the input does not
+contain, which is not extraction — it is guessing a naming scheme. At 3/19 (15.8%)
+the model is well short of even that ceiling, so there *is* real headroom; but a
+perfect run on this dataset still cannot reach 100% on `component`.
+
+**Does not establish:** whether the five are wrong. This is the part that still needs
+the predictions. Two readings remain open and they point in opposite directions:
+
+1. **The dataset is under-specified.** If the model answered `inventory-service` for
+   the first row, the ground truth is asking for a name the text withheld, and the fix
+   is to the golden data — a benchmark whose ground truth is not derivable from its
+   input measures the annotator, not the model.
+2. **The text encodes the answer by convention.** `session-cache` for "the session
+   Redis" is the *role* rather than the *technology*, and a component field plausibly
+   means the role. If the model answered `redis`, the schema is under-specified rather
+   than the data being wrong.
+
+The distinction needs the answers. What has changed is that the question is now
+**bounded**: it is about 5 named samples, not about the whole field.
+
+### The consequence for M1
+
+`type` 26.3% and `category` 57.9% are unconstrained by this — both vocabularies are
+closed and stated in the prompt, so their ceilings are 19/19 and their misses are
+real. `component` is the one scored field whose ceiling is below 100% for reasons in
+the data rather than in the model.
+
+This does not change the verdict. M1 is `strict`, and `strict` needs every scored
+field at once; with `component` capped at 73.7% and `type` at 26.3%, the binding
+constraint is still `type`. But it does change what a good `component` fix looks like:
+the ceiling has to be raised deliberately, by either tightening the golden data or
+stating the naming rule in the prompt, not by adding comparator tolerance.
+
+---
+
+## Finding 62 — `type` at 26.3% is an unstated-vocabulary problem, and the prompt can be blamed precisely
+
+### The asymmetry inside the prompt
+
+Finding 60 left `type` as the binding constraint at 5/19 (26.3%) without saying why it
+is the *worst-explained* field rather than merely the hardest. Reading the prompt
+answers it, because the prompt treats the two closed-vocabulary fields inconsistently:
+
+```
+{ "type": "fault type (short)", "category": "one of: resource | network | runtime |
+  middleware | code | config | dependency", "component": "faulty component",
+  "description": "root-cause reason", "confidence": 0.0..1.0 }
+
+`category` is matched case-insensitively against that list; any other value is rejected.
+```
+
+`category` gets a **closed vocabulary**, an explicit statement that it is closed, and a
+comparison rule. `type` gets the words "fault type (short)" and nothing else — no
+vocabulary, no grammar, no length. And the expectation is a *canonical slug*:
+
+| Property of the expected `type` | Value |
+|---|---|
+| Samples whose expected `type` appears verbatim in the incident text | **0/19** |
+| Distinct expected labels | **19 of 19** (no label repeats) |
+| Label length range | 8–35 characters, mean 17.3 |
+| Longest | `database-connection-pool-exhaustion` (35) |
+
+So the model must turn `"the pod sat pinned at its 500m limit"` into `cpu-saturation`,
+and `"all 20 are held by threads waiting on a lock held by a transaction that is itself
+waiting for a connection"` into `database-connection-pool-exhaustion`. Neither string
+occurs in the input. The prompt does not say the answer is a hyphenated slug, does not
+say how long, and does not hint at granularity.
+
+### Why the measured 26.3% is consistent with this and not with "the model is bad"
+
+Two readings fit 5/19, and the dataset separates them:
+
+- **Unstated vocabulary.** `category` — the field that *is* specified — scores 57.9%,
+  more than double. Same model, same prompt, same incident texts. The only variable
+  that moves is whether the output space is stated. That is a strong signal that the
+  prompt, not the capability, is what differs between 57.9% and 26.3%.
+- **Genuine capability failure.** A 26.3% figure with an unstated 19-way label space
+  cannot be read as "the model cannot classify faults", because nothing told it what
+  the labels are.
+
+**This is a prompt defect, not a code defect.** No comparator change helps: the model is
+not producing a near-miss of `cpu-saturation` that normalisation fails to fold, it is
+producing something from an unbounded space. Unlike finding 61, there is no ceiling
+argument to make — a stated 19-label vocabulary is derivable from the input, so
+`type`'s ceiling is 19/19 and 26.3% is fully fixable.
+
+### What this does not establish
+
+- **That stating the vocabulary reaches 70%.** It removes a structural handicap; it
+  does not guarantee the model picks the right label from a stated list. The next
+  reading is what tests that, and it is a real experiment rather than a formality:
+  `category` at 57.9% with a stated 7-value vocabulary is the closest available
+  estimate for what a stated `type` vocabulary buys, and 57.9% is still below 70%.
+- **Which of the two fields to specify first.** `category` is already specified and
+  still misses 42%; that suggests the residual is capability, not specification. So
+  the honest expectation is that `type` improves substantially and *still* lands
+  short, which would make `category` the thing that decides M1.
+
+### The fix this implies, stated as a prediction to be tested
+
+Adding the 19 expected labels to the prompt as the allowed `type` values would be
+fitting the prompt to the test set, and is not proposed. What is proposed is the same
+treatment `category` already gets: a stated vocabulary. Two versions are worth
+measuring, and the second is the more honest experiment:
+
+1. **The closed list.** State `FAULT_TYPES`, mirroring `FAULT_CATEGORIES`. Expect a
+   large `type` jump and a new failure mode where the model picks a neighbouring label.
+2. **A stated grammar.** Say `type` is a lower-case hyphenated slug naming the mechanism
+   (`<subject>-<failure>`), and leave the vocabulary open. This tests whether the miss
+   was the *format* or the *space*, which is the distinction that decides whether this
+   repository needs a fault-type ontology at all.
+
+Version 2 is the one that would generalise past this dataset, and it is cheap to run
+because the instrument is now known to work end to end.
+
+---
+
+## Finding 63 — The shape rule is stated, and what would falsify it
+
+### What changed
+
+`buildFaultExtractionPrompt` now carries a shape rule for `type`, which was the only
+scored field the prompt left undescribed:
+
+```
+`type` is a short lower-case hyphenated slug naming the failure mechanism, e.g.
+`cpu-saturation`, `network-delay`, `database-connection-pool-exhaustion`. Use
+hyphens, never spaces or capitals. Prefer the mechanism over the symptom.
+```
+
+### Why the grammar and not the labels
+
+Listing the 19 expected labels would raise `type` by fitting the prompt to the test
+set, and the resulting number would mean nothing: it would report that the model can
+copy from a list it was handed, on the same 19 samples the list came from. Worse, it
+would be read as progress.
+
+The grammar is the part that transfers. A fault this repository has never seen still
+has to be named, and the naming convention is what the model needs to know to name it
+the way the schema expects. A closed fault-type ontology is a legitimate goal for a
+different reason -- bounded labels make aggregation possible -- but it is a separate
+decision, and the code comment says so, because collapsing the two would produce a
+number that cannot be interpreted as either.
+
+### Two halves, again
+
+This is the second time a prompt rule and a parser tolerance have been paired, and
+the pairing is deliberate for the same reason as `category`'s casing fix: the prompt
+states the rule so the model is not left to guess it, and the comparator already
+tolerates the obvious deviation (`normalizeFaultType` folds case and spaces on both
+sides) so a model that guesses the format anyway does not lose a correct answer.
+
+The difference from `category` is where the tolerance stops. `category` is closed, so
+a value outside it is *rejected*. `type` is open, so nothing is rejected and every
+answer is scored on label choice. That is the intended asymmetry: one field has a
+closed answer space and the other has an open one, and the prompt now describes each
+according to which it is.
+
+### Tests were written first and observed red
+
+| Stage | Result |
+|---|---|
+| Tests written, before any source change | **2 failed / 6 passed** |
+| After adding the shape rule | 8 passed |
+| Injection: remove the rule from the prompt | **2 failed** (the two prompt tests) |
+| Injection: make one expected `type` camelCase | **2 failed** (two *different* tests) |
+
+The 6 that passed before the change are the point: they assert properties of the
+*dataset*, and they held already. That is what makes the rule a description of the
+existing data rather than a new requirement invented to make a test pass. Had they
+failed, the rule would have been wrong and the right fix would have been to the data.
+
+The two injections failing *different* pairs is the other thing worth having: it means
+the suite checks two independent properties -- the prompt states the rule, the data
+obeys it -- rather than one assertion written twice.
+
+### What would falsify the finding
+
+The fix is a prediction, and it is testable in one run:
+
+- **If `type` does not move materially**, finding 62's attribution is wrong and the
+  low score was capability rather than specification. The next suspect would be the
+  19-way open space itself, which would make the closed-list variant the right
+  experiment.
+- **If `type` moves a lot but `strict` stays 0**, the prediction recorded in finding 62
+  holds: `category` at 57.9% with an already-stated vocabulary becomes the binding
+  constraint, and M1 then depends on a field whose prompt was never the problem.
+- **If `type` moves and `component` does not**, finding 61's ceiling argument is
+  confirmed as the reason `component` is stuck, and the remaining work there is a data
+  or schema decision rather than a prompt one.
+
+All three are decided by the same annotation the workflow already emits, so no new
+instrumentation is required to read the answer.
+
+---
+
+## Finding 64 — The shape rule bought one sample, and finding 62's prediction is refuted
+
+### The reading
+
+Run `36229820836` against `9c72a56026`, the first run carrying the `type` shape rule:
+
+```
+samples=19  graded_count=19  graded_rate=19/19 (100.0%)  strict=1/19 (5.3%)
+m1=NOT MET (>= 70% strict)
+
+type=6/19  category=11/19  component=3/19  description=0/0
+```
+
+### Against the previous run
+
+| Field | `262fc0d` (before) | `9c72a56` (after) | Δ |
+|---|---|---|---|
+| `strict` | 0/19 (0.0%) | **1/19 (5.3%)** | **+1** |
+| `type` | 5/19 (26.3%) | **6/19 (31.6%)** | **+1** |
+| `category` | 11/19 (57.9%) | 11/19 (57.9%) | 0 |
+| `component` | 3/19 (15.8%) | 3/19 (15.8%) | 0 |
+| `description` | 0/0 | 0/0 | — |
+
+### Finding 62's prediction is refuted, and that is the result
+
+Finding 62 predicted that giving `type` the treatment `category` already had would
+produce "a large `type` jump", and offered outcome 1 explicitly: *"if `type` does not
+move materially, finding 62's attribution is wrong and the low score was capability
+rather than specification."*
+
+`+1 sample` is not a material move. **1 of 19 went from wrong to right.** The
+attribution was wrong, and the pre-registered falsification is what makes that a
+finding rather than a reinterpretation: the prediction was written down before the
+run, with the reading that would refute it, and the run produced that reading.
+
+The honest summary is that **the shape rule was cheap to test and it did not work.**
+It is not harmful -- `strict` moved off zero for the first time, and `category` and
+`component` were untouched as expected -- but an effect of one sample on a 19-sample
+set is within the range that a re-run alone could produce, and it would be wrong to
+describe the prompt as improved. The rule stays because it states a true and useful
+property of the schema, not because it is a fix.
+
+### What `strict` going to 1/19 does and does not mean
+
+It means a sample exists that is now fully correct, so the pipeline can in principle
+produce a strict hit and M1 is not a structural impossibility. It does **not** mean
+progress toward 70%: one sample is 5.3%, the bar is 70%, and 12 more samples would
+have to become fully correct.
+
+### The alternative that finding 62 named is now the live one
+
+Finding 62 proposed two variants and argued for the grammar over the closed list. The
+grammar moved one sample. The remaining suspect is the one finding 62 explicitly
+deferred: **the 19-way open label space itself.** With the format now stated and the
+score barely changed, "the model does not know which label we want" is a stronger
+explanation than "the model does not know the format".
+
+That reframes `type` and `category` as **one problem rather than two**. `category` is a
+*closed* vocabulary, it was never the subject of a prompt defect, and it still sits at
+57.9% -- a 42% miss rate against a stated 7-value list. If specification is not what
+holds `category` back, specification is probably not what holds `type` back either,
+and the two figures (57.9% and 31.6%) are ordered the way one would expect from
+difficulty (7 choices versus an open space) rather than from the prompt asymmetry
+finding 62 identified.
+
+### What the next experiment should be
+
+Not another prompt variant. The three rates are now consistent with a **capability
+ceiling for this model on this task**, and the cheap way to test that is to change the
+model, not the prompt: run the same revision against a stronger provider through the
+existing registry. If `category` stays near 58% across providers, it is the task; if it
+moves, it is the model.
+
+That experiment needs no code change -- `RCA_BENCH_LLM_MODEL` is a repository variable
+and the registry is provider-agnostic by construction -- which is the first time this
+project's LLM abstraction pays off as a measurement instrument rather than as
+architecture.
+
+---
+
+## Finding 65 — the miss diagnosis answers a question the last four rounds could not
+
+Four rounds of reasoning about `type` and `category` produced four hypotheses, three of
+which needed a dispatch to test and one of which was refuted by its own pre-registered
+condition. The miss diagnosis settles the underlying question without spending a run, and
+the reason is embarrassing: **the answers were already being recorded.**
+
+`scripts/derive-fault-golden.mjs` writes every prediction's `type`, `category`, `component`
+and `description` into the artefact the scorer reads. The scorer's report printed the
+*rates* and nothing else, so the per-sample answers were present and unreadable. The
+reading was missing, not the data. Adding `misses` and `missClassification` to
+`ExtractionReport`, and two lines to the printout, exposes what was already on disk.
+
+The diagnosis distinguishes **`wrongValue` from `omitted`**, which is the distinction the
+previous rounds could not draw. A wrong value is the model's answer being incorrect; an
+omission is the model declining to answer. They have different fixes — a prompt shape rule
+addresses the first, a required-fields instruction addresses the second — and the
+headline rate collapses them.
+
+Built in the **same pass** as the rates, from the same `verdicts`, deliberately: a second
+implementation of "was this field right" is a second chance to disagree with the number it
+explains, and the failure would read plausibly.
+
+### The probe that removed a guard
+
+The first draft had three guards preventing a scored-`null` field from being reported as a
+miss, with a comment asserting all three were reachable through different inputs. That
+comment was wrong, and it was wrong in the way the codebase already warns about: a
+documented unreachable branch reads as protection.
+
+The counter-example is one line of `scoreField`:
+
+```ts
+if (expected === undefined) {
+  return null;   // not false
+}
+```
+
+A field the ground truth never asked about is `null`, never `false`. So `fields[field] ===
+false` implies an expectation exists, the third guard could never fire, and it was removed
+rather than kept-and-documented. Verified by probe, not by reading: a sample with no
+`description` expectation, paired with a prediction that also omits it and gets the other
+three fields wrong, reports exactly three misses and `description: graded 0/0 (n/a)`. The
+third guard never ran.
+
+Removing it took `extraction-scoring.ts` from `99.27 | 98.21` to `100 | 99.11`, and the
+remaining branch was a formatting ternary that a format test now pins.
+
+### The guard that stayed, and why the difference is not cosmetic
+
+The loop's other guard — `if (sample === undefined || prediction?.extracted === undefined)
+continue` — was also unreachable, and it *did* have to go, but for a different reason and
+by a different repair. Its second clause was doing real work for the type checker, which
+cannot see that a `graded` verdict implies a present `extracted`. Deleting it produced
+`TS18048: 'prediction.extracted' is possibly 'undefined'`.
+
+The repair was to make the pairing structural rather than to re-add the guard: `paired`
+now carries `{ sample, prediction, verdict }` from the single place they are already
+together, and `gradedPairs` narrows `extracted` once with a stated invariant. The lookup
+that could not be proven total is gone; the branch is gone; the type checker is satisfied.
+
+## Finding 66 — equivalent mutants have to be re-proven after the code they describe changes
+
+`for (const verdict of graded)` versus `for (const verdict of verdicts)` in the diagnosis
+loop is an equivalent mutant — both give identical output — and it survived injection twice.
+The first time it was documented as equivalent on the reasoning that ungraded verdicts carry
+all-null fields. That reasoning was correct, and the test suite did not check it.
+
+The repair is not a new test for the mutant, which cannot be killed, but a test for the
+**invariant the equivalence depends on**: every ungraded verdict carries all-null fields.
+`leaves every ungraded verdict with all-null fields, which is what makes graded == verdicts`
+asserts it for all three ungraded states, and now a mutation that gives `unvalidated` a
+scored field fails with `unvalidated is ungraded but carries scored misses: [["type",false]]`.
+
+Writing that test surfaced a **second** bug in the first draft of the fixture: the
+`unvalidated` case was built as `{ parseOk: true, validationValid: false }` with no
+`extracted`, which hits the `!parseOk || extracted === undefined` branch and lands in
+`unparseable`. The fixture was not exercising the state it was named for, and a mutation
+aimed at `unvalidated` survived *because the state was never reached*. The test now asserts
+each fixture reaches its named state, so this cannot recur silently.
+
+## Finding 67 — a character-truncated annotation can cut an expected value in half
+
+The miss-detail annotation was bounded with `cut -c1-900`. Measured against the real
+scorer at 19 samples × 3 scored fields, the payload is **4044 characters**, and the worst
+case ends mid-token:
+
+```
+...network-loss-payment-gateway.type:network-loss>wrong network-
+```
+
+That is half an expected value. A reader cannot tell a truncated value from a wrong one,
+which is exactly the failure the surrounding comment claimed to be avoiding — the comment
+said "a silently truncated line is worse than a stated bound" while the implementation
+produced one.
+
+Two errors compounded. The bound was a guess (900) never compared against the data, and it
+cut on characters when the unit that matters is the row. The repair takes whole rows and
+states the omission:
+
+```
+detail=$(printf '%s' "$missed_rows" | head -n 60 | tr '\n' ' ')
+dropped=$((miss_row_count > 60 ? miss_row_count - 60 : 0))
+```
+
+The cap of 60 is measured: 19 samples × 3 fields = 57 rows maximum, 4091 characters
+saturated, 64KiB annotation limit. So the truncation branch exists for a larger dataset and
+is not the normal case. A test asserts the cap is at least 57 — and fails with
+`the workflow caps detail at 10 rows but a fully-missed run produces 57` when it is not.
+
+## Finding 68 — a test helper that assumes a delimiter manufactured a green
+
+The workflow test's `classificationAndDetail()` built its detail regex with
+`detail.replace(/^s\//, '')`, assuming `/` was the `sed` delimiter. The detail substitution
+uses `|`, because its *replacement* contains a `/`. So the strip matched nothing, the `|p`
+suffix stayed on the pattern, and the resulting regex — `s|^    ([a-z]...)` — matched
+**every** line.
+
+Three negative assertions failed, which is how it was caught. But the two *positive*
+assertions had been passing for the wrong reason: they matched on the stray `s|` prefix at
+any offset, not on a real row. A helper that guesses a delimiter can therefore not merely
+miss a defect, it can **manufacture** a passing test.
+
+The repair reuses the delimiter-aware scanner the sibling helper already had — reading the
+delimiter from the expression rather than assuming it, and splitting by scanning rather than
+by a constructed `RegExp`. The same class of error had already been fixed once in this file
+for `headlineSubstitutions()`; the fix was not carried across, which is finding 47's shape
+again: a lesson recorded in one place and not applied in the next.
+
+## The retraction
+
+The previous round's closing recommendation was **"change the model, not the prompt"**,
+with the argument that ~58% `category` consistency across providers would prove a capability
+ceiling. That recommendation was challenged — *"why do you need another LLM?"* — and the
+challenge was correct.
+
+The reasoning had a break at one step. From "specification does not explain `category`'s
+42%" it concluded "specification is unlikely to explain `type`'s 26.3%". But **what
+`category`'s 42% actually is was never established.** A wrong in-vocabulary label and a
+rejected out-of-vocabulary synonym are different failures with different owners, and the
+second would have been *this scorer's parser* charging the model. Proposing a provider swap
+on top of an unmeasured 42% was building on an inference presented as a result.
+
+Two things then settled it without a run:
+
+1. **A logical fact.** `parseFaultExtractionResponse({category: 'net'})` returns
+   `{"ok":false,"error":"invalid fault category 'net'"}` — an out-of-vocabulary category
+   makes the **whole response** unparseable. Since `graded` is 19/19, no sample can have
+   answered a category outside the vocabulary, in any run, for any model. The
+   "parser rejected a synonym" class is foreclosed, not merely unlikely.
+2. **The answers were already on disk.** `derive-fault-golden.mjs` had been writing every
+   prediction's fields all along.
+
+So the provider question was not wrong because providers are irrelevant; it was wrong
+because it was **ordered after a reading that cost nothing**. The correct sequence is: read
+the answers, classify the misses, and only then ask whether the residual is capability. That
+is what findings 65–68 implement, and the provider experiment stays available — now with a
+measured baseline to compare against instead of an inferred one.
+
+---
+
+## Finding 69 — the diagnosis answers it in one reading, and the answer invalidates finding 62
+
+Run `36240660455` (`9932e766c`), first run carrying the miss diagnosis:
+
+```
+samples=19 graded_count=19 graded_rate=19/19 (100.0%) strict=0/19 (0.0%) m1=NOT MET (>= 70% strict)
+type=4/19 category=11/19 component=4/19 description=0/0
+classification=wrong value 38, omitted 0, samples with >= 1 miss 19
+```
+
+Three facts, each of which removes a class of explanation.
+
+### `omitted 0` — the model never declines to answer
+
+All 38 misses are answers that differ from the ground truth. Not one is a missing
+field. "The model is not answering" and "the required-fields instruction is missing" are
+both eliminated, and the earlier plan to address omissions would have been work on a
+failure that does not occur.
+
+### Every wrong `category` is a legal vocabulary value
+
+Eight `category` misses. Checked mechanically against `FAULT_CATEGORIES`:
+
+| expected | actual | legal? |
+|---|---|---|
+| `resource` | `code` | yes |
+| `runtime` | `resource` | yes |
+| `runtime` | `dependency` | yes |
+| `middleware` | `resource` | yes |
+| `middleware` | `code` | yes |
+| `middleware` | `resource` | yes |
+| `code` | `config` | yes |
+| `middleware` | `resource` | yes |
+
+**8 of 8 are inside the closed list. 0 are outside.** The model read the vocabulary
+correctly and chose a different member of it.
+
+This is the fact four rounds of reasoning were missing, and it **invalidates finding 62**.
+Finding 62 argued that `type`'s low score was a *specification* defect and that `category`'s
+57.9% was the visible cost of a well-specified field — so the fix was to specify `type`
+better. That conflated two different failures:
+
+- **formatting** — the model does not know what shape a value should take. Fixable with a
+  grammar, a vocabulary, an example.
+- **choosing** — the model knows the shape and picks the wrong member. Not fixable by any
+  prompt that describes the output space, because the output space was already correct.
+
+`category` was already in the second category and I read it as evidence about the first.
+Its 57.9% is not "a well-specified field far from 100%" — it is **a semantic
+disagreement rate**, and it is the natural ceiling for any field where the label depends
+on a judgement call about the incident rather than on a fact in it.
+
+The practical consequence: **finding 63's shape rule was aimed at the wrong failure mode.**
+It was not wrong to state the grammar — a stated shape is a precondition, not a fix — but
+the predicted jump it was measured against assumed a formatting problem. It bought one
+sample because the actual problem is elsewhere.
+
+### `component` is being answered by quotation
+
+The `component` misses show a distinct and nameable behaviour: the model quotes the
+incident text instead of naming the component.
+
+| expected | actual |
+|---|---|
+| `session-cache` | `session Redis` |
+| `billing-service` | `billing service database client pool` |
+| `analytics-replica` | `replica applier thread` |
+| `log-collector` | `log-collector-data-volume` |
+| `media-transcoder` | `ffmpeg native binding` |
+| `payment-gateway` | `client node egress interface` |
+
+Where finding 61 measured that 5 of 19 expected components never appear in the text in any
+form, this shows the complementary failure: the model **finds a phrase in the text and
+returns it**, because the field is named `component` and no instruction says the answer must
+be a component *identifier* rather than a component *description*. That is a formatting
+defect in the strict sense — and unlike `category`, it is fixable, because the expected
+values are identifiers and the instruction to give identifiers is absent rather than
+contradicted.
+
+### What this says about the remaining gap
+
+`strict` needs 13 of 19 samples fully correct. With `type` at 4/19 and `component` at 4/19
+against a 14/19 structural ceiling on `component`, no prompt change reaches 70%. The
+honest statement of M1's position is: **the task, as specified by this golden set with this
+model, is not reachable by prompt engineering**, and the two candidate paths are now
+distinguishable rather than a matter of opinion — either the ground truth labels are
+tightened to admit the model's defensible readings (a data change, and possibly a
+*correct* one), or a stronger model is tried (the experiment deferred in Pass 19, now with
+a measured baseline: `category` 8/8 legal-but-different is a claim a provider comparison
+can actually test).
+
+## Finding 70 — the annotation format was ambiguous, and I misread it first
+
+The first parse of the detail annotation reported **two rows where expected equalled
+actual** — `order-service -> order-service` and `tax-calculation -> tax-calculation` — which
+would have meant the scorer scoring a correct answer as wrong. It did not.
+
+The rows are space-joined, and the *values contain spaces*. `order-service` was the first
+token of the real answer `order-service ConfigMap`; `tax-calculation` the first token of
+`tax-calculation provider`. Tokenising on whitespace split records and produced two
+phantom contradictions.
+
+The scorer was correct throughout, and the diagnostic channel was not: **a separator that
+appears inside the data cannot separate the data.** This is finding 59's complaint about
+`strict=0/19` being unactionable, one level down — the reading exists, is correct, and is
+still capable of being misread, which for a measurement channel is the same defect.
+
+The repair: emit the detail with a **record separator that cannot occur in a value**.
+Values are derived from incident text and slugs, so `\x1f` (unit separator) is safe and
+conventional; a newline would work too but is harder to keep out of a shell pipeline. The
+annotation then states its own record boundary, and a reader does not have to infer it from
+the shape of the payload.
+
+## Finding 71 — the separator fix, and the two numbers that prove it
+
+Finding 70's repair is one line, so it is worth recording exactly what the line is worth,
+because "we changed the separator" is not evidence and this project's standard is that a
+change carries its measurement.
+
+Two runs over the same saturated payload — 19 samples, 3 scored fields, 57 rows, wrong
+values deliberately containing spaces:
+
+| channel | records recovered | tokens if split on whitespace | rows as published |
+| --- | --- | --- | --- |
+| space join (before) | ambiguous | 285 | 57 joined into one run |
+| `\x1f` join (after) | **57** | 57 | 57, each intact |
+
+**57 rows produce 285 whitespace tokens** — a 5x over-split. That ratio is the ambiguity,
+quantified: roughly four of every five "records" a whitespace-splitting reader would see
+are not records. Finding 70's two phantom rows were the visible tip of it.
+
+The saturated payload is 5306 characters (the earlier 4044 figure used a shorter wrong
+value and was an underestimate of the worst case, not a different measurement), and the
+cap is 60 rows, so `\x1f` costs nothing in length and the payload sits far inside the 64KiB
+annotation limit.
+
+### What the test asserts, and why not the literal byte
+
+Three injections, all caught:
+
+| injection | change | tests failed |
+| --- | --- | --- |
+| L | join with a space again | 3 |
+| M | separator is `,` (printable) | 3 |
+| N | raise the cap to 1000 | 1 |
+
+Injection N failing only one test is correct rather than weak: the cap has two bounds in
+opposite directions — too small truncates a routine run, too large overflows the
+annotation — and they belong to two different tests. N violates the second
+(`expected 116200 to be less than 65535`), not the first.
+
+The test does **not** assert the literal `\x1f`. It reads the byte out of the workflow's
+own `printf`, asserts it is a control character, and then asserts that **no value in the
+real dataset contains it**. Pinning the literal would pass forever while the dataset grew a
+sample whose value happened to contain the chosen byte; asserting the property catches
+that on the commit that introduces it. This is the same reasoning as finding 66: assert the
+invariant the choice depends on, not the choice.
+
+## Finding 72 — the separator, confirmed on live data -- and the ambiguity was 1.79x
+
+Finding 71 proved the separator on a synthetic saturated payload. The workflow has now run with
+it: run **36242319547** on `567118aea`, `success`, and the published annotation is readable as
+records for the first time.
+
+```
+records: 39            (39 rows, cap of 60 not reached)
+tokens if split on whitespace: 70
+records containing a space: 15 of 39
+```
+
+**Fifteen of thirty-nine records contain a space**, so the old space join would have shown
+**70 whitespace tokens for 39 records** -- a 1.79x over-split, measured on the real payload
+rather than the synthetic one. Every one of those fifteen rows would have been silently
+fragmented, and a reader reconciling tokens against the `samples with >= 1 miss 19` count
+would have had no way to tell.
+
+And the phantom mechanism is right there in the data. Two of the fifteen are:
+
+```
+config-datasource-url-orders.component:order-service>order-service ConfigMap
+dependency-upstream-5xx-pricing.component:tax-calculation>tax-calculation provider
+```
+
+These are exactly the two rows that produced finding 70's apparent `order-service -> order-service`.
+The scorer was never wrong. Under a whitespace split both rows begin with a token that repeats
+the sample's own component name, which reads as "the model answered correctly and the scorer
+marked it wrong" -- the most alarming possible misreading of a diagnostic, produced by a
+separator choice.
+
+### The reading this run produced
+
+```
+samples=19 graded_count=19 graded_rate=19/19 (100.0%) strict=0/19 (0.0%) m1=NOT MET (>= 70% strict)
+type=5/19 category=11/19 component=2/19 description=0/0
+classification=wrong value 39, omitted 0, samples with >= 1 miss 19
+```
+
+`component` moved 4 -> 2, and the detail says why. **Every one of the fifteen component rows is
+a description, not an identifier** -- `session Redis`, `replica applier thread`, `native ffmpeg
+binding`, `rack switch carrying the third node`, `scheduled job flag definition`. This is
+finding 69's third fact confirmed on independent data, and the mechanism is now visible in
+full rather than inferred from four examples: the model locates the passage that discusses the
+component and returns a phrase from it, every time.
+
+`omitted 0` again, on a second run. The model does not decline; it answers, and the answers are
+descriptions where identifiers were wanted. That is a formatting defect with a named fix, and
+it is the only one of the three fields for which that is true.
+
+## Finding 73 — the component hypothesis is refuted before it is implemented
+
+Finding 72 ended with a named lever: `component` is answered with a description where an
+identifier was wanted, so instruct the model to return the identifier. That reading is
+correct and the proposed fix is wrong, and the arithmetic says so before any prompt is edited.
+
+Applying the *actual* normaliser (`normalizeFaultType`: lower-case, whitespace and underscores
+to hyphens, strip non-alphanumerics) to all fifteen wrong answers:
+
+```
+sample                                   expected             model answered                        slug(answered)                       match
+resource-memory-leak-recommendation      recommendation-service  recommendation service session cache  recommendation-service-session-cache  no
+resource-disk-full-log-collector         log-collector        log collector pod                     log-collector-pod                     no
+network-delay-cart-to-inventory          cart-service         cart-to-inventory network path        cart-to-inventory-network-path        no
+network-loss-payment-gateway             payment-gateway      client node egress interface          client-node-egress-interface          no
+network-partition-search-cluster         search-cluster       rack switch carrying the third node   rack-switch-carrying-the-third-node   no
+runtime-container-crash-loop-media       media-transcoder     native ffmpeg binding                 native-ffmpeg-binding                 no
+middleware-redis-latency-cache           session-cache        session Redis                         session-redis                         no
+middleware-database-connection-pool      billing-service      billing service connection pool       billing-service-connection-pool      no
+code-unhandled-exception-export          export-worker        CSV writer                            csv-writer                            no
+code-slow-regex-api-gateway              api-gateway          WAF rule                              waf-rule                              no
+config-datasource-url-orders             order-service        order-service ConfigMap               order-service-configmap               no
+config-feature-flag-checkout             checkout-ui          scheduled job flag definition         scheduled-job-flag-definition         no
+dependency-upstream-5xx-pricing          tax-calculation      tax-calculation provider              tax-calculation-provider              no
+dependency-version-incompatibility-shipping  shipping-service  client library                        client-library                        no
+middleware-mysql-replica-lag-analytics   analytics-replica    replica applier thread                replica-applier-thread                no
+
+slugifying the answer produces the expected: 0 of 15
+```
+
+**Zero of fifteen.** If the failure were formatting, this column would be mostly `YES`: the
+answer would be the right words in the wrong shape. It is not. The answers are *different
+entities*:
+
+| expected (component identity) | answered (mechanism or location) |
+| --- | --- |
+| `media-transcoder` | `native ffmpeg binding` |
+| `export-worker` | `CSV writer` |
+| `api-gateway` | `WAF rule` |
+| `session-cache` | `session Redis` |
+| `payment-gateway` | `client node egress interface` |
+
+A shape rule would therefore produce **well-formatted wrong answers**. `component` would score
+0/19 in the same way it scores 2/19 now, with the added cost of having made the prompt longer
+and the failure harder to see. This is the trap finding 62 named for `type` -- a rule that
+describes the format of an answer the model is not giving -- and it applies more sharply here,
+because the model is not even in the neighbourhood.
+
+### What the failure actually is
+
+The model is answering "what is involved in this incident", where the ground truth asks "which
+component is faulty". Those are different questions, and the second one is not answerable by
+reading the text: only **5 of 19** expected components appear verbatim in their incident text,
+so the identifier must be *synthesised* from the expectation that the incident is about a
+named service. `recommendation-service` appears as "the recommendation service"; the model
+returns `recommendation service session cache`, which names the right service **and** its
+cache. It is not a near miss on formatting, it is a different granularity.
+
+### What follows for the design
+
+The lever is not the prompt. Two honest options remain, and they are now sharply distinguished:
+
+1. **The ground truth is the thing under test.** The model's answers are defensible readings of
+   the same incidents (`session Redis` for a Redis-cache sample is not wrong). If the golden
+   labels were tightened to admit the model's granularity, `component` would move -- and the
+   change would be a *data* change whose correctness is independently arguable, not a prompt
+   tweak tuned until a number rises.
+2. **The field is over-specified for the task.** `component` at 2/19 with a uniform,
+   100%-description failure is evidence that "the component" is not recoverable from these
+   texts by this task framing, and the field's weight in `strict` should be reconsidered.
+
+Both are decisions about what is being measured. Neither is reachable by editing the prompt,
+and finding 73 exists so that the next pass does not spend a run discovering that.
+
+## Finding 74 — the instrument is stable, so the moving rate is the model's
+
+Four runs produced `strict` 0 -> 1 -> 0 and `type` 5 -> 6 -> 4 on an identical dataset, an
+identical prompt and a nominally identical model. The available reading was "the model is
+noisy". That is a claim *about the model*, and it is only available if the instrument is
+stable -- and the instrument had never been tested for stability over the real data. Every
+existing scoring test graded hand-written fixtures.
+
+Four properties, now asserted over the real 19-sample dataset rather than a fixture:
+
+| property | why a violation would be invisible |
+| --- | --- |
+| **Determinism** -- two calls give byte-identical reports | a non-deterministic scorer makes every rate a sample, and a sample is indistinguishable from a measurement in the published number |
+| **Input purity** -- the scorer does not mutate the dataset | a second run would differ from the first for a reason unrelated to the model |
+| **Order independence** -- reversing the predictions changes nothing | positional pairing would score every sample against the wrong ground truth, and a re-sorted file would read as a model change |
+| **Denominator completeness** -- `samplesWithMisses` equals the graded samples with a miss, and `wrongValue + omitted` equals the detail rows | the two published lines could disagree while each looked self-consistent |
+
+All four hold. `strict`'s 0 -> 1 -> 0 is therefore **model sampling, not measurement drift** --
+which is a negative result and the useful one: it means M1's instability across runs is a fact
+about the model's output distribution, and a single run cannot be read as a capability
+estimate. That is the justification for treating `component` 4 -> 2 the same way rather than
+as a regression.
+
+### The battery found a defect in itself first
+
+Injection A (embed a per-call counter) initially reported **SURVIVED**. It had not survived --
+the injection's second anchor did not match the real `return {` shape, so the mutation was
+never applied and the test suite correctly reported nothing. An inert injection and a toothless
+test produce the *same* output: `SURVIVED`.
+
+That is the same class of defect as finding 68's manufactured green -- a signal that reads as
+a substantive conclusion while being an artefact of the instrument. The repair is that the
+battery now distinguishes three outcomes and fails on the two that are not `CAUGHT`:
+
+```
+CAUGHT  A. non-deterministic: embed a per-call counter in the report  (failed 2, passed 14)
+CAUGHT  B. mutates its input: sorts the samples in place              (failed 2, passed 14)
+CAUGHT  C. pairs by position instead of by id                         (failed 1, passed 15)
+CAUGHT  D. drops the denominator: omits a sample that missed          (failed 1, passed 0)
+battery: 4 caught, 0 survived, 0 inert
+```
+
+`INERT` is counted separately and non-zero exits non-zero, because "the mutation never
+happened" must not be reportable as "the test caught it" or as "the test missed it".
+
+## Finding 75 — The `component` rule rejects exactly one sample, and that sample is mislabelled
+
+Finding 73 established that `component`'s fifteen wrong answers are *different entities*, so no
+shape rule rescues them. Finding 74 established that the instrument is stable, so the field's
+readings are real. What neither settles is the prior question: **what is `component` a component
+of, and what rule makes a given answer right or wrong?** Without a stated rule the field is
+ungradeable in principle -- every answer is wrong for an unstated reason, which is
+indistinguishable from the grader being wrong.
+
+The cheapest way to find the rule is to look for the one that the ground truth *itself* obeys,
+since a ground truth that violates its own rule is a data defect rather than a model failure.
+Three candidates, measured over all 19 expected values:
+
+| candidate rule | coverage | verdict |
+| --- | --- | --- |
+| appears verbatim in the incident text | **5/19** | useless: the identifier must usually be *synthesised* |
+| verbatim, or with hyphens read as spaces | **13/19** | still rejects six legitimate names |
+| every hyphen token of the name appears in the text, case-insensitively | **18/19** | rejects **exactly one** |
+
+The third rule is the only one that nearly works, and the single sample it rejects is worth
+reading in full:
+
+```
+id:       config-feature-flag-checkout
+expected: checkout-ui
+
+The one-click checkout button disappeared from the storefront for all users at 08:00.
+No deploy ran. The flag service shows flag 'one_click_checkout' flipped to false at 07:59
+by a scheduled job that was supposed to flip a different flag; a copy-paste left the same
+key in both job definitions.
+```
+
+**The string `checkout-ui` does not appear, and no part of it can be derived from the text.**
+Every other expected component shares at least one token with its incident, which is why the
+token rule reaches 18/19 -- the six the space rule loses (`cart-service`, `session-cache`,
+`order-events-consumer`, `api-gateway`, `analytics-replica`) all keep their tokens
+(`cart`, `session`, `events`, `gateway`, `analytics`, `replica`) and only re-join them. This
+sample is the sole one where the ground truth is **not recoverable from the input at all**:
+
+- the failing subject is "the one-click checkout button" -- a UI element, never named as a service;
+- `checkout-ui` is a naming inference, not a reading;
+- the sample is bucketed under `category: config`, yet its mechanism is a *scheduled job*
+  flipping a flag, which is the same mechanism as `runtime-pod-kill-user-profile` -- whose
+  expected component is likewise a workload name.
+
+So `checkout-ui` is either an annotation error, or the benchmark relies on a naming convention
+it never states. Either way it is a **defect in the ground truth, not a model failure** -- and it
+is the one sample that makes the `component` rule unwritable.
+
+### The rule must not be written by watching the model
+
+The obvious failure mode is to pick whichever rule flatters the current answers. Measured, the
+fifteen wrong answers under the token rule:
+
+| how many wrong answers satisfy it | count |
+| --- | --- |
+| verbatim in the text | **7/15** |
+| all words present | **10/15** |
+
+A rule that **10 of the 15 wrong answers satisfy** cannot distinguish right from wrong -- and the
+seven that are verbatim are verbatim for the *wrong reason*, which is the sharper result:
+
+| sample | model answer | what it actually named |
+| --- | --- | --- |
+| `middleware-redis-latency-cache` | `session Redis` | the datastore instance, not the service |
+| `code-unhandled-exception-export` | `CSV writer` | a code symbol inside the faulting worker |
+| `code-slow-regex-api-gateway` | `WAF rule` | the *cause*, not the component |
+| `dependency-upstream-5xx-pricing` | `tax-calculation provider` | the upstream dependency, not the owner |
+| `config-datasource-url-orders` | `order-service ConfigMap` | the config object, not the service |
+
+Every one of these names something **real and present in the text**, one level off from what the
+field asks for. That is the same failure as `type`'s: the model answers a nearby question
+correctly. A prompt that merely asks for "the faulty component" leaves the level unstated, so
+the answers are not wrong so much as **un-asked** -- and this is a defect in the *task
+definition*, not in the model and not in the prompt's wording.
+
+### Consequence: `component` cannot be fixed by a prompt edit, and must not be fixed by editing the ground truth
+
+Two temptations, both refused on the evidence:
+
+1. **Editing the prompt to say "name the service, not the object"** -- rejected by the above. Ten
+   of fifteen wrong answers already satisfy the loosest textual rule, so a wording change cannot
+   be validated: any improvement would be indistinguishable from sampling noise (finding 74
+   showed `component` moves 4 <-> 2 across runs). The change would be unfalsifiable.
+2. **Editing `checkout-ui` to something derivable** -- rejected because the sample is evidence of
+   a real ambiguity in the benchmark's own definition, and editing it away destroys that
+   evidence while leaving the definition unwritten. The fix is to state the rule and then let
+   the sample be re-annotated *by the rule*, in a commit that can show the rule's own tests.
+
+The decision this leaves is a **data/design** one, and it is the round's open question: the
+benchmark must state what a component answer denotes (the deployed workload that owns the fault,
+on the evidence of the three well-formed samples `checkout-api`, `user-profile`,
+`media-transcoder`), after which the rule becomes testable, `checkout-ui` becomes either
+re-annotated or a named exception, and `component`'s rate becomes a capability estimate rather
+than a reading.
+
+## Finding 76 — The `component` rule has discriminating power, which makes a prompt edit unfalsifiable rather than useless
+
+Finding 75 argued that the token rule cannot distinguish right from wrong, on the strength of
+"ten of fifteen wrong answers satisfy it". Writing that rule as an executable test and running it
+against the recorded run -- four right answers and fifteen wrong ones -- **falsified the claim's
+strength while confirming its conclusion**. The measurements, in the test that now pins them:
+
+| side of the run | answers | accepted by the token rule | rate |
+| --- | --- | --- | --- |
+| correct | 4 | 4 | **1.00** |
+| wrong | 15 | 11 | **0.73** |
+
+So the rule **does** discriminate: it accepts every right answer and rejects four of the fifteen
+wrong ones. Finding 75's sentence "a rule that 10 of the 15 wrong answers satisfy cannot
+distinguish right from wrong" was an overstatement -- a 73% acceptance rate over wrong answers is
+not zero discrimination, and the correct statement of the defect is different and sharper.
+
+**The defect is not that the rule cannot tell right from wrong. It is that the gap is small enough
+to be closed by a prompt edit without any change in capability.** A prompt that pushed the
+answers toward text-present vocabulary would raise the acceptance rate on the wrong side toward
+1.00 -- the *measured* rate would improve while the *number of correct answers* stayed at four.
+That is the unfalsifiability finding 75 names, and it survives the correction: the argument never
+needed the rule to be useless, only for its acceptance rate to be uncorrelated with correctness
+in the direction a measured rate would move. The correction makes the argument stronger, because
+"the metric can be gamed upward" is a more specific failure than "the metric is noise".
+
+### The rule is looser than "the answer appears in the text"
+
+Finding 75 said the accepted answers "name something real and present in the text". Measured, the
+relation is looser than that: of the eleven accepted wrong answers, **exactly one** is a case
+where the ground-truth component itself appears verbatim. The other ten are accepted on **token
+co-occurrence alone** -- the answer's words appear, but the ground-truth component does not:
+
+| sample | expected component | accepted answer | why it passes |
+| --- | --- | --- | --- |
+| `dependency-upstream-5xx-pricing` | `tax-calculation` | `tax-calculation provider` | the component appears; the answer over-qualifies it |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | `order-events` | `order` and `events` occur; the answer truncates |
+| `dependency-version-incompatibility-shipping` | `shipping-service` | `client library` | neither is the component; both occur in the text |
+| `network-loss-payment-gateway` | `payment-gateway` | `client node egress interface` | names the failing path, not the owner |
+| `code-null-dereference-reporting` | `reporting-service` | `summarize()` | names the function the trace ends in |
+| `config-feature-flag-checkout` | `checkout-ui` | `scheduled job flag definition` | names the mechanism, not the subject |
+
+The first row is the single most informative datum in the round. `tax-calculation` is **readable
+verbatim** from its incident -- the sample where the model had the answer in front of it -- and it
+still answered `tax-calculation provider`. The readable set is five samples; the correctly
+answered set is four; and the single member of the difference is the sample where the model read
+the right entity and then named it one level off. That is the failure mode in its purest form,
+and it is now an assertion rather than an anecdote.
+
+This also corrects finding 75's framing of the accepted answers as "a real object one level off".
+Ten of the eleven are not one level off from the component; they are **on a different axis** --
+the mechanism, the path, the datastore, the symbol, the config object. The model is not
+mis-levelling a name, it is answering a different question, which is what finding 73 found at the
+entity level and this finding confirms at the rule level.
+
+### The assertions were rewritten three times, each time because the battery reported SURVIVED
+
+The battery is the reason the conclusion is trustworthy, so its own history is part of the
+evidence:
+
+| version | assertion | mutation that survived it |
+| --- | --- | --- |
+| 1 | `expect(WRONG[id]).toBe('session Redis')` | any -- it compared a literal to itself |
+| 2 | `expect(satisfied.length).toBeGreaterThanOrEqual(10)` | widening the bound to `0` |
+| 3 | `expect(wrongRate).toBeGreaterThan(0.5)` plus `expect(wrongRate).toBeLessThan(rightRate)` | **none: 8 caught, 0 survived, 0 inert** |
+
+Version 1 was a tautology over a literal declared three lines above it. Version 2 tested the
+"majority" claim only at its own boundary, so no mutation inside the range moved it. Version 3
+asserts a **contrast** -- a rate over wrong answers against a rate over right answers -- which
+can fail in both directions and therefore moves when either side changes. The rewrite was not
+driven by reading the code for weakness; it was driven by eight injections, one of which
+reported `SURVIVED` after every honest attempt to make it fail.
+
+One further correction came from the same source. An intermediate version asserted that the
+readable-and-wrong set and the accepted-and-wrong set were the **same** set; measuring showed
+eight accepted wrong answers are not readable at all, so the bijection was false. The honest
+statement is a set difference with a named count, which is what the test now asserts -- and the
+injection that closes the gap in the wrong direction is caught.
+
+### Consequence for the round's open decision
+
+Nothing in this finding changes the recommendation, but it changes what the recommendation rests
+on. The benchmark still needs a **stated** rule for what a `component` answer denotes, and the
+evidence for it is now: three samples whose answer is the deployed workload named verbatim
+(`checkout-api`, `user-profile`, `media-transcoder`), four answered correctly under exactly that
+reading, and one sample (`config-feature-flag-checkout` / `checkout-ui`) whose ground truth is not
+recoverable from its text at all. What is newly excluded is the *reason* a prompt edit is refused:
+not because the rule is meaningless, but because a rule with a 73% acceptance rate on wrong
+answers cannot be validated by its own rate.
+
+## Finding 77 — The battery that catches false readings shipped with a false reading of its own, and the CI run is what caught it
+
+`3a04d26` pushed twelve gates and two injection batteries. Eleven passed locally and in CI.
+The twelfth -- the scorer-stability battery, the very step that exists to prove the other gates
+mean something -- **failed in CI on its first run and passed locally every time**.
+
+The job step list, read through the API because the log channel is unreachable:
+
+```
+9   Test with coverage (core + cli, ≥95% per dimension, 100% functions)   success
+10  Mutation suite (gate + export, 100% interception)                     success
+11  Scorer stability battery (no survivors, no inert mutations)           failure  <== FAILED
+12  Golden Master verification                                             skipped
+```
+
+The cause was three lines at the top of `scripts/inject-stability.mjs`:
+
+```js
+const SRC  = '/root/.codebuddy/artifact/rca-work/rca-bench-factory/packages/core/src/fault/extraction-scoring.ts';
+const BAK  = '/tmp/extraction-scoring.bak.ts';
+const REPO = '/root/.codebuddy/artifact/rca-work/rca-bench-factory';
+```
+
+**The absolute path of the machine it was written on.** On the runner there is no such
+directory, so `copyFileSync` threw before the first injection and the step exited non-zero. The
+failure was total and silent: no injection ran, so the output said nothing about the scorer, and
+a reader who saw only "battery failed" could have concluded the *tests* were weak when in fact
+the battery never started.
+
+### Why this is worse than an ordinary bug
+
+The repository's stated standard is that a pre-push gate makes local-pass/CI-fail drift
+impossible. This defect inverted it: **the script whose purpose is detecting work that only
+appears to pass was itself work that only appeared to pass.** It is finding 68's manufactured
+green in the most load-bearing place available -- not in a test, and not in a battery, but in the
+battery's own entry path. Three properties made it invisible:
+
+| property | why it hid the defect |
+| --- | --- |
+| the path was correct on the author's machine | every local run passed, including the run that produced finding 76's eight-caught result |
+| the failure mode was an exception before any output | the console showed nothing that distinguished "did not start" from "found nothing" |
+| the sibling script got it right | `verify-scorer-stability.mjs` resolves from `import.meta.url`, so a reader comparing the two would see one correct example and one correct-in-appearance example |
+
+### The fix, and the gate that prevents a repeat
+
+Paths now resolve from the script's own location, and the backup lives inside the repository
+rather than in a shared temp directory:
+
+```js
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, '..');
+const SRC  = resolve(REPO, 'packages/core/src/fault/extraction-scoring.ts');
+const BAK  = resolve(REPO, 'node_modules/.cache/extraction-scoring.bak.ts');
+```
+
+Repairing the three lines is not sufficient, because the next script can make the same mistake.
+A static check was added and wired into the `lint` chain -- `scripts/check-no-absolute-paths.mjs`,
+which fails on any string literal under `/Users`, `/home`, `/root` or `/private` in `scripts/`,
+`packages/*/src` and `golden-master/`. It found **eight occurrences across five files**, three of
+which predated this round:
+
+| file | path | disposition |
+| --- | --- | --- |
+| `scripts/inject-stability.mjs` | the author's checkout | **the CI failure** -- fixed |
+| `scripts/inject-component-rule.mjs` | a fixed `/tmp` report path | written this round, fixed before it could fail |
+| `scripts/fetch-official.mjs` | `/tmp/official` output default | left: a portable fallback, and the rule was narrowed to say so |
+| `scripts/injection/*.py` (3 files) | the author's checkout, `/tmp` backups | fixed: these are cited by `docs/audit.md` as historical evidence, so deleting them would destroy the record |
+
+The check was then **verified to have teeth** by reintroducing the exact defect and confirming it
+fails, then restoring and confirming it passes -- the same discipline this finding is about.
+
+### Verification on a CI-shaped layout
+
+Passing locally proves nothing about this class of defect, so the fix was verified in a directory
+that is *not* the author's checkout:
+
+```
+$ cd /tmp/ci-sim2/work && node scripts/inject-stability.mjs
+CAUGHT  A. non-deterministic: embed a per-call counter in the report  (failed 2, passed 14)
+CAUGHT  B. mutates its input: sorts the samples in place              (failed 2, passed 14)
+CAUGHT  C. pairs by position instead of by id                         (failed 1, passed 15)
+CAUGHT  D. drops the denominator: omits a sample that missed          (failed 1, passed 0)
+battery: 4 caught, 0 survived, 0 inert
+EXIT=0
+
+$ cd /tmp/ci-sim2/work && node scripts/inject-component-rule.mjs
+battery: 8 caught, 0 survived, 0 inert
+EXIT=0
+```
+
+Running `check-no-absolute-paths.mjs` in that same directory **also** reported the two `.py`
+files, because the copy step had not yet picked up their fix -- an unplanned second demonstration
+that the check detects the real defect rather than a pattern it was tuned to.
+
+### What this changes about how the round is read
+
+Finding 76's conclusion -- 8 caught, 0 survived, 0 inert -- was produced by a battery that could
+not have run in CI. The *result* stands, because the injections did apply on the machine where it
+ran and the mutations and catches are reproducible there; but the claim "this is a gate" was
+false until this finding, since a gate that fails everywhere except one machine protects nothing.
+The distinction is worth keeping explicit: the measurement was sound, and the enforcement was not.
+
+## Finding 78 — M1's ceiling is 18/19, and the *component* field costs exactly one sample of headroom
+
+Every pass since 21 has closed on the same open question, stated identically each time: the benchmark
+must *state* what a `component` answer denotes. Finding 75 declined to state it and gave a reason --
+`checkout-ui` is not recoverable from its own incident text, so no rule describes the ground truth.
+Finding 76 declined to state it too, and gave a different reason -- the loosest rule accepts 73% of
+the wrong answers, so no prompt edit can be validated against it.
+
+Both findings are about the *rule*. Neither answered the question the milestone is actually scored
+on: **what is M1's ceiling, and what does the `component` field cost?** That is a measurement, not a
+design debate, and it had never been taken.
+
+### The measurement
+
+`scripts/probe-m1-ceiling.mjs` computes it. Two definitions, reported side by side because a
+"ceiling" quoted without its definition is the class of number this repository has retracted three
+times:
+
+```
+component, under the loosest defensible rule (all hyphen tokens present):
+  recoverable   18/19
+  unrecoverable 1/19  [config-feature-flag-checkout]
+
+M1 strict threshold: 0.7
+strict, every stated field required:
+  ceiling 18/19 = 94.7%  CLEARS M1
+strict, component excluded from the definition:
+  ceiling 19/19 = 100.0%  CLEARS M1
+
+the decision costs 1 sample(s) of headroom: 18/19 strictly vs 19/19 without component.
+```
+
+### Why this contradicts what the documents said
+
+`docs/audit.md` finding 69 states the opposite, in the present tense:
+
+> `strict` needs 13 of 19 samples fully correct. With `type` at 4/19 and `component` at 4/19 against
+> a **14/19 structural ceiling** on `component`, no prompt change reaches 70%.
+
+Both halves of that sentence are wrong, and they are wrong in the same direction -- they make the
+milestone look unreachable when it is reachable.
+
+**The 14/19 figure was never measured.** It appears in the audit with no derivation, and the
+arithmetic does not reproduce: 18 of 19 expected components are recoverable under the rule finding 75
+itself names as the loosest defensible one. A ceiling of 14/19 implies five unrecoverable samples;
+there is one. The likely origin is a count taken over a *stricter* rule and then quoted under this
+one, which is the same defect as the `538` figure finding 54 retracted -- a number that outlived the
+measurement it came from.
+
+**"No prompt change reaches 70%" does not follow from the ceiling in any case.** The ceiling is a
+bound on what the *ground truth* admits, not on what the *model* can achieve, and the two are
+independent: a model that gets every recoverable field right scores 18/19 = 94.7%. The sentence
+conflates "the benchmark cannot ask more than 18 questions" with "the benchmark cannot be passed",
+which is the mistake a ceiling measurement exists to prevent.
+
+### What is actually true
+
+| claim | value | source |
+| --- | --- | --- |
+| expected components recoverable under the loosest rule | **18/19** | probe, and `fault-prompt-grammar.test.ts` |
+| the one exception | `config-feature-flag-checkout` / `checkout-ui` | both |
+| M1's strict ceiling, component required | **18/19 = 94.7%** | probe |
+| M1's strict ceiling, component dropped | **19/19 = 100%** | probe |
+| headroom the `component` decision costs | **1 sample** | probe |
+| samples the model must get fully right to clear 70% | **14 of 19** | `M1_STRICT_THRESHOLD` |
+| headroom above that requirement | **4 samples** | 18 - 14 |
+
+So the position is: M1 needs 14 of 19 fully correct, the field structure permits 18, and the four
+samples of slack are what the round has been spending. The `component` field -- the field two
+findings were written about, the field a whole pass was spent making executable -- **costs one
+sample of headroom out of four.**
+
+### Consequence for the open decision
+
+The decision is now an arithmetic one rather than a judgement call, and it inverts the priority the
+last several passes assigned it.
+
+**Stating the `component` rule recovers at most one sample.** Even the strongest version -- state the
+rule, re-annotate `checkout-ui` by it, get the model to answer it -- moves the ceiling from 18/19 to
+19/19. Against a 14-sample requirement that is a 7% increase in headroom, and it requires a dataset
+edit, a prompt edit, a re-run, and a new finding for each.
+
+**The binding constraint is `type`, and it is not a definitional problem.** Finding 69's `type` at
+4/19 is a model-accuracy figure, not a ceiling: all 19 expected types are distinct slugs and
+`normalizeFaultType` leaves each unchanged, so nothing about the *data* limits how many the model can
+answer. The probe asserts exactly that distinction, and finding 62's prompt fix has already been
+applied and measured without moving the number.
+
+The honest statement of M1's position is therefore: **the benchmark can ask 18 questions, the model
+answers 4 well enough to clear the bar, and closing that gap is a model capability question rather
+than a `component` definition question.** The `component` rule should still be stated -- an unstated
+rule makes the field ungradeable in principle and finding 75's argument for stating it stands -- but
+it should be scheduled as one sample of cleanup, not carried as the milestone's blocker.
+
+### Guards, because this number will be quoted
+
+The probe's own tests (`packages/core/test/m1-ceiling-probe.test.ts`) compute the expected
+recoverability **from the dataset** and require the probe to agree, rather than reading two numbers
+out of the same report -- the battery showed that a test comparing the report to itself proves only
+that the report is internally consistent. The probe partitions the ground truth into recoverable and
+unrecoverable and *derives* the second list from the first, with a guard that fires when the two
+disagree; the first draft computed them by two independent filters, and an injection that exempted
+one sample from the positive filter left the negative one untouched, so the report held two
+contradictory figures and nothing said which was right.
+
+## Finding 79 — Two batteries classified a suite that never ran as a suite nothing could break
+
+Finding 78's probe needed assertions about its published figure, and this repository's standard for
+anything that reports a number is a battery that requires each assertion to be breakable. The file
+was written, it passed 8/8, and it was then driven through a battery of its own. **Seven of the
+eight mutations survived.**
+
+That is the finding: the tests were written and looked correct, and almost none of them could fail.
+
+### The three defects, in the order the battery found them
+
+**1. A relaxed assertion with no mutation to expose it.** Three injections changed the test file
+alone -- relaxing an equality to a bound, dropping a named tripwire, replacing a derived value with a
+literal. All three SURVIVED, and the survival was *correct*: with the probe publishing correct values,
+nothing in the file could fail, because the relaxation was the only change. An injection that edits
+only the assertion under test and leaves the subject correct is not a test of the assertion. Each was
+re-paired with the probe mutation it exists to catch, and all three then failed.
+
+**2. `-1 > 0` is false, so a broken runner read as a survivor.** `runSuite()` returns
+`failed: -1` when the vitest process produces no JSON report -- which is what a mutation that crashes
+the script under test looks like. The branch was:
+
+```js
+if (result.failed > 0) { CAUGHT } else { SURVIVED }
+```
+
+so a mutation that stopped the suite from running at all was classified SURVIVED and counted as an
+assertion nothing could break. **The sibling battery in CI (`scripts/inject-component-rule.mjs`) has
+the same branch, so this was a live defect in a gate, not only in the new file.** Both now read the
+total test count: zero tests run is caught, not survived.
+
+**3. Zero failures is also what a passing suite reports.** Fixing (2) exposed a second form of the
+same ambiguity. Vitest writes `failed: 0, passed: 0` when the test file throws during *collection* --
+the probe mutation that makes the script throw at module load is the case -- and with the fix above
+in place that still read as a suite that ran and found nothing. The distinction that actually
+separates the cases is `numTotalTests`, not either count, and it is what both batteries now use.
+
+Three ways to write "did the suite fail", and only the third distinguishes a mutation nothing detects
+from a mutation that broke the runner. This is finding 74's INERT/SURVIVED distinction in a second
+place, arrived at the same way -- by a run whose output was ambiguous rather than wrong.
+
+### The identity claim, and why its failure to be caught is *not* a defect
+
+Injection B swaps which sample is unrecoverable (the count stays at one) and relaxes every assertion
+about that identity. Four attempts were needed to make it caught, and the sequence is worth keeping
+because it shows how easily a claim becomes unenforceable:
+
+| attempt | relaxed | result | what it revealed |
+| --- | --- | --- | --- |
+| 1 | the named tripwire | SURVIVED | the partition test derives the set from the dataset independently |
+| 2 | + the derived comparison | SURVIVED | the membership test still checked the length against the same derived count |
+| 3 | + that length check | SURVIVED | nothing else pinned the identity |
+| 4 | + the literal, replaced with a *contrast* | **CAUGHT** | naming the other end of the move gives the assertion a relationship to the data |
+
+The lesson is attempt 4. A literal compared to a reported value can be relaxed into agreement, because
+relaxing it changes only the relationship between two numbers that already agree. A contrast against
+the sample the mutation moves *to* cannot: `expect(ids).not.toContain('network-delay-cart-to-inventory')`
+plus the properties of that sample fails whichever direction the swap goes. This is finding 76's
+conclusion -- an assertion that records a distribution fact has no structural consequence, so the
+question is not "can it be deleted" but "does asserting the opposite direction fail" -- reached
+independently in a different file.
+
+A correction came out of attempt 4 as well. The contrast's first version asserted that the swap
+target's text contains `cart-service` verbatim, and that is false: the incident says
+"Cart-to-inventory" and "the inventory service", and the rule accepts the component because both of
+its hyphen tokens occur, not because the joined name does. The assertion now pins the actual
+mechanism -- both tokens present, the joined form absent -- which is the distinction the whole
+`component` question turns on.
+
+### A measurement taken while a battery was writing the source
+
+One core coverage run reported `1 failed | 2444 passed`, and the rerun reported `2445 passed` with no
+failure. The cause is operational rather than logical: the run was issued while an injection battery
+was mid-flight, and a battery mutates `packages/core/src/fault/extraction-scoring.ts` and the golden
+dataset on a timer. A test that reads a file the battery had temporarily rewritten is a test that can
+fail for a reason that has nothing to do with the code. The gate chain runs the batteries in
+sequence for this reason, and the lesson generalises: **two processes that both write the same source
+tree must not run concurrently**, and a green suite is only evidence about the revision it was run
+against.
+
+### What this changes
+
+The probe's figure from finding 78 stands -- it was measured by a script, before any of this, and the
+battery's job was to check the assertions *about* it, not the figure. What changes is the confidence
+in the guards: the tests now compute their expectations from the dataset rather than from the report,
+the partition is derived rather than filtered twice, an injection that breaks the two halves apart
+trips a guard, and a suite that will not run is counted as caught. All of those are recorded as
+mutations, so the next edit to the file is checked rather than trusted.
+
+## Finding 80 — The `component` rule is statable, and stating it required re-annotating one sample
+
+Finding 75 established that the `component` field was ungradeable in principle, found the token rule
+the ground truth itself obeys, and measured it rejecting exactly one sample: `config-feature-flag-checkout`,
+annotated `checkout-ui`. Finding 78 priced that sample at one of four samples of headroom and
+scheduled the fix as cleanup rather than a milestone blocker. This round does the cleanup, and the
+measurement that made it safe is the one worth recording.
+
+### What the sample actually is
+
+The hypothesis finding 75 left open was that the sample is *unrecoverable* -- that no name derivable
+from its text could be the answer. That is true of `checkout-ui`, and false of the sample:
+
+```
+id:       config-feature-flag-checkout
+expected: checkout-ui            <- the string does not appear in the text
+text:     "...disappeared from the storefront for all users..."   <- storefront does
+          "...The flag service shows flag 'one_click_checkout'..."<- flag service does
+```
+
+Measured over all 19 samples, this is the **only** annotation in the file whose name is absent from
+its own incident text. Every other expected component shares at least one token with its text; this
+one shared none, because it named a UI element inferred from the symptom rather than a workload read
+from the incident.
+
+So the finding is not "one sample is unrecoverable". It is **one sample was mis-annotated**, and the
+text it was mis-annotated from names two deployed workloads. Re-annotating it to the workload whose
+user-visible surface broke -- `storefront` -- closes the rule with no exception:
+
+| reading | ceiling | headroom over the 14-sample requirement |
+| --- | --- | --- |
+| as shipped (`checkout-ui`) | 18/19 = 94.7% | 4 samples |
+| re-annotated (`storefront`) | **19/19 = 100%** | **5 samples** |
+
+### What the re-annotation cost, which is not nothing
+
+Changing a ground-truth value moves every figure computed over it, and four of them moved:
+
+| figure | before | after |
+| --- | --- | --- |
+| readable-verbatim set | 5 | **6** |
+| readable-and-wrong | 1 | **2** |
+| wrong answers accepted by the token rule | 10/15 (0.67) | **9/15 (0.60)** |
+| accepted on token co-occurrence alone | 8 | **7** |
+| strict ceiling | 18/19 | **19/19** |
+
+The wrong-answer acceptance rate **fell**, which is the interesting part: the rule now accepts a
+smaller share of the wrong answers. It remains above 0.5, so finding 75's argument -- that a rule
+this permissive cannot grade the field, and a prompt edit toward it would be unfalsifiable -- still
+holds. The movement is recorded rather than smoothed, because a rate quoted from a stale run would
+be a false reading of exactly the kind this repository has retracted before.
+
+### The rule that is now stated
+
+`buildFaultExtractionPrompt` carries a `FAULT_COMPONENT_RULE` beside `FAULT_TYPE_SHAPE_RULE`, stating
+the *level* (the deployed workload that owns the fault, not the config object, code symbol, upstream
+dependency or UI element) and the *shape* (a lower-case hyphenated slug). The level is the
+load-bearing half: all fifteen wrong answers from the recorded run are well-formed identifiers, so a
+shape rule alone would not have changed a single one. What they got wrong was which entity they named.
+
+The rule is a description of the data, not a new requirement -- the same contract `type`'s rule makes.
+Both properties are asserted over the real file, so a dataset edit that breaks either fails a test
+rather than silently invalidating the prompt text. Deliberately not a list of the 19 answers: the
+prompt's examples (`payments-api`, `search-indexer`, `session-store`) are chosen to be unlike any
+dataset component, and a test asserts none of the 19 appears in the prompt.
+
+### The part that was nearly missed
+
+**Four injections across two batteries went stale the moment the data moved, and none of them was a
+probe or test defect.** They were the batteries mistaking the day's numbers for the invariant:
+
+| injection | how it went stale |
+| --- | --- |
+| probe battery A, B | asserted `unrecoverable == 1` and `ceiling == 18`, which encoded the gap |
+| probe battery C | anchored on `"checkout-ui"`, which no longer exists -- INERT |
+| probe battery E | `strictCeiling = total` became a no-op once `recoverable.length == total` |
+| probe battery J | exempting the re-annotated sample became a no-op for the same reason |
+| test battery A, G | same `checkout-ui` exemption, applied-but-inert -- the worst kind |
+| test battery H | anchored on `"checkout-ui"` -- INERT |
+
+The fix is structural, and it is the finding: **every requirement in the probe battery now reads the
+baseline the probe actually reports**, so it asserts a *movement* rather than a literal. A requirement
+phrased as "the ceiling fell by one" survives a dataset edit that moves the ceiling; a requirement
+phrased as "the ceiling is 18" turns into a false alarm. Two injections also had to be re-aimed at
+what the closed ceiling can still distinguish, because a mutation that is a no-op under the new data
+cannot be caught by any assertion -- E now drops a sample from the numerator, and J reproduces the
+original two-independent-filters defect rather than a plausible-looking edit that still partitions.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| probe | 19/19, unrecoverable 0/19, headroom cost 0 samples |
+| probe battery | **10 caught, 0 survived, 0 inert** |
+| test battery | **8 caught, 0 survived, 0 inert** |
+| component-rule battery | **8 caught, 0 survived, 0 inert** |
+| stability battery | **4 caught, 0 survived, 0 inert** |
+| core | 2623 passed (87 files), `src` 100 / 100 / 100 / 100 |
+| cli | 173 passed |
+| golden master | PASSED (6 OpenRCA + 4 RCAEval byte-stable) |
+| official | PASSED (8 targets, 1 skipped by contract) |
+| docs / examples / registry / bundle | up to date |
+
+### What this changes for M1
+
+**The benchmark can now ask 19 questions rather than 18, and the field's definition no longer costs
+headroom.** The milestone's remaining gap is unchanged and is the one finding 78 identified: the model
+answers few of those questions well enough to clear the bar, and `type` is the binding constraint with
+no structural ceiling behind it. Stating the rule did not raise the measured accuracy on its own -- it
+removed a reason the measurement could not be trusted.
+
+## Finding 81 — The `type` shortfall is a capability limit, and it drifts toward over-specification
+
+Finding 69 classified `category`'s eight misses one by one -- `resource -> code`, `runtime -> resource`,
+and so on -- and concluded that the model chose a legal vocabulary member, so the failure was *choosing*
+rather than *formatting*. Finding 78 then argued `type` has no structural ceiling behind it and read its
+4/19 as a model-accuracy figure. **Neither reading was a reading.** Finding 69's conclusion was taken
+over `category` and *asserted* of `type`; finding 78 repeated the assertion. This round takes the
+reading, and it is the same asymmetry finding 69 was written to close, one field over.
+
+### The question, stated so it can be answered
+
+When the model's `type` differs from the expected slug, is it
+
+| class | what it means | whose defect |
+| --- | --- | --- |
+| `form-variant` | the answer normalizes equal to the expected slug | **this repository's** -- the scorer rejected an answer it should have accepted |
+| `shares-token` | same subject, more words (`cpu-saturation` -> `cpu-throttling`) | the model's, and a near miss |
+| `different-mechanism` | something else entirely (`network-loss` -> `egress-packet-drop`) | the model's |
+
+The partition matters because the first class is actionable here and the other two are not. The
+normalizer under test is `normalizeFaultType`, which is a pure **form** normalizer:
+
+```ts
+type.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '')
+```
+
+It folds case, whitespace and separators. It **strips** rather than replaces punctuation, so
+`null.dereference` becomes `nulldereference` and is *not* equal to `null-dereference`; a trailing hyphen
+is **kept**, so `cpu-saturation-` is not equal either. It performs **no synonym resolution**. Both of
+those distinctions were asserted wrongly in the first draft of the test file and are now pinned as the
+negative half of a contrast, because they are the reason the recorded misses are not form variants.
+
+### The reading
+
+The fifteen `type` misses of run `9932e766c` are recorded in the CI annotation in `expected>actual`
+form, e.g. `resource-cpu-saturation-checkout.type:cpu-saturation>cpu-throttling`. They are transcribed
+into `scripts/probe-type-misses.mjs` with their run named:
+
+```
+form-variant 0 | shares-token 9 | different-mechanism 6
+over-specified (answer longer than the expected slug): 11/15
+no form variant: the normalizer is not the defect, so no answer here was rejected
+that should have been accepted
+```
+
+**The first class is empty, and that is the load-bearing result.** Not one of the fifteen answers would
+have been accepted by a correct normalizer. There is no scoring defect to fix, and no synonym table
+would close the gap either -- a synonym table is a *form* device and nine of the fifteen misses are not
+form failures at all.
+
+### The new fact: the drift is toward over-specification
+
+| direction | count |
+| --- | --- |
+| answer longer than the expected slug | **11 / 15** |
+| answer shorter | 2 / 15 |
+| same length, different mechanism | 2 / 15 |
+
+The model is not naming a different field or inventing unrelated vocabulary. It is **describing the
+incident** where the prompt asks it to **name the mechanism**: `replica-lag` -> `replica-apply-thread-saturation`,
+`redis-latency` -> `redis-command-thread-saturation`, `disk-full` -> `disk-space-exhaustion`,
+`container-crash` -> `native-ffmpeg-segfault`. That is a specific, testable claim about the failure mode,
+and it is what makes the finding actionable -- the fix is a prompt constraint on *level of abstraction*,
+not a bigger vocabulary.
+
+### The instrument
+
+Two artefacts, because the figure is published and this repository holds published figures to one
+standard.
+
+`scripts/probe-type-misses.mjs` is the classifier that ships. Its `counts` keys are the **same strings**
+the classifier returns (`form-variant`, not `formVariant`); an earlier draft used camelCase keys with
+kebab-case values and the mismatch was invisible in the human-readable output while breaking every
+programmatic consumer. It exits `2` when a form variant is found, because that is a bug and the probe has
+to be usable as a gate rather than only as a report.
+
+`packages/core/test/type-miss-probe.test.ts` (8 tests) is the assertion half. It duplicates the
+classifier rather than importing it, and a test runs the shipped script as a **subprocess** and requires
+its output to match -- a test that imports its subject's helper proves only that the file agrees with
+itself. The discriminating test constructs form variants, so `form-variant 0` passes for the right
+reason rather than because a classifier returning `differentMechanism` for everything would also report
+zero.
+
+`scripts/injection/type-miss-probe.py` is the battery. It is the first in this repository whose
+injections are **paired**, and expressing that is a change to the battery's own machinery:
+
+| injection | pair | why half a pair is undecidable |
+| --- | --- | --- |
+| B | unreachable form-variant class + a case variant to fold | the class is empty in the baseline, so making it unreachable moves no count; the data edit alone is invisible because the variant folds |
+| D | folding removed + a variant whose only token is upper-case | `POD_KILL` also *shares a token* once folded, so removing folding leaves it classified as a near miss and the count stays 0 |
+| E | guard disabled + a non-exhaustive classifier | the three classes cover the transcription by construction, so no data mutation reaches the missing guard |
+| E2 | dead guard + a non-exhaustive classifier | says whether E tests the guard or the crash: a `covered < 0` condition reports the same benign partition as a correct one |
+| H | exit code forced to 0 + a variant that must trip it | the JSON is unchanged, so only an input *with* a form variant distinguishes "the gate is open" from "there is nothing to gate" |
+
+The pairing is expressed as an **`also` slot**, applied to the result of the first mutation, with
+`main` refusing the pair if the second edit changed nothing. An earlier version of the file described
+the pairs in prose and reported four SURVIVED -- the correct outcome for a battery asserting half a pair
+and describing the other half.
+
+An injection whose second half is a no-op is not a mutation at all. B, D and H had to have their data
+halves chosen rather than assumed: `NETWORK_LOSS` works for B because the class is *unreachable* so the
+folded variant is discarded, and `CPU-SATURATION` works for D because its single folded token is not a
+token of the expected slug. `POD_KILL` does not work for D, and that failure is recorded in the file.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| type-miss probe | 15 misses -- `form-variant 0`, `shares-token 9`, `different-mechanism 6`, over-specified 11 |
+| type-miss test | 8 passed |
+| type-miss battery | **14 caught, 0 survived, 0 inert** |
+| probe battery | 10 caught, 0 survived, 0 inert |
+| M1 test battery | 8 caught, 0 survived, 0 inert |
+| component-rule battery | 8 caught, 0 survived, 0 inert |
+
+### What this changes for M1
+
+**The remaining M1 gap is a capability gap, and the next round has a specific hypothesis to test.** The
+`type` field is the binding constraint, no normalizer change reaches it, and the measured failure mode
+is over-specification rather than misidentification. That converts "the model is not accurate enough"
+into "the prompt asks for a name and the model supplies a summary", which is a prompt change that can be
+tested against these same fifteen rows.
+
+The round did **not** raise the measured accuracy and does not claim to. It removed a hypothesis that
+was standing on an argument rather than on a reading, and it replaced it with one that stands on a
+measurement.
+
+---
+
+## Finding 82 — Five gates were "covered by CI running them", which is not coverage
+
+The audit said so itself, in the section on what the meta-gate does not reach:
+
+> Five gates above still have no test naming them -- `check-readme-sample.mjs`, `build-example-bundle.mjs`,
+> `gen-examples.mjs`, and the second exits of `check-cli-reference.mjs` and `gen-rcaeval-cases.mjs`. They
+> are covered by CI running them against the real tree, which is a weaker claim than a test that forces
+> them to fail, and it is the honest status.
+
+This finding closes that gap and reports what closing it exposed. Four of the five now have a test file
+of their own; the fifth already had one and gained the assertions it was missing. The count is not the
+interesting part. **Two of the five gates were carrying a guarantee that does not exist**, and neither
+was visible from a green CI run -- because a gate that runs correctly and reports correctly on a tree
+that never violates it is indistinguishable, from the outside, from a gate whose failure branch is dead.
+
+### What each test had to force
+
+A test that runs a gate against the real tree and sees exit 0 proves the gate does not crash. It does
+not prove the gate would refuse. Every test below therefore builds a tree in which the gate *must*
+refuse, and asserts the refusal:
+
+| gate | fixture | what the gate must refuse |
+| --- | --- | --- |
+| `check-readme-sample.mjs` | a throwaway tree whose `README.md` the test writes | no sample block; a `ts` block that never imports the package; a sample calling `runAllGates` with the wrong signature; one good sample beside one broken one |
+| `build-example-bundle.mjs` | a copy of `examples/order-prod` plus a writable `site/assets/` | a stale archive; a stale metadata file; both missing at once; an empty example directory |
+| `gen-examples.mjs` | a tree whose `docs/targets/*.md` the test writes | a stale `data.js`; a missing `data.js`; a marker naming an unknown target; a marker naming an unexported path; a field marker matching no documented file; an ignored `truncate` |
+| `check-cli-reference.mjs` | a reference document synthesised from the binary's own `--help` | an implemented-but-undocumented command; a documented-but-unimplemented one; a flag the reference never mentions; a reference documenting no flag; more than one disagreement at once |
+| `gen-rcaeval-cases.mjs` | a synthetic corpus on disk | a non-numeric `inject_time.txt`; a path whose head carries no suite; the default output path; a top-level file beside a suite; a fourth suite |
+
+### What the forcing exposed
+
+**A dead branch in `check-readme-sample.mjs`.** The gate has a second exit for the case where
+`body.replace(/from '@rca-bench-factory\/core'/, …)` leaves the body unchanged, and its comment says the
+rewrite "is asserted so a change to the import specifier surfaces here instead of producing a confusing
+module-resolution error". The block reaches that loop only if `body.includes("from
+'@rca-bench-factory/core'")` was true, and **that predicate and the rewrite's regex are the same literal
+string**. `includes` is true exactly when the literal occurs; `replace` changes the text exactly when the
+regex matches, which is exactly when the literal occurs. They cannot disagree on any input, so the branch
+is unreachable and its diagnostic can never be printed.
+
+This was found by trying to write the test that was supposed to cover it. Three bodies were attempted, and
+each failed for a different reason -- which is how the equivalence became visible rather than arguable:
+
+- a **double-quoted** import matches *neither* predicate, so the gate exits one guard earlier (the marker
+  contains `from` and the quotes, so the block is never collected);
+- a **line break** inside the specifier matches *both* (the marker is a substring test over the joined
+  text; the regex does not care where the literal sits);
+- an **escaped quote** inside a string literal matches *neither*.
+
+The conclusion is not that the guard is wrong -- it fails safe, and the first exit already covers the case
+its comment worries about. The conclusion is that the comment describes a reachable state and there is
+none, so a reader takes a guarantee from it that the code does not provide. The test pins the equivalence
+over a probe list and over the two literals, and says in its own comment that the `toContain` half is
+weaker than it looks -- which the battery confirmed, by mutating the branch's *body* to `if (false)` and
+observing the test file stay green.
+
+**A redundant guard in `gen-rcaeval-cases.mjs`.** The walk tests `isDirectory()` before descending at
+each of its three levels. At the top level that test is **redundant with the `try { readdirSync(suitePath)
+} catch { continue }` immediately below it**: reading a file as a directory throws `ENOTDIR`, and the
+catch skips precisely the entries `isDirectory()` would have skipped. No input separates them, so no test
+can be written that fails only when the guard is removed.
+
+This is the second instance in this repository of a check the battery proved redundant, and it is handled
+the same way pass 5 handled `Number.isSafeInteger`: **kept, and named**. The difference is where the
+record lives. There the check stayed in source with a comment; here the *injection* stays in the battery
+with a reason, listed under `EXPECTED_SURVIVORS`. Reporting it as CAUGHT would need a dishonest mutation;
+deleting it would lose the finding.
+
+Two attempts at this row are also recorded, because both were near misses of the kind that produce a
+false green: the first had the wrong indentation and the anchor silently missed, which the battery
+reports as INERT rather than as a survivor; the second targeted `runDir.isDirectory()` on the theory
+that the guard bounds the walk's depth. It does not -- the walk is a *fixed* three-level nest, so the
+guard skips file entries at the run level and has nothing to do with depth. Depth is guarded by the
+nesting itself, and the injection that establishes it reads the run level from one directory deeper.
+
+### The battery, and why it mutates gates rather than probes
+
+The four batteries beside this one mutate a *probe* and read a number it reports, because a probe is what
+publishes a figure. This one mutates a **gate** and reads whether the gate's own test file goes red,
+because what is in question is whether a test would notice a guard being removed. Twenty-five injections,
+one per guard, each an anchored replacement that asserts its anchor was present:
+
+**24 caught, 0 survived, 0 inert, 1 redundant (expected).**
+
+The battery prints the *failing test names* rather than only a verdict, because a requirement phrased as
+"some test fails" is satisfied by a test failing for an unrelated reason. `CLIREF 1` is the sharpest
+case: it drops the trailing word boundary from `mentionsFlag`, and exactly **one** test fails -- the one
+written for that boundary. The other five pass under the broken implementation, which is what makes that
+test the boundary's guard rather than one of six tests that happen to overlap.
+
+### Verification
+
+| gate | result |
+| --- | --- |
+| five new/expanded test files | 59 tests -- 9 README, 9 bundle, 14 examples, 6 CLI-ref, 21 rcaeval |
+| gate-test battery | **24 caught, 0 survived, 0 inert, 1 redundant** |
+| core tests | **2500 passed** (was 2450) |
+| core coverage | `src 100/100/100/100`, `All files 99.96/99.93/100/99.96` |
+| cli tests | 173 passed, `run.ts 100/100/100/100` |
+| golden master | PASSED (6 OpenRCA + 4 RCAEval byte-stable) |
+| official regression | PASSED (8 targets scored, 1 skipped by contract) |
+| examples / bundle / docs / pack | up to date / up to date / PASSED / 9 files verified |
+| lint (5 checks) | all OK |
+| all five workflow YAMLs | parse |
+
+### What this changes
+
+`audit.md`'s earlier sentence is retracted by supersession: the five gates named there are no longer
+covered by CI running them. The honest status of the *remaining* gates is now worse rather than better,
+and it is worth stating: `progress.md`'s P1-6 table lists 25 `process.exit(1)` sites across `scripts/`,
+of which this round brings the covered count from 5 to 14. `verify-example-pack.mjs` (4 sites),
+`check-official.mjs` (3 remaining), `check-no-vendored-data.mjs` (1), `apply-pins.mjs` and
+`fetch-official.mjs` (4) are still covered only by CI running them -- and the two guards this round
+found dead were both in the five that *had* just been covered. The implication is direct: the
+uncovered remainder should be assumed to contain more of the same, not less.
+
+---

@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 46,
+  "scanned": 49,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -29,6 +29,14 @@
       "diagnostic": "${path} is stale - run \\",
       "status": "proved",
       "provedBy": "packages/core/test/build-example-bundle.test.ts"
+    },
+    {
+      "script": "scripts/check-audit-volumes.mjs",
+      "line": 44,
+      "condition": "process.argv[1] !== undefined && process.argv[1].endsWith('check-audit-volumes.mjs')",
+      "diagnostic": "${error}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/audit-volumes.test.ts"
     },
     {
       "script": "scripts/check-backend-support.mjs",
@@ -492,7 +500,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 77,
+      "line": 78,
       "condition": "plan.errors.length > 0",
       "diagnostic": "${error}\\n",
       "status": "proved",
@@ -500,7 +508,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 94,
+      "line": 95,
       "condition": "commands.length === 0",
       "diagnostic": "verify:local: no step key contains \"${only}\"\\n",
       "status": "proved",
@@ -509,6 +517,14 @@
     {
       "script": "scripts/verify-local.mjs",
       "line": 105,
+      "condition": "repair.state === 'held' || repair.state === 'failed'",
+      "diagnostic": "verify:local: the tree is not the repository's:\\n ${repair.message}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/tree-repair.test.ts"
+    },
+    {
+      "script": "scripts/verify-local.mjs",
+      "line": 117,
       "condition": "!result.ok",
       "diagnostic": "${failureReport(result).join('\\n')}\\n",
       "status": "proved",
@@ -516,7 +532,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 162,
+      "line": 174,
       "condition": "process.argv[1] !== undefined && process.argv[1].endsWith('verify-local.mjs')",
       "diagnostic": "verify:local: ${error instanceof Error ? error.message : String(error)}\\n",
       "status": "proved",

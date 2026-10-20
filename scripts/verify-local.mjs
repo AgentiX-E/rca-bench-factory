@@ -50,6 +50,7 @@ import {
   shippedPlan,
 } from './gate-steps.mjs';
 import { runStep } from './step-process.mjs';
+import { repairAbandonedTree } from './tree-repair.mjs';
 
 const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
@@ -93,6 +94,17 @@ async function main() {
     );
     process.exit(1);
   }
+
+  // Before the first step reads anything: put back what a killed battery left.
+  // A gate session that starts over a mutated tree reports four reds about the
+  // mutation, and every one of them is a sentence about the wrong subject. The
+  // repair is a property of the session, not of a step, so it is stated here.
+  const repair = repairAbandonedTree();
+  if (repair.state === 'held' || repair.state === 'failed') {
+    process.stderr.write(`verify:local: the tree is not the repository's:\n  ${repair.message}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(`\npreflight: ${repair.message}\n`);
 
   const result = await runSteps(commands, runStep);
   const selected = only === null ? plan.local.length : plan.local.filter((step) => step.key.includes(only)).length;

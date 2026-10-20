@@ -9050,9 +9050,9 @@ unnamed job the fixtures use — `job ""` is not a name.
 | a job budget | cancels the job; other jobs untouched |
 | the report | `also failed: batteries`; no more `stopped:` |
 | `gate-steps.test.ts` | **149 tests** (144 before) |
-| `core` test suite | **164 files, 4144 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **168 files, 4331 tests passed** (as of this commit) |
+| `core` test suite | **164 files, 4144 tests passed** (as of `456b5c4b0`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `456b5c4b0`) |
+| repo test suite | **168 files, 4331 tests passed** (as of `456b5c4b0`) |
 | the shipped gate | passes; the `budget:` line is unchanged in shape and per job |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -9072,3 +9072,147 @@ unnamed job the fixtures use — `job ""` is not a name.
   cancelled, its five remaining steps print five `skipped` lines. They are true and they are noise;
   collapsing them into one line is a presentation change, and a count that hides a step is the thing
   this file exists to avoid]`
+
+## v2.26 — one document, four heading forms, and a size that stopped it being a document
+
+### The push that would not go
+
+The previous pass ended with a fact and a recommendation: `docs/audit.md` was 1,100,900 bytes, and
+the push of it failed twice with HTTP 400 on `POST /git/blobs`. The base64 body is 1.47 MB; the same
+bytes as plain `utf-8` are 1.1 MB and went through. A document that cannot be delivered is not a
+document, and the size had stopped being a matter of taste several passes earlier.
+
+### What splitting it exposed
+
+Reading the file to split it at finding boundaries turned up something larger than the size:
+
+```
+## 49 — Signal validity: …          the first sixty-four findings
+## Finding 65: the miss diagnosis…  a colon
+## Finding 75 -- The `component`…   two hyphens
+## Finding 140. A worktree …        a full stop
+```
+
+**Four forms for the same thing, in one document.** A census that matched `## Finding <n> — `
+reported **127** entries where the log had **191**, and said nothing about the difference. That is
+this repository's oldest shape, met in a markdown file: a count answering a narrower question than
+the one it was asked, and reporting its answer as the whole. It also explains why findings 1–64 had
+always looked absent from `grep '^## Finding'`, and why nobody noticed: nothing was counting.
+
+### The split
+
+`docs/audit.md` is now an index — scope, summary, the volume table, method, retractions — and the
+findings live in four volumes of at most 280,000 bytes. The split is by size rather than subject,
+because a finding keeps its number and numbers are what the rest of the repository cites.
+
+The migration was verified by re-parsing both sides: 191 findings before, 191 after, no duplicates,
+no title changes, and exactly one body changed — finding 44's, because `## Method` and
+`## Retractions` sat inside it and were lifted into the index.
+
+### The guard, and the two defects it had itself
+
+`scripts/check-audit-volumes.mjs` fails when a volume is over budget, when the volume names skip a
+number, when a heading is one of the four old forms, when a number repeats or goes backwards, when a
+volume holds no finding, or when a volume exists that the index does not name. Absent numbers are
+**reported** rather than refused: the log has three (118, 132–133) and no record of why, and
+inventing a reason would be worse than printing a hole.
+
+Writing it produced two defects, both found by running it:
+
+| when | what |
+| --- | --- |
+| first run against the real log | the finding that documents this defect quotes all four old headings in a fence, and the guard counted them — four errors against its own example. A fence flag fixed it: the guard was right about the text and wrong about the document |
+| first append after the split | the index row carries a range and a count, and the append made both stale. The guard now reads the row and compares it with the file, so the number cannot rot |
+
+The first index also printed each volume's byte count. That column is gone — it changes on every
+append, and a number that must be retyped on every append is a number that will be wrong. The guard
+prints the largest volume against the budget instead, which is a measurement rather than a copy.
+
+### The check whose scope shrank
+
+`blocker-claims.test.ts` scans the audit for unsupported blockers and read `docs/audit.md`. After the
+split that file is 47 KB of an 1.08 MB corpus, so the rule would have kept returning "no unsupported
+blocker" over a fifteenth of the evidence. **A check whose scope shrank while its verdict stayed
+green is worse than no check, because it looks like one.** It now reads the index plus every volume,
+and asserts the corpus is more than three times the index so a mistyped path fails rather than passes.
+
+### Two existing guards caught this pass's own work
+
+| guard | what it said |
+| --- | --- |
+| `bounded-spread.test.ts` | `push(...x)` twice, in the guard itself: a spread whose length is a function of the input |
+| `cold-tree-job.test.ts` | `docs:check:cold` gained a member the measured set did not name |
+
+The second was resolved by **measuring**: with `packages/core/dist` moved aside,
+`node scripts/check-audit-volumes.mjs` printed `OK — 4 volume(s)` and exited 0, and the table row
+records the command and its output. Both were fixed at the cause.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the index | 47 KB; four rows, ranges and counts checked by the guard |
+| the volumes | 4 files, ≤ 280,000 bytes, findings 1–195 |
+| heading forms | one; the guard refuses the other four by name |
+| absent numbers | 118, 132–133, printed in the OK line |
+| the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
+| `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
+| `core` test suite | **166 files, 4168 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **170 files, 4355 tests passed** (as of this commit) |
+| gate sites | **70** across 41 scripts |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **`docs/progress.md` is 520 KB, and nothing splits it.** `[open: it is the same document as the
+  audit was, one pass behind: append-only, one heading per pass, and 500 KB is where a reader stops
+  reading. The audit's split is the recipe -- an index and volumes -- but the tracker's entries are
+  read in order rather than by number, so the boundary rule has to be decided before it is mechanical]`
+- **The volumes are split by size, not by subject.** `[open: finding 195 sits at the end of volume
+  04 because that is where the bytes ran out, not because it belongs with 194. A reader looking for
+  "the runner" finds findings in three volumes. Splitting by subject would break the invariant that
+  a number never moves, which is what the rest of the repository cites]`
+- **A finding's number is permanent and its file is not.** `[open: the split kept every number, and
+  the guard refuses a duplicate or a decrease, but nothing binds a number to a file. Re-splitting at
+  a different budget would move every finding above the boundary, and the guard would pass]`
+
+## v2.27 — the red that named no reason, and the tree a killed run was holding
+
+The audit split (v2.26) landed and the first full gate run after it went red at
+`5/31` with a block that named the step, the directory and the command — and not the
+reason. `pnpm test:coverage` exited `0` by hand. The next run went red at `13/31`
+with `UNATTRIBUTED check-audit-volumes.mjs`. Neither red was the change under test,
+and one of them was not even the code.
+
+| red | what it was | how it was proved |
+| --- | --- | --- |
+| `UNATTRIBUTED check-audit-volumes.mjs` | the gate held its own reading, and the meta-gate proves a gate by emptying it; an emptied file that a test imports kills the worker and names no test | reading moved to `scripts/audit-volumes.mjs` (`data`), the gate kept the verdict → `CAUGHT (2 test(s) red)`, `OK (41 gate(s))` |
+| four reds in the next run | a battery killed by SIGKILL left a **one-line** injection in `check-backend-support.mjs`; the restore lived in its `finally` | the meta-gate's own line: `repaired check-backend-support.mjs, left hollowed by a run that was killed` |
+| `failureReport` had no `reason:` | three endings — exit 1, killed by a signal, `spawn ENOENT` — printed as one sentence | two tests, and a third asserting the line is absent on a timeout |
+| `coverage-writes-are-drained` flagged the new test | the scan accepted two spellings of "joins its child"; `await once(child, 'exit')` is the third | pattern list extended, with the reason beside it |
+
+The fix for the second one is a **preflight**: `scripts/tree-repair.mjs` asks the
+injection batteries' shared module to put back what a dead run left, before the first
+step of a session reads anything. A live battery is a refusal rather than a wait, and
+a missing `python3` is reported as "cannot verify the batteries, and the tree is not
+repaired either" rather than as a clean tree. The repair is driven with `python3 -c`
+so that `_witnesses.py` keeps no entry point: a `__main__` there would make a shared
+module a *battery*, and every battery must be invoked by a package script and a CI
+workflow.
+
+**Acceptance.** `verify:local: OK` — 31 commands covering 36 of the 43 run steps,
+`verify 59s of 15m` and `batteries 17m of 30m`; core **166 files / 4168 tests**, cli
+**4 / 187**, repo **170 / 4355**; core coverage 99.97 / 99.74 / 100 / 99.97 and cli
+100 ×4; **71** proved failure sites across 41 scripts; the audit log is now **5**
+volumes, findings 1–196.
+
+### Open
+
+- **`check-cli-reference.test.ts` runs 1.6–2.6 s per case, against a 5 s default
+  bound nobody chose**, and one case went red once under a full-suite load and green
+  standalone twice. `[open: the case that failed was reading a gate another process
+  had mutated, and the mutation is reproduced rather than inferred -- but the second
+  half is not: a test that spends a third of its bound on a quiet machine has no
+  margin to name, and the next red will be read as a flake until the cases either
+  get an explicit bound or stop spawning the CLI per assertion]`

@@ -477,8 +477,15 @@ def _restore(record: dict) -> int:
     return done
 
 
-def repair_abandoned() -> None:
-    """Undo what runs that are gone left behind, and refuse a run that is not gone."""
+def repair_abandoned() -> int:
+    """Undo what runs that are gone left behind, and refuse a run that is not gone.
+
+    Returns how many journals were repaired, because the count is the whole answer
+    a caller has: a repair of zero is "the tree is what the last run left", and a
+    caller that cannot tell it from a repair of three is a caller that cannot say
+    whether its readings were taken over a mutated tree.
+    """
+    repaired = 0
     for journal in sorted(CACHE.glob(f"{JOURNAL_PREFIX}*.json")):
         try:
             record = json.loads(journal.read_text())
@@ -496,11 +503,13 @@ def repair_abandoned() -> None:
             )
         restored = _restore(record)
         journal.unlink(missing_ok=True)
+        repaired += 1
         print(
             f"_witnesses: repaired {record.get('label')} (pid {pid} is gone), "
             f"{restored} file(s) put back",
             file=sys.stderr,
         )
+    return repaired
 
 
 def _script_name() -> str | None:
@@ -628,3 +637,4 @@ def guard(label: str, roots=None):
             "restore check decides whether that is a failure",
             file=sys.stderr,
         )
+

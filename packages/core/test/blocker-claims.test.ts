@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -132,6 +132,26 @@ function readDoc(rel: string): string {
 
 const TRACKER = 'docs/progress.md';
 const AUDIT = 'docs/audit.md';
+const AUDIT_VOLUMES = 'docs/audit';
+
+/**
+ * The audit corpus: the index plus every volume it names.
+ *
+ * Reading only `docs/audit.md` was correct until the log was split, and then it
+ * was the exact mistake this file exists to catch: a rule that scans 47 KB of an
+ * 1.08 MB corpus and reports that it found nothing. A check whose scope shrank
+ * while its verdict stayed green is worse than no check, because it looks like
+ * one.
+ */
+function readAudit(): { text: string; volumes: string[] } {
+  const volumes = readdirSync(join(ROOT, AUDIT_VOLUMES))
+    .filter((name) => /^volume-\d+\.md$/.test(name))
+    .sort();
+  return {
+    text: [readDoc(AUDIT), ...volumes.map((name) => readDoc(join(AUDIT_VOLUMES, name)))].join('\n'),
+    volumes,
+  };
+}
 
 describe('prose · a blocker names what established it', () => {
   it('finds both documents, so a green run is not a file that was not read', () => {
@@ -140,6 +160,11 @@ describe('prose · a blocker names what established it', () => {
     // so reaching these assertions means both were read.
     expect(readDoc(TRACKER).length).toBeGreaterThan(1000);
     expect(readDoc(AUDIT).length).toBeGreaterThan(1000);
+    // And the volumes, because the log is split: an index read on its own would be
+    // a scan of the table of contents reported as a scan of the book.
+    const audit = readAudit();
+    expect(audit.volumes.length).toBeGreaterThan(0);
+    expect(audit.text.length).toBeGreaterThan(readDoc(AUDIT).length * 3);
   });
 
   it('would catch the sentence I actually wrote, so the rule is not vacuous', () => {
@@ -181,11 +206,23 @@ describe('prose · a blocker names what established it', () => {
     }
   });
 
-  it.each([TRACKER, AUDIT])('%s states no unsupported blocker', (rel) => {
-    const found = unsupportedBlockers(readDoc(rel));
+  it('progress.md states no unsupported blocker', () => {
+    const found = unsupportedBlockers(readDoc(TRACKER));
     expect(
       found,
-      `${rel} asserts a blocker in a paragraph that names no measurement:\n` +
+      `${TRACKER} asserts a blocker in a paragraph that names no measurement:\n` +
+        found.map((f) => `  - ${f}`).join('\n') +
+        '\nA blocker is a finding, and a finding names the observation behind it.',
+    ).toEqual([]);
+  });
+
+  it('every audit volume states no unsupported blocker', () => {
+    const audit = readAudit();
+    const found = unsupportedBlockers(audit.text);
+    expect(
+      found,
+      `the audit corpus (${AUDIT} plus ${String(audit.volumes.length)} volume(s)) asserts a blocker in a ` +
+        'paragraph that names no measurement:\n' +
         found.map((f) => `  - ${f}`).join('\n') +
         '\nA blocker is a finding, and a finding names the observation behind it.',
     ).toEqual([]);

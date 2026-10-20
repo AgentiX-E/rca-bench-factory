@@ -1362,6 +1362,16 @@ export function failureReport(result) {
   }
   if (where !== '') lines.push(`  where:   ${where}`);
   lines.push(`  command: ${step.run.split('\n')[0] ?? ''}`);
+  // Why it stopped, in the words the runner used. Three failures look identical
+  // without this line -- a non-zero exit, a signal, and a spawn that never became
+  // a process are all "FAILED at 13/31" -- and they send a reader to three
+  // different places. The first red run of this gate printed the step, the
+  // directory and the command, and nothing about which of the three it was: the
+  // answer was three screens up in a log nobody had kept.
+  if (!result.timedOut && result.error !== null && result.error !== undefined) {
+    const message = result.error instanceof Error ? result.error.message : String(result.error);
+    lines.push(`  reason:  ${message}`);
+  }
   // The notes that came before the stop are part of what this run learned. A
   // reader fixing the step that stopped the run would otherwise never learn that
   // two earlier steps are broken and were allowed to be.

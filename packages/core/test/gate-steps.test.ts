@@ -1701,6 +1701,25 @@ describe('what a failed run says', () => {
     expect(text).not.toContain('bound:');
   });
 
+  it('says why the step stopped, because three failures look the same without it', () => {
+    // The gate went red on a step that exited non-zero, and the block named the
+    // step, the directory and the command but not which of the three endings it
+    // was. Each sends a reader somewhere else: a non-zero exit is a step to fix, a
+    // signal is a step that was killed, and a spawn error is a step that never ran.
+    // The words are `runStep`'s, reproduced rather than re-derived.
+    for (const message of ['the step exited 1', 'the step was killed by SIGTERM', 'spawn bash ENOENT']) {
+      const text = failureReport(failed({ error: new Error(message) })).join('\n');
+      expect(text).toContain(`  reason:  ${message}`);
+    }
+  });
+
+  it('does not invent a reason on a bound, where the bound is the reason', () => {
+    // A timeout already says what ended the run; a second line repeating the
+    // error would read as though the step had also failed on its own account.
+    const text = failureReport(failed({ timedOut: true })).join('\n');
+    expect(text).not.toContain('  reason:');
+  });
+
   it('names the bound and the step that set it when the budget ran out', () => {
     // The reason this is a pure function: reaching this branch from the CLI costs
     // fifteen minutes, so it is reached here instead.
