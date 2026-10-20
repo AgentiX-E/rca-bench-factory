@@ -73,7 +73,14 @@ const only = onlyIndex < 0 ? null : (argv[onlyIndex + 1] ?? null);
 export function runCommand(step) {
   const { file, argv: command } = materialiseStep(step);
   try {
-    execFileSync(command[0], command.slice(1), { cwd: resolve(ROOT, step.cwd), stdio: 'inherit' });
+    execFileSync(command[0], command.slice(1), {
+      cwd: resolve(ROOT, step.cwd),
+      // The step's own environment, on top of this one: a step that sets
+      // `NODE_OPTIONS` means it here too, and dropping it would be a difference
+      // between this run and CI that no key in the workflow explains.
+      env: { ...process.env, ...(step.env ?? {}) },
+      stdio: 'inherit',
+    });
   } finally {
     rmSync(file, { force: true });
   }

@@ -28,6 +28,7 @@ import {
   conditionOf,
   cwdOf,
   describePlan,
+  envOf,
   localCommands,
   materialiseStep,
   readWorkflow,
@@ -181,6 +182,55 @@ describe('the workflow reader', () => {
     expect(script.keys).toEqual(['run']);
     expect(script.run).toBe('set -eu\necho one\necho two');
   });
+
+  it('reads a block `env:` map, which is the one value that is not on the key line', () => {
+    const withEnv = WORKFLOW.replace(
+      '      - name: A gate\n        run: pnpm gate',
+      '      - name: A gate\n        env:\n          NODE_OPTIONS: --max-old-space-size=4096\n          QUOTED: "two words"\n        run: pnpm gate',
+    );
+    const { steps, errors } = readWorkflow(withEnv);
+    expect(errors).toEqual([]);
+    const gate = steps.find((one) => one.name === 'A gate');
+    expect(gate.keys).toEqual(['env', 'run']);
+    expect(gate.env).toEqual({
+      NODE_OPTIONS: '--max-old-space-size=4096',
+      QUOTED: '"two words"',
+    });
+    // The block ends at the next key, and the key after it is still read.
+    expect(gate.run).toBe('pnpm gate');
+  });
+
+  it('records a flow-style `env:` rather than parsing it, because splitting on commas would be a guess', () => {
+    // `env: {A: b, C: "${{ join(x, ', ') }}"}` is legal YAML and legal GitHub, and
+    // a reader that split it on commas would cut the expression in half. The shape
+    // is recorded and refused downstream, with the spelling that works.
+    const flow = WORKFLOW.replace('        run: pnpm gate', '        env: {A: b}\n        run: pnpm gate');
+    const { steps } = readWorkflow(flow);
+    const gate = steps.find((one) => one.name === 'A gate');
+    expect(gate.values.env).toBe('{A: b}');
+    expect(gate.env).toBeUndefined();
+  });
+
+  it('does not read a `run:` block body as an `env:` entry when `env:` comes first', () => {
+    // Both are ten spaces deep. What separates them is which key opened the block,
+    // and a reader that keyed on indentation alone would fold the script into the
+    // environment and lose the command.
+    const both = [
+      'jobs:',
+      '  one:',
+      '    steps:',
+      '      - name: Gate',
+      '        env:',
+      '          A: b',
+      '        run: |',
+      '          echo one',
+      '          echo two',
+    ].join('\n');
+    const { steps, errors } = readWorkflow(both);
+    expect(errors).toEqual([]);
+    expect(steps[0].env).toEqual({ A: 'b' });
+    expect(steps[0].run).toBe('echo one\necho two');
+  });
 });
 
 describe('classify', () => {
@@ -255,6 +305,7 @@ describe('the keys a step may carry', () => {
     keys: string[],
     run: string | null = 'pnpm gate',
     values: Record<string, string> = {},
+    env: Record<string, string> | undefined = undefined,
   ): Record<string, unknown> {
     return {
       job: 'verify',
@@ -264,6 +315,7 @@ describe('the keys a step may carry', () => {
       uses: run === null ? 'actions/checkout@v4' : null,
       keys,
       values,
+      ...(env === undefined ? {} : { env }),
     };
   }
   const LOCAL = { 'verify / Gate': { local: true } };
@@ -440,6 +492,49 @@ describe('the keys a step may carry', () => {
     expect(errors.join('\n')).toContain('does nothing');
   });
 
+  it('carries a literal `env:` onto a local step, because data is not a condition', () => {
+    // `env:` was in `LOCAL_INCOMPATIBLE` and is not any more. The key was never the
+    // problem: a literal value is data the runner can pass to the child process
+    // exactly as written. What the runner cannot supply is a value only the runner
+    // can compute -- and that is a fact about the **value**, not about the key.
+    expect(LOCAL_INCOMPATIBLE).not.toContain('env');
+    const result = classify(
+      [step(['run', 'env'], 'pnpm gate', { env: '' }, { NODE_OPTIONS: '--max-old-space-size=4096' })],
+      LOCAL,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.local[0]).toMatchObject({ env: { NODE_OPTIONS: '--max-old-space-size=4096' } });
+  });
+
+  it('refuses a local step whose `env:` names a value only the runner can supply', () => {
+    // The message quotes the value, because "cannot honour env" would send the
+    // reader looking for the wrong thing in the wrong file.
+    const errors = classify(
+      [step(['run', 'env'], 'pnpm gate', { env: '' }, { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' })],
+      LOCAL,
+    ).errors;
+    expect(errors.join('\n')).toContain('GITHUB_TOKEN');
+    expect(errors.join('\n')).toContain('${{ secrets.GITHUB_TOKEN }}');
+    expect(errors.join('\n')).toContain('remote-only');
+  });
+
+  it('refuses a local step whose `env:` is the spelling this reader does not parse', () => {
+    const withInline = step(['run', 'env'], 'pnpm gate', { env: '{A: b}' });
+    const errors = classify([withInline], LOCAL).errors;
+    expect(errors.join('\n')).toContain('flow');
+  });
+
+  it('tolerates any `env:` outside the plan, where its value cannot mislead', () => {
+    // The publisher is the case in the shipped workflow: `GITHUB_TOKEN` is a
+    // secret, and the reason the step does not run here is still the run token.
+    const result = classify(
+      [step(['run', 'env', 'if'], 'pnpm gate', { env: '', if: 'always()' }, { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' })],
+      REMOTE,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.tolerated).toEqual([{ key: 'verify / Gate', keys: ['if', 'env'], condition: 'always()' }]);
+  });
+
 });
 
 describe('the interpreter and the directory a step runs in', () => {
@@ -510,6 +605,36 @@ describe('the interpreter and the directory a step runs in', () => {
     expect(whereOf({ cwd: 'examples', shell: DEFAULT_SHELL })).toBe('in examples');
     expect(whereOf({ cwd: '.', shell: 'sh -e {0}' })).toBe('sh -e {0}');
     expect(whereOf({ cwd: 'examples', shell: 'sh -e {0}' })).toBe('in examples, sh -e {0}');
+    // A count, not the values: the values are in the workflow, and a run line that
+    // reprinted them would be the second place they are written down.
+    expect(whereOf({ env: { A: '1', B: '2' } })).toBe('env (2)');
+    expect(whereOf({ cwd: 'examples', env: { A: '1' } })).toBe('in examples, env (1)');
+  });
+});
+
+describe('the values an `env:` block declares', () => {
+  it('separates what can be passed through from what only the runner can compute', () => {
+    // The distinction is the whole reason `env:` stopped being a key-level refusal:
+    // `A: b` is data, and `${{ secrets.Y }}` is a computation this machine has no
+    // inputs for. One key, two answers, and the answer belongs to the value.
+    const result = envOf({ env: { A: 'b', B: '"two words"', C: 'x ${{ secrets.Y }}' } });
+    expect(result.error).toBeNull();
+    expect(result.literals).toEqual({ A: 'b', B: 'two words' });
+    expect(result.expressions).toEqual([{ name: 'C', value: 'x ${{ secrets.Y }}' }]);
+  });
+
+  it('reads no `env:` as no values, rather than as a problem', () => {
+    expect(envOf({})).toEqual({ literals: {}, expressions: [], error: null });
+  });
+
+  it('names the flow spelling it does not parse, and says how to write it', () => {
+    // Splitting `{A: b, C: "${{ join(x, ', ') }}"}` on commas would cut the
+    // expression in half, and a reader that guessed here would produce an
+    // environment nobody wrote.
+    const result = envOf({ values: { env: '{A: b}' } });
+    expect(result.error).toContain('flow');
+    expect(result.error).toContain('{A: b}');
+    expect(result.error).toContain('one `NAME: value` per line');
   });
 });
 
@@ -611,6 +736,31 @@ describe('the plan as a runnable sequence', () => {
     expect(commands.map((one) => one.shell)).toEqual(['sh -e {0}', DEFAULT_SHELL]);
   });
 
+  it('does not collapse two identical commands under different environments', () => {
+    // The third fact that travels with a command. `pnpm test` under `NODE_ENV=test`
+    // and under `NODE_ENV=production` are the same bytes and different runs, and
+    // merging them would report one step as done by the other.
+    const commands = localCommands([
+      { key: 'a / one', run: 'pnpm test', env: { NODE_ENV: 'test' } },
+      { key: 'b / two', run: 'pnpm test', env: { NODE_ENV: 'production' } },
+    ]);
+    expect(commands).toHaveLength(2);
+    expect(commands.map((one) => one.env)).toEqual([{ NODE_ENV: 'test' }, { NODE_ENV: 'production' }]);
+  });
+
+  it('compares the environment by content, not by the order the keys were written', () => {
+    // Two steps that declare the same pair in two orders are the same run. An
+    // identity built on `JSON.stringify` of the object would say otherwise, and the
+    // second step would run twice for nothing -- the cheaper of the two failures,
+    // but still a plan that does not describe itself.
+    const commands = localCommands([
+      { key: 'a / one', run: 'pnpm test', env: { A: '1', B: '2' } },
+      { key: 'b / two', run: 'pnpm test', env: { B: '2', A: '1' } },
+    ]);
+    expect(commands).toHaveLength(1);
+    expect(commands[0].also).toEqual(['b / two']);
+  });
+
   it('still collapses the same command in the same place, which is what CI does twice', () => {
     // The dedup is not the bug; identifying a step by its text alone was.
     const commands = localCommands([
@@ -659,7 +809,7 @@ describe('scripts/verify-local.mjs as a command', () => {
     // And the interpretation every command gets: a runner whose default is not
     // stated is a runner whose default is not reviewable.
     expect(result.stdout).toContain(DEFAULT_SHELL);
-    expect(result.stdout).toContain('0 of 36 override either');
+    expect(result.stdout).toContain('0 of 36 override the shell, the directory or the environment');
   });
 
   it('refuses a filter that selects nothing, rather than reporting success', () => {
@@ -696,7 +846,16 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     expect(runAt, `no run under ${key}`).toBeGreaterThan(at);
     expect(lines[runAt], 'a block scalar has no line to insert an extra key after').toMatch(/^ {8}run: [^|>]/);
     lines[runAt] = `        run: ${command}`;
-    lines.splice(runAt + 1, 0, ...extra.map(([name, value]) => `        ${name}: ${value}`));
+    lines.splice(
+      runAt + 1,
+      0,
+      ...extra.flatMap(([name, value]) =>
+        // A leading newline means a block: `env:` needs `NAME: value` lines under
+        // it, and a fixture that could only write inline keys could not spell the
+        // shape this pass reads.
+        value.startsWith('\n') ? [`        ${name}:`, ...value.slice(1).split('\n')] : [`        ${name}: ${value}`],
+      ),
+    );
     fixtures += 1;
     const path = join(scratch, `ci-${String(fixtures)}.yml`);
     writeFileSync(path, lines.join('\n'));
@@ -783,6 +942,26 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const [interpreter, script] = readFileSync(marker, 'utf8').split('|');
     expect(interpreter).toBe('bash');
     expect(script).toMatch(/\.sh$/);
+  });
+
+  it('hands the declared environment to the process, which is the only way to know it arrived', () => {
+    // The claim is about the child's environment, so the child is asked. The
+    // variable is deliberately one the runner does not set: if the implementation
+    // passed nothing, the marker would hold the empty string and this would fail
+    // with the shell's own expansion rather than with an assertion about a map.
+    const marker = join(scratch, 'env-marker.txt');
+    const command = `printf '%s' "$RCA_PROBE_GREETING" > ${marker}`;
+    const path = workflowWith('verify / Type-check', command, [
+      ['env', '\n          RCA_PROBE_GREETING: hello from the workflow'],
+    ]);
+    const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, RCA_CI_WORKFLOW: path },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('(env (1))');
+    expect(readFileSync(marker, 'utf8')).toBe('hello from the workflow');
   });
 
   it('declares the scripts it drives, in the form the inventory reads', () => {

@@ -19579,3 +19579,133 @@ speaking the moment the premise is false.
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | gate sites | 68 across 40 scripts, `--check` OK (only three line numbers moved) |
 | `typecheck` / `lint` / `docs:check` | green |
+
+---
+
+## Finding 189 — `env:` was refused as a key, and the refusal could not tell a literal from a secret
+
+### The open item, and the question it was answering
+
+v2.19 left this:
+
+> **`env:` is still tolerated by presence, and its value is a secret.** `[open: the publisher carries
+> `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and the plan records only that `env:` exists; the
+> argument that no env value can make "needs the run token" incomplete is written in the code and
+> not tested]`
+
+The argument is sound and it is an answer to a different question. It asks *"can an environment
+value make a step's stated reason for not running here incomplete?"* and answers *"no"* — which is
+true for a step that does not run. It says nothing about the steps that **do**, and that is where
+`env:` was doing damage: the key sat in `LOCAL_INCOMPATIBLE`, so a step carrying it could not be
+local at all. A key-level refusal cannot distinguish
+
+```yaml
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+```
+
+from
+
+```yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+and it refused both. The first is data the runner can hand to a child process exactly as written.
+The second is a computation whose inputs — a secret, a run id, a matrix — exist only on the runner.
+**The difference is in the value, and the list was about keys.**
+
+### What the reader had to learn first
+
+`env:` is the one key whose value is a **map**, so it is the one key whose value is not on its own
+line. The reader had to learn to collect it:
+
+```js
+        if (key === 'env' && inline === '') {
+          step.env = {};
+          let k = j + 1;
+          for (; k < lines.length; k += 1) {
+            const named = /^ {10}([A-Za-z_][A-Za-z0-9_]*):(.*)$/.exec(lines[k]);
+            ...
+```
+
+Ten spaces is also how deep a `run:` block body is. What separates the two is **which key opened
+the block**, not the indentation — and a reader that keyed on indentation alone would fold a script
+into the environment and lose the command. There is a test that puts `env:` immediately above a
+`run: |` and checks both survive.
+
+A line at the block's depth that is *not* `NAME: value` is either the end of the block or an entry
+this reader cannot name. Only the second is an error, and it is an error rather than a skip: a
+silently dropped variable is a command that runs with a different environment than the workflow says.
+
+### The flow spelling is refused, not guessed
+
+`env: {A: b, C: "${{ join(x, ', ') }}"}` is legal YAML and legal GitHub. Splitting it on commas
+would cut that expression in half and hand the command a value nobody wrote, so the reader records
+the shape and refuses it downstream, naming the spelling that works:
+
+```
+verify / Gate: `env: {A: b}` is the flow spelling, which this reader does not parse: splitting it
+on commas would cut an expression that contains one. Write it as a block, one `NAME: value` per line
+```
+
+This is the same trade the whole file makes: a shape it does not read is an error with a repair,
+never a guess.
+
+### The list is now about control flow, and that is the point
+
+`LOCAL_INCOMPATIBLE` was five keys in v2.18, three in v2.19, and is **two** now:
+
+| key | why it cannot be carried |
+| --- | --- |
+| `if:` | decides *whether* the step runs; `runSteps` stops at the first failure |
+| `continue-on-error:` | means a failure is not a failure — the distinction a runner exists to report |
+
+Both are about **control flow**. Everything else turned out to be about a *value* the runner either
+has or does not: the interpreter, the directory, and now the environment. Three keys fell out of
+that list across two passes by being read instead of refused, and each time the list got shorter by
+the same argument — *the claim was incomplete, not false*.
+
+### The identity gains a third fact
+
+`localCommands` deduplicated on `(cwd, shell, text)`. `pnpm test` under `NODE_ENV=test` and under
+`NODE_ENV=production` are the same bytes and different runs, so the environment joined the tuple:
+
+```js
+    const environment = Object.keys(env).sort().map((name) => `${name}=${env[name]}`).join('\u0000');
+    const identity = [entry.cwd, entry.shell, environment, entry.run].join('\u0000');
+```
+
+Sorted, because two steps that declare the same pair in two orders are one run — `JSON.stringify` of
+two objects with different key orders is two strings, which is the cheaper of the two failures but
+still a plan that does not describe itself. Two tests: different environments do not collapse, equal
+environments in different orders do.
+
+### Proven by asking the child
+
+The claim is about a child process's environment, so the child is asked. A fixture step declares
+
+```yaml
+        env:
+          RCA_PROBE_GREETING: hello from the workflow
+```
+
+and runs `printf '%s' "$RCA_PROBE_GREETING" > <marker>`; the marker's contents are compared against
+the declared value. If the runner passed nothing, the shell expands to the empty string and the test
+fails with the value, not with a map comparison.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| block `env:` | read, quoted scalars unwrapped |
+| flow `env:` | recorded and refused, with the spelling that works |
+| literal value | carried onto the step and passed to the child |
+| `${{ … }}` value | refused on a local step, quoting the entry |
+| outside the plan | tolerated, and mentioned only when it is not reproducible |
+| `LOCAL_INCOMPATIBLE` | **3 → 2**, both about control flow, asserted |
+| dedup identity | `(cwd, shell, env-sorted, text)`; two tests |
+| `--list` | `0 of 36 override the shell, the directory or the environment` |
+| `gate-steps.test.ts` | **80 tests** (69 before) |
+| `core` / `cli` / repo | **163 / 4067** · **4 / 187** · **167 / 4254** |
+| gate sites | 68 across 40 scripts (three line numbers moved again) |

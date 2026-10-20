@@ -8355,9 +8355,9 @@ what this one did not.
 | `gate-steps.test.ts` | **69 tests** (51 before) |
 | journal guard | a vanished file is a named difference; dotfiles are not recorded (2 tests) |
 | the split commit is red | yes, and recorded below: it adds tests without moving the measurement |
-| `core` test suite | **163 files, 4056 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **167 files, 4243 tests passed** (as of this commit) |
+| `core` test suite | **163 files, 4056 tests passed** (as of `6d0900d`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `6d0900d`) |
+| repo test suite | **167 files, 4243 tests passed** (as of `6d0900d`) |
 | gate sites | 68 across 40 scripts, `--check` OK (three line numbers moved) |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -8379,3 +8379,112 @@ what this one did not.
   the first failure, so `always()` would have to change the loop's shape rather than its
   arguments; the shipped workflow has no such step, so the change would be exercised by its
   fixtures alone]`
+
+## v2.20 — `env:` was a key-level refusal, and the values had never been read
+
+### What the previous pass recorded
+
+v2.19's Open list opened with this:
+
+> **`env:` is still tolerated by presence, and its value is a secret.** `[open: the publisher carries
+> `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and the plan records only that `env:` exists; the
+> argument that no env value can make "needs the run token" incomplete is written in the code and
+> not tested]`
+
+It is a good argument about the wrong question. It asks whether an environment value can make a
+step's *reason for not running here* incomplete — a question about steps that do not run. `env:` was
+also blocking steps that **could**: the key was in `LOCAL_INCOMPATIBLE`, so any step carrying it was
+refused whatever it carried.
+
+Two steps, same key, opposite answers:
+
+| the step declares | the runner |
+| --- | --- |
+| `NODE_OPTIONS: --max-old-space-size=4096` | can pass it to the child exactly as written |
+| `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` | has no secret and no run context to evaluate it |
+
+**The difference is in the value.** The list was about keys.
+
+### What the reader could not do yet
+
+`env:` is the one key whose value is a **map**, so it is the only key not written on its own line.
+The reader had to learn to collect it — and the block is ten spaces deep, which is exactly how deep
+a `run:` body is. What separates them is **which key opened the block**, and there is a test that
+puts `env:` immediately above `run: |` and checks that both survive.
+
+A line at the block's depth that is not `NAME: value` is either the end of the block or an entry the
+reader cannot name. Only the second is an error, and it is an error rather than a skip: a silently
+dropped variable is a command that runs with an environment the workflow does not describe.
+
+The flow spelling is refused rather than split on commas — `${{ join(x, ', ') }}` contains one:
+
+```
+verify / Gate: `env: {A: b}` is the flow spelling, which this reader does not parse: splitting it
+on commas would cut an expression that contains one. Write it as a block, one `NAME: value` per line
+```
+
+### The list is now two, and both are about control flow
+
+`LOCAL_INCOMPATIBLE` went five → three → **two** over two passes:
+
+| key | why it cannot be carried |
+| --- | --- |
+| `if:` | decides *whether* the step runs, and `runSteps` stops at the first failure |
+| `continue-on-error:` | means a failure is not a failure — the distinction the runner exists to report |
+
+Interpreter, directory and environment all turned out to be **values** the runner either has or does
+not, and all three left the list by being read. Each time the same sentence applied: the claim was
+*incomplete*, not false.
+
+### The identity, third time
+
+`localCommands` deduplicated on `(cwd, shell, text)`. `pnpm test` under `NODE_ENV=test` and under
+`NODE_ENV=production` are the same bytes and different runs, so the environment joined the tuple —
+compared **sorted by name**, because two steps that declare the same pair in two orders are one run
+and `JSON.stringify` of two differently-ordered objects is two strings.
+
+Three identities in three passes, each one a fact that had been true-when-added and false-by-default:
+text, then `(cwd, shell)`, now `(cwd, shell, env)`. The tuple is written out rather than grown field
+by field because that is the shape the last two mistakes share.
+
+### Proven by asking the child
+
+The claim is about a child process's environment, so the child is asked. The fixture declares
+`RCA_PROBE_GREETING: hello from the workflow` and runs `printf '%s' "$RCA_PROBE_GREETING" > <marker>`;
+the marker is compared against the declared value. A runner that passed nothing would produce the
+empty string, and the failure would name the value rather than a map.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| block `env:` | read; quoted scalars unwrapped |
+| flow `env:` | recorded and refused, with the spelling that works |
+| a literal value | carried onto the step, passed to the child, proven by the child |
+| a `${{ … }}` value | refused on a local step, quoting the entry |
+| outside the plan | tolerated, mentioned only when it is not reproducible |
+| `LOCAL_INCOMPATIBLE` | **3 → 2**, both about control flow, asserted by name |
+| dedup identity | `(cwd, shell, env-sorted, text)`; two tests |
+| `--list` | `0 of 36 override the shell, the directory or the environment` |
+| `gate-steps.test.ts` | **80 tests** (69 before) |
+| `core` test suite | **163 files, 4067 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **167 files, 4254 tests passed** (as of this commit) |
+| gate sites | 68 across 40 scripts, `--check` OK (three line numbers moved again) |
+| `typecheck` / `lint` / `docs:check` | green, by exit code |
+
+### Open
+
+- **`continue-on-error:` is still refused on a local step, which is the strictest reading.**
+  `[open: a local step could run and report its failure as a note, which is a small change to
+  `runSteps`; it is not made because no shipped step uses the key, so honouring it would give the
+  runner a second notion of "failed" with nothing exercising it]`
+- **`timeout-minutes:` is still tolerated and unenforced.** `[open: a step that hangs hangs here for
+  as long as the terminal is patient, where CI would kill the job; enforcing it means a timer around
+  a child process and a decision about what part of a step's output survives]`
+- **`if:` on a local step is still refused rather than honoured.** `[open: `runSteps` stops at the
+  first failure, so `always()` would change the loop's shape rather than its arguments; the shipped
+  workflow has no such step, so the change would be exercised by its fixtures alone]`
+- **A step may still declare an environment the *shell* overrides.** `[open: a literal `env:` entry
+  is passed through, and a command that then runs `export FOO=bar` changes it for its own children
+  only; that is the command's business, not the runner's, but nothing says so in the plan's output]`

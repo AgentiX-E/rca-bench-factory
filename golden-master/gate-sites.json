@@ -492,7 +492,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 88,
+      "line": 95,
       "condition": "plan.errors.length > 0",
       "diagnostic": "${error}\\n",
       "status": "proved",
@@ -500,7 +500,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 105,
+      "line": 112,
       "condition": "commands.length === 0",
       "diagnostic": "verify:local: no step key contains \"${only}\"\\n",
       "status": "proved",
@@ -508,7 +508,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 122,
+      "line": 129,
       "condition": "!result.ok",
       "diagnostic": "verify:local: FAILED at ${String(result.index + 1)}/${String(result.commands)}",
       "status": "proved",

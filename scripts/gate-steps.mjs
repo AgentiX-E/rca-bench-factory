@@ -200,6 +200,53 @@ export function cwdOf(raw) {
   return { path: relative(ROOT, resolved) || '.', error: null };
 }
 
+/**
+ * Read a step's `env:` as values this machine can supply, and values it cannot.
+ *
+ * ## Why the key stopped being the unit
+ *
+ * `env:` was in `LOCAL_INCOMPATIBLE`, which said a step carrying it cannot run
+ * here. That is true of `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and false of
+ * `NODE_OPTIONS: --max-old-space-size=4096`, and the difference is in the **value**,
+ * not in the key. A literal is data the runner can hand to the child process
+ * exactly as written; an expression is a computation whose inputs (secrets, the
+ * run, the matrix) exist only on the runner.
+ *
+ * So the answer is per entry, and the refusal downstream names the entry: "cannot
+ * honour `env:`" would send a reader looking for a key where the problem is a
+ * value.
+ *
+ * The flow spelling -- `env: {A: b}` -- is **not parsed**. Splitting it on commas
+ * would cut `${{ join(x, ', ') }}` in half, and a reader that guessed here would
+ * hand the command an environment nobody wrote. It is recorded so it can be
+ * refused with the spelling that works.
+ */
+export function envOf(step) {
+  const inline = String(step.values?.env ?? '').trim();
+  if (inline !== '') {
+    return {
+      literals: {},
+      expressions: [],
+      error:
+        `\`env: ${inline}\` is the flow spelling, which this reader does not parse: splitting it on commas ` +
+        'would cut an expression that contains one. Write it as a block, one `NAME: value` per line',
+    };
+  }
+  const literals = {};
+  const expressions = [];
+  for (const [name, raw] of Object.entries(step.env ?? {})) {
+    const value = scalar(raw);
+    // `${{` without a closing pair is still an expression this machine cannot
+    // evaluate, and treating it as a literal would pass the braces to the command.
+    if (/\$\{\{/.test(value)) {
+      expressions.push({ name, value });
+      continue;
+    }
+    literals[name] = value;
+  }
+  return { literals, expressions, error: null };
+}
+
 /** Where a step runs, as a clause, or an empty string for the default. */
 export function whereOf(step) {
   const parts = [];
@@ -207,6 +254,10 @@ export function whereOf(step) {
   if (cwd !== '.') parts.push(`in ${cwd}`);
   const shell = step.shell ?? DEFAULT_SHELL;
   if (shell !== DEFAULT_SHELL) parts.push(shell);
+  // A count rather than the values: the values are written in the workflow, and a
+  // run line that reprinted them would be the second place they exist.
+  const named = Object.keys(step.env ?? {}).length;
+  if (named > 0) parts.push(`env (${String(named)})`);
   return parts.join(', ');
 }
 
@@ -261,7 +312,7 @@ export const STEP_KEYS = {
 
   // Tolerated only on a step that does not run here; refused on a local one.
   if: 'a condition on whether the step runs at all',
-  env: 'environment for the command, which this runner does not reproduce',
+  env: 'read: a literal value is passed to the command; a value only the runner can compute is refused',
   'continue-on-error': 'a failure that does not fail the job, which this runner reads as a failure',
   with: 'inputs for an action; meaningful only on a `uses:` step',
 };
@@ -289,12 +340,16 @@ export function conditionOf(raw) {
  *
  *  - `if:` decides *whether* the step runs. `runSteps` stops at the first failure,
  *    so a step that runs regardless is a step this runner would not run at all.
- *  - `env:` supplies values, and the one the shipped workflow uses is a secret the
- *    runner does not have.
  *  - `continue-on-error:` means a failure is not a failure, which is exactly the
  *    distinction a runner exists to report.
+ *
+ * `env:` left with this pass, and the way it left is the point: what a runner
+ * cannot reproduce is not the **key** but certain **values** -- a secret, the run
+ * context -- and `envOf` separates those from literals, which are passed through.
+ * A key-level refusal could not tell `NODE_OPTIONS: --max-old-space-size=4096` from
+ * `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, and it refused both.
  */
-export const LOCAL_INCOMPATIBLE = ['if', 'env', 'continue-on-error'];
+export const LOCAL_INCOMPATIBLE = ['if', 'continue-on-error'];
 
 /** The actions a step may use. Anything else is a gate wearing a `uses:`. */
 export const SETUP_ACTIONS = {
@@ -458,7 +513,40 @@ export function readWorkflow(text) {
         // on: `shell:`, `working-directory:` and `if:` are all read by value now,
         // and a reader that kept only the key names would have to grow a special
         // case each time another one started to matter.
-        step.values[key] = rest.trim();
+        const inline = rest.trim();
+        step.values[key] = inline;
+
+        // `env:` is the one key whose value is a **map**, so it is the one key that
+        // needs the lines below it. A non-empty inline value is the flow spelling,
+        // which stays in `values.env` for `envOf` to refuse: recording it a second
+        // time here would be two copies of one fact, and the copy that goes stale
+        // is whichever one nothing reads.
+        //
+        // The block is ten spaces deep, which is also how deep a `run:` body is.
+        // What separates them is which key opened the block, and there is a test
+        // for exactly that.
+        if (key === 'env' && inline === '') {
+          step.env = {};
+          let k = j + 1;
+          for (; k < lines.length; k += 1) {
+            const entryLine = lines[k];
+            if (entryLine.trim() === '') continue;
+            const named = /^ {10}([A-Za-z_][A-Za-z0-9_]*):(.*)$/.exec(entryLine);
+            if (named === null) {
+              // A line at the block's own depth that is not a `NAME: value` is
+              // either the end of the block or an entry this reader would drop in
+              // silence. Only the second is an error.
+              if (/^ {10}\S/.test(entryLine)) {
+                errors.push(
+                  `line ${String(k + 1)}: an \`env:\` entry this reader cannot name -- \`NAME: value\` is the spelling it reads`,
+                );
+              }
+              break;
+            }
+            step.env[named[1]] = named[2].trim();
+          }
+          j = k - 1;
+        }
       }
 
       const runMatch = /^ {8}run: (.*)$/.exec(inner);
@@ -550,7 +638,13 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // fact that the workflow uses conditions should be visible in the plan
       // rather than inferred from the plan's silence.
       const conditional = (step.keys ?? []).filter((key) => LOCAL_INCOMPATIBLE.includes(key));
-      if (conditional.length > 0) {
+      // `env:` on an action is legal -- the action's own environment -- so the same
+      // rule applies as on a step outside the plan: it is worth mentioning only
+      // when the value is one this machine could not have supplied.
+      const actionEnv = envOf(step);
+      const envBeyond = actionEnv.error !== null || actionEnv.expressions.length > 0;
+      const declared = [...conditional, ...(envBeyond ? ['env'] : [])];
+      if (declared.length > 0) {
         const condition = conditional.includes('if') ? conditionOf(step.values?.['if']) : null;
         if (condition !== null && condition !== 'always()') {
           errors.push(
@@ -558,7 +652,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
           );
           continue;
         }
-        tolerated.push({ key: step.key, keys: conditional, condition });
+        tolerated.push({ key: step.key, keys: declared, condition });
       }
       continue;
     }
@@ -585,6 +679,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
     // where the step runs.
     const shell = shellOf(step.values?.shell);
     const cwd = cwdOf(step.values?.['working-directory']);
+    const env = envOf(step);
 
     if (entry.local === true) {
       // A key that changes whether or with what a local step runs makes
@@ -602,7 +697,19 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       // here, and the plan says why instead of assuming it away.
       if (shell.error !== null) errors.push(`${step.key}: ${shell.error}`);
       if (cwd.error !== null) errors.push(`${step.key}: ${cwd.error}`);
-      if (blocked.length > 0 || shell.error !== null || cwd.error !== null) continue;
+      // `env:` is the same question one level down: an entry is either a literal
+      // this machine can pass through or a value it has no inputs for.
+      if (env.error !== null) errors.push(`${step.key}: ${env.error}`);
+      if (env.expressions.length > 0) {
+        const [first] = env.expressions;
+        errors.push(
+          `${step.key}: \`env: ${first.name}: ${first.value}\` is a value only the runner can supply -- this ` +
+            'machine has no secrets and no run context to evaluate it with. Use a literal value, or make the ' +
+            'step remote-only with a reason',
+        );
+      }
+      if (blocked.length > 0 || shell.error !== null || cwd.error !== null || env.error !== null) continue;
+      if (env.expressions.length > 0) continue;
 
       local.push({
         key: step.key,
@@ -611,6 +718,7 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
         note: entry.note ?? '',
         cwd: cwd.path,
         shell: shell.template,
+        env: env.literals,
       });
       continue;
     }
@@ -637,7 +745,11 @@ export function classify(steps, plan = STEP_PLAN, setupActions = SETUP_ACTIONS) 
       const unreadable = [];
       if (shell.error !== null) unreadable.push('shell');
       if (cwd.error !== null) unreadable.push('working-directory');
-      const toleratedKeys = [...conditional, ...unreadable];
+      // A literal `env:` on a step outside the plan is not worth a mention: the
+      // runner could reproduce it and simply does not run the step. An entry it
+      // could *not* reproduce is, because that is the fact the plan is about.
+      const envBeyond = env.error !== null || env.expressions.length > 0;
+      const toleratedKeys = [...conditional, ...(envBeyond ? ['env'] : []), ...unreadable];
       if (toleratedKeys.length > 0) {
         tolerated.push({
           key: step.key,
@@ -703,12 +815,12 @@ export function describePlan(plan) {
   const overrides = plan.local.filter((step) => whereOf(step) !== '');
   const lines = [
     `verify:local — ${String(plan.local.length)} of ${String(plan.remote.length + plan.local.length)} run steps can run here`,
-    // The default is stated, and so is the number of steps that depart from it. A
-    // runner whose default is unstated has a default nobody can review, which is
+    // The defaults are stated, and so is the number of steps that depart from them.
+    // A runner whose default is unstated has a default nobody can review, which is
     // how `sh -c` survived ten passes.
     `  each command runs from the repository root under \`${DEFAULT_SHELL}\`; ${String(overrides.length)} of ${String(
       plan.local.length,
-    )} override either`,
+    )} override the shell, the directory or the environment`,
     '',
   ];
   for (const step of plan.local) {
@@ -740,24 +852,36 @@ export function describePlan(plan) {
  * one machine the second adds a minute and proves nothing, so the same command
  * text is run once and reported as already done.
  *
- * "The same command" is now the same **interpreter, directory and text**. It used
- * to be the text alone, which was true while every step ran from the root under
- * one shell and became false the moment either could differ: `pnpm lint` in
- * `packages/core` and `pnpm lint` in `packages/cli` would have collapsed into one
- * run, and the second step would have been reported as done by the first.
+ * "The same command" is now the same **interpreter, directory, environment and
+ * text**. It used to be the text alone, which was true while every step ran from
+ * the root under one shell with no environment, and became false the moment any of
+ * those could differ: `pnpm lint` in `packages/core` and `pnpm lint` in
+ * `packages/cli` would have collapsed into one run, and the second step would have
+ * been reported as done by the first. The environment was the third instance of the
+ * same mistake, which is why the identity is written as a tuple rather than added
+ * to one field at a time.
  */
 export function localCommands(local) {
   const order = [];
   const byIdentity = new Map();
   for (const step of local) {
+    const env = step.env ?? {};
     const entry = {
       run: step.run,
       cwd: step.cwd ?? '.',
       shell: step.shell ?? DEFAULT_SHELL,
+      env,
       first: step.key,
       also: [],
     };
-    const identity = [entry.cwd, entry.shell, entry.run].join('\u0000');
+    // The environment is compared by **content**, sorted: two steps that declare
+    // the same pair in two orders are one run, and `JSON.stringify` of two objects
+    // with different key orders is two strings.
+    const environment = Object.keys(env)
+      .sort()
+      .map((name) => `${name}=${env[name]}`)
+      .join('\u0000');
+    const identity = [entry.cwd, entry.shell, environment, entry.run].join('\u0000');
     const seen = byIdentity.get(identity);
     if (seen !== undefined) {
       seen.also.push(step.key);
