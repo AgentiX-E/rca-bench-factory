@@ -140,7 +140,11 @@ function sandbox(stub: { body: string; status: number }, subject: string | null 
     writeFileSync(join(tree, 'scripts', subject), 'process.exit(1);\n');
     writeFileSync(
       join(tree, 'packages', 'core', 'test', 'probe.test.ts'),
-      `// names scripts/${subject} so the audit has a subject to run\n`,
+      // In code, not in a comment: the audit's denominator is "names it in code"
+      // since finding 200, and this fixture's first version named the subject in a
+      // `//` line -- so the sandbox was measured as "no test names it" and every
+      // case below reported the wrong refusal.
+      `const SUBJECT = 'scripts/${subject}';\n`,
     );
   }
   writeFileSync(

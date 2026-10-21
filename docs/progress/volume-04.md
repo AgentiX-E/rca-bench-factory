@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **168 files, 4200 tests passed** (as of this commit) |
+| `core` test suite | **168 files, 4206 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **172 files, 4387 tests passed** (as of this commit) |
+| repo test suite | **172 files, 4393 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2583,3 +2583,59 @@ across 42 scripts; audit log 5 volumes, findings 1–199.
   threshold, and inventing one today would be a number chosen to fit the current
   distribution -- the honest next step is to look at the four gates with the widest gap
   and read why each naming file is silent, which is a pass of its own]`
+
+## v2.31 — the denominator counted prose, and the ratio was retired to what it measures
+
+Finding 199 added `in M of K naming file(s)`. The first run printed
+`check-official.mjs 3 of 10`, and ten minus three reads like a shortfall: seven files that
+name a gate and prove nothing.
+
+Reading the ten says otherwise. One drives it seventeen times. Of the other nine, **seven
+are prose** — sentences in comments, one of them reading *"A file that mentions
+`check-official.mjs` in a comment"*. The remaining two are a register key and a `DRIVES`
+list. The denominator was `source.includes(gate)`, and a string search cannot tell a
+sentence about a gate from a use of it. **The repository already knew** — that comment is
+the distinction, written by somebody who had hit it. What was missing was a reader.
+
+`namesInCode` strips comments and keeps strings, with a scanner that tracks quoting
+because the naive `replace(/\/\/.*$/gm, '')` truncates at the first `//` and this tree is
+full of `https://` inside literals. Six tests, one per way that can go wrong.
+
+| gate | before | after |
+| --- | --- | --- |
+| `check-official.mjs` | 3 of 10 | **3 of 4** |
+| `check-no-mock.mjs` | 2 of 8 | **2 of 5** |
+| `derive-gate-sites.mjs` | 2 of 7 | **2 of 5** |
+| `inject-stability.mjs` | 3 of 8 | **3 of 6** |
+
+`check-official.mjs` also went from 50 failing tests to **100**, because the nested run
+now includes the files that drive it instead of three that mentioned it.
+
+**And the ratio stops here.** After the correction, 75 files still name some gate in code
+and do not go red: `scripts-are-classified.test.ts` names all 42 by design (a register key
+is a string, and a proof *of the register*), `gate-sites-are-proven` asserts about the
+inventory, `cold-tree-job` about a command list. No source-level scan separates "names it
+in order to run it" from "names it in order to say something about it" — only the run can,
+and the run's answer *is* M. A ratio whose denominator cannot be measured invites an
+inference it cannot support, so the verdict line keeps `in M file(s)` and the residual is
+printed once at the end.
+
+The correction also broke 15 tests in `gates-are-testable-is-enumerated.test.ts`, all with
+the wrong refusal: its sandbox wrote its subject into a test file as
+`// names scripts/check-throwaway.mjs so the audit has a subject to run`. Under the new
+rule the sandbox had **no test naming its subject**, so every case measured the `NO-TEST`
+path instead of the one it was written for — a fixture relying on prose being counted, in
+the file whose subject is "the audit of the audits".
+
+**Acceptance.** `namesInCode`/`stripComments` **6 tests**; `gate-proofs.test.ts` **14**;
+42 gates, 0 silent claims, **75** mentioners; fixture names its subject in code (22 tests);
+core **168 / 4206**, repo **172 / 4393**; audit log 5 volumes, findings 1–200.
+
+### Open
+
+- **`named in code, not red: 75`** is the count of files that are proofs of something
+  else, and it will grow with every register entry. `[open: a number that grows by design
+  is a number a reader will eventually read as debt. The honest shape is probably to stop
+  counting it and to name the three classes it is made of -- register, inventory,
+  command list -- but that is a classification of the test suite rather than of the gates,
+  and it should be decided with the suite in front of it]`

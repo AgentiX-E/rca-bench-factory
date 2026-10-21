@@ -444,7 +444,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 393,
+      "line": 397,
       "condition": "subjects.length === 0",
       "diagnostic": "golden-master/gate-sites.json names no gate, so this run would pass while measuring nothing.",
       "status": "proved",
@@ -452,7 +452,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 539,
+      "line": 544,
       "condition": "held !== null && isAlive(held.pid)",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -460,7 +460,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 577,
+      "line": 582,
       "condition": "inFlight.length > 0",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -468,7 +468,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 599,
+      "line": 604,
       "condition": "unrestored.length > 0",
       "diagnostic": "could not repair ${gate} from the journal",
       "status": "proved",
@@ -476,7 +476,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 618,
+      "line": 623,
       "condition": "alreadyHollowed.length > 0",
       "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
       "status": "proved",
@@ -484,7 +484,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 652,
+      "line": 657,
       "condition": "mine !== undefined",
       "diagnostic": "verify-gates-are-testable: FAILED -- interrupted by ${signal};",
       "status": "proved",
@@ -492,7 +492,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 697,
+      "line": 702,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -500,7 +500,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 773,
+      "line": 796,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",

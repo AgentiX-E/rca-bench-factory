@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { claimedProofs, classify, redFiles, stripAnsi } from '../../../scripts/gate-proofs.mjs';
+import {
+  claimedProofs,
+  classify,
+  namesInCode,
+  redFiles,
+  stripAnsi,
+  stripComments,
+} from '../../../scripts/gate-proofs.mjs';
 
 /**
  * Reading a hollowed run: the facts, not the verdict.
@@ -114,5 +121,55 @@ describe('what the inventory claims about those files', () => {
     const claimed = claimedProofs(inventory, 'verify-local.mjs').map((one) => one.replace(/^packages\/core\//, ''));
     const red = redFiles({ red: ['packages/core/test/gate-steps.test.ts'] });
     expect(claimed.filter((one) => !red.includes(one))).toEqual(['test/tree-repair.test.ts']);
+  });
+});
+
+/**
+ * Naming a gate in code is a narrower claim than containing its name.
+ *
+ * The meta-gate's first denominator was `source.includes(gate)`, and it inflated every
+ * ratio: `check-official.mjs` reads as `4 of 10 naming file(s)` while **nine** of the
+ * ten only mention it -- a register key, a command list, and seven sentences,
+ * including one in `gate-sites-are-proven.test.ts` that says "a file that mentions
+ * `check-official.mjs` in a [comment]". The repository knew the distinction; the
+ * number did not.
+ */
+describe('a comment is prose about the gate, a string is the gate being used', () => {
+  const gate = 'check-no-mock.mjs';
+
+  it('does not count a line comment', () => {
+    expect(namesInCode(`// \`${gate}\` made about reporting every line.\n`, gate)).toBe(false);
+  });
+
+  it('does not count a block comment, on one line or across many', () => {
+    expect(namesInCode(`/* ${gate} is not imported here */\n`, gate)).toBe(false);
+    const block = ['/**', ` * ${gate} also lacks a fixture.`, ' */', 'const x = 1;'].join('\n');
+    expect(namesInCode(block, gate)).toBe(false);
+  });
+
+  it('counts a string, because that is what a spawn path is', () => {
+    expect(namesInCode(`spawnSync(node, [resolve(ROOT, 'scripts', '${gate}')]);\n`, gate)).toBe(true);
+    expect(namesInCode(`const DRIVES = ['scripts/${gate}'];\n`, gate)).toBe(true);
+  });
+
+  it('does not truncate a line at a `//` inside a string', () => {
+    // The naive stripper (`replace(/\/\/.*$/gm, '')`) deletes half of this line and,
+    // with it, the only mention -- a false negative in a check whose job is to find
+    // mentions. `https://` is everywhere in this tree.
+    const line = `const url = 'https://example.test/${gate}';\n`;
+    expect(stripComments(line)).toContain(gate);
+    expect(namesInCode(line, gate)).toBe(true);
+  });
+
+  it('honours an escaped quote, so a string does not end early', () => {
+    const line = `const note = 'it\\'s ${gate}'; // trailing comment\n`;
+    expect(stripComments(line)).toContain(gate);
+    expect(stripComments(line)).not.toContain('trailing comment');
+  });
+
+  it('keeps code that follows a comment on another line', () => {
+    const source = `// a comment about ${gate}\nconst x = 'kept';\n`;
+    expect(stripComments(source)).toContain("const x = 'kept';");
+    expect(namesInCode(source, gate)).toBe(false);
   });
 });

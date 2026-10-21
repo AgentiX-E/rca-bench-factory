@@ -19,6 +19,83 @@
  * decides what to do with them.
  */
 
+
+/**
+ * The source with its comments removed, and its strings left alone.
+ *
+ * ## Why this is not `source.replace(/\/\/.*$/gm, '')`
+ *
+ * A naive stripper truncates a line at the first `//`, and this tree is full of
+ * `https://` inside string literals -- so it would delete the half of the line that
+ * matters and keep the half that does not. The scanner below tracks which of the
+ * three quoting states it is in, and treats `//` and `/*` as syntax only outside
+ * them. Escapes are honoured so that `'it\'s'` does not end a string early.
+ *
+ * It is not a parser and does not claim to be: a template literal with an embedded
+ * `${}` containing a comment would be misread. Nothing in this tree writes one, and
+ * the failure mode is a false "names it", which the caller already tolerates.
+ */
+export function stripComments(source) {
+  let out = '';
+  let i = 0;
+  let quote = null;
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (quote !== null) {
+      out += ch;
+      if (ch === '\\') {
+        out += next ?? '';
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * Whether a test file names the gate **in code**, which is a much narrower claim
+ * than "contains the string".
+ *
+ * ## The measurement this replaced
+ *
+ * The meta-gate's first denominator was `source.includes(gate)`, and it counted
+ * prose. `check-official.mjs` came out as `4 of 10 naming file(s)`, and reading the
+ * ten showed why: one file drives it seventeen times, and the other nine are a
+ * register key, a `DRIVES`-style list, and seven sentences that *mention* the file --
+ * including one in `gate-sites-are-proven.test.ts` that reads "A file that mentions
+ * `check-official.mjs` in a [comment]". The repository already knew the distinction;
+ * the number did not.
+ *
+ * A comment is prose about the gate. A string or an identifier is the gate being
+ * used. `namesInCode` therefore strips comments and keeps strings.
+ */
+export function namesInCode(source, gate) {
+  return stripComments(String(source)).includes(gate);
+}
+
 /**
  * The test files `golden-master/gate-sites.json` names as this gate's proofs.
  *

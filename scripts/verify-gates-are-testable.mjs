@@ -56,7 +56,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedProofs, classify, redFiles } from './gate-proofs.mjs';
+import { claimedProofs, classify, namesInCode, redFiles } from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -104,7 +104,11 @@ function gates() {
 function referencingTests(gate) {
   return readdirSync(TESTS)
     .filter((name) => name.endsWith('.test.ts'))
-    .filter((name) => readFileSync(resolve(TESTS, name), 'utf8').includes(gate))
+    // In code, not in prose. `includes(gate)` counted sentences about the gate --
+    // `check-official.mjs` read as "4 of 10 naming file(s)" while nine of the ten
+    // were a register key and seven comments, one of which said "a file that
+    // mentions `check-official.mjs`". See `namesInCode`.
+    .filter((name) => namesInCode(readFileSync(resolve(TESTS, name), 'utf8'), gate))
     .map((name) => `test/${name}`)
     .sort();
 }
@@ -399,6 +403,7 @@ const unattributed = [];
 const unparsable = [];
 const restored = [];
 const silentClaims = [];
+const namedNotRed = [];
 
 /**
  * The file currently mutated, recorded on disk so a later run can undo it.
@@ -713,6 +718,9 @@ for (const gate of subjects) {
       `CAUGHT      ${gate.padEnd(44)} ${String(outcome.failures.length).padStart(2)} test(s) red ` +
         `in ${String(red.length)} of ${String(files.length)} naming file(s)`,
     );
+    for (const one of files.filter((file) => !red.includes(file.replace(/^packages\/core\//, '')))) {
+      namedNotRed.push({ gate, file: one });
+    }
     if (silent.length > 0) {
       console.log(`  claimed-but-silent: ${silent.join(', ')}`);
       for (const one of silent) silentClaims.push({ gate, file: one });
@@ -733,6 +741,21 @@ console.log(
   + `unattributed: ${unattributed.length}  unparsable: ${unparsable.length}`,
 );
 console.log(`restored byte-for-byte: ${restored.length} of ${subjects.length - unvisited.length - unparsable.length}`);
+if (namedNotRed.length > 0) {
+  // Printed and not judged. A file that names a gate in code and does not go red when
+  // it is emptied is either a test that does not exercise it, or -- more often here --
+  // a file that names it for a reason other than driving it: a register key, a
+  // command list, a contract assertion about the script's text. Those are proofs of
+  // something, just not of this. The widest gaps are named so the next reader can
+  // decide which; a threshold would be a number chosen to fit today's tree.
+  const widest = new Map();
+  for (const one of namedNotRed) widest.set(one.gate, (widest.get(one.gate) ?? 0) + 1);
+  const ranked = [...widest.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  console.log(
+    `named in code, not red: ${String(namedNotRed.length)} file(s) across ${String(widest.size)} gate(s); ` +
+      `widest: ${ranked.map(([gate, count]) => `${gate} ${String(count)}`).join(', ')}`,
+  );
+}
 
 // A claim the run did not honour.
 //

@@ -374,3 +374,76 @@ script could run in, and a tree missing a dependency is not one.
 | enforcement | a silent claim now fails the run, with the file and the gate named |
 | the sandbox | `gate-proofs.mjs` copied beside the audit; 22 tests in that file, all green |
 | `core` / repo | **168 / 4200** · **172 / 4387** |
+
+## Finding 200 — the denominator counted prose, and the ratio was retired to what it measures
+
+Finding 199 introduced `in M of K naming file(s)`: M files went red when the gate was
+emptied, K files "name" it. The first run printed `check-official.mjs 3 of 10`, and ten
+minus three reads like a shortfall — seven files that name a gate and prove nothing.
+
+Reading the ten says otherwise. One file drives it seventeen times. Of the other nine,
+**seven are prose**: sentences in `//` and `/** */` comments, including one in
+`gate-sites-are-proven.test.ts` that literally reads *"A file that mentions
+`check-official.mjs` in a comment"*. The remaining two are a register key and a `DRIVES`
+list. The denominator was `source.includes(gate)`, and a string search cannot tell a
+sentence about a gate from a use of it.
+
+**The repository already knew.** That comment is the distinction, written by somebody who
+had hit it. What was missing was a reader.
+
+### The fix, and what it moved
+
+`namesInCode` strips comments and keeps strings — with a scanner that tracks quoting,
+because the naive `replace(/\/\/.*$/gm, '')` truncates a line at the first `//` and this
+tree is full of `https://` inside literals. Six tests: line comment, block comment
+(one line and many), string, `https://` inside a string, an escaped quote, and code that
+follows a comment.
+
+| gate | before | after |
+| --- | --- | --- |
+| `check-official.mjs` | 3 of 10 | **3 of 4** |
+| `check-no-mock.mjs` | 2 of 8 | **2 of 5** |
+| `derive-gate-sites.mjs` | 2 of 7 | **2 of 5** |
+| `inject-stability.mjs` | 3 of 8 | **3 of 6** |
+
+`check-official.mjs` also went from 50 to **100** failing tests, because the nested run
+now includes the files that actually drive it instead of three that merely mentioned it.
+
+### What the residual is, and why the ratio stops here
+
+After the correction, 75 files still name some gate in code and do not go red when it is
+emptied — and they are not evidence of anything missing. `scripts-are-classified.test.ts`
+alone names all 42 gates by design: a register key is a string, and it is a proof *of the
+register*, not of the gate. `gate-sites-are-proven.test.ts` asserts about the inventory,
+`cold-tree-job.test.ts` about a command list.
+
+There is no source-level scan that separates "names it in order to run it" from "names it
+in order to say something about it" — the only instrument that can is the run itself, and
+the run's answer *is* M. A ratio whose denominator cannot be measured is a number that
+invites an inference it cannot support, so the verdict line keeps `in M file(s)` and the
+residual is reported once, at the end, as a count with its widest three:
+
+```
+named in code, not red: 75 file(s) across 42 gate(s); widest: check-doc-counts.mjs 3, …
+```
+
+### The fixture that named its subject in a comment
+
+The correction broke 15 tests in `gates-are-testable-is-enumerated.test.ts`, all with the
+wrong refusal. The sandbox wrote its subject into a test file as
+`// names scripts/check-throwaway.mjs so the audit has a subject to run` — a comment. Under
+the new rule the sandbox had **no test naming its subject**, so every case measured the
+`NO-TEST` path instead of the one it was written for.
+
+That is the finding in one sentence: a fixture had been relying on prose being counted, in
+the very file whose subject is "the audit of the audits".
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `namesInCode` / `stripComments` | 6 tests, including the `https://` case the naive stripper would truncate |
+| the ratio | K is now "names it in code"; the residual is printed once at the end, not judged |
+| the measurement | 42 gates, 0 silent claims, **75** mentioners across 42 gates |
+| the fixture | names its subject in code; 22 tests in that file, all green |
+| `core` / repo | **168 / 4206** · **172 / 4393** |
