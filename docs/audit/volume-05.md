@@ -228,3 +228,77 @@ corpus, because "3 row(s) updated" over five files says nothing about which.
 | `core` / `cli` / repo | **167 / 4190** · **4 / 187** · **171 / 4377** |
 | site inventory | **72** sites across 42 scripts, every one proved or exempted |
 | cold tree | `check-progress-volumes.mjs` measured with `packages/core/dist` moved aside: `OK — 4 volume(s), 75 round(s)`, exit 0 |
+
+## Finding 198 — the rule was in prose, and the second violation proved it
+
+Finding 196 moved the reading of `check-audit-volumes.mjs` out of the gate, because a
+gate that a test **imports** cannot be proved: `verify-gates-are-testable.mjs` proves
+a gate by emptying it, and an emptied file that a test imports kills the worker at its
+first statement, reports no failing test, and is refused as `UNATTRIBUTED`.
+
+That finding wrote the rule down. It did not give the rule a reader — and the
+repository had a second violation the whole time, which only the meta-gate could see:
+
+```
+CAUGHT      measure-doc-counts.mjs                         3 test(s) red
+```
+
+`CAUGHT` is true and misleading at once. Three *other* test files spawn the script and
+go red when it is emptied; four tests in two files **import** it, and those do not go
+red — they disappear. The meta-gate's verdict is over "at least one test named", so a
+partially-imported gate passes it while half its proof is invisible. That is the same
+shape as a check whose scope shrank while its verdict stayed green, one level up:
+the proof's scope shrank and the verdict stayed green.
+
+### The rule, with a reader
+
+`scripts-are-classified.test.ts` gains one assertion: no test file may import a file
+whose register class is `gate` or `probe`. It reads every `from '…/scripts/x.mjs'` and
+`import('…/scripts/x.mjs')` in `packages/core/test/*.test.ts`, joins it against the
+register, and fails with the repair rather than the symptom. Two tests: the rule, and
+a negative control that proves the pattern matches something and that the register
+distinguishes `data` from `gate` — because a regex that matched nothing would make the
+rule pass over every file.
+
+Cost: under a second, against the meta-gate's two and a half minutes.
+
+### What the violation was
+
+`measure-doc-counts.mjs` is 890 lines and was two files in one: a library (`parseSummary`,
+`countsFromReports`, the five `MeasurementUnavailable` subclasses, `rewritePublishedRows`,
+`diagnoseRedRun`, `SCOPES`) and a CLI. Four tests imported the library half.
+
+The split would have been mechanical except for one thing, and it is the interesting
+part: **the library half called `fail()`**, which prints to stderr and ends the process.
+A module that can end the process cannot be driven by a test at all — which is how
+`fail()` came to be reachable from there: that half was written when it *was* the whole
+program, and nothing had asked it to be callable since.
+
+Six sites became `refuse()`, which throws `MeasurementUnavailable` — a class the gate
+already caught and printed with `fail(error.lines)`. Same sentences, same exit code,
+and now observable. The gate keeps the CLI, the measurement loop, the serialiser and
+`main`.
+
+### Two things the meta-gate cannot say
+
+1. **A dynamic import through a variable is invisible to a literal scan.**
+   `measure-doc-counts-readings.test.ts` did `await import(pathToFileURL(SCRIPT).href)`,
+   so the new rule would not have caught it. It was found by running the suite: the
+   import resolved, the constants came back `undefined`, and four tests failed with
+   `expected '' to contain 'records a failure'`. The file now imports the data module
+   statically and keeps `SCRIPT` only for the spawns, which is what the inventory
+   expects. The rule's comment says it reads literal specifiers — a sentence about what
+   the check does, rather than one claiming a property it does not have.
+2. **`CAUGHT` does not mean "every test that names this gate is a proof".** It means
+   "at least one is". The register's `why` fields carry the rest of the argument.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the rule | 2 tests: the import scan, and a negative control on the pattern and the register |
+| the violation | `measure-doc-counts.mjs` split into the gate and `scripts/doc-counts-rows.mjs` (`data`); 6 `fail()` sites became `refuse()` |
+| the tests that imported it | 2 files repointed to the data module; `measure-doc-counts-readings.test.ts` stops importing a gate at all |
+| the meta-gate | `OK (42 gate(s), each caught by at least one test)` |
+| `core` / repo | **167 / 4192** · **171 / 4379** |
+| site inventory | **72** sites across 42 scripts |

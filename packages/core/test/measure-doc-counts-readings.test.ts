@@ -56,13 +56,21 @@ interface Counts {
  * guards its work behind a direct-call check, so this neither spawns three
  * suites nor rewrites the committed measurement.
  */
-const library = (await import(pathToFileURL(SCRIPT).href)) as {
+/**
+ * The two readers, imported from the module that now holds them.
+ *
+ * They used to be imported out of `measure-doc-counts.mjs` -- which is a **gate**,
+ * and a gate a test imports cannot be proved by emptying it (finding 196). The
+ * readings moved to `scripts/doc-counts-rows.mjs`, so this file imports that and
+ * keeps `SCRIPT` only for the spawns below, which is what the inventory expects.
+ */
+const { COUNT_UNAVAILABLE, countsFromReports, parseSummary } = (await import(
+  pathToFileURL(resolve(ROOT, 'scripts', 'doc-counts-rows.mjs')).href
+)) as {
   COUNT_UNAVAILABLE: string;
   countsFromReports: (paths: string[]) => Record<'core' | 'cli' | 'repo', Counts>;
   parseSummary: (out: string, scope: string) => Counts;
 };
-const { countsFromReports, parseSummary } = library;
-const COUNT_UNAVAILABLE = library.COUNT_UNAVAILABLE;
 
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 

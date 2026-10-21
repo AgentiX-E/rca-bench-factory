@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 52,
+  "scanned": 53,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -341,7 +341,7 @@
     },
     {
       "script": "scripts/measure-doc-counts.mjs",
-      "line": 158,
+      "line": 162,
       "diagnostic": "measure-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/probe-built-module-guards.test.ts"

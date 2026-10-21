@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { diagnoseRedRun } from '../../../scripts/measure-doc-counts.mjs';
+import { diagnoseRedRun } from '../../../scripts/doc-counts-rows.mjs';
 
 /**
  * What the counting tool says when the suite it counts is red.

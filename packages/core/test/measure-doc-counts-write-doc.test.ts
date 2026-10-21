@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { rewritePublishedRows } from '../../../scripts/measure-doc-counts.mjs';
+import { rewritePublishedRows } from '../../../scripts/doc-counts-rows.mjs';
 
 /**
  * Writing the published counts into the document a reader opens.

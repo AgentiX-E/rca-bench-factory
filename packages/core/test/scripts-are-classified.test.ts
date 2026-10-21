@@ -129,6 +129,14 @@ const REGISTER: Record<string, Entry> = {
       'the file\'s. No main and no exit -- check-progress-volumes.mjs holds the verdict and is spawned, ' +
       'because a gate that a test imports cannot be proved by emptying it.',
   },
+  'doc-counts-rows.mjs': {
+    class: 'data',
+    why:
+      'What a published count row is and how it is rewritten, plus how a red run is reported. It ' +
+      'lives outside measure-doc-counts.mjs because two tests import it and that file is a gate -- ' +
+      'a gate a test imports cannot be proved by emptying it (finding 196), and this is the second ' +
+      'time the rule was learned by running the meta-gate instead of by reading a check.',
+  },
   'docs-corpus.mjs': {
     class: 'data',
     why:
@@ -442,5 +450,65 @@ describe('scripts/ · every script is classified, and the class is checked', () 
       expect(corpus).toContain('check-no-mock.mjs');
       expect(REGISTER['serve-site.mjs']?.why).not.toContain('check-no-mock');
     });
+  });
+});
+
+/**
+ * A gate may be spawned by a test, never imported by one.
+ *
+ * ## The defect this closes, stated as a rule
+ *
+ * `verify-gates-are-testable.mjs` proves a gate by **emptying it** and requiring
+ * the suite to go red *and to name a failing test*. Those are one requirement: a
+ * worker that dies at its first statement reports `UNATTRIBUTED`, which is
+ * indistinguishable from a broken test file, and the meta-gate refuses it.
+ *
+ * That means a gate which a test imports **cannot be proved at all** -- the proof
+ * is self-defeating. It was found twice by running the meta-gate and reading its
+ * output (`check-audit-volumes.mjs` in finding 196, `measure-doc-counts.mjs` in
+ * finding 198), and both times the repair was the same: move the reading into a
+ * `data` module and leave the verdict in the gate.
+ *
+ * Twice is a pattern, and the rule was only in prose. This is the same rule with a
+ * reader: any import of `scripts/<name>.mjs` in any test file whose register class
+ * is `gate` or `probe` fails here, in under a second, instead of two minutes later
+ * in the meta-gate's `UNATTRIBUTED` line.
+ */
+describe('a gate is proved by being emptied, so no test may import one', () => {
+  /** `from '../../../scripts/x.mjs'` and dynamic `import('…/scripts/x.mjs')`. */
+  const IMPORT = /(?:from\s+|import\s*\(\s*)'[^']*?\/([\w.-]+\.mjs)'/g;
+
+  it('no test file imports a file the register calls a gate or a probe', () => {
+    const offenders: string[] = [];
+    const testDir = resolve(ROOT, 'packages/core', 'test');
+    for (const name of readdirSync(testDir).filter((entry) => entry.endsWith('.test.ts'))) {
+      const source = readFileSync(resolve(testDir, name), 'utf8');
+      for (const match of source.matchAll(IMPORT)) {
+        const script = match[1]!;
+        const klass = REGISTER[script]?.class;
+        if (klass === 'gate' || klass === 'probe') {
+          offenders.push(`${name} imports ${script}, which is a ${klass}`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      'a gate that a test imports cannot be proved by emptying it: the emptied file kills ' +
+        'the worker before it names a failing test, and the meta-gate reports UNATTRIBUTED. ' +
+        'Move the reading into a data module and leave the verdict in the gate',
+    ).toEqual([]);
+  });
+
+  it('reads imports at all, which is the half that a broken pattern would skip', () => {
+    // The negative control. An `IMPORT` regex that matched nothing would make the
+    // assertion above pass over every file, and the failure would only appear the
+    // next time somebody imported a gate -- which is the day it was written for.
+    const sample = "import { check } from '../../../scripts/audit-volumes.mjs';";
+    const names = [...sample.matchAll(IMPORT)].map((match) => match[1]);
+    expect(names).toEqual(['audit-volumes.mjs']);
+    // And the register must actually distinguish the two classes, or the filter
+    // above is a filter over one value.
+    expect(REGISTER['audit-volumes.mjs']?.class).toBe('data');
+    expect(REGISTER['check-audit-volumes.mjs']?.class).toBe('gate');
   });
 });

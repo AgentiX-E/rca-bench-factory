@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **167 files, 4190 tests passed** (as of this commit) |
+| `core` test suite | **167 files, 4192 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **171 files, 4377 tests passed** (as of this commit) |
+| repo test suite | **171 files, 4379 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2477,3 +2477,57 @@ bytes`; the audit log is 5 volumes, findings 1–197.
   it larger. Moving the historical parts of the front matter (the round-trip history
   and the L4 anchor detail) into a `volume-00` is not a size problem but a naming
   one: they are not rounds, so where they belong is a decision, not a measurement]`
+
+## v2.29 — the rule was in prose, and the second violation proved it
+
+Finding 196 wrote down that a gate may be spawned by a test but never imported: the
+meta-gate proves a gate by emptying it, and an emptied file that a test imports kills
+the worker before it can name a failing test -- `UNATTRIBUTED`, which the meta-gate
+refuses.
+
+The rule had no reader. The repository had a second violation the whole time, and only
+the meta-gate could see it, in a line that is true and misleading at once:
+
+```
+CAUGHT      measure-doc-counts.mjs                         3 test(s) red
+```
+
+Three other files spawn the script and go red. Four tests in two files import it, and
+when it is emptied those tests do not go red -- they disappear. `CAUGHT` is a verdict
+over "at least one test named", so a partially imported gate passes it while half its
+proof is invisible. **The proof's scope shrank and the verdict stayed green** -- the
+same sentence this campaign has written about checks four times now, one level up.
+
+`scripts-are-classified.test.ts` now holds the rule: no test file may import a file
+whose register class is `gate` or `probe`. Under a second, against the meta-gate's two
+and a half minutes, and it fails with the repair rather than the symptom.
+
+The violation was worth more than the rule. `measure-doc-counts.mjs` was a library and
+a CLI in one file, and **the library half called `fail()`** -- print to stderr and end
+the process. A module that can end the process cannot be driven by a test at all, which
+is how `fail()` came to be reachable from there: that half was written when it *was* the
+whole program. Six sites became `refuse()`, throwing `MeasurementUnavailable`, a class
+the gate already caught and printed. Same sentences, same exit code, now observable.
+
+One gap is recorded rather than papered over: the rule reads **literal** import
+specifiers, and `measure-doc-counts-readings.test.ts` imported the gate through a
+variable (`await import(pathToFileURL(SCRIPT).href)`). It was found by running the
+suite -- four failures with `expected '' to contain 'records a failure'` -- and the file
+now imports the data module statically, keeping `SCRIPT` only for its spawns.
+
+**Acceptance.** The rule and its negative control: **2 tests**, register **13 classes**
+checked; the split: `scripts/doc-counts-rows.mjs` (`data`, 12 exports) and a gate that
+is CLI, measurement loop and serialiser; core **167 files / 4192 tests**, repo **171 /
+4379**; meta-gate `OK (42 gate(s))`; **72** proved sites across 42 scripts; audit log
+5 volumes, findings 1–198.
+
+### Open
+
+- **`verify-gates-are-testable.mjs` cannot distinguish "a proof" from "one proof"**:
+  `CAUGHT` says at least one test named the gate, and the meta-gate has no vocabulary
+  for "some of this gate's tests are imports and therefore invisible". `[open: the
+  register's `why` fields carry the argument instead, and the new import rule is what
+  makes the import case impossible going forward -- but a gate whose *behavioural* tests
+  were deleted, leaving one spawn, would still read CAUGHT. Measuring that needs the
+  meta-gate to know which tests name which script, which is the inventory's job rather
+  than the battery's]`
