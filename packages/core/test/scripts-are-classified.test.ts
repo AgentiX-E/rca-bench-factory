@@ -129,6 +129,14 @@ const REGISTER: Record<string, Entry> = {
       'the file\'s. No main and no exit -- check-progress-volumes.mjs holds the verdict and is spawned, ' +
       'because a gate that a test imports cannot be proved by emptying it.',
   },
+  'gate-proofs.mjs': {
+    class: 'data',
+    why:
+      'Reading a hollowed run: which test files went red, and what the inventory claims about them. ' +
+      'It is here because the meta-gate is a gate, so a test may not import it -- and the parsing is ' +
+      'the part that was wrong once in the safe direction ("0 of 4 naming file(s)" for all 42 gates), ' +
+      'which is a thing only a canned transcript can catch.',
+  },
   'doc-counts-rows.mjs': {
     class: 'data',
     why:

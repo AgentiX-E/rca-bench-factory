@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **167 files, 4192 tests passed** (as of this commit) |
+| `core` test suite | **168 files, 4200 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **171 files, 4379 tests passed** (as of this commit) |
+| repo test suite | **172 files, 4387 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2531,3 +2531,55 @@ is CLI, measurement loop and serialiser; core **167 files / 4192 tests**, repo *
   were deleted, leaving one spawn, would still read CAUGHT. Measuring that needs the
   meta-gate to know which tests name which script, which is the inventory's job rather
   than the battery's]`
+
+## v2.30 — the inventory's proofs were statements, and nothing measured them
+
+`golden-master/gate-sites.json` says, for every failure site, which test proves it.
+Two halves of that claim were checked: the file exists, and it names the script.
+Neither half is the claim. **The claim is that the test goes red when the gate is
+wrong**, and nothing had ever run it.
+
+`verify-gates-are-testable.mjs` came closest and stopped one word short: `CAUGHT` means
+*at least one* test failed, so a gate can be caught by one file while another file the
+inventory names proves nothing, and the inventory stays green.
+
+The meta-gate now compares the two sets. The first attempt reported `0 of 4 naming
+file(s)` for **all 42 gates** — wrong in the safe direction, which is indistinguishable
+from a finding: "no gate's proofs are unmeasured" is exactly what a parser that matches
+nothing would say. The `×` line carries the test's name and nothing else; the file is
+on the `❯ <path>` header above it. The corrected parse reads both reporter shapes, and
+`gate-proofs.test.ts` (**8 tests**) holds it against canned transcripts, because a run
+of the real thing cannot tell a wrong measurement from a clean one.
+
+**What it found: nothing.** All 42 gates honour every claim, and a silent claim now
+fails the run with the gate and the file named. That is the right result, and the
+finding's subject is the *claim* rather than the proofs: an inventory that could have
+been wrong would not have said so. What it produces besides is the distribution, which
+no report had carried before:
+
+```
+CAUGHT      check-doc-counts.mjs                         18 test(s) red in 1 of 4 naming file(s)
+CAUGHT      build-example-bundle.mjs                      9 test(s) red in 1 of 5 naming file(s)
+```
+
+"Naming" is a much weaker relation than "proving", and until this run the two were the
+same number.
+
+Two smaller things this round cost, both worth their sentence: the parse had to leave
+the gate (v2.29's rule, applied to v2.30's code without being asked), and the
+meta-gate's own sandbox then failed with `ERR_MODULE_NOT_FOUND` because it copied the
+entry point and not the new dependency — a fixture is a tree the script could run in,
+and a tree missing a dependency is not one.
+
+**Acceptance.** `gate-proofs.test.ts` **8 tests**; meta-gate `OK (42 gate(s))` with
+**0 silent claims**; core **168 files / 4200 tests**, repo **172 / 4387**; **72** sites
+across 42 scripts; audit log 5 volumes, findings 1–199.
+
+### Open
+
+- **`in M of K naming file(s)` is printed and not judged.** A gate caught by 1 of 5
+  naming files is proved; whether the other four *should* prove something is a question
+  about the tests, not about the gate. `[open: the ratio is now a measurement without a
+  threshold, and inventing one today would be a number chosen to fit the current
+  distribution -- the honest next step is to look at the four gates with the widest gap
+  and read why each naming file is silent, which is a pass of its own]`

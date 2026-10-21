@@ -56,11 +56,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { claimedProofs, classify, redFiles } from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 const TESTS = resolve(ROOT, 'packages', 'core', 'test');
 const INVENTORY = resolve(ROOT, 'golden-master', 'gate-sites.json');
+/** Parsed once: every gate asks it for its claimed proofs, and the file does not change. */
+const INVENTORY_JSON = JSON.parse(readFileSync(INVENTORY, 'utf8'));
 
 /**
  * Every gate in the tree: the scripts `golden-master/gate-sites.json` says exit
@@ -94,6 +97,8 @@ function gates() {
   const inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
   return [...new Set(inventory.sites.map((site) => site.script.replace(/^scripts\//, '')))].sort();
 }
+
+
 
 /** The test files that name this gate -- the only ones that could notice. */
 function referencingTests(gate) {
@@ -201,52 +206,7 @@ function parses(source) {
   }
 }
 
-/**
- * Remove the SGR escapes vitest emits when colour is on.
- *
- * This script was written, run green here, and failed on its first CI run with
- * `caught: 0, survived: 13` -- every gate reported as unguarded. The cause was its
- * own detector: it looked for a line whose first non-space character is `×`, and
- * on a runner vitest colourises, so the line is `\x1b[31m×\x1b[39m …` and begins
- * with an escape. That is precisely the defect class this audit exists to find,
- * in the audit, and it is the fourth time this campaign has recorded it (findings
- * 147, 148, and twice in the readers they repaired).
- *
- * It was caught rather than tolerated because a SURVIVED gate fails the run: the
- * failure mode of this script is loud by construction, which is the only reason
- * the divergence between here and the runner surfaced at all.
- */
-function stripAnsi(text) {
-  // eslint-disable-next-line no-control-regex
-  return String(text).replace(/\u001b\[[0-9;]*m/g, '');
-}
 
-/**
- * Whether the nested run shows a failure, and whether its status agrees.
- *
- * ## Why the exit status alone is not the verdict
- *
- * `npx vitest run <files>` exits non-zero both when a test fails and when there
- * is nothing to run -- a suite that was never collected, a path that does not
- * exist, a syntax error introduced by the hollowing itself. Crediting any of
- * those as CAUGHT would be reading a crash as a proof, which is the false-green
- * idiom this repository rejects everywhere else.
- *
- * So both halves are required: the status must be non-zero **and** the output must
- * name at least one failing test. A run that fails without naming one is its own
- * state, reported as its own word, and fails the audit -- because it cannot be
- * credited to the gate.
- */
-function classify(files, result) {
-  const out = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  const failures = stripAnsi(out)
-    .split('\n')
-    .filter((line) => line.trim().startsWith('\u00d7'));
-  const status = result.status ?? -1;
-  if (status !== 0 && failures.length > 0) return { verdict: 'CAUGHT', failures };
-  if (status === 0) return { verdict: 'SURVIVED', failures };
-  return { verdict: 'UNATTRIBUTED', failures, status, files };
-}
 
 /**
  * The suite this run is waiting for, as a process group, while it is running.
@@ -438,6 +398,7 @@ const unvisited = [];
 const unattributed = [];
 const unparsable = [];
 const restored = [];
+const silentClaims = [];
 
 /**
  * The file currently mutated, recorded on disk so a later run can undo it.
@@ -738,7 +699,24 @@ for (const gate of subjects) {
   restored.push(gate);
 
   if (outcome.verdict === 'CAUGHT') {
-    console.log(`CAUGHT      ${gate.padEnd(44)} ${String(outcome.failures.length).padStart(2)} test(s) red`);
+    const red = redFiles(outcome);
+    const claimed = claimedProofs(INVENTORY_JSON, gate);
+    // Only the claims this run could have seen. A claim naming a file that was not
+    // executed says nothing here -- and that case is already refused by
+    // `gate-sites-are-proven.test.ts`, which requires a claimed proof to *name* the
+    // script. Without this filter every fixture run in the suite came out red,
+    // because a fixture's file list never contains the real inventory's proofs.
+    const run = new Set(files.map((one) => one.replace(/^packages\/core\//, '')));
+    const visible = claimed.filter((one) => run.has(one.replace(/^packages\/core\//, '')));
+    const silent = visible.filter((one) => !red.includes(one.replace(/^packages\/core\//, '')));
+    console.log(
+      `CAUGHT      ${gate.padEnd(44)} ${String(outcome.failures.length).padStart(2)} test(s) red ` +
+        `in ${String(red.length)} of ${String(files.length)} naming file(s)`,
+    );
+    if (silent.length > 0) {
+      console.log(`  claimed-but-silent: ${silent.join(', ')}`);
+      for (const one of silent) silentClaims.push({ gate, file: one });
+    }
   } else if (outcome.verdict === 'SURVIVED') {
     console.log(`SURVIVED    ${gate.padEnd(44)} emptied, and nothing failed across ${files.length} file(s)`);
     survived.push(gate);
@@ -756,7 +734,27 @@ console.log(
 );
 console.log(`restored byte-for-byte: ${restored.length} of ${subjects.length - unvisited.length - unparsable.length}`);
 
-const failed = survived.length + unvisited.length + unattributed.length + unparsable.length;
+// A claim the run did not honour.
+//
+// `CAUGHT` says at least one test named the gate. It does not say that the tests
+// `golden-master/gate-sites.json` *claims* as the proofs of its sites did anything --
+// and until finding 199 nothing compared the two. The inventory is a set of
+// statements about which test proves which exit; this is the run, and a statement
+// nothing measures is a comment.
+const unprovenClaims = silentClaims.length > 0;
+if (unprovenClaims) {
+  console.error('');
+  console.error('verify-gates-are-testable: the inventory names proofs this run did not see:');
+  for (const one of silentClaims) {
+    console.error(`  ${one.gate}: golden-master/gate-sites.json says ${one.file} proves it, and that file`);
+    console.error('    named no failing test when the gate was emptied');
+  }
+  console.error('  Either the annotation is wrong, or the test does not exercise the gate. Both are the');
+  console.error('  same defect: a proof that exists only in the inventory.');
+}
+
+const failed =
+  survived.length + unvisited.length + unattributed.length + unparsable.length + (unprovenClaims ? 1 : 0);
 if (failed > 0) {
   console.error('');
   console.error('verify-gates-are-testable: FAILED');

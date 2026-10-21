@@ -302,3 +302,75 @@ and now observable. The gate keeps the CLI, the measurement loop, the serialiser
 | the meta-gate | `OK (42 gate(s), each caught by at least one test)` |
 | `core` / repo | **167 / 4192** · **171 / 4379** |
 | site inventory | **72** sites across 42 scripts |
+
+## Finding 199 — the inventory's proofs were statements, and nothing measured them
+
+`golden-master/gate-sites.json` carries a `provedBy` for every failure site: the test
+that proves this exit can fail. `gate-sites-are-proven.test.ts` holds two halves of it
+— the file exists, and it names the script. Neither half is the claim. The claim is
+that **the test goes red when the gate is wrong**, and nothing had ever measured that.
+
+`verify-gates-are-testable.mjs` came closest, and stopped one word short. Its verdict
+is `CAUGHT` when the hollowed gate made at least one test fail — *at least one*. So a
+gate can be caught by one file while another file the inventory names proves nothing
+at all, and the inventory stays green. That is the same shape this campaign has
+recorded four times about checks, now on the **proofs**: a claim whose scope is wider
+than the measurement behind it.
+
+### The measurement, and the two ways to get it wrong
+
+The meta-gate now attributes every `×` line to the file it came from and compares:
+
+- `claimed` = the distinct `provedBy` paths for this gate's sites;
+- `red` = the files in which the hollowed run named a failing test;
+- `silent` = claimed ∩ run − red — claims this run could see and did not honour.
+
+The first attempt reported `0 of 4 naming file(s)` for **all 42 gates**, and a
+zero-silent verdict. It was wrong in the safe direction: the `×` line carries the
+test's name and nothing else, and the file is on the `❯ <path>` header above it. A
+measurement that is wrong in the safe direction is indistinguishable from a finding —
+"no gate's proofs are unmeasured" is exactly what a parser that matches nothing would
+say. The corrected parse reads both reporter shapes (`❯` + `×` locally, `FAIL <file>
+> …` on CI), and `gate-proofs.test.ts` (8 tests) holds it against canned transcripts,
+because a run of the real thing cannot tell those two apart.
+
+### What it found
+
+**Nothing.** All 42 gates honour every claim the inventory makes about them — zero
+silent, measured, with the corrected parse. That is the right result and it is worth
+stating plainly: this finding's subject is not a defect in the proofs, it is a defect
+in the *claim* — an inventory that could have been wrong and would not have said so.
+
+What it does produce is the distribution, printed on every run:
+
+```
+CAUGHT      check-doc-counts.mjs                         18 test(s) red in 1 of 4 naming file(s)
+CAUGHT      build-example-bundle.mjs                      9 test(s) red in 1 of 5 naming file(s)
+CAUGHT      apply-pins.mjs                               14 test(s) red in 2 of 3 naming file(s)
+```
+
+"Naming" is a much weaker relation than "proving", and until this run the two were the
+same number in every report.
+
+### The rule v2.29 imposed on this code
+
+The parse had to live somewhere a test can import it, and `verify-gates-are-testable.mjs`
+is a gate — so `scripts/gate-proofs.mjs` (`data`) holds `classify`, `redFiles`,
+`claimedProofs` and `stripAnsi`, and the gate decides. The rule written in finding 198
+was applied to the code written in finding 199, one round later, without being asked.
+
+It also broke the meta-gate's own sandbox: the fixture copied the entry point and not
+its new dependency, so every refusal printed `ERR_MODULE_NOT_FOUND` instead of its
+sentence. Fixed in the fixture, with the reason beside it — a fixture is a tree the
+script could run in, and a tree missing a dependency is not one.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the comparison | `claimed` vs `red` per gate; `silent` restricted to claims this run executed |
+| the corrected parse | `gate-proofs.test.ts` **8 tests**: both reporter shapes, no-header attribution, three endings, ANSI, prefix normalisation |
+| the measurement | **42 gates, 0 silent claims**; `in M of K naming file(s)` printed for each |
+| enforcement | a silent claim now fails the run, with the file and the gate named |
+| the sandbox | `gate-proofs.mjs` copied beside the audit; 22 tests in that file, all green |
+| `core` / repo | **168 / 4200** · **172 / 4387** |

@@ -131,6 +131,11 @@ function sandbox(stub: { body: string; status: number }, subject: string | null 
   mkdirSync(join(tree, 'bin'), { recursive: true });
   mkdirSync(join(tree, 'golden-master'), { recursive: true });
   copyFileSync(resolve(ROOT, 'scripts', AUDIT), join(tree, 'scripts', AUDIT));
+  // The audit reads the hollowed output through a module beside it (finding 199), so
+  // a sandbox that carried only the entry point gave the audit an `ERR_MODULE_NOT_FOUND`
+  // and every refusal below reported a stack trace instead of its sentence. A fixture
+  // is a tree the script could run in, and a tree missing a dependency is not one.
+  copyFileSync(resolve(ROOT, 'scripts', 'gate-proofs.mjs'), join(tree, 'scripts', 'gate-proofs.mjs'));
   if (subject !== null) {
     writeFileSync(join(tree, 'scripts', subject), 'process.exit(1);\n');
     writeFileSync(
