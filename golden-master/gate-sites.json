@@ -500,7 +500,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 796,
+      "line": 800,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",

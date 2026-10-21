@@ -447,3 +447,70 @@ the very file whose subject is "the audit of the audits".
 | the measurement | 42 gates, 0 silent claims, **75** mentioners across 42 gates |
 | the fixture | names its subject in code; 22 tests in that file, all green |
 | `core` / repo | **168 / 4206** · **172 / 4393** |
+
+## Finding 201 — a number that grows with the tree is read as debt
+
+Finding 200 retired the `M of K` ratio and left one line: `named in code, not red: 77
+file(s) across 42 gate(s)`. That number is honest and unusable. It grows by one every
+time a gate is added, because `scripts-are-classified.test.ts` names all of them by
+design, and within two rounds a reader sees a backlog where there is a register.
+
+The fix is not to stop counting. It is to say **what the count is made of**, and the
+shape for that already exists in this repository: a table a human types, each row
+carrying the thing it is a proof of instead. Three rows cover most of it.
+
+| role | what it proves instead | pairs |
+| --- | --- | --- |
+| `scripts-are-classified.test.ts` | the classification of every script | 42 |
+| `cold-tree-job.test.ts` | where a gate runs, held to what was measured cold-safe | 15 |
+| `gate-sites-are-proven.test.ts` | the inventory's own rules | **0** |
+
+### The residue, named rather than counted
+
+The third row explains nothing in this run, and that is a fact worth its cell: every
+gate `gate-sites-are-proven.test.ts` names also goes red when it is emptied, because the
+deriver reads the hollowed file. It is declared because a future gate might not be, and
+because a table that listed only the rows that currently fire would be a snapshot rather
+than a rule.
+
+57 of 77 pairs are explained, and the line now reads:
+
+```
+named in code, not red: 77 pair(s); 42 the script register, 15 a command list; unexplained 20: …
+```
+
+Twenty pairs across ten files are printed **by name** and not judged. Sampling them
+suggests a fourth class — `injection-target-routing.test.ts` and `spread-append-guard.test.ts`
+hold tables of `{ file: 'scripts/…' }` rows, which are data about scripts rather than
+drives of them — but sampling is not measurement, and adding a row to the table on the
+strength of two samples is how a table becomes a place to put anything. The table has
+three rows and a test that refuses a fourth kind of growth:
+
+```js
+expect(MENTIONER_ROLES.length).toBeLessThan(6);
+```
+
+That assertion is worth more than it looks. A role table that lists every file explains
+everything and means nothing — the same failure as a check whose scope is "all of it".
+
+### What the three rows are, in code
+
+`classifyMentioners(entries, roles)` splits `{gate, file}` pairs into the declared roles
+and the residue, and the tests hold the arithmetic rather than the prose:
+
+- the parts add up to the whole, so a dropped pair cannot hide behind a breakdown;
+- every declared file exists, so a rename cannot leave the rule covering nothing;
+- every row's `why` is longer than 80 characters, the same floor the doc-count exemptions
+  use, because a reason short enough to be a label is not a reason.
+
+Seventeen tests in `gate-proofs.test.ts` now, three of them for the table.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the roles | 3 declared, 57 of 77 pairs explained, 20 named by file |
+| the arithmetic | parts = whole, in a test rather than in a sentence |
+| the table's own limits | file exists; `why` ≥ 80 characters; fewer than six rows |
+| the measurement | 42 gates, 0 silent claims, 77 pairs (42 + 15 + 20) |
+| `core` / repo | **168 / 4209** · **172 / 4396** |

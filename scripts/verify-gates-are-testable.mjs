@@ -56,7 +56,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedProofs, classify, namesInCode, redFiles } from './gate-proofs.mjs';
+import { claimedProofs, classify, classifyMentioners, namesInCode, redFiles } from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -742,18 +742,22 @@ console.log(
 );
 console.log(`restored byte-for-byte: ${restored.length} of ${subjects.length - unvisited.length - unparsable.length}`);
 if (namedNotRed.length > 0) {
-  // Printed and not judged. A file that names a gate in code and does not go red when
-  // it is emptied is either a test that does not exercise it, or -- more often here --
-  // a file that names it for a reason other than driving it: a register key, a
-  // command list, a contract assertion about the script's text. Those are proofs of
-  // something, just not of this. The widest gaps are named so the next reader can
-  // decide which; a threshold would be a number chosen to fit today's tree.
-  const widest = new Map();
-  for (const one of namedNotRed) widest.set(one.gate, (widest.get(one.gate) ?? 0) + 1);
-  const ranked = [...widest.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  // Printed and not judged, and split into the roles that are proofs of something
+  // else. `scripts-are-classified` names all 42 gates by design, so a bare total
+  // grows by one per gate forever -- a number that grows with the tree reads as debt
+  // within two rounds. What is left after the declared roles is a real question, and
+  // it is named rather than counted.
+  const byFile = namedNotRed.map((one) => ({ gate: one.gate, file: one.file.replace(/^test\//, '') }));
+  const { explained, unexplained } = classifyMentioners(byFile);
   console.log(
-    `named in code, not red: ${String(namedNotRed.length)} file(s) across ${String(widest.size)} gate(s); ` +
-      `widest: ${ranked.map(([gate, count]) => `${gate} ${String(count)}`).join(', ')}`,
+    `named in code, not red: ${String(namedNotRed.length)} pair(s); ` +
+      (explained.length === 0
+        ? 'no role explains any of them'
+        : explained.map(([role, count]) => `${String(count)} ${role}`).join(', ')) +
+      (unexplained.length === 0
+        ? ', and nothing left over'
+        : `; unexplained ${String(unexplained.length)}: ` +
+          [...new Set(unexplained.map((one) => one.file))].join(', ')),
   );
 }
 

@@ -75,6 +75,70 @@ export function stripComments(source) {
   return out;
 }
 
+
+/**
+ * The test files that name every gate for a reason other than proving it.
+ *
+ * ## Why a table, and why with reasons
+ *
+ * Finding 200 left `named in code, not red: 77` printed once per run, and 77 is a
+ * number that grows by one every time a gate is added -- `scripts-are-classified`
+ * names all 42 by design. A measurement that grows with the tree is read as debt
+ * within two rounds, so the three roles behind almost all of it are **declared**
+ * here, each with the thing it is a proof of instead. What remains after the table
+ * is a real question and is printed by name.
+ *
+ * Same shape as the register in `scripts-are-classified.test.ts`, for the same
+ * reason: a class a human has to type is a claim a reviewer can read, and a class
+ * derived from the filename is a guess wearing a table's clothes.
+ */
+export const MENTIONER_ROLES = [
+  {
+    file: 'scripts-are-classified.test.ts',
+    role: 'the script register',
+    why:
+      'It names every script, gates included, because its subject is the classification of all of ' +
+      'them. An entry proves the register, not the gate: emptying a gate changes nothing it reads.',
+  },
+  {
+    file: 'cold-tree-job.test.ts',
+    role: 'a command list',
+    why:
+      'It holds the members of `docs:check` and `docs:check:cold` to what was measured cold-safe. ' +
+      'A gate named there is a claim about where it runs, and the file spawns none of them.',
+  },
+  {
+    file: 'gate-sites-are-proven.test.ts',
+    role: 'the inventory rules',
+    why:
+      'It asserts that every site names a proof or an exemption, and that the committed table matches ' +
+      'a fresh derivation. It names gates to describe the inventory rather than to run them.',
+  },
+];
+
+/**
+ * Split the naming files into the roles above and the ones nothing explains.
+ *
+ * `entries` is `[{ gate, file }]`, one per (gate, naming file) pair that did not go
+ * red. A file in the table is explained once per pair; the residue is returned with
+ * the gates it named, because "3 unexplained" is not actionable and "these three
+ * files, on these gates" is.
+ */
+export function classifyMentioners(entries, roles = MENTIONER_ROLES) {
+  const byFloor = new Map(roles.map((one) => [one.file, one]));
+  const explained = new Map();
+  const unexplained = [];
+  for (const entry of entries) {
+    const role = byFloor.get(entry.file);
+    if (role === undefined) {
+      unexplained.push(entry);
+      continue;
+    }
+    explained.set(role.role, (explained.get(role.role) ?? 0) + 1);
+  }
+  return { explained: [...explained.entries()], unexplained };
+}
+
 /**
  * Whether a test file names the gate **in code**, which is a much narrower claim
  * than "contains the string".

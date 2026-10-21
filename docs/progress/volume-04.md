@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **168 files, 4206 tests passed** (as of this commit) |
+| `core` test suite | **168 files, 4209 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **172 files, 4393 tests passed** (as of this commit) |
+| repo test suite | **172 files, 4396 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2639,3 +2639,54 @@ core **168 / 4206**, repo **172 / 4393**; audit log 5 volumes, findings 1–200.
   counting it and to name the three classes it is made of -- register, inventory,
   command list -- but that is a classification of the test suite rather than of the gates,
   and it should be decided with the suite in front of it]`
+
+## v2.32 — a number that grows with the tree is read as debt
+
+Finding 200 retired the `M of K` ratio and left one line: `named in code, not red: 77
+file(s) across 42 gate(s)`. Honest and unusable — it grows by one per gate, because
+`scripts-are-classified.test.ts` names all of them by design, and within two rounds a
+reader sees a backlog where there is a register.
+
+The fix is not to stop counting but to say what the count is **made of**, with the shape
+this repository already uses for claims: a table a human types, each row carrying what it
+is a proof of instead.
+
+| role | proves instead | pairs |
+| --- | --- | --- |
+| `scripts-are-classified.test.ts` | the classification of every script | 42 |
+| `cold-tree-job.test.ts` | where a gate runs, held to what was measured cold-safe | 15 |
+| `gate-sites-are-proven.test.ts` | the inventory's own rules | **0** |
+
+The third row explains nothing in this run and is kept: every gate it names also goes
+red when emptied, because the deriver reads the hollowed file. Declaring it is a rule
+about the future, not a snapshot of the present.
+
+**The residue is named, not judged**: 20 pairs across ten files, printed by name.
+Sampling them suggests a fourth class — `injection-target-routing` and
+`spread-append-guard` hold tables of `{ file: 'scripts/…' }` rows — but two samples is
+not a measurement, and a table that grows a row per unexplained file becomes a place to
+put anything. Hence the assertion that matters more than the table:
+
+```js
+expect(MENTIONER_ROLES.length).toBeLessThan(6);
+```
+
+A role table that lists every file explains everything and means nothing — the same
+failure as a check whose scope is "all of it".
+
+`classifyMentioners` splits the pairs and the tests hold the arithmetic: parts add up to
+the whole (a dropped pair cannot hide in a breakdown), every declared file exists (a
+rename cannot leave the rule covering nothing), every `why` is longer than 80 characters
+(the same floor the doc-count exemptions use).
+
+**Acceptance.** `gate-proofs.test.ts` **17 tests** (three for the table); 42 gates, 0
+silent claims, 77 pairs = 42 + 15 + 20; core **168 / 4209**, repo **172 / 4396**; audit
+log 5 volumes, findings 1–201.
+
+### Open
+
+- **Twenty pairs across ten files are printed and not explained.** `[open: sampling says
+  they are tables of scripts and contract assertions about scripts, which would be a
+  fourth row -- but a row added on two samples is how the table stops meaning anything.
+  The pass that closes this reads all ten files and either declares the pattern once or
+  shows that each is one of the three. It is bounded work and it is not this round's]`
