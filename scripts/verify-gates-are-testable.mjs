@@ -56,7 +56,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedProofs, classify, classifyMentioners, namesInCode, redFiles } from './gate-proofs.mjs';
+import { claimedProofs, classify, classifyMentioners, namesInCode, namesakeOf, redFiles } from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -404,6 +404,7 @@ const unparsable = [];
 const restored = [];
 const silentClaims = [];
 const namedNotRed = [];
+const namesakeSilent = [];
 
 /**
  * The file currently mutated, recorded on disk so a later run can undo it.
@@ -720,6 +721,8 @@ for (const gate of subjects) {
     );
     for (const one of files.filter((file) => !red.includes(file.replace(/^packages\/core\//, '')))) {
       namedNotRed.push({ gate, file: one });
+      // The one pair that is not incidental: the file named after the gate.
+      if (one.replace(/^packages\/core\//, '') === namesakeOf(gate)) namesakeSilent.push({ gate, file: one });
     }
     if (silent.length > 0) {
       console.log(`  claimed-but-silent: ${silent.join(', ')}`);
@@ -741,6 +744,13 @@ console.log(
   + `unattributed: ${unattributed.length}  unparsable: ${unparsable.length}`,
 );
 console.log(`restored byte-for-byte: ${restored.length} of ${subjects.length - unvisited.length - unparsable.length}`);
+if (namesakeSilent.length > 0) {
+  console.error('');
+  console.error('verify-gates-are-testable: a gate has a test file named after it, and emptying it left');
+  console.error('that file green:');
+  for (const one of namesakeSilent) console.error(`  ${one.gate}: ${one.file} did not fail`);
+  console.error('  Either the file tests something other than the gate, or the gate has no test.');
+}
 if (namedNotRed.length > 0) {
   // Printed and not judged, and split into the roles that are proofs of something
   // else. `scripts-are-classified` names all 42 gates by design, so a bare total
@@ -781,7 +791,12 @@ if (unprovenClaims) {
 }
 
 const failed =
-  survived.length + unvisited.length + unattributed.length + unparsable.length + (unprovenClaims ? 1 : 0);
+  survived.length +
+  unvisited.length +
+  unattributed.length +
+  unparsable.length +
+  (unprovenClaims ? 1 : 0) +
+  (namesakeSilent.length > 0 ? 1 : 0);
 if (failed > 0) {
   console.error('');
   console.error('verify-gates-are-testable: FAILED');

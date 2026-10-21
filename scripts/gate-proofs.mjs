@@ -139,6 +139,31 @@ export function classifyMentioners(entries, roles = MENTIONER_ROLES) {
   return { explained: [...explained.entries()], unexplained };
 }
 
+
+/**
+ * The test file a gate's own name predicts, as the nested run spells it.
+ *
+ * ## Why this is the pair that matters
+ *
+ * Finding 201 left 20 unexplained pairs printed by name. Reading the ten files behind
+ * them shows that each names two to four gates and drives one: `gen-rcaeval-cases.test.ts`
+ * spawns `gen-rcaeval-cases.mjs` and also asserts that a *different* script's name
+ * appears in some output; `spread-append-guard.test.ts` holds a table of
+ * `{ file: 'scripts/…' }` rows. Those pairs are incidental — the file mentions a gate
+ * it does not run — and no source scan can separate "mentions in order to run" from
+ * "mentions in order to assert about", which is why finding 200 retired that ratio.
+ *
+ * But one pair is not incidental by construction: **a gate's own test file**. If
+ * `check-no-mock.mjs` has a `check-no-mock.test.ts` and emptying the gate leaves that
+ * file green, the file named after the gate does not exercise it. That is the defect
+ * this function makes askable, and it is a property of the tree rather than of a
+ * judgement about prose.
+ */
+export function namesakeOf(gate) {
+  const base = gate.replace(/^scripts\//, '').replace(/\.mjs$/, '');
+  return `test/${base}.test.ts`;
+}
+
 /**
  * Whether a test file names the gate **in code**, which is a much narrower claim
  * than "contains the string".

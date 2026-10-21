@@ -78,6 +78,26 @@ const SCRIPT = resolve(ROOT, 'scripts', 'verify-local.mjs');
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'rca-verify-local-'));
 
+/**
+ * The battery cache a nested `verify:local` is given: its own, and empty.
+ *
+ * Its preflight (finding 196) repairs what a killed battery left and **refuses while a
+ * live one holds the tree**. A test that spawns it from a suite which also runs the
+ * injection batteries would otherwise hand it the repository's cache, and would then
+ * measure that refusal instead of the step it named -- measured once, as
+ * `verify:local: the tree is not the repository's: _witnesses: pid 213281 is running
+ * gate-tests-battery on this tree`, on a run where the step itself was fine.
+ *
+ * A nested run measures a tree nobody else is holding, or it measures nothing; with a
+ * cache of its own it is always the first case.
+ */
+const BATTERY_CACHE = mkdtempSync(join(SCRATCH, 'battery-cache-'));
+
+/** The environment for a nested run: the fixture workflow, and a cache with no journals. */
+function nestedEnv(workflow: string): NodeJS.ProcessEnv {
+  return { ...process.env, RCA_CI_WORKFLOW: workflow, RCA_BENCH_BATTERY_CACHE: BATTERY_CACHE };
+}
+
 afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
 describe('the shipped workflow and the shipped plan agree', () => {
@@ -1907,7 +1927,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('with 1 tolerated failure(s)');
@@ -1923,7 +1943,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(existsSync(marker), 'a step whose condition was false ran anyway').toBe(false);
@@ -1938,7 +1958,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const listed = spawnSync(process.execPath, [SCRIPT, '--list'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(listed.status, listed.stderr).toBe(0);
     // One step declares a condition, and the line says which -- a default that is
@@ -1949,7 +1969,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(readFileSync(marker, 'utf8')).toBe('ran');
@@ -1963,7 +1983,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--list'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: 'no-such-workflow.yml' },
+      env: nestedEnv('no-such-workflow.yml'),
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('verify:local:');
@@ -1980,7 +2000,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--list'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('the plan does not match the workflow');
@@ -1994,7 +2014,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('verify:local: FAILED at 1/1');
@@ -2007,7 +2027,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('verify:local: OK (1 command(s), 1 of the 36 local steps)');
@@ -2029,7 +2049,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     // `match` rather than equality: the prefix depends on where this tree is
@@ -2048,7 +2068,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('(bash -x {0})');
@@ -2070,7 +2090,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, RCA_CI_WORKFLOW: path },
+      env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('(env (1))');

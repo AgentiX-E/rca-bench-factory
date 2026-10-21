@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **168 files, 4209 tests passed** (as of this commit) |
+| `core` test suite | **168 files, 4211 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **172 files, 4396 tests passed** (as of this commit) |
+| repo test suite | **172 files, 4398 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2690,3 +2690,78 @@ log 5 volumes, findings 1–201.
   fourth row -- but a row added on two samples is how the table stops meaning anything.
   The pass that closes this reads all ten files and either declares the pattern once or
   shows that each is one of the three. It is bounded work and it is not this round's]`
+
+## v2.33 — the sample was a property of the whole corpus
+
+Finding 201 left twenty unexplained pairs and a promise: read the ten files. Reading them
+produced a better question.
+
+**Each of the ten names two to four gates and drives one.** `gen-rcaeval-cases.test.ts`
+spawns `gen-rcaeval-cases.mjs` and also asserts another script's name appears in some
+output; `spread-append-guard.test.ts` holds a table of `{ file: 'scripts/…' }` rows. Those
+pairs are mentions *about* a gate, not uses of it — and no source scan separates the two,
+which is why finding 200 retired the ratio rather than tuning it.
+
+So the twenty are not defects. But "they are incidental" is a reading, not a measurement.
+The pair that is **not** incidental by construction is a gate's own test file: if
+`check-no-mock.mjs` has a `check-no-mock.test.ts` and emptying the gate leaves that file
+green, the file named after the gate does not exercise it. `namesakeOf(gate)` makes that
+askable, and the answer on this tree is **zero**.
+
+### The incident that produced the question
+
+The pair count moved from 77 to 36 between two runs of the **same** meta-gate, with the
+register's 42 pairs vanishing. The cause was two files away:
+
+- `scripts-are-classified.test.ts` asserted `expect(undriven).toContain('serve-site.mjs')`;
+- `gate-proofs.test.ts`, written this round, used `namesakeOf('serve-site.mjs')` as a sample.
+
+A mention in *any* test file puts the name into the corpus, so `serve-site.mjs` stopped
+being undriven, that assertion failed for **every gate at once**, the register file became
+a red file for all 42, and the meta-gate reported no register pairs.
+
+The comment above that assertion already recorded the **first** incident of exactly this
+kind, and concluded that "pinning the exact set would report a coverage change where only
+prose had changed". It then pinned one name anyway. **A pinned name is a property of the
+whole corpus** — a sample that a sentence can retire is not a sample.
+
+The assertion is gone; what stands in its place is the rule the same comment argued for:
+the undriven set is whatever it is, every member must name a class with no verdict to
+prove, and `serve-site.mjs` keeps one stable claim — it is a `tool`, and a tool has no exit
+for a test to prove.
+
+**Acceptance.** `namesakeOf` **2 tests** (`gate-proofs.test.ts` **19**); meta-gate 42
+gates, **0 silent claims**, **0 namesake-silent**, 78 pairs = 42 + 15 + 21; core **168 /
+4211**, repo **172 / 4398**; audit log 5 volumes, findings 1–202.
+
+### Open
+
+- **The 21 pairs still print.** They are now known to be mentions-about rather than uses,
+  so the line is information rather than debt — but it is the third round spent on this
+  number, and the honest end state is probably that it stops being printed at all.
+  `[open: three rounds on one line is the signal. The rate at which it is read is zero
+  unless something fails beside it, and the two questions it was introduced to answer --
+  are the inventory's claims honoured, and does a gate's own test catch it -- are both
+  answered by failures now. Removing it is a one-line change that should be made with the
+  numbers in hand, not at the end of a round that has already spent its attention here]`
+
+### And the nested run that inherited the lock
+
+The same round's second defect arrived while proving the first. `verify:local` went red at
+`5/31` — with finding 196's preflight doing exactly its job:
+
+```
+reason:  the step exited 1
+  _witnesses: pid 213281 is running gate-tests-battery on this tree
+```
+
+A test spawns `verify:local.mjs` against a fixture workflow, and the child **inherited the
+repository's battery cache**, so whenever a battery was in flight the nested run refused to
+measure a tree "somebody else held". The step was fine; the refusal was about a lock two
+processes away. `nestedEnv(workflow)` gives every fixture run a cache of its own, and the
+ten spawn sites go through it.
+
+**Third time in five rounds** that ambient state reached a process with no business seeing
+it: a killed battery's mutations, a live battery's lock, and now a lock inherited by a
+nested gate. The sentence is the same each time — **a child inherits an environment, and
+the environment is a claim about the whole machine**.

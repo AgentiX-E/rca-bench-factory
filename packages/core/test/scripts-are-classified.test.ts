@@ -436,7 +436,29 @@ describe('scripts/ · every script is classified, and the class is checked', () 
       const corpus = testFiles.map((file) => readFileSync(file, 'utf8')).join('\n');
 
       const undriven = scriptNames().filter((name) => !corpus.includes(name));
-      expect(undriven).toContain('serve-site.mjs');
+
+      /**
+       * No name is pinned here, and the reason is the second incident of the same kind.
+       *
+       * This assertion used to read `expect(undriven).toContain('serve-site.mjs')`, and
+       * the two rounds that broke it were both prose: a negative assertion in another
+       * file put that name into the corpus once, and `gate-proofs.test.ts` put it there
+       * again by using it as a sample (`namesakeOf('serve-site.mjs')`). A pinned name is
+       * a property of the **whole corpus**, so any new sentence about the script retires
+       * it -- and when it retires, `undriven` shrinks and every gate in the meta-gate
+       * loses its register pair at once, which is how this was noticed: the run printed
+       * `42 the script register` one round and nothing the next.
+       *
+       * What replaces it is the rule the comment above already argued for: the set is
+       * whatever it is, and every member of it must name a class with no verdict to
+       * prove. That is checkable without a sample. Vacuity is guarded from the other
+       * side instead -- the corpus is the whole test directory, and its size is asserted
+       * above -- and `serve-site.mjs` keeps one stable claim below: it is a `tool`, and
+       * a tool has no exit for a test to prove.
+       */
+      expect(scriptNames().length).toBeGreaterThan(0);
+      expect(REGISTER['serve-site.mjs']?.class).toBe('tool');
+      expect(REGISTER['serve-site.mjs']?.why).toBeTypeOf('string');
       for (const name of undriven) {
         // A `gate` or a `probe` here would be the P1-6 defect stated in the register's
         // own vocabulary: a script with a failure exit that no test names, so nothing

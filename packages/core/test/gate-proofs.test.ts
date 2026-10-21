@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   MENTIONER_ROLES,
   claimedProofs,
+  namesakeOf,
   classifyMentioners,
   classify,
   namesInCode,
@@ -225,5 +226,32 @@ describe('a file that names every gate is a proof of something else', () => {
     // And it is not a catch-all: a table that listed every file would explain
     // everything and mean nothing.
     expect(MENTIONER_ROLES.length).toBeLessThan(6);
+  });
+});
+
+/**
+ * The one pair that is not incidental.
+ *
+ * Twenty pairs across ten files are printed by finding 201 and explained by none of
+ * the three roles. Reading the files shows each names two to four gates and drives
+ * one, so most pairs are a mention *about* a gate rather than a use of it — a
+ * distinction no source scan can draw. But a gate's **own** test file is not a
+ * judgement call: if it exists and stays green when the gate is emptied, the file named
+ * after the gate does not exercise it.
+ */
+describe('the test file a gate names', () => {
+  it('is the gate\'s own name with the test suffix', () => {
+    expect(namesakeOf('check-no-mock.mjs')).toBe('test/check-no-mock.test.ts');
+    expect(namesakeOf('inject-stability.mjs')).toBe('test/inject-stability.test.ts');
+    // The inventory writes paths from the repository root; the nested run is rooted at
+    // `packages/core`, and this is the form that comparison happens in.
+    expect(namesakeOf('scripts/verify-local.mjs')).toBe('test/verify-local.test.ts');
+  });
+
+  it('predicts a path whether or not one exists, so the caller decides', () => {
+    // Returning `null` for a gate with no namesake would put the existence check inside
+    // the predictor, and the two callers -- "is there a namesake?" and "is the namesake
+    // silent?" -- would then disagree about what an absent one means.
+    expect(namesakeOf('serve-site.mjs')).toBe('test/serve-site.test.ts');
   });
 });

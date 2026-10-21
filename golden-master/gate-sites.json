@@ -452,7 +452,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 544,
+      "line": 545,
       "condition": "held !== null && isAlive(held.pid)",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -460,7 +460,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 582,
+      "line": 583,
       "condition": "inFlight.length > 0",
       "diagnostic": "two runs cannot measure one tree at the same time",
       "status": "proved",
@@ -468,7 +468,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 604,
+      "line": 605,
       "condition": "unrestored.length > 0",
       "diagnostic": "could not repair ${gate} from the journal",
       "status": "proved",
@@ -476,7 +476,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 623,
+      "line": 624,
       "condition": "alreadyHollowed.length > 0",
       "diagnostic": "restore it first: a measurement of a mutated tree is a measurement of nothing",
       "status": "proved",
@@ -484,7 +484,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 657,
+      "line": 658,
       "condition": "mine !== undefined",
       "diagnostic": "verify-gates-are-testable: FAILED -- interrupted by ${signal};",
       "status": "proved",
@@ -492,7 +492,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 702,
+      "line": 703,
       "condition": "back !== original",
       "diagnostic": "verify-gates-are-testable: FAILED -- could not restore ${gate}",
       "status": "proved",
@@ -500,7 +500,7 @@
     },
     {
       "script": "scripts/verify-gates-are-testable.mjs",
-      "line": 800,
+      "line": 815,
       "condition": "failed > 0",
       "diagnostic": "${gate} could not be hollowed into valid JavaScript, so it was not measured at all",
       "status": "proved",

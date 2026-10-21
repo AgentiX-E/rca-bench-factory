@@ -514,3 +514,78 @@ Seventeen tests in `gate-proofs.test.ts` now, three of them for the table.
 | the table's own limits | file exists; `why` ≥ 80 characters; fewer than six rows |
 | the measurement | 42 gates, 0 silent claims, 77 pairs (42 + 15 + 20) |
 | `core` / repo | **168 / 4209** · **172 / 4396** |
+
+## Finding 202 — the sample was a property of the whole corpus
+
+Finding 201 left twenty unexplained pairs and one promise: read the ten files. Reading
+them produced a better question than the one asked.
+
+**Each of the ten names two to four gates and drives one.** `gen-rcaeval-cases.test.ts`
+spawns `gen-rcaeval-cases.mjs` and also asserts that another script's name appears in
+some output; `spread-append-guard.test.ts` holds a table of `{ file: 'scripts/…' }` rows;
+`injection-target-routing.test.ts` lists the injection scripts it routes. Those pairs are
+incidental — a mention *about* a gate, not a use of it — and no source scan separates the
+two, which is exactly why finding 200 retired that ratio.
+
+So the twenty are not defects, and saying so is not a measurement either. The pair that
+**is** not incidental by construction is a gate's own test file: if `check-no-mock.mjs`
+has a `check-no-mock.test.ts` and emptying the gate leaves that file green, the file named
+after the gate does not exercise it. `namesakeOf(gate)` makes that askable, and the answer
+on this tree is **zero** — no gate's namesake survives its own emptying.
+
+### And the incident that produced the question
+
+The pair count moved from 77 to 36 between two runs of an unchanged meta-gate, with the
+register's 42 pairs vanishing. The cause was two files away:
+`scripts-are-classified.test.ts` asserted `expect(undriven).toContain('serve-site.mjs')`,
+and `gate-proofs.test.ts` — written in this round — used `namesakeOf('serve-site.mjs')` as
+a sample. A mention in *any* test file puts the name into the corpus, `serve-site.mjs`
+stopped being undriven, that assertion failed for **every** gate at once, and the register
+file became a red file for all 42 — so the meta-gate reported no register pairs.
+
+The comment above that assertion already recorded the first incident of exactly this kind,
+and concluded that "pinning the exact set would report a coverage change where only prose
+had changed". It then pinned one name anyway. **A pinned name is a property of the whole
+corpus**, so any new sentence about a script retires it — and a sample that a sentence can
+retire is not a sample.
+
+The assertion is gone. What stands in its place is the rule the same comment argued for:
+the undriven set is whatever it is, every member must name a class with no verdict to
+prove, and `serve-site.mjs` keeps one stable claim — it is a `tool`, and a tool has no exit
+for a test to prove. Vacuity is guarded from the other side, by the corpus size.
+
+| gate | result |
+| --- | --- |
+| namesakes | **0** silent: every gate whose namesake exists is caught by it |
+| the twenty pairs | read, and incidental: each file drives one gate and mentions others |
+| the register incident | found by the meta-gate's own breakdown moving 42 → 0; fixed by removing the pin |
+| `gate-proofs.test.ts` | **19 tests** (`namesakeOf`, both shapes) |
+| `core` / repo | **168 / 4211** · **172 / 4398** |
+
+### The nested run that inherited the lock
+
+This round's second defect arrived while proving the first. `verify:local` went red at
+`5/31` with the preflight from finding 196 doing exactly its job:
+
+```
+reason:  the step exited 1
+...
+× runs a step in the directory the workflow names
+  → verify:local: the tree is not the repository's:
+    _witnesses: pid 213281 is running gate-tests-battery on this tree
+```
+
+A test in the suite spawns `verify:local.mjs` against a fixture workflow, and the child
+**inherited the repository's battery cache** — so when any battery was in flight, the
+nested run refused to measure a tree it was told somebody else held. The step it was
+asked to run was fine; the refusal was about a lock two processes away.
+
+The repair is the same rule the preflight enforces, applied one level down: a nested run
+measures a tree nobody else is holding, or it measures nothing. `nestedEnv(workflow)` gives
+each fixture run a cache of its own — empty, therefore unheld — and the ten spawn sites in
+`gate-steps.test.ts` now go through it rather than through `{ ...process.env, … }`.
+
+This is the third time in five rounds that ambient state reached a process that had no
+business seeing it (a killed battery's mutations, a live battery's lock, and now a lock
+inherited by a nested gate). The pattern is the same each time: **a child inherits an
+environment, and the environment is a claim about the whole machine.**
