@@ -36,11 +36,27 @@ const SCRIPT = join(ROOT, 'scripts', 'check-progress-volumes.mjs');
 
 afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
-/** A directory holding the given volume bodies, keyed by file name. */
+/**
+ * A directory holding the given volume bodies, keyed by file name.
+ *
+ * Each body is padded to `FIXTURE_BYTES`, because a volume is tens of kilobytes and a
+ * twenty-byte one is not a volume. That mattered the moment the guard gained a relation
+ * rather than a constant: `check` now requires the index to be smaller than the smallest
+ * volume, and a fixture whose "volume" is one heading would have made every structural
+ * test red for a size reason it was not written to exercise. Padding is the honest fix --
+ * the alternative, an option that turns the relation off, is a seam that invites exactly
+ * the kind of test that measures nothing.
+ */
+const FIXTURE_BYTES = 4_000;
+
 function volumesOf(files: Record<string, string>): string {
   const dir = mkdtempSync(join(SCRATCH, 'v-'));
   mkdirSync(dir, { recursive: true });
-  for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+  for (const [name, body] of Object.entries(files)) {
+    const filler = 'A fixture volume, padded so the size relation has something to compare against.\n';
+    const pad = body.length >= FIXTURE_BYTES ? '' : filler.repeat(Math.ceil((FIXTURE_BYTES - body.length) / filler.length));
+    writeFileSync(join(dir, name), body + pad);
+  }
   return dir;
 }
 
@@ -239,5 +255,38 @@ describe('the command, because a gate nobody has seen fail is not a gate', () =>
     const result = run(dir, index);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('docs/progress.md says volume-01.md holds 7 entries');
+  });
+});
+
+/**
+ * The index and the things it indexes.
+ *
+ * v2.28 wrote that the index had become "the largest single file in `docs/`", and it is
+ * the **smallest** of the five progress files -- a claim nobody measured, in a round whose
+ * subject was that a measurement must be taken rather than assumed. The rule that replaces
+ * it is a relation rather than a number: the file a reader opens first, to find their way
+ * to the others, must not be bigger than the things it indexes. Twenty kilobytes of
+ * headroom today, six rounds at the current rate, and then the split is an instruction
+ * rather than an opinion.
+ */
+describe('the index has not outgrown what it indexes', () => {
+  it('refuses an index bigger than the smallest volume', () => {
+    const dir = volumesOf({ 'volume-01.md': `## Pass 1 -- a small volume\n\n${'x'.repeat(400)}\n` });
+    // 4_000 padded + the 1_200 below is not enough, so the index is padded past the volume
+    // by hand: the point of this case is the comparison, not the constant.
+    const index = `${indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1']])}\n\n${'y'.repeat(6_000)}\n`;
+    const errors = check(index, dir).errors.join('\n');
+    expect(errors).toContain('has outgrown something it indexes');
+    // And it says what to do about it, because "your index is large" is not a repair.
+    expect(errors).toContain('belongs');
+  });
+
+  it('accepts an index smaller than every volume, and prints the two numbers', () => {
+    const dir = volumesOf({ 'volume-01.md': `## Pass 1 -- a larger volume\n\n${'x'.repeat(4000)}\n` });
+    const result = check(indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1']]), dir);
+    expect(result.errors).toEqual([]);
+    // The relation is printed beside the budget, so a reader can see the headroom rather
+    // than take it on trust -- and so a run that shrinks a volume shows up here.
+    expect(result.summary).toMatch(/index [\d,]+ of smallest volume [\d,]+/);
   });
 });

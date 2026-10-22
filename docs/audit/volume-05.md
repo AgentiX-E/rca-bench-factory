@@ -720,3 +720,80 @@ list does this entry belong to", and a guard that silently picked one would be g
 | the nesting | refused with both line numbers named; 1 test |
 | `core` / repo | **168 / 4210** · **172 / 4397** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 204 — two counters reached forty-two, and they were not the same counter
+
+`docs/progress.md` carries a table of eleven audit passes with a `Defects` column, and the
+audit log carries findings numbered 1–203. Nothing has ever compared them. The obvious
+comparison, and the one this round set out to build a guard for:
+
+```
+6 + 5 + 4 + 8 + 5 + 3 + 2 + 2 + 3 + 2 + 2 = 42
+```
+
+and there are exactly 42 findings numbered 1 through 42. A guard asserting
+`sum(defects) === count(findings 1..sum)` would have been written, would have passed, and
+would have looked like a check on a table that had none.
+
+**It is a coincidence of two sequences that happen to reach the same number.** Finding 39
+is *"A 2.8 GB download was verified with a function that cannot read above 2 GiB"* — the
+subject of **pass 6** (`scripts/fetch-official.mjs`), numbered 39 because it was found
+during the real-corpus runs. Finding 42, *"The corpus layout was assumed rather than
+read"*, is the same line of work. Pass 11 is `src/fault/injector.ts`. The findings are
+numbered by when they were found; the passes are numbered by when they were run; the two
+orders diverge and the totals agree by accident.
+
+A guard built on the accident has a second failure mode that is worse than the first: it
+would keep passing after somebody edited one of the eleven numbers, because the sum would
+still be a number that exists as a finding. **A check whose assertion is true for a reason
+other than the one it names is a check that will approve the change it was written to
+refuse.**
+
+### And the section is not a duplicate either
+
+The plan before that one was to delete the section as a copy of the audit log. Measured:
+of 79 prose sentences longer than 60 characters in `## Audit passes`, **zero** appear in
+`docs/audit/`. It is unique synthesis — *why* each pass was chosen, which the
+finding-by-finding audit log does not carry.
+
+Two plans, both killed by measurement, and neither by argument.
+
+### What the round did instead
+
+The section stays. What was wrong was the index's own accounting, in three places:
+
+1. **`named in code, not red` is retired.** Four rounds: 77 pairs, then a table of three
+   roles to explain 57 of them, then 21 residual pairs across ten files, then a role table
+   with an assertion refusing its own growth. Every measurement was correct and nothing
+   read them. The two questions the line was introduced for — are the inventory's claims
+   honoured, and does a gate's own test catch it — are answered by **failures**, which the
+   runs already produce. `MENTIONER_ROLES` and `classifyMentioners` existed to explain the
+   count and left with it.
+2. **The index must be smaller than the smallest volume.** A relation, not a budget: the
+   file a reader opens first, to find their way to the others, must not be bigger than
+   what it indexes. Printed on every run as two numbers —
+   `index 72,217 of smallest volume 92,309` — so the twenty kilobytes of headroom are
+   visible rather than assumed.
+3. **A claim of mine, corrected.** v2.28's open list says the index had become "the
+   largest single file in `docs/`". It is the **smallest** of the five progress files.
+   That sentence was written in a round whose subject was that a measurement must be taken
+   rather than assumed, and nothing measured it for six rounds.
+
+### The fixture that had to be padded
+
+The relation reddened fifteen structural tests at once, all for a size reason they were
+not written to exercise: their "volumes" were one heading, twenty bytes. `volumesOf` now
+pads every fixture body to 4,000 bytes, with the reason beside it — **a volume is tens of
+kilobytes, and a twenty-byte one is not a volume**. The alternative was an option that
+turns the relation off, which is precisely the seam that lets a test measure nothing.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the two counters | sum 42 vs findings 1–42: **not the same sequence**, shown by finding 39 (pass 6's subject, numbered 39) |
+| the duplication | 0 of 79 prose sentences in the audit log; the section is unique and stays |
+| the retired line | `named in code, not red` gone, with `MENTIONER_ROLES` and `classifyMentioners`; 3 tests removed with them |
+| the relation | index **71,492** of smallest volume **92,309**, printed each run; 2 tests (one red, one green) |
+| the fixtures | every volume body padded to 4,000 bytes, with the reason |
+| `core` / repo | **168 / 4209** · **172 / 4396** |

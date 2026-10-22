@@ -56,7 +56,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { claimedProofs, classify, classifyMentioners, namesInCode, namesakeOf, redFiles } from './gate-proofs.mjs';
+import { claimedProofs, classify, namesInCode, namesakeOf, redFiles } from './gate-proofs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -403,7 +403,6 @@ const unattributed = [];
 const unparsable = [];
 const restored = [];
 const silentClaims = [];
-const namedNotRed = [];
 const namesakeSilent = [];
 
 /**
@@ -720,7 +719,6 @@ for (const gate of subjects) {
         `in ${String(red.length)} of ${String(files.length)} naming file(s)`,
     );
     for (const one of files.filter((file) => !red.includes(file.replace(/^packages\/core\//, '')))) {
-      namedNotRed.push({ gate, file: one });
       // The one pair that is not incidental: the file named after the gate.
       if (one.replace(/^packages\/core\//, '') === namesakeOf(gate)) namesakeSilent.push({ gate, file: one });
     }
@@ -751,25 +749,21 @@ if (namesakeSilent.length > 0) {
   for (const one of namesakeSilent) console.error(`  ${one.gate}: ${one.file} did not fail`);
   console.error('  Either the file tests something other than the gate, or the gate has no test.');
 }
-if (namedNotRed.length > 0) {
-  // Printed and not judged, and split into the roles that are proofs of something
-  // else. `scripts-are-classified` names all 42 gates by design, so a bare total
-  // grows by one per gate forever -- a number that grows with the tree reads as debt
-  // within two rounds. What is left after the declared roles is a real question, and
-  // it is named rather than counted.
-  const byFile = namedNotRed.map((one) => ({ gate: one.gate, file: one.file.replace(/^test\//, '') }));
-  const { explained, unexplained } = classifyMentioners(byFile);
-  console.log(
-    `named in code, not red: ${String(namedNotRed.length)} pair(s); ` +
-      (explained.length === 0
-        ? 'no role explains any of them'
-        : explained.map(([role, count]) => `${String(count)} ${role}`).join(', ')) +
-      (unexplained.length === 0
-        ? ', and nothing left over'
-        : `; unexplained ${String(unexplained.length)}: ` +
-          [...new Set(unexplained.map((one) => one.file))].join(', ')),
-  );
-}
+// `named in code, not red` was printed here for four rounds, and it is gone.
+//
+// It counted the (gate, file) pairs where a file names a gate in code and does not go
+// red when that gate is emptied: 77, then 78, then 21 residual pairs across ten files,
+// then a table of three roles to explain 57 of them. Every round produced a correct
+// measurement and none of them answered a question a reader had -- the two questions it
+// was introduced for ("are the inventory's claims honoured" and "does a gate's own test
+// catch it") are answered by failures, below and above, and the count could not have
+// answered them: a register key and a `DRIVES` list name every gate by design, so the
+// number grew by one per gate forever.
+//
+// A number that grows with the tree, whose readers are zero, is the same defect as a
+// check whose scope shrank while its verdict stayed green -- only quieter, because
+// nothing ever goes red. `MENTIONER_ROLES` and `classifyMentioners` existed to explain
+// the count and are retired with it.
 
 // A claim the run did not honour.
 //

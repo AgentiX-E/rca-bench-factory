@@ -3,10 +3,8 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  MENTIONER_ROLES,
   claimedProofs,
   namesakeOf,
-  classifyMentioners,
   classify,
   namesInCode,
   redFiles,
@@ -179,53 +177,6 @@ describe('a comment is prose about the gate, a string is the gate being used', (
     const source = `// a comment about ${gate}\nconst x = 'kept';\n`;
     expect(stripComments(source)).toContain("const x = 'kept';");
     expect(namesInCode(source, gate)).toBe(false);
-  });
-});
-
-/**
- * The mentioners that are proofs of something else.
- *
- * `named in code, not red` was 77 and grows by one per gate, because
- * `scripts-are-classified` names all 42 by design. A number that grows with the tree
- * is read as debt, so the three roles behind almost all of it are declared with what
- * each is a proof of instead, and only the residue is printed by name.
- */
-describe('a file that names every gate is a proof of something else', () => {
-  it('splits the pairs into the declared roles and the residue', () => {
-    const entries = [
-      { gate: 'a.mjs', file: 'scripts-are-classified.test.ts' },
-      { gate: 'b.mjs', file: 'scripts-are-classified.test.ts' },
-      { gate: 'a.mjs', file: 'cold-tree-job.test.ts' },
-      { gate: 'c.mjs', file: 'something-else.test.ts' },
-    ];
-    const { explained, unexplained } = classifyMentioners(entries);
-    expect(Object.fromEntries(explained)).toEqual({ 'the script register': 2, 'a command list': 1 });
-    expect(unexplained).toEqual([{ gate: 'c.mjs', file: 'something-else.test.ts' }]);
-  });
-
-  it('counts every pair once, so the parts add up to the whole', () => {
-    // The summary prints a total and a breakdown side by side. A classifier that
-    // dropped a pair would make the two disagree, and the disagreement would be the
-    // only evidence that the table had stopped covering the tree.
-    const entries = MENTIONER_ROLES.flatMap((one, index) => [
-      { gate: `gate-${String(index)}.mjs`, file: one.file },
-    ]);
-    const { explained, unexplained } = classifyMentioners(entries);
-    const total = explained.reduce((sum, [, count]) => sum + count, 0) + unexplained.length;
-    expect(total).toBe(entries.length);
-  });
-
-  it('declares only files that exist, and a role that says what it proves instead', () => {
-    // The table is a claim about this tree. A renamed test file would leave the rule
-    // covering nothing, and the residue would jump by 42 without a word.
-    const testDir = resolve(ROOT, 'packages/core/test');
-    for (const role of MENTIONER_ROLES) {
-      expect(existsSync(resolve(testDir, role.file)), `${role.file} is declared and absent`).toBe(true);
-      expect(role.why.length, `${role.file}: the reason is too short to be one`).toBeGreaterThan(80);
-    }
-    // And it is not a catch-all: a table that listed every file would explain
-    // everything and mean nothing.
-    expect(MENTIONER_ROLES.length).toBeLessThan(6);
   });
 });
 

@@ -226,6 +226,15 @@ say what each pass measured at the time.
 | 10 | `test/export-surface-enumerated.test.ts` (P1-2 rest) | 2 | 45 enumerated modules (was 18); symbol-keyed exemptions; 8-row injection matrix |
 | 11 | `src/fault/injector.ts` (P1-3) | 2 | 70 tests in 1 new file; `100/100/100/100`; 11-row injection matrix; 1 dead branch removed |
 
+**The `Defects` column is each pass's own count at the time, and it is not the finding
+numbering.** The eleven numbers sum to **42**, which is also how many findings are numbered
+1–42 — and the correspondence is a coincidence, not an identity: finding 39 is the 2 GiB
+`readFileSync` defect, whose subject is **pass 6** (`scripts/fetch-official.mjs`), numbered
+39 because the real-corpus runs found it. Findings are numbered by when they were found and
+passes by when they were run, and the two orders diverge. Nothing checks this column, and
+nothing can: it is the only record of the counts, so writing the sum into a guard would
+have made an equation that stays true when one of the numbers is edited. See finding 204.
+
 Pass 2 was chosen by measurement, not by guesswork: ranking modules by test
 references per source line put `otlp.ts` at the top of the under-verified list
 (403 lines, one test file) while also being the main real-world ingest path.
@@ -1170,7 +1179,7 @@ and this table.
 | [volume-01.md](progress/volume-01.md) | 20 | Pass 14 | Pass 34 |
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
-| [volume-04.md](progress/volume-04.md) | 30 | v2.06 | v2.34 |
+| [volume-04.md](progress/volume-04.md) | 31 | v2.06 | v2.35 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

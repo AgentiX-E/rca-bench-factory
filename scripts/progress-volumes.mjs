@@ -269,6 +269,35 @@ export function check(indexText, dir = VOLUMES) {
   for (const problem of indexCovers(indexText, volumes)) errors.push(problem);
   for (const problem of straysIn(indexText)) errors.push(problem);
   const largest = volumes.length === 0 ? 0 : Math.max(...volumes.map((one) => one.bytes));
+
+  // The index must stay smaller than the smallest volume.
+  //
+  // ## Why a relation rather than a number
+  //
+  // Finding 202 recorded that a pinned number is a property of the whole corpus: pin the
+  // count of test files and any new file retires the pin. A byte budget would fail the
+  // same way if it were chosen to fit today's index -- and it would also say nothing,
+  // because the question is not "how big may the index be" but "what is the index for".
+  //
+  // The relation answers the second question with the document's own structure: the file
+  // a reader opens **first**, to find their way to the others, must not be bigger than
+  // the things it indexes. It holds about twenty kilobytes of headroom -- six rounds at
+  // the current rate -- and when it loses that, the split stops being an opinion and
+  // becomes an instruction. The two numbers are printed on every run rather than quoted
+  // here, because a literal in a comment is a number that rots.
+  //
+  // Measured before writing this: the index was said in v2.28 to be "the largest single
+  // file in `docs/`", and it is the **smallest** of the five progress files. The claim
+  // was never measured; the relation is.
+  const indexBytes = Buffer.byteLength(indexText, 'utf8');
+  const smallest = volumes.length === 0 ? 0 : Math.min(...volumes.map((one) => one.bytes));
+  if (smallest > 0 && indexBytes >= smallest) {
+    errors.push(
+      `docs/progress.md is ${String(indexBytes)} bytes and the smallest volume is ${String(smallest)}: the ` +
+        'index has outgrown something it indexes, so either the section that grew is a record and belongs ' +
+        'in a volume, or the index is no longer an index',
+    );
+  }
   return {
     ok: errors.length === 0,
     errors,
@@ -278,6 +307,8 @@ export function check(indexText, dir = VOLUMES) {
       `check-progress-volumes: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(volumes.length)} volume(s), ` +
       `${String(order.length)} round(s)` +
       (order.length === 0 ? '' : `; largest ${largest.toLocaleString('en-US')} of ` +
-        `${MAX_BYTES.toLocaleString('en-US')} bytes`),
+        `${MAX_BYTES.toLocaleString('en-US')} bytes`) +
+      (smallest === 0 ? '' : `; index ${indexBytes.toLocaleString('en-US')} of smallest volume ` +
+        `${smallest.toLocaleString('en-US')}`),
   };
 }

@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **168 files, 4210 tests passed** (as of this commit) |
+| `core` test suite | **168 files, 4209 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **172 files, 4397 tests passed** (as of this commit) |
+| repo test suite | **172 files, 4396 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2865,3 +2865,67 @@ gone; core **168 files / 4210 tests**, cli **4 / 187**, repo **172 / 4397**; cov
   a reader looking up this round finds it in `volume-04`, and the front matter is the part
   that grows with every round. Splitting it is a naming decision -- which of these are
   rounds and which are reference -- and it cannot be made by measuring bytes]`
+
+## v2.35 — two counters reached forty-two, and they were not the same counter
+
+The index carries a table of eleven audit passes with a `Defects` column; the audit log
+carries findings 1–203; nothing had ever compared them. The comparison looked like a gift:
+
+```
+6 + 5 + 4 + 8 + 5 + 3 + 2 + 2 + 3 + 2 + 2 = 42
+```
+
+and there are exactly 42 findings numbered 1 through 42 — so `sum(defects)` was about to
+become a guard, and it would have passed.
+
+**It is a coincidence.** Finding 39 is the 2 GiB `readFileSync` defect, which is **pass 6's**
+subject (`scripts/fetch-official.mjs`), numbered 39 because it was found during the
+real-corpus runs. Finding 42 is "the corpus layout was assumed rather than read", same line
+of work. Pass 11 is `src/fault/injector.ts`. Findings are numbered by when they were found,
+passes by when they were run; the orders diverge and the totals meet by accident.
+
+Worse than a wrong guard: it would have kept passing after an edit to any of the eleven
+numbers, because the sum would still be a number that exists as a finding. **A check whose
+assertion is true for a reason other than the one it names will approve the change it was
+written to refuse.**
+
+### The plan before that one died the same way
+
+It was to delete `## Audit passes` as a copy of the audit log. Measured: of 79 prose
+sentences longer than 60 characters, **zero** appear in `docs/audit/`. It is unique
+synthesis — why each pass was chosen — and the finding-by-finding log does not carry it.
+Two plans, both killed by measurement, neither by argument.
+
+### What the round did
+
+1. **`named in code, not red` retired**, after four rounds: 77 pairs, a role table
+   explaining 57 of them, 21 residual pairs across ten files, then an assertion refusing
+   the table's own growth. Every number was right; nothing read them. The two questions it
+   existed for are answered by failures. `MENTIONER_ROLES` and `classifyMentioners` left
+   with it.
+2. **The index must be smaller than the smallest volume** — a relation, printed each run:
+   `index 72,217 of smallest volume 92,309`. Twenty kilobytes of headroom, about six
+   rounds, and then the split becomes an instruction instead of an opinion.
+3. **A claim of mine corrected.** v2.28 says the index had become "the largest single file
+   in `docs/`"; it is the **smallest** of the five progress files, and nothing had measured
+   that for six rounds.
+
+The relation reddened fifteen structural tests at once, all for a size reason they were not
+written to exercise — their "volumes" were one heading. `volumesOf` now pads every fixture
+body to 4,000 bytes: **a volume is tens of kilobytes, and a twenty-byte one is not a
+volume.** The alternative was an option that turns the relation off, which is the seam that
+lets a test measure nothing.
+
+**Acceptance.** `named in code, not red` gone (−3 tests with the role table); the size
+relation +2 tests (one red, one green); core **168 files / 4209 tests**, cli **4 / 187**,
+repo **172 / 4396**; coverage unchanged at 99.97 / 99.74 / 100 / 99.97 and 100 ×4;
+`check-progress-volumes: OK — 4 volume(s), 82 round(s); largest 155,536 of 200,000;
+index 71,492 of smallest volume 92,309`; audit log 5 volumes, findings 1–204.
+
+### Open
+
+- **The index's `## Open` still answers "what is not done" for a project whose rounds each
+  answer it too.** `[open: the twelve entries are marked, and the guard checks only that.
+  One of the two answers has to stop being one -- a roll-up the last round rewrites, or a
+  pointer at the last round -- and that is a decision about what the document is for, not a
+  measurement]`
