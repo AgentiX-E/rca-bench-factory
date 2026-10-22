@@ -5,6 +5,10 @@ import {
   validateExtractedFault,
 } from '../src/fault/importer.js';
 
+/** Two real labels: enough for the prompt to have an answer space, small enough to read. */
+const VOCAB = ['cpu-saturation', 'network-delay'] as const;
+
+
 /**
  * Historical fault importer — prompt/parse agreement.
  *
@@ -77,7 +81,7 @@ describe('a normalised category survives the whole importer pipeline', () => {
     // This is the assertion the defect broke: the same string that the parser
     // said it understood must still be understood by the validator.
     const text = 'Ticket 4412: the payment service lost network connectivity for 4 minutes.';
-    const prompt = buildFaultExtractionPrompt(text);
+    const prompt = buildFaultExtractionPrompt(text, VOCAB);
     expect(prompt).toContain(text);
 
     const modelReply = `Here is the record:\n\`\`\`json\n${extract({
@@ -102,18 +106,18 @@ describe('a normalised category survives the whole importer pipeline', () => {
 
 describe('the prompt states the rule the parser enforces', () => {
   it('names the vocabulary and says the value must be one of it', () => {
-    const prompt = buildFaultExtractionPrompt('incident');
+    const prompt = buildFaultExtractionPrompt('incident', VOCAB);
     expect(prompt).toContain('resource | network | runtime | middleware | code | config | dependency');
     expect(prompt).toMatch(/one of/i);
   });
 
   it('says the match is case-insensitive, so a model does not have to guess', () => {
-    expect(buildFaultExtractionPrompt('incident')).toMatch(/case-insensitive/i);
+    expect(buildFaultExtractionPrompt('incident', VOCAB)).toMatch(/case-insensitive/i);
   });
 
   it('still carries the incident text verbatim', () => {
     const text = 'multi\nline\nincident with "quotes" and {braces}';
-    expect(buildFaultExtractionPrompt(text)).toContain(text);
+    expect(buildFaultExtractionPrompt(text, VOCAB)).toContain(text);
   });
 });
 

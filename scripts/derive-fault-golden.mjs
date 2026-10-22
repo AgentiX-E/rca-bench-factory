@@ -161,7 +161,9 @@ async function main() {
   let unusable = 0;
 
   for (const sample of dataset.samples) {
-    const prompt = core.buildFaultExtractionPrompt(sample.incidentText);
+    // The dataset's own vocabulary, stated in the prompt. `buildFaultExtractionPrompt`
+    // requires it: a field whose answer space is unstated measures the model's naming.
+    const prompt = core.buildFaultExtractionPrompt(sample.incidentText, dataset.types);
     const prediction = { sampleId: sample.id, parseOk: false };
 
     try {

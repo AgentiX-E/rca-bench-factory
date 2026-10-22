@@ -6,6 +6,7 @@ import {
   meetsM1ExitCondition,
   parseGoldenDataset,
   scoreExtractionSample,
+  FAULT_GOLDEN_SCHEMA,
 } from '../src/fault/extraction-scoring.js';
 import type {
   ExtractionSamplePrediction,
@@ -381,7 +382,8 @@ describe('fault/extraction-scoring · buildExtractionReport', () => {
 
 describe('fault/extraction-scoring · parseGoldenDataset', () => {
   const valid = {
-    schema: 'rca-bench-fault-golden/1',
+    schema: FAULT_GOLDEN_SCHEMA,
+    types: ['cpu-saturation', 'network-delay'],
     samples: [
       { id: 's1', incidentText: 'cpu saturation', expected: { type: 'cpu-saturation', category: 'resource' } },
     ],
@@ -393,18 +395,45 @@ describe('fault/extraction-scoring · parseGoldenDataset', () => {
     expect(result.samples[0]!.id).toBe('s1');
   });
 
+  it('rejects a dataset with no type vocabulary, because the answer space is part of it', () => {
+    const { types: _omitted, ...withoutTypes } = valid;
+    expect(() => parseGoldenDataset(withoutTypes)).toThrow(/'types' is missing/);
+    expect(() => parseGoldenDataset({ ...valid, types: [] })).toThrow(/'types' is missing/);
+  });
+
+  it('rejects a vocabulary that repeats a label, or names a blank one', () => {
+    expect(() => parseGoldenDataset({ ...valid, types: ['cpu-saturation', 'cpu-saturation'] })).toThrow(
+      /duplicate fault type/,
+    );
+    expect(() => parseGoldenDataset({ ...valid, types: ['cpu-saturation', '  '] })).toThrow(
+      /not a non-blank string/,
+    );
+  });
+
+  it('rejects a sample whose expected type is outside the vocabulary it published', () => {
+    // A dataset that expects an answer its own vocabulary forbids is one no run could satisfy,
+    // and the scorer would report it as a model failure.
+    const contradicted = {
+      ...valid,
+      samples: [{ id: 's1', incidentText: 'x', expected: { type: 'cpu-throttling', category: 'resource' } }],
+    };
+    expect(() => parseGoldenDataset(contradicted)).toThrow(/not in the dataset's 'types'/);
+  });
+
   it('rejects a non-object dataset with a named error', () => {
     expect(() => parseGoldenDataset('nope')).toThrow(/dataset is not an object/);
   });
 
   it('rejects an unknown schema version rather than reading it optimistically', () => {
-    expect(() => parseGoldenDataset({ ...valid, schema: 'rca-bench-fault-golden/2' })).toThrow(
-      /unsupported dataset schema 'rca-bench-fault-golden\/2'/,
+    // The version moves with the format: `/2` added the type vocabulary, and a scorer that
+    // read `/1` optimistically would score a dataset whose answer space it does not know.
+    expect(() => parseGoldenDataset({ ...valid, schema: 'rca-bench-fault-golden/3' })).toThrow(
+      /unsupported dataset schema 'rca-bench-fault-golden\/3'/,
     );
   });
 
   it('rejects a missing samples array', () => {
-    expect(() => parseGoldenDataset({ schema: 'rca-bench-fault-golden/1' })).toThrow(
+    expect(() => parseGoldenDataset({ schema: FAULT_GOLDEN_SCHEMA, types: ['cpu-saturation'] })).toThrow(
       /'samples' is not an array/,
     );
   });

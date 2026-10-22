@@ -74,7 +74,7 @@ import { isRecord } from '../util/json.js';
  */
 
 /** The dataset schema this scorer reads. Versioned so a future change is visible. */
-export const FAULT_GOLDEN_SCHEMA = 'rca-bench-fault-golden/1';
+export const FAULT_GOLDEN_SCHEMA = 'rca-bench-fault-golden/2';
 
 /**
  * The M1 exit condition: a strict all-fields rate at or above this clears it.
@@ -130,6 +130,31 @@ export interface GoldenSample {
 
 export interface GoldenDataset {
   schema: string;
+  /**
+   * The fault types this benchmark recognises, and the only ones a run may answer with.
+   *
+   * ## Why the vocabulary is part of the dataset
+   *
+   * Finding 62 measured `type` at 26.3% and named the cause: `category` is stated as a closed
+   * seven-value vocabulary and scored 57.9%, while `type` was "fault type (short)" with no
+   * vocabulary at all and the expected answers are canonical slugs that appear in **0 of 19**
+   * incident texts (`cpu-saturation` for "the pod sat pinned at its 500m limit"). A field whose
+   * answer space is unstated cannot distinguish "cannot classify" from "cannot guess our names".
+   *
+   * Finding 63 answered it with a *shape* rule instead (hyphenated, lower-case), and finding 64
+   * measured what that bought: **one sample**. The vocabulary experiment proposed in finding 62
+   * was never run.
+   *
+   * ## What it costs, stated
+   *
+   * Closing the list makes `type` a 19-way classification. A model can no longer be scored down
+   * for naming the fault in its own catalogue, and the resulting number is **not comparable** to
+   * the open-vocabulary ones -- 2/19 strict is the number under an unstated space, and the
+   * reading after this change is the number under a stated one. Both are recorded; the second is
+   * the one that can be improved on purpose, because a miss now means the model chose the wrong
+   * label from a list it was given.
+   */
+  types: readonly string[];
   samples: GoldenSample[];
 }
 
@@ -650,6 +675,23 @@ export function parseGoldenDataset(input: unknown): GoldenDataset {
     throw new Error('golden dataset contains no samples; an empty run measures nothing');
   }
 
+  // The vocabulary, before the samples: an expected `type` outside it is a dataset that
+  // contradicts itself, and that is cheaper to find here than in a scored run.
+  const rawTypes = input['types'];
+  if (!Array.isArray(rawTypes) || rawTypes.length === 0) {
+    throw new Error(
+      "golden dataset 'types' is missing: the vocabulary a run may answer with is part of the dataset",
+    );
+  }
+  const types: string[] = [];
+  for (const [i, one] of rawTypes.entries()) {
+    if (typeof one !== 'string' || one.trim() === '') {
+      throw new Error(`'types' entry ${i} is not a non-blank string`);
+    }
+    if (types.includes(one)) throw new Error(`duplicate fault type '${one}' in 'types'`);
+    types.push(one);
+  }
+
   const samples: GoldenSample[] = [];
   const seen = new Set<string>();
 
@@ -678,6 +720,12 @@ export function parseGoldenDataset(input: unknown): GoldenDataset {
       throw new Error(`sample '${id}' is missing an 'expected' object`);
     }
     const type = optionalString(rawExpected, 'type');
+    if (type !== undefined && !types.includes(type)) {
+      throw new Error(
+        `sample '${id}' expects type '${type}', which is not in the dataset's 'types'; a run could ` +
+          'not answer correctly even in principle',
+      );
+    }
     if (type === undefined) {
       throw new Error(`sample '${id}' is missing an expected 'type'`);
     }
@@ -702,5 +750,5 @@ export function parseGoldenDataset(input: unknown): GoldenDataset {
     });
   }
 
-  return { schema: FAULT_GOLDEN_SCHEMA, samples };
+  return { schema: FAULT_GOLDEN_SCHEMA, types, samples };
 }

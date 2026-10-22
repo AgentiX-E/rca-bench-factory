@@ -248,7 +248,7 @@
     },
     {
       "script": "scripts/derive-fault-golden.mjs",
-      "line": 243,
+      "line": 245,
       "condition": "unusable > 0",
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",

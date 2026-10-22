@@ -126,7 +126,14 @@ const HITL_CONFIDENCE_THRESHOLD = 0.8;
  * to be flattened by every adapter, and the flattening would differ between them
  * in ways that show up as accuracy differences rather than as adapter bugs.
  */
-export function buildFaultExtractionPrompt(incidentText: string): string {
+export function buildFaultExtractionPrompt(incidentText: string, types: readonly string[]): string {
+  // The vocabulary is an argument, not a default. A prompt that could be built without one is a
+  // prompt that will be, and a field whose answer space is unstated measures the model's taste in
+  // names -- finding 62 measured exactly that at 26.3%, and the experiments since then changed the
+  // *shape* of the answer (finding 63) rather than its space.
+  if (types.length === 0) {
+    throw new Error('a prompt without a type vocabulary asks the model to guess a naming scheme');
+  }
   return [
     'You are extracting a structured fault record from a support ticket or post-mortem.',
     '',
@@ -134,11 +141,11 @@ export function buildFaultExtractionPrompt(incidentText: string): string {
     incidentText,
     '',
     'Respond with JSON only, in this shape:',
-    `{ "type": "fault type (short)", "category": "one of: ${FAULT_CATEGORY_VOCABULARY}", "component": "faulty component", "description": "root-cause reason", "confidence": 0.0..1.0 }`,
+    `{ "type": "one of: ${types.join(' | ')}", "category": "one of: ${FAULT_CATEGORY_VOCABULARY}", "component": "faulty component", "description": "root-cause reason", "confidence": 0.0..1.0 }`,
     '',
     FAULT_TYPE_SHAPE_RULE,
     '',
-    '`category` is matched case-insensitively against that list; any other value is rejected.',
+    '`type` and `category` are each matched case-insensitively against their lists; any other value is rejected.',
     '',
     FAULT_COMPONENT_RULE,
     '',

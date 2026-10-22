@@ -6,6 +6,10 @@ import { buildFaultExtractionPrompt } from '../src/fault/importer.js';
 import { parseFaultExtractionResponse } from '../src/fault/importer.js';
 import { normalizeFaultType } from '../src/fault/collector.js';
 
+/** Two real labels: enough for the prompt to have an answer space, small enough to read. */
+const VOCAB = ['cpu-saturation', 'network-delay'] as const;
+
+
 /**
  * The `type` field's prompt contract.
  *
@@ -51,23 +55,39 @@ function goldenSamples(): GoldenSample[] {
   return parsed.samples;
 }
 
-describe('the type field states its shape', () => {
-  it('says the value is a lower-case hyphenated slug', () => {
-    const prompt = buildFaultExtractionPrompt('irrelevant incident text');
-    // The rule, not an example. A prompt that showed `"cpu-saturation"` as a
-    // sample value would teach the format too, but this asserts the statement of
-    // the rule because that is what holds for the other 18 labels.
-    expect(prompt).toMatch(/lower-?case/i);
-    expect(prompt).toMatch(/hyphen/i);
+describe('both closed fields state their vocabulary, and which list each value comes from', () => {
+  it('names the type vocabulary it was given, in the JSON shape it asks for', () => {
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+    expect(prompt).toContain('one of: cpu-saturation | network-delay');
   });
 
-  it('distinguishes the stated shape of type from the closed vocabulary of category', () => {
-    const prompt = buildFaultExtractionPrompt('irrelevant incident text');
-    // category is closed and the prompt says so. type is open but shaped, and
-    // the prompt has to say that too -- the failure in finding 62 was that only
-    // one of the two fields was described.
-    expect(prompt).toContain('resource | network | runtime | middleware | code | config | dependency');
+  it('names the category vocabulary, which it owns rather than takes', () => {
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+    expect(prompt).toContain('one of: resource | network | runtime | middleware | code | config | dependency');
+  });
+
+  it('says both are matched against their lists, and that anything else is rejected', () => {
+    // Finding 62's defect was that only one of the two fields was described. Both are now
+    // closed, and a prompt that named the lists without the matching rule would leave the
+    // model to guess whether `CPU-Saturation` counts.
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+    expect(prompt).toContain('`type` and `category` are each matched case-insensitively');
+    expect(prompt).toMatch(/any other value is rejected/i);
+  });
+
+  it('still states the shape, which is now a hint for choosing inside the list', () => {
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+    // The rule survives the vocabulary: with 19 candidates a model still has to pick one,
+    // and "prefer the mechanism over the symptom" is what tells it which.
+    expect(prompt).toMatch(/lower-?case/i);
     expect(prompt).toMatch(/hyphen/i);
+    expect(prompt).toMatch(/mechanism over the symptom/i);
+  });
+
+  it('refuses to build a prompt with no vocabulary at all', () => {
+    // An empty list would render `one of: ` and invite the naming game the vocabulary
+    // exists to end, so it is a refusal rather than an empty string.
+    expect(() => buildFaultExtractionPrompt('incident', [])).toThrow(/without a type vocabulary/);
   });
 });
 
@@ -536,7 +556,7 @@ describe('the component field states its rule', () => {
    * against the dataset rather than being an example of an answer.
    */
   it('names the level the answer should be at, so a nearby-but-different entity is wrong', () => {
-    const prompt = buildFaultExtractionPrompt('irrelevant incident text');
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
     // The level is the load-bearing half of the rule: the fifteen wrong answers
     // from the recorded run are all real entities in the text, one level off.
     // A rule that only described the *shape* would not have changed any of them.
@@ -545,7 +565,7 @@ describe('the component field states its rule', () => {
   });
 
   it('does not list the dataset answers, which would fit the prompt to the test set', () => {
-    const prompt = buildFaultExtractionPrompt('irrelevant incident text');
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
     // The other half of finding 62's argument, applied to `component`: stating
     // the convention is what transfers, memorising the answer key is not. If a
     // future edit lists the expected components, this fails and the resulting
@@ -565,7 +585,7 @@ describe('the component field states its rule', () => {
   });
 
   it('states the shape too, so the answer is an identifier rather than prose', () => {
-    const prompt = buildFaultExtractionPrompt('irrelevant incident text');
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
     // Without a shape the field attracts prose ("the scheduled job that flipped
     // the flag"), which is ungradeable for a different reason. The shape rule is
     // the same one `type` uses, and the dataset is already consistent with it --

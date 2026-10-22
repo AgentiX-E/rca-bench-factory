@@ -6,6 +6,10 @@ import {
 } from '../src/fault/importer.js';
 import type { ExtractedFault } from '../src/fault/importer.js';
 
+/** Two real labels: enough for the prompt to have an answer space, small enough to read. */
+const VOCAB = ['cpu-saturation', 'network-delay'] as const;
+
+
 /**
  * Historical fault importer tests.
  *
@@ -18,7 +22,7 @@ import type { ExtractedFault } from '../src/fault/importer.js';
 
 describe('buildFaultExtractionPrompt', () => {
   it('carries the incident text and the JSON contract', () => {
-    const prompt = buildFaultExtractionPrompt('order service OOM at 03:00');
+    const prompt = buildFaultExtractionPrompt('order service OOM at 03:00', VOCAB);
     expect(prompt).toContain('order service OOM at 03:00');
     expect(prompt).toContain('"type"');
     expect(prompt).toContain('"confidence"');
