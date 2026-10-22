@@ -863,3 +863,78 @@ So the three repairs are judgements, and each is recorded as one:
 | the inventory | **73** failure sites across 43 scripts, each proved or exempted |
 | cold tree | measured with `packages/core/dist` moved aside: `OK (977 citation(s) of 201 number(s) across 11 file(s))`, exit 0 |
 | `core` / repo | **169 / 4216** · **173 / 4403** |
+
+## Finding 206 — a budget sized on a number nobody took on the runner
+
+The run that carried finding 205 came back `cancelled`. Not failed: cancelled. One job,
+`build / typecheck / lint / coverage / mutation / one reader against a real backend`, and
+the API says which step:
+
+```
+  1 Set up job                                        0.0m  success
+  6 Install the shells the suite cross-checks against  2.5m  success
+ 10 Test with coverage (core + cli)                    1.5m  success
+ 12 Mutation suite (gate + export)                     0.0m  success
+ 13 Install a backend this repository did not write   10.8m  cancelled
+ 14 A reader, against that backend                     0.0m  skipped
+```
+
+Steps 1–12 sum to **259 s**. Step 13 — `apt-get update -qq && apt-get install -y -qq
+prometheus` — took **648 s** and was then cancelled at the job's `timeout-minutes: 15`. The
+budget was spent by two commands whose costs differ by a factor of forty, and the report
+said *cancelled*, which reads like somebody stopped the run.
+
+The comment beside that step gives the number the budget was sized on:
+
+> The distribution already carries Prometheus 2.45.3 — the same version pass 44 measured by
+> hand — so the cost here is an `apt-get` and **nine seconds**.
+
+Nine seconds is what it costs where the apt index and the package cache are warm. A cold
+`ubuntu-latest` runner pays for both. **The step was costed at nine seconds and measured at
+648, and nothing between those two numbers ever ran**, because a budget is only tested when
+it is exhausted.
+
+### This is finding 166 again, one level down
+
+Finding 166 split one job into three because "the fix is not a bigger number in one bucket,
+it is three buckets whose wall clocks run beside each other" — after a run was reported
+`cancelled` with eight steps `skipped`, which "reads like somebody stopped it rather than
+like a budget being spent". The split held for four rounds. Then the verify bucket re-acquired
+a member with a completely different cost profile, and the same sentence came true again.
+
+That is the part worth recording: **a split is not a property of the workflow, it is a
+property of the steps in it at the time.** A bucket whose name lists five things will grow a
+sixth, and the sixth will be costed by whoever adds it — from a warm machine.
+
+### The change
+
+A fourth job, `backend`, holding the install and the reader, with `timeout-minutes: 20`
+against a measured 648 s install plus a build and a reader. The comment states the
+measurement and the reason the headroom exists (an apt mirror having a bad day is not a
+finding about this repository). `verify` keeps its 15 minutes for the 259 s of work it
+actually does, which is a budget with real headroom for the first time.
+
+Three consequences, each mechanical:
+
+1. **`STEP_PLAN` failed loudly**, which is what it is for: "if a step is added to the
+   workflow and not added here, `gate-steps.test.ts` fails — which is the moment a person is
+   still thinking about what the step needs". Two steps moved, two were added, and the table
+   said so before the suite could pass.
+2. **`verify:local` now covers 38 of 45 run steps** (was 36 of 43), because the new job's
+   `Install dependencies` and `Build` are commands this machine runs too.
+3. **Four tests pinned `36`** — the local step count — in assertions whose subject was "no
+   step overrides the shell, the directory or the environment". They failed for a reason
+   that had nothing to do with that. The count is now `\d+` and the property is unchanged:
+   the number was never what the test was about.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the measurement | steps 1–12 **259 s**; step 13 **648 s**, cancelled at 900 s |
+| the claim in the comment | "nine seconds" — 72× below the measured cost, and never taken on a runner |
+| the workflow | **5 jobs**: verify 15m, backend 20m, batteries 30m, artefacts 15m, cold-tree 20m |
+| the plan table | 2 steps moved, 2 added; the exhaustiveness test caught the move first |
+| the pinned counts | 4 assertions unpinned; the properties they name are unchanged |
+| `verify:local` | **OK** — 31 commands covering **38 of 45** run steps |
+| `core` / repo | **169 / 4216** · **173 / 4403** |

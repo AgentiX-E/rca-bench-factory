@@ -539,10 +539,20 @@ export const STEP_PLAN = {
     note: 'depends on the coverage step having written both reports, which the order guarantees',
   },
   'verify / Mutation suite (gate + export, 100% interception)': { local: true },
-  'verify / Install a backend this repository did not write': {
+
+  // ---- backend --------------------------------------------------------------
+  //
+  // Split out of `verify` by finding 206. The steps are the same; the budget is not:
+  // measured, this job's `apt-get install prometheus` takes 648 s on a cold runner and
+  // the verify job's other twelve steps take 259 s, so one 900 s budget was being spent
+  // by two commands whose costs differ by two orders of magnitude -- and the one that
+  // lost was reported as `cancelled`.
+  'backend / Install dependencies': { local: true },
+  'backend / Build (core then cli; cli resolves core\'s dist)': { local: true },
+  'backend / Install a backend this repository did not write': {
     remoteOnly: 'installs prometheus through apt and binds a port',
   },
-  'verify / A reader, against that backend': {
+  'backend / A reader, against that backend': {
     remoteOnly: 'reads from the prometheus the step above installed',
   },
 

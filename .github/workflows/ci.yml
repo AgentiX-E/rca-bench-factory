@@ -34,7 +34,7 @@ jobs:
   # 637d11494 they summed to 1213 s before the budget killed the job at the round-trip
   # record battery.
   verify:
-    name: build / typecheck / lint / coverage / mutation / one reader against a real backend
+    name: build / typecheck / lint / coverage / mutation
     runs-on: ubuntu-latest
     # Not a performance assertion: a job that hangs has to be reported as a budget
     # being spent rather than six hours later.
@@ -127,15 +127,6 @@ jobs:
       # service up. The distribution already carries Prometheus 2.45.3 -- the same version pass 44
       # measured by hand -- so the cost here is an `apt-get` and nine seconds.
       #
-      # The gate starts the server on a port of its own, reads it, reads it again with a label the
-      # server does not set, and stops it. A missing binary fails the step with the package name
-      # rather than reading as a broken reader.
-      - name: Install a backend this repository did not write
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
-
-      - name: A reader, against that backend
-        run: node scripts/verify-reader-against-backend.mjs
-
       # The scorer-stability battery is a gate, not a report.
       #
       # It mutates the shipped scorer and requires every mutation to be caught, so
@@ -145,6 +136,59 @@ jobs:
       # output as a toothless test, and reporting that as a pass would be a false
       # reading of the kind findings 68 and 74 both describe.
 
+
+  # The backend install and the reader against it, split out of `verify` by finding 206.
+  #
+  # The same shape as the split in finding 166, one level down and four rounds later: a
+  # budget shared by steps whose costs differ by two orders of magnitude is a budget that
+  # will be blamed on the wrong one. Measured on f1eee910 (run 39764133768) from the API:
+  # the verify job's first twelve steps summed to **259 s**, and `apt-get install
+  # prometheus` took **648 s** and was then cancelled at the job's 900 s -- reported as
+  # `cancelled`, which reads like somebody stopped the run rather than like a budget
+  # being spent.
+  #
+  # The comment beside the install said "an `apt-get` and nine seconds". Nine seconds is
+  # what it costs where the apt index and the package cache are warm; a cold
+  # `ubuntu-latest` runner pays for both, and the number had never been taken there. A
+  # budget sized on a number that was never measured is the defect, and a bigger number
+  # in the same bucket would hide it: the reader would go on being cancelled whenever the
+  # distribution's package grew.
+  backend:
+    name: a backend this repository did not write, and a reader against it
+    runs-on: ubuntu-latest
+    # Measured 648 s for the install alone on a cold runner, plus a build and a reader.
+    # The headroom is for the variable half -- an apt mirror having a bad day is not a
+    # finding about this repository -- and it is bounded so that a hang is still reported
+    # as a budget being spent.
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (core then cli; cli resolves core's dist)
+        run: pnpm build
+
+      # The gate starts the server on a port of its own, reads it, reads it again with a label the
+      # server does not set, and stops it. A missing binary fails the step with the package name
+      # rather than reading as a broken reader.
+      - name: Install a backend this repository did not write
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq prometheus
+
+      - name: A reader, against that backend
+        run: node scripts/verify-reader-against-backend.mjs
 
   # The injection batteries. This is the long pole -- everything else in the workflow
   # fits in two minutes -- so it gets its own job and its own budget.

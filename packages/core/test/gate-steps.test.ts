@@ -1852,7 +1852,11 @@ describe('scripts/verify-local.mjs as a command', () => {
     // And the interpretation every command gets: a runner whose default is not
     // stated is a runner whose default is not reviewable.
     expect(result.stdout).toContain(DEFAULT_SHELL);
-    expect(result.stdout).toContain('0 of 36 override the shell, the directory or the environment');
+    // The count is deliberately not pinned: it moves whenever a step is added, and the
+    // property under test is that **none** overrides. A pinned 36 failed the round the
+    // backend job was split out (finding 206), for a reason that had nothing to do with
+    // the shell, the directory or the environment.
+    expect(result.stdout).toMatch(/0 of \d+ override the shell, the directory or the environment/);
     // And the budget, which every job of the shipped workflow declares and which
     // this runner now enforces: the range is the jobs' own numbers.
     // The budget, stated as what it is: a pool per job. A line that said "15m" on
@@ -1865,7 +1869,7 @@ describe('scripts/verify-local.mjs as a command', () => {
     // runs only after the ones before it have passed, which is GitHub's default and
     // is what makes a failure meaningful.
     expect(result.stdout).toContain('a step runs only after the ones before it have passed');
-    expect(result.stdout).toContain('none of the 36 declares a condition');
+    expect(result.stdout).toMatch(/none of the \d+ declares a condition/);
     expect(result.stdout).toContain('verify / Type-check — 15m');
   });
 
@@ -1963,7 +1967,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
     expect(listed.status, listed.stderr).toBe(0);
     // One step declares a condition, and the line says which -- a default that is
     // only stated in a header would leave a reader unable to find the exception.
-    expect(listed.stdout).toContain('1 of 36 declare a condition that changes it');
+    expect(listed.stdout).toMatch(/1 of \d+ declare a condition that changes it/);
     expect(listed.stdout).toContain('verify / Type-check — 15m, if (always())');
 
     const result = spawnSync(process.execPath, [SCRIPT, '--only', 'verify / Type-check'], {
@@ -2030,7 +2034,7 @@ describe('the exits, reached without breaking the shipped workflow', () => {
       env: nestedEnv(path),
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('verify:local: OK (1 command(s), 1 of the 36 local steps)');
+    expect(result.stdout).toMatch(/verify:local: OK \(1 command\(s\), 1 of the \d+ local steps\)/);
     expect(result.stdout).toContain('did not run:');
     // And what the run spent, so the budget is a measurement rather than a limit
     // nobody looks at until it fires.

@@ -2979,6 +2979,69 @@ measured with `packages/core/dist` moved aside (exit 0); 43 gates, **73** failur
 
 ### Open
 
+- **The index's `## Open` still answers "what is not done" while every round answers it too.**
+  `[open: measured this round -- the rounds do not carry residuals forward (120 of 135 open
+  entries never reappear), so the "last round is the answer" reading is false as well. One
+  list has to be maintained by hand and the other declared a record; the guard can check only
+  that each entry says which it is, so this is a decision about what the document is for, and
+  it is the last structural item left]`
+
+## v2.37 — a budget sized on a number nobody took on the runner
+
+The run that carried finding 205 came back **`cancelled`**. Not failed: cancelled. The API
+says which step, and the shape is unmistakable:
+
+```
+  6 Install the shells the suite cross-checks against  2.5m  success
+ 10 Test with coverage (core + cli)                    1.5m  success
+ 13 Install a backend this repository did not write   10.8m  cancelled
+ 14 A reader, against that backend                     0.0m  skipped
+```
+
+Steps 1–12 sum to **259 s**; step 13 — `apt-get install prometheus` — took **648 s** and was
+cancelled at the job's `timeout-minutes: 15`. One budget, two commands forty times apart in
+cost, and the one that lost was reported as *cancelled*, which reads like somebody stopped it.
+
+The comment beside that step says what it was costed at:
+
+> so the cost here is an `apt-get` and **nine seconds**.
+
+Nine seconds is what it costs where the package cache is warm. A cold `ubuntu-latest` runner
+pays for the index too. **Costed at nine, measured at 648, and nothing between the two ever
+ran** — a budget is only tested when it is exhausted.
+
+### The same sentence as finding 166, four rounds later
+
+Finding 166 split one job into three, and wrote: *the fix is not a bigger number in one
+bucket, it is three buckets whose wall clocks run beside each other.* That held for four
+rounds. Then the verify bucket re-acquired a member with a different cost profile, and the
+sentence came true again.
+
+What is worth keeping: **a split is a property of the steps in the bucket at the time, not of
+the workflow.** A bucket whose name lists five things will grow a sixth, and the sixth gets
+costed by whoever adds it, from the machine they have.
+
+### The change, and three mechanical consequences
+
+A fourth job — `backend`, holding the install and the reader, `timeout-minutes: 20` against a
+measured 648 s — and `verify` keeps its 15 minutes for the 259 s it actually does.
+
+1. `STEP_PLAN` failed loudly before anything else could pass, which is exactly what its
+   docstring promises: *"if a step is added to the workflow and not added here,
+   `gate-steps.test.ts` fails — which is the moment a person is still thinking about what the
+   step needs."*
+2. `verify:local` now covers **38 of 45** run steps (was 36 of 43).
+3. Four tests pinned `36` — the local step count — inside assertions whose subject was "no
+   step overrides the shell, the directory or the environment". They failed for a reason that
+   had nothing to do with that, so the count became `\d+` and the property stayed.
+
+**Acceptance.** 5 jobs (15 / 20 / 30 / 15 / 20 minutes); `verify:local: OK — 31 command(s)
+covering 38 of 45 run steps`; core **169 files / 4216 tests**, cli **4 / 187**, repo **173 /
+4403**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; 43 gates, 73 sites; audit log 5
+volumes, findings 1–206.
+
+### Open
+
 - **`docs/audit/volume-03.md` sits fourteen bytes under a bound that will never be tested
   again.** `[open: appending happens in the last volume, so volume-03 is closed and will never
   grow on its own -- but correcting one sentence inside it would take it over 280,000 and fail
@@ -2987,8 +3050,8 @@ measured with `packages/core/dist` moved aside (exit 0); 43 gates, **73** failur
   have a budget at all is the question, and answering it means deciding what the number was
   for]`
 - **The index's `## Open` still answers "what is not done" while every round answers it too.**
-  `[open: measured this round -- the rounds do not carry residuals forward (120 of 135 open
-  entries never reappear), so the "last round is the answer" reading is false as well. One
-  list has to be maintained by hand and the other declared a record; the guard can check only
-  that each entry says which it is, so this is a decision about what the document is for, and
-  it is the last structural item left]`
+  `[open: measured in v2.36 -- the rounds do not carry residuals forward (120 of 135 open entries
+  never reappear), so "the last round is the answer" is false as well. One list has to be
+  maintained by hand and the other declared a record; the guard can check only that each entry
+  says which it is, so this is a decision about what the document is for, and it is the last
+  structural item left]`
