@@ -999,3 +999,68 @@ guard reads, and says so.
 | the duplicate rule | scoped to one kind; 2 tests (a carry-forward accepted, two records refused) |
 | the revert | the old spelling is no longer read, and the run says the list is gone |
 | `core` / repo | **169 / 4218** · **173 / 4405** |
+
+## Finding 208 — a bound that could only be obeyed by the file it was not about
+
+`docs/progress.md`'s volumes have a 280,000-byte budget, and every volume was judged against
+it. The number exists for one reason, stated in the guard: a volume past it becomes a pile,
+and the reader who has to push and diff it is the one who pays. So it forces a decision --
+*start the next volume*.
+
+That advice is only available to the volume that can still grow. Appends land in the last
+one; the others are closed, and will never take another round. Judging them against the same
+bound therefore produced a rule that could only be obeyed by a file it was not about:
+
+```
+docs/audit/volume-03.md   279,893 of 280,000      (107 bytes of room)
+```
+
+A repair of one sentence that happened to cross 107 bytes would have been refused, and the
+refusal would have said "start the next volume, move the newest round into it" -- advice
+volume-03 cannot follow, about a file that is not a pile.
+
+### The decision, and what it costs
+
+The bound now applies to **the last volume only**. Three candidates were on the table and the
+live list carried the question for two rounds:
+
+| rule | what it would do | why not |
+| --- | --- | --- |
+| judge every volume | refuses repairs with impossible advice | the case above |
+| a repair allowance for closed volumes | 280,000 to split, 282,000 to repair | two numbers, and the second exists only to undo the first |
+| judge the growing volume | the number does what it was written for | a closed volume could be grown by an edit unnoticed |
+
+The third is chosen, and its cost is **stated rather than guarded**: every volume's size is
+now printed on each run --
+
+```
+sizes 102,903 / 92,355 / 127,029 / 169,431; index 73,625 of smallest volume 92,355
+```
+
+(That is the line at the moment this finding was written; the numbers move with every round,
+which is why the line is printed rather than quoted in a comment.)
+
+-- so a volume that doubled would appear in the line a reader of a red build already reads.
+That is a weaker guarantee than a red gate, and it is the honest one: the failure it guards
+against is somebody quietly appending 100 KB to a closed volume, which nobody has done and
+which no invariant in this repository would notice even if it were checked, because the
+closed volumes' contents are prose.
+
+### Why this was worth a finding rather than a footnote
+
+It is the third time in three rounds that a number's *purpose* outlived its *formula*
+(finding 206: a budget costed at nine seconds; finding 207: two lists both called Open;
+this one: a split trigger applied to files that cannot split). The pattern is not "the
+number was wrong". Each number was right when it was written, and each kept being applied
+after the thing it was about had changed -- a job that grew a member, a heading that was
+copied, a volume that closed.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the bound | judged on the last volume only; a closed volume over it is no longer an error |
+| the visibility | all four sizes printed on every run, with the index's relation beside them |
+| the tests | 2: closed-over-budget accepted **and** last-over-budget refused, in one case; sizes printed one per volume |
+| volume-03 | 279,893 bytes, now compliant by construction rather than by luck |
+| `core` / repo | **169 / 4220** · **173 / 4407** |

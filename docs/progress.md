@@ -1171,14 +1171,10 @@ settle.
   `[open: the LLM-dependent paths here sit behind a provider-agnostic abstraction, and
   scheduling a benchmark against a hosted embedding model belongs to whichever package
   owns the model rather than to this one]`
-- **A closed volume's budget answers a repair with "start the next volume", which is advice a
-  closed volume cannot take.** `[open: appends only ever land in the last volume, so
-  volume-03's 279,893 bytes will never grow on their own -- but repairing one sentence inside
-  it would cross 280,000 and fail the guard, and the guard's message would then suggest the one
-  thing that volume cannot do. Either the budget belongs to the volume that can still grow, or
-  a closed volume needs a repair allowance and a sentence saying why. The number was chosen to
-  force a split, and a repair is not a split; deciding this is deciding what the number is
-  for]`
+- ~~**A closed volume's budget answers a repair with "start the next volume", which is advice a
+  closed volume cannot take.**~~ **Closed by finding 208**, which applies the bound to the
+  volume that can still grow and prints every size instead of judging the closed ones.
+
 
 
 ## Pass log
@@ -1201,7 +1197,7 @@ and this table.
 | [volume-01.md](progress/volume-01.md) | 20 | Pass 14 | Pass 34 |
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
-| [volume-04.md](progress/volume-04.md) | 34 | v2.06 | v2.38 |
+| [volume-04.md](progress/volume-04.md) | 35 | v2.06 | v2.39 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **169 files, 4218 tests passed** (as of this commit) |
+| `core` test suite | **169 files, 4220 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **173 files, 4405 tests passed** (as of this commit) |
+| repo test suite | **173 files, 4407 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -3103,3 +3103,60 @@ cli **4 / 187**, repo **173 / 4405**; coverage 99.97 / 99.74 / 100 / 99.97 and 1
   moved because the live list is where a question that outlives its round belongs -- restating
   it here as well would be the second answer this round removed. The record is this sentence,
   and the entry to read is the last one under ## Open]`
+
+## v2.39 — a bound that could only be obeyed by the file it was not about
+
+The volumes have a 280,000-byte budget and every volume was judged against it. The number
+exists to force one decision — *start the next volume* — and that decision is only available
+to the volume that can still grow. Appends land in the last one; the others are closed.
+
+So the rule could only be obeyed by a file it was not about:
+
+```
+docs/audit/volume-03.md   279,893 of 280,000      (107 bytes of room)
+```
+
+A repair that crossed 107 bytes would have been refused, and the refusal would have said
+"start the next volume, move the newest round into it" — advice volume-03 cannot follow,
+about a file that is not a pile.
+
+### Three candidates, and the one that costs something
+
+| rule | what it does | why not |
+| --- | --- | --- |
+| judge every volume | refuses repairs with impossible advice | the case above |
+| a repair allowance for closed volumes | 280,000 to split, 282,000 to repair | two numbers, and the second exists only to undo the first |
+| judge the growing volume | the number does what it was written for | a closed volume could be grown by an edit unnoticed |
+
+The third, with its cost **stated rather than guarded**: every volume's size is printed on
+each run —
+
+```
+sizes 102,903 / 92,355 / 127,029 / 169,431; index 73,625 of smallest volume 92,355
+```
+
+(the line as it stood when this round began; it moves every round)
+
+— so a volume that doubled appears in the line a reader of a red build already reads. That is
+weaker than a red gate, and it is the honest guarantee: the failure is somebody quietly
+appending 100 KB to a closed volume, which nobody has done, and which no invariant would catch
+even if built, because the closed volumes' contents are prose.
+
+### Why this is a finding and not a footnote
+
+Third round in a row where a number's **purpose** outlived its **formula**: a job budget
+costed at nine seconds (finding 206), two lists both called `Open` (207), and now a split
+trigger applied to files that cannot split. None of the numbers was wrong when written. Each
+kept being applied after the thing it was about had changed — a job that grew a member, a
+heading that was copied, a volume that closed.
+
+**Acceptance.** The bound judges the last volume only; all four sizes printed; 2 tests (a
+closed volume over the bound accepted *and* the last one refused, in one case; sizes printed
+one per volume); volume-03 is now compliant by construction rather than by luck; core **169
+files / 4220 tests**, cli **4 / 187**, repo **173 / 4407**; coverage 99.97 / 99.74 / 100 /
+99.97 and 100 ×4; 43 gates; audit log 5 volumes, findings 1–208.
+
+No residual, and that is worth writing down: this is the first round whose live-list entry was
+closed in the same round it was picked up, and the index's `## Open` now holds only the six
+standing limits — things this repository does not do, each with what would close it, none of
+them waiting on a decision.

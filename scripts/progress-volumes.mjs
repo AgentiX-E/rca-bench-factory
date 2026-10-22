@@ -129,7 +129,21 @@ export function readVolumes(dir = VOLUMES) {
     const path = join(dir, name);
     const text = readFileSync(path, 'utf8');
     const bytes = statSync(path).size;
-    if (bytes > MAX_BYTES) {
+    // The budget is judged on the volume that can still grow, and only there.
+    //
+    // The number exists to force a decision -- start the next volume before this one
+    // becomes a pile -- and only the last volume can take that decision: the others are
+    // closed, and nothing appends to them. Applying it to them meant that a repair of
+    // more than the remaining bytes was refused with advice the volume could not follow,
+    // which is the wrong answer to a repair (finding 208).
+    //
+    // The cost is that a closed volume could be grown by an edit and no gate would red.
+    // That is accepted and stated rather than guarded: the sizes of every volume are
+    // printed on each run, so a volume that doubled would be visible in the line every
+    // reader of a red build already looks at, and no rule needs to exist for a thing
+    // nobody has done.
+    const isLast = position === names.length - 1;
+    if (isLast && bytes > MAX_BYTES) {
       errors.push(
         `${name} is ${String(bytes)} bytes, and the budget is ${String(MAX_BYTES)}: start the next volume, ` +
           'move the newest round into it, and add its row to docs/progress.md',
@@ -308,6 +322,9 @@ export function check(indexText, dir = VOLUMES) {
       `${String(order.length)} round(s)` +
       (order.length === 0 ? '' : `; largest ${largest.toLocaleString('en-US')} of ` +
         `${MAX_BYTES.toLocaleString('en-US')} bytes`) +
+      (volumes.length === 0
+        ? ''
+        : `; sizes ${volumes.map((one) => one.bytes.toLocaleString('en-US')).join(' / ')}`) +
       (smallest === 0 ? '' : `; index ${indexBytes.toLocaleString('en-US')} of smallest volume ` +
         `${smallest.toLocaleString('en-US')}`),
   };

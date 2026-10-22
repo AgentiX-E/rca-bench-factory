@@ -109,6 +109,43 @@ describe('the shape of a volume', () => {
     expect(errors).toContain('start the next volume');
   });
 
+  it('judges the budget on the volume that can still grow, and only there', () => {
+    // volume-01 over the budget and volume-02 under it: nothing appends to volume-01, so the
+    // number cannot force the decision it exists for, and refusing a repair there with
+    // "start the next volume" would be advice that volume cannot follow (finding 208).
+    const closed = volumesOf({
+      'volume-01.md': `## Pass 1 — one\n\n${'x'.repeat(MAX_BYTES)}\n`,
+      'volume-02.md': '## Pass 2 — two\n',
+    });
+    const index = indexFor([
+      ['volume-01.md', 1, 'Pass 1', 'Pass 1'],
+      ['volume-02.md', 1, 'Pass 2', 'Pass 2'],
+    ]);
+    expect(check(index, closed).errors.join('\n')).not.toContain('start the next volume');
+
+    // The same file as the last volume is refused, because that is the one a round lands in.
+    const last = volumesOf({ 'volume-01.md': `## Pass 1 — one\n\n${'x'.repeat(MAX_BYTES)}\n` });
+    expect(check(indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1']]), last).errors.join('\n')).toContain(
+      'start the next volume',
+    );
+  });
+
+  it('prints every volume\'s size, which is what replaces a rule on the closed ones', () => {
+    // The cost of judging only the last volume is that a closed one could be grown by an
+    // edit unnoticed. The sizes are therefore printed, all of them, on every run -- a
+    // volume that doubled shows up in the line a reader of a red build already reads.
+    const dir = volumesOf({ 'volume-01.md': '## Pass 1 — one\n', 'volume-02.md': '## Pass 2 — two\n' });
+    const result = check(
+      indexFor([
+        ['volume-01.md', 1, 'Pass 1', 'Pass 1'],
+        ['volume-02.md', 1, 'Pass 2', 'Pass 2'],
+      ]),
+      dir,
+    );
+    expect(result.summary).toMatch(/sizes [\d,]+ \/ [\d,]+/);
+    expect(result.summary.match(/sizes ([\d, /]+?);/)?.[1].split(' / ')).toHaveLength(2);
+  });
+
   it('refuses a volume that begins mid-round, because the boundary went through a sentence', () => {
     const dir = volumesOf({ 'volume-01.md': 'the end of a sentence.\n\n## Pass 2 — two\n' });
     expect(check(indexFor([['volume-01.md', 1, 'Pass 2', 'Pass 2']]), dir).errors.join('\n')).toContain(
