@@ -770,7 +770,7 @@ the archive showed a local file header whose `csize` was 0 -- the directory entr
 inferred for the archive and written down as a measured fact.
 
 It was not measured. It was generalised from one member that cannot exhibit the
-property either way. The file is named here for the same reason finding 118 names
+property either way. The file is named here for the same reason finding 46 names
 its own misdiagnosis: an unsupported claim that reads like a measurement is the
 failure mode this audit keeps finding, and the fix is to record it rather than
 quietly edit it away.
@@ -2380,7 +2380,7 @@ is the quietest failure in the family, and nothing in this gate looks for it.
 
 ## Finding 134 — the caller passed a positional path and selected nothing, and the gate said OK
 
-A diagnostic pass while writing up finding 133 ran, in this order:
+A diagnostic pass while writing up this finding ran, in this order:
 
     node scripts/check-no-unsafe-shell.mjs t1.sh                       -> OK  rc=0
     node scripts/check-no-unsafe-shell.mjs /tmp/bs-probe/z.sh          -> OK  rc=0

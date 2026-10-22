@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **168 files, 4209 tests passed** (as of this commit) |
+| `core` test suite | **169 files, 4216 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **172 files, 4396 tests passed** (as of this commit) |
+| repo test suite | **173 files, 4403 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2929,3 +2929,66 @@ index 71,492 of smallest volume 92,309`; audit log 5 volumes, findings 1–204.
   One of the two answers has to stop being one -- a roll-up the last round rewrites, or a
   pointer at the last round -- and that is a decision about what the document is for, not a
   measurement]`
+
+## v2.36 — a citation reads as well when it resolves to nothing
+
+The audit log numbers its findings and cites them constantly — "closed by finding 170",
+"finding 46's fix" — and every round of this log cites them too. Across both documents there
+are hundreds of such citations and **nothing had ever checked that a cited number names
+something**.
+
+Three did not:
+
+| citation | where | the sentence |
+| --- | --- | --- |
+| the number 118 | `audit/volume-03.md:773` | "the same reason ... names its own misdiagnosis" |
+| the number 133 | `audit/volume-03.md:2383` | "a diagnostic pass while writing up ..." |
+| the number 133 | `progress/volume-02.md:519` | "writing up ... turned into finding 134 and then finding 135" |
+
+The third is also the explanation: **133 was a write-up that became 134 and 135.** The number
+was consumed by work that split in two, and two sentences went on referring to it. The number
+118 has no such story anywhere; the sentence citing it is the only trace.
+
+### Why a gate, and what it can and cannot see
+
+A citation that resolves to nothing reads exactly as convincingly as one that does — the
+sentence is right and the number is wrong, so no amount of care at write time catches it.
+Whether a number *exists* is precisely what a script can know, which is why this one is
+mechanical where the rest of this campaign's checks needed judgements.
+
+It cannot see whether the number is the **right** one: a sentence citing 41 when it meant 42
+passes forever. So the three repairs are judgements and are recorded as judgements — the 118
+sentence now cites **finding 46**, whose title is a correction of a wrong mechanism and is the
+nearest true referent; the other two needed no number at all ("this finding", and the three
+the table beneath actually lists).
+
+Two outputs, only one an error: **absent** numbers (118, 132, 133) are printed, because a hole
+nothing cites is invisible and renumbering 204 findings to close three would break every
+citation that works today; **dangling** citations fail the run, with file, line and sentence.
+
+The split is the one finding 196 established: `audit-citations.mjs` holds the reading
+(headings, citations, sentence context, holes) and `check-citations.mjs` holds the verdict,
+because a gate a test imports cannot be proved by emptying it. The meta-gate agrees:
+`CAUGHT 3 test(s) red in 2 of 3 naming file(s)`.
+
+**Acceptance.** 995 citations of 202 numbers across 11 files at this round's measurement;
+3 citations of 2 numbers repaired by hand; `audit-citations.test.ts` **7 tests**; cold tree
+measured with `packages/core/dist` moved aside (exit 0); 43 gates, **73** failure sites across
+43 scripts; core **169 files / 4216 tests**, cli **4 / 187**, repo **173 / 4403**; coverage
+99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit log 5 volumes, findings 1–205.
+
+### Open
+
+- **`docs/audit/volume-03.md` sits fourteen bytes under a bound that will never be tested
+  again.** `[open: appending happens in the last volume, so volume-03 is closed and will never
+  grow on its own -- but correcting one sentence inside it would take it over 280,000 and fail
+  the guard, which is the wrong answer to a repair. The budget is doing its job for the volume
+  that grows and standing in the way of the ones that do not; whether a closed volume should
+  have a budget at all is the question, and answering it means deciding what the number was
+  for]`
+- **The index's `## Open` still answers "what is not done" while every round answers it too.**
+  `[open: measured this round -- the rounds do not carry residuals forward (120 of 135 open
+  entries never reappear), so the "last round is the answer" reading is false as well. One
+  list has to be maintained by hand and the other declared a record; the guard can check only
+  that each entry says which it is, so this is a decision about what the document is for, and
+  it is the last structural item left]`

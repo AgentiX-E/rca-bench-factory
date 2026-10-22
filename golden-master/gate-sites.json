@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 54,
+  "scanned": 56,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -44,6 +44,14 @@
       "diagnostic": "check-backend-support: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-backend-support.test.ts"
+    },
+    {
+      "script": "scripts/check-citations.mjs",
+      "line": 86,
+      "condition": "broken.length > 0",
+      "diagnostic": "today would move with the numbers.",
+      "status": "proved",
+      "provedBy": "packages/core/test/audit-citations.test.ts"
     },
     {
       "script": "scripts/check-cli-reference.mjs",

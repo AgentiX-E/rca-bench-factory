@@ -160,6 +160,20 @@ const REGISTER: Record<string, Entry> = {
       'rounds rather than inside one, the order across the Pass and v2 eras, the index row, and no round ' +
       'left behind in the index.',
   },
+  'audit-citations.mjs': {
+    class: 'data',
+    why:
+      'Reading citations of findings out of the documentation: which numbers have a heading, which ' +
+      'sentences cite them, and which citations resolve to nothing. It holds no verdict, because the ' +
+      'gate that does is hollowed by the meta-gate and a test may not import it (finding 196).',
+  },
+  'check-citations.mjs': {
+    class: 'gate',
+    why:
+      'The verdict for the audit log\'s own cross-references: every `finding N` the documentation writes ' +
+      'must name a heading that exists. Measured on the first run: 977 citations of 201 numbers, two of ' +
+      'them naming nothing.',
+  },
   'check-open-list.mjs': { class: 'gate' },
   'check-official-registry.mjs': { class: 'gate' },
   'check-official.mjs': { class: 'gate' },

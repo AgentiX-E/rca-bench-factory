@@ -516,8 +516,8 @@ is the honest ceiling of a fix at this layer.
 
 ## Pass 39 — the rule was covered and the verdict was still lost, three different ways
 
-Writing up finding 133 turned into finding 134 and then finding 135, and all
-three are the same statement at three removes from the rule: *a check whose
+One write-up turned into findings 134 and 135, and all three -- 131, 134 and
+135 -- are the same statement at three removes from the rule: *a check whose
 answer nothing reads*. After finding 131 the shell rule had 30 tests and was not
 the problem. The problem had already left the rule behind, and none of the three
 was reachable by adding a construct to `MALFORMED`.

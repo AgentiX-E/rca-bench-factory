@@ -797,3 +797,69 @@ turns the relation off, which is precisely the seam that lets a test measure not
 | the relation | index **71,492** of smallest volume **92,309**, printed each run; 2 tests (one red, one green) |
 | the fixtures | every volume body padded to 4,000 bytes, with the reason |
 | `core` / repo | **168 / 4209** · **172 / 4396** |
+
+## Finding 205 — a citation reads as well when it resolves to nothing
+
+The audit log numbers its findings 1–204 and cites them constantly: "closed by finding 170",
+"finding 46's fix", "the mechanism finding 39 named". The progress log cites them too, from
+every round. Across 1.6 MB of markdown there are **996 citations of 202 distinct numbers**,
+and until this round nothing had ever checked that a cited number names something.
+
+Two did not.
+
+| citation | file | what the sentence says |
+| --- | --- | --- |
+| the number 118 | `docs/audit/volume-03.md:773` | "the same reason ... names its own misdiagnosis" |
+| the number 133 | `docs/audit/volume-03.md:2383` | "a diagnostic pass while writing up ..." |
+| the number 133 | `docs/progress/volume-02.md:519` | "writing up ... turned into finding 134 and then finding 135" |
+
+The third one is also the explanation: **133 was a write-up that became 134 and 135.** The
+number was consumed by work that split in two, and the two sentences that referred to it
+went on referring. The number 118 has no such story anywhere in the corpus; the sentence that
+cites it is the only trace, and it says the finding named a misdiagnosis of its own.
+
+### Why this is worth a gate rather than a careful read
+
+A citation that resolves to nothing **reads exactly as convincingly as one that does**.
+The sentence around it is right, the number is wrong, and the reader who follows it finds
+an adjacent finding and assumes they mis-scrolled. That is the property that makes it
+mechanical: no amount of care at write time catches it, because the thing being checked is
+whether a number exists, which is exactly what a script can know.
+
+The guard is `check-citations.mjs` over `audit-citations.mjs`, split at the seam finding
+196 established — a gate that a test imports cannot be proved by emptying it. It reports
+two different things and only one is an error:
+
+- **`absent`** — numbers skipped in the sequence (118, 132, 133). *Printed.* A hole nothing
+  cites is invisible, and renumbering 204 findings to close three would break every
+  citation that works today.
+- **`dangling`** — a citation of a number with no heading. *Refused*, with file, line, and
+  the sentence, because a repair edits one sentence and "somewhere in 1.6 MB" is not a
+  place.
+
+### What it cannot do, stated rather than implied
+
+It checks that a number **exists**, not that it is the *right* number. A sentence citing
+finding 41 when it meant 42 passes forever: both exist, and the claim about either is prose.
+So the three repairs are judgements, and each is recorded as one:
+
+1. `volume-03:773` now cites **finding 46**, whose title is a correction of a wrong
+   mechanism — the nearest true referent to "names its own misdiagnosis". The original
+   number has no history to consult, so this is a choice rather than a correction.
+2. `volume-03:2383` now reads "while writing up **this** finding", because the pass happened
+   inside finding 134 and no other number is needed.
+3. `progress/volume-02:519` now reads "one write-up turned into findings 134 and 135, and
+   all three — 131, 134 and 135 — are the same statement", which is what the table beneath
+   it lists. The old sentence counted 133 among the three, and 133 was never written.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the measurement | **977 citations of 201 numbers across 11 files**; 3 citations of 2 numbers did not resolve |
+| the repairs | 3 sentences, each a recorded judgement rather than a substitution |
+| the guard | `audit-citations.test.ts` **7 tests**: both heading spellings, three citation spellings, sentence-not-paragraph context, dangling with location, one number/three places, holes, and the shipped corpus |
+| the meta-gate | `CAUGHT check-citations.mjs 3 test(s) red in 2 of 3 naming file(s)`; **43 gates** |
+| the inventory | **73** failure sites across 43 scripts, each proved or exempted |
+| cold tree | measured with `packages/core/dist` moved aside: `OK (977 citation(s) of 201 number(s) across 11 file(s))`, exit 0 |
+| `core` / repo | **169 / 4216** · **173 / 4403** |
