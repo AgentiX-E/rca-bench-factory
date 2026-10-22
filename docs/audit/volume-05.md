@@ -1064,3 +1064,75 @@ copied, a volume that closed.
 | the tests | 2: closed-over-budget accepted **and** last-over-budget refused, in one case; sizes printed one per volume |
 | volume-03 | 279,893 bytes, now compliant by construction rather than by luck |
 | `core` / repo | **169 / 4220** · **173 / 4407** |
+
+## Finding 209 — M1's failure belongs to the model, and now that is measured rather than assumed
+
+M1 is the milestone this repository is short of: a strict all-fields extraction rate at or
+above 70%. Pass 15 recorded *"the first real reading, and it says M1 is not met"*, and every
+round since has worked on the pipeline around it — the guards, the docs, the CI — without
+asking the prior question: **does the metric grade its own answer key at 100%?**
+
+If it does not, every model number is uninterpretable, because a run could fail for a reason
+that has nothing to do with the model. The audit log's **finding 1** is exactly this class —
+*"the regression graded its own answer key"* — and it was found in the regression's scoring
+path, not in the extraction one.
+
+### The control
+
+`golden-master/fault-extraction/samples.json` carries 19 samples with `expected: {type,
+category, component}`. Submitting those expectations back as predictions, with
+`parseOk`/`validationValid`/`verifiable` true, and scoring them with the shipped scorer:
+
+```
+  parsed: 19/19 (100.0%)   validated: 19/19 (100.0%)   graded: 19/19 (100.0%)
+    type        : graded 19/19 (100.0%)   overall 19/19 (100.0%)
+    category    : graded 19/19 (100.0%)   overall 19/19 (100.0%)
+    component   : graded 19/19 (100.0%)   overall 19/19 (100.0%)
+    description : graded 0/0 (n/a)        overall 0/19 (0.0%)
+  strict all-fields: 19/19 (100.0%)
+  M1 exit condition: MET (>= 70% strict)
+```
+
+**The instrument is sound.** It gives its own answers full marks on every field it scores,
+which is the one result that lets "M1 is not met" be a statement about an extractor rather
+than about a metric.
+
+### The control needs a control
+
+A test that asserts 100% is worthless if the metric would say 100% to anything. So the same
+run was repeated with two predictions corrupted by hand:
+
+| corrupted | type | category | component | strict |
+| --- | --- | --- | --- | --- |
+| one component, one type | 18/19 | 19/19 | 18/19 | **17/19** |
+
+The metric discriminates, and the 100% above is a reading rather than a constant. Both halves
+are now a test (`answer-key.test.ts`, 4 cases): the oracle at 100%, M1 cleared by it, the
+`description` scope asserted, and the dataset's shape held so the control cannot go vacuous
+by shrinking to one sample or losing a field.
+
+### The scope fact worth publishing
+
+`description` has **no denominator**: `expected` carries three fields, so a run that never
+emits a description still reaches 100% strict. That is visible in the report as
+`graded 0/0 (n/a)` and it is now asserted, because a reader of "M1 met" is entitled to know
+which fields the number is over. It is not a defect — the fourth field has no ground truth to
+be graded against — and calling it one would be worse than saying it.
+
+### Why this belongs before any optimisation
+
+The next rounds can now spend themselves on the extractor: a change that moves the strict
+rate from below 70% to above it is a change in a number whose ceiling has been checked. The
+alternative — tuning against a metric nobody had asked to grade its own key — is how a run
+gets to 74% and turns out to have moved nothing.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the oracle | type / category / component **19/19**; strict **19/19**; M1 **MET** |
+| the negative control | two corrupted predictions → **17/19** strict; the metric discriminates |
+| the scope | `description` `graded 0/0`, asserted, so "strict" is named over three fields |
+| the vacuity guards | ≥19 samples; every sample carries a non-empty value for each scored field |
+| the tests | `answer-key.test.ts` **4** |
+| `core` / repo | **170 / 4224** · **174 / 4411** |

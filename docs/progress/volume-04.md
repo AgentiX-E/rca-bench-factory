@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **169 files, 4220 tests passed** (as of this commit) |
+| `core` test suite | **170 files, 4224 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **173 files, 4407 tests passed** (as of this commit) |
+| repo test suite | **174 files, 4411 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -3160,3 +3160,59 @@ No residual, and that is worth writing down: this is the first round whose live-
 closed in the same round it was picked up, and the index's `## Open` now holds only the six
 standing limits — things this repository does not do, each with what would close it, none of
 them waiting on a decision.
+
+## v2.40 — M1's failure belongs to the model, and now that is measured
+
+M1 is the milestone this repository is short of: a strict all-fields extraction rate at or
+above 70%. Pass 15 recorded the first real reading — not met — and every round since worked on
+the pipeline around it without asking the prior question: **does the metric grade its own
+answer key at 100%?**
+
+If it does not, every model number is uninterpretable. Finding 1 is that exact class —
+*"the regression graded its own answer key"* — and it was found in the regression's path, not
+in the extraction one.
+
+Submitting the dataset's own `expected` values back as predictions, through the shipped
+scorer:
+
+```
+  graded: 19/19   type 19/19   category 19/19   component 19/19
+  strict all-fields: 19/19 (100.0%)      M1 exit condition: MET
+  description : graded 0/0 (n/a)
+```
+
+**The instrument is sound**, which is the one result that lets "M1 is not met" be a statement
+about an extractor.
+
+### The control needs a control
+
+100% is worthless if the metric says 100% to anything. Corrupting two predictions by hand:
+
+| corrupted | type | category | component | strict |
+| --- | --- | --- | --- | --- |
+| one component, one type | 18/19 | 19/19 | 18/19 | **17/19** |
+
+It discriminates. Both halves are now `answer-key.test.ts` (4 cases), with vacuity guards: at
+least 19 samples, and every sample carrying a non-empty value for each scored field.
+
+### A scope fact worth publishing
+
+`description` has **no denominator** — `expected` carries three fields — so a run that never
+emits a description still reaches 100% strict. The report already says `graded 0/0 (n/a)`; the
+test now asserts it, because a reader of "M1 met" is entitled to know which fields the number
+is over.
+
+**Acceptance.** `answer-key.test.ts` **4 tests**; oracle 19/19 on three fields and on strict;
+negative control 17/19; core **170 files / 4224 tests**, cli **4 / 187**, repo **174 / 4411**;
+coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; 43 gates; audit log 5 volumes, findings 1–209.
+
+### Left open
+
+- **M1 itself is next, and it needs a model this environment does not have.** `[open: the
+  instrument is now checked, so the remaining work is the extractor -- prompts, vocabulary,
+  the four fields the model is asked for -- and every one of those is measured by running a
+  real model against the 19 samples, which needs the API key finding 53 recorded as invisible
+  to this repository. The deterministic parts are already measured and refuted: finding 99's
+  agreement reading was shown to be an artifact of the vocabulary by its own control
+  (agreement-baseline.ts, 1 of 19 on the ground truth), so the next step is not another
+  vocabulary pass]`
