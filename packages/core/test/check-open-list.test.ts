@@ -83,71 +83,35 @@ function openSection(title: string, entries: string[]): string {
   return `## ${title}\n\n### Open\n\n${entries.join('\n')}\n`;
 }
 
+/**
+ * The index's own shape: an `## Open` at the top of a document, closed by the next `## `.
+ *
+ * The second spelling, and the one that had no reader for as long as it existed. A
+ * fixture written only with `### Open` cannot tell the two apart, which is why the four
+ * tests below it use this instead.
+ */
+function indexOpen(entries: string[]): string {
+  return `## Headline\n\ntext\n\n## Open\n\n${entries.join('\n')}\n\n## Pass log\n\nbody\n`;
+}
+
 const CLOSED_ENTRY = '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.';
 const OPEN_ENTRY =
   '- A residual. [open: it needs the measurement the entry is about, and that measurement does not exist yet]';
 const BARE_ENTRY = '- A residual with no marker at all.';
 
 /**
- * The guard has no injection point for its document, and adding one to make it
- * testable would change the thing under test. So these tests drive the *predicates*
- * the script applies, by reading the shipped file and re-running its two regexes --
- * the same shapes the fixtures below are written in.
+ * There was a copy of the guard's two regexes here, and five tests drove it.
+ *
+ * It is gone, and finding 203 is why: the guard's closure rule was `/~~|Closed by
+ * finding \d+/`, satisfied by a strikethrough alone, and the copy made the tests pass
+ * for exactly the same reason the guard did. When the rule was tightened the copy
+ * stayed where it was -- a test suite that agrees with a stale duplicate of the
+ * implementation is a suite that reports on its own source. Every rule below is
+ * therefore driven through `runOn`, which spawns the script, so there is one
+ * vocabulary and it is the shipped one. The three fixture strings stay.
  */
-const CLOSED = /~~|Closed by finding \d+/;
-const OPEN = /\[open:\s*([^\]]*)\]/;
 
-function judge(entries: string[]) {
-  const problems: string[] = [];
-  const reasons = new Map<string, string>();
-  for (const item of entries) {
-    if (CLOSED.test(item)) continue;
-    const open = item.match(OPEN);
-    if (!open) {
-      problems.push('neither closed nor explained');
-      continue;
-    }
-    const reason = open[1].trim();
-    if (reason.length < 40) problems.push('reason too short');
-    if (reasons.has(reason)) problems.push('reason shared with another entry');
-    reasons.set(reason, item);
-  }
-  return problems;
-}
-
-describe('docs · the Open list says which entries are work and which are history', () => {
-  it('refuses an entry that says neither', () => {
-    // The state all three stale entries were in.
-    expect(judge(['- The six other scripts failed and were never examined.'])).toEqual([
-      'neither closed nor explained',
-    ]);
-  });
-
-  it('refuses a reason short enough to be a placeholder', () => {
-    expect(judge(['- Something. [open: still to do]'])).toEqual(['reason too short']);
-  });
-
-  it('refuses two entries sharing a reason, because one is a placeholder', () => {
-    const shared =
-      'this is a reason long enough to pass the length rule and still be a placeholder';
-    expect(judge([`- One. [open: ${shared}]`, `- Two. [open: ${shared}]`])).toEqual([
-      'reason shared with another entry',
-    ]);
-  });
-
-  it('accepts a closure with the finding that closed it, and needs no reason', () => {
-    expect(judge(['- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.'])).toEqual([]);
-  });
-
-  it('accepts an open entry whose reason is a sentence', () => {
-    expect(
-      judge([
-        '- A residual. [open: it needs the measurement the entry is about, and that measurement ' +
-          'does not exist yet]',
-      ]),
-    ).toEqual([]);
-  });
-
+describe('docs · the shipped list, as the guard reads it', () => {
   it('reads the shipped document and finds the two it closed', () => {
     // Non-vacuity for the fixtures above: the shipped file is judged by the same
     // predicates, so a document that reverted to plain prose would fail here.
@@ -172,9 +136,14 @@ describe('docs · the Open list says which entries are work and which are histor
     // The corpus, not one path: the lists moved into the volumes with the rounds
     // they belong to (finding 197), and a test that counted headings in the index
     // alone would compare the guard's 47 against the index's 1.
+    // Both spellings, and the union is the point: `## Open` is the index's live list
+    // and `### Open` is the list a round closes with, and the guard read one of them
+    // until finding 203 -- 19,285 bytes of the other had no reader at all. A count
+    // written as `=== '### Open'` here would have agreed with the guard while both
+    // ignored the same twelve entries.
     const headings = progressCorpus()
       .flatMap((file) => file.text.split('\n'))
-      .filter((line) => line.trim() === '### Open').length;
+      .filter((line) => ['## Open', '### Open'].includes(line.trim())).length;
     expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
     expect(entries).toBeGreaterThanOrEqual(sections);
@@ -238,5 +207,55 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
     const r = runOn('## Pass 1\n\nNothing here.\n');
     expect(r.code).toBe(1);
     expect(r.out).toContain('the list this guard reads is gone');
+  });
+
+  it('reads `## Open` as well as `### Open`, because the index uses the first', () => {
+    // The defect, as a fixture: before finding 203 this document had no reader -- the
+    // guard's table named one heading, and the index's live list was 19,285 bytes of
+    // the other. The entry below is deliberately dirty, so a green here would mean the
+    // section was skipped rather than read and found clean.
+    const r = runOn(indexOpen([BARE_ENTRY]));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('says neither that it is closed nor why it is open');
+    // And the clean version is green, which is the half that says the section is read
+    // rather than merely refused.
+    const clean = runOn(indexOpen([OPEN_ENTRY]));
+    expect(clean.code).toBe(0);
+    expect(clean.out).toMatch(/1 entry\(ies\) across 1 section\(s\)/);
+  });
+
+  it('refuses a closure that does not say what closed it', () => {
+    // The rule the docstring promised and the regex did not enforce: `~~` alone passed,
+    // so "~~something old~~" was a closure whose authority nobody could check. Eleven
+    // of the twenty shipped closures could not have satisfied the strict version
+    // either -- their citation wraps a line break -- which is why the pattern needs
+    // `\s+` and why this fixture is one entry, not a document.
+    const r = runOn(indexOpen(['- ~~An old item, struck through and otherwise silent.~~']));
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('does not say what closed it');
+  });
+
+  it('accepts the three authorities a closure can have', () => {
+    const cases = [
+      '- ~~An old item.~~ **Closed by finding 150**: the consumer arrived.',
+      '- ~~An old item.~~ **Closed by finding\n  170**: the citation wraps, as eleven of them do.',
+      '- ~~An old item.~~ **Closed by Pass 15**, which recorded the first real reading.',
+      '- ~~An old item.~~ **Closed without a finding: the fix was in a scratch helper outside this tree, and the entry records it.**',
+    ];
+    for (const entry of cases) {
+      const r = runOn(indexOpen([entry]));
+      expect(r.code, `${entry} was refused: ${r.out}`).toBe(0);
+    }
+  });
+
+  it('refuses a list inside a list, rather than counting its entries twice', () => {
+    // Reachable only because two levels are read now. An entry counted in both a
+    // `## Open` and the `### Open` it sits inside makes `N open with a reason` a number
+    // that depends on how the document is headed rather than on how much is open.
+    const nested = `## Open\n\n${OPEN_ENTRY}\n\n### Open\n\n${CLOSED_ENTRY}\n\n## Pass log\n\nbody\n`;
+    const r = runOn(nested);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('sits inside the');
+    expect(r.out).toContain('counted twice');
   });
 });

@@ -589,3 +589,134 @@ This is the third time in five rounds that ambient state reached a process that 
 business seeing it (a killed battery's mutations, a live battery's lock, and now a lock
 inherited by a nested gate). The pattern is the same each time: **a child inherits an
 environment, and the environment is a claim about the whole machine.**
+
+## Finding 203 — the open list had two spellings, and one of them had no reader
+
+The guard that reads `docs/progress.md`'s open list was written because three entries
+had stopped meaning anything while nothing read them. Its docstring, written in the
+same round, draws the conclusion:
+
+> A document that gains a list must gain a reader for it, and the only way to hold that
+> is to read all of them.
+
+It then reads **all sections with one heading**:
+
+```js
+const DOCS = [{ path: 'docs/progress.md', heading: '### Open' }];
+```
+
+The index has an `## Open`. The guard has never seen it. Nineteen thousand, two hundred
+and eighty-five bytes, twelve entries, and — measured — **zero** `[open:` markers and
+zero closure citations. The volumes' 132 entries are all marked, because the guard
+reads them; the index's twelve are not, because nothing did.
+
+This is finding 195's shape, one document later and written by the same hand: a census
+that knew four heading forms counted 127 of 191, and the lesson recorded there was that
+*the vocabulary of the scan is a claim about the document*. The vocabulary here was one
+string.
+
+### What the twelve were
+
+Not a to-do list. A v1-era residuals section, and four of the twelve had been false for
+as long as they had existed. The clearest:
+
+> **Five gates are covered by CI running them, not by a test that forces them to
+> fail.** ... `check-readme-sample.mjs`, `build-example-bundle.mjs` and `gen-examples.mjs`
+> have no test naming them ...
+
+The meta-gate now reports all three, and the two others the entry names:
+
+```
+CAUGHT      build-example-bundle.mjs      18 test(s) red in 1 of 2 naming file(s)
+CAUGHT      check-readme-sample.mjs       14 test(s) red in 1 of 3 naming file(s)
+CAUGHT      gen-examples.mjs              24 test(s) red in 1 of 2 naming file(s)
+CAUGHT      check-cli-reference.mjs       32 test(s) red in 3 of 4 naming file(s)
+CAUGHT      gen-rcaeval-cases.mjs         38 test(s) red in 1 of 4 naming file(s)
+```
+
+and each has a namesake file. So the entry's first half is closed and its second half is
+not: the meta-gate proves a gate is caught by **at least** one test, not that every exit
+has one (finding 199). It was narrowed rather than struck.
+
+The twelve, each given a verdict by measurement rather than by reading:
+
+| entry | verdict | authority |
+| --- | --- | --- |
+| real-corpus runs diagnosed | closed | the third naming is the run's own stack trace, quoted in the entry |
+| dispatch fired four times | closed | the fix was in a scratch helper outside this tree |
+| Anchor 4 closed for three anchors only | **open** | six score targets still have no automated fetch |
+| the fourth anchor's fetch defect | closed | `Pass 15` — the first round with a reading from a real run |
+| no measured extraction accuracy | closed | `Pass 15`, whose title is "the first reading, and M1 is not met" |
+| OpenRCA shard-cache route | **open** | making the shards a source is a change in six other repositories |
+| Anchor 4 closed by `official-data.yml` | closed | the workflow is the closure; the retractions are in the audit |
+| active injection | **open** | it needs a cluster, and a cluster test does not run in CI |
+| Chaos Mesh mapping table | **open** | no test runs `kubectl apply --dry-run=server` |
+| five gates only covered by CI | **open, narrowed** | naming half closed; branch half is what the meta-gate cannot say |
+| export enumeration | **open** | it asserts a name is mentioned, not called |
+| `glm-embedding-3` scheduling | **open** | scope: the abstraction is here, the model is not |
+
+Six closed, six open — and the six that are open now say what would close them, which
+none of the twelve did before.
+
+### The second defect, in the same guard
+
+The docstring promises a closed entry is "struck through, **with the finding that closed
+it named**". The regex was `/~~|Closed by finding \d+/`, which a strikethrough alone
+satisfies — so half the promise was unenforced. And the enforced half could not have
+worked on more than half the document: eleven of the twenty shipped citations wrap
+(`**Closed by\nfinding 170.**`), and the pattern has no `\s+` across the break.
+
+A rule stated in prose and a rule enforced in code had drifted, which is the defect this
+guard exists to catch in other people's lists.
+
+The closure rule now needs **one of three authorities**, and the third exists because
+two of the closures I had to judge are not findings at all:
+
+1. `Closed by finding N`;
+2. `Closed by Pass N` — this log names rounds in two eras, and a round closes most things;
+3. `Closed without a finding: <sentence>` / `Closed in this pass ...`, where the
+   authority is a measurement or a fix outside this tree.
+
+`[^.]{0,120}?` keeps the citation inside the closure's own sentence, so "Closed by the
+workflow. Finding 170 later found something else." cannot read as a citation.
+
+Measured before choosing the tightening: **19 of the 20 shipped closures already complied**,
+and the twentieth says "Closed in this pass by the run itself: 15 s for the install",
+which the third authority accepts verbatim. So the stricter rule cost nothing and made
+fourteen citations visible that the old one could not see.
+
+### The third defect, in the test
+
+`check-open-list.test.ts` held a **copy** of the guard's two regexes, and five tests
+drove the copy — for the reason its own comment gives, that the guard has no injection
+point for its document. When the guard was tightened the copy would have stayed where
+it was, and those five tests would have gone on agreeing with an implementation that no
+longer existed.
+
+They are gone. Every rule is now driven through `runOn`, which spawns the script, so
+there is one vocabulary and it is the shipped one. The five new rules (second spelling,
+uncited closure refused, three authorities accepted, nested list refused, and the
+`## Open` section read rather than merely refused) are all spawns.
+
+Net test count in that file: **13 → 12**. One fewer, and the five that left were
+measuring a copy of the thing they claimed to measure.
+
+### The nesting rule, which only two spellings make reachable
+
+A `### Open` inside a `## Open` is two sections whose entry counts overlap. The guard
+reports `2 section(s)` and would count the inner list twice, so the summary number would
+depend on how the document is headed rather than on how much is open. It is refused
+rather than de-duplicated: a document with a list inside a list has no answer to "which
+list does this entry belong to", and a guard that silently picked one would be guessing.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the spellings | `## Open` and `### Open`, both read; the twelve were exposed at **164 entries across 54 sections** (was 152 / 53) and the document now reports **167 / 55**, its own list included |
+| the twelve | 6 closed with an authority, 6 open with a reason that names what would close it |
+| the closure rule | one of three authorities required; **19 of 20** shipped closures complied before the change |
+| the copy | removed from the test; **12 tests**, all spawning the script |
+| the nesting | refused with both line numbers named; 1 test |
+| `core` / repo | **168 / 4210** · **172 / 4397** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

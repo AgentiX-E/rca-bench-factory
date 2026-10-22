@@ -60,7 +60,19 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const DOCS = [
-  { path: 'docs/progress.md', heading: '### Open' },
+  // Two spellings, and they are not the same list.
+  //
+  // `## Open` is where a reader looks for what is not done, and it is a v1 section that
+  // no round has appended to: twelve entries, 19,285 bytes, and six of them history. A
+  // round's residuals go to its own `### Open`, because that is where the reader of that
+  // round is. Saying this plainly matters, because the guard cannot check either claim --
+  // it checks only that each entry says which it is -- and a comment calling the index's
+  // section "the live list" would be a claim the check does not make.
+  //
+  // Until finding 203 this table named one of the two, so the index's section had no
+  // reader at all, and four of its twelve had been contradicted by the tree for as long
+  // as they had existed.
+  { path: 'docs/progress.md', headings: ['## Open', '### Open'] },
 ];
 
 /**
@@ -77,33 +89,68 @@ function source(rel) {
   return { label: actual, path: actual };
 }
 
-const CLOSED = /~~|Closed by finding \d+/;
+/**
+ * What a closed entry has to say, and why the old rule did not make it say that.
+ *
+ * The docstring above promises "struck through, **with the finding that closed it
+ * named**". The regex was `/~~|Closed by finding \d+/`, which is satisfied by a
+ * strikethrough alone -- so half the promise was unenforced, and eleven of the twenty
+ * closed entries could not have satisfied it anyway: their citation wraps
+ * (`**Closed by\nfinding 170.**`) and a pattern without `\s+` cannot see across the
+ * break. A rule stated in prose and a rule enforced in code had drifted, which is the
+ * defect this whole guard exists to catch in other people's lists.
+ *
+ * So the citation is required, and there are three authorities a closure can have:
+ *
+ * 1. a **finding** (`Closed by finding 170`), which is the common case;
+ * 2. a **round** (`Closed by Pass 15`), because this log names rounds in two eras and
+ *    a round is what closes most things;
+ * 3. **explicitly not a finding** (`Closed without a finding: ...`, `Closed in this
+ *    pass ...`), for closures whose authority is a measurement or a fix outside this
+ *    tree -- and the sentence after it has to be long enough to be one.
+ *
+ * `[^.]{0,120}?` keeps the citation in the closure's own sentence: "Closed by the
+ * workflow. Finding 170 later found something else." must not read as a citation.
+ */
+const CLOSED = /~~/;
+const CITED = /(?:Closed|Narrowed|Retracted)\b[^.]{0,120}?\b(?:finding\s+\d+|Pass\s+\d+|v\d+\.\d+)/;
+const UNCITED = /(?:Closed without a finding|Closed in this pass)[\s\S]{40,}/;
 const OPEN = /\[open:\s*([^\]]*)\]/;
 
 /**
- * Every section that starts at `heading`, in document order.
+ * Every section whose heading is one of `headings`, in document order, with its span.
  *
  * A deeper heading inside a section (`#### x`) stays in it; a heading of the same
  * level or shallower ends it. That is the rule the single-section version used, and it
  * is kept so the two sources of truth -- this scan and the document's own structure --
  * cannot drift apart on what "the section" means.
+ *
+ * The span is returned rather than only the lines because two spellings make nesting
+ * possible in a way one spelling did not: a `### Open` inside a `## Open` is two
+ * sections whose entry counts overlap, and a guard that reported `2 section(s)` without
+ * saying so would be publishing a number it cannot defend.
  */
-function sections(doc, heading) {
+function sections(doc, headings) {
+  const wanted = new Set(headings);
   const lines = doc.split('\n');
-  const level = heading.match(/^#+/)[0].length;
-  const found = [];
-  let current = null;
-  for (const line of lines) {
-    if (line.trim() === heading) {
-      current = [];
-      found.push(current);
-      continue;
+  const heads = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const level = (/^#+/.exec(lines[index]) ?? [''])[0].length;
+    if (level > 0 && wanted.has(lines[index].trim())) {
+      heads.push({ index, level, heading: lines[index].trim() });
     }
-    if (current === null) continue;
-    if (/^#+\s/.test(line) && line.match(/^#+/)[0].length <= level) current = null;
-    else current.push(line);
   }
-  return found;
+  return heads.map((head) => {
+    let end = lines.length;
+    for (let j = head.index + 1; j < lines.length; j += 1) {
+      const level = (/^#+/.exec(lines[j]) ?? [''])[0].length;
+      if (level > 0 && level <= head.level) {
+        end = j;
+        break;
+      }
+    }
+    return { ...head, end, lines: lines.slice(head.index + 1, end) };
+  });
 }
 
 /** The entries of a section: a `- ` line and the continuation lines indented under it. */
@@ -164,16 +211,30 @@ function check() {
       problems.push(`cannot read ${from.label}: ${error.message}`);
       continue;
     }
-    const found = sections(text, doc.heading);
+    const found = sections(text, doc.headings);
     if (found.length === 0) continue;
     headings += 1;
     sectionsSeen += found.length;
     labelled = from.label;
-    found.forEach((lines, index) => {
-      const items = entries(lines);
+    // A list inside a list. The two spellings make this reachable in a way one did not,
+    // and it is refused rather than counted twice: an entry counted in both a `## Open`
+    // and the `### Open` it sits inside would make `N open with a reason` a number that
+    // depends on how the document is headed rather than on how much is open.
+    for (const outer of found) {
+      for (const inner of found) {
+        if (inner === outer || inner.index <= outer.index || inner.index >= outer.end) continue;
+        problems.push(
+          `${from.label}: the \`${inner.heading}\` at line ${String(inner.index + 1)} sits inside the ` +
+            `\`${outer.heading}\` at line ${String(outer.index + 1)}, so its entries are counted twice and ` +
+            'a reader cannot tell which list an entry belongs to',
+        );
+      }
+    }
+    found.forEach((section, index) => {
+      const items = entries(section.lines);
       if (items.length === 0) {
         problems.push(
-          `${from.label}: the \`${doc.heading}\` section ${index + 1} of ${found.length} is empty, ` +
+          `${from.label}: the \`${section.heading}\` section ${index + 1} of ${found.length} is empty, ` +
             'so this guard has no subject',
         );
         return;
@@ -182,7 +243,14 @@ function check() {
       for (const item of items) {
         const first = item.split('\n')[0].slice(2).trim();
         if (CLOSED.test(item)) {
-          closed += 1;
+          if (CITED.test(item) || UNCITED.test(item)) {
+            closed += 1;
+            continue;
+          }
+          problems.push(
+            `${from.label}: a closed entry is struck through and does not say what closed it, so a ` +
+              `reader cannot check the closure: ${first.slice(0, 80)}`,
+          );
           continue;
         }
         const open = item.match(OPEN);
@@ -212,8 +280,8 @@ function check() {
     }
     if (headings === 0) {
       problems.push(
-        `${files[0].label} has no \`${doc.heading}\` heading, in the index or in any volume; the list ` +
-          'this guard reads is gone',
+        `${files[0].label} has none of ${doc.headings.map((one) => `\`${one}\``).join(' or ')}, in the ` +
+          'index or in any volume; the list this guard reads is gone',
       );
       continue;
     }

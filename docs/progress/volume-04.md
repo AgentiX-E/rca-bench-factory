@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **168 files, 4211 tests passed** (as of this commit) |
+| `core` test suite | **168 files, 4210 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **172 files, 4398 tests passed** (as of this commit) |
+| repo test suite | **172 files, 4397 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2765,3 +2765,103 @@ ten spawn sites go through it.
 it: a killed battery's mutations, a live battery's lock, and now a lock inherited by a
 nested gate. The sentence is the same each time — **a child inherits an environment, and
 the environment is a claim about the whole machine**.
+
+## v2.34 — the open list had two spellings, and one of them had no reader
+
+The guard that reads this document's open list exists because three entries had stopped
+meaning anything while nothing read them. Its docstring, written in that round, draws the
+conclusion: *"A document that gains a list must gain a reader for it, and the only way to
+hold that is to read all of them."*
+
+It then reads all sections with **one heading**:
+
+```js
+const DOCS = [{ path: 'docs/progress.md', heading: '### Open' }];
+```
+
+The index has an `## Open`. Nineteen thousand two hundred and eighty-five bytes, twelve
+entries, zero `[open:` markers and zero closure citations — the volumes' 132 entries are
+all marked, and the index's twelve were not, because nothing read them.
+
+That is finding 195 one document later, and by the same hand: a census that knew four
+heading forms counted 127 of 191, and the lesson recorded there was that the scan's
+vocabulary is a claim about the document. Here the vocabulary was one string.
+
+### What the twelve were, and why four were false
+
+A v1-era residuals section. The clearest case:
+
+> **Five gates are covered by CI running them, not by a test that forces them to fail.**
+> ... `check-readme-sample.mjs`, `build-example-bundle.mjs` and `gen-examples.mjs` have no
+> test naming them ...
+
+The meta-gate now prints all five as `CAUGHT` with named failing tests (18, 14, 24, 32 and
+38 of them), and each has a namesake file. So the naming half is closed and the branch
+half is not — the meta-gate proves a gate is caught by **at least** one test, not that
+every exit has one. That entry was **narrowed**, not struck.
+
+Each of the twelve got a verdict from a measurement rather than from a reading: six
+closed with an authority (`Pass 15` twice, the run's own stack trace, a scratch helper, the
+workflow itself), six open with a reason that names what would close it. The closures are
+the interesting half — two of them are closed by **rounds rather than findings**, which is
+why the closure rule needed a vocabulary instead of a regex.
+
+### The same guard's closure rule was prose
+
+The docstring promises a closed entry is "struck through, with the finding that closed it
+named". The regex was `/~~|Closed by finding \d+/`, which a strikethrough alone satisfies.
+And the enforced half could not have worked on more than half the document: **eleven of
+the twenty** shipped citations wrap (`**Closed by\nfinding 170.**`), and the pattern had
+no `\s+` across the break.
+
+A rule stated in prose and a rule enforced in code had drifted — which is this guard's own
+subject, applied to itself.
+
+It now needs one of three authorities: a finding, a round (`Pass N`), or explicitly not a
+finding (`Closed without a finding: <sentence>`). Measured before tightening: **19 of 20**
+already complied, and the twentieth says "Closed in this pass by the run itself: 15 s for
+the install", which the third authority accepts verbatim. The stricter rule cost nothing
+and made fourteen citations visible that the old one could not see.
+
+### The third defect: the test held a copy of the rule
+
+`check-open-list.test.ts` kept a copy of the two regexes and drove five tests against it.
+Tightening the guard would have left the copy behind, and those five would have gone on
+agreeing with an implementation that no longer existed — a suite reporting on its own
+source. They are gone; every rule now spawns the script, so there is one vocabulary. Net
+**13 → 12** tests in that file, and the five that left were measuring a copy.
+
+### The nesting rule, which only two spellings make reachable
+
+A `### Open` inside a `## Open` is two sections whose entries overlap, so the entry count
+would depend on how the document is headed rather than on how much is open. It is
+refused, with both line numbers named, rather than de-duplicated: a list inside a list has
+no answer to "which list does this entry belong to".
+
+**Acceptance.** `## Open` and `### Open` both read — the twelve were exposed at **164
+entries across 54 sections** (was 152 / 53), and the document now prints **167 / 55** with
+its own list included; the twelve all marked; the closure rule tightened at zero cost; the copy
+gone; core **168 files / 4210 tests**, cli **4 / 187**, repo **172 / 4397**; coverage
+99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit log 5 volumes, findings 1–203.
+
+### Open
+
+- **`named in code, not red` is still printed, and this is the fourth round it appears.**
+  `[open: it is now known to be a count of proofs-of-something-else, and the two questions
+  it was introduced for -- are the inventory's claims honoured, and does a gate's own test
+  catch it -- are both answered by failures rather than by this line. Removing it is one
+  edit that should be made deliberately, with the numbers above in hand, and then that
+  section of `verify-gates-are-testable.mjs` stops existing]`
+- **The index's `## Open` is marked but not maintained, and that is one answer too many.**
+  `[open: the twelve are all marked now, and six of them are history -- but a round's
+  residuals go to its own `### Open`, so "what is not done" is answered in two places and
+  the index's answer has not been appended to since v1. One of the two has to stop being
+  the answer: either the index's section becomes a roll-up that each round rewrites, or it
+  is retired to a volume and the index points at the last round instead. The guard cannot
+  choose -- it can only check that each entry says which it is -- so this is a decision
+  about what the document is for]`
+- **The index is 71,000 bytes and 39,000 of them are two historical lists.**
+  `[open: `## Audit passes` and `## Open` are append-only and neither is what an index is;
+  a reader looking up this round finds it in `volume-04`, and the front matter is the part
+  that grows with every round. Splitting it is a naming decision -- which of these are
+  rounds and which are reference -- and it cannot be made by measuring bytes]`

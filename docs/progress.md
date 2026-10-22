@@ -829,8 +829,10 @@ is a list of the ones somebody happened to check.
 
 ## Open
 
-- **The real-corpus runs are diagnosed, and the mechanism was named wrong twice
-  before it was named right.** Five runs of the fourth anchor's path, each failing
+- ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
+  before it was named right.**~~ **Closed without a finding: the third naming came from
+  the run's own stack trace, quoted below, and that is what the entry was waiting for.**
+  Five runs of the fourth anchor's path, each failing
   one step later than the last.
 
   "The failure has moved down the job three times" was true of those five runs and
@@ -1000,7 +1002,9 @@ is a list of the ones somebody happened to check.
   from an empty response from a failed request. The helper now treats a
   non-idempotent POST as fire-once-and-verify-by-reading.
 
-- **The dispatch was fired four times, and the cause is now fixed in the tooling.**
+- ~~**The dispatch was fired four times, and the cause is now fixed in the tooling.**~~
+  **Closed without a finding: the fix was in a scratch API helper outside this tree, and
+  the paragraphs below record both the repair and its confirmation.**
   `POST .../actions/workflows/{id}/dispatches` returns **204 No Content** on
   success, and the ad-hoc API helper this session used retried until it got a
   non-empty body. An empty 204 from a *successful* dispatch is indistinguishable
@@ -1023,15 +1027,20 @@ is a list of the ones somebody happened to check.
   automated fetch, so for those targets the fourth anchor still rests on the
   synthetic path in `anchor-roundtrip.yml` and nothing more. That is a smaller
   claim than "the fourth anchor is closed" and it is the accurate one.
-- **The fourth anchor's fetch defect is fixed; whether that was *the* cause is not
-  yet known.** The retry loop wrapped only `download()`, so a bad transfer had no
+  `[open: the six remaining score targets -- both OpenRCA targets, RCA100, AIOps2025, Cloud-OpsBench and ITBench -- still have no automated fetch, so for them the fourth anchor rests on the synthetic path alone]`
+- ~~**The fourth anchor's fetch defect is fixed; whether that was *the* cause is not
+  yet known.**~~ **Closed by Pass 15**, which is the first round to record a reading from
+  a real-corpus run -- so the open question, "no run has happened since the fix", has an
+  answer, and the fix was not the whole story either. The retry loop wrapped only `download()`, so a bad transfer had no
   second attempt and ended the job. That much is proved from the source and is
   recorded as finding 52. What is *not* known is whether truncations, a bad pin or
   both accounted for the twelve failures: no run has happened since the fix, and
   the whole reason the fix adds an exit code is that the log could not say. The
   honest status is *"the defect is fixed and the fix is verified in isolation; its
   effect on the anchor is unobserved."*
-- **There is still no measured extraction accuracy.** The scorer, the 19-sample
+- ~~**There is still no measured extraction accuracy.**~~ **Closed by Pass 15**, whose
+  title is the answer: "the first real reading, and it says M1 is not met". The
+  instrument produced a number; whether the number clears 70% is a different entry. The scorer, the 19-sample
   golden dataset, the two runner scripts and the workflow are all in place and
   verified locally against synthetic predictions. The workflow has now been
   **dispatched once** (run `36201115545`) and it **stopped at step 8,
@@ -1073,8 +1082,10 @@ is a list of the ones somebody happened to check.
   repository can read. Making them a source means having them publish an artifact
   instead of populating a cache, which is a change in those repositories and is
   not done.
-- **Anchor 4** is closed by `official-data.yml`, which fetches the corpora on a
-  runner. Two claims here were wrong and are retracted in the audit:
+  `[open: making the six shard repositories a source means having them publish an artifact instead of populating a cache, which is a change in those repositories and is not made here]`
+- ~~**Anchor 4** is closed by `official-data.yml`, which fetches the corpora on a
+  runner.~~ **Closed without a finding: the closure is the workflow itself, and the two
+  retractions it exists to record are in the audit rather than in a finding.** Two claims here were wrong and are retracted in the audit:
   - *"It needs official data mounted by the operator."* A GitHub runner has
     general internet access, and the RCAEval corpora are on Zenodo -- a plain
     HTTPS host with no interactive step. There was never anything to mount.
@@ -1093,11 +1104,13 @@ is a list of the ones somebody happened to check.
   full chain to the official scorer -- is **not met**; what is met is that each kind's
   document is correct, refusable, and asserted against Chaos Mesh's API shape. The
   remaining work is a cluster runner. See finding 51.
+  `[open: applying the document needs a cluster, and a test that needs a cluster is a test that does not run in CI, so the remaining work is a cluster runner rather than another unit test]`
 - **The Chaos Mesh mapping is asserted against a hand-written table, not against the
   CRD.** The mapping was derived from the documentation and is asserted for internal
   consistency and for the `TimeChaos` trap specifically -- no test validates it with a
   live `kubectl apply --dry-run=server`, so a field renamed upstream would not be
   caught here.
+  `[open: no test validates the mapping with a live kubectl apply --dry-run=server, so a field renamed upstream would still not be caught here]`
 - **Five gates are covered by CI running them, not by a test that forces them to
   fail.** `gates-are-testable.test.ts` proves no gate can be hollowed out, which is
   a floor. It does not reach every branch: `check-readme-sample.mjs`,
@@ -1106,6 +1119,7 @@ is a list of the ones somebody happened to check.
   empty-reference guard) and of `gen-rcaeval-cases.mjs` are unexercised. Closing
   those means fixtures that build a whole synthetic reference or example tree,
   which is doable and not done. Recorded rather than implied.
+  `[open: the naming half is closed -- all five gates are now CAUGHT with named failing tests and each has a namesake file -- but the branch half is not: the meta-gate proves a gate is caught by at least one test, not that every exit has one]`
 - **The export enumeration covers the whole package.** `cli/`, `ingest/`,
   `transform/`, `pack/`, `util/`, `llm/`, `fault/`, `evolution/`, `report/` and
   `entity/` were exempted in `UNENUMERATED` module by module, each with a reason
@@ -1128,9 +1142,13 @@ is a list of the ones somebody happened to check.
   different ways — 43 in the test file's own comment, 45 here, 46 in the L3 row —
   which is why the test file no longer states any of them and points at the list
   instead.
+  `[open: the enumeration asserts that a name is mentioned rather than called, and the completeness of index.ts as a surface rests on pack-manifest-completeness and the package exports field]`
 
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
+  `[open: the LLM-dependent paths here sit behind a provider-agnostic abstraction, and
+  scheduling a benchmark against a hosted embedding model belongs to whichever package
+  owns the model rather than to this one]`
 
 ## Pass log
 
@@ -1152,7 +1170,7 @@ and this table.
 | [volume-01.md](progress/volume-01.md) | 20 | Pass 14 | Pass 34 |
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
-| [volume-04.md](progress/volume-04.md) | 29 | v2.06 | v2.33 |
+| [volume-04.md](progress/volume-04.md) | 30 | v2.06 | v2.34 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
