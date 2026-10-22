@@ -938,3 +938,64 @@ Three consequences, each mechanical:
 | the pinned counts | 4 assertions unpinned; the properties they name are unchanged |
 | `verify:local` | **OK** — 31 commands covering **38 of 45** run steps |
 | `core` / repo | **169 / 4216** · **173 / 4403** |
+
+## Finding 207 — fifty-eight answers to one question, and one of them current
+
+`docs/progress.md` had two headings spelled `## Open` and `### Open`. The first is the
+index's list, twelve entries inherited from the v1 era; the second closes every round, and
+there are fifty-seven of them. Both read as "what is not done".
+
+A reader who greps for the open list therefore gets **fifty-eight answers**, and exactly one
+is current. The other fifty-seven are records of what a round left behind, frozen at that
+round, and most of them describe things that were fixed afterwards -- by a later round, in a
+later volume, under a heading that also says `Open`.
+
+### What made this a defect rather than a habit
+
+Two measurements, neither of which was available when the headings were chosen:
+
+1. **The rounds do not carry residuals forward.** Of 135 open entries, **120 never reappear**
+   in the next round's list. So "read the last round" is not the answer either: a residual
+   raised in v2.12 and never mentioned again is still open if nothing closed it, and no
+   single round's list contains it.
+2. **There is no derivation from the records to the live set.** An entry is closed by a
+   sentence somebody writes; nothing links the sentence to the entry. A guard can check that
+   each entry says which it is (finding 203) and cannot check that any of them is still true.
+
+Together they leave exactly one workable arrangement: **one list maintained by hand, and the
+rest declared records.** A list that must be derived cannot be; a list that is not derived
+must be maintained; and a maintained list needs a name that says so.
+
+### The change
+
+`### Open` in the volumes became `### Left open` -- 57 headings, mechanical, and the count is
+asserted. The index keeps `## Open` and now says what it is:
+
+> **This is the only live list.** An entry arrives when the round that raised it declined to
+> close it, and is struck when something closes it. A round's own heading is `### Left open`,
+> and it is a record of that round, frozen.
+
+Renaming rather than writing the rule down is the whole point. A comment saying "`## Open` is
+live" leaves fifty-seven headings that still say `Open`; the reader who greps has already been
+misled by the time they find the comment.
+
+The guard's duplicate rule moved with it, and that move is not cosmetic: it was scoped
+document-wide, so a live entry and the record that raised it would have been refused for
+"sharing a reason". **A carried-forward item is supposed to appear in both.** The rule is now
+scoped to one kind, where a shared sentence really is a copy-paste -- the second round
+re-signing the first one's text without reading it.
+
+One test now asserts the old spelling is *not* read, because finding 203's first half is the
+half a revert would silently undo: a document that went back to `### Open` has no list this
+guard reads, and says so.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the rename | **57** headings; no `### Open` heading remains in the volumes |
+| the live list | one `## Open`, the index's, carrying the standing limits and this round's question |
+| the guard | **173 entries across 59 sections: 1 live, 58 records**; 148 open with a reason (172 / 58 before this round's own record) |
+| the duplicate rule | scoped to one kind; 2 tests (a carry-forward accepted, two records refused) |
+| the revert | the old spelling is no longer read, and the run says the list is gone |
+| `core` / repo | **169 / 4218** · **173 / 4405** |

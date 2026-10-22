@@ -80,7 +80,7 @@ function runOn(body: string) {
  * for two reasons at once could not say which branch was reached.
  */
 function openSection(title: string, entries: string[]): string {
-  return `## ${title}\n\n### Open\n\n${entries.join('\n')}\n`;
+  return `## ${title}\n\n### Left open\n\n${entries.join('\n')}\n`;
 }
 
 /**
@@ -137,13 +137,13 @@ describe('docs · the shipped list, as the guard reads it', () => {
     // they belong to (finding 197), and a test that counted headings in the index
     // alone would compare the guard's 47 against the index's 1.
     // Both spellings, and the union is the point: `## Open` is the index's live list
-    // and `### Open` is the list a round closes with, and the guard read one of them
+    // and `### Left open` is the list a round closes with, and the guard read one of them
     // until finding 203 -- 19,285 bytes of the other had no reader at all. A count
-    // written as `=== '### Open'` here would have agreed with the guard while both
+    // written as `=== '### Left open'` here would have agreed with the guard while both
     // ignored the same twelve entries.
     const headings = progressCorpus()
       .flatMap((file) => file.text.split('\n'))
-      .filter((line) => ['## Open', '### Open'].includes(line.trim())).length;
+      .filter((line) => ['## Open', '### Left open'].includes(line.trim())).length;
     expect(sections, 'the guard read a different number of lists than the document has').toBe(headings);
     expect(entries, 'the parts do not add up to the whole').toBe(open + closed);
     expect(entries).toBeGreaterThanOrEqual(sections);
@@ -192,7 +192,7 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
   });
 
   it('refuses a section that exists and says nothing', () => {
-    const r = runOn(openSection('Pass 1', [OPEN_ENTRY]) + '## Pass 2\n\n### Open\n');
+    const r = runOn(openSection('Pass 1', [OPEN_ENTRY]) + '## Pass 2\n\n### Left open\n');
     expect(r.code).toBe(1);
     expect(r.out).toContain('is empty, so this guard has no subject');
   });
@@ -209,7 +209,7 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
     expect(r.out).toContain('the list this guard reads is gone');
   });
 
-  it('reads `## Open` as well as `### Open`, because the index uses the first', () => {
+  it('reads `## Open` as well as `### Left open`, because the index uses the first', () => {
     // The defect, as a fixture: before finding 203 this document had no reader -- the
     // guard's table named one heading, and the index's live list was 19,285 bytes of
     // the other. The entry below is deliberately dirty, so a green here would mean the
@@ -248,11 +248,31 @@ describe('docs · the guard reads its subject, not the first sample of it', () =
     }
   });
 
+  it('accepts a live entry and a record that share a reason, because that is a carry-forward', () => {
+    // The scope of the duplicate rule is one kind, and this is why. A residual that a round
+    // raised and the live list still carries has the same reason in both places by
+    // construction; refusing that would make the live list unable to name anything a round
+    // had already named, which is most of what it names.
+    const reason = 'a residual long enough to pass the length rule and short enough to repeat';
+    const entry = (lead: string) => `- ${lead}. [open: ${reason}]`;
+    const r = runOn(`${indexOpen([entry('live')])}\n${openSection('Pass 1', [entry('record')])}`);
+    expect(r.code, r.out).toBe(0);
+  });
+
+  it('no longer reads the heading the volumes used to call Open', () => {
+    // Finding 207's repair was a rename, and this is the test that would notice a revert: a
+    // document that went back to `### Open` now has no list the guard reads, which is the
+    // right answer -- the old name is exactly the ambiguity the rename removed.
+    const r = runOn('## Pass 1\n\n### Open\n\n- A residual. [open: a reason long enough to pass the rule here]\n');
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the list this guard reads is gone');
+  });
+
   it('refuses a list inside a list, rather than counting its entries twice', () => {
     // Reachable only because two levels are read now. An entry counted in both a
-    // `## Open` and the `### Open` it sits inside makes `N open with a reason` a number
+    // `## Open` and the `### Left open` it sits inside makes `N open with a reason` a number
     // that depends on how the document is headed rather than on how much is open.
-    const nested = `## Open\n\n${OPEN_ENTRY}\n\n### Open\n\n${CLOSED_ENTRY}\n\n## Pass log\n\nbody\n`;
+    const nested = `## Open\n\n${OPEN_ENTRY}\n\n### Left open\n\n${CLOSED_ENTRY}\n\n## Pass log\n\nbody\n`;
     const r = runOn(nested);
     expect(r.code).toBe(1);
     expect(r.out).toContain('sits inside the');

@@ -60,19 +60,22 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
 const DOCS = [
-  // Two spellings, and they are not the same list.
+  // Two headings, and they answer two different questions.
   //
-  // `## Open` is where a reader looks for what is not done, and it is a v1 section that
-  // no round has appended to: twelve entries, 19,285 bytes, and six of them history. A
-  // round's residuals go to its own `### Open`, because that is where the reader of that
-  // round is. Saying this plainly matters, because the guard cannot check either claim --
-  // it checks only that each entry says which it is -- and a comment calling the index's
-  // section "the live list" would be a claim the check does not make.
+  // `## Open` is the **live** list: what is not done now. There is one, in the index, and
+  // it is maintained by hand -- an entry is added when the round that raises it declines
+  // to close it, and struck when something closes it.
   //
-  // Until finding 203 this table named one of the two, so the index's section had no
-  // reader at all, and four of its twelve had been contradicted by the tree for as long
-  // as they had existed.
-  { path: 'docs/progress.md', headings: ['## Open', '### Open'] },
+  // `### Left open` is a **record**: what that round left undone, at that round. There are
+  // fifty-seven of them and none is updated afterwards. The heading used to read `### Open`
+  // in both places, which is how a reader grepping for what is open got 58 answers, one of
+  // which was current (finding 207). Renaming was the repair; a rule in a comment would
+  // have left the names lying.
+  //
+  // The guard checks the same two things of both: that each entry says which it is, and
+  // that an open entry gives a reason long enough to be one. It cannot check that either
+  // list is *current*, and does not pretend to.
+  { path: 'docs/progress.md', headings: ['## Open', '### Left open'] },
 ];
 
 /**
@@ -126,7 +129,7 @@ const OPEN = /\[open:\s*([^\]]*)\]/;
  * cannot drift apart on what "the section" means.
  *
  * The span is returned rather than only the lines because two spellings make nesting
- * possible in a way one spelling did not: a `### Open` inside a `## Open` is two
+ * possible in a way one spelling did not: a `### Left open` inside a `## Open` is two
  * sections whose entry counts overlap, and a guard that reported `2 section(s)` without
  * saying so would be publishing a number it cannot defend.
  */
@@ -218,7 +221,7 @@ function check() {
     labelled = from.label;
     // A list inside a list. The two spellings make this reachable in a way one did not,
     // and it is refused rather than counted twice: an entry counted in both a `## Open`
-    // and the `### Open` it sits inside would make `N open with a reason` a number that
+    // and the `### Left open` it sits inside would make `N open with a reason` a number that
     // depends on how the document is headed rather than on how much is open.
     for (const outer of found) {
       for (const inner of found) {
@@ -231,6 +234,9 @@ function check() {
       }
     }
     found.forEach((section, index) => {
+      // Which list this is. The index's `## Open` is the live one; a volume's `### Left open`
+      // is a record of one round. The distinction is used for one thing, below.
+      const kind = section.heading === '## Open' ? 'live' : 'record';
       const items = entries(section.lines);
       if (items.length === 0) {
         problems.push(
@@ -268,13 +274,22 @@ function check() {
               `reason: ${first.slice(0, 60)}`,
           );
         }
-        if (reasons.has(reason)) {
+        // Scoped to one kind, and that scope is the whole point.
+        //
+        // Two **records** sharing a sentence is a copy-paste: the second round re-signed the
+        // first one's text without reading it, and the same reason was made to carry two
+        // different residuals. A live entry and a record sharing one is not that -- it is a
+        // residual that a round raised and the live list still carries, which is how a
+        // carried-forward item is supposed to look. Refusing it would make the live list
+        // unable to name anything a round had already named.
+        const key = `${kind}:${reason}`;
+        if (reasons.has(key)) {
           problems.push(
             `${from.label}: two entries share an open reason (${reason.slice(0, 40)}), so one of them is ` +
               'a placeholder that will be re-signed without being read',
           );
         }
-        reasons.set(reason, first);
+        reasons.set(key, first);
       }
     });
     }

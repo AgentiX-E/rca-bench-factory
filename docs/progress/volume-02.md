@@ -724,7 +724,7 @@ strength of those artefacts.
 | `cold-tree-job.test.ts` | 12 tests, 11/11 workflow mutations caught |
 | `ci-reaches-doc-guards.test.ts` | 7 tests, green under the new aggregates |
 
-### Open
+### Left open
 
 Every entry says which it is: a **closure** (`~~struck through~~`, with the finding
 that closed it) or an **open** item carrying `[open: <reason>]`. `check-open-list.mjs`
@@ -869,7 +869,7 @@ nobody reads.
 | `battery-witnesses.test.ts` | **16 tests** (14 before): six reconciliations, the directory walk, and both directions of the `NO_WITNESS_TABLE` exemption |
 | guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the un-re-derived matrix; `derive-gate-sites` refused the moved site until it was re-signed |
 
-### Open
+### Left open
 
 - **Three backends still carry a written reason and no reader** (Elasticsearch,
   ClickHouse, the Kubernetes API). `[open: this pass is evidence that a reason of that
@@ -960,7 +960,7 @@ answered by a deployment.
 | guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
-### Open
+### Left open
 
 - ~~Two backends still carry a written reason and no reader (ClickHouse, the Kubernetes
   API).~~ **Closed by finding 165** for the Kubernetes half: the credentials are a required
@@ -1068,7 +1068,7 @@ fifteen of fifteen pass with it.** Finding 166 records it.
 | guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix until it was re-derived; the CI budget refused the run that carried the readers |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
-### Open
+### Left open
 
 - ~~**The ClickHouse row still carries a written reason and no reader.**~~ **Closed by finding
   167**, and not the way this list predicted. The prediction was that the reason might survive
@@ -1186,7 +1186,7 @@ an untouched file, the first hypothesis is the battery rather than the file.
 | guards that refused the change first | the snapshot test refused the stale `backend-support.json`; `export-surface-enumerated` refused the unregistered module; `check-backend-support` refused the matrix twice -- once for the stale row and once for the duplicate it left behind |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
-### Open
+### Left open
 
 - ~~**No reader has a CLI command.**~~ **Closed by finding 170**: `rca-bench pull --backend
   <id>` reads any of the six, and the command's backend table *is* the registry's `implemented`
@@ -1264,7 +1264,7 @@ hunt that finds nothing is a result.
 | the fixture that had to change | `referenceFor(..., { flags: false })` wrote **no sections**; once sections became the subject it exercised the "no section" branch instead of the one it names. It now writes a section per command with no flags in it |
 | `derive-gate-sites` | the one moved site (`check-cli-reference.mjs`, 123 -> 199) lost its signature as a line shift always does, and was **re-signed by hand** to `proved`; the inventory is back to **50 of 50** |
 
-### Open
+### Left open
 
 - ~~**The CLI still cannot drive any of the six T2 readers.**~~ **Closed by finding 170**, which
   built the command this paragraph asked for: `rca-bench pull --backend <id>`, whose backend
@@ -1348,7 +1348,7 @@ pnpm's wrapper line instead of what the check printed. Written down rather than 
 | repo test suite | **142 files, 3859 tests passed** (as of `a81beb522`) |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
 
-### Open
+### Left open
 
 - ~~**The CLI still cannot drive any of the six T2 readers.**~~ **Closed by finding 170.** The next
   pass built the command; `packages/cli/test/pull.test.ts` drives all six through `argv` against a
@@ -1449,7 +1449,7 @@ bound.
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 | the guards that refused the change first | `check-cli-reference` (the reference had no `pull` section), `vocabulary-single-source` (the documented command list was 11), `export-surface-enumerated` (two new names) |
 
-### Open
+### Left open
 
 - ~~**The reference's per-backend table is prose beside a generated help.**~~ **Closed by finding
   171**, which built the guard this entry named as missing: `check-cli-reference.mjs` now reads
@@ -1533,7 +1533,7 @@ can drive them, and a gate holding the table to the code.
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` / `docs:counts:check` | green |
 | the guard that refused the change first | `derive-gate-sites --check`, on the moved site -- the gate doing what finding 150 built it for |
 
-### Open
+### Left open
 
 - **No reader is driven against a real deployment by CI.** Unchanged from pass 47: the fixture
   server answers all six shapes faithfully, and it is this repository's reading of six APIs

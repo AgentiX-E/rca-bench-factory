@@ -838,6 +838,19 @@ is a list of the ones somebody happened to check.
 
 ## Open
 
+**This is the only live list.** An entry arrives when the round that raised it declined to
+close it, and is struck when something closes it. A round's own heading is `### Left open`,
+and it is a record of that round, frozen: nothing appends to it afterwards, and a reader who
+greps for what is open is asking this list, not those.
+
+Both headings were called `Open` until finding 207, which is how the same reader got
+fifty-eight answers, one of which was current. The rename was the repair; a sentence saying
+which was which would have left the names lying.
+
+Most entries below are **limits** rather than tasks: each names something this repository
+does not do, why, and what would close it. The last one is a question this round could not
+settle.
+
 - ~~**The real-corpus runs are diagnosed, and the mechanism was named wrong twice
   before it was named right.**~~ **Closed without a finding: the third naming came from
   the run's own stack trace, quoted below, and that is what the entry was waiting for.**
@@ -1158,6 +1171,15 @@ is a list of the ones somebody happened to check.
   `[open: the LLM-dependent paths here sit behind a provider-agnostic abstraction, and
   scheduling a benchmark against a hosted embedding model belongs to whichever package
   owns the model rather than to this one]`
+- **A closed volume's budget answers a repair with "start the next volume", which is advice a
+  closed volume cannot take.** `[open: appends only ever land in the last volume, so
+  volume-03's 279,893 bytes will never grow on their own -- but repairing one sentence inside
+  it would cross 280,000 and fail the guard, and the guard's message would then suggest the one
+  thing that volume cannot do. Either the budget belongs to the volume that can still grow, or
+  a closed volume needs a repair allowance and a sentence saying why. The number was chosen to
+  force a split, and a repair is not a split; deciding this is deciding what the number is
+  for]`
+
 
 ## Pass log
 
@@ -1179,7 +1201,7 @@ and this table.
 | [volume-01.md](progress/volume-01.md) | 20 | Pass 14 | Pass 34 |
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
-| [volume-04.md](progress/volume-04.md) | 33 | v2.06 | v2.37 |
+| [volume-04.md](progress/volume-04.md) | 34 | v2.06 | v2.38 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

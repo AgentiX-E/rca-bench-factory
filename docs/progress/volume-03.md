@@ -122,7 +122,7 @@ became two, which is what the green CI is a statement about.
 > shared budget (here, an RPC timeout nobody had measured against) exhausted by work that is
 > serial in one file and parallel across two.
 
-### Open
+### Left open
 
 - **`verify-gates-are-testable` reads its subjects from a filename prefix.** `gate-sites.json`
   now enumerates **37** scripts with failure exits; the hollowing check covers the **16** named
@@ -265,7 +265,7 @@ names the worst case and says the range can widen is not a sample dressed as a m
 166 is this file's record of a budget being exceeded; this is the same file failing four times to say
 what a budget measurement is.
 
-### Open
+### Left open
 
 - ~~**`verify-gates-are-testable` reads its subjects from a filename prefix.**~~ **Closed by finding
   173.** The audit takes its subjects from `gate-sites.json`, and the tie is asserted in both
@@ -381,7 +381,7 @@ found by `git status`, which is also how finding 173's twelve-file corruption wa
 | repo test suite | **145 files, 3953 tests passed** (as of `e9e87e9e0`) |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - ~~**A killed run leaves its nested suite behind.**~~ **Closed by finding 174.** The suite runs in
   a group of its own, the group is written down before it can outlive the run that started it, a
@@ -498,7 +498,7 @@ starting up on any hardware. The install is the part that is a download.
 The job that hosts them went from roughly two minutes to **153 s of its 15-minute budget** across
 earlier readings, so the pair costs a fraction of the margin that job has.
 
-### Open
+### Left open
 
 - ~~**No reader is driven against a real deployment by CI.**~~ **Closed for one of six by finding
   175.** Prometheus is read from the distribution's own server in the `verify` job, on every push,
@@ -634,7 +634,7 @@ test holds the two strings to each other.
 | repo test suite | **147 files, 3970 tests passed** (as of `4369140`) |
 | `typecheck` / `lint` / `derive-gate-sites --check` | green |
 
-### Open
+### Left open
 
 - **The other eight targets are still transcriptions.** OpenRCA 1.0/2.0, RCA100, AIOps2025,
   Cloud-OpsBench and ITBench each carry a prose rule and a `source` string, and only RCAEval is now
@@ -755,7 +755,7 @@ and a precondition; the batteries that mutate a dozen source files did not.
 | batteries | **13 of 13, rc=0**, after restoring the mutation the interrupted run left behind |
 | `typecheck` / `lint` / `docs:check` / `docs:check:cold` | green |
 
-### Open
+### Left open
 
 - **The counts snapshot is still not compared to the suite in CI.** `[open: the attempt is measured
   and rejected -- a second full suite run in the same job trips `onTaskUpdate` on a two-core runner
@@ -889,7 +889,7 @@ reporter after its queue is drained.
 | batteries | **13 of 13, rc=0**; the ten Python ones run inside the guard, the three Node ones do not |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - ~~**Three Node batteries are outside the journal, and the census cannot see them either.**
   `inject-stability.mjs`, `inject-component-rule.mjs` and `inject-m1-ceiling-tests.mjs` mutate tracked
@@ -1034,7 +1034,7 @@ surfaced it.
 | record cost | **272 files / 4.35 MB / 34 ms** per entry and exit, against batteries that take 3 to 60 s |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **A kill plus a concurrent edit is still ambiguous.** A normal exit drops the record, so an edit
   made during a run survives. A *kill* leaves the record, and a person's edit inside that window is
@@ -1174,7 +1174,7 @@ Two details the first version could not have had:
 | CI | the new step reads the reports in **0.056 s**; the job that could not afford a second suite run now has the comparison for free |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **A kill plus a concurrent edit is still ambiguous**, and this pass touched no battery.
   `[open: the closing shape is a record written at write time rather than at start -- one more IO at
@@ -1285,7 +1285,7 @@ The direction is asserted, so a change that starts agreeing fails the test.
 | coverage | core **99.97 / 99.93 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - ~~**Eight score targets are still transcriptions**, and this pass established no oracle.~~ **Narrowed
   by finding 181**: OpenRCA 1.0 is now held to its evaluator over 28 cases, and seven targets are not.
@@ -1433,7 +1433,7 @@ has to delete a file that another test replays.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **Four targets have no replay**, and the census says which for each.
   `[open: rca100 has a rubric this rule does not use -- the fault-type term is a coin
@@ -1579,7 +1579,7 @@ than as a fix.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **The checkpoint value is matched exactly**, and the dataset's own thresholds carry
   full float precision.
@@ -1727,7 +1727,7 @@ the new one.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **A directory's contents are described in more than one place**, and this pass
   found the second copy the hard way.
@@ -1880,7 +1880,7 @@ needs.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **Three of the four un-replayable targets now wait on a decision, not on code**, and
   the fourth is the same shape one step out.
@@ -1998,7 +1998,7 @@ anyone editing both: **5 replayed / 3 transcribed / 1 derived.**
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **A quote can no longer be checked mechanically, and that is the residual risk.**
   `[open: the corpus test asserts the quote equals a clause, and the clause was pasted
@@ -2106,7 +2106,7 @@ did not write for the occasion.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **`pr` is a lower bound and the corpus says so**, which is not the same as being right.
   `[open: closing the gap needs the PAVE observation graph -- every component that deviated,

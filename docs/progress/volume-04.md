@@ -75,7 +75,7 @@ That is the same shape as the finding this whole campaign keeps meeting: **a mis
 not evidence about the other side until the reader has been checked.** The fix was one
 table instead of a string operation, and the 102 rows became replayable on the next run.
 
-### Open
+### Left open
 
 - **42 rows of the archive are outside the replay.** `[open: a two-root key across three
   criterion kinds needs the second root's `groundtruth` row, which the archive does not
@@ -172,7 +172,7 @@ a solver may be shown.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green |
 
-### Open
+### Left open
 
 - **The example incident states its own answer.** `[open: `examples/order-prod/bundle.json`
   and three siblings carry `"The order service became slow at 08:10 UTC+8"` as the query
@@ -262,7 +262,7 @@ also the first anchor move that a local run can catch.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / `golden-master/verify.mjs` | green |
 
-### Open
+### Left open
 
 - **A moved anchor is still updated by hand.** `[open: `expected.json` has no writer, and
   giving it one would let a broken export re-anchor itself -- which is worse than the
@@ -382,7 +382,7 @@ open item rather than worked around.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
 
-### Open
+### Left open
 
 - **A binary artefact cannot be represented in `git apply`.** `[open: regenerating
   `site/assets/rca-bench-factory-examples.tar.gz` makes `typecheck-entrypoint.test.ts` red
@@ -495,7 +495,7 @@ and the byte removed. Before the fix that run failed at `collect`, with no tests
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
 
-### Open
+### Left open
 
 - **`measure-doc-counts` dies with a stack when the suite is red.** `[open: it spawns
   `pnpm test`, and an `execFileSync` that exits non-zero propagates as an unhandled error,
@@ -587,7 +587,7 @@ the process is the shape finding 121 was written about.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
 
-### Open
+### Left open
 
 - **The counts snapshot still updates in two steps.** `[open: `doc-counts.json` and the
   published row are both hand-refreshed, and doing one without the other is green locally
@@ -689,7 +689,7 @@ quoting `as of this commit` must survive untouched.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
 
-### Open
+### Left open
 
 - **Starting a new pass still means dating the old rows by hand.** `[open: the writer
   maintains "the rows that say they are current", and a new pass turns the previous pass's
@@ -815,7 +815,7 @@ The two readings were held against each other once more, on this tree: `pnpm doc
 took 162/3974 from a spawned `pnpm test`, and `--check --from` read 162/3974 from the coverage
 run's report. **They agree**, which is the only reason either number may be published.
 
-### Open
+### Left open
 
 - **Starting a new pass still means dating the previous pass's rows by hand.** `[open: the
   writer maintains "the rows that say they are current"; turning yesterday's into a dated
@@ -935,7 +935,7 @@ transcript clearly says what happened.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
 
-### Open
+### Left open
 
 - **Three readers, one sentence, three mechanisms.** `[open: an exit code, a `status` field
   and a summary line are three different kinds of evidence, so the three refusals cannot share
@@ -1040,7 +1040,7 @@ deliberately not read: it is the sum of the four terms that are.
 | gate sites | 65 across 39 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green |
 
-### Open
+### Left open
 
 - **A skip is now reported, not prevented.** `[open: nothing stops a passing test from
   becoming `it.skip` -- the count drops, the guard calls it stale, and the note explains why.
@@ -1232,7 +1232,7 @@ which is precisely what the previous pass did not have.
 | coverage | core **99.97 / 99.74 / 100 / 99.97**, cli **100 × 4** |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **A green local run is not a green CI run, and the tool says so rather than fixing it.**
   `[open: seven steps need a runner, and no amount of local work will run them. The plan prints
@@ -1323,7 +1323,7 @@ ever became local, the shipped-plan test fails before CI does — which is what 
 | gate sites | 68 across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **A tolerated key is checked for presence, not for meaning.** `[open: `if: always()` and
   `if: github.ref == 'refs/heads/main'` are both "a condition", and both are refused on a local
@@ -1409,7 +1409,7 @@ The tolerated line in `--list` now shows the value rather than the key:
 | gate sites | 68 across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` / 金标 / `official:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **`env:` is still tolerated by presence, and its value is a secret.** `[open: the publisher
   carries `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`, and the plan records only that `env:`
@@ -1571,7 +1571,7 @@ what this one did not.
 | gate sites | 68 across 40 scripts, `--check` OK (three line numbers moved) |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **`env:` is still tolerated by presence, and its value is a secret.** `[open: the publisher
   carries `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and the plan records only that `env:`
@@ -1683,7 +1683,7 @@ empty string, and the failure would name the value rather than a map.
 | gate sites | 68 across 40 scripts, `--check` OK (three line numbers moved again) |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **`continue-on-error:` is still refused on a local step, which is the strictest reading.**
   `[open: a local step could run and report its failure as a note, which is a small change to
@@ -1801,7 +1801,7 @@ and the one that fails first is the one the local run replaces.
 | gate sites | **69** across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **A step can still be killed for the wrong reason.** `[open: the bound is the job's, and a job's
   bound is a budget for *all* its steps together -- `verify` has 15 minutes for build, types,
@@ -1912,7 +1912,7 @@ written next to it.
 | gate sites | **69** across 40 scripts, `--check` OK |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **`if:` is the last key, and it is not a matter of effort.** `[open: a local step with `if:
   always()` should run even after a failure, but this runner stops at the first failure that is not
@@ -2046,7 +2046,7 @@ repository's oldest shape: one rule, two implementations, and the one that repor
 | gate sites | 69 across 40 scripts, `--check` OK (one line number moved) |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **A condition on a step that does not run here is still only checked for widening.**
   `[open: a remote-only step with `if: failure()` is refused, because its absence from the plan would
@@ -2167,7 +2167,7 @@ Per job, because per step was the false statement: a line that printed `15m` bes
 | the shipped gate | passes with the pools enforced: `batteries 17m of 30m` is the closest any job comes |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **A failure in one job still skips the remaining steps of every job.** `[open: CI's jobs are
   independent -- `needs:` is the only ordering -- so a red `verify` would not stop `batteries`. This
@@ -2266,7 +2266,7 @@ unnamed job the fixtures use — `job ""` is not a name.
 | the shipped gate | passes; the `budget:` line is unchanged in shape and per job |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **The order between jobs is still the dedupe's, not CI's.** `[open: a command serving two jobs
   runs once, at the position the first of them gives it, so its cost is charged to the second job
@@ -2367,13 +2367,13 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **169 files, 4216 tests passed** (as of this commit) |
+| `core` test suite | **169 files, 4218 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **173 files, 4403 tests passed** (as of this commit) |
+| repo test suite | **173 files, 4405 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
-### Open
+### Left open
 
 - **`docs/progress.md` is 520 KB, and nothing splits it.** `[open: it is the same document as the
   audit was, one pass behind: append-only, one heading per pass, and 500 KB is where a reader stops
@@ -2417,7 +2417,7 @@ workflow.
 100 ×4; **71** proved failure sites across 41 scripts; the audit log is now **5**
 volumes, findings 1–196.
 
-### Open
+### Left open
 
 - **`check-cli-reference.test.ts` runs 1.6–2.6 s per case, against a 5 s default
   bound nobody chose**, and one case went red once under a full-suite load and green
@@ -2468,7 +2468,7 @@ tests**, cli **4 / 187**, repo **171 / 4377**; **72** proved sites across 42 scr
 `check-progress-volumes: OK — 4 volume(s), 75 round(s); largest 130,230 of 200,000
 bytes`; the audit log is 5 volumes, findings 1–197.
 
-### Open
+### Left open
 
 - **`docs/progress.md` front matter is still 69,216 bytes of live state**, and it
   grows with every coverage table and headline row. `[open: the split took the record
@@ -2521,7 +2521,7 @@ is CLI, measurement loop and serialiser; core **167 files / 4192 tests**, repo *
 4379**; meta-gate `OK (42 gate(s))`; **72** proved sites across 42 scripts; audit log
 5 volumes, findings 1–198.
 
-### Open
+### Left open
 
 - **`verify-gates-are-testable.mjs` cannot distinguish "a proof" from "one proof"**:
   `CAUGHT` says at least one test named the gate, and the meta-gate has no vocabulary
@@ -2575,7 +2575,7 @@ and a tree missing a dependency is not one.
 **0 silent claims**; core **168 files / 4200 tests**, repo **172 / 4387**; **72** sites
 across 42 scripts; audit log 5 volumes, findings 1–199.
 
-### Open
+### Left open
 
 - **`in M of K naming file(s)` is printed and not judged.** A gate caught by 1 of 5
   naming files is proved; whether the other four *should* prove something is a question
@@ -2631,7 +2631,7 @@ the file whose subject is "the audit of the audits".
 42 gates, 0 silent claims, **75** mentioners; fixture names its subject in code (22 tests);
 core **168 / 4206**, repo **172 / 4393**; audit log 5 volumes, findings 1–200.
 
-### Open
+### Left open
 
 - **`named in code, not red: 75`** is the count of files that are proofs of something
   else, and it will grow with every register entry. `[open: a number that grows by design
@@ -2683,7 +2683,7 @@ rename cannot leave the rule covering nothing), every `why` is longer than 80 ch
 silent claims, 77 pairs = 42 + 15 + 20; core **168 / 4209**, repo **172 / 4396**; audit
 log 5 volumes, findings 1–201.
 
-### Open
+### Left open
 
 - **Twenty pairs across ten files are printed and not explained.** `[open: sampling says
   they are tables of scripts and contract assertions about scripts, which would be a
@@ -2734,7 +2734,7 @@ for a test to prove.
 gates, **0 silent claims**, **0 namesake-silent**, 78 pairs = 42 + 15 + 21; core **168 /
 4211**, repo **172 / 4398**; audit log 5 volumes, findings 1–202.
 
-### Open
+### Left open
 
 - **The 21 pairs still print.** They are now known to be mentions-about rather than uses,
   so the line is information rather than debt — but it is the third round spent on this
@@ -2844,7 +2844,7 @@ its own list included; the twelve all marked; the closure rule tightened at zero
 gone; core **168 files / 4210 tests**, cli **4 / 187**, repo **172 / 4397**; coverage
 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit log 5 volumes, findings 1–203.
 
-### Open
+### Left open
 
 - **`named in code, not red` is still printed, and this is the fourth round it appears.**
   `[open: it is now known to be a count of proofs-of-something-else, and the two questions
@@ -2922,7 +2922,7 @@ repo **172 / 4396**; coverage unchanged at 99.97 / 99.74 / 100 / 99.97 and 100 �
 `check-progress-volumes: OK — 4 volume(s), 82 round(s); largest 155,536 of 200,000;
 index 71,492 of smallest volume 92,309`; audit log 5 volumes, findings 1–204.
 
-### Open
+### Left open
 
 - **The index's `## Open` still answers "what is not done" for a project whose rounds each
   answer it too.** `[open: the twelve entries are marked, and the guard checks only that.
@@ -2977,7 +2977,7 @@ measured with `packages/core/dist` moved aside (exit 0); 43 gates, **73** failur
 43 scripts; core **169 files / 4216 tests**, cli **4 / 187**, repo **173 / 4403**; coverage
 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit log 5 volumes, findings 1–205.
 
-### Open
+### Left open
 
 - **The index's `## Open` still answers "what is not done" while every round answers it too.**
   `[open: measured this round -- the rounds do not carry residuals forward (120 of 135 open
@@ -3040,7 +3040,7 @@ covering 38 of 45 run steps`; core **169 files / 4216 tests**, cli **4 / 187**, 
 4403**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; 43 gates, 73 sites; audit log 5
 volumes, findings 1–206.
 
-### Open
+### Left open
 
 - **`docs/audit/volume-03.md` sits fourteen bytes under a bound that will never be tested
   again.** `[open: appending happens in the last volume, so volume-03 is closed and will never
@@ -3055,3 +3055,51 @@ volumes, findings 1–206.
   maintained by hand and the other declared a record; the guard can check only that each entry
   says which it is, so this is a decision about what the document is for, and it is the last
   structural item left]`
+
+## v2.38 — fifty-eight answers to one question, and one of them current
+
+Two headings were spelled `Open`: the index's list and the one every round closes with. A
+reader who greps for what is not done got **fifty-eight answers**, and exactly one was current.
+
+Two measurements made that a defect rather than a habit, and neither existed when the headings
+were chosen:
+
+- **the rounds do not carry residuals forward** — of 135 open entries, **120 never reappear** in
+  the next round's list, so "read the last round" is not the answer either;
+- **there is no derivation from the records to the live set** — an entry is closed by a sentence
+  somebody writes, and nothing links the sentence to the entry.
+
+Which leaves one workable arrangement: one list maintained by hand, and the rest declared
+records. A list that must be derived cannot be; a list that is not derived must be maintained;
+and a maintained list needs a name that says so.
+
+`### Open` in the volumes became **`### Left open`** — 57 headings, mechanical. The index keeps
+`## Open` and now opens with what it is: *this is the only live list; an entry arrives when the
+round that raised it declined to close it, and is struck when something closes it.*
+
+**Renaming rather than writing the rule down is the point.** A comment saying "`## Open` is live"
+leaves fifty-seven headings that still say `Open`, and the reader who greps has been misled
+before they reach the comment.
+
+Two consequences in the guard, neither cosmetic:
+
+1. **The duplicate rule is now scoped to one kind.** It was document-wide, so a live entry and
+   the record that raised it would have been refused for "sharing a reason" — and a
+   carried-forward item is *supposed* to appear in both. Within records, a shared sentence is
+   still a copy-paste and still refused.
+2. **A test asserts the old spelling is no longer read**, because a revert is the one thing that
+   would silently undo finding 203's first half: the document would have no list the guard reads,
+   and would say so.
+
+**Acceptance.** 57 headings renamed, none left; the live list carries the standing limits plus
+this round's question; **173 entries across 59 sections — 1 live, 58 records**; 148 open with a
+reason; `audit-citations.test.ts` unchanged at 7 and green; core **169 files / 4218 tests**,
+cli **4 / 187**, repo **173 / 4405**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit log
+5 volumes, findings 1–207.
+
+### Left open
+
+- **The closed-volume budget question is now in the index's live list, not here.** `[open: it
+  moved because the live list is where a question that outlives its round belongs -- restating
+  it here as well would be the second answer this round removed. The record is this sentence,
+  and the entry to read is the last one under ## Open]`
