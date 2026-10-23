@@ -1216,3 +1216,135 @@ confirms it, and the six misses name which boundaries are in dispute.
 | the prompt | vocabulary required by signature; 5 tests, one of them the empty-list refusal |
 | the prediction | finding 62's "category becomes binding" confirmed, with the six misses named |
 | `core` / repo | **170 / 4230** · **174 / 4417** |
+
+## Finding 211 — stating what each category owns fixed five of six boundary disputes and created one
+
+Finding 210 ended with six `category` misses and the observation that every one was a
+**boundary** disagreement: the model knew the fault and put it in a neighbouring bucket. The
+prompt listed the seven values and said nothing about what any of them covers, which is finding
+62's asymmetry one level down — `type` had no *space*, `category` had a space but no
+*boundaries*.
+
+### The change
+
+Two things, both in the prompt and both derived from the taxonomy rather than from the samples:
+
+- **a definition per category**, stating what it owns rather than what it looks like;
+- **a rule per disputed pair** — the five distinct pairs the measured misses produced — saying
+  which fact decides between the two.
+
+The vocabulary itself stopped being a hand-written string. It was
+`'resource | network | ... | dependency'`, a second copy of `FAULT_CATEGORIES`, so adding a
+category in `ir/types.ts` would have left the prompt advertising seven values while the parser
+accepted eight, and the disagreement would have surfaced as a rejected model answer rather than
+a failing build. It is now `FAULT_CATEGORIES` minus `unknown` — the fallback
+`category-derivation.ts` returns when a type cannot be placed is a value the *inference* may
+produce and the *prompt* must not offer. The definitions table is a
+`Record<Exclude<FaultCategory, 'unknown'>, string>`, so a category without a definition does not
+compile.
+
+### The reading, one change later
+
+| field | stated space (finding 210) | defined members | Δ |
+| --- | --- | --- | --- |
+| type | 17/19 (89.5%) | **19/19 (100.0%)** | +2 |
+| category | 13/19 (68.4%) | **17/19 (89.5%)** | +4 |
+| component | 14/19 (73.7%) | 15/19 (78.9%) | +1 |
+| **strict** | **9/19 (47.4%)** | **13/19 (68.4%)** | **+4** |
+
+### What it fixed, and what it did not
+
+Five of the six disputes resolved, one did not, and one new one appeared:
+
+| boundary | before | after |
+| --- | --- | --- |
+| cache at 100% command-thread saturation | `middleware → resource` | **middleware** |
+| connection pool with every slot held | `middleware → resource` | **middleware** |
+| pod evicted on account of another workload | `runtime → resource` | **runtime** |
+| segfault inside a linked native library | `runtime → dependency` | **runtime** |
+| null dereference behind a 500 | `code → runtime` | **code** |
+| consumer lag after a per-record call | `middleware → code` | `middleware → code` |
+| **new**: a regex with nested quantifiers in a WAF rule | `code` | **`code → config`** |
+
+The new miss is the interesting one, and it is a real cost rather than noise: the definition of
+`config` says "a deployed value — a URL, a flag, a key — holds the wrong thing and is read as
+written", and a WAF rule *is* deployed configuration. The dataset calls it `code` because the
+defect is a catastrophic backtracking pattern — logic that executes, not a value that is read.
+The discriminator exists but the prompt does not state it, so `config` now absorbs a fault it
+should not. Stating a member's meaning can enlarge it; that is the risk the previous round's
+finding 62 argument did not have to consider, because an unstated answer space cannot be
+enlarged by a definition.
+
+`middleware → code` did not move even though the rule says the shared layer wins "even when a
+code change is what loaded it". The model read `code`'s definition — "the workload's own source
+produces the wrong answer or raises the exception" — and the lag was produced by a code change,
+so both definitions still fit. The boundary is stated as a *cause* test; what separates these
+two is the *symptom's location*.
+
+### One component answer moved with no component change
+
+`network-delay-cart-to-inventory` answered `inventory-service` in the previous run and
+`cart-service` in this one, and the `component` rule is byte-identical between the two. The
+only change was the category block. So the run is not a pure function of the field that was
+edited: one sample of movement per run is available to a change that does not touch its field.
+
+That matters for the arithmetic. M1 needs **14/19** and this is **13/19**, so the milestone is
+one sample away and one sample is the size of the noise just measured. A single reading at
+14/19 would not establish the exit condition; the next round states its prediction and repeats
+the run.
+
+### The ceiling, priced from the miss list rather than guessed
+
+The six remaining misses sit on six distinct samples:
+
+| sample | field | expected → actual |
+| --- | --- | --- |
+| `network-loss-payment-gateway` | component | `payment-gateway → order-service` |
+| `middleware-redis-latency-cache` | component | `session-cache → session-store` |
+| `middleware-kafka-consumer-lag` | category | `middleware → code` |
+| `code-slow-regex-api-gateway` | category | `code → config` |
+| `config-feature-flag-checkout` | component | `storefront → scheduled-job` |
+| `dependency-upstream-5xx-pricing` | component | `tax-calculation → tax-provider` |
+
+Two are `category` and four are `component`, so the two constraints are now comparable for the
+first time and the cheaper one is `category`: both of its samples have the other two fields
+right, so resolving them reaches **15/19 (78.9%)** and clears the exit condition without
+touching the component rule. That is the next round, and it needs no re-annotation.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the prompt | seven definitions + five boundary rules, rendered as one line each |
+| the vocabulary | derived from `FAULT_CATEGORIES`, `unknown` excluded; the old literal is gone |
+| exhaustiveness | `Record` over the answerable union: a category without a definition does not compile |
+| the tests | 6 new in `fault-prompt-grammar.test.ts`, 33 in the file; the pair list is the recorded measurement |
+| the guard against fitting | no sample id, expected component or eight words of incident text appears in the prompt |
+| the batteries | component rule 8/8, M1 ceiling 11/11, M1 ceiling tests 8/8, type-miss probe 74/74, extraction workflow 28/28 — all caught, none survived |
+| `core` / repo | **170 / 4236** · **174 / 4423** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+| the reading | 13/19 strict; M1 **not met**, one sample short |
+
+## Finding 212 — a green tree split into two commits is a red commit
+
+The round before this one changed the test count and shipped its documentation in the *next*
+commit. Both trees were green locally — the working tree carried the code and the updated
+counts together — and the pushed commit `ee1d6488` went red in CI:
+
+> `verify` → `Published suite counts, read from that run rather than taken again`: failure
+
+The count guard was right and the split was wrong. `doc-counts.json` and the prose rows it
+checks are a *function of the tree at that commit*, so a commit that adds six tests and leaves
+the published count at the old number is a commit whose documents are false about itself. It is
+green on the machine where both edits exist in the working copy, which is exactly the state a
+commit is meant to freeze out.
+
+The cost was measurable and small — one red run, `39809914874`, at a step whose failure message
+names the stale row — but the shape is the one this repository keeps rediscovering: **a
+measurement taken from the working tree is not a measurement of the commit.** `--write-doc`
+exists to write both halves from one reading for this reason; what it cannot do is stop a person
+from committing the halves separately.
+
+The rule that follows is a rule about commits, not about tooling: a commit that changes a
+measured quantity ships the measurement. This round's commit did, and it is the reason its count
+rows are in the same diff as the tests that moved them.

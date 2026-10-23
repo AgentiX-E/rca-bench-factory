@@ -3276,3 +3276,69 @@ tests**, cli **4 / 187**, repo **174 / 4417**; coverage 99.97 / 99.74 / 100 / 99
   semantic types and the vocabulary experiment just vindicated for type: state what each
   category means, then re-read. It is a prompt change measured the same way, and the six
   misses are the evidence for which definitions matter]`
+
+## v2.42 — the category field says what its values own, and five of six boundaries move
+
+v2.41 left six `category` misses and named them as boundary disagreements. This round states the
+boundaries. Both halves of the change are descriptions of the taxonomy, not of the samples: a
+definition per category saying what it owns, and a rule per disputed pair saying which fact
+decides between the two. The vocabulary itself is now derived from `FAULT_CATEGORIES` instead of
+being a hand-written second copy, and the definitions are a `Record` over the answerable union,
+so a category without a definition does not compile.
+
+One change, one run (`39880043431`), same model, same 19 samples:
+
+| field | v2.41 | v2.42 | Δ |
+| --- | --- | --- | --- |
+| type | 17/19 | **19/19** | +2 |
+| category | 13/19 | **17/19** | +4 |
+| component | 14/19 | 15/19 | +1 |
+| **strict** | 9/19 (47.4%) | **13/19 (68.4%)** | **+4** |
+
+Five of the six disputes resolved: the saturated cache, the held connection pool and the evicted
+pod came back to `middleware`/`middleware`/`runtime`; the segfault in a linked library to
+`runtime`; the null dereference to `code`. Two did not behave as predicted:
+
+- **consumer lag stayed `code`.** The rule says the shared layer wins "even when a code change is
+  what loaded it", which is a *cause* test, and the model was reasoning about the cause. The
+  discriminator between these two is where the *symptom* lands, not what produced it.
+- **a WAF regex became `config`.** The `config` definition ("a deployed value ... read as
+  written") is true of a rule, so defining a member can *enlarge* it. An unstated answer space
+  cannot be enlarged by a definition; a stated one can, and this is the first time that cost has
+  been paid.
+
+A component answer also moved without its rule being touched: `network-delay-cart-to-inventory`
+answered `inventory-service` in v2.41 and `cart-service` here. One sample of movement per run is
+therefore available to a change that does not touch that field — which is the same size as the
+gap to the milestone. M1 needs 14/19 and this is 13/19, so a single reading at 14/19 will not
+settle it; the next round states its prediction and repeats the run.
+
+**Acceptance.** 6 new tests in `fault-prompt-grammar.test.ts` (33 in the file): the vocabulary is
+derived rather than restated, every value has a definition line, the header names the
+discriminator, every recorded pair is stated with both sides, no pair twice, and no definition
+copies a sample id, an expected component or eight words of an incident. The five batteries that
+mutate this file all caught every injection. `typecheck`, `lint`, `docs:check` green; core 170
+files / 4236 tests, cli 4 / 187, repo 174 / 4423; coverage 99.97 / 99.74 / 100 / 99.97 and
+100 ×4; 43 gates, 73 sites; audit 5 volumes, findings 1–212.
+
+### Left open
+
+- **Two `category` samples, and both have the other two fields right.**
+  `[open: consumer lag is `middleware` and answered `code`; the WAF regex is `code` and answered
+  `config`. Resolving both reaches 15/19 and clears M1 without touching the component rule, so
+  this is the next round. Each needs its boundary restated as a discriminator the model can apply
+  -- symptom location for the first, executed-versus-read for the second -- and both pairs go into
+  the recorded list with the miss that motivated them]`
+- **Four `component` misses, and two of them are synonyms.**
+  `[open: `session-cache` answered `session-store`, `tax-calculation` answered `tax-provider` --
+  the model invents a plausible name instead of using the incident's; `storefront` answered
+  `scheduled-job`, the actor rather than the workload; and `payment-gateway` answered
+  `order-service`, the other end of a link. The first two look like one rule ("spell it as the
+  incident spells it"), the third like another ("the workload that broke, not the actor"), and
+  the fourth is the one that is not obviously answerable]`
+- **The link-end annotation may itself be inconsistent.**
+  `[open: the two link samples sit on opposite ends -- `network-delay` names the caller, and
+  `network-loss` names the callee even though its own text puts the drop counter on the client's
+  egress and says the gateway received fewer requests than were sent. A key no stated rule can
+  produce is a key worth re-reading, and re-annotation is the one repair this project has used
+  before (finding 75) -- but it must not be done in the round that would gain a point from it]`
