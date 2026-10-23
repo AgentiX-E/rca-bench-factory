@@ -740,3 +740,77 @@ describe('every category the prompt offers is defined, and the disputed pairs ar
     }
   });
 });
+
+/**
+ * The two levels the `component` rule did not name, and the run that named them.
+ *
+ * v2.43 left four `component` misses and they are not one kind. Two of them are
+ * *level* errors of a specific shape, and both were answered with a real entity
+ * from the same incident:
+ *
+ *   session-cache -> session-redis   the product the workload runs on
+ *   storefront    -> scheduled-job   the actor that triggered the change
+ *
+ * The prompt said "the deployed workload that owns the fault" and stopped there.
+ * That sentence excludes a config object, a code symbol, an upstream dependency
+ * and a UI element -- the four things finding 75 measured -- and excludes
+ * neither of these two, because `session-redis` *is* a deployed thing and
+ * `scheduled-job` *is* a workload. The rule was a list of exclusions, and both
+ * misses fell in the gap between the items.
+ */
+describe('the component rule names the product and the actor, which the exclusion list left open', () => {
+  const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+
+  /**
+   * The two misses this block answers, recorded so the rules cannot outlive their
+   * evidence: each key is a real sample and each value is what the v2.43 run
+   * answered, so a dataset edit that moves either one fails here rather than
+   * leaving the rule attached to a sample that no longer says it.
+   */
+  const OFF_LEVEL_ANSWERS: Record<string, string> = {
+    'middleware-redis-latency-cache': 'session-redis',
+    'config-feature-flag-checkout': 'scheduled-job',
+  };
+
+  it('says to name the workload for what it does rather than the product it runs', () => {
+    // `session-redis` is the datastore; `session-cache` is the service that owns
+    // it. Both are in the text, which is why "use the incident's own words" does
+    // not decide it -- the discriminator is *what the name describes*.
+    expect(prompt()).toMatch(/not (for )?the (product|technology|software|vendor)/i);
+  });
+
+  it('says to name the workload whose behaviour broke rather than the actor that triggered it', () => {
+    // `scheduled-job` is what flipped the flag; `storefront` is what lost its
+    // button. Naming the actor answers "what changed", which is the cause, not
+    // the `component` field's question.
+    expect(prompt()).toMatch(/(not|rather than) the (job|actor|operator|cron|pipeline|script)/i);
+  });
+
+  it('keeps both discriminators as rules rather than as the recorded answers', () => {
+    // The examples in the rule must not be any sample's expected component, the
+    // same contract the block above holds. Asserted over the real dataset, so a
+    // future edit that adds one of them as an answer fails here.
+    const text = prompt();
+    for (const sample of goldenSamples()) {
+      expect(text, `${sample.id}: the rule's examples became the answer key`).not.toContain(sample.expected.component);
+    }
+  });
+
+  it('records answers that are still wrong, so the rules have evidence behind them', () => {
+    // A record whose entries had become correct would be a rule justified by
+    // nothing. Both halves are checked: the sample exists, and the recorded
+    // answer differs from the key.
+    const samples = goldenSamples();
+    for (const [id, answered] of Object.entries(OFF_LEVEL_ANSWERS)) {
+      const sample = samples.find((s) => s.id === id);
+      expect(sample, `${id} must exist for this record to mean anything`).toBeDefined();
+      if (!sample) continue;
+      expect(answered, `${id}: the recorded answer is the expected one, so it is not a miss`).not.toBe(
+        sample.expected.component,
+      );
+      expect(sample.expected.component, `${id}: the key itself is the product or the actor`).not.toMatch(
+        /redis|job/,
+      );
+    }
+  });
+});
