@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { buildFaultExtractionPrompt } from '../src/fault/importer.js';
 import { parseFaultExtractionResponse } from '../src/fault/importer.js';
 import { normalizeFaultType } from '../src/fault/collector.js';
+import { FAULT_CATEGORIES } from '../src/ir/types.js';
 
 /** Two real labels: enough for the prompt to have an answer space, small enough to read. */
 const VOCAB = ['cpu-saturation', 'network-delay'] as const;
@@ -604,6 +605,133 @@ describe('the component field states its rule', () => {
       expect(c, `${sample.id}: not a slug`).toBe(c.toLowerCase());
       expect(c, `${sample.id}: not hyphenated`).not.toMatch(/\s/);
       expect(c.length, `${sample.id}: empty`).toBeGreaterThan(0);
+    }
+  });
+});
+
+/**
+ * The `category` field's prompt contract.
+ *
+ * Finding 210 measured what happens when the answer space is stated but its
+ * *members* are not. Two runs, one change between them: the run that states the
+ * type vocabulary scores `type` 17/19 and `category` 13/19, and six of the
+ * thirteen remaining misses are `category`. Every one is a boundary
+ * disagreement rather than a naming one -- the model knows the fault and puts it
+ * in a different bucket:
+ *
+ *   middleware -> resource   (a cache at 100% command-thread saturation)
+ *   middleware -> resource   (a client connection pool with every slot held)
+ *   middleware -> code       (consumer lag after a per-record call was added)
+ *   runtime    -> resource   (a pod evicted on account of another workload)
+ *   runtime    -> dependency (a segfault inside a native library)
+ *   code       -> runtime    (a null dereference behind a 500)
+ *
+ * The six name five distinct pairs, and the prompt said nothing about any of
+ * them: it listed the seven values and left the taxonomy to be inferred. That is
+ * finding 62's asymmetry again, one level down -- `type` had no *space*, and
+ * `category` has a space but no *boundaries*.
+ *
+ * These tests pin the properties the definitions must have, not their prose.
+ */
+describe('every category the prompt offers is defined, and the disputed pairs are separated', () => {
+  const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+
+  /**
+   * The five pairs the measured run disputed, in the order the prompt is
+   * expected to state them.
+   *
+   * This is a *record*, in the same sense as `WRONG_ANSWERS` above: it is the
+   * evidence the definitions rest on, kept beside the tests so a future edit
+   * cannot leave the claim attached to data that no longer says it. Adding a
+   * boundary to the prompt therefore requires adding it here with the miss that
+   * motivated it -- a definition with no measurement behind it is a guess, and
+   * this project does not publish guesses as fixes.
+   */
+  const DISPUTED_PAIRS = [
+    ['resource', 'runtime'],
+    ['resource', 'middleware'],
+    ['middleware', 'code'],
+    ['code', 'runtime'],
+    ['runtime', 'dependency'],
+  ] as const;
+
+  /** The answerable vocabulary: everything `FAULT_CATEGORIES` publishes but the inference fallback. */
+  const ANSWERABLE = FAULT_CATEGORIES.filter((c) => c !== 'unknown');
+
+  it('offers exactly the answerable categories, and not the fallback', () => {
+    // `unknown` is what `category-derivation.ts` returns when a type cannot be
+    // placed. A model that answers it has not classified anything, so it is a
+    // value the *inference* may produce and the *prompt* must not offer. The
+    // list is compared against the published vocabulary rather than restated,
+    // so a category added to `FAULT_CATEGORIES` cannot leave the prompt behind.
+    expect(prompt()).toContain(`one of: ${ANSWERABLE.join(' | ')}`);
+    expect(prompt()).not.toContain('`unknown`');
+  });
+
+  it('defines each of the seven in a line of its own', () => {
+    // A vocabulary whose values are described somewhere in prose is not the
+    // same thing as a definition per value: the measurement was six boundary
+    // disputes, and a boundary can only be resolved where both sides are
+    // described. One line each also makes the completeness check mechanical.
+    for (const category of ANSWERABLE) {
+      expect(prompt(), `no definition line for \`${category}\``).toMatch(
+        new RegExp(`^- \`${category}\`: \\S`, 'm'),
+      );
+    }
+  });
+
+  it('states the question the field answers, so the definitions have something to be about', () => {
+    // Ownership, not appearance. The six misses are all cases where two
+    // categories *look* right from the symptom -- a pod that died looks like a
+    // resource problem, a 500 looks like a runtime one -- so the header sentence
+    // names the discriminator the definitions then apply.
+    expect(prompt()).toMatch(/`category` is decided by what owns the fault/i);
+  });
+
+  it('names both sides of every pair the measurement found in dispute', () => {
+    // The load-bearing assertion. A definition per category leaves the six
+    // measured questions unanswered; a boundary line answers exactly one of
+    // them, and this test requires one per measured pair.
+    const lines = prompt()
+      .split('\n')
+      .filter((line) => /^- `[a-z]+` vs `[a-z]+`: \S/.test(line));
+    const stated = lines.map((line) => {
+      const match = /^- `([a-z]+)` vs `([a-z]+)`/.exec(line);
+      if (!match) throw new Error(`unparseable boundary line: ${line}`);
+      return [match[1], match[2]];
+    });
+    expect(stated).toEqual(DISPUTED_PAIRS.map((pair) => [...pair]));
+  });
+
+  it('states each pair once, so two rules cannot disagree about one boundary', () => {
+    // A boundary stated twice is not emphasis: the second statement is what a
+    // model reads last, and it would be the one to win. Keyed unordered, because
+    // `a vs b` and `b vs a` are the same boundary.
+    const keys = DISPUTED_PAIRS.map((pair) => [...pair].sort().join('|'));
+    expect(new Set(keys).size).toBe(keys.length);
+    const stated = prompt()
+      .split('\n')
+      .filter((line) => /^- `[a-z]+` vs `[a-z]+`:/.test(line))
+      .map((line) => line.slice(2).split(':')[0].split(' vs ').map((s) => s.replace(/`/g, '')).sort().join('|'));
+    expect(new Set(stated).size).toBe(stated.length);
+  });
+
+  it('does not copy any sample id, expected component, or eight words of incident text', () => {
+    // The guard against fitting the prompt to the test set. The definitions are
+    // meant to describe the taxonomy's own distinctions; a definition that
+    // reproduces an incident is a memorised answer wearing a rule's clothes, and
+    // the resulting accuracy number would stop being interpretable.
+    const text = prompt();
+    for (const sample of goldenSamples()) {
+      expect(text, `${sample.id}: the prompt must not carry the sample id`).not.toContain(sample.id);
+      expect(text, `${sample.id}: the prompt must not carry the expected component`).not.toContain(
+        sample.expected.component,
+      );
+      const words = sample.incidentText.split(/\s+/);
+      for (let i = 0; i + 8 <= words.length; i += 1) {
+        const window = words.slice(i, i + 8).join(' ');
+        expect(text, `${sample.id}: eight words of its incident text reached the prompt`).not.toContain(window);
+      }
     }
   });
 });

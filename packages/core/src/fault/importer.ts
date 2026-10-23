@@ -39,8 +39,138 @@ export interface FaultExtractionValidation {
   spec?: FaultSpec;
 }
 
-const FAULT_CATEGORY_VOCABULARY =
-  'resource | network | runtime | middleware | code | config | dependency';
+/**
+ * The categories a model may answer with: the published vocabulary minus the
+ * inference fallback.
+ *
+ * `FAULT_CATEGORIES` includes `unknown` because `category-derivation.ts` returns
+ * it when a type cannot be placed -- a value the *inference* may produce. A model
+ * that answers `unknown` has classified nothing, so the prompt does not offer it.
+ *
+ * Derived rather than restated. Until finding 211 this was the literal
+ * `'resource | network | runtime | middleware | code | config | dependency'`,
+ * which is a second copy of a vocabulary declared in `ir/types.ts`: adding a
+ * category there would have left the prompt advertising seven values while the
+ * parser accepted eight, and the disagreement would have surfaced as a rejected
+ * model answer rather than as a failing build.
+ */
+type AnswerableCategory = Exclude<FaultCategory, 'unknown'>;
+
+const ANSWERABLE_CATEGORIES: readonly AnswerableCategory[] = FAULT_CATEGORIES.filter(
+  (category): category is AnswerableCategory => category !== 'unknown',
+);
+
+const FAULT_CATEGORY_VOCABULARY = ANSWERABLE_CATEGORIES.join(' | ');
+
+/**
+ * What each category owns, stated because the prompt listed the values without
+ * saying what any of them covers.
+ *
+ * Finding 210 measured the cost. With the type vocabulary in place, `type`
+ * scored 17/19 and `category` 13/19 in the same run, on the same texts, with the
+ * same model -- and all six `category` misses were *boundary* disagreements, not
+ * naming ones. The model knew the fault and put it in a neighbouring bucket:
+ * `middleware` answered for a saturated cache and for a held connection pool,
+ * `resource` for a pod evicted on account of another workload, `dependency` for
+ * a segfault inside a library, `runtime` for a null dereference. Every one of
+ * those is defensible from the symptom and wrong from the taxonomy, and the
+ * prompt said nothing that could separate them.
+ *
+ * This is finding 62's asymmetry one level down. There, `type` had no *answer
+ * space* and scored 26.3%; here `category` has a space but no *boundaries*, and
+ * the prediction finding 62 made -- that `category` becomes binding once `type`
+ * is fixed -- is what the measurement confirmed.
+ *
+ * The definitions are descriptions of the taxonomy's own distinctions, not of
+ * the nineteen samples: no sample id, expected component or incident phrase
+ * appears in them, and a test asserts that. Listing the answers would fit the
+ * prompt to the test set and make the resulting number uninterpretable, which is
+ * the reason given for not listing the type labels either.
+ *
+ * `Record<AnswerableCategory, string>` is load-bearing: a category added to
+ * `FAULT_CATEGORIES` without a definition here does not compile, so the
+ * completeness of this table is a type error rather than a review question.
+ */
+const FAULT_CATEGORY_DEFINITIONS: Readonly<Record<AnswerableCategory, string>> = {
+  resource:
+    "the workload's own finite quota ran out -- CPU throttled at its limit, the container " +
+    'killed for its own memory, its volume full',
+  network:
+    'the path between two workloads misbehaves -- delay, loss, a partition -- while both ends ' +
+    'are up and their own resources are normal',
+  runtime:
+    'the process stops, restarts or fails to start while nothing of its own was exhausted: an ' +
+    'eviction decided for another workload, a crash in the start-up path',
+  middleware:
+    'a shared data or messaging layer the workload talks to -- cache, broker, database, ' +
+    'including the connection pool it holds against one -- is slow, saturated or exhausted',
+  code:
+    "the workload's own source produces the wrong answer or raises the exception, and the " +
+    'process keeps running and serving',
+  config: 'a deployed value -- a URL, a flag, a key -- holds the wrong thing and is read as written',
+  dependency:
+    'something outside the workload changed under it: a service it calls degraded, or an ' +
+    "upgraded library's contract moved so the workload's own call now fails",
+};
+
+/** A boundary between two categories that the measurement found ambiguous. */
+interface CategoryBoundary {
+  readonly between: readonly [AnswerableCategory, AnswerableCategory];
+  readonly rule: string;
+}
+
+/**
+ * The ties, broken. One entry per pair the measured run disputed, in the order
+ * the pairs are stated to the model.
+ *
+ * A boundary is not a restatement of the two definitions: it names the evidence
+ * that decides between them. `runtime` and `resource` both describe a process
+ * that died, so the entry says which fact about the death owns it; `code` and
+ * `runtime` both describe an exception, so the entry says where it was raised.
+ *
+ * The rules are stated as *pairs about the same event*, which is why they cannot
+ * be folded into the definitions: a definition per category can be read as
+ * compatible with a neighbour, and only the comparison says which one wins. The
+ * five pairs are the five the run produced; a sixth would need its own
+ * measurement, and `fault-prompt-grammar.test.ts` requires the list it states to
+ * be the list recorded there.
+ */
+const FAULT_CATEGORY_BOUNDARIES: readonly CategoryBoundary[] = [
+  {
+    between: ['resource', 'runtime'],
+    rule:
+      'a process that died while its own quota was the thing that ran out is `resource`; one ' +
+      'that died with its own quota intact -- evicted because of another workload on the node -- ' +
+      'is `runtime`',
+  },
+  {
+    between: ['resource', 'middleware'],
+    rule:
+      'a limit reached inside a shared layer -- a cache server saturating its command thread, a ' +
+      "database's connection pool with every slot held -- is `middleware`; `resource` is only " +
+      "the workload's own quota",
+  },
+  {
+    between: ['middleware', 'code'],
+    rule:
+      'a fault that surfaces as lag, latency or pool exhaustion at the shared layer is ' +
+      '`middleware` even when a code change is what loaded it; `code` is a defect whose symptom ' +
+      "is in the workload's own answers",
+  },
+  {
+    between: ['code', 'runtime'],
+    rule:
+      "an exception raised by the workload's own logic is `code`; a process that dies without " +
+      'its own logic raising -- a segfault inside the library it linked, a kill from the ' +
+      'platform -- is `runtime`',
+  },
+  {
+    between: ['runtime', 'dependency'],
+    rule:
+      'a library that *crashes* the process is `runtime`; a library whose *contract* moved so ' +
+      "the workload's own call now throws is `dependency`",
+  },
+];
 
 /**
  * The shape rule for `type`, stated because the field was previously undescribed.
@@ -146,6 +276,14 @@ export function buildFaultExtractionPrompt(incidentText: string, types: readonly
     FAULT_TYPE_SHAPE_RULE,
     '',
     '`type` and `category` are each matched case-insensitively against their lists; any other value is rejected.',
+    '',
+    '`category` is decided by what owns the fault, not by what the symptom looks like:',
+    ...ANSWERABLE_CATEGORIES.map((category) => `- \`${category}\`: ${FAULT_CATEGORY_DEFINITIONS[category]}`),
+    '',
+    'Where two of them both seem to fit, the comparison decides it:',
+    ...FAULT_CATEGORY_BOUNDARIES.map(
+      (boundary) => `- \`${boundary.between[0]}\` vs \`${boundary.between[1]}\`: ${boundary.rule}`,
+    ),
     '',
     FAULT_COMPONENT_RULE,
     '',
