@@ -22,14 +22,22 @@ import { describe, expect, it } from 'vitest';
  * ## What it can and cannot see
  *
  * The scan is *lexical*, and says so rather than pretending otherwise. It flags a write whose
- * target expression — or whose target's `const` binding, transitively — names a root that
- * makes a path repository-relative: `SRC`, `PACKAGE_ROOT`, `ROOT`, `ROOT_DIR`. That catches
- * the shape that occurred and its near neighbours: an inline `join(SRC, …)`, one written
- * through a variable, or through a variable that points at another variable.
+ * target expression — or whose target's `const` binding, transitively — either **names** a root
+ * (`SRC`, `PACKAGE_ROOT`, `ROOT`, `ROOT_DIR`) or **resolves from this file's own location**
+ * (`import.meta.url`, `import.meta.dirname`, `process.cwd()`).
  *
- * It does **not** see a path assembled from `import.meta.dirname`, from `process.cwd()`, or
- * from a function's return value. Those are the false negatives, listed here because a guard
- * described as complete when it is lexical is finding 196's defect.
+ * The second clause is finding 220. The first version tested names only, and the class it had
+ * just been written for survived one definition away: `type-miss-probe.test.ts` bound its repo
+ * root as `const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')` and
+ * wrote a harness into `scripts/` through it. Any name would do, because the binding's *value*
+ * is what makes the path repository-relative — a location-derived path can only lead inside the
+ * tree. Rooting the rule in the value rather than in the spelling is what makes it independent
+ * of what the next author names things.
+ *
+ * It still does **not** see a path returned by a function — a helper that computes a repository
+ * path and hands it back — nor one imported from another module. Those are the remaining false
+ * negatives, listed because a guard described as complete when it is lexical is finding 196's
+ * defect.
  *
  * The controls are the other half: a scan that reports nothing is indistinguishable from one
  * that cannot report anything, so the detector is also run against a source *string* written
@@ -94,9 +102,20 @@ function writesIntoThePackage(source: string): Flag[] {
   const withoutStrings = (expression: string): string =>
     expression.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""');
 
+  /**
+   * Expressions that make a path repository-relative because of where they *start*.
+   *
+   * `import.meta.url` and `import.meta.dirname` are this file's own location, and every path
+   * built from one is inside the tree; `process.cwd()` is the package root under vitest. The
+   * rule is about the value, not the name, which is why it closes finding 220's case while the
+   * name list could not.
+   */
+  const LOCATION = /import\.meta\.(url|dirname|filename)|process\.cwd\(\)/;
+
   const reachesRoot = (rawExpression: string, seen = new Set<string>(), depth = 0): boolean => {
     if (depth > 4) return false;
     const expression = withoutStrings(rawExpression);
+    if (LOCATION.test(expression)) return true;
     for (const token of expression.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)) {
       const name = token[1] as string;
       if (ROOTS.has(name)) return true;
@@ -176,7 +195,21 @@ describe('no test writes inside the package it tests', () => {
     // skipping it safe, because they run the detector over those literals.
     const self = fileURLToPath(import.meta.url);
     const files = TEST_ROOTS.flatMap((root) => testFiles(join(REPO, root))).filter((file) => file !== self);
-    expect(files.length, 'the scan must have files to read').toBeGreaterThan(50);
+    // The count is compared to a published figure, not to a floor.
+    //
+    // It was `toBeGreaterThan(50)`, and that would have stayed green if the walker had stopped
+    // descending into subdirectories: `packages/core/test` holds 163 files at the top level and
+    // nine more under `fault/` and `llm/`, so a walker that missed the subdirectories would
+    // have scanned 163 of 176 and reported zero offenders -- the same narrow-range-green-verdict
+    // shape this file exists to refuse. `golden-master/doc-counts.json` is the count the README
+    // publishes and CI verifies from its own run, so it is an oracle this test does not own.
+    const published = JSON.parse(readFileSync(join(REPO, 'golden-master', 'doc-counts.json'), 'utf8')) as {
+      repo: { files: number };
+    };
+    expect(files.length, 'the scan must read exactly the test files the published counts describe').toBe(
+      // One less: this file is the exemption stated above.
+      published.repo.files - 1,
+    );
 
     const offenders = files.flatMap((file) =>
       writesIntoThePackage(readFileSync(file, 'utf8')).map(
@@ -219,6 +252,24 @@ describe('no test writes inside the package it tests', () => {
       "writeFileSync(target, 'original\\n');",
     ].join('\n');
     expect(writesIntoThePackage(source)).toEqual([]);
+  });
+
+  it('flags a write through a location-derived path, whatever the binding is called', () => {
+    // The case this rule was widened for, in the shape it actually had: a root bound to a name
+    // the name list did not carry, and a harness written into `scripts/` through it. The name
+    // here is deliberately one nobody would put on a list -- `HERE` -- because the point is
+    // that the identity of the binding must not be what decides.
+    const source = [
+      "const HERE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');",
+      "const harness = resolve(HERE, 'scripts', '.probe-harness.mjs');",
+      "writeFileSync(harness, source);",
+      "rmSync(harness, { force: true });",
+    ].join('\n');
+    expect(writesIntoThePackage(source)).toHaveLength(2);
+  });
+
+  it('flags a write through process.cwd(), which is the package root under the runner', () => {
+    expect(writesIntoThePackage("writeFileSync(resolve(process.cwd(), 'scripts', 'x.mjs'), body);")).toHaveLength(1);
   });
 
   it('does not flag a write through a name nothing binds to a root', () => {

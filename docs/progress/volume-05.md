@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **172 files, 4258 tests passed** (as of this commit) |
+| `core` test suite | **172 files, 4260 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **176 files, 4445 tests passed** (as of this commit) |
+| repo test suite | **176 files, 4447 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1398,3 +1398,62 @@ volumes, findings 1–219.
 - **Two rounds of prompt changes still have no reading, and now a third instrument.**
   `[open: v2.43's boundaries have a reading on the 19-sample key; v2.44's component rules have none;
   the 30-sample key has none. All three wait on a provider balance that returns 402]`
+
+## v2.49 — the guard tested names; the defect survived one definition away, and the write it found was twice unnecessary
+
+v2.48 built a scan that forbids a test from writing inside the package, and it passed with zero
+offenders — because it tested the **spelling** of the root binding, not its value. The class it had
+just been written for was still in the tree, one word away:
+
+```ts
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs');
+writeFileSync(harness, source.replace(/* ... */));
+```
+
+The root list was `SRC | PACKAGE_ROOT | ROOT | ROOT_DIR`; this file calls its root `REPO_ROOT`.
+Widening the rule to the **value** — a destination that resolves from `import.meta.*` or
+`process.cwd()` is root-ish, because a path built from a test's own location can only lead inside
+the tree — reported **seven** sites, all in that file.
+
+**Why the write existed is the better half.** ESM could not reach `readOutcomeVocabulary`
+because the probe's export list did not carry it, so the test synthesised a module beside the
+probe that re-exported it from a copy of the source. Three mechanisms were then built around that
+copy — a dotfile prefix, a deriver taught to ignore dotfiles, an `afterAll` sweeper — and the file
+still admitted the window was "a hazard for any future reader of `scripts/`". Adding the name to
+the export list is one line, and the copy, the sweeper, the dotfile dependency and the paragraph
+all disappeared with it. One of the two call sites had been doing `source.replace(a, a)`: it wrote
+a **byte-identical copy of the source** to obtain a cache-busted specifier for a module that was
+already importable.
+
+Two further corrections came out of the change:
+
+- **The previous finding's count was wrong.** It recorded "0 offenders across 130 test files"; the
+  tree holds 176 (175 scanned after the exemption). The completeness assertion was
+  `toBeGreaterThan(50)`, which a walker reaching a third of the tree satisfies — including one
+  that never descends into `fault/` or `llm/`, where nine files live. It now compares to
+  `doc-counts.json`'s `repo.files` minus the exemption, an oracle the scan does not own.
+- **The scratch-path rule had to move its control**, and moved it to a better place. With both
+  harnesses gone its population is empty, so its non-vacuity control failed; deleting the rule was
+  the cheap repair. The control now runs the *scan* over both spellings — which is what that file
+  once got wrong — and the population is asserted to be empty *as the measurement*. Running it
+  surfaced two more false entries: a **read** of `node_modules/.pnpm`, and the scan's own control
+  strings, i.e. a scanner reading its specimens as the disease.
+
+**Acceptance.** Guard 7 tests (was 5) with two new controls; the mutation check re-adds a write
+through `REPO_ROOT` and the guard fails naming `type-miss-probe.test.ts:750`; two consecutive full
+runs at **4260 passed** with a clean tree; probe battery 74 caught / 0 survived / source restored
+identical; typecheck, lint, `docs:check`, `derive-gate-sites --check` green; core **172 / 4260**,
+cli 4 / 187, repo **176 / 4447**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5
+volumes, findings 1–220.
+
+### Left open
+
+- **The scan still cannot see a path returned by a function.** `[open: a helper that computes a
+  repository path and hands it back, or a path imported from another module, is invisible to a
+  lexical scan; closing it needs a dataflow. What the scan does see is now rooted in the value
+  rather than the name, which is the part that was wrong]`
+- **Three measurements still wait on the provider balance.** `[open: v2.44's component rules, the
+  30-sample key's baseline, and v2.43's boundaries on the finer instrument all need a dispatch,
+  and the account returns 402. Two rounds of prompt changes are in the tree with one reading
+  between them]`

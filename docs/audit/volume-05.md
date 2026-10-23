@@ -1848,3 +1848,99 @@ literals — and it is stated with that reason rather than left implicit.
 | the suites | two consecutive full runs at **4258 passed**, working tree clean after each |
 | `core` / repo | **172 / 4258** · **176 / 4445** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 220 — the guard tested names, the defect survived one definition away, and the write it found was unnecessary three times over
+
+v2.48 built a scan that forbids a test from writing inside the package. It passed with zero
+offenders, and it was measuring the wrong thing: **it tested the *spelling* of the binding, not
+its value.**
+
+### The class it missed, in the tree it had just scanned
+
+```ts
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs');
+writeFileSync(harness, source.replace(/* ... */));
+```
+
+`type-miss-probe.test.ts` wrote a module into `scripts/` and deleted it in a `finally`, on every
+call, in a directory two other test files scan. The rule's root list was
+`SRC | PACKAGE_ROOT | ROOT | ROOT_DIR`; this file calls its root `REPO_ROOT`. One word.
+
+Widening the rule to the **value** — an expression that resolves from `import.meta.url`,
+`import.meta.dirname` or `process.cwd()` is root-ish, because a path built from this file's own
+location can only lead inside the tree — makes the name irrelevant rather than longer. Measured
+against the tree, the widened rule reported **seven** sites, all in that one file, and none of
+them visible to the name list.
+
+### Why the write existed
+
+ESM could reach only the seven names the probe's export list carried, and the test needed an
+eighth (`readOutcomeVocabulary`). So it synthesised a module beside the probe that re-exported
+that one name from a copy of the source. Three mechanisms were then built to make the copy safe:
+
+| mechanism | what it was for |
+| --- | --- |
+| a dotfile prefix | so `derive-gate-sites` would not count it as a published script |
+| a deriver taught to ignore dotfiles | so the count stayed right, in the deriver rather than at the write |
+| an `afterAll` sweeper | so a killed worker's leftover was removed on the next start |
+
+and the file still said: *"This window is still a hazard for any **future** reader of
+`scripts/`."* Three mechanisms, and an acknowledged residue, for a copy.
+
+**The copy was unnecessary.** `readOutcomeVocabulary` is a pure function; adding it to the export
+list is one line. The battery never noticed the gap because Python's `importlib` sees
+module-level functions regardless of the ESM export list — so the two readers disagreed about
+what the module publishes, and the test papered over the disagreement by writing a file.
+
+One of the two call sites was worse than that: its `source.replace(a, a)` replaced a string with
+itself, so it wrote a **byte-identical copy of the source** and imported it. That site's entire
+purpose was to get a cache-busted specifier for a module that was already importable.
+
+Both are gone, and with them the `afterAll`, the dotfile dependency, and the paragraph explaining
+the hazard.
+
+### The count in the previous finding was wrong, and the assertion was why
+
+v2.48 recorded "0 offenders across 130 test files". The tree holds **176**, of which 175 are
+scanned after the exemption. The number in the finding was not measured from the scan; the test's
+own completeness assertion was `expect(files.length).toBeGreaterThan(50)`, which is satisfied by
+any walker that reaches a third of the tree — including one that never descends into
+`fault/` or `llm/`, where nine files live.
+
+The assertion now compares to `golden-master/doc-counts.json`'s `repo.files` minus the exemption:
+a figure the README publishes and CI re-derives from its own run, so the scan cannot certify its
+own completeness. That is the same trade finding 217 made — an external oracle instead of a
+threshold — with a mistake in a document as the evidence that the threshold was load-bearing.
+
+### A control that had to move, and a scan that read its own specimens
+
+`scratch-prefixes-are-disjoint.test.ts` asserted that the suite's in-tree scratch files exist, as
+a non-vacuity control. With both harnesses gone, the population is **empty**, and the control
+failed. Deleting the rule was the cheap repair and the wrong one; the control moved from the tree
+to the **scan**, which is the stronger place for it — the defect that file once had was a
+*spelling* (`resolve(REPO_ROOT, 'scripts/x.mjs')` known, `resolve(ROOT, 'scripts', 'x.mjs')` read
+as "no defect"), and a control pinned to a path in the tree disappears exactly when the paths do.
+
+Two more corrections came out of that move, both found by running it:
+
+- the scan counted `node_modules/.pnpm` — a directory `coverage-writes-are-drained.test.ts`
+  **reads** to find the coverage provider's source. A read of the installed store is the opposite
+  of a scratch file; nothing under `node_modules` is a fixture, and the rule now says so;
+- the scan counted **its own control strings**. A scan whose specimens are string literals in
+  itself reads as the disease: the file's own header warns about exactly this (a scanner that
+  matched its documentation), one level in. It skips itself now, with the reason stated, and the
+  controls over those literals are what make the skip safe.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the widened rule | flags a location-derived destination whatever the binding is called; two new controls (`HERE`, `process.cwd()`) |
+| the mutation | re-adding a write through `REPO_ROOT` fails the guard and names `type-miss-probe.test.ts:750` |
+| completeness | the scanned count is compared to `doc-counts.json`, not to a floor |
+| the removal | 2 write sites, 1 `afterAll`, 1 no-op `replace`, 1 dotfile dependency, 1 hazard paragraph |
+| the population | the in-tree scratch map is empty; the exclusivity rule fires when it is not |
+| the probe | 74 injections caught, 0 survived, source restored identical |
+| `core` / repo | **172 / 4260** · **176 / 4447** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

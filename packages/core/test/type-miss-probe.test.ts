@@ -1,8 +1,9 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
 
 import { parseMissDetail } from '../src/fault/miss-detail.js';
 
@@ -50,6 +51,33 @@ import { parseMissDetail } from '../src/fault/miss-detail.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const PROBE = resolve(REPO_ROOT, 'scripts/probe-type-misses.mjs');
+
+/**
+ * A reading taken by importing the probe module, in a subprocess.
+ *
+ * This replaces a harness that was **written into `scripts/` and deleted again**, and the
+ * reason it existed is worth keeping: ESM could reach only the names the probe's export list
+ * carried, and `readOutcomeVocabulary` was not one of them, so the test synthesised a module
+ * beside the probe that re-exported it from a copy of the source.
+ *
+ * Three mechanisms were built to make that copy safe -- a dotfile prefix, a deriver taught to
+ * ignore dotfiles, and an `afterAll` that swept leftovers from a killed worker -- and the file
+ * still said "this window is still a hazard for any *future* reader of `scripts/`". All of
+ * that disappeared when the name was added to the export list, which is what the harness was
+ * emulating one indirection away.
+ *
+ * A subprocess rather than an in-process import keeps the test's reading identical to the
+ * battery's: the battery loads this module by path too. Nothing is written, so nothing races,
+ * and no cache-buster is needed -- there is no rewrite for a module registry to hold stale.
+ */
+const readFromProbe = <T,>(expression: string): T => {
+  const script = `import(${JSON.stringify(pathToFileURL(PROBE).href)}).then((m) => { console.log(JSON.stringify(${expression})); });`;
+  const printed = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  });
+  return JSON.parse(printed) as T;
+};
 const FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 /**
  * Every run whose annotation body is on file, most recent first.
@@ -366,8 +394,16 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
         { sampleId: 'a-clean-miss', detail: [{ field: 'type', expected: 'network-loss', actual: 'egress-packet-drop' }] },
       ],
     };
-    const tmp = resolve(REPO_ROOT, 'node_modules/.cache/type-miss-probe-input.json');
-    mkdirSync(dirname(tmp), { recursive: true });
+    // Into a scratch directory, not `node_modules/.cache`.
+    //
+    // The path was inside the repository, which is the class finding 219's guard forbids: a
+    // write whose target resolves from this file's location. A cache directory under
+    // `node_modules` is the mildest member of that class -- nothing imports it -- but "mild"
+    // is a judgement about the reader, and the whole point of the rule is that the next reader
+    // is not known yet. The probe reads whatever path it is handed, so a temp directory works
+    // and leaves nothing to clean up in the tree.
+    const scratch = mkdtempSync(join(tmpdir(), 'type-miss-probe-'));
+    const tmp = join(scratch, 'input.json');
     writeFileSync(tmp, JSON.stringify(report));
     try {
       expect(() =>
@@ -389,7 +425,7 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
         }),
       ).not.toThrow();
     } finally {
-      rmSync(tmp, { force: true });
+      rmSync(scratch, { recursive: true, force: true });
     }
   });
 });
@@ -457,60 +493,7 @@ describe('the type misses are classified by a stated rule, not by taste', () => 
  * count.
  */
 describe('the UModel figures separate shape from content', () => {
-  const readFigures = (): Record<string, unknown> => {
-    // The harness lives beside the probe: the probe resolves its own imports
-    // (`../packages/core/dist/...`) relative to its own path, so a harness
-    // anywhere else makes every one of them unresolvable. Written and removed per
-    // call so a crash cannot leave a stray module in `scripts/`.
-    //
-    // Writing into `scripts/` is a shared-state hazard and it caused one: for the
-    // duration of the window below, `derive-gate-sites.mjs` counted this file as a
-    // published script, so `gate-sites-are-proven.test.ts`'s rule 1 failed with
-    // `expected 35 to be 36` in roughly one full-suite run in four.
-    //
-    // The repair is in the deriver rather than here -- it now ignores dotfiles,
-    // because a file that is not committed, not named by `pnpm lint` and never
-    // resolved by an operator is not part of the artefact the inventory describes.
-    // That is where the false statement was. This window is still a hazard for any
-    // *future* reader of `scripts/`, which is why the dotfile prefix is
-    // load-bearing rather than cosmetic: it is the signal that says "not part of
-    // the tree", and it is now the thing the deriver trusts.
-    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs');
-    const source = readFileSync(PROBE, 'utf8');
-    // Re-export exactly the one name that publishes the figures, so this reads the
-    // same figures the battery reads rather than a reimplementation of them.
-    writeFileSync(
-      harness,
-      source.replace(
-        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };',
-        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf, readOutcomeVocabulary };',
-      ),
-    );
-    try {
-      // The cache-buster belongs *inside* the specifier: `JSON.stringify(harness)`
-      // alone would put `?v=` outside the quotes and produce a syntax error.
-      const specifier = `${harness}?v=${Date.now()}`;
-      const script =
-        `import(${JSON.stringify(specifier)}).then((m) => ` +
-        `console.log(JSON.stringify(m.readOutcomeVocabulary())));`;
-      return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-        cwd: REPO_ROOT,
-        encoding: 'utf8',
-      }));
-    } finally {
-      rmSync(harness, { force: true });
-    }
-  };
-
-  // The two probes below write a harness into `scripts/` and remove it in
-  // `finally`. A worker killed between the two leaves it behind, and the file is
-  // then visible to every later reader of that directory -- which is how a
-  // whole-suite run failed twice with `scripts/` one file too long. `finally` runs
-  // on a throw, not on a kill; this runs on the *next* start, when the leftover is
-  // already stale.
-  afterAll(() => {
-    rmSync(resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs'), { force: true });
-  });
+  const readFigures = (): Record<string, unknown> => readFromProbe('m.readOutcomeVocabulary()');
 
   it('carries a content reading beside the three counts, because the counts cannot move', () => {
     const figures = readFigures();
@@ -546,45 +529,26 @@ describe('the UModel figures separate shape from content', () => {
     // to the exported pure function rather than to a mutated repository, which is what
     // makes this test safe to run: the version that mutated `src/` raced
     // `vocabulary-single-source.test.ts` and was moved out of the suite.
-    const harness = resolve(REPO_ROOT, 'scripts/.probe-figures-harness-type-miss.mjs');
-    const source = readFileSync(PROBE, 'utf8');
-    writeFileSync(
-      harness,
-      source.replace(
-        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };',
-        'export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };',
-      ),
+    const [base, reversed, rotated, permuted] = readFromProbe<[string, string, string, string]>(
+      `(() => {
+        const pairs = [['service','apm.service'],['pod','k8s.pod'],['node','k8s.node'],
+          ['host','k8s.node'],['container','k8s.pod'],['db','apm.external.database'],
+          ['mq','apm.external.message'],['cluster','k8s.cluster'],['external','apm.external']];
+        const reversed = pairs.slice().reverse();
+        const rotated = pairs.slice(4).concat(pairs.slice(0, 4));
+        return [
+          m.umodelMappingDigestOf(pairs),
+          m.umodelMappingDigestOf(reversed),
+          m.umodelMappingDigestOf(rotated),
+          m.umodelMappingDigestOf(pairs.map(([k, w]) => [k, w === 'k8s.pod' ? 'k8s.node' : w])),
+        ];
+      })()`,
     );
-    try {
-      const specifier = `${harness}?v=${Date.now()}`;
-      const script =
-        `import(${JSON.stringify(specifier)}).then((m) => {` +
-        `  const pairs = [['service','apm.service'],['pod','k8s.pod'],['node','k8s.node'],` +
-        `['host','k8s.node'],['container','k8s.pod'],['db','apm.external.database'],` +
-        `['mq','apm.external.message'],['cluster','k8s.cluster'],['external','apm.external']];` +
-        `  const reversed = pairs.slice().reverse();` +
-        `  const rotated = pairs.slice(4).concat(pairs.slice(0, 4));` +
-        `  console.log(JSON.stringify([` +
-        `    m.umodelMappingDigestOf(pairs),` +
-        `    m.umodelMappingDigestOf(reversed),` +
-        `    m.umodelMappingDigestOf(rotated),` +
-        `    m.umodelMappingDigestOf(pairs.map(([k, w]) => [k, w === 'k8s.pod' ? 'k8s.node' : w])),` +
-        `  ]));` +
-        `});`;
-      const [base, reversed, rotated, permuted] = JSON.parse(
-        execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-          cwd: REPO_ROOT,
-          encoding: 'utf8',
-        }),
-      ) as [string, string, string, string];
-      // Order-free: two different orderings give the same reading.
-      expect(reversed).toBe(base);
-      expect(rotated).toBe(base);
-      // Content-sensitive: an actual change to the mapping does not.
-      expect(permuted).not.toBe(base);
-    } finally {
-      rmSync(harness, { force: true });
-    }
+    // Order-free: two different orderings give the same reading.
+    expect(reversed).toBe(base);
+    expect(rotated).toBe(base);
+    // Content-sensitive: an actual change to the mapping does not.
+    expect(permuted).not.toBe(base);
   });
 });
 

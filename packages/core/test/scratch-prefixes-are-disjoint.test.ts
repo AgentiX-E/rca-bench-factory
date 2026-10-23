@@ -129,26 +129,48 @@ const SITES = sites();
  * that is deliberate -- but invisibility to the deriver is not exclusivity, and
  * the two were conflated. This scan states the property that was missing.
  */
+/**
+ * The in-tree scratch paths one source text names.
+ *
+ * Separate from the walk so the scan can be given a source it did not read from disk:
+ * the population of this defect is now empty, and a control has to prove the *detector*
+ * still works when the tree has nothing for it to find.
+ */
+function scratchPathsIn(source: string): string[] {
+  // Both spellings the suite uses, because the first cut of this scan knew only one of
+  // them and therefore passed while the shared path it was written to catch was restored --
+  // a guard that reads one shape as "no defect" is the finding it exists for, one level in.
+  //
+  //   resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs')   -- joined
+  //   resolve(ROOT, 'scripts', '.probe-figures-harness.mjs')     -- segmented
+  const found: string[] = [];
+  for (const m of stripComments(source).matchAll(
+    /resolve\(\s*(?:REPO_ROOT|ROOT)\s*,\s*'([^']*)'\s*(?:,\s*'([^']+)'\s*)?\)/g,
+  )) {
+    const path = m[2] === undefined ? m[1]! : `${m[1]}/${m[2]}`;
+    // Only a dot-prefixed *filename* is scratch. `scripts/` alone is not.
+    if (path.split('/').pop()?.startsWith('.') !== true) continue;
+    // And nothing under `node_modules` is a fixture. `coverage-writes-are-drained.test.ts`
+    // reads `node_modules/.pnpm` to find the coverage provider's own source, which is a
+    // *read* of the installed store -- the opposite of a scratch file, and the kind of entry
+    // that would have put a directory read under a rule about writes. The store is not the
+    // suite's to write, so nothing there can be a shared fixture path either.
+    if (path.split('/').includes('node_modules')) continue;
+    found.push(path);
+  }
+  return found;
+}
+
 function inTreeScratch(): Map<string, string[]> {
   const byPath = new Map<string, string[]>();
-  for (const file of readdirSync(TEST_DIR).filter((f) => f.endsWith('.test.ts')).sort()) {
-    const source = stripComments(readFileSync(resolve(TEST_DIR, file), 'utf8'));
-    // Both spellings the suite uses, because the first cut of this scan knew
-    // only one of them and therefore passed while the shared path it was written
-    // to catch was restored -- a guard that reads one shape as "no defect" is the
-    // finding it exists for, one level in.
-    //
-    //   resolve(REPO_ROOT, 'scripts/.probe-figures-harness.mjs')   -- joined
-    //   resolve(ROOT, 'scripts', '.probe-figures-harness.mjs')     -- segmented
-    const found: string[] = [];
-    for (const m of source.matchAll(
-      /resolve\(\s*(?:REPO_ROOT|ROOT)\s*,\s*'([^']*)'\s*(?:,\s*'([^']+)'\s*)?\)/g,
-    )) {
-      const path = m[2] === undefined ? m[1]! : `${m[1]}/${m[2]}`;
-      // Only a dot-prefixed *filename* is scratch. `scripts/` alone is not.
-      if (path.split('/').pop()?.startsWith('.') === true) found.push(path);
-    }
-    for (const path of found) {
+  // This file is skipped, and the reason is not convenience: its controls spell both
+  // `resolve(ROOT, 'scripts', '.probe-harness.mjs')` forms as **string literals**, so a scan
+  // that reads code would report the specimen as the disease. It is one exemption, stated
+  // here, and the controls below run the same scan over those literals -- which is what makes
+  // skipping the file safe rather than blind.
+  const self = 'scratch-prefixes-are-disjoint.test.ts';
+  for (const file of readdirSync(TEST_DIR).filter((f) => f.endsWith('.test.ts') && f !== self).sort()) {
+    for (const path of scratchPathsIn(readFileSync(resolve(TEST_DIR, file), 'utf8'))) {
       const files = byPath.get(path) ?? [];
       if (!files.includes(file)) files.push(file);
       byPath.set(path, files);
@@ -160,12 +182,31 @@ function inTreeScratch(): Map<string, string[]> {
 const IN_TREE = inTreeScratch();
 
 describe('the suite’s in-tree scratch files', () => {
-  it('finds them, so the rule below is not vacuously true', () => {
-    // Two at the time of writing -- one per writer. The positive control is on a
-    // path known to exist rather than on the count alone, because a regex that
-    // drifted would otherwise leave the rule below green over an empty map.
-    expect(IN_TREE.size).toBeGreaterThan(0);
-    expect([...IN_TREE.keys()].some((p) => p.includes('.probe-figures-harness'))).toBe(true);
+  it('finds none today, and the scan still finds one when it is shown one', () => {
+    // The population is **empty**, and that is the measurement rather than an omission.
+    //
+    // Two writers held a harness in `scripts/` when this file was written. Both are gone:
+    // v2.48 moved `gate-sites-are-proven`'s into a copy of `scripts/` in a temp directory, and
+    // v2.49 deleted `type-miss-probe`'s by exporting the one name it needed (finding 220).
+    // So the exclusivity rule below now runs over an empty map -- which is safe in the way
+    // that matters, because it fires the moment a path is added back.
+    //
+    // The positive control therefore moved from the tree to the **scan**. That is the
+    // stronger place for it: the defect this scan once had was a spelling, not a path -- it
+    // knew `resolve(REPO_ROOT, 'scripts/x.mjs')` and read `resolve(ROOT, 'scripts', 'x.mjs')`
+    // as "no defect", which is how it passed while the shared path it was written to catch
+    // was restored. A control pinned to a path in the tree would have gone red for the *right*
+    // reason here and then been deleted; a control on both spellings cannot be.
+    expect(IN_TREE, 'the suite writes no scratch file inside the tree').toEqual(new Map());
+    expect(scratchPathsIn("const p = resolve(REPO_ROOT, 'scripts/.probe-harness.mjs');")).toEqual([
+      'scripts/.probe-harness.mjs',
+    ]);
+    expect(scratchPathsIn("const p = resolve(ROOT, 'scripts', '.probe-harness.mjs');")).toEqual([
+      'scripts/.probe-harness.mjs',
+    ]);
+    // And a path that is not a dot-prefixed filename is not scratch, which is the rule the
+    // control above would otherwise be satisfied by matching anything at all.
+    expect(scratchPathsIn("const p = resolve(ROOT, 'scripts', 'probe.mjs');")).toEqual([]);
   });
 
   it('gives each scratch path exactly one owning test file, so no two can race', () => {

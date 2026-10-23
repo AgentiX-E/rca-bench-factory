@@ -1726,4 +1726,24 @@ if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].re
   process.exit(main());
 }
 
-export { RUNS, DEFAULT_RUN, classify, normalizeFaultType, recordedTypeMisses, typeMissesFrom, umodelMappingDigestOf };
+// `readOutcomeVocabulary` is exported because a *test* reads it, and the alternative cost a
+// write into this directory.
+//
+// `type-miss-probe.test.ts` used to synthesise a module beside this file that re-exported this
+// one name from a copy of the source, because ESM could not reach a name the export list did
+// not carry. That copy lived in `scripts/` for the duration of each call, which made it
+// visible to every concurrent scan of that directory -- the hazard the file itself documents.
+// Two mechanisms were built to make the write safe (a dotfile prefix, and a deriver that
+// ignores dotfiles) before anyone asked whether the write was needed. It was not: the name was
+// simply missing from this list. Python's `importlib` sees module-level functions regardless
+// of the ESM export list, which is why the battery never noticed the gap.
+export {
+  RUNS,
+  DEFAULT_RUN,
+  classify,
+  normalizeFaultType,
+  recordedTypeMisses,
+  typeMissesFrom,
+  umodelMappingDigestOf,
+  readOutcomeVocabulary,
+};
