@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1131,9 +1131,23 @@ describe('every enumerated export is named outside the tests', () => {
    * blind spot where the enumeration is computed too early. Resolving the pairs
    * inside the assertion body is what makes the test read the current tree.
    */
-  function exportPairs(): Array<readonly [string, string]> {
+  /**
+   * Every (module, export) pair, read through `read`.
+   *
+   * The reader is a parameter so the run-time test below can vary what a module
+   * *says* without varying what is on disk. The first version of that test
+   * appended a probe line to `src/export/guard.ts` and restored it in a
+   * `finally`, which is a write to a source file while forty other workers are
+   * importing it: CI run `39954894209` failed with 191 tests reporting
+   * `assertExportableBundle is not a function`, because a worker imported
+   * `guard.js` in the window between the truncation and the restore. A test that
+   * edits the tree it is testing is not isolated from the tests that read it.
+   */
+  function exportPairs(
+    read: (module: string) => string = (module) => readFileSync(join(SRC, module), 'utf8'),
+  ): Array<readonly [string, string]> {
     return ENUMERATED_MODULES.flatMap((module) => {
-      const text = readFileSync(join(SRC, module), 'utf8');
+      const text = read(module);
       const names = [...new Set([...namedExports(text), ...bracedExports(text)])];
       return names.map((name) => [module, name] as const);
     });
@@ -1148,19 +1162,29 @@ describe('every enumerated export is named outside the tests', () => {
 
   it('every enumeration here is read at run time, not frozen at collection time', () => {
     // The structural check for the defect described in `exportPairs`. If the
-    // pairs were a module-level constant, appending an export to a scanned file
-    // would not change the count; here it must.
+    // pairs were a module-level constant, adding an export to what a scanned
+    // module *says* would not change the count; here it must.
+    //
+    // What a module says is varied through the reader, not through the disk. The
+    // first version wrote a probe line into `src/export/guard.ts` and restored it
+    // in a `finally`; CI run `39954894209` then failed with 191 tests reporting
+    // `assertExportableBundle is not a function`, because another worker imported
+    // that module between the truncation and the restore. The property under test
+    // is "the enumeration is computed when it runs", and a reader that answers
+    // differently on the second call tests exactly that -- a module-level constant
+    // would return the first answer twice.
     const before = exportPairs().length;
-    const probe = `\nexport const runTimeProbe${Date.now()} = 1;\n`;
-    const target = join(SRC, 'export', 'guard.ts');
-    const original = readFileSync(target, 'utf8');
-    try {
-      writeFileSync(target, original + probe);
-      expect(exportPairs().length).toBe(before + 1);
-    } finally {
-      writeFileSync(target, original);
-    }
-    expect(exportPairs().length).toBe(before);
+    const probe = '\nexport const runTimeProbe = 1;\n';
+    let mutated = false;
+    const read = (module: string): string => {
+      const text = readFileSync(join(SRC, module), 'utf8');
+      return mutated && module === 'export/guard.ts' ? text + probe : text;
+    };
+    expect(exportPairs(read).length).toBe(before);
+    mutated = true;
+    expect(exportPairs(read).length).toBe(before + 1);
+    mutated = false;
+    expect(exportPairs(read).length).toBe(before);
   });
 
   it.each(ENUMERATED_MODULES)('%s names every export it declares from outside test/', (module) => {

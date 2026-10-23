@@ -1697,3 +1697,81 @@ which is an inference, and which instrument answers the question the sentence wa
 | the open item | corrected in place, not struck: the residual claim is unchanged |
 | `core` / repo | **171 / 4253** · **175 / 4440** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 218 — a test that edits the source it tests is a race with every other worker
+
+CI run `39954894209` — the first push of v2.46 — reported **191 failing tests** across
+`test/official.test.ts` (37) and `test/score.test.ts` (154), all with the same message:
+
+```
+→ (0 , assertExportableBundle) is not a function
+```
+
+The function exists. It is exported from `src/export/guard.ts`, every exporter imports it, and the
+same commit passes the suite locally — three consecutive full runs, 4253 tests each. So the reading
+is not "the export is missing"; it is "the module was read at a moment when it did not say that".
+
+### The mechanism
+
+`export-surface-enumerated.test.ts` asserted that its enumeration is computed at run time rather
+than frozen at collection time, and the way it asserted that was **to append a probe line to
+`src/export/guard.ts` and restore it in a `finally`**:
+
+```ts
+writeFileSync(target, original + probe);
+expect(exportPairs().length).toBe(before + 1);
+// ... finally: writeFileSync(target, original);
+```
+
+`writeFileSync` truncates and then writes. For the duration of that window the file on disk is a
+partial module, and the suite runs **32 workers**, any of which may import `export/guard.js` at
+that moment — `official.test.ts` and `score.test.ts` both do, through the exporters. A worker that
+imports inside the window gets a module whose export binding is missing, and every subsequent call
+fails with `is not a function`.
+
+**The failure is proportional to the load, which is why it was invisible locally and red in CI**:
+the window is microseconds and the probability of another worker importing in it rises with the
+number of workers and the length of the run. Nothing in the message points at the mutation, so the
+first reading of that run returned to the prompt and the dataset.
+
+### The repair, and what it deliberately does not do
+
+The property under test is "the enumeration is computed when it runs". That does not require the
+disk at all: `exportPairs` now takes a reader, and the test varies **what a module says** between
+two calls.
+
+```ts
+exportPairs(read?: (module: string) => string)
+```
+
+A module-level constant would return the first answer twice, so the original defect is still
+caught; and nothing is written, so nothing races. The alternative — keeping the write and narrowing
+the window — was refused: the window's width is not the property, the write is.
+
+This is the third time in this sequence that a **test's own mechanism** was the defect (findings 84
+and 96 were the others), and the first where the mechanism is a write to the tree.
+
+### A second spawn failure, instrumented rather than explained
+
+The same investigation produced a local full-suite run with three failures in
+`check-doc-counts.test.ts`: the guard "exited" with no output and code 0, reported as
+`expected '' to contain 'check-doc-counts: OK'`. That file's own helper already says *"a spawn that
+never ran is not a verdict"* and retries `EAGAIN`/`ENOMEM`; it now also retries a **killed** child
+(`status: null`) and — more important — asserts that **every exit prints**, because this guard has
+exactly two and both print.
+
+The cause is **not established**. What is established is that the next occurrence names itself:
+status, signal, spawn error, and the emptiness, in one message. Recording it that way rather than
+guessing is the same trade finding 83 made about an unreadable CI failure.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the symptom | 191 failures, one message, function present and exported |
+| the mechanism | a `writeFileSync` of a live source module, under 32 workers |
+| the repair | reader injected; no write to the tree; the run-time property still asserted |
+| the evidence | three consecutive full runs at 4253 passed, and the mutation of `functions: 95` still caught |
+| the flake | instrumented, not explained: a killed child and an empty verdict each fail with details |
+| `core` / repo | **171 / 4253** · **175 / 4440** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

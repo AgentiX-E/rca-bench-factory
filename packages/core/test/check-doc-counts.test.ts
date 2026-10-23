@@ -118,11 +118,41 @@ function run(body: string, unmeasured?: unknown) {
   // kernel) because retrying a real red would be masking it.
   let r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
   const failure = (): string | undefined => (r.error as NodeJS.ErrnoException | undefined)?.code;
-  if (failure() === 'EAGAIN' || failure() === 'ENOMEM') {
+  // Two shapes of "the guard never ran", and the second one cost a diagnosis.
+  //
+  // The first is a `spawnSync` error (`EAGAIN`, `ENOMEM`) and was already
+  // retried. The second is a child that started and was *killed*: `status: null`
+  // with a signal, and no output at all -- a whole-suite run under 32 workers
+  // reported three cases in this file as `expected '' to contain
+  // 'check-doc-counts: OK'` and `expected +0 to be 1`, i.e. as complaints about
+  // the guard, when the guard had produced no verdict whatsoever. Neither shape
+  // is a verdict, so both are retried once; a *wrong* verdict is not retried,
+  // because retrying a red would be masking it.
+  const neverRan = (): boolean =>
+    failure() === 'EAGAIN' || failure() === 'ENOMEM' || r.status === null;
+  if (neverRan()) {
     r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
   }
   expect(r.error, `the guard could not be started: ${String(r.error)}`).toBeUndefined();
-  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+  expect(
+    r.status,
+    `the guard was killed by ${String(r.signal)} rather than answering: ` +
+      `${JSON.stringify({ status: r.status, signal: r.signal, out: `${r.stdout}${r.stderr}`.slice(0, 200) })}`,
+  ).not.toBeNull();
+  const out = `${r.stdout}${r.stderr}`;
+  // This guard has exactly two exits and both print: `... OK (...)` or
+  // `... FAILED` followed by the reasons. So "exit 0 and printed nothing" is not
+  // a verdict either, and a whole-suite run under load produced three of them in
+  // this file -- reported as `expected '' to contain 'check-doc-counts: OK'`, a
+  // complaint about the guard rather than about the spawn. Asserting the shape
+  // here turns that into a failure that says what actually came back, on the first
+  // occurrence, instead of costing another run to interpret.
+  expect(
+    out.length,
+    `the guard exited ${String(r.status)} without printing; every exit prints. ` +
+      `${JSON.stringify({ status: r.status, signal: r.signal, error: String(r.error) })}`,
+  ).toBeGreaterThan(0);
+  return { code: r.status, out };
 }
 
 const NO_EXCUSES: unknown[] = [];

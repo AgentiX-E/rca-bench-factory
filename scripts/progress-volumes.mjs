@@ -295,10 +295,16 @@ export function check(indexText, dir = VOLUMES) {
   //
   // The relation answers the second question with the document's own structure: the file
   // a reader opens **first**, to find their way to the others, must not be bigger than
-  // the things it indexes. It holds about twenty kilobytes of headroom -- six rounds at
-  // the current rate -- and when it loses that, the split stops being an opinion and
+  // the things it indexes. When it loses that, the split stops being an opinion and
   // becomes an instruction. The two numbers are printed on every run rather than quoted
-  // here, because a literal in a comment is a number that rots.
+  // here, because a literal in a comment is a number that rots -- and this paragraph used
+  // to quote one ("about twenty kilobytes of headroom -- six rounds"), which v2.47
+  // measured at 5.9 kilobytes and one round.
+  //
+  // A **new** volume is smaller than the index by construction, so the relation also says
+  // where the split has to fall: far enough back that the new volume is already bigger
+  // than the file that indexes it. v2.47's split moved twenty-one rounds for that reason
+  // alone, which is the rule working rather than an inconvenience.
   //
   // Measured before writing this: the index was said in v2.28 to be "the largest single
   // file in `docs/`", and it is the **smallest** of the five progress files. The claim
