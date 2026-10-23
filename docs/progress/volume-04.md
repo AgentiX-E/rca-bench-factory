@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **171 files, 4250 tests passed** (as of this commit) |
+| `core` test suite | **171 files, 4251 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **175 files, 4437 tests passed** (as of this commit) |
+| repo test suite | **175 files, 4438 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -3407,3 +3407,58 @@ coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–
   `[open: the quantum is 5.3 points and the margin is one sample, so the milestone is met on an
   instrument whose resolution is coarse relative to its threshold. Enlarging the key is the
   durable fix and is a data project, not a prompt one]`
+
+## v2.44 — the component rule names the product and the actor, and the run that could not answer
+
+M1 was met at 15/19 with four `component` misses left. Two of them are level errors the rule could
+not catch, because the rule was a list of exclusions and both fell between its items:
+`session-redis` (the product the cache runs on) and `scheduled-job` (the actor that flipped the
+flag) are both deployed things, so excluding "a config object, a code symbol, an upstream
+dependency or a UI element" excludes neither. The rule now says both: name the workload for what
+it does rather than the product it runs, and name the workload whose behaviour broke rather than
+the job, operator or script that triggered the change. Four tests, including the record of what
+those two samples answered.
+
+The prediction was committed before the run: **component 17/19, strict 17/19 (89.5%)**.
+
+**It has not been measured.** Run `39901474902` came back `unparseable 19/19` in forty seconds,
+and the artefact said only `parseOk: false`, nineteen times — which is what a rate limit, an
+expired key, a truncated response and a malformed answer all look like from outside. That is
+finding 215, and the repair is in this round: the artefact now carries the reason and the
+beginning of the response, the shipped scorer passes them through (it re-declares the fields it
+reads, and would have dropped them), and the report prints up to three.
+
+The repair answered the question on its first use:
+
+> `unparseable  DeepSeek API error 402: {"error":{"message":"Insufficient Balance …"}}`
+
+**The provider account is out of credit.** Nothing about the prompt, the dataset or the scorer was
+involved, and the 15/19 reading in v2.43 — taken 1h20m before the balance ran out — stands. The
+v2.44 prediction stays untested until credit is restored or the provider is switched, and it is
+recorded here as untested rather than as a result.
+
+Reading that first output also found a defect in the report: `padEnd(20)` does nothing for a
+28-character id, so every line read `…-checkoutunparseable`. The fixture had used `s1` and `s00` —
+the only shape the defect does not affect.
+
+**Acceptance.** 11 new tests (9 diagnostics, 2 shipped-script), core **171 / 4251**, cli 4 / 187,
+repo **175 / 4438**; typecheck, lint, `docs:check` green; coverage 99.97 / 99.74 / 100 / 99.97 and
+100 ×4; `gate-sites.json` re-derived with all 73 proofs carried; audit 5 volumes, findings 1–215.
+
+### Left open
+
+- **The provider account has no balance, and the milestone's re-measurement is blocked on it.**
+  `[open: two consecutive dispatches returned `402 Insufficient Balance`. The 15/19 reading is
+  valid -- it was taken before the balance ran out -- but nothing can be re-measured, including
+  this round's prediction. The remedies are a top-up or a switch to another registered provider;
+  both are billing decisions, not code. The instrument now names this in one line, which is the
+  only part of it this repository can fix]`
+- **v2.44's prediction is untested.**
+  `[open: component 17/19 and strict 17/19 were committed in `5ea706f3` before any run. The run
+  that would have tested them never reached the model. Whoever restores the balance should
+  dispatch, read the number, and either confirm the prediction or record what it got wrong]`
+- **Three `component` naming misses remain, two of them now addressed by the prompt and none
+  measurable yet.**
+  `[open: the link pair (`payment-gateway` answered `order-service`) is still the one with no rule
+  that produces both of its annotations, and `tax-calculation-service` for `tax-calculation` is
+  still a comparator question refused on purpose]`

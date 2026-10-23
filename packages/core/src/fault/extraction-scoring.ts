@@ -713,7 +713,11 @@ export function formatExtractionReport(report: ExtractionReport): string {
       `  Not scored (${report.unusable.length} of ${report.total}; first ${shown.length} shown):`,
     );
     for (const u of shown) {
-      lines.push(`    ${u.sampleId.padEnd(20)}${u.state.padEnd(14)}${u.reason ?? '(no reason recorded)'}`);
+      // One space between the columns, not just padding. Every golden id is
+      // longer than the column this used to pad to, so `padEnd` did nothing and
+      // the first real output read
+      // `resource-cpu-saturation-checkoutunparseable` (finding 215).
+      lines.push(`    ${u.sampleId.padEnd(30)} ${u.state.padEnd(13)} ${u.reason ?? '(no reason recorded)'}`);
       if (u.excerpt !== undefined) {
         lines.push(`      began: ${u.excerpt}`);
       }

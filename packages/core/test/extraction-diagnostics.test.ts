@@ -123,6 +123,36 @@ describe('the report prints why a run produced no answer', () => {
     expect(text).toContain('7');
   });
 
+  it('keeps the columns apart when a sample id is longer than the column', () => {
+    // Found by reading the first real output of this report, on run 39902858134:
+    // every golden id is between 26 and 40 characters, and `padEnd(20)` does
+    // nothing for a string longer than 20 -- so the line printed
+    // `resource-cpu-saturation-checkoutunparseable`. The test that pinned the
+    // section used `s1`, `s00` and so on, which pad correctly, so it passed
+    // while every real line was unreadable. That is the fixture choosing the one
+    // shape the defect does not affect.
+    const id = 'resource-cpu-saturation-checkout';
+    const ds = parseGoldenDataset({
+      schema: 'rca-bench-fault-golden/2',
+      types: ['cpu-saturation'],
+      samples: [
+        {
+          id,
+          incidentText: 'the pod sat pinned at its 500m limit',
+          expected: { type: 'cpu-saturation', category: 'resource', component: 'checkout-api' },
+        },
+      ],
+    });
+    const text = formatExtractionReport(
+      buildExtractionReport(ds.samples, [
+        { sampleId: id, parseOk: false, parseError: 'response contains no JSON object' },
+      ]),
+    );
+    const line = text.split('\n').find((l) => l.includes(id));
+    expect(line, 'the unusable section must name the sample').toBeDefined();
+    expect(line).toMatch(new RegExp(`^ {4}${id} +unparseable`));
+  });
+
   it('says nothing extra when every sample was scored, so a good run stays short', () => {
     const report = buildExtractionReport(dataset.samples, [
       {

@@ -1455,3 +1455,80 @@ workflow header, with the reading that first met it, and the header says why the
 gone. A static gate for this would have to distinguish a path from a mention of a path, which is
 finding 197's problem again; the honest position is that this one is held by review and recorded
 here rather than claimed to be gated.
+
+## Finding 215 — the measurement could not say why, and its first use found two defects in itself
+
+Run `39901474902` — the first attempt to measure v2.44 — reported `unparseable 19/19` and took
+about forty seconds. Forty seconds is far too short for nineteen model calls to have returned
+usable answers, so the shape of the failure was already visible. The reason was not: it was
+printed to stdout, and a job's stdout is unreadable from this project's environment (finding 55).
+The artefact was the only channel, and it carried
+
+```json
+{ "sampleId": "resource-cpu-saturation-checkout", "parseOk": false }
+```
+
+nineteen times. From outside, `parseOk: false` is what a rate limit, an expired key, a truncated
+response and a genuinely malformed answer all look like. **The run was paid for and could not say
+what happened** — the same shape as finding 205, a citation that reads the same whether or not it
+resolves, applied to a failure instead of a reference.
+
+### The repair, in three places
+
+| place | what it now records |
+| --- | --- |
+| `describeExtractionFailure(text, reason)` | the parser's message, and the response whitespace-collapsed and bounded at 200 characters |
+| `derive-fault-golden.mjs` | that record on the artefact for an unparseable response; `transportError` for a request that threw |
+| `formatExtractionReport` | up to three of them with the count of the rest, in the step summary |
+
+The bound is not decoration: the input can be an HTML error page of a megabyte, and an artefact
+that grows with a provider's error page is one nobody pastes into a report. The two error classes
+are kept apart because their repairs differ — a thrown request is the network or the credential,
+a malformed answer is the model.
+
+### The second half was the same defect one layer down
+
+`score-fault-extraction.mjs` **re-declares** the fields it reads from the artefact instead of
+consuming the core type. It would have dropped the three new ones, so the artefact would have
+known why and the report would have printed `(no reason recorded)` about a file that recorded one.
+A test drives the *shipped* script over an artefact carrying a reason; removing the pass-through
+turns it red, which was checked by hand before restoring it.
+
+### The first use answered the question in one line
+
+Run `39902858134`, same one-line change, no model calls:
+
+> `unparseable  DeepSeek API error 402: {"error":{"message":"Insufficient Balance (request_id: …)"}}`
+
+**The provider account is out of credit.** That is the entire cause of both failed runs, and it
+was knowable in forty seconds and unknowable for two runs. Nothing about the prompt, the dataset
+or the scorer was involved. The reading in finding 213 (`15/19`, M1 met) was taken 1h20m earlier
+and stands; **v2.44's prediction is unmeasured**, and cannot be measured until the balance is
+restored or the provider is switched.
+
+### And reading that output found a defect in the report itself
+
+The first real line printed
+
+```
+    resource-cpu-saturation-checkoutunparseable   DeepSeek API error 402: …
+```
+
+`padEnd(20)` does nothing for a string longer than 20, and every golden id is 26 to 40
+characters. The test that pinned the section used `s1` and `s00`, which pad correctly — **a
+fixture that only had the shape the defect does not affect**. Both columns now pad *and* are
+separated by a space, and the new test uses a real golden id. This is the third time in this
+sequence that reading an actual output found what a fixture could not (findings 65 and 96 are the
+others).
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the diagnosis | one run, one line, the cause named: a provider 402 |
+| the tests | 9 in `extraction-diagnostics.test.ts`, 2 in `fault-extraction-scripts.test.ts` |
+| the pass-through | removing it turns the shipped-script test red (checked, then restored) |
+| the report's own shape | a real-length id is asserted to keep the columns apart |
+| `core` / repo | **171 / 4251** · **175 / 4438** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+| `gate-sites.json` | re-derived; two line shifts, all 73 proofs carried |
