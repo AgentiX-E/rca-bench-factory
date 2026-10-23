@@ -1944,3 +1944,78 @@ Two more corrections came out of that move, both found by running it:
 | the probe | 74 injections caught, 0 survived, source restored identical |
 | `core` / repo | **172 / 4260** · **176 / 4447** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 221 — the scan's roots were a list of two names, and its completeness was a count of one file type
+
+Finding 220 rooted the no-in-tree-write rule in the *value* of a path instead of the spelling of
+its binding. Two things about that scan were still lists:
+
+```ts
+const TEST_ROOTS = ['packages/core/test', 'packages/cli/test'];   // two names
+... else if (entry.endsWith('.test.ts')) out.push(full);          // one file type
+```
+
+### The roots
+
+`pnpm-workspace.yaml` says `packages: ['packages/*']`, so the set of packages is a **rule**, and it
+was written out as two names. A third package would have been invisible: its tests would run in the
+same parallel suite, its counts would be published by the same measurement, and its writes would
+race every other worker while the scan reported zero offenders about a tree it had not read.
+
+The roots are now derived from the workspace file, and the derivation **throws** on a glob it does
+not understand rather than skipping it — a skipped glob is an unscanned package, which is the
+failure the derivation exists to prevent.
+
+### The file type
+
+The test roots hold **179** TypeScript files: 176 `*.test.ts` and three helpers — `helpers.ts`,
+`fixtures.ts`, `uncommitted-carry.ts`. The last of those exists to copy a working tree, and a write
+in it would be a write by every test that imports it, while a `*.test.ts` filter reads it as
+nothing at all. The scan now reads every `.ts` under those roots.
+
+Measured: the widened scan finds **no offenders today**. `uncommitted-carry.ts` shells out to
+`git apply` rather than calling `writeFileSync`, so the widening costs nothing — which is the
+measurement, not the reason to skip it. Mutation: a `writeFileSync(resolve(process.cwd(), …))`
+added to that helper is caught and named (`uncommitted-carry.ts:57`).
+
+### Completeness had to change shape, and the second oracle is the repository's
+
+While the scan read only test files, its completeness assertion compared a *count* to
+`doc-counts.json`. That count describes `*.test.ts` and nothing else, so a scan that also reads
+helpers cannot be equal to it — and loosening the comparison to `>=` would have been the wrong
+direction: a walker that missed files would still satisfy it.
+
+So the assertion is now a **list** compared to `git ls-files` under the derived roots: the
+repository's own statement about what exists there, which a walker cannot certify about itself.
+The published count is kept, restricted to the subset it actually describes.
+
+| oracle | what it covers | what it would catch |
+| --- | --- | --- |
+| `git ls-files` under the roots | every `.ts`, helpers included | a walker that stops descending; a root the derivation missed |
+| `doc-counts.json` `repo.files` | `*.test.ts` only | a file added without the published count moving |
+
+### The assumption, asserted rather than assumed
+
+Deriving roots at `<pkg>/test` is itself an assumption: a package could put its tests in `src/`.
+That case is now an **error at load**, naming the files:
+
+```
+Error: these test files are outside a scanned root: packages/core/src/__probe.test.ts
+```
+
+checked by mutation, with the probe file created and removed. A scan that reports zero offenders
+about a suite it never read is the defect this whole file exists to refuse, and a silent skip is
+how it would happen.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the roots | derived from `pnpm-workspace.yaml`; an unsupported glob throws |
+| the derivation | asserted equal to the directories under `packages/` that have a `test/` |
+| the file set | 179 tracked, 178 scanned (this file exempt); compared to `git ls-files` as a list |
+| the helpers | `helpers.ts` and `uncommitted-carry.ts` are in the scan; a write added to the second is caught at `:57` |
+| the assumption | a `*.test.ts` outside `<pkg>/test/` fails the file at load, naming it |
+| the widening's cost | zero offenders today, measured rather than assumed |
+| `core` / repo | **172 / 4263** · **176 / 4450** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

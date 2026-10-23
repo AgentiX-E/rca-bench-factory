@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **172 files, 4260 tests passed** (as of this commit) |
+| `core` test suite | **172 files, 4263 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **176 files, 4447 tests passed** (as of this commit) |
+| repo test suite | **176 files, 4450 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1457,3 +1457,57 @@ volumes, findings 1–220.
   30-sample key's baseline, and v2.43's boundaries on the finer instrument all need a dispatch,
   and the account returns 402. Two rounds of prompt changes are in the tree with one reading
   between them]`
+
+## v2.50 — the scan's roots were two names, and its completeness was a count of one file type
+
+v2.49 rooted the no-in-tree-write rule in the *value* of a path rather than the spelling of its
+binding. Two things about the scan were still lists, and both were the defect it had just fixed,
+one level up:
+
+```ts
+const TEST_ROOTS = ['packages/core/test', 'packages/cli/test'];   // two names in a glob workspace
+... else if (entry.endsWith('.test.ts')) out.push(full);          // one file type in a directory of three
+```
+
+**The roots.** `pnpm-workspace.yaml` says `packages/*`, so the set of packages is a rule that was
+written as two names. A third package would have run in the same parallel suite, had its counts
+published, and raced every other worker, while the scan reported zero offenders about a tree it had
+not read. They are now derived from the workspace file, and the derivation throws on a glob it does
+not understand instead of skipping it.
+
+**The file type.** The roots hold 179 TypeScript files: 176 tests and three helpers. The scan read
+only tests, so `helpers.ts`, `fixtures.ts` and `uncommitted-carry.ts` were invisible — and the last
+of those exists to copy a working tree. It now reads every `.ts`. Measured: **no offenders today**,
+because that helper shells out to `git apply` rather than writing; a `writeFileSync` added to it is
+caught and named (`uncommitted-carry.ts:57`).
+
+**Completeness changed shape.** A count from `doc-counts.json` describes `*.test.ts` and nothing
+else, so a scan that reads helpers cannot equal it, and loosening to `>=` would let a walker that
+misses files pass. The list is now compared to `git ls-files` under the derived roots — the
+repository's own statement about what exists, which a walker cannot certify about itself — and the
+published count is kept for the subset it describes.
+
+**The assumption is asserted.** Deriving roots at `<pkg>/test` assumes tests live there. A
+`*.test.ts` anywhere else in a package now fails the file at load, naming the paths:
+
+```
+Error: these test files are outside a scanned root: packages/core/src/__probe.test.ts
+```
+
+checked by mutation, probe created and removed.
+
+**Acceptance.** Guard 10 tests (was 7); the file set is 179 tracked / 178 scanned (self exempt) and
+equal to git's list; two consecutive full runs at **4263 passed**; typecheck, lint, `docs:check`
+green; core **172 / 4263**, cli 4 / 187, repo **176 / 4450**; coverage 99.97 / 99.74 / 100 / 99.97
+and 100 ×4; audit 5 volumes, findings 1–221.
+
+### Left open
+
+- **A path built by one module and passed to another is still invisible.** `[open: the scan reads
+  the destination expression and its local bindings; a call like `carryUncommitted(source, dest)`
+  that resolves a repository path internally is not traced into. Closing that needs interprocedural
+  analysis, and the honest position is the one written in the file: what it sees, it sees by
+  value]`
+- **The provider balance still blocks three measurements.** `[open: v2.44's component rules, the
+  30-sample key's baseline, and v2.43's boundaries re-read on the finer instrument. Every other
+  line of work in this round was chosen because it needs no dispatch]`

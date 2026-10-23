@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -45,7 +46,61 @@ import { describe, expect, it } from 'vitest';
  */
 
 const REPO = resolve(fileURLToPath(import.meta.url), '..', '..', '..', '..');
-const TEST_ROOTS = ['packages/core/test', 'packages/cli/test'];
+
+/**
+ * Every package's test directory, derived from the workspace file pnpm reads.
+ *
+ * This was a literal list — `['packages/core/test', 'packages/cli/test']` — and that is
+ * finding 220's defect one level up: a list of names standing in for a rule. A package added
+ * to `pnpm-workspace.yaml` would have been invisible to the scan while its tests ran, its
+ * counts were published, and its writes raced the rest of the suite. The workspace file is
+ * where the repository says which directories are packages, so it is where this reads them.
+ *
+ * One level of nesting is handled and anything else throws: a glob this function silently
+ * skips is a package whose tests are unscanned, which is the failure this derivation exists to
+ * prevent.
+ */
+function testRoots(): string[] {
+  const workspace = readFileSync(join(REPO, 'pnpm-workspace.yaml'), 'utf8');
+  const globs = [...workspace.matchAll(/^\s*-\s*'([^']+)'\s*$/gm)].map((m) => m[1] as string);
+  if (globs.length === 0) throw new Error('the workspace file names no package directories');
+  const roots: string[] = [];
+  for (const glob of globs) {
+    if (!glob.endsWith('/*')) {
+      throw new Error(`unsupported workspace glob '${glob}': this derivation handles one level of nesting`);
+    }
+    const base = glob.slice(0, -2);
+    for (const entry of readdirSync(join(REPO, base)).sort()) {
+      const dir = join(REPO, base, entry);
+      if (!statSync(dir).isDirectory()) continue;
+      if (existsSync(join(dir, 'test'))) roots.push(join(dir, 'test'));
+      // A package whose tests live *outside* `test/` would be invisible to a scan rooted at
+      // `test/`, and invisible is the failure mode this whole derivation is about. So the
+      // assumption is asserted rather than assumed: a `*.test.ts` anywhere else in a package
+      // is an error naming it, not a silence.
+      const stray = strayTests(dir).filter((file) => !file.startsWith(join(dir, 'test') + '/'));
+      if (stray.length > 0) {
+        throw new Error(
+          `these test files are outside a scanned root: ${stray.map((file) => relative(REPO, file)).join(', ')}`,
+        );
+      }
+    }
+  }
+  return roots;
+}
+
+/** Every `*.test.ts` under a package, skipping its installed dependencies. */
+function strayTests(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    if (entry === 'node_modules' || entry === 'dist') continue;
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) strayTests(full, out);
+    else if (entry.endsWith('.test.ts')) out.push(full);
+  }
+  return out;
+}
+
+const TEST_ROOTS = testRoots();
 
 /**
  * Calls that change the filesystem, by the names node gives them, and **which argument is
@@ -178,13 +233,37 @@ function writesIntoThePackage(source: string): Flag[] {
   return flags;
 }
 
-function testFiles(dir: string, out: string[] = []): string[] {
+/**
+ * Every TypeScript file under a test directory, helpers included.
+ *
+ * `.test.ts` was the first filter and it was too narrow: the test roots also hold
+ * `helpers.ts`, `fixtures.ts` and `uncommitted-carry.ts`, and a write in a helper is a write by
+ * every test that imports it while being invisible to a scan that reads only test files.
+ * `uncommitted-carry.ts` shells out to `git` rather than to `writeFileSync`, so widening this
+ * finds nothing today -- which is the measurement, not the reason to skip it.
+ */
+function suiteFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) testFiles(full, out);
-    else if (entry.endsWith('.test.ts')) out.push(full);
+    if (statSync(full).isDirectory()) suiteFiles(full, out);
+    else if (entry.endsWith('.ts')) out.push(full);
   }
   return out;
+}
+
+/** What git says is in the tree under those roots -- an enumeration this test does not own. */
+function trackedFiles(roots: string[]): string[] {
+  const patterns = roots.flatMap((root) => {
+    const relative = root.slice(REPO.length + 1);
+    return [`${relative}/*.ts`, `${relative}/**/*.ts`];
+  });
+  const listed = execFileSync('git', ['ls-files', '-z', '--', ...patterns], { cwd: REPO, encoding: 'utf8' });
+  return listed
+    .split('\0')
+    .filter((name) => name !== '')
+    .map((name) => join(REPO, name))
+    .filter((file) => roots.some((root) => file.startsWith(`${root}/`)) && file.endsWith('.ts'))
+    .sort();
 }
 
 describe('no test writes inside the package it tests', () => {
@@ -194,22 +273,30 @@ describe('no test writes inside the package it tests', () => {
     // the disease. One exemption, stated here -- and the controls below are what make
     // skipping it safe, because they run the detector over those literals.
     const self = fileURLToPath(import.meta.url);
-    const files = TEST_ROOTS.flatMap((root) => testFiles(join(REPO, root))).filter((file) => file !== self);
-    // The count is compared to a published figure, not to a floor.
+    const files = TEST_ROOTS.flatMap((root) => suiteFiles(root)).filter((file) => file !== self).sort();
+    // Two oracles, and neither is a number this test chose.
     //
-    // It was `toBeGreaterThan(50)`, and that would have stayed green if the walker had stopped
-    // descending into subdirectories: `packages/core/test` holds 163 files at the top level and
-    // nine more under `fault/` and `llm/`, so a walker that missed the subdirectories would
-    // have scanned 163 of 176 and reported zero offenders -- the same narrow-range-green-verdict
-    // shape this file exists to refuse. `golden-master/doc-counts.json` is the count the README
-    // publishes and CI verifies from its own run, so it is an oracle this test does not own.
+    // The first is **git**: `ls-files` under the derived roots is the repository's own
+    // statement about what exists there, so a walker that stops descending, or a root the
+    // derivation missed, shows up as a difference in a list rather than as a count that still
+    // looks plausible. The second is the published count, which covers `*.test.ts` only -- it
+    // is what the README prints and what CI re-derives from its own run.
+    //
+    // The count alone was not enough, and that is measured rather than argued: it used to be
+    // `toBeGreaterThan(50)`, which any walker reaching a third of the tree satisfies, and the
+    // finding that introduced this scan recorded "130 test files" against a tree of 176.
+    expect(
+      files.map((file) => relative(REPO, file)),
+      'the scan must read every TypeScript file git says is under these roots',
+    ).toEqual(trackedFiles(TEST_ROOTS).filter((file) => file !== self).map((file) => relative(REPO, file)));
     const published = JSON.parse(readFileSync(join(REPO, 'golden-master', 'doc-counts.json'), 'utf8')) as {
       repo: { files: number };
     };
-    expect(files.length, 'the scan must read exactly the test files the published counts describe').toBe(
+    expect(
+      files.filter((file) => file.endsWith('.test.ts')).length,
+      'the test files the scan reads must be the test files the published counts describe',
       // One less: this file is the exemption stated above.
-      published.repo.files - 1,
-    );
+    ).toBe(published.repo.files - 1);
 
     const offenders = files.flatMap((file) =>
       writesIntoThePackage(readFileSync(file, 'utf8')).map(
@@ -266,6 +353,40 @@ describe('no test writes inside the package it tests', () => {
       "rmSync(harness, { force: true });",
     ].join('\n');
     expect(writesIntoThePackage(source)).toHaveLength(2);
+  });
+
+  it('derives its roots from the workspace file, so a new package cannot be invisible', () => {
+    // The property, not the two names: every directory the workspace glob resolves to that has
+    // a `test/` is scanned, and the list is read rather than written. A third package added to
+    // `pnpm-workspace.yaml` appears here without an edit to this file.
+    const packages = readdirSync(join(REPO, 'packages')).filter((entry) =>
+      existsSync(join(REPO, 'packages', entry, 'test')),
+    );
+    expect(TEST_ROOTS.map((root) => relative(join(REPO, 'packages'), root).split('/')[0])).toEqual(packages.sort());
+    expect(TEST_ROOTS.map((root) => relative(REPO, root))).toEqual(packages.map((p) => `packages/${p}/test`).sort());
+  });
+
+  it('fails loudly if a package keeps tests outside the directory it scans', () => {
+    // The assumption the derivation makes, asserted instead of assumed: walking a package finds
+    // every `*.test.ts` in it, and any that is not under `<pkg>/test/` is an error. Without this
+    // a package could move its tests to `src/` and the scan would report zero offenders about a
+    // suite it never read -- the exact shape of the defect that produced this file.
+    const strays = readdirSync(join(REPO, 'packages')).flatMap((entry) => {
+      const dir = join(REPO, 'packages', entry);
+      if (!statSync(dir).isDirectory()) return [];
+      return strayTests(dir).filter((file) => !file.startsWith(join(dir, 'test') + '/'));
+    });
+    expect(strays.map((file) => relative(REPO, file)), 'tests outside a scanned root').toEqual([]);
+  });
+
+  it('reads the test roots’ helper modules, not only their test files', () => {
+    // A write in `uncommitted-carry.ts` would be a write by every test that imports it, and a
+    // scan over `*.test.ts` would not see it. Nothing writes there today; the assertion is that
+    // the scan would look.
+    const files = TEST_ROOTS.flatMap((root) => suiteFiles(root)).map((file) => relative(REPO, file));
+    expect(files).toContain('packages/core/test/helpers.ts');
+    expect(files).toContain('packages/core/test/uncommitted-carry.ts');
+    expect(files.some((file) => file.endsWith('.test.ts'))).toBe(true);
   });
 
   it('flags a write through process.cwd(), which is the package root under the runner', () => {
