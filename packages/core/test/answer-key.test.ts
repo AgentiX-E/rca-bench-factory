@@ -85,7 +85,7 @@ describe('the extraction metric grades its own answer key at 100%', () => {
     // The vacuity guard. An oracle test over one sample, or over samples that carry no
     // category, would pass while measuring nothing -- and the dataset is derived by a script
     // (`scripts/derive-fault-golden.mjs`), so its shape can change without this file.
-    expect(dataset.samples.length).toBeGreaterThanOrEqual(19);
+    expect(dataset.samples.length).toBeGreaterThanOrEqual(30);
     for (const sample of dataset.samples) {
       for (const field of ['type', 'category', 'component'] as const) {
         expect(sample.expected[field], `${sample.id} has no ${field}`).toBeTypeOf('string');

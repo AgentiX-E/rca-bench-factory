@@ -3403,10 +3403,13 @@ coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–
   separators, not suffixes, and widening it to fold `-service` would also make `session-store`
   match `session`. The honest options are a stated naming rule in the prompt (no role suffix) or
   accepting the miss; widening the comparator is refused]`
-- **M1's reading rests on 19 samples.**
-  `[open: the quantum is 5.3 points and the margin is one sample, so the milestone is met on an
+- ~~**M1's reading rests on 19 samples.**~~
+  ~~`[open: the quantum is 5.3 points and the margin is one sample, so the milestone is met on an
   instrument whose resolution is coarse relative to its threshold. Enlarging the key is the
-  durable fix and is a data project, not a prompt one]`
+  durable fix and is a data project, not a prompt one]`~~
+  **Closed by finding 216**, which grew the key to 30 samples and re-read every figure derived
+  from it. The reading itself is *not* closed: the 15/19 belongs to the old instrument, and the
+  30-sample number cannot be taken while the provider returns 402.
 
 ## v2.44 — the component rule names the product and the actor, and the run that could not answer
 
@@ -3462,3 +3465,67 @@ repo **175 / 4438**; typecheck, lint, `docs:check` green; coverage 99.97 / 99.74
   `[open: the link pair (`payment-gateway` answered `order-service`) is still the one with no rule
   that produces both of its annotations, and `tax-calculation-service` for `tax-calculation` is
   still a comparator question refused on purpose]`
+
+## v2.45 — the corpus grows to 30, and fourteen figures move with it
+
+M1 was met at 15/19, and the milestone was weaker than its own number: at 19 samples the strict
+rate moves in 5.3-point steps, the threshold sits between thirteen and fourteen, and the margin
+was one sample — the size of the drift the instrument has been measured to have. So the key grew:
+**eleven new samples**, one to three per category, each obeying the three rules the file already
+states (slug absent from its own text, category derived from the type, every component token
+present in the incident). The vocabulary went from 19 types to 30.
+
+A corpus here is not a data file. **Fourteen assertions across five test files and one number in a
+workflow were functions of its size**, and each had to be re-read:
+
+| where | 19-sample | 30-sample |
+| --- | --- | --- |
+| `category-derivation` A/B | 19 graded / conforming / defined | 30 |
+| `category-derivation` F | 2 disagree (0.1053) | **4 (0.1333)**, still below the floor |
+| `category-derivation` R | 4 distinct verdicts over 5040 orders | **8** |
+| `category-derivation` O | 19 graded / inert | 30 |
+| `denial-inventory` | 19 graded, partition sum 19 | 30 |
+| `miss-distractor` | 19 graded | 30 |
+| `agreement-baseline` | 1 supported, 0.0526 | 1 of 30, 0.0333 |
+| `fault-extraction-accuracy.yml` | 60-row miss-detail cap | **128** |
+
+Two are results rather than denominators: the alternative readings now disagree on 4 of 30 (still
+at or below the floor, so "this reading cannot separate anyone" stands), and the row-order space
+has eight verdicts instead of four because a new slug — `queue-disk-watermark` — is matched by
+both the middleware and the resource rows.
+
+**The cap is the one that would have gone quiet.** The workflow capped published miss detail at
+60 rows and its comment said the truncation path existed "for the day the dataset grows". A
+fully-missed run is now 90 rows, so that day arrived — and `workflow-provider.test.ts`, which
+computes a saturated run and requires `cap >= rows`, failed rather than letting the annotation
+truncate routinely.
+
+**One sample was renamed rather than a control loosened.** `agreement-baseline` asserts that an
+expected component never carries its own category term, because that would make "the component
+supports the category" true by construction. The first draft called a cache service
+`product-cache`; the control failed and named it. It is `product-index` now, with its incident
+rewritten so both tokens appear. Loosening the assertion was the cheaper edit and the wrong one.
+
+**One test was reading a global it did not own.** A full-suite run failed in `step-process` with
+`verify-local-89229-1.sh` — a script written by another vitest worker in the same window, counted
+because the assertion diffed the whole of `tmpdir()`. The runner names its files
+`verify-local-<pid>-<n>.sh`; the test now filters by its own pid.
+
+**Acceptance.** All 4251 core tests green; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; the six
+batteries over this area all caught every injection; `probe-m1-ceiling` reads 30/30 recoverable
+with a 100% ceiling and no headroom cost; audit 5 volumes, findings 1–216.
+
+### Left open
+
+- **The milestone has a number on the old instrument and none on the new one.**
+  `[open: 15/19 was taken on the 19-sample key; the 30-sample key has not been measured because the
+  provider returns 402 (finding 215). The next dispatch after a top-up should read all three fields
+  and record the 30-sample strict rate as a *new* baseline rather than as a comparison with 15/19]`
+- **The key is 30 samples, which is better and still small.**
+  `[open: 3.3-point steps against a threshold between 20 and 21 samples; one sample of drift is now
+  worth 3.3 points rather than 5.3, so the margin is narrower in absolute terms even though the
+  resolution is finer. A hundred samples would make the milestone's number stable, and that is a
+  data project with a review cost per sample]`
+- **Three `component` naming misses are still unmeasured.**
+  `[open: the v2.44 rule change (product, actor) was never exercised, and the link pair plus
+  `tax-calculation-service` remain. All of it waits on the balance]`

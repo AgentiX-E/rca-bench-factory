@@ -1532,3 +1532,95 @@ others).
 | `core` / repo | **171 / 4251** · **175 / 4438** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
 | `gate-sites.json` | re-derived; two line shifts, all 73 proofs carried |
+
+## Finding 216 — the corpus grew from 19 to 30, and fourteen pinned figures moved with it
+
+M1 was met at 15/19 and the number was weak in a way the milestone could not see: at 19 samples the
+strict rate moves in steps of **5.3 points**, the threshold sits between thirteen and fourteen
+samples, and the margin over it was **one sample** — the same size as the drift the instrument was
+measured to have (finding 211). A milestone met on an instrument whose resolution is coarse
+relative to its own threshold is met in name.
+
+This round grew the key: **eleven new samples**, one to three per category, each hand-written and
+each held to the same three rules the file already states — the type is a lower-case slug absent
+from its own text, the category is what `inferFaultCategory` derives from that type, and every
+hyphen token of the component appears in the incident. The vocabulary grew from 19 types to 30.
+
+### What a corpus is, in this repository
+
+It is not a data file. **Fourteen assertions in five test files and one number in a workflow were
+functions of its size**, and every one of them had to be re-read rather than incremented:
+
+| where | figure | 19-sample | 30-sample |
+| --- | --- | --- | --- |
+| `category-derivation.test.ts` A/B | graded / conforming / defined | 19 | 30 |
+| `category-derivation.test.ts` F | alternative readings that disagree | 2 (0.1053) | **4 (0.1333)** |
+| `category-derivation.test.ts` R | distinct verdicts over 5040 row orders | 4 | **8** |
+| `category-derivation.test.ts` O | downstream graded / inert | 19 | 30 |
+| `denial-inventory.test.ts` | graded, and the partition sum | 19 | 30 |
+| `miss-distractor.test.ts` | graded total | 19 | 30 |
+| `agreement-baseline.test.ts` | supported / share / delta | 1, 0.0526 | 1 of 30, 0.0333 |
+| `fault-extraction-accuracy.yml` | miss-detail row cap | 60 | **128** |
+
+Two of those are results changing rather than denominators: the alternative readings now disagree
+with the label on **4 of 30** (still at or below the floor of 0.2, so the verdict "this reading
+cannot separate anyone" is unchanged), and the row-order dependence now has **eight** distinct
+verdicts instead of four, because the new vocabulary contains a third slug whose verdict depends on
+which row is tested first (`queue-disk-watermark`: `queue` is a middleware term and `disk` a
+resource term).
+
+### The cap that would have gone quiet
+
+`fault-extraction-accuracy.yml` capped the published miss detail at 60 rows, with a comment that
+said the cap "covers every run this dataset can produce" and that "the truncation path exists for
+the day the dataset grows". That day was this one: a fully-missed run is now **90** rows. The
+workflow would have truncated **routinely** and said so in a suffix that is easy to skim past.
+
+It did not, because `workflow-provider.test.ts` computes a saturated run from the real dataset and
+requires `cap >= rows`. The test failed with `the workflow caps detail at 60 rows but a
+fully-missed run produces 90`. **A comment predicted the failure and a test caught it** — which is
+the difference between the two that findings 196 and 205 keep drawing.
+
+### One sample was renamed rather than a control loosened
+
+`agreement-baseline.test.ts` asserts a property of the ground truth: an expected component is a
+service or a mechanism noun, **never a slug that carries its own category term**, because a corpus
+where components are category slugs would make "the component supports the category" true by
+construction. The first draft called a cache service `product-cache`, whose name contains `cache` —
+and the control failed exactly as designed, naming the second sample it now accepted.
+
+The repair is the sample, not the control: it is `product-index` now, its incident rewritten so both
+tokens appear, and the property is true of all thirty. **Loosening the assertion would have been the
+cheaper edit and the wrong one** — it would have made the baseline's control vacuous for every
+sample added afterwards.
+
+### One test that was reading a global it did not own
+
+A full-suite run failed in `step-process.test.ts` with `verify-local-89229-1.sh`: the assertion
+diffed the whole of `tmpdir()` before and after its own steps, so a script written by **another
+vitest worker** in the same window counted as this one's leak. The runner already names its files
+`verify-local-<pid>-<n>.sh`, which is exactly what makes the two distinguishable; the test now
+filters by its own pid. This is finding 205's shape once more — a check whose subject was wider than
+its claim — and it is why the file says so in a comment rather than quietly.
+
+### What this does to the milestone
+
+**The 15/19 reading belongs to the 19-sample key.** On a 30-sample key the strict rate is a
+different number, and it cannot be claimed until it is measured — and measurement is blocked by the
+provider's `402` (finding 215). The honest state is therefore: *M1 was met on the previous
+instrument; it has not been measured on this one.* The corpus makes the eventual reading sharper
+(3.3-point steps instead of 5.3) and the claim narrower (one sample is now worth 3.3 points, so a
+single sample of drift no longer covers the margin).
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the key | 30 samples, 30 types, one to three per category |
+| the rules | every sample obeys slug, derivability and token recoverability; asserted over the file |
+| the reference probe | `probe-m1-ceiling`: 30/30 recoverable, ceiling 100%, costs 0 samples of headroom |
+| the corpus-measuring tests | 14 figures re-read, each with the old and new value stated |
+| the row cap | 128, and the test that compares it to a saturated run is what moved it |
+| the batteries | component rule 8/8, M1 ceiling 11/11, M1 ceiling tests 8/8, type-miss 74/74, scoring 12/12, workflow 28/28 — all caught |
+| `core` / repo | **171 / 4251** · **175 / 4438** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

@@ -72,9 +72,9 @@ const PREDICTED: BaselineSample[] = [
 ];
 
 describe('the expected side -- components that are right by construction', () => {
-  it('supports its category in exactly one of nineteen', () => {
+  it('supports its category in exactly one of thirty', () => {
     const inv = buildBaselineInventory(expectedSide());
-    expect(inv.graded).toBe(19);
+    expect(inv.graded).toBe(30);
     expect(inv.supporting).toBe(1);
   });
 
@@ -90,9 +90,9 @@ describe('the expected side -- components that are right by construction', () =>
     expect(row?.terms).toEqual(['cache']);
   });
 
-  it('reads 1 of 19 as a share of 0.0526', () => {
+  it('reads 1 of 30 as a share of 0.0333', () => {
     const inv = buildBaselineInventory(expectedSide());
-    expect(inv.supportShare).toBeCloseTo(1 / 19, 10);
+    expect(inv.supportShare).toBeCloseTo(1 / 30, 10);
   });
 });
 
@@ -119,7 +119,7 @@ describe('the contrast, which is the finding', () => {
   it('and the delta is positive, meaning the reading favours the model slightly', () => {
     const c = buildAgreementContrast({ expected: expectedSide(), predicted: PREDICTED });
     expect(c.shareDelta).toBeGreaterThan(0);
-    expect(c.shareDelta).toBeCloseTo(1 / 19, 10);
+    expect(c.shareDelta).toBeCloseTo(1 / 30, 10);
   });
 
   /**
@@ -143,7 +143,7 @@ describe('the contrast, which is the finding', () => {
 
   it('and the reason says so in a sentence, so a report cannot print the bare figure', () => {
     const c = buildAgreementContrast({ expected: expectedSide(), predicted: PREDICTED });
-    expect(c.reason).toContain('1 of 19');
+    expect(c.reason).toContain('1 of 30');
     expect(c.reason).toMatch(/indistinguishable from zero/);
   });
 
@@ -360,7 +360,7 @@ describe('the reading reports through the probe, not only through the unit tests
     const out = probeReport();
     expect(out).toContain('expected');
     expect(out).toContain('predicted');
-    expect(out).toContain('1 of 19');
+    expect(out).toContain('1 of 30');
     expect(out).toContain('0 of 7');
   });
 

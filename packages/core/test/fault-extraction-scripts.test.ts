@@ -51,6 +51,11 @@ const DERIVE = resolve(ROOT, 'scripts', 'derive-fault-golden.mjs');
 const SCORE = resolve(ROOT, 'scripts', 'score-fault-extraction.mjs');
 const DATASET = resolve(ROOT, 'golden-master', 'fault-extraction', 'samples.json');
 
+/** How many samples the shipped key holds, read rather than pinned. */
+function datasetSamples(): number {
+  return (JSON.parse(readFileSync(DATASET, 'utf8')) as { samples: unknown[] }).samples.length;
+}
+
 interface Outcome {
   status: number;
   stdout: string;
@@ -232,7 +237,10 @@ describe('scripts/score-fault-extraction.mjs · the exit codes', () => {
     const result = run(SCORE, ['--predictions', path]);
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/M1 exit condition: MET/);
-    expect(result.stdout).toMatch(/strict all-fields: 19\/19 \(100\.0%\)/);
+    // Read from the dataset rather than pinned: the corpus grew from 19 to 30 in v2.45 and a
+    // literal here would have turned a corpus edit into a failed test about the scorer.
+    const n = dataset.samples.length;
+    expect(result.stdout).toContain(`strict all-fields: ${n}/${n} (100.0%)`);
   });
 
   it('exits 2, not 1, when the measurement exists and misses the threshold', () => {
@@ -275,7 +283,10 @@ describe('scripts/score-fault-extraction.mjs · the exit codes', () => {
     const path = writePredictions(workdir, [{ sampleId: 'only-one', parseOk: false }]);
     const result = run(SCORE, ['--predictions', path]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/19 sample\(s\) but 1 prediction\(s\)/);
+    // The denominator comes from the dataset, not from a literal: the message's whole job is to
+    // name how many samples were expected.
+    const n = datasetSamples();
+    expect(result.stderr).toContain(`${n} sample(s) but 1 prediction(s)`);
   });
 
   it('exits 1 on a prediction artefact with the wrong schema', () => {
@@ -375,7 +386,10 @@ describe('scripts/score-fault-extraction.mjs · the report it prints', () => {
     );
     const result = run(SCORE, ['--predictions', path]);
     expect(result.stdout).toMatch(/unparseable\s*: 1/);
-    expect(result.stdout).toMatch(/graded\s*: 18/);
+    // One sample withheld from the denominator, whatever the corpus size is.
+    expect(result.stdout).toMatch(
+      new RegExp(`graded\\s*: ${dataset.samples.length - 1}/${dataset.samples.length} \\(`),
+    );
   });
 });
 

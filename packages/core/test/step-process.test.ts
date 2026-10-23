@@ -167,11 +167,22 @@ describe('one step, run as CI would run it', () => {
   it('does not leave the script it materialised behind, whether the step passes or not', async () => {
     // The runner writes the body to a file, because `{0}` is a path. A file left
     // behind is a scratch file in the temporary directory per step, per run.
-    const before = new Set(spawnSync('ls', [tmpdir()], { encoding: 'utf8' }).stdout.split('\n'));
+    //
+    // The filter is by *this process's* pid, and that is a repair rather than a
+    // detail. The first version diffed the whole of `tmpdir()` before and after,
+    // which made the assertion a function of every other process on the machine:
+    // a full-suite run failed with `verify-local-89229-1.sh`, a file written by a
+    // different vitest worker in the same window. The runner names its files
+    // `verify-local-<pid>-<n>.sh` precisely so the two cases are distinguishable,
+    // and a test that ignored the pid was reading a global it did not own.
+    const mine = `verify-local-${String(process.pid)}-`;
+    const left = () =>
+      spawnSync('ls', [tmpdir()], { encoding: 'utf8' })
+        .stdout.split('\n')
+        .filter((name) => name.startsWith(mine));
+    expect(left(), 'a previous test in this file leaked one').toEqual([]);
     await runStep({ key: 'a / one', run: 'true', cwd: '.' });
     await expect(runStep({ key: 'a / one', run: 'exit 1', cwd: '.' })).rejects.toThrow();
-    const after = new Set(spawnSync('ls', [tmpdir()], { encoding: 'utf8' }).stdout.split('\n'));
-    const left = [...after].filter((name) => name.startsWith('verify-local-') && !before.has(name));
-    expect(left).toEqual([]);
+    expect(left(), 'the step scripts for this process were not removed').toEqual([]);
   });
 });

@@ -1,32 +1,43 @@
 {
   "schema": "rca-bench-fault-golden/2",
   "provenance": {
-    "note": "Hand-written ground truth for the historical-fault extraction channel (M13 channel B). Each incidentText is written to sound like a real support ticket or post-mortem while naming exactly one fault, so the expected record is decidable from the text alone. No incident text here is copied from any corpus: this file is authored, reviewable, and small. It exists so the M1 exit condition has a denominator that does not move when the model changes.",
+    "note": "Hand-written ground truth for the historical-fault extraction channel (M13 channel B). Each incidentText is written to sound like a real support ticket or post-mortem while naming exactly one fault, so the expected record is decidable from the text alone. No incident text here is copied from any corpus: this file is authored, reviewable, and small. It exists so the M1 exit condition has a denominator that does not move when the model changes. The key grew from 19 to 30 samples in v2.45: at 19 the strict rate moved in 5.3-point steps, which is coarse against a 70% threshold, and the margin over it was one sample.",
     "reviewGate": "H3",
     "authoringRule": "The expected.type must be derivable from the incident text by a careful human reader. A sample whose answer needs context the text does not carry is a bad sample, not a hard one.",
     "annotationRule": "The expected.component must be the deployed workload that owns the fault, and it must be recoverable from the incident text under the token rule the extraction prompt states -- every hyphen-delimited token of the name appears in the text, case-insensitively. This is asserted over the whole file in fault-prompt-grammar.test.ts, so an annotation that names something its text does not carry fails a test. One sample was re-annotated under this rule: config-feature-flag-checkout named `checkout-ui`, which its text never carries; see its annotationNote.",
-    "categoryRule": "The expected.category must be the value inferFaultCategory (packages/core/src/fault/category.ts) returns for the sample's own expected.type. The rule is stated here because it was true of the whole file and written down nowhere: the category was authored by reading the type, so the derivation reproduces it exactly -- 19 of 19 in fault/category-derivation.test.ts, which asserts it over the whole file and asserts that every one of the 19 lands on a member of FAULT_CATEGORIES, so an expected.type added without a derivable category fails a test rather than being counted as a miss. The same module measures the rule's discriminating power and records that it is below the floor, so this concordance is self-consistency and not a result: see finding 102. Whether the extraction prompt should state the rule is a product decision, deliberately not taken here."
+    "categoryRule": "The expected.category must be the value inferFaultCategory (packages/core/src/fault/category.ts) returns for the sample's own expected.type. The rule is stated here because it was true of the whole file and written down nowhere: the category was authored by reading the type, so the derivation reproduces it exactly in every sample -- 30 of 30 in fault/category-derivation.test.ts, which asserts it over the whole file and asserts that every one of them lands on a member of FAULT_CATEGORIES, so an expected.type added without a derivable category fails a test rather than being counted as a miss. The same module measures the rule's discriminating power and records that it is below the floor, so this concordance is self-consistency and not a result: see finding 102. Whether the extraction prompt should state the rule is a product decision, deliberately not taken here."
   },
   "types": [
+    "cache-shard-unassigned",
     "config-mismatch",
     "container-crash",
+    "container-start-failure",
     "cpu-saturation",
     "database-connection-pool-exhaustion",
     "disk-full",
+    "ephemeral-capacity-exceeded",
     "feature-flag-misconfiguration",
+    "ingress-timeout-misconfiguration",
     "kafka-consumer-lag",
     "library-version-incompatibility",
+    "logic-off-by-one-pagination",
     "memory-leak",
+    "memory-request-overcommit",
     "network-delay",
     "network-loss",
+    "network-mtu-blackhole",
     "network-partition",
     "null-dereference",
     "pod-kill",
+    "pod-shutdown-timeout",
+    "queue-disk-watermark",
     "redis-latency",
     "regex-catastrophic-backtracking",
     "replica-lag",
+    "timezone-conversion-error",
     "unhandled-exception",
-    "upstream-5xx"
+    "upstream-5xx",
+    "upstream-schema-change"
   ],
   "samples": [
     {
@@ -199,6 +210,105 @@
         "type": "replica-lag",
         "category": "middleware",
         "component": "analytics-replica"
+      }
+    },
+    {
+      "id": "resource-ephemeral-capacity-image-builder",
+      "incidentText": "At 04:12 the image builder began failing every build with 'no space left on device' while df reported 40 percent used. The writable overlay had hit its 10Gi ephemeral limit: each build leaves a layer cache under /var/lib/buildkit, and the janitor that trims it runs on a schedule that a long build queue had outrun. Deleting the cache by hand restored builds until the queue grew again.",
+      "expected": {
+        "type": "ephemeral-capacity-exceeded",
+        "category": "resource",
+        "component": "image-builder"
+      }
+    },
+    {
+      "id": "resource-memory-request-ingest-writer",
+      "incidentText": "The ingest writer was OOMKilled twice overnight. It requests 1Gi but the JVM starts without a heap cap, so under a backlog it grows to whatever the node will give and the kernel reclaims it. Requesting 1Gi while using 3Gi also made the scheduler pack two copies onto one node. Setting the heap to 700m removed both the kills and the double packing.",
+      "expected": {
+        "type": "memory-request-overcommit",
+        "category": "resource",
+        "component": "ingest-writer"
+      }
+    },
+    {
+      "id": "network-mtu-catalog-service",
+      "incidentText": "After the overlay was rebuilt, catalog service requests larger than about 1,400 bytes started hanging while its health checks stayed green. Small payloads were unaffected. Captures show the handshake and the first data segment arriving and nothing after it, and a router on the new path reports dropping fragments. Lowering the interface MTU to 1,380 made every call complete.",
+      "expected": {
+        "type": "network-mtu-blackhole",
+        "category": "network",
+        "component": "catalog-service"
+      }
+    },
+    {
+      "id": "runtime-container-start-notification-worker",
+      "incidentText": "The notification worker has not served a single request since the last rollout. Its container never gets past start-up: the entrypoint waits for a file the new image no longer creates, so it exits after twenty seconds and the kubelet backs off. No probe ever runs. Rolling the image back to the previous tag starts it immediately.",
+      "expected": {
+        "type": "container-start-failure",
+        "category": "runtime",
+        "component": "notification-worker"
+      }
+    },
+    {
+      "id": "runtime-pod-shutdown-webhook-dispatcher",
+      "incidentText": "Every deploy of the webhook dispatcher drops about 300 deliveries. The process handles the termination signal by closing its listener but keeps draining an internal queue for up to two minutes, and the pod is killed at thirty seconds, so the drain never finishes. A preStop hook that sleeps forty seconds, plus a longer grace period than the drain, made the drops disappear.",
+      "expected": {
+        "type": "pod-shutdown-timeout",
+        "category": "runtime",
+        "component": "webhook-dispatcher"
+      }
+    },
+    {
+      "id": "middleware-cache-shard-product-index",
+      "incidentText": "The product index served stale and missing entries for ninety minutes. Two of the sixteen cluster slots were unassigned: a node had been replaced and the cluster's replica placement pins a copy to a zone label the replacement does not carry. Reads against the surviving shards kept answering, which is why dashboards showed partial success rather than an outage. Adding the label let the cluster converge in four minutes.",
+      "expected": {
+        "type": "cache-shard-unassigned",
+        "category": "middleware",
+        "component": "product-index"
+      }
+    },
+    {
+      "id": "middleware-queue-watermark-ledger-writer",
+      "incidentText": "The ledger writer's publishes began timing out at 21:40 and its producer buffer grew to 40,000 records. Broker logs show the disk watermark crossed 92 percent: the topic's retention was raised to seven days during the week and the broker volumes were sized for three. Producers were throttled rather than failed. Lowering retention to three days dropped the watermark and publishes resumed within a minute.",
+      "expected": {
+        "type": "queue-disk-watermark",
+        "category": "middleware",
+        "component": "ledger-writer"
+      }
+    },
+    {
+      "id": "code-off-by-one-invoice-renderer",
+      "incidentText": "The invoice renderer skipped the last line of every multi-page invoice. The loop that splits items into pages advances its index by the page size after appending, so the item on the boundary is written to the current page and then skipped on the next one. Nothing is logged and totals still match, because the total is summed from the source list rather than from the rendered pages. Advancing by page size minus one restores every line.",
+      "expected": {
+        "type": "logic-off-by-one-pagination",
+        "category": "code",
+        "component": "invoice-renderer"
+      }
+    },
+    {
+      "id": "code-timezone-booking-api",
+      "incidentText": "Booking reminders went out an hour early for every appointment created after the daylight saving change. The API stores a local wall-clock time plus a zone name, then converts with a fixed offset read once at process start. Restarting the pods for an unrelated deploy hid it for a week, which is why the first report blamed the scheduler. Converting per request with the zone's rules for that date fixes it.",
+      "expected": {
+        "type": "timezone-conversion-error",
+        "category": "code",
+        "component": "booking-api"
+      }
+    },
+    {
+      "id": "config-ingress-timeout-partner-portal",
+      "incidentText": "Partner portal uploads began failing with 504 for files over 5MB, immediately after an ingress change. The annotation that sets the upstream read timeout was written as 1s where the previous value was 600s, and the upload handler needs about eight seconds. Nothing in the application changed and its own logs show the work completing. Restoring the annotation to 600s fixed every failure.",
+      "expected": {
+        "type": "ingress-timeout-misconfiguration",
+        "category": "config",
+        "component": "partner-portal"
+      }
+    },
+    {
+      "id": "dependency-schema-change-currency-feed",
+      "incidentText": "Settlement totals were wrong by a few cents for two hours. The currency feed's response changed shape -- the rate object used to carry a single rate field and now carries rate plus inverse -- and the feed's own status page shows the change deployed at 09:00. Settlement's parser still reads the old field, which is now rounded. The feed team reverted at 11:00 and totals matched again.",
+      "expected": {
+        "type": "upstream-schema-change",
+        "category": "dependency",
+        "component": "currency-feed"
       }
     }
   ]

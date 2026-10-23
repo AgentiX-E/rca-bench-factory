@@ -140,10 +140,10 @@ function adversarialWords(): string[] {
 // ---------------------------------------------------------------------------
 
 describe('A. the dataset obeys the category rule', () => {
-  it('derives the labelled category from the labelled type in all nineteen', () => {
+  it('derives the labelled category from the labelled type in all thirty', () => {
     const reading = assessDatasetConformance(datasetSamples());
-    expect(reading.graded).toBe(19);
-    expect(reading.conforming).toBe(19);
+    expect(reading.graded).toBe(30);
+    expect(reading.conforming).toBe(30);
     expect(reading.share).toBe(1);
     expect(reading.conforms).toBe(true);
   });
@@ -169,7 +169,7 @@ describe('A. the dataset obeys the category rule', () => {
       s.sampleId === 'resource-cpu-saturation-checkout' ? { ...s, category: 'network' } : s,
     );
     const reading = assessDatasetConformance(broken);
-    expect(reading.conforming).toBe(18);
+    expect(reading.conforming).toBe(29);
     expect(reading.conforms).toBe(false);
     expect(reading.disagreements).toHaveLength(1);
     expect(reading.disagreements[0]?.sampleId).toBe('resource-cpu-saturation-checkout');
@@ -205,8 +205,8 @@ describe('A. the dataset obeys the category rule', () => {
 describe('B. the rule covers every labelled type', () => {
   it('leaves no expected type undecidable', () => {
     const reading = assessDerivability(datasetSamples());
-    expect(reading.graded).toBe(19);
-    expect(reading.defined).toBe(19);
+    expect(reading.graded).toBe(30);
+    expect(reading.defined).toBe(30);
     expect(reading.undefinedTypes).toEqual([]);
     expect(reading.total).toBe(true);
   });
@@ -474,11 +474,21 @@ describe('E. the miss result is a property of the run, not of the model', () => 
 // ---------------------------------------------------------------------------
 
 describe('F. the reading cannot separate anyone, and says so', () => {
-  it('finds the alternative readings disagreeing with the label on two of nineteen', () => {
+  it('finds the alternative readings disagreeing with the label on four of thirty', () => {
+    // The corpus grew from 19 to 30 in v2.45 and this reading moved with it: 2 of 19 became
+    // 4 of 30, because two of the new types sit where the row order decides. The *verdict*
+    // did not move -- 0.1333 is still at or below the floor of 0.2 -- and that is the point
+    // of asserting the count as well as the verdict: a corpus change that silently made the
+    // reading look better would fail here.
     const power = assessDiscriminatingPower(datasetSamples());
-    expect(power.graded).toBe(19);
-    expect(power.differ).toHaveLength(2);
-    expect(power.differ.sort()).toEqual(['feature-flag-misconfiguration', 'redis-latency']);
+    expect(power.graded).toBe(30);
+    expect(power.differ).toHaveLength(4);
+    expect(power.differ.sort()).toEqual([
+      'feature-flag-misconfiguration',
+      'ingress-timeout-misconfiguration',
+      'queue-disk-watermark',
+      'redis-latency',
+    ]);
   });
 
   it('names which reading disagrees about which type', () => {
@@ -487,12 +497,17 @@ describe('F. the reading cannot separate anyone, and says so', () => {
     const power = assessDiscriminatingPower(datasetSamples());
     const byName = new Map(power.alternativeReadings.map((r) => [r.name, r.differ]));
     expect(byName.get('substring')).toEqual(['feature-flag-misconfiguration']);
-    expect(byName.get('row-shadowing')).toEqual(['redis-latency', 'feature-flag-misconfiguration']);
+    expect(byName.get('row-shadowing')).toEqual([
+      'redis-latency',
+      'feature-flag-misconfiguration',
+      'queue-disk-watermark',
+      'ingress-timeout-misconfiguration',
+    ]);
   });
 
-  it('computes the share as two of nineteen', () => {
+  it('computes the share as four of thirty', () => {
     const power = assessDiscriminatingPower(datasetSamples());
-    expect(power.share).toBeCloseTo(2 / 19, 10);
+    expect(power.share).toBeCloseTo(4 / 30, 10);
   });
 
   it('does not call the reading load-bearing', () => {
@@ -519,7 +534,7 @@ describe('F. the reading cannot separate anyone, and says so', () => {
     // The reason carries the share to four places and the floor as written. Asserting the
     // exact floor text rather than a formatted one: the first version of this test expected
     // `0.2000`, which the module has never printed -- the test was wrong, not the module.
-    expect(power.reason).toContain('0.1053');
+    expect(power.reason).toContain('0.1333');
     expect(power.reason).toContain(`floor of ${ALT_READING_FLOOR}`);
     expect(power.reason).toContain('at or below the floor');
   });
@@ -728,7 +743,7 @@ describe('J. every branch the corpus cannot reach is reached by a control', () =
     // The premise. If this ever stops holding the controls below become redundant rather than
     // wrong, and the assertion says so instead of leaving a reader to work it out.
     const corpus = assessDatasetConformance(datasetSamples());
-    expect(corpus.graded).toBe(19);
+    expect(corpus.graded).toBe(30);
     expect(corpus.disagreements).toHaveLength(0);
   });
 
@@ -747,7 +762,7 @@ describe('J. every branch the corpus cannot reach is reached by a control', () =
 
   it('reports every corpus type as defined, so the unknown branch is unexercised by it', () => {
     const corpus = assessDerivability(datasetSamples());
-    expect(corpus.graded).toBe(19);
+    expect(corpus.graded).toBe(30);
     expect(corpus.undefinedTypes).toHaveLength(0);
     expect(corpus.total).toBe(true);
   });
@@ -1133,7 +1148,7 @@ describe('N. the dataset states the rule it follows, and the whole file obeys it
     const rule = provenance()['categoryRule'];
     expect(rule).toBeDefined();
     expect(rule).toContain('inferFaultCategory');
-    expect(rule).toContain('19 of 19');
+    expect(rule).toContain('30 of 30');
     expect(rule).toContain('self-consistency');
   });
 
@@ -1269,7 +1284,7 @@ const REAL_CONSUMERS: CategoryConsumer[] = [
 describe('O. downstream agreement measures what depends on the predicted field', () => {
   it('grades every sample the dataset labels', () => {
     const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
-    expect(reading.graded).toBe(19);
+    expect(reading.graded).toBe(30);
   });
 
   it('moves no branching consumer on any sample of this corpus', () => {
@@ -1277,7 +1292,7 @@ describe('O. downstream agreement measures what depends on the predicted field',
     // the field is derivable away without moving them. This is the figure the verdict governs.
     const reading = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
     expect(reading.moved).toEqual([]);
-    expect(reading.inert).toBe(19);
+    expect(reading.inert).toBe(30);
     expect(reading.share).toBe(1);
     expect(reading.lossless).toBe(true);
   });
@@ -1345,7 +1360,7 @@ describe('O. downstream agreement measures what depends on the predicted field',
     // because either alone is compatible with a `separates` that ignores the denominator.
     const corpus = assessDownstreamAgreement(datasetSamples(), REAL_CONSUMERS);
     expect(corpus.separates).toBe(false);
-    expect(corpus.reason).toContain('1 of 19');
+    expect(corpus.reason).toContain('1 of 30');
   });
 
   it('reaches the separating branch with a corpus the alternative reading moves throughout', () => {
@@ -1658,12 +1673,15 @@ describe('R. the row order the alternative reading depends on', () => {
   const AMBIGUOUS = {
     'redis-latency': ['middleware', 'network'],
     'feature-flag-misconfiguration': ['middleware', 'config'],
+    // Added in v2.45 with the corpus: `queue` is a middleware term and `disk` a resource
+    // term, so this slug's verdict is decided by which row comes first.
+    'queue-disk-watermark': ['middleware', 'resource'],
   } as const;
 
-  it('names the two slugs whose verdict depends on the row order', () => {
-    // Both slugs are matched by two rows' term lists, so `substringReading`'s answer is decided
-    // by which row `Object.entries` reaches first. These are the only two in the corpus; a third
-    // appearing means the vocabulary gained a collision and this list must grow with it.
+  it('names the three slugs whose verdict depends on the row order', () => {
+    // Each slug is matched by two rows' term lists, so `substringReading`'s answer is decided
+    // by which row `Object.entries` reaches first. These are the only three in the corpus; a
+    // fourth appearing means the vocabulary gained a collision and this list must grow with it.
     const order = Object.keys(CATEGORY_TERMS);
     const ambiguous: string[] = [];
     for (const sample of datasetSamples()) {
@@ -1723,16 +1741,18 @@ describe('R. the row order the alternative reading depends on', () => {
           .join('|'),
       ),
     );
-    // Four distinct outcomes out of 5040 orders: the reading's answer is not a function of the
-    // data alone. Two of the four are the shipped and the fully-reversed-ish forms.
-    expect(vectors.size).toBe(4);
-    expect([...vectors].filter((v) => v.split('|')[8] === 'network')).toHaveLength(2);
+    // Eight distinct outcomes out of 5040 orders: the reading's answer is not a function of the
+    // data alone. It was four when the corpus had 19 samples and the third ambiguous slug did
+    // not exist; each additional order-sensitive slug doubles the space, which is why this is
+    // asserted as a number rather than as "more than one".
+    expect(vectors.size).toBe(8);
+    expect([...vectors].filter((v) => v.split('|')[8] === 'network')).toHaveLength(4);
   });
 
   it('records what the shipped order costs, so the trade is visible', () => {
     // The shipped order tests `middleware` before `config`, and that ordering is what makes
     // `feature-flag-misconfiguration` derive `middleware` -- the single disagreement that
-    // `assessDiscriminatingPower` reports as 1 of 19 and that `assessDownstreamAgreement`'s
+    // `assessDiscriminatingPower` reports as 1 of 30 and that `assessDownstreamAgreement`'s
     // refutation leans on. This is stated rather than left to be rediscovered: the ordering is a
     // decision with a consequence, and the consequence is a corpus figure.
     const order = Object.keys(CATEGORY_TERMS);

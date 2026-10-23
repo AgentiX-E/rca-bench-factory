@@ -166,7 +166,7 @@ describe('the misses follow counter-evidence, and the figure is stated with its 
     expect(report.withPhrase).toBe(6);
     expect(report.missedWithPhrase).toBe(5);
     expect(report.missedTotal).toBe(8);
-    expect(report.gradedTotal).toBe(19);
+    expect(report.gradedTotal).toBe(30);
     expect(report.precision).toBeCloseTo(5 / 6, 10);
     expect(report.recall).toBeCloseTo(5 / 8, 10);
   });

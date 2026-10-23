@@ -310,12 +310,18 @@ jobs:
           # out, keeps every published row readable and makes the omission
           # explicit rather than invisible.
           #
-          # The cap is 60, measured rather than guessed. The dataset has 19 samples
-          # and 3 scored fields, so 57 rows is the arithmetic maximum; the fully
-          # saturated payload is 4091 characters and an annotation limit is 64KiB.
-          # 60 therefore covers every run this dataset can produce with room to
-          # spare, and the truncation path exists for the day the dataset grows --
-          # it is a stated bound, not the normal case.
+          # The cap is 128, measured rather than guessed -- and the number moved
+          # when the dataset did. It was 60 while the key held 19 samples (57 rows
+          # at three scored fields); v2.45 grew the key to 30, so the arithmetic
+          # maximum is 90, and a fully-missed run would have been truncated
+          # *routinely*, which is exactly what the old comment said this cap
+          # existed to prevent. `workflow-provider.test.ts` fails when the cap is
+          # below a saturated run, which is how the stale figure was caught rather
+          # than noticed.
+          #
+          # 128 covers up to about 42 samples before truncation, and the character
+          # side is not close: 90 rows at the longest observed row is under 9 KB
+          # against a 64 KiB annotation limit. The bound is stated, not implied.
           # Rows are joined with U+001F (unit separator), not with a space.
           # Measured, not assumed: the first version separated rows with spaces and
           # the values themselves contain spaces -- `order-service ConfigMap`,
@@ -328,8 +334,8 @@ jobs:
           # one that cannot occur in a value. Values are slugs and quoted incident
           # text, so U+001F is safe and is what it exists for.
           sep=$(printf '\037')
-          detail=$(printf '%s' "$missed_rows" | head -n 60 | paste -sd "$sep" -)
-          dropped=$((miss_row_count > 60 ? miss_row_count - 60 : 0))
+          detail=$(printf '%s' "$missed_rows" | head -n 128 | paste -sd "$sep" -)
+          dropped=$((miss_row_count > 128 ? miss_row_count - 128 : 0))
           if [ -n "$detail" ]; then
             if [ "$dropped" -gt 0 ]; then
               echo "::notice title=M1 fault extraction miss detail::${detail}... [${dropped} more row(s) omitted; all ${miss_row_count} are in the step summary]"
