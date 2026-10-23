@@ -1624,3 +1624,76 @@ single sample of drift no longer covers the margin).
 | the batteries | component rule 8/8, M1 ceiling 11/11, M1 ceiling tests 8/8, type-miss 74/74, scoring 12/12, workflow 28/28 — all caught |
 | `core` / repo | **171 / 4251** · **175 / 4438** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 217 — an open item's clause was two claims, and measuring the first dissolved the second
+
+`docs/progress.md` has carried this sentence since pass 11, under the export enumeration:
+
+> the enumeration asserts that a name is mentioned rather than called
+
+Read quickly it says *the list over-claims tests*. Read carefully it is **two claims**: a
+measurement ("a name is mentioned, not called") and an inference ("therefore the list's claim is
+weaker than it sounds"). The measurement had never been taken. This round took it.
+
+### The measurement
+
+**61 of the 506 names in `TESTED` are named by no test file at all.** That is the sentence's first
+half, and it is true.
+
+The second half does not follow, and the obvious repair would have been wrong. A rule of the form
+"every listed export must be imported by a test" produces 61 findings, and most of them are false
+in a specific way — the export is exercised through a caller:
+
+| name | exercised by |
+| --- | --- |
+| `readOpenRcaGroundTruth`, `readOpenRcaSubmission` | `score/official.ts` |
+| `getUnitDef` | `convertUnit`, `sameDimension` in the same module |
+| `buildGroundTruthCsv` and the three other CSV builders | `scripts/format-spec.mjs`, whose output a doc gate compares |
+| `isVocabularyMember` | `scripts/check-official.mjs`, which has a test |
+
+The rest are zod schemas (imported by the module that composes them) and constants (paths,
+timeouts, vocabularies) whose *behaviour* is what a test would assert. So a name-level rule would
+have produced a repair of 61 exemption rows — an exemption table that says "this one doesn't
+count", 61 times, which is an instrument that has been talked out of its own finding.
+
+### What actually answers the question
+
+"Is this export exercised" is answered by the **coverage gate**: the suite runs, v8 reports per
+function, and `packages/core/vitest.config.ts` requires **`functions: 100`**. Under that threshold
+no exported function can be unexecuted, and the figure has held at 100 across every round. That is
+a measurement of execution, which a name-level scan is not.
+
+So the two claims divide the work, and the division is now stated where it can fail:
+
+- the **list** says the export exists and is listed, and asserts it in both directions against the
+  source;
+- the **coverage gate** says it runs;
+- and the enumeration test now **reads `functions: 100` out of the config and asserts it**, so
+  lowering the threshold fails in the file whose claim depends on it rather than quietly making
+  the list's appearance of coverage false. Checked by mutation: `functions: 95` turns it red,
+  restoring turns it green.
+
+The second test is the control for the first: it computes, live, how many listed names no test
+names, and requires the answer to stay **non-zero**. If it ever reached zero the two criteria
+would have collapsed into one and the paragraph above would become false — which is worth a failing
+test rather than a sentence that outlives its evidence.
+
+### What this round did not do
+
+It did not add 61 tests, and it did not add 61 exemptions. It also did not close the item: the
+residual claim — *no instrument states how each export is exercised* — is real and unchanged, and
+the completeness of `index.ts` as a surface still rests on `pack-manifest-completeness` and the
+`exports` field. What changed is that the item now says which of its two halves is a measurement,
+which is an inference, and which instrument answers the question the sentence was reaching for.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the measurement | 61 of 506 names named by no test; the 5 function cases traced to their callers |
+| the coupling | `functions: 100` read from the config and asserted in the enumeration test |
+| the mutation | `functions: 95` fails that test; restoring it passes (checked by hand) |
+| the control | the live count of unnamed names must stay non-zero |
+| the open item | corrected in place, not struck: the residual claim is unchanged |
+| `core` / repo | **171 / 4253** · **175 / 4440** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

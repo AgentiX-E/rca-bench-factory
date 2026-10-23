@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **171 files, 4251 tests passed** (as of this commit) |
+| `core` test suite | **171 files, 4253 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **175 files, 4438 tests passed** (as of this commit) |
+| repo test suite | **175 files, 4440 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -3529,3 +3529,54 @@ with a 100% ceiling and no headroom cost; audit 5 volumes, findings 1–216.
 - **Three `component` naming misses are still unmeasured.**
   `[open: the v2.44 rule change (product, actor) was never exercised, and the link pair plus
   `tax-calculation-service` remain. All of it waits on the balance]`
+
+## v2.46 — an open item's clause was two claims, and measuring one dissolved the other
+
+The export enumeration has carried this sentence since pass 11: *"the enumeration asserts that a
+name is mentioned rather than called"*. It reads as an accusation — the list over-claims tests —
+and it is **two claims wearing one sentence**: a measurement nobody had taken, and an inference
+drawn from it.
+
+The measurement, taken:
+
+**61 of the 506 names in `TESTED` are named by no test file at all.** The inference does not
+follow. A rule requiring each listed export to be imported by a test would have produced 61
+findings, and most are false in one way — the export is exercised through a caller:
+
+| name | exercised by |
+| --- | --- |
+| `readOpenRcaGroundTruth`, `readOpenRcaSubmission` | `score/official.ts` |
+| `getUnitDef` | `convertUnit` / `sameDimension` |
+| the four CSV builders | `scripts/format-spec.mjs`, whose output a doc gate compares |
+| `isVocabularyMember` | `scripts/check-official.mjs`, which has a test |
+
+The rest are zod schemas composed by a tested module and constants whose behaviour is what a test
+would assert. So the repair would have been an exemption table with 61 rows — an instrument talked
+out of its own finding.
+
+What actually answers "is this export exercised" is the **coverage gate**: `functions: 100`, per
+function, over the real suite. The enumeration test now **reads that threshold out of the config
+and asserts it**, so lowering it fails in the file whose claim depends on it (`functions: 95`
+turns it red; restoring turns it green — checked by hand). A second test computes the 61 live and
+requires it to stay **non-zero**: if the two criteria ever collapsed into one, the paragraph above
+would become false, and that is worth a failing test rather than a sentence outliving its evidence.
+
+The residual claim is **not** closed and the item was corrected in place rather than struck: no
+instrument states *how* each export is exercised, and `index.ts` completeness still rests on
+`pack-manifest-completeness` and the `exports` field.
+
+**Acceptance.** 2 new tests (207 in the enumeration file), core **171 / 4253**, cli 4 / 187, repo
+**175 / 4440**; typecheck, lint, `docs:check` green; coverage 99.97 / 99.74 / 100 / 99.97 and
+100 ×4; audit 5 volumes, findings 1–217.
+
+### Left open
+
+- **No instrument states how each export is exercised.**
+  `[open: the list proves existence, the coverage gate proves execution, and nothing in between
+  records whether an export is called directly, called through a caller, or reached only through a
+  composed schema. A per-symbol call-site map would be the instrument, and the 61-name measurement
+  is the population it would have to cover]`
+- **The milestone waits on the balance, and now on a new baseline.**
+  `[open: M1's 15/19 belongs to the 19-sample key; the 30-sample key has never been measured
+  because the provider returns 402. Two rounds of prompt changes (v2.43's boundaries, v2.44's
+  component rules) are in the tree and only the first has a reading]`

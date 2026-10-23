@@ -1164,7 +1164,22 @@ settle.
   different ways — 43 in the test file's own comment, 45 here, 46 in the L3 row —
   which is why the test file no longer states any of them and points at the list
   instead.
-  `[open: the enumeration asserts that a name is mentioned rather than called, and the completeness of index.ts as a surface rests on pack-manifest-completeness and the package exports field]`
+  **v2.46 measured the clause this entry has carried since pass 11**, and it was
+  two claims wearing one sentence. The first — "it asserts a name is mentioned,
+  not called" — is a measurement nobody had taken: **61 of the 506 names in
+  `TESTED` are named by no test file at all**. The second — that the list
+  therefore over-claims — is not what the list says, and the obvious repair would
+  have been wrong: `readOpenRcaGroundTruth` is called by `score/official.ts`,
+  `getUnitDef` by `convertUnit`, the four CSV builders by
+  `scripts/format-spec.mjs`, `isVocabularyMember` by a gate. A name-level rule
+  would have produced 61 findings, most false, and the repair would have been an
+  exemption table with 61 rows.
+
+  What actually answers "is this export exercised" is the **coverage gate**, which
+  runs the suite and requires **100% function coverage** — asserted inside the
+  enumeration test now, so lowering it fails there rather than leaving this list
+  reading as if it covered execution.
+  `[open: the list proves an export exists and is listed; the coverage gate proves it runs; no instrument states *how* it is exercised, and the completeness of index.ts as a surface still rests on pack-manifest-completeness and the package exports field]`
 
 - **`glm-embedding-3` benchmark scheduling** is out of scope for this package;
   the LLM-dependent paths here are behind a provider-agnostic abstraction.
@@ -1197,7 +1212,7 @@ and this table.
 | [volume-01.md](progress/volume-01.md) | 20 | Pass 14 | Pass 34 |
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
-| [volume-04.md](progress/volume-04.md) | 41 | v2.06 | v2.45 |
+| [volume-04.md](progress/volume-04.md) | 42 | v2.06 | v2.46 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

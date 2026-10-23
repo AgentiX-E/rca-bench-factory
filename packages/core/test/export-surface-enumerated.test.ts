@@ -1340,3 +1340,55 @@ describe('the gate can actually fail', () => {
     expect(naming.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * What this list does *not* claim, measured rather than assumed.
+ *
+ * `docs/progress.md`'s Open list carried this entry: *"the enumeration asserts
+ * that a name is mentioned rather than called"* — read as "the list says 506
+ * exports are tested, and it only checks that the names appear". The first half
+ * of that is a claim the list never made; the second half is a measurement
+ * nobody had taken. This block takes it.
+ *
+ * Measured on the day it was written: **61 of 506** names in `TESTED` are not
+ * named by any test file. The obvious repair — require each name to be imported
+ * by a test — is **wrong**, and the reason is worth recording because it is this
+ * repository's oldest mistake in a new place. Of those 61, several are perfectly
+ * well tested through a caller: `readOpenRcaGroundTruth` is called by
+ * `score/official.ts`, `getUnitDef` by `convertUnit`, the four CSV builders by
+ * `scripts/format-spec.mjs`, and `isVocabularyMember` by a gate. A name-level
+ * rule would have produced 61 findings, most of them false, and the predictable
+ * repair would have been an exemption table with 61 rows.
+ *
+ * The question "is this export executed" is already answered, by an instrument
+ * that measures execution rather than names: the coverage gate runs the real
+ * suite and requires **100% function coverage**. So the two claims divide the
+ * work — this list says the export *exists and is listed*, the coverage gate
+ * says it *runs* — and the division is only sound while that threshold is what
+ * it says. Which is what the first test below pins.
+ */
+describe('the claim this list makes, and the instrument that makes the other one', () => {
+  it('leaves execution to a gate that requires every function to run', () => {
+    // The precondition. If `functions` is ever lowered, "every export is
+    // executed" stops being true for the whole surface at once, and this list
+    // would go on reading as if it were -- so the coupling is asserted here
+    // instead of being described in a comment somewhere else.
+    const config = readFileSync(join(PACKAGE_ROOT, 'vitest.config.ts'), 'utf8');
+    const functions = /functions:\s*(\d+)/.exec(config);
+    expect(functions, 'the core vitest config must state a function threshold').not.toBeNull();
+    expect(Number(functions?.[1])).toBe(100);
+  });
+
+  it('does not claim that every name it lists is named by a test', () => {
+    // The measurement, taken live rather than quoted, and it must stay
+    // non-zero: if it ever reaches zero the two criteria collapse into one, the
+    // paragraph above becomes false, and this test says so instead of leaving a
+    // sentence to rot.
+    const self = join(HERE, 'export-surface-enumerated.test.ts');
+    const corpus = ALL_TS.filter((f) => f.includes('/test/') && f !== self)
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    const notNamed = TESTED.filter((name) => !new RegExp(`\\b${name}\\b`).test(corpus));
+    expect(notNamed.length, 'the two criteria have become the same criterion').toBeGreaterThan(0);
+  });
+});
