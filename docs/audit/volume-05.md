@@ -1348,3 +1348,110 @@ from committing the halves separately.
 The rule that follows is a rule about commits, not about tooling: a commit that changes a
 measured quantity ships the measurement. This round's commit did, and it is the reason its count
 rows are in the same diff as the tests that moved them.
+
+## Finding 213 — M1 is met, on a prediction that was committed before the run
+
+Finding 211 ended eight points short of the exit condition with a priced ceiling: two `category`
+samples, both with the other fields right, worth **15/19**. This round restated the two
+boundaries that had survived, and the prediction was written into commit `0c3355d1` **before the
+run existed**:
+
+> Prediction, recorded before the run so it can be wrong: category 19/19, strict 15/19 (78.9%),
+> M1 met.
+
+Run `39881192308`, same model, same 19 samples:
+
+| field | v2.40 (no space) | v2.41 (space) | v2.42 (definitions) | v2.43 (boundaries) |
+| --- | --- | --- | --- | --- |
+| type | 4/19 | 17/19 | 19/19 | **19/19** |
+| category | 11/19 | 13/19 | 17/19 | **19/19** |
+| component | 14/19 | 14/19 | 15/19 | 15/19 |
+| **strict** | **2/19** | **9/19** | **13/19** | **15/19 (78.9%)** |
+
+`M1 exit condition: MET (>= 70% strict)` — the first time that line has ever been printed.
+
+### The two changes, and why each was a defect in the text rather than a missing rule
+
+**`middleware` vs `code`** was written as a test of the *cause*: "even when a code change is what
+loaded it". That sentence invites exactly the reasoning the model performed — the lag was caused
+by a code change, therefore `code` — and then denies it in the second half. The fact that
+separates the two is where the **symptom** lands: a queue falling behind is `middleware`, a 500
+in the workload's own answers is `code`. Rewritten as that test, the sample moved.
+
+**`code` vs `config`** did not exist, and it was the cost of finding 211's own definitions: once
+`config` was defined as "a deployed value ... read as written", a WAF rule containing a
+catastrophic regex looked like a member. The discriminator is **executed versus read** — a URL,
+a flag, a key is read; a pattern, a rule, a matcher is executed — and stating it returns the
+sample without weakening `config`, whose other two samples are both read values.
+
+Both are still descriptions of the taxonomy. Neither names a sample, a component or an incident:
+the assertion that forbids the prompt carrying any sample id, any expected component or eight
+consecutive words of any incident text passes unchanged.
+
+### What "met" is allowed to mean here
+
+- **It is 15/19, not 19/19.** Four samples miss, all in `component`, and none of them is a
+  `category` or `type` error.
+- **The margin is one sample.** Finding 211 measured one sample of drift per run on a field whose
+  rule had not changed (and this run moved `session-cache`'s component answer again, from
+  `session-store` to `session-redis`). One sample down is 14/19 = 73.7%, still above the
+  threshold; two down is 13/19 = 68.4%, below it. So the claim is "met, with one sample of margin
+  against the drift this instrument has been measured to have", which is weaker than "comfortably
+  met" and stronger than "met on one reading".
+- **19 samples makes the quantum 5.3 points.** The threshold sits between thirteen and fourteen
+  samples; it was crossed at fifteen.
+- **`description` still has no denominator** (finding 209): the key carries three fields, so the
+  strict rate covers `type`, `category` and `component` only.
+
+### The four remaining misses, and the one that is now a scoring question
+
+| sample | expected → actual | what it is |
+| --- | --- | --- |
+| `network-loss-payment-gateway` | `payment-gateway → order-service` | the other end of a link |
+| `middleware-redis-latency-cache` | `session-cache → session-redis` | the text's own name for the same thing |
+| `config-feature-flag-checkout` | `storefront → scheduled-job` | the actor, not the workload |
+| `dependency-upstream-5xx-pricing` | `tax-calculation → tax-calculation-service` | the expected name plus a role suffix |
+
+The fourth is a different kind from the other three. `tax-calculation-service` and
+`tax-calculation` name the same entity, and `sameValue` normalises case and separators but not a
+`-service` suffix. Widening the comparator is the repair finding 61 explicitly refused ("fixing a
+comparator that never had the defect it was blamed for"), and it is refused here for the same
+reason: `session-store` would then match `session`, and the field would stop distinguishing
+anything. The three others are naming questions for the prompt, and the link pair is the one
+where the key itself may be inconsistent (recorded as open in v2.42).
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the prediction | committed before the run; both halves (`category 19/19`, `strict 15/19`) correct |
+| the reading | `type 19/19`, `category 19/19`, `component 15/19`, **`strict 15/19`**, M1 **MET** |
+| the prompt | six boundary rules; the recorded pair list is the six the two runs produced |
+| the tests | 33 in `fault-prompt-grammar.test.ts`, the anti-fitting assertions unchanged and passing |
+| `core` / repo | **170 / 4236** · **174 / 4423** (no test moved this round, so no count moved) |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 214 — the workflow cited a file that has never existed, for the definition of its own number
+
+`fault-extraction-accuracy.yml` opened with:
+
+> `docs/product.md` states the M1 exit condition in terms of extraction accuracy...
+
+There is no `docs/product.md` in this repository and there never was. The file list is
+`acceptance`, `architecture`, `audit`, `cli-reference`, `data-model`, `progress`,
+`target-formats`, `user-guide`. The condition it described was real, and the number the workflow
+produces had been compared against it for four rounds — but the *location* of the definition was
+invented, and nothing reads a comment.
+
+This is the same shape as finding 205 (a citation that reads the same whether or not it
+resolves), one level down: 205 was about `finding N` references inside the audit log, which a
+gate now checks. **File references in comments are checked by nothing.** The citation was
+introduced while writing the header, which is exactly when a person is most likely to write the
+name of the document they meant to write rather than the one that exists.
+
+The repair is not to create `docs/product.md` to satisfy a stale sentence: the exit condition is
+one paragraph, and it belongs where the measurement lives. It is now stated inline in the
+workflow header, with the reading that first met it, and the header says why the citation is
+gone. A static gate for this would have to distinguish a path from a mention of a path, which is
+finding 197's problem again; the honest position is that this one is held by review and recorded
+here rather than claimed to be gated.

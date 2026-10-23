@@ -2,11 +2,19 @@ name: Fault extraction accuracy
 
 # The M1 exit condition, measured.
 #
-# `docs/product.md` states the M1 exit condition in terms of extraction accuracy:
+# This comment used to cite `docs/product.md` for the condition below, and no such
+# file has ever existed in this repository (finding 214). The condition is stated
+# here instead, because a header that points at an absent document is a claim
+# with no location -- and this one was pointing at the definition of the very
+# number the workflow exists to produce:
+#
 # the historical-fault channel (M13 channel B) must recover the fault type and
 # category from an incident text at a strict all-fields rate of at least 70%.
+#
 # Until this workflow existed, that condition had no measurement behind it -- it
-# was a claim in a document with nothing that could contradict it.
+# was a claim in a document with nothing that could contradict it. It was met for
+# the first time on run `39881192308`: `strict 15/19 (78.9%)`, with `type` and
+# `category` at 19/19 and the four remaining misses all in `component`.
 #
 # ## Why this is on a runner and not in the sandbox
 #

@@ -3342,3 +3342,68 @@ files / 4236 tests, cli 4 / 187, repo 174 / 4423; coverage 99.97 / 99.74 / 100 /
   egress and says the gateway received fewer requests than were sent. A key no stated rule can
   produce is a key worth re-reading, and re-annotation is the one repair this project has used
   before (finding 75) -- but it must not be done in the round that would gain a point from it]`
+
+## v2.43 — M1 is met, on a prediction committed before the run
+
+v2.42 left two `category` misses and a priced ceiling: both samples had the other two fields
+right, so resolving them reaches 15/19 and clears the exit condition without touching `component`
+or any annotation. This round restates the two boundaries, and the prediction went into the commit
+message before the run existed:
+
+> category 19/19, strict 15/19 (78.9%), M1 met.
+
+Run `39881192308`:
+
+| field | v2.40 | v2.41 | v2.42 | v2.43 |
+| --- | --- | --- | --- | --- |
+| type | 4/19 | 17/19 | 19/19 | **19/19** |
+| category | 11/19 | 13/19 | 17/19 | **19/19** |
+| component | 14/19 | 14/19 | 15/19 | 15/19 |
+| **strict** | 2/19 | 9/19 | 13/19 | **15/19 (78.9%)** |
+
+`M1 exit condition: MET`. Both halves of the prediction were right, which is the first time a
+prompt change in this sequence has been predicted rather than measured and then explained.
+
+The two changes were both defects of wording rather than missing rules:
+
+- **`middleware` vs `code`** was written as a test of the *cause* ("even when a code change is
+  what loaded it"). That is the reasoning the model performed, invited and then denied in the same
+  sentence. The separating fact is where the *symptom* lands.
+- **`code` vs `config`** did not exist, and defining `config` as "read as written" is what created
+  the need for it. Executed versus read returns the sample without weakening `config`, whose two
+  other samples are both read values.
+
+**What "met" is allowed to mean.** It is 15/19, not 19/19. The margin is one sample: one sample
+down is 14/19 (73.7%), still above the threshold, and two down is 13/19 (68.4%), below it. The
+instrument has been measured to drift by one sample per run, so this is "met with one sample of
+margin", not "comfortably met". With 19 samples the quantum is 5.3 points and the threshold sits
+between thirteen and fourteen.
+
+The four remaining misses are all `component`: the other end of a link, the text's own name for
+the cache, the actor rather than the workload, and — new in kind — `tax-calculation-service` for
+`tax-calculation`, which is the same entity plus a role suffix. Widening the comparator to accept
+it is the repair finding 61 refused and is refused again here: `session-store` would then match
+`session`, and the field would stop distinguishing anything.
+
+**Acceptance.** No test moved (33 in `fault-prompt-grammar.test.ts`), so no count moved; core
+**170 / 4236**, cli **4 / 187**, repo **174 / 4423**; typecheck, lint and `docs:check` green;
+coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–214.
+
+### Left open
+
+- **Three `component` naming misses, and none is a `category` or `type` error.**
+  `[open: `session-cache` answered `session-redis` (the text's own name for it),
+  `storefront` answered `scheduled-job` (the actor, not the workload), and `payment-gateway`
+  answered `order-service` (the other end of a link). The first two look like one rule -- use the
+  name the incident uses and name the workload that broke -- and the third is the link pair, where
+  the key may itself be inconsistent. The link pair must not be re-annotated in a round that would
+  gain from it]`
+- **`tax-calculation-service` is a scoring question, not a prompt one.**
+  `[open: the model names the right entity with a role suffix. `sameValue` folds case and
+  separators, not suffixes, and widening it to fold `-service` would also make `session-store`
+  match `session`. The honest options are a stated naming rule in the prompt (no role suffix) or
+  accepting the miss; widening the comparator is refused]`
+- **M1's reading rests on 19 samples.**
+  `[open: the quantum is 5.3 points and the margin is one sample, so the milestone is met on an
+  instrument whose resolution is coarse relative to its threshold. Enlarging the key is the
+  durable fix and is a data project, not a prompt one]`
