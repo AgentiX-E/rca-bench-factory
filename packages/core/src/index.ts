@@ -611,10 +611,12 @@ export type {
  * and it should not have to be found by reading source.
  */
 export {
+  FAILURE_EXCERPT_LIMIT,
   FAULT_GOLDEN_SCHEMA,
   M1_STRICT_THRESHOLD,
   SCORED_FIELDS,
   buildExtractionReport,
+  describeExtractionFailure,
   formatExtractionReport,
   meetsM1ExitCondition,
   parseGoldenDataset,
@@ -631,6 +633,7 @@ export type {
   SampleState,
   SampleVerdict,
   ScoredField,
+  UnusableSample,
 } from './fault/extraction-scoring.js';
 
 export {

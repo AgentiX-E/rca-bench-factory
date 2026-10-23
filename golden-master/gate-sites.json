@@ -248,7 +248,7 @@
     },
     {
       "script": "scripts/derive-fault-golden.mjs",
-      "line": 245,
+      "line": 255,
       "condition": "unusable > 0",
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",
@@ -412,7 +412,7 @@
     },
     {
       "script": "scripts/score-fault-extraction.mjs",
-      "line": 149,
+      "line": 156,
       "condition": "!core.meetsM1ExitCondition(report)",
       "diagnostic": "fatal: ${error instanceof Error ? error.message : String(error)}",
       "status": "proved",

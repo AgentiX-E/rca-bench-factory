@@ -170,6 +170,12 @@ async function main() {
       const text = await provider.generate(prompt);
       const parsed = core.parseFaultExtractionResponse(text);
       if (!parsed.ok) {
+        // The reason and the beginning of the response go into the artefact, not
+        // only onto stdout. Run 39901474902 left nineteen `parseOk: false` records
+        // and nothing else, because stdout of a job is unreadable here (finding
+        // 55) -- so the one channel that survives could say *that* the run failed
+        // and not *why*.
+        Object.assign(prediction, core.describeExtractionFailure(text, parsed.error));
         console.log(`  UNPARSEABLE ${sample.id}: ${parsed.error}`);
         unusable += 1;
       } else {
@@ -201,7 +207,11 @@ async function main() {
       // A transport failure is not an unparseable answer and is not scored as
       // one. It is recorded as a failed parse so the state is visible, and the
       // run continues -- one flaky request must not cost the whole measurement.
-      console.log(`  FAILED       ${sample.id}: ${error instanceof Error ? error.message : String(error)}`);
+      // Recorded in the artefact as a *transport* failure, which is a different
+      // repair from a response that parsed badly: one is a network or credential
+      // problem, the other is the model's answer.
+      prediction.transportError = error instanceof Error ? error.message : String(error);
+      console.log(`  FAILED       ${sample.id}: ${prediction.transportError}`);
       unusable += 1;
     }
 

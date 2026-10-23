@@ -625,6 +625,10 @@ const TESTED = [
   'meetsM1ExitCondition',
   'parseGoldenDataset',
   'scoreExtractionSample',
+  // finding 215 -- a run that could not answer now says why, in the artefact and
+  // in the report; `extraction-diagnostics.test.ts` is the test that drives both.
+  'FAILURE_EXCERPT_LIMIT',
+  'describeExtractionFailure',
   // fault/miss-detail.ts -- finding 92, reading the published miss detail back.
   'MISS_DETAIL_TITLE',
   'isTruncated',

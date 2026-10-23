@@ -100,6 +100,13 @@ function readPredictions(core, path) {
     ...(p?.extracted !== undefined && typeof p.extracted === 'object' ? { extracted: p.extracted } : {}),
     ...(typeof p?.validationValid === 'boolean' ? { validationValid: p.validationValid } : {}),
     ...(typeof p?.verifiable === 'boolean' ? { verifiable: p.verifiable } : {}),
+    // The diagnosis of a sample that produced no answer. Dropping these here was
+    // the second half of the same defect: the artefact would carry the reason and
+    // this mapping would silently discard it, so the report would print
+    // "(no reason recorded)" about a file that recorded one.
+    ...(typeof p?.parseError === 'string' ? { parseError: p.parseError } : {}),
+    ...(typeof p?.responseExcerpt === 'string' ? { responseExcerpt: p.responseExcerpt } : {}),
+    ...(typeof p?.transportError === 'string' ? { transportError: p.transportError } : {}),
   }));
 }
 

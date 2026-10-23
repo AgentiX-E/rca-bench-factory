@@ -192,6 +192,21 @@ export interface ExtractionSamplePrediction {
    * Absent is treated as verifiable -- a scorer must not invent an excuse.
    */
   verifiable?: boolean;
+  /**
+   * Why the response could not be parsed, when it could not be.
+   *
+   * Run `39901474902` recorded `{ sampleId, parseOk: false }` nineteen times and
+   * nothing else, so the artefact could not distinguish a quota error from an
+   * expired key from a genuinely malformed answer. The reason existed only on the
+   * job's stdout, which is not readable from this project's environment
+   * (finding 55) -- so a paid measurement was unreadable in exactly the way that
+   * matters.
+   */
+  parseError?: string;
+  /** The beginning of the response, whitespace-collapsed and bounded. */
+  responseExcerpt?: string;
+  /** A request that threw, which is a different cause from a response that parsed badly. */
+  transportError?: string;
 }
 
 export interface LayerMetrics {
@@ -244,9 +259,24 @@ export interface MissClassification {
   samplesWithMisses: number;
 }
 
+/**
+ * A sample the run could not score, with whatever the artefact knows about why.
+ *
+ * `unverifiable` is deliberately not here: it is a property of the *corpus*, not
+ * a failure of the run, and listing it beside a quota error would read as one.
+ */
+export interface UnusableSample {
+  sampleId: string;
+  state: SampleState;
+  reason?: string;
+  excerpt?: string;
+}
+
 export interface ExtractionReport {
   total: number;
   counts: Record<SampleState, number>;
+  /** Every sample that produced no answer, with its reason when the artefact carries one. */
+  unusable: UnusableSample[];
   /** Every expected field was right, over graded samples. */
   strict: LayeredRate;
   layers: LayerMetrics;
@@ -561,6 +591,17 @@ export function buildExtractionReport(
     layers: { parse, validation, graded: gradedRate, ...fieldRates },
     misses,
     missClassification,
+    unusable: paired
+      .filter((r) => r.verdict.state === 'unparseable' || r.verdict.state === 'unvalidated')
+      .map((r) => ({
+        sampleId: r.sample.id,
+        state: r.verdict.state,
+        ...(r.prediction.parseError !== undefined ? { reason: r.prediction.parseError } : {}),
+        ...(r.prediction.transportError !== undefined ? { reason: r.prediction.transportError } : {}),
+        ...(r.prediction.responseExcerpt !== undefined && r.prediction.responseExcerpt !== ''
+          ? { excerpt: r.prediction.responseExcerpt }
+          : {}),
+      })),
   };
 }
 
@@ -576,6 +617,42 @@ export function meetsM1ExitCondition(report: ExtractionReport): boolean {
     return false;
   }
   return report.strict.rate >= M1_STRICT_THRESHOLD;
+}
+
+/**
+ * How much of an unparseable response is kept.
+ *
+ * Two hundred characters is enough for an error envelope's message and short
+ * enough that nineteen of them still fit on one page of a step summary. A bound
+ * is needed because the input can be an HTML error page of a megabyte, and an
+ * artefact that grows with a provider's error page is an artefact nobody pastes
+ * into a report.
+ */
+/** How many unusable samples the report names before it summarises the rest. */
+const UNUSABLE_SHOWN = 3;
+
+export const FAILURE_EXCERPT_LIMIT = 200;
+
+/**
+ * The record of a response that could not be parsed.
+ *
+ * Both halves are kept. The *reason* is the parser's own message -- "response
+ * contains no JSON object" -- and the *excerpt* is what the endpoint actually
+ * said. Either alone is ambiguous: the reason cannot distinguish an empty body
+ * from prose, and the excerpt cannot say which parser rule rejected it.
+ *
+ * Whitespace is collapsed rather than stripped: newlines are what make a
+ * pretty-printed error body a stack trace in a log, and a report line that wraps
+ * three times is one a reader skips.
+ */
+export function describeExtractionFailure(
+  responseText: string,
+  reason: string,
+): { parseError: string; responseExcerpt: string } {
+  const collapsed = responseText.replace(/\s+/g, ' ').trim();
+  const responseExcerpt =
+    collapsed.length > FAILURE_EXCERPT_LIMIT ? `${collapsed.slice(0, FAILURE_EXCERPT_LIMIT)}…` : collapsed;
+  return { parseError: reason, responseExcerpt };
 }
 
 function renderRate(label: string, r: LayeredRate): string {
@@ -626,6 +703,22 @@ export function formatExtractionReport(report: ExtractionReport): string {
       `omitted ${report.missClassification.omitted}, ` +
       `samples with >= 1 miss ${report.missClassification.samplesWithMisses}`,
   );
+  if (report.unusable.length > 0) {
+    // Bounded on purpose. Nineteen identical lines push the per-field table off
+    // the summary page, and the first failure is what identifies the cause. The
+    // count is still printed so the list is not read as the whole run.
+    const shown = report.unusable.slice(0, UNUSABLE_SHOWN);
+    lines.push('  ' + '-'.repeat(46));
+    lines.push(
+      `  Not scored (${report.unusable.length} of ${report.total}; first ${shown.length} shown):`,
+    );
+    for (const u of shown) {
+      lines.push(`    ${u.sampleId.padEnd(20)}${u.state.padEnd(14)}${u.reason ?? '(no reason recorded)'}`);
+      if (u.excerpt !== undefined) {
+        lines.push(`      began: ${u.excerpt}`);
+      }
+    }
+  }
   if (report.misses.length === 0) {
     lines.push('  No graded sample missed a scored field.');
   } else {

@@ -486,3 +486,78 @@ describe('scripts/derive-fault-golden.mjs · it is a real process, not a shell f
     );
   });
 });
+
+/**
+ * A sample that produced no answer, and whether the shipped report says why.
+ *
+ * Run `39901474902` scored `unparseable 19/19` in forty seconds. The reason was
+ * printed to stdout, which this environment cannot read (finding 55), so the
+ * artefact was the only channel and it carried `{ sampleId, parseOk: false }`
+ * nineteen times. Recording the reason in the artefact is half the repair; this
+ * test is the other half, because the scorer *re-declares* the fields it reads
+ * and would have dropped them -- the artefact would have known why and the
+ * report would have printed "(no reason recorded)" about a file that recorded
+ * one. That is the same shape as the defect it fixes, one layer down.
+ */
+describe('scripts/score-fault-extraction.mjs · a sample that produced no answer carries its reason', () => {
+  /** A one-sample dataset, so the artefact and the key agree and the report is short. */
+  function oneSampleDataset(id: string): string {
+    const path = join(workdir, `dataset-${id}.json`);
+    writeFileSync(
+      path,
+      JSON.stringify({
+        schema: 'rca-bench-fault-golden/2',
+        types: ['cpu-saturation'],
+        samples: [
+          {
+            id,
+            incidentText: 'the pod sat pinned at its 500m limit',
+            expected: { type: 'cpu-saturation', category: 'resource', component: 'checkout-api' },
+          },
+        ],
+      }),
+    );
+    return path;
+  }
+
+  it('prints the artefact’s reason and the beginning of the response', () => {
+    const id = 'carries-reason';
+    const path = join(workdir, 'carries-reason.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        schema: 'rca-bench-fault-extraction-predictions/1',
+        predictions: [
+          {
+            sampleId: id,
+            parseOk: false,
+            parseError: 'response contains no JSON object',
+            responseExcerpt: '{"error":{"message":"insufficient balance"}}',
+          },
+        ],
+      }),
+    );
+    const out = run(SCORE, ['--predictions', path, '--dataset', oneSampleDataset(id)]);
+    expect(out.stdout).toContain('response contains no JSON object');
+    expect(out.stdout).toContain('insufficient balance');
+  });
+
+  it('prints a transport failure as a transport failure', () => {
+    // A thrown request and a malformed answer both count as "not parseable" and
+    // have different repairs: one is the network or the credential, the other is
+    // the model's answer. The report keeps the distinction the artefact drew.
+    const id = 'carries-transport';
+    const path = join(workdir, 'carries-transport.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        schema: 'rca-bench-fault-extraction-predictions/1',
+        predictions: [
+          { sampleId: id, parseOk: false, transportError: 'getaddrinfo ENOTFOUND api.deepseek.com' },
+        ],
+      }),
+    );
+    const out = run(SCORE, ['--predictions', path, '--dataset', oneSampleDataset(id)]);
+    expect(out.stdout).toContain('ENOTFOUND');
+  });
+});
