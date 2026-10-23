@@ -131,7 +131,7 @@ interface CategoryBoundary {
  * The rules are stated as *pairs about the same event*, which is why they cannot
  * be folded into the definitions: a definition per category can be read as
  * compatible with a neighbour, and only the comparison says which one wins. The
- * five pairs are the five the run produced; a sixth would need its own
+ * pairs listed are the ones the runs produced; a seventh would need its own
  * measurement, and `fault-prompt-grammar.test.ts` requires the list it states to
  * be the list recorded there.
  */
@@ -153,9 +153,9 @@ const FAULT_CATEGORY_BOUNDARIES: readonly CategoryBoundary[] = [
   {
     between: ['middleware', 'code'],
     rule:
-      'a fault that surfaces as lag, latency or pool exhaustion at the shared layer is ' +
-      '`middleware` even when a code change is what loaded it; `code` is a defect whose symptom ' +
-      "is in the workload's own answers",
+      '`middleware` when the symptom lands on a shared layer -- a queue falling behind, a cache ' +
+      'or a pool saturating -- even if a code change is what loaded it; `code` when the symptom ' +
+      "is in the workload's own answers: a 500, a wrong value, an exception it raised",
   },
   {
     between: ['code', 'runtime'],
@@ -169,6 +169,13 @@ const FAULT_CATEGORY_BOUNDARIES: readonly CategoryBoundary[] = [
     rule:
       'a library that *crashes* the process is `runtime`; a library whose *contract* moved so ' +
       "the workload's own call now throws is `dependency`",
+  },
+  {
+    between: ['code', 'config'],
+    rule:
+      'a value the workload *reads* -- a URL, a flag, a key -- is `config`; an expression it ' +
+      '*executes* -- a pattern, a rule, a matcher -- is `code`, even when the expression was ' +
+      'shipped as configuration',
   },
 ];
 

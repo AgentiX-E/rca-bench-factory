@@ -637,7 +637,7 @@ describe('every category the prompt offers is defined, and the disputed pairs ar
   const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
 
   /**
-   * The five pairs the measured run disputed, in the order the prompt is
+   * The six pairs the measured runs disputed, in the order the prompt is
    * expected to state them.
    *
    * This is a *record*, in the same sense as `WRONG_ANSWERS` above: it is the
@@ -645,7 +645,11 @@ describe('every category the prompt offers is defined, and the disputed pairs ar
    * cannot leave the claim attached to data that no longer says it. Adding a
    * boundary to the prompt therefore requires adding it here with the miss that
    * motivated it -- a definition with no measurement behind it is a guess, and
-   * this project does not publish guesses as fixes.
+   * this project does not publish guesses as fixes. The sixth pair is v2.42's
+   * `code -> config` regression, which the `middleware`/`code` rule also fails to
+   * cover: `middleware` vs `code` was rewritten in the same round as a *symptom
+   * location* test rather than a cause test, because that is the fact the model
+   * applied instead.
    */
   const DISPUTED_PAIRS = [
     ['resource', 'runtime'],
@@ -653,6 +657,7 @@ describe('every category the prompt offers is defined, and the disputed pairs ar
     ['middleware', 'code'],
     ['code', 'runtime'],
     ['runtime', 'dependency'],
+    ['code', 'config'],
   ] as const;
 
   /** The answerable vocabulary: everything `FAULT_CATEGORIES` publishes but the inference fallback. */
