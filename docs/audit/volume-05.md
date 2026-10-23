@@ -1775,3 +1775,76 @@ guessing is the same trade finding 83 made about an unreadable CI failure.
 | the flake | instrumented, not explained: a killed child and an empty verdict each fail with details |
 | `core` / repo | **171 / 4253** · **175 / 4440** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 219 — the guard for "no test writes into the tree" found three, and one of them had been "fixed" before
+
+Finding 218 removed one test's write into `src/`. That is a repair of an instance, and this
+repository's standard is that a finding without a mechanism is a note. So this round built the
+mechanism: a scan over every `.test.ts` in `packages/*/test` that flags a filesystem write whose
+**destination** expression — or the destination's `const` binding, transitively — names a root that
+makes a path repository-relative (`SRC`, `PACKAGE_ROOT`, `ROOT`, `ROOT_DIR`).
+
+### Four measurements before it was usable, and what each one taught
+
+| version | result | the false reading |
+| --- | --- | --- |
+| scan the whole rest of the line | 31 hits | named a root in a *later* argument: `writeFileSync(join(tree, …), readFileSync(resolve(ROOT, …)))` writes into a scratch tree and reads the repo |
+| first argument only | 17 hits | still counts `copyFileSync(source, target)`, whose repository path is the **source** |
+| destination index per call | 4 hits | `join(tree, 'README.md')` matched a `const README = resolve(ROOT, …)` two hundred lines away, because the *string* `'README.md'` tokenises as `README` |
+| strings blanked before tokenising | 0 hits | — |
+
+Every intermediate number was a plausible-looking list of offenders, and three of the four were
+the guard accusing tests that isolate themselves correctly. **A lexical scan is a sequence of
+decisions about what to ignore**, and each one was found by reading the list rather than by
+trusting the count.
+
+### What the last measurement found
+
+Three real writes, and they are not the one finding 218 removed:
+
+| site | what it wrote | why it is a write into the tree |
+| --- | --- | --- |
+| `gate-sites-are-proven.test.ts` | `scripts/.probe-figures-harness-gate-sites.mjs`, removed in a `finally` | every concurrent scan of `scripts/` reads it while it exists |
+| `injection-write-discipline.test.ts` | `scripts/injection/__pycache__`, deleted after `py_compile` | the compile writes it; the cleanup is a second write |
+| — | (the third is the one 218 removed, now gone) | |
+
+**The first one had already been "fixed" once.** An earlier round recorded a race between this
+test and `type-miss-probe.test.ts` over the same harness path, and the repair was to give each file
+its own name -- `scratch-prefixes-are-disjoint.test.ts` is that repair's guard and its comment is
+the record of it. That fixed the collision between two tests' *premises* and left the interference that
+matters: the test's own comment says the deriver reports `scanned: 36` with the file and `35`
+without — **a concurrent reader's reading changes while the file exists.** A name that no other
+test uses does not make a file invisible to a scan.
+
+The repair is the copy the repository already uses elsewhere: the harness now goes into a copy of
+`scripts/` in a temp directory, and the deriver is spawned against it. The assertions are
+unchanged, including the equality with the committed `scanned` count, because the copy is
+byte-identical.
+
+The second is the same shape one layer down: `py_compile` writes `__pycache__` beside the script
+unless told otherwise, so the test compiled in the tree and then cleaned up. `PYTHONPYCACHEPREFIX`
+sends the bytecode to a temp directory, so nothing is written and nothing needs removing. The
+assertion compares existence **before and after** rather than demanding absence, because a battery
+that compiles in the tree can leave one behind and this test must not be blamed for it.
+
+### The guard, stated as narrowly as it is
+
+It sees a root named in the destination or in its `const` bindings, up to four levels. It does
+**not** see a path built from `import.meta.dirname`, from `process.cwd()`, or returned by a
+function. Those limits are written in the file, next to the four controls that make the scan
+falsifiable: the defect's own shape, an inline `join`, a legitimate `mkdtempSync` fixture that must
+not be flagged, and a write through a name bound to nothing root-like.
+
+One exemption exists — the guard's own file, whose controls contain the forbidden text as string
+literals — and it is stated with that reason rather than left implicit.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the scan | 5 tests: the tree, the defect's shape, an inline join, a scratch fixture, a non-root name |
+| the tree | 0 offenders across 130 test files |
+| the two repairs | harness in a temp copy; bytecode outside the tree |
+| the suites | two consecutive full runs at **4258 passed**, working tree clean after each |
+| `core` / repo | **172 / 4258** · **176 / 4445** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

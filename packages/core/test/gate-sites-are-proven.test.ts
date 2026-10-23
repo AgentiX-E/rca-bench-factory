@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -871,14 +871,27 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
       // property of a file another test owns is measuring the scheduler; the
       // path is now exclusive to this file, which is why the precondition is
       // true by construction.
-      const harness = resolve(ROOT, 'scripts', '.probe-figures-harness-gate-sites.mjs');
-      expect(existsSync(harness), 'the harness must not exist before this test').toBe(false);
-      writeFileSync(harness, '// scratch\n');
+      // The harness goes into a **copy** of `scripts/`, not into `scripts/`.
+      //
+      // Finding 219. This test used to write `scripts/.probe-figures-harness-gate-sites.mjs`
+      // and remove it in a `finally`, and finding 133's repair had already given it a name
+      // no other test used. That fix addressed a collision between two tests' *premises*
+      // and not the interference that matters: `derive-gate-sites.mjs` and every other scan
+      // of `scripts/` read that directory while the file exists, so the inventory's
+      // `scanned` count moves -- this test's own comment says so ("with such a file
+      // created, the deriver reports `scanned: 36`; removed, `scanned: 35`"). A file that
+      // changes a concurrent reader's reading is a race whether or not its name is unique.
+      // The copy is byte-identical, so the count below is still the committed one.
+      const tree = mkdtempSync(join(tmpdir(), 'gate-sites-harness-'));
       try {
+        cpSync(resolve(ROOT, 'scripts'), join(tree, 'scripts'), { recursive: true });
+        const harness = join(tree, 'scripts', '.probe-figures-harness-gate-sites.mjs');
+        expect(existsSync(harness), 'the harness must not exist before this test').toBe(false);
+        writeFileSync(harness, '// scratch\n');
         const fresh = spawnSync(
           process.execPath,
-          [resolve(ROOT, 'scripts', 'derive-gate-sites.mjs'), '--stdout'],
-          { encoding: 'utf8', cwd: ROOT },
+          [join(tree, 'scripts', 'derive-gate-sites.mjs'), '--stdout'],
+          { encoding: 'utf8', cwd: tree },
         );
         expect(fresh.status).toBe(0);
         const derived = JSON.parse(fresh.stdout) as Inventory;
@@ -888,7 +901,7 @@ describe('golden-master/gate-sites.json · the inventory is read, not just writt
         // And no site may name it: a dotfile is not a script that ships.
         expect(derived.sites.filter((s) => s.script.includes('.probe-figures'))).toEqual([]);
       } finally {
-        rmSync(harness, { force: true });
+        rmSync(tree, { recursive: true, force: true });
       }
     });
 

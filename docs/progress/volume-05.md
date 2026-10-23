@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **171 files, 4253 tests passed** (as of this commit) |
+| `core` test suite | **172 files, 4258 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **175 files, 4440 tests passed** (as of this commit) |
+| repo test suite | **176 files, 4445 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1342,3 +1342,59 @@ still caught; core **171 / 4253**, cli 4 / 187, repo **175 / 4440**; typecheck, 
   does. A test asserting "no test file writes under packages/*/src" would be a static scan of test
   sources for a write call whose target resolves inside the package -- possible, not written, and
   the next such test would be found by a red CI instead of by that scan]`
+
+## v2.48 — the guard for "no test writes into the tree" found three, one of them twice-flagged
+
+v2.47 removed one test's write into `src/` and recorded it. A finding without a mechanism is a
+note, so this round built the mechanism: a scan over every `.test.ts` in `packages/*/test` that
+flags a filesystem write whose **destination** — or the destination's `const` binding — names a
+root that makes a path repository-relative.
+
+It took four versions to be usable, and every wrong one produced a plausible list:
+
+| version | hits | what it was actually reporting |
+| --- | --- | --- |
+| the whole rest of the line | 31 | a root named in a *later* argument — a call that writes to scratch and reads the repo |
+| first argument | 17 | `copyFileSync(source, target)`, whose repository path is the source |
+| destination index per call | 4 | `join(tree, 'README.md')` matching a `const README = resolve(ROOT, …)` elsewhere |
+| strings blanked | **0** | — |
+
+Three of the four were the guard accusing tests that isolate themselves correctly, and each was
+caught by reading the list rather than by trusting the count.
+
+The last measurement found **two** real writes, and the first had been "fixed" once already:
+
+- `gate-sites-are-proven.test.ts` wrote `scripts/.probe-figures-harness-gate-sites.mjs` and removed
+  it. An earlier round had recorded a race with `type-miss-probe.test.ts` over that path and
+  repaired it by giving each file its own name -- `scratch-prefixes-are-disjoint.test.ts` is the
+  guard it left behind — which fixed a collision between two tests' premises and left
+  the interference that matters: the test's own comment says the deriver reports `scanned: 36` with
+  the file and `35` without. A unique name does not make a file invisible to a concurrent scan. The
+  harness now goes into a **copy of `scripts/` in a temp directory**, and the assertions are
+  unchanged, including equality with the committed count, because the copy is byte-identical.
+- `injection-write-discipline.test.ts` compiled in the tree and then deleted the `__pycache__`.
+  `PYTHONPYCACHEPREFIX` puts the bytecode outside, so nothing is written and nothing needs removing;
+  the assertion compares existence before and after rather than demanding absence, because a battery
+  can leave one behind and this test must not be blamed for it.
+
+The guard is stated as narrowly as it is: it sees a root named in the destination or its bindings,
+not a path from `import.meta.dirname` or a function's return, and that limit is written beside the
+four controls — the defect's shape, an inline join, a scratch fixture that must not be flagged, and
+a name bound to nothing root-like. Its own file is the one exemption, because its controls contain
+the forbidden text as literals.
+
+**Acceptance.** 5 new tests (0 offenders across 130 test files); two consecutive full runs at
+**4258 passed** with a clean tree after each; core **172 / 4258**, cli 4 / 187, repo **176 / 4445**;
+typecheck, lint, `docs:check` green; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5
+volumes, findings 1–219.
+
+### Left open
+
+- **The scan cannot see a path it was not told to look for.**
+  `[open: a destination built from `import.meta.dirname`, from `process.cwd()` or from a helper's
+  return value is invisible to it, and those are the false negatives it states. Closing them needs
+  a dataflow, not a token scan; until then the guard catches the shape that occurred and its near
+  neighbours, and says so in the file]`
+- **Two rounds of prompt changes still have no reading, and now a third instrument.**
+  `[open: v2.43's boundaries have a reading on the 19-sample key; v2.44's component rules have none;
+  the 30-sample key has none. All three wait on a provider balance that returns 402]`

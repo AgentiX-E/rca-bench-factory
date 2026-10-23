@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -330,13 +330,28 @@ describe('the atomic helper is correct on its own', () => {
   it('is present and syntactically valid as a script', () => {
     // The battery is a deliverable that is run by hand; a syntax error would be
     // discovered at the worst moment. `py_compile` checks it without running it.
-    const result = spawnSync('python3', ['-m', 'py_compile', BATTERY], { encoding: 'utf8' });
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe('');
-    // Compiling writes a __pycache__ directory for a script outside a package.
-    const cache = resolve(ROOT, 'scripts', 'injection', '__pycache__');
-    if (existsSync(cache)) {
-      rmSync(cache, { recursive: true, force: true });
+    // Compiled with its bytecode cache sent outside the repository.
+    //
+    // `py_compile` writes `__pycache__` beside the script unless it is told not to, and
+    // the first version of this test deleted that directory afterwards -- a write into the
+    // tree, during a run in which other workers scan `scripts/` (finding 219). The write is
+    // the problem, not the cleanup: `PYTHONPYCACHEPREFIX` makes CPython put the cache
+    // somewhere else, so nothing inside the repository changes and nothing needs removing.
+    // Whether it existed before is part of the reading: a battery that compiles in the tree
+    // leaves one behind, and this test must not be blamed for it -- nor may it create one.
+    const inTree = resolve(ROOT, 'scripts', 'injection', '__pycache__');
+    const before = existsSync(inTree);
+    const cacheDir = mkdtempSync(join(tmpdir(), 'pycache-'));
+    try {
+      const result = spawnSync('python3', ['-m', 'py_compile', BATTERY], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONPYCACHEPREFIX: cacheDir },
+      });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
     }
+    expect(existsSync(inTree), 'the compile wrote bytecode into the tree').toBe(before);
   });
 });
