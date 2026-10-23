@@ -2367,9 +2367,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **170 files, 4224 tests passed** (as of this commit) |
+| `core` test suite | **170 files, 4230 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **174 files, 4411 tests passed** (as of this commit) |
+| repo test suite | **174 files, 4417 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -3216,3 +3216,63 @@ coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; 43 gates; audit log 5 volumes,
   agreement reading was shown to be an artifact of the vocabulary by its own control
   (agreement-baseline.ts, 1 of 19 on the ground truth), so the next step is not another
   vocabulary pass]`
+
+## v2.41 — the vocabulary experiment, run 140 findings late
+
+The org secret was reachable, so M1 finally had a real model behind it. Two runs, one change
+between them.
+
+**Run 1** (unstated answer space): `type 4/19`, `category 11/19`, `component 14/19`,
+**strict 2/19**. All 28 field-misses were `wrongValue` and none was omitted — the model always
+answered, and its answers were the right fault under another name: `cpu-saturation →
+cpu-throttling`, `memory-leak → unbounded-cache-growth`, `disk-full → disk-space-exhaustion`,
+`pod-kill → kubelet-eviction`.
+
+That diagnosis was already on file. **Finding 62** measured `type` at 26.3% and named the
+cause — `category` is a stated seven-value vocabulary and scored 57.9%, while `type` was
+"fault type (short)" and its answers appear in **0 of 19** incident texts. Finding 63 answered
+the *shape* instead; finding 64 measured what that bought: **one sample**. The vocabulary
+experiment was never run.
+
+**Run 2** (the vocabulary in the dataset, required by the prompt):
+
+| field | unstated | stated | Δ |
+| --- | --- | --- | --- |
+| type | 4/19 (21.1%) | **17/19 (89.5%)** | +13 |
+| category | 11/19 (57.9%) | 13/19 (68.4%) | +2 |
+| component | 14/19 (73.7%) | 14/19 (73.7%) | 0 |
+| **strict** | 2/19 (10.5%) | **9/19 (47.4%)** | **+7** |
+
+M1 is still not met, and the second number is **not comparable** to the first: `type` is now a
+19-way classification, so no sample can be lost to a naming scheme. Both are kept for exactly
+that reason.
+
+### The shape of what is left
+
+With `type` settled, thirteen misses remain and they are a different kind:
+
+| field | misses |
+| --- | --- |
+| **category** (6) | `middleware → resource` ×2, `middleware → code`, `runtime → resource`, `runtime → dependency`, `code → runtime` |
+| component (5) | the other side of a link (`cart-service → inventory-service`), a synonym (`session-cache → session-store`), one omission |
+| type (2) | `container-crash → library-version-incompatibility`, `redis-latency → cpu-saturation` |
+
+The category misses are **boundary** disagreements, not naming ones: the model knows the fault
+and puts it in a different bucket. Finding 62 predicted `category` would become binding once
+`type` was fixed; the first measurement after the fix confirms it and names which six
+boundaries are in dispute.
+
+**Acceptance.** Dataset `types` required (schema `/2`), 3 refusal tests; prompt vocabulary
+required by signature, 5 tests including the empty-list refusal; core **170 files / 4230
+tests**, cli **4 / 187**, repo **174 / 4417**; coverage 99.97 / 99.74 / 100 / 99.97 and
+100 ×4; 43 gates, 73 sites; audit log 5 volumes, findings 1–210.
+
+### Left open
+
+- **`category` is the binding constraint now, and the six misses name the boundaries.**
+  `[open: every one is a boundary disagreement -- middleware put under resource, runtime under
+  resource or dependency, code under runtime -- and the prompt states the seven values without
+  saying what any of them covers. The next experiment is the one finding 20 proposed for the
+  semantic types and the vocabulary experiment just vindicated for type: state what each
+  category means, then re-read. It is a prompt change measured the same way, and the six
+  misses are the evidence for which definitions matter]`

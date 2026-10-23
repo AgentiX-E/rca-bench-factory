@@ -1136,3 +1136,83 @@ gets to 74% and turns out to have moved nothing.
 | the vacuity guards | ≥19 samples; every sample carries a non-empty value for each scored field |
 | the tests | `answer-key.test.ts` **4** |
 | `core` / repo | **170 / 4224** · **174 / 4411** |
+
+## Finding 210 — the vocabulary experiment, run 140 findings late, moved `type` from 21% to 90%
+
+M1 was at **2/19 strict**. The first thing this session did was check the instrument (finding
+209): it grades its own answer key at 100%. Then the reading itself, from DeepSeek on a runner:
+
+| field | first real reading (v2.40, unstated space) |
+| --- | --- |
+| type | **4/19 (21.1%)** |
+| category | 11/19 (57.9%) |
+| component | 14/19 (73.7%) |
+| **strict** | **2/19 (10.5%)** |
+
+Every one of the 28 field-misses was `wrongValue` and none was omitted: the model always
+answered, and its answers were **the right fault under another name** —
+`cpu-saturation → cpu-throttling`, `memory-leak → unbounded-cache-growth`, `disk-full →
+disk-space-exhaustion`, `pod-kill → kubelet-eviction`, `network-loss → network-packet-drop`.
+
+### This had already been diagnosed, 140 findings ago
+
+**Finding 62** measured `type` at 26.3% and named the cause precisely: `category` is a stated
+seven-value vocabulary and scored 57.9%; `type` was the words "fault type (short)", and the
+expected answers are canonical slugs that appear in **0 of 19** incident texts. It concluded
+that "a stated 19-label vocabulary is derivable from the input, so `type`'s ceiling is 19/19
+and 26.3% is fully fixable" — and warned that `category` would become the binding constraint
+afterwards.
+
+**Finding 63** answered the *shape* instead: hyphenated, lower-case, prefer the mechanism.
+**Finding 64** measured what that bought: **one sample**. The vocabulary experiment was never
+run. Four hundred and sixty findings of pipeline work later, `type` was at 21.1% and the cause
+was the one that had been recorded.
+
+### The change
+
+The vocabulary is now part of the dataset (`types`, schema `/2`), and the prompt **requires**
+it: `buildFaultExtractionPrompt(text, types)`, with an empty list a refusal rather than an
+empty `one of:`. `parseGoldenDataset` refuses a dataset without the vocabulary, with a
+repeated label, or expecting a type outside the one it published — a dataset that contradicts
+its own answer space is one no run could satisfy.
+
+### The second reading
+
+Same model, same 19 samples, one change — the answer space is stated:
+
+| field | unstated | stated | Δ |
+| --- | --- | --- | --- |
+| type | 4/19 (21.1%) | **17/19 (89.5%)** | **+13 samples** |
+| category | 11/19 (57.9%) | 13/19 (68.4%) | +2 |
+| component | 14/19 (73.7%) | 14/19 (73.7%) | 0 |
+| **strict** | **2/19 (10.5%)** | **9/19 (47.4%)** | **+7** |
+
+M1 is still **not met** — 47.4% against 70% — and the number is **not comparable** to the one
+before it: `type` is now a 19-way classification, so a model can no longer lose a sample by
+naming the fault in its own catalogue. Both readings are kept for that reason.
+
+### What the miss list now says, which it could not say before
+
+With `type` settled, thirteen field-misses remain, and their shape is different:
+
+| field | misses | what they are |
+| --- | --- | --- |
+| **category** | **6** | `middleware → resource` (×2), `middleware → code`, `runtime → resource`, `runtime → dependency`, `code → runtime` |
+| component | 5 | the *other side of a link* (`cart-service → inventory-service`), a synonym (`session-cache → session-store`), one omission |
+| type | 2 | `container-crash → library-version-incompatibility`, `redis-latency → cpu-saturation` |
+
+The category misses are **boundary** errors, not naming errors: the model knows what the fault
+is and disagrees with the dataset about which bucket it belongs in. Finding 62 predicted that
+`category` would become the binding constraint; the first measurement after the vocabulary
+confirms it, and the six misses name which boundaries are in dispute.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the instrument | unchanged: answer key 19/19 (finding 209) |
+| the experiment | 2/19 → **9/19** strict; `type` 4/19 → **17/19** |
+| the dataset | `types` required, schema `/2`; 3 refusal tests (absent, repeated/blank, out-of-vocabulary) |
+| the prompt | vocabulary required by signature; 5 tests, one of them the empty-list refusal |
+| the prediction | finding 62's "category becomes binding" confirmed, with the six misses named |
+| `core` / repo | **170 / 4230** · **174 / 4417** |
