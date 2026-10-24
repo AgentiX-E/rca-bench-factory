@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 56,
+  "scanned": 57,
   "excluded": {
     "zero": 8,
     "indirect": 3,
@@ -409,6 +409,21 @@
       "diagnostic": "\\n${counts['form-variant']} form variant(s) found -- the scorer rejected an answer it should",
       "status": "exempt",
       "reason": "The largest probe in the tree, and its exit aggregates several per-type counts. `type-miss-probe.test.ts` runs it and reads those counts directly, so a test pinning this line would be checking a summary of facts the test already holds."
+    },
+    {
+      "script": "scripts/reconcile-readings.mjs",
+      "line": 48,
+      "diagnostic": "usage: node scripts/reconcile-readings.mjs [--runs <api-response.json>] [--readings <file>]",
+      "status": "proved",
+      "provedBy": "packages/core/test/readings-reconcile.test.ts"
+    },
+    {
+      "script": "scripts/reconcile-readings.mjs",
+      "line": 128,
+      "condition": "unrecorded.length > 0",
+      "diagnostic": "reconcile-readings: ${String(unrecorded.length)} successful run(s) of ${WORKFLOW} since id",
+      "status": "proved",
+      "provedBy": "packages/core/test/readings-reconcile.test.ts"
     },
     {
       "script": "scripts/score-fault-extraction.mjs",

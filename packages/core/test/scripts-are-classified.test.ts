@@ -90,6 +90,15 @@ const REGISTER: Record<string, Entry> = {
       'consume it are what carry the verdicts.',
   },
 
+  'reconcile-readings.mjs': {
+    class: 'gate',
+    why:
+      'It exits 3 when a successful accuracy run is absent from the record and 2 when the run list or ' +
+      'the record cannot be read, so it is a gate by the inventory rule. Both sites are proved by ' +
+      '`readings-reconcile.test.ts`, which drives it over a saved API payload -- the only test in the ' +
+      'tree that spawns it, because the live form needs a token and a network.',
+  },
+
   // --- Gates: each has failure exits, all enumerated in gate-sites.json ---
   'apply-pins.mjs': { class: 'gate' },
   'build-example-bundle.mjs': { class: 'gate' },

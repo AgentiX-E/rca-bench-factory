@@ -2473,3 +2473,75 @@ policy.
 | the state | "never accepted" is asserted, so using the hatch is a visible edit |
 | `core` / repo | **176 / 4289** · **179 / 4476** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 228 — the record could still lie by omission, and now a tool says so
+
+Findings 226 and 227 closed two of the three ways a prompt change can go unmeasured: a prompt edited
+without a reading (the digest gate) and a reading worse than a previous one (the anti-regression
+rule). The third was left open in both:
+
+> a run that happened and was not written into the record is caught by neither.
+
+That is not a hypothetical. Run `39950191377` produced **24/30** and sat unread for twenty hours while
+four rounds were written on top of a document that said the measurement was blocked (finding 222). The
+gates were all green throughout, because a record cannot disagree with a run it does not know about.
+
+### The tool
+
+`scripts/reconcile-readings.mjs` takes the workflow's run list — fetched with a token, or saved from
+the API — and names every successful run whose id is not in the record. A run is *accounted for* if its
+id appears as a reading **or** as an `absent` entry, which is the route used for the one run whose
+artefact was lost.
+
+```
+$ GITHUB_TOKEN=… node scripts/reconcile-readings.mjs
+reconcile-readings: OK (7 successful run(s) since id 39806875985, every one of them accounted for
+in 7 recorded id(s))
+```
+
+Run today, against the real history. That is the first time the record has been checked against the
+thing it claims to describe rather than against itself.
+
+### Three decisions the tool had to make, each with a reason
+
+| decision | why |
+| --- | --- |
+| **scope begins at the smallest recorded id** | run ids increase with creation time, so "the record starts here" is a fact about ids rather than a date to maintain. Without it the tool reports every success since September and becomes noise — and a noisy guard is a guard that gets switched off |
+| **only successful runs are asked for** | a `402` has no numbers to record; a tool that demanded an entry for every failure would cry wolf exactly when the record is least interesting |
+| **a payload with no `workflow_runs` is an error, not "no runs"** | an empty result and an unreadable input are different findings, which is finding 83's distinction applied to a tool |
+
+The last one is the shape of every defect in this series: a reader that treats "I could not read it" as
+"there is nothing there" reports success and means nothing.
+
+### The two exits are gate sites, and they are proved
+
+The script has two failure exits — `2` for an unreadable input or a missing token, `3` for an
+unaccounted run — so the inventory requires a site for each. Both are annotated `proved` against
+`readings-reconcile.test.ts`, and the meta-gate confirms it by hollowing the script and watching the
+suite go red:
+
+```
+CAUGHT      reconcile-readings.mjs      10 test(s) red in 1 of 1 naming file(s)
+```
+
+Adding the script also required a `DRIVES` declaration in that test file, because
+`gate-sites-are-proven` cross-checks the sites a script owns against the tests that spawn it — the two
+accounts disagreeing is the state that check exists to prevent. It caught this round's omission before
+CI did.
+
+### What it still cannot do
+
+It cannot run in CI without a token, so it is a tool and not a gate: nothing forces anybody to run it.
+That is stated rather than papered over, and the alternative — checking run history inside the suite —
+would make the suite depend on the network it exists to measure.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the tool | 6 tests over a saved payload; unrecorded, failed, out-of-scope and malformed inputs each distinct |
+| the live reading | 7 successful runs since id 39806875985, all accounted for |
+| the sites | both exits annotated `proved`; meta-gate CAUGHT (44 gates, 0 survived) |
+| the register | classified `gate` with the reason both exits exist |
+| `core` / repo | **177 / 4295** · **180 / 4482** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

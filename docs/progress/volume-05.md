@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **175 files, 4289 tests passed** (as of this commit) |
+| `core` test suite | **176 files, 4295 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **179 files, 4476 tests passed** (as of this commit) |
+| repo test suite | **180 files, 4482 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1843,3 +1843,57 @@ could trade `type` for `component` at constant strict, and no rule reads the per
   unmeasured prompt and this rule catches a measured worse one; a run that happened and was not written
   into the record is caught by neither. Closing it needs the record to be built from the workflow's own
   history rather than by hand]`
+
+## v2.57 — the record could still lie by omission; now a tool says so
+
+Two gates now cover two of the three ways a prompt change goes unmeasured: an edited prompt with no
+reading (v2.55's digest) and a reading worse than a previous one (v2.56's arithmetic). The third was
+left open in both — **a run that happened and was never written down is caught by neither** — and it is
+not hypothetical: run `39950191377` produced 24/30 and sat unread for twenty hours while four rounds
+were written on top of "blocked" (v2.51).
+
+`scripts/reconcile-readings.mjs` closes it as far as a tool can. Given the workflow's run list — fetched
+with a token, or saved — it names every successful run whose id is not in the record. A run is
+accounted for if its id is a reading **or** an `absent` entry, the route used for the run whose artefact
+was lost. Run today against the real history:
+
+```
+reconcile-readings: OK (7 successful run(s) since id 39806875985, every one of them accounted for
+in 7 recorded id(s))
+```
+
+That is the first time the record has been checked against the thing it claims to describe.
+
+**Three decisions, each with a reason:**
+
+| decision | why |
+| --- | --- |
+| scope begins at the smallest recorded id | run ids increase with time, so "the record starts here" is a fact about ids rather than a date to maintain; without it the tool reports every success since September and gets switched off |
+| only successful runs are asked for | a `402` has no numbers; demanding an entry for every failure would cry wolf exactly when the record matters least |
+| a payload without `workflow_runs` is an error | "I could not read it" and "there is nothing there" are different findings |
+
+**Both exits are gate sites and both are proved.** The script exits `2` on an unreadable input or a
+missing token and `3` on an unaccounted run; the inventory required a site for each, they are annotated
+`proved` against `readings-reconcile.test.ts`, and the meta-gate confirms by hollowing:
+`CAUGHT reconcile-readings.mjs — 10 test(s) red in 1 of 1 naming file(s)` (44 gates, 0 survived). Adding
+the script also required a `DRIVES` declaration in that test file, because `gate-sites-are-proven`
+cross-checks the sites a script owns against the tests that spawn it — **it caught this round's omission
+before CI did.**
+
+**What it still cannot do:** run in CI without a token. It is a tool, not a gate, and nothing forces
+anybody to run it. Stated rather than papered over.
+
+**Acceptance.** 6 tests over a saved payload (unrecorded, failed, out-of-scope, malformed each
+distinct); three consecutive full runs at **4295 passed**; typecheck, lint, `docs:check`,
+`derive-gate-sites --check` green; core **177 / 4295**, cli 4 / 187, repo **180 / 4482**; coverage
+99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–228.
+
+### Left open
+
+- **A tool nobody runs is a habit with a filename.** `[open: the reconciler needs a token and a network,
+  so it cannot be a gate. Running it before every push, or in a scheduled workflow that opens an issue
+  when it finds an unrecorded run, are both possible -- neither is built]`
+- **The record's own arithmetic is still hand-made.** `[open: each reading's samples are transcribed
+  from an artefact by hand. `derive-fault-golden.mjs` writes the artefact; a small `--reading` mode that
+  writes the record entry too would remove the transcription step, which is where a wrong number would
+  come from]`
