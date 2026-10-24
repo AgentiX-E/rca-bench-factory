@@ -214,6 +214,11 @@ describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () 
     expect(scripts.length).toBeGreaterThan(0);
   });
 
+  /** The size of a script's first read, for the diagnostic above. */
+  function firstBytes(name: string): number {
+    return readFileSync(resolve(ROOT, 'scripts', name), 'utf8').length;
+  }
+
   it('measures a subject the filename prefix would have missed, and skips a script with no exit at all', () => {
     // Two negatives that together pin the rule. "Every `.mjs` in scripts/" would
     // satisfy the first half alone, and the old `check-*` prefix would satisfy the
@@ -237,7 +242,25 @@ describe('scripts/verify-gates-are-testable.mjs · the audit of the audits', () 
     // Non-empty, or the loop below proves nothing.
     expect(withoutExit.length).toBeGreaterThan(0);
     for (const name of withoutExit) {
-      expect(listed, `${name} never exits, so it is not a gate`).not.toContain(name);
+      if (!listed.includes(name)) continue;
+      // A script that came back in both lists gets a **second read**, and the second read
+      // decides. This is not a retry for luck: it separates "this script does not exit"
+      // from "this read caught the script while something else was writing it", and only
+      // the first is a finding about the source.
+      //
+      // The need was measured. A whole-suite run failed here once with
+      // `check-doc-counts.mjs never exits`, and that file has `process.exit(1)` on line 222
+      // -- it reads as exit-free only while its body is replaced, which is what a mutation
+      // battery does to it. Nothing in this file writes into `scripts/`; something outside
+      // it does, and a test that reads the tree is not isolated from that by being careful.
+      const second = readFileSync(resolve(ROOT, 'scripts', name), 'utf8');
+      expect(
+        /process\.exit\s*\(/.test(second),
+        `${name} is listed as a gate and reads as exit-free on a second read too: ` +
+          `${JSON.stringify({ bytesFirst: firstBytes(name), bytesSecond: second.length })}. ` +
+          'A script that changed between two reads was being written by something else, ' +
+          'and a script that did not is a gate that cannot fail.',
+      ).toBe(true);
     }
   });
 

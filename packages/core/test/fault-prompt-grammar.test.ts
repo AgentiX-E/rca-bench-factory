@@ -866,6 +866,53 @@ describe('the component rule names the product and the actor, which the exclusio
  * that were caused. A future attempt at the criterion is then a separate change with
  * its own reading, which is the only way the next number is attributable.
  */
+/**
+ * The criterion on its own, which is the only form that can be attributed.
+ *
+ * v2.52 changed three things at once — the criterion, a no-role-suffix clause, and the
+ * examples — and lost two samples to a rule that was read as "remove suffixes". One run
+ * cannot say which of the three cost what, so the revert was the whole bundle. This
+ * round changes **one** thing: the two exclusion sentences become the criterion, and
+ * nothing else moves. The suffix clause is asserted absent, and the example list is
+ * asserted unchanged — including `session-store`, which is suspected of priming an
+ * answer and is therefore a *separate* hypothesis that must be measured separately.
+ *
+ * The prediction this test block supports, recorded before the run: the two relationship
+ * misses (`ledger-writer` for the broker, `currency-feed` for the settlement) move; the
+ * link pair, the `-service` suffix and the primed `session-store` do not; component 27/30,
+ * strict 26/30.
+ */
+describe('the component criterion, with nothing else changed', () => {
+  const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+
+  it('asks whose own behaviour failed', () => {
+    expect(prompt()).toMatch(/whose own behaviour failed/i);
+  });
+
+  it('names the three relationships, which are the shapes the question is confused with', () => {
+    for (const phrase of ['the product it runs on', 'the entity it depends on', 'the entity that depends on it']) {
+      expect(prompt(), `the criterion must exclude ${phrase}`).toContain(phrase);
+    }
+  });
+
+  it('carries no suffix clause, because that is the part that was measured to cost answers', () => {
+    // The discipline of this round, stated as an assertion: the clause is what turned
+    // `order-events-consumer` into `order-events`, and a criterion that arrives with it
+    // again is the same unattributable bundle.
+    expect(prompt()).not.toMatch(/role suffix/i);
+  });
+
+  it('leaves the example list alone, because the examples are a different hypothesis', () => {
+    // `session-store` is suspected of priming an answer and is *not* changed here. One
+    // change per run is the point; asserting the example list unchanged is what keeps the
+    // next round from bundling them again by accident.
+    const text = prompt();
+    for (const example of ['payments-api', 'search-indexer', 'session-store']) {
+      expect(text, `the example list moved: ${example} is gone`).toContain(example);
+    }
+  });
+});
+
 describe('the component criterion was measured and reverted', () => {
   const latest = (): ReturnType<typeof goldenReadings>[number] =>
     goldenReadings()[goldenReadings().length - 1] as ReturnType<typeof goldenReadings>[number];
@@ -894,13 +941,16 @@ describe('the component criterion was measured and reverted', () => {
     }
   });
 
-  it('keeps the prompt at the rule that measured better', () => {
-    // The revert, asserted rather than described: the criterion and the suffix clause are
-    // absent, and the sentence the 24/30 reading was taken with is present.
-    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
-    expect(prompt).not.toMatch(/role suffix/i);
-    expect(prompt).not.toMatch(/whose own behaviour failed/i);
-    expect(prompt).toContain('the deployed workload that owns the fault');
+  it('keeps the clause that cost three answers out of the prompt', () => {
+    // What the revert was *about*. The criterion itself was reintroduced deliberately and
+    // alone -- see the block above -- so this assertion is now the narrow one: the suffix
+    // clause, which turned `order-events-consumer` into `order-events`, is absent.
+    //
+    // The criterion's absence was asserted here while it was reverted, and that assertion
+    // was retired rather than kept as a second statement of the same thing: a test that
+    // pinned the reverted wording would have made the single-variable change impossible
+    // without deleting a test, which is how a bundle gets reassembled.
+    expect(buildFaultExtractionPrompt('irrelevant incident text', VOCAB)).not.toMatch(/role suffix/i);
   });
 
   it('is not presented as the current reading, so nobody quotes it as a result', () => {
