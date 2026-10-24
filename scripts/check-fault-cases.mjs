@@ -106,6 +106,56 @@ function fold(text) {
 }
 
 /**
+ * Turn a declared series into metric signals on a fixed cadence.
+ *
+ * The values are derived, not captured: `baseline` and `post` are the two numbers the incident
+ * text states, and the jitter is a fixed cycle rather than a random one so that two runs produce
+ * the same file. A counter is expanded as an accumulating series, because a counter that jumped
+ * to its post value would be a level wearing a counter's name.
+ *
+ * The cadence is ninety seconds and the counts are eight and eight: enough post-onset samples for
+ * G3's sustained-anomaly rule (three consecutive) with room to spare, and short enough to stay
+ * inside every window this corpus declares.
+ */
+const STEP_MS = 90_000;
+const POINTS = 8;
+const JITTER = [0, 1, -1, 0.5, -0.5, 0.8, -0.8, 0.3];
+
+function expandSeries(declaration, faultCase) {
+  const startMs = Date.parse(faultCase.window.start);
+  const onsetMs = Date.parse(faultCase.injectTime);
+  const service = String(declaration.service);
+  const name = String(declaration.metric);
+  const unit = typeof declaration.unit === 'string' ? declaration.unit : undefined;
+  const baseline = Number(declaration.baseline);
+  const post = Number(declaration.post);
+  const counter = declaration.derivation === 'counter';
+  const step = counter ? (post - baseline) / POINTS : 0;
+  const out = [];
+  const at = (ms) => new Date(ms).toISOString();
+
+  for (let index = 0; index < POINTS; index += 1) {
+    const t = startMs + index * STEP_MS;
+    if (t >= onsetMs) break;
+    const value = counter ? baseline + index * 0.1 : baseline * (1 + JITTER[index] * 0.02);
+    out.push({ timestamp: at(t), value });
+  }
+  for (let index = 0; index < POINTS; index += 1) {
+    const t = onsetMs + index * STEP_MS;
+    const value = counter ? baseline + (index + 1) * step : post * (1 + JITTER[index] * 0.02);
+    out.push({ timestamp: at(t), value });
+  }
+
+  return out.map((row) => ({
+    irVersion: '1.0.0',
+    resource: { 'service.name': service },
+    timestamp: row.timestamp,
+    signal: 'metric',
+    payload: { kind: 'metric', name, ...(unit === undefined ? {} : { unit }), value: Number(row.value.toFixed(6)) },
+  }));
+}
+
+/**
  * Every layer's annotation must show the sentence it came from.
  *
  * `why` is prose and cannot be checked; a quote can. The annotations in this directory are made
@@ -156,6 +206,8 @@ const floor = typeof index.min === 'number' ? index.min : 0;
 const problems = [];
 const invalid = [];
 const seen = new Set();
+/** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
+const withTelemetry = [];
 
 for (const entry of index.cases) {
   const caseId = typeof entry?.caseId === 'string' ? entry.caseId : '';
@@ -224,6 +276,56 @@ for (const entry of index.cases) {
     problems.push(`'${caseId}' fails the L2 reference contract: ${violation.message}`);
   }
 
+  // G5 needs no telemetry either, so it is asked of every case: a body that carries an email
+  // address or a token is a corpus defect regardless of whether the case can be scored yet, and
+  // `answerKeyIsolated` is a claim the case makes about itself that nothing had checked.
+  const antiPollution = core.checkG5AntiPollution(bundle, { requireAnswerKeyIsolation: true });
+  for (const violation of antiPollution.violations) {
+    problems.push(`'${caseId}' fails the anti-pollution gate: ${violation.message}`);
+  }
+
+  // Derived telemetry, when the entry declares it. This is the step that changes what the corpus
+  // *is*: without signals a case is an annotation, and with them it is something G1's signal rules,
+  // G2's window rule and G3's anomaly rule can all be pointed at. It is still not scoreable -- G4
+  // needs a baseline solver and G5 needs the pollution checks -- and the report says "derived" so
+  // that no reader mistakes a constructed series for a captured one.
+  if (typeof entry.signals === 'string') {
+    const declaration = readJson(join(args.cases, entry.signals), `signals for '${caseId}'`);
+    if (declaration.caseId !== caseId) {
+      problems.push(`'${caseId}' names signals for '${String(declaration.caseId)}'`);
+    }
+    const text = fold(sampleById.get(sampleId)?.incidentText);
+    const series = Array.isArray(declaration.series) ? declaration.series : [];
+    if (series.length === 0) {
+      problems.push(`'${caseId}' declares an empty signal series`);
+    }
+    for (const one of series) {
+      const quote = typeof one?.quote === 'string' ? one.quote : '';
+      if (!text.includes(fold(quote))) {
+        problems.push(
+          `'${caseId}' derives '${String(one?.metric)}' from a quote the incident text does not contain: '${quote}'`,
+        );
+      }
+    }
+    const signals = series.flatMap((one) => expandSeries(one, parsedCase));
+    const withSignals = { ...bundle, signals: { [caseId]: signals } };
+    const signalStructure = core.checkG1Structural(withSignals, { requiredSignals: ['metric'], requiresQuery: false });
+    for (const violation of signalStructure.violations) {
+      problems.push(`'${caseId}' signals fail the L2 structural contract: ${violation.message}`);
+    }
+    const signalSemantics = core.checkG2Semantic(withSignals);
+    for (const violation of signalSemantics.violations) {
+      problems.push(`'${caseId}' signals fail the L2 reference contract: ${violation.message}`);
+    }
+    const validity = core.checkG3Validity(withSignals, {});
+    for (const violation of validity.violations) {
+      problems.push(`'${caseId}' signals fail G3: ${violation.message}`);
+    }
+    if (validity.violations.length === 0 && signalStructure.violations.length === 0) {
+      withTelemetry.push(caseId);
+    }
+  }
+
   const reading = core.assessFourLayer({ case: parsedCase, graph: parsedGraph });
   if (!reading.complete) {
     const empty = reading.layers.filter((layer) => !layer.filled).map((layer) => `${layer.layer}: ${String(layer.reason)}`);
@@ -234,7 +336,10 @@ for (const entry of index.cases) {
 }
 
 // A file in the directory that the index does not name is a case nobody will run.
-const named = new Set(['index.json', ...index.cases.flatMap((entry) => [entry?.case, entry?.graph])]);
+const named = new Set([
+  'index.json',
+  ...index.cases.flatMap((entry) => [entry?.case, entry?.graph, entry?.signals].filter((name) => typeof name === 'string')),
+]);
 const unnamed = readdirSync(args.cases).filter((file) => file.endsWith('.json') && !named.has(file));
 
 if (invalid.length > 0) {
@@ -271,6 +376,7 @@ if (index.cases.length < floor) {
 console.log(
   `check-fault-cases: OK (${String(index.cases.length)} of ${String(known.size)} sample(s) carry a four-layer ` +
     `case; each is complete, every reference resolves, every layer quotes a sentence the incident ` +
-    `text contains, and every case passes the L2 contract -- structure, references and units; ` +
-    `floor ${String(floor)})`,
+    `text contains, and every case passes G1, G2 and G5 -- structure, references, units, and no ` +
+    `leaked identifiers; ${String(withTelemetry.length)} of ${String(index.cases.length)} also carry ` +
+    `derived telemetry that passes G3; floor ${String(floor)})`,
 );

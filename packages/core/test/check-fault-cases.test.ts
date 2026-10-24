@@ -68,6 +68,8 @@ function corpus(options: {
   min?: number;
   extraFiles?: string[];
   index?: Record<string, unknown>;
+  /** A derived-signals declaration to write beside the case, when the test needs one. */
+  signals?: Record<string, unknown>;
 }): string {
   const dir = workspace();
   const faultCase = JSON.parse(JSON.stringify(REAL_CASE)) as Record<string, unknown>;
@@ -87,11 +89,15 @@ function corpus(options: {
         graph: 'graph.json',
         why: WHY,
         sources: REAL_SOURCES,
+        ...(options.signals === undefined ? {} : { signals: 'signals.json' }),
         ...options.entry,
       },
     ],
   };
   writeFileSync(join(dir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
+  if (options.signals !== undefined) {
+    writeFileSync(join(dir, 'signals.json'), `${JSON.stringify(options.signals, null, 2)}\n`);
+  }
   for (const file of options.extraFiles ?? []) writeFileSync(join(dir, file), '{}\n');
   return dir;
 }
@@ -108,7 +114,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
     expect(result.out).toContain('3 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
-    expect(result.out).toContain('every case passes the L2 contract -- structure, references and units');
+    expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
   });
 
   it('accepts a corpus whose only case is the same one copied to a scratch directory', () => {
@@ -421,5 +427,82 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
     const result = run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('asserts propagation with no path in the topology');
+  });
+});
+
+describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () => {
+  // The step that changes what the corpus is: without signals a case is an annotation, and with
+  // them G1's signal rules, G2's window rule and G3's anomaly rule all have something to judge.
+  // The values are derived from the two numbers the text states -- so the same quote mechanism
+  // holds them -- and the series is constructed, which is why the report says "derived".
+  const REAL_SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function signals(): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
+  }
+
+  function seriesOf(declaration: Record<string, unknown>): Array<Record<string, unknown>> {
+    return declaration.series as Array<Record<string, unknown>>;
+  }
+
+  it('accepts the shipped declaration and says how many cases carry telemetry', () => {
+    const dir = corpus({ signals: signals() });
+    const result = run(['--cases', dir]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('1 of 1 also carry derived telemetry that passes G3');
+  });
+
+  it('refuses a series with no anomaly in it', () => {
+    // Both series flat: the case still has four layers, resolves, and quotes its text, and G3
+    // says the telemetry carries no fault. This is the assertion that proves the gate is running
+    // rather than skipping a case with no metrics.
+    const edited = signals();
+    for (const one of seriesOf(edited)) {
+      one.post = one.baseline;
+    }
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('signals fail G3: no metric sustains |Z| >= 2 for 3 samples after injection');
+  });
+
+  it('refuses a derived value whose quote is not in the incident text', () => {
+    const edited = signals();
+    seriesOf(edited)[0]!.quote = '180ms to 4.4s';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('derives \'request_duration_p99_ms\' from a quote the incident text does not contain');
+  });
+
+  it('refuses a declaration that names another case', () => {
+    const edited = signals();
+    edited.caseId = 'history-something-else';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("names signals for 'history-something-else'");
+  });
+
+  it('refuses an empty series', () => {
+    const edited = signals();
+    edited.series = [];
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('declares an empty signal series');
+  });
+});
+
+describe('check-fault-cases · G5 is asked of every case, because it needs no telemetry', () => {
+  it('refuses a case that does not isolate its answer key', () => {
+    // `answerKeyIsolated` is a claim the case makes about itself, and until this round nothing
+    // read it. A case whose answer key sits beside its query is a case whose oracle is the payload.
+    const dir = corpus({
+      mutate: (faultCase) => {
+        faultCase.answerKeyIsolated = false;
+      },
+    });
+    const result = run(['--cases', dir]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('fails the anti-pollution gate');
   });
 });

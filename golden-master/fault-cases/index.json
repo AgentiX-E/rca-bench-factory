@@ -30,7 +30,8 @@
           "quote": "180ms to 4.3s",
           "why": "the two numbers the p99 checkpoint holds; a checkpoint with one number would not say what the fault changed"
         }
-      ]
+      ],
+      "signals": "history-checkout-cpu-saturation.signals.json"
     },
     {
       "caseId": "history-cart-network-delay",

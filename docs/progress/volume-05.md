@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **180 files, 4394 tests passed** (as of this commit) |
+| `core` test suite | **180 files, 4400 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **184 files, 4581 tests passed** (as of this commit) |
+| repo test suite | **184 files, 4587 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2166,3 +2166,62 @@ coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–
   `FaultCase` at all, so the question does not arise until one is written. Every new annotation now
   inherits both obligations from the guard, which is the reason to write the next one with the
   timestamp and unit rules in view rather than after]`
+
+## v2.62 — a case cannot carry telemetry until its window starts before its onset
+
+v2.61 closed by naming the boundary: G3/G4/G5 need telemetry the annotated cases do not have. This
+round crossed part of it, and the first thing it found was that the corpus **could not** cross it
+as written.
+
+**All three cases had `window.start === injectTime`.** G3 reads a baseline from samples before the
+onset and the post-onset samples from the onset onwards; G2 requires every signal to sit inside the
+window. With `start === onset` no sample is both, so the two rules cannot hold at once and no
+amount of telemetry would have made these cases valid. Each window now starts before its onset --
+fifteen minutes for the two short ones, an hour for the six-hour one.
+
+**Telemetry derived from the checkpoints, with both ends quoted.** Two series for the checkout
+case: `request_duration_p99_ms` 180ms -> 4300ms (the quote `180ms to 4.3s`) and
+`container_cpu_throttled_seconds_total` 12s -> 96s (the quote `throttling counters climbed`). The
+guard expands each into sixteen metric signals -- eight from `window.start`, eight from
+`injectTime`, ninety seconds apart, fixed jitter so two runs produce the same bytes -- and runs
+G1 (`requiredSignals: ['metric']`), G2 and G3 over the result. The counter accumulates rather than
+jumping, because a counter that jumps is a level wearing a counter's name.
+
+**G3 can refuse it.** Flattening **both** series fails with
+`no metric sustains |Z| >= 2 for 3 samples after injection`. Flattening only the p99 passes -- that
+is G3's `anyStrong` semantics, and the first version of the test was green for the wrong reason
+until it was made to flatten both.
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; ...; every case passes G1, G2
+and G5 -- structure, references, units, and no leaked identifiers; 1 of 3 also carry derived
+telemetry that passes G3; floor 3)
+```
+
+**G5 was askable all along.** Its four checks -- duplicate by fingerprint, public-benchmark
+contamination, an identifier in the payload, and `answerKeyIsolated` -- need no telemetry, so they
+apply to an annotation as much as to a scored case. `answerKeyIsolated: true` was a claim each case
+made about itself and nothing had read it. G5 is now asked of every case; **G4 is the only gate left
+that genuinely needs something the corpus does not have.**
+
+**Still `derived`, and still not scoreable.** G4 needs a baseline solver; the distance from
+"annotated" to "scoreable" is smaller and still real, and the word `derived` in the report is what
+keeps the difference legible.
+
+**Acceptance.** 34 tests over the guard (six new: acceptance, no-anomaly, bad quote, wrong case,
+empty series, answer key not isolated); typecheck, lint, `docs:check` green; `derive-gate-sites --check` green (86 sites, 46
+scripts); the meta-gate at **46 gates, 46 caught, 0 survived** (hollowing the guard turns 66 tests red); coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; core **180 / 4400**, cli 4 / 187, repo
+**184 / 4587**; audit 5 volumes, findings 1–234.
+
+### Left open
+
+- **Two of the three cases still carry no telemetry.** `[open: the second and third declare none, so
+  the guard reports 1 of 3. Each needs the same two numbers from its text -- the before and the
+  after -- and the network case's pair (12ms and 900ms) is already quoted in its own sources]`
+- **G4 has never been asked of an annotated case.** `[open: G4 needs a baseline solver's outcome for
+  the case, which is a real localiser run rather than a derivation. G5 was the same shape and turned
+  out to need nothing the corpus lacks, so it is now asked -- the remaining gate is the one that
+  needs a solver, and that is a decision about which localiser rather than about the corpus]`
+- **The derived series is a construction, and the report says so in one word.** `[open: `provenance:
+  applied` versus `captured` is a string in the signals file, not a schema-level distinction, so a
+  future case could claim either. A closed vocabulary would make the claim checkable]`

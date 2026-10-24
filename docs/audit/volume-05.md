@@ -3053,3 +3053,95 @@ answered a narrower question than the sentence it was quoted as supporting.**
 | the guard | 28 tests, four new: two for L2's structural half, two for its reference half |
 | the module | unchanged; `four-layer.ts` **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
 | `core` / repo | **180 / 4394** · **184 / 4581** |
+
+## Finding 234 — an annotation cannot carry telemetry until its window starts before its onset
+
+Finding 233 closed by asking G1 and G2 of every case and naming the boundary: G3, G4 and G5 need
+telemetry these cases do not have, and "a case that is annotated is not a case that is scoreable".
+This round crossed part of that boundary, and the first thing it found was that the corpus **could
+not** have crossed it as written.
+
+### The window was the onset
+
+All three cases had `window.start === injectTime`. G3 reads a metric's **baseline** from samples
+before `injectTime` and its **post-onset** samples from `injectTime` onwards; G2 requires every
+signal to sit inside the declared window. With `start === onset` there is no sample that is both
+before the onset and inside the window, so the two rules cannot be satisfied at once, and no amount
+of telemetry would have made these cases valid.
+
+The corpus now starts each window before its onset -- fifteen minutes before for the two short
+windows, an hour before for the six-hour one -- and an incident is what it always was: an onset
+inside an observation window, not the window itself.
+
+### Telemetry derived from the checkpoints, with both ends quoted
+
+`history-checkout-cpu-saturation.signals.json` declares two series:
+
+| series | baseline | post | the sentence both come from |
+| --- | --- | --- | --- |
+| `request_duration_p99_ms` on `checkout-api` | 180 ms | 4300 ms | `180ms to 4.3s` |
+| `container_cpu_throttled_seconds_total` on `checkout-api-0` | 12 s | 96 s | `throttling counters climbed` |
+
+The guard expands each into sixteen metric signals -- eight baseline points from `window.start`,
+eight post-onset points from `injectTime`, ninety seconds apart, with a **fixed** jitter cycle
+rather than a random one so two runs produce the same bytes -- and then runs G1 (with
+`requiredSignals: ['metric']`), G2 and G3 over the result. The counter is expanded as an
+accumulating series, because a counter that jumps to its post value is a level wearing a counter's
+name.
+
+**Both ends are quoted, and the quote is checked the same way the layer quotes are.** That is what
+stops the derivation from being an invention: the text states the before and the after, so the
+series has two anchors, and the guard refuses a series whose quote is not in the incident text.
+
+### G3 can refuse it, which is the point
+
+The test that makes this a measurement rather than a ceremony flattens **both** series and watches
+the gate fail:
+
+```
+'history-checkout-cpu-saturation' signals fail G3: no metric sustains |Z| >= 2 for 3 samples
+after injection
+```
+
+Flattening one series is not enough, and that is G3's semantics rather than an oversight: a case is
+valid when *some* metric carries a sustained anomaly, because the fault is allowed to be visible in
+one place. The first version of the test flattened only the p99 and passed, which is the shape this
+campaign keeps meeting -- **a green that meant "the other series was doing the work"**.
+
+### G5 was askable all along, and nothing had asked it
+
+The same round found a cheaper answer sitting next to the expensive one. G5's checks -- a duplicate
+case by fingerprint, contamination from a public benchmark, an identifier in the payload, and
+`answerKeyIsolated` -- need **no telemetry at all**, so they apply to an annotation as much as to a
+scored case. `answerKeyIsolated: true` is a claim each case makes about itself and nothing had ever
+read it; a case whose answer key sits beside its query is a case whose oracle is the payload.
+
+So G5 is now asked of every case, and one test sets `answerKeyIsolated: false` and watches the guard
+refuse it. G4 is the only gate left that genuinely needs something the corpus does not have.
+
+### What the number now says
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; ...; every case passes G1, G2
+and G5 -- structure, references, units, and no leaked identifiers; 1 of 3 also carry derived
+telemetry that passes G3; floor 3)
+```
+
+`1 of 3` is reported, not gated, for the same reason `3 of 30` is. And it says **derived**: these
+signals were constructed from the annotation, not captured from a deployment. G4 needs a baseline
+solver to show the case is solvable and G5 needs the pollution and de-identification checks; both
+are still unasked, so the distance from "annotated" to "scoreable" is smaller and still real.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the window | three cases now start before their onset; `start === onset` could never satisfy G2 and G3 together |
+| the derivation | two series, both ends quoted, expanded to 32 metric signals on a fixed 90-second cadence |
+| G1 / G2 / G3 | all three run over the derived signals; G1's `requiredSignals` is `['metric']` for these cases |
+| the refusal | both series flattened fails G3; one series flattened passes, which is G3's `anyStrong` semantics |
+| the guard | 34 tests (six new: acceptance, no-anomaly, bad quote, wrong case, empty series, answer key not isolated) |
+| G5 | asked of every case; `answerKeyIsolated: false` is refused |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns 66 tests red in 1 of 2 naming files |
+| `core` / repo | **180 / 4400** · **184 / 4587** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
