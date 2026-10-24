@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **172 files, 4263 tests passed** (as of this commit) |
+| `core` test suite | **173 files, 4271 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **176 files, 4450 tests passed** (as of this commit) |
+| repo test suite | **177 files, 4458 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1511,3 +1511,71 @@ and 100 ×4; audit 5 volumes, findings 1–221.
 - **The provider balance still blocks three measurements.** `[open: v2.44's component rules, the
   30-sample key's baseline, and v2.43's boundaries re-read on the finer instrument. Every other
   line of work in this round was chosen because it needs no dispatch]`
+
+## v2.51 — the answer was taken fourteen minutes after the question was closed as unanswerable
+
+v2.44 predicted, v2.45 recorded the run as blocked on a provider `402`, and its commit `4694c3d`
+(11:47Z) said so. **At 12:01Z run `39950191377` completed successfully** — thirty samples, M1 MET:
+
+| reading | key | type | category | component | strict |
+| --- | --- | --- | --- | --- | --- |
+| v2.41 | 19 | 17 | 13 | 14 | 9 (47.4%) |
+| v2.42 | 19 | 19 | 17 | 15 | 13 (68.4%) |
+| v2.43 | 19 | 19 | 19 | 15 | 15 (78.9%) |
+| **v2.44 rules** | **30** | **30** | **29** | **25** | **24 (80.0%)** |
+
+I found it twenty hours later, after four rounds were written on top of "blocked". The note was true
+when written and false within the hour, and **nothing existed that could notice** — a blocker is a
+sentence in a document, and a dispatch outcome is a fact in an API. The artefact was still
+downloadable, which is luck rather than design.
+
+**The prediction was half right, and the half that failed is the informative one.** v2.44 added
+"name the workload, not the product it runs" and "not the actor that triggered it". The actor rule
+worked (`config-feature-flag-checkout` is correct now); the product rule did not
+(`middleware-redis-latency-cache` still answers `session-store`). Two new samples produced two new
+component misses of the same family — `message-broker` for the ledger writer, `settlement-service`
+for the currency feed: **"name the workload that owns the fault" is still read as "name the thing the
+incident is about"**, one layer out. Two exclusions were named; the family has more members.
+
+**And a category answer moved backwards with its own text untouched.** `middleware-kafka-consumer-lag`
+answers `code` again, though v2.43's run recorded `category 19/19`. v2.44 edited only the component
+block of the same prompt. This is v2.42's cross-field movement in the direction that matters: a rule
+that appeared to work stopped appearing to work, and the reading that said otherwise was one sample
+away from being wrong.
+
+**The evidence is now a file.** `golden-master/fault-extraction/readings.json` holds all four
+readings — every sample as answered beside the value it was scored against, a key digest per
+reading, the run id and the prompt change — and `m1-reading-is-reproducible.test.ts` recomputes
+every total from that table.
+
+| property | how it is held |
+| --- | --- |
+| totals are arithmetic | recomputed from the rows |
+| the scoring side is fixed | sha256 over the sorted four-field lines |
+| the record cannot drift | every id still in the key carries the key's current expected values |
+| the one rename is named | `…-product-cache` → `…-product-index`, with the reason and the finding |
+| the gap is named, not filled | run `39806875985` (2/19) is listed absent with its reason |
+| the old instrument is not "now" | exactly one reading is on the current key size, and it is the newest |
+| sensitivity | flipping one answered field moves strict by exactly one |
+
+**Acceptance.** 8 new tests; the write scan's git oracle now reads `--cached --others
+--exclude-standard` (a new test file exists before it is added, and excluding it made the guard
+accuse the scan of inventing a file); two consecutive full runs at **4271 passed**; typecheck, lint,
+`docs:check` green; core **173 / 4271**, cli 4 / 187, repo **177 / 4458**; coverage 99.97 / 99.74 /
+100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–222.
+
+### Left open
+
+- **A blocker written in a document has no expiry.** `[open: v2.45's note said "nothing can be
+  re-measured" and the next dispatch succeeded; nothing compares a recorded blocker against a
+  dispatch outcome. The cheap version is that a blocked item must name the *check* that would lift
+  it -- here: any run after 11:47Z with conclusion success -- so the next reader can run that check
+  instead of trusting the sentence]`
+- **Two component misses name the other end of a relationship, and the prompt names two exclusions
+  out of a family.** `[open: `message-broker` for a writer, `settlement-service` for a feed, plus the
+  link pair and the `-service` suffix. The rule needs a *test* ("which entity's own behaviour
+  failed") rather than a list of things not to name -- the same lesson `middleware`/`code` taught
+  when a cause test was rewritten as a symptom test]`
+- **One prompt edit moved a field it did not touch.** `[open: v2.44 changed the component block and
+  the consumer-lag category answer went back to `code`. Until a run varies one field at a time, a
+  single reading cannot attribute a move to the field whose text changed]`

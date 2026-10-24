@@ -2019,3 +2019,103 @@ how it would happen.
 | the widening's cost | zero offenders today, measured rather than assumed |
 | `core` / repo | **172 / 4263** · **176 / 4450** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 222 — the run that answered the blocked question ran fourteen minutes after the commit that called it blocked
+
+v2.44's prediction was recorded before its run, the run failed on a provider `402`, and v2.45's
+commit — `4694c3d`, 11:47Z — closed with:
+
+> **The provider account has no balance, and the milestone's re-measurement is blocked on it.**
+> […] nothing can be re-measured […] The remedies are a top-up or a switch to another registered
+> provider.
+
+**At 12:01Z that same day, run `39950191377` completed successfully.** Fourteen minutes later. It
+scored thirty samples and printed:
+
+```
+  type        : graded 30/30 (100.0%)
+  category    : graded 29/30 (96.7%)
+  component   : graded 25/30 (83.3%)
+  strict all-fields: 24/30 (80.0%)
+  M1 exit condition: MET (>= 70% strict)
+```
+
+Nobody read it for twenty hours — not through v2.46, v2.47, v2.48, v2.49 or v2.50, four of which
+were written while the answer sat in an artefact. The note was not wrong when it was written; it
+was **wrong within the hour and there was nothing to notice it with**, because a blocker is a
+sentence in a document and a dispatch outcome is a fact in an API.
+
+The artifact is still downloadable, so the reading is recoverable — that is luck, not design, and
+the rest of this finding is the design.
+
+### What the reading says
+
+| reading | key | type | category | component | strict |
+| --- | --- | --- | --- | --- | --- |
+| v2.41 (run `39810137978`) | 19 | 17 | 13 | 14 | 9 (47.4%) |
+| v2.42 (run `39880043431`) | 19 | 19 | 17 | 15 | 13 (68.4%) |
+| v2.43 (run `39881192308`) | 19 | 19 | 19 | 15 | **15 (78.9%)** |
+| **v2.44 rules (run `39950191377`)** | **30** | **30** | **29** | **25** | **24 (80.0%)** |
+
+Recomputed locally against the current key before it was believed: identical to the report, down to
+the six misses. The thirty-sample baseline is **24/30**, three samples clear of the twenty-one the
+threshold requires.
+
+### The prediction, falsified in substance
+
+v2.44 added two component rules and predicted `component 17/19`. Its own two targets:
+
+| sample | rule v2.44 added | on 30 samples |
+| --- | --- | --- |
+| `middleware-redis-latency-cache` | name the workload, not the product it runs | **still `session-store`** — the rule did not land |
+| `config-feature-flag-checkout` | name the workload that broke, not the actor | **correct now** — the actor rule did land |
+
+One of two. And two *new* component misses arrived with the new samples, both of the same family the
+rules were meant to exclude:
+
+| sample | answered | what it named |
+| --- | --- | --- |
+| `middleware-queue-watermark-ledger-writer` | `message-broker` | the broker, not the writer |
+| `dependency-schema-change-currency-feed` | `settlement-service` | the consumer, not the feed |
+
+So "name the workload that owns the fault" is still being read as "name the thing the incident is
+about", one layer out. The two rules name two exclusions; the category of error has more members
+than the two the rules took.
+
+### A category answer moved back, with the category text untouched
+
+`middleware-kafka-consumer-lag` answered **`code`** again. On the nineteen-sample key v2.43's run
+recorded `category 19/19`, which means that sample answered `middleware` then. v2.44 edited only the
+*component* block of the same prompt; the category rules were byte-identical.
+
+This is the second instance of the movement v2.42 recorded — a component answer moved when only the
+category block changed — and it is the stronger one, because the direction is *backwards*: a rule
+that appeared to work stopped appearing to work with no edit to its own text. A single reading at
+19/19 was one sample away from being wrong, and the next reading showed it.
+
+### The evidence is now a file, not an artefact
+
+`golden-master/fault-extraction/readings.json` carries all four readings: every sample as answered
+beside the expected value it was scored against, the key digest for each, the run id, and the prompt
+change between them. `m1-reading-is-reproducible.test.ts` recomputes every total from that table.
+
+| property | how it is held |
+| --- | --- |
+| the totals are arithmetic | recomputed from the rows; an edited answer and an unedited total fail |
+| the scoring side is fixed | a sha256 over the sorted four-field lines, `id` then type, category, component |
+| the record cannot drift from the key | every id still in the key must carry its current expected values |
+| the one rename is named | `middleware-cache-shard-product-cache` → `…-index`, with the reason and the finding |
+| the gap is named, not filled | run `39806875985` (2/19) is listed as *absent* with the reason its artefact was not kept |
+| the old instrument is not "now" | exactly one reading is on the current key size, and it is the newest |
+| the arithmetic is sensitive | flipping one answered field moves the strict count by exactly one |
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the reading | 24/30, M1 MET, three samples of margin, recomputed locally before it was recorded |
+| the record | 4 readings, 30-key digest pinned, one superseded id with a reason, one absent run with a reason |
+| the tests | 8 in `m1-reading-is-reproducible.test.ts` |
+| the guard change | the write scan's git oracle reads `--cached --others --exclude-standard`, because a new test file exists before it is added |
+| `core` / repo | **173 / 4271** · **177 / 4458** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

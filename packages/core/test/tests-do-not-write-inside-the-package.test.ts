@@ -251,13 +251,25 @@ function suiteFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** What git says is in the tree under those roots -- an enumeration this test does not own. */
+/**
+ * What git says is on disk under those roots -- an enumeration this test does not own.
+ *
+ * `--others --exclude-standard` is part of the question, and the first version left it out.
+ * With `--cached` alone the guard failed on this round's own new test file before it had been
+ * `git add`ed: the file existed and was scanned, git did not list it, and the comparison read
+ * that as a file the scan had invented. The subject is *what exists*, so a tracked-or-untracked
+ * file counts and a gitignored one does not -- which is also the only reading under which the
+ * oracle means anything while a change is being written.
+ */
 function trackedFiles(roots: string[]): string[] {
   const patterns = roots.flatMap((root) => {
     const relative = root.slice(REPO.length + 1);
     return [`${relative}/*.ts`, `${relative}/**/*.ts`];
   });
-  const listed = execFileSync('git', ['ls-files', '-z', '--', ...patterns], { cwd: REPO, encoding: 'utf8' });
+  const listed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...patterns], {
+    cwd: REPO,
+    encoding: 'utf8',
+  });
   return listed
     .split('\0')
     .filter((name) => name !== '')
