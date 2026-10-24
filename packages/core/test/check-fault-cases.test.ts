@@ -451,7 +451,9 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     const dir = corpus({ signals: signals() });
     const result = run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('1 of 1 also carry telemetry whose provenance is declared and which passes G3');
+    expect(result.out).toContain(
+      '1 of 1 also carry telemetry whose provenance is declared, which passes G3, and which the peak-z baseline locates in its top-K',
+    );
   });
 
   it('refuses a series with no anomaly in it', () => {
@@ -534,5 +536,42 @@ describe('check-fault-cases · provenance is a closed vocabulary, not a sentence
     edited.provenance = 'captured';
     const result = run(['--cases', corpus({ signals: edited })]);
     expect(result.status, result.out).toBe(0);
+  });
+});
+
+describe('check-fault-cases · G4, the last gate that needed a run rather than a derivation', () => {
+  // G4 reads outcomes, so asking it of the corpus required a localiser. `fault/baseline-localiser.ts`
+  // is that run: peak |z| per service against its own baseline, ranked, with the answer key never
+  // read. These tests are the gate's side of it -- the case must be *solvable*, and a case whose
+  // anomaly belongs to a service nobody annotated is the one that is not.
+  // The checkout declaration, because the scratch corpus writes the checkout case: a declaration
+  // names its case and the guard refuses a mismatch, which is its own test above.
+  const REAL_SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function signals(): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
+  }
+
+  it('accepts a case whose own service carries the anomaly the baseliner finds', () => {
+    const result = run(['--cases', corpus({ signals: signals() })]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('1 of 1 also carry telemetry');
+    expect(result.out).toContain('the peak-z baseline locates in its top-K');
+  });
+
+  it('refuses a case whose anomaly belongs to a service the annotation does not name', () => {
+    // The signals stay anomalous, so G3 passes; the ranking is built from them, so the annotated
+    // component is nowhere in it and G4 refuses. This is the shape of a case that reads as valid
+    // and cannot be scored, which is exactly what the gate is for.
+    const edited = signals();
+    for (const one of (edited.series as Array<Record<string, unknown>>)) {
+      one.service = 'somebody-else';
+    }
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('is not solvable by the peak-z-by-service baseline');
+    expect(result.out).toContain('only 0 baseline(s) locate the root cause within top-K');
   });
 });

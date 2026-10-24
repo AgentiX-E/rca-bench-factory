@@ -133,6 +133,7 @@ const ENUMERATED_MODULES = [
   'fault/miss-detail.ts',
   'fault/reading-record.ts',
   'fault/four-layer.ts',
+  'fault/baseline-localiser.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -631,6 +632,10 @@ const TESTED = [
   // in the report; `extraction-diagnostics.test.ts` is the test that drives both.
   'FAILURE_EXCERPT_LIMIT',
   'describeExtractionFailure',
+  // fault/baseline-localiser.ts -- G4 reads outcomes, so the corpus needs a run behind it.
+  'PEAK_Z_METHOD',
+  'locateWithPeakZScore',
+  'rankServicesByPeakZScore',
   // fault/four-layer.ts -- M1's four-layer condition, as a definition that can fail.
   'assessFourLayer',
   'formatFourLayerReading',

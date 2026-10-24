@@ -331,7 +331,19 @@ for (const entry of index.cases) {
     for (const violation of validity.violations) {
       problems.push(`'${caseId}' signals fail G3: ${violation.message}`);
     }
-    if (validity.violations.length === 0 && signalStructure.violations.length === 0) {
+    // G4 as well: a case whose anomaly no baseline can locate is a case that reads as valid and
+    // cannot be scored. The localiser is the one in `fault/baseline-localiser.ts`, named in the
+    // outcome so a reader knows which run produced the rank, and it never looks at the answer key.
+    const outcome = core.locateWithPeakZScore(parsedCase, signals);
+    const solvability = core.checkG4Solvability(withSignals, [outcome], {});
+    for (const violation of solvability.violations) {
+      problems.push(`'${caseId}' is not solvable by the ${String(outcome.method)} baseline: ${violation.message}`);
+    }
+    if (
+      validity.violations.length === 0 &&
+      signalStructure.violations.length === 0 &&
+      solvability.violations.length === 0
+    ) {
       withTelemetry.push(caseId);
     }
   }
@@ -388,5 +400,6 @@ console.log(
     `case; each is complete, every reference resolves, every layer quotes a sentence the incident ` +
     `text contains, and every case passes G1, G2 and G5 -- structure, references, units, and no ` +
     `leaked identifiers; ${String(withTelemetry.length)} of ${String(index.cases.length)} also carry ` +
-    `telemetry whose provenance is declared and which passes G3; floor ${String(floor)})`,
+    `telemetry whose provenance is declared, which passes G3, and which the peak-z baseline ` +
+    `locates in its top-K; floor ${String(floor)})`,
 );

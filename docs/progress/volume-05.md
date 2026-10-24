@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **180 files, 4402 tests passed** (as of this commit) |
+| `core` test suite | **181 files, 4419 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **184 files, 4589 tests passed** (as of this commit) |
+| repo test suite | **185 files, 4606 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2267,3 +2267,53 @@ audit 5 volumes, findings 1–235.
   inherits six obligations -- four layers, a quote per layer, G1, G2, G5, and optionally derived
   telemetry -- and the guard holds every one of them, which is what makes the next annotation
   reviewable rather than merely written]`
+
+## v2.64 — G4 was the last gate that needed a run
+
+Every round since v2.61 ended with the same sentence: G4 has never been asked, because it reads
+`BaselineOutcome`s and no run produced any. This round wrote the run.
+
+**`fault/baseline-localiser.ts`** ranks services by the largest absolute z-score any of their
+metrics reaches after the onset, against that metric's own baseline; peak per service, descending,
+ties broken by service name. Two properties are what make it a measurement rather than a
+certificate, and both are asserted: it **never reads `groundTruth`** (a test empties the answer key
+and checks the ranking is unchanged), and **"not in the ranking" is `null`, not last** (a solver
+that produced no candidate by that name did not place it badly -- it did not place it).
+
+**What a rank of 1 does not mean.** The signals are derived from the annotations, so peak-z finding
+the annotated service is close to tautological. What the run establishes is narrower: the case
+carries a locatable structure, and G4's first condition is met by a run rather than assumed.
+
+```
+check-fault-cases: OK (3 of 30 ...; every case passes G1, G2 and G5 ...; 3 of 3 also carry
+telemetry whose provenance is declared, which passes G3, and which the peak-z baseline locates
+in its top-K; floor 3)
+```
+
+**All five gates have now been asked** of every annotated case. What remains between "annotated"
+and "scoreable" is no longer a gate.
+
+**Two defects of this round.** The comparator's first version was
+`right.peakZ - left.peakZ || (left.service < right.service ? -1 : 1)` and the coverage table
+reported **96.15% branches** with that line named -- a hand-written three-way comparator has two
+branches and one is easy to leave unexecuted, so it became `localeCompare`. And a test paired the
+checkout case with the *cart* declaration, refused by the guard's own `names signals for` check,
+which is the mechanism working.
+
+**Acceptance.** 12 tests over the localiser, 38 over the guard; typecheck, lint, `docs:check`
+green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46 gates, 46
+caught, 0 survived** (hollowing the guard turns 72 tests red); localiser **100 ×4**; core
+**181 / 4419**, cli 4 / 187, repo **185 / 4606**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4;
+audit 5 volumes, findings 1–236.
+
+### Left open
+
+- **The baseline is peak-z, and it was chosen because it is dull.** `[open: G4 needs one solver that
+  locates the root cause, and this one does -- on data derived from the same annotation. A second
+  baseline with a different inductive bias would test whether the case is locatable rather than
+  whether one method agrees with the construction]`
+- **Every signal is still derived, and no case is captured.** `[open: the vocabulary admits `captured`
+  and nothing uses it. The gap that remains is not a gate but an origin]`
+- **Twenty-seven extraction samples carry no case.** `[open: 3 of 30, and each annotation now has to
+  satisfy six obligations the guard holds: four layers with quotes, G1, G2, G5, and optionally
+  telemetry that passes G3 with a baseline that locates it]`

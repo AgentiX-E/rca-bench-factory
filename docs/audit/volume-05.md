@@ -3208,3 +3208,73 @@ a data change rather than a schema change.
 | the guard | 36 tests (two new: an unknown provenance, and `captured`) |
 | `core` / repo | **180 / 4402** · **184 / 4589** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 236 — G4 was the last gate that needed a run, and now there is one
+
+Findings 233–235 each ended with the same sentence: G4 has never been asked of an annotated case,
+because G4 reads `BaselineOutcome`s and no run produced any. This round wrote the run.
+
+### The localiser, and what it refuses to read
+
+`fault/baseline-localiser.ts` ranks services by the largest absolute z-score any of their metrics
+reaches after the onset, against that metric's own baseline. Peak per service, descending, ties
+broken by service name so two runs produce one order. Nothing about it is clever.
+
+**Two properties are what make it a measurement rather than a certificate**, and both are asserted
+rather than described:
+
+| property | why | how it is held |
+| --- | --- | --- |
+| it never reads the answer key | a localiser that peeked turns G4 into a stamp | the test hands it a case whose `groundTruth` has been replaced wholesale and asserts the ranking is unchanged |
+| "not in the ranking" is `null`, not last | a solver that produced no candidate by that name did not place it badly -- it did not place it | `rankOfTruth` is `null` when the component is absent, and G4 counts `null` as unsolved |
+
+The tiebreak earns its own sentence: without it, equal peaks come out in insertion order, which is
+the order the signals happened to arrive in -- **a fact about the file, not about the data**.
+
+### What a rank of 1 does and does not mean
+
+The signals are derived from the annotations, so a peak-z method finding the annotated service is
+close to tautological: the service carrying the constructed anomaly *is* the answer. What the run
+establishes is narrower and still worth the code -- **the case carries a locatable structure**, and
+G4's first condition is met by a run rather than assumed. Difficulty needs many cases and a spread
+of baselines, which is what `G4Options.distributionMinCases` is for and why it does not fire here.
+
+Both facts are in the module's comment, not only here, because the next reader will be the one
+tempted to quote the number.
+
+### The corpus now passes four of five gates
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; ...; every case passes G1, G2
+and G5 -- structure, references, units, and no leaked identifiers; 3 of 3 also carry telemetry
+whose provenance is declared, which passes G3, and which the peak-z baseline locates in its
+top-K; floor 3)
+```
+
+G1, G2, G3, G4 and G5 have now each been asked of every annotated case. What remains between
+"annotated" and "scoreable" is no longer a gate: it is that the signals are **derived**, and that
+three of thirty samples carry a case at all.
+
+### Two defects of this round
+
+**1. The comparator had a branch nothing executed.** The first version was
+`right.peakZ - left.peakZ || (left.service < right.service ? -1 : 1)`, and the coverage table
+reported **96.15% branches** on the module with that line named. A hand-written three-way comparator
+has two branches and one of them is easy to leave unexecuted; `localeCompare` has none at this
+level. Replaced, and the reason is in the code where the next reader will look.
+
+**2. A test paired one case with another case's signals.** The scratch corpus writes the checkout
+case, and the first version of the G4 test loaded the *cart* declaration with it -- refused by the
+guard's own `names signals for` check, which is the mechanism working. Fixed by using the
+declaration that matches, and the test now says why.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the run | 12 tests over the localiser: ranking, answer-key blindness, empty inputs, malformed timestamps, missing baseline, non-metric signals, ties, `topK` |
+| G4 | asked of every case that carries telemetry; a case whose anomaly belongs to an unnamed service is refused |
+| the corpus | **3 of 3** cases pass G3 and are located in the baseline's top-K |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns 72 tests red in 1 of 2 naming files |
+| coverage | module **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
+| `core` / repo | **181 / 4419** · **185 / 4606** |

@@ -657,6 +657,16 @@ export type {
   ReadingTotals,
 } from './fault/reading-record.js';
 
+// The baseline localiser G4 needs. Exported because G4 reads outcomes rather than signals, so a
+// gate over the corpus is only as meaningful as the run behind it -- and a run nobody can call is
+// a run nobody can reproduce.
+export {
+  PEAK_Z_METHOD,
+  locateWithPeakZScore,
+  rankServicesByPeakZScore,
+} from './fault/baseline-localiser.js';
+export type { LocalisationReading, ServiceRank } from './fault/baseline-localiser.js';
+
 // M1's "GT four-layer annotation can all be filled", as a thing that can fail. The schema marks
 // `causalChain` and `evidenceCheckpoints` optional and `rootCauseEntityId` is a string nothing
 // resolves, so until this existed the condition was met by definition. Exported because the
