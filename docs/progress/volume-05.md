@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **173 files, 4277 tests passed** (as of this commit) |
+| `core` test suite | **173 files, 4275 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **177 files, 4464 tests passed** (as of this commit) |
+| repo test suite | **177 files, 4462 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1579,3 +1579,64 @@ accuse the scan of inventing a file); two consecutive full runs at **4271 passed
 - **One prompt edit moved a field it did not touch.** `[open: v2.44 changed the component block and
   the consumer-lag category answer went back to `code`. Until a run varies one field at a time, a
   single reading cannot attribute a move to the field whose text changed]`
+
+## v2.52 — three changes, one reading, two samples lost: reverted
+
+The 24/30 baseline left four component misses, three of them one question asked three ways. So the
+component rule was replaced with a criterion (*whose own behaviour failed*), a no-role-suffix clause
+was added, and the examples were changed because one was `session-store` — the exact string the model
+had answered for a different workload three times.
+
+**Prediction, committed before the run: component 28/30, strict 27/30.**
+**Run `40049467914`: component 22/30, strict 22/30.** M1 still met, and that is why this round exists.
+
+| field | v2.44 rule | this rule | Δ |
+| --- | --- | --- | --- |
+| type | 30 | 29 | −1 |
+| category | 29 | 29 | 0 |
+| component | 25 | **22** | **−3** |
+| strict | 24 | **22** | **−2** |
+
+`order-events-consumer` → `order-events` is the finding in one line. The clause said *add no role
+suffix unless the incident's own name carries one*; it was read as *remove role suffixes*, and
+`-consumer`, `-replica` and `-settlement` went the way of `-service`. One sample stopped answering
+component at all (`cart-service`, omitted), two new wrong layers appeared (`ingress`,
+`pricing-service`), and the sample the criterion was written for — `settlement-service` for
+`currency-feed` — came back as `settlement`: the wrong entity with the right words taken off.
+
+One target moved: `middleware-queue-watermark-ledger-writer` answers `ledger-writer` now.
+
+**Three changes, one reading.** The lost samples cannot be attributed between the criterion, the
+clause and the examples, and the suffix clause is only the *obvious* suspect — which is the kind of
+conclusion this repository has been wrong about before. So `FAULT_COMPONENT_RULE` is restored
+byte-identically from the commit that produced 24/30, and a test asserts the criterion and the clause
+are absent. Refining an unattributable run would keep the parts nobody measured.
+
+**And 22/30 clears the threshold.** Keeping it would have cost two samples, three component answers
+and a type miss while every gate stayed green and the milestone stayed met — the case where a number
+most easily hides a loss. The revert is on the record, not on the score.
+
+**The record became a place for failures.** `readings.json` now carries the run with
+`status: "reverted"` and a reason beside the `current` reading; the tests recompute its totals like
+any other, assert the three truncations **sample by sample**, and require that exactly one reading is
+`current`. A reverted reading must state its reason and must score below the current one — without
+that, 22/30 would sit in the file looking like a result.
+
+**Acceptance.** 4 tests in the reverted block (prompt 41), 8 in the readings file; typecheck, lint,
+`docs:check` green; two consecutive full runs at **4275 passed**; component-rule battery 8/8, M1
+ceiling 11/11 and 8/8 after the revert; core **173 / 4275**, cli 4 / 187, repo **177 / 4462**;
+coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–223.
+
+### Left open
+
+- **The criterion is still untested.** `[open: one of its three targets moved and the other two were
+  buried under the suffix clause. The next attempt changes the rule text and nothing else -- no
+  clause, no example churn -- or the reading is unattributable again]`
+- **The example hypothesis survived as a correlation.** `[open: `session-store` was removed from the
+  examples and `middleware-redis-latency-cache` still answers `session-redis`. That is consistent with
+  priming and also consistent with the model naming the datastore for its own reasons; separating the
+  two needs a run that changes only the example list]`
+- **The link pair is still the miss no rule produces.** `[open: `payment-gateway` answered
+  `order-service` in every reading so far. Its two annotations sit on opposite ends of the same link
+  -- recorded in v2.42 as possibly inconsistent -- and re-annotating it must not happen in a round
+  that would gain a point from it]`

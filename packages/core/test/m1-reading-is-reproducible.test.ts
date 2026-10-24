@@ -54,6 +54,10 @@ interface Reading {
   key: { size: number; digest: string };
   totals: Record<Field, number> & { strict: number };
   samples: Sample[];
+  /** `current` is the rule in the tree; `old-key` is a reading on a key that no longer exists. */
+  status: 'old-key' | 'current' | 'reverted';
+  /** Required when `reverted`: what the reading measured, and why it was not kept. */
+  statusWhy?: string;
 }
 
 interface Readings {
@@ -118,7 +122,13 @@ describe('M1’s readings are re-derivable from the repository', () => {
     // `M1_STRICT_THRESHOLD` is imported, not restated: the milestone is met when a
     // reading clears the number the scorer publishes, and a change to that number
     // moves this assertion with it.
-    const last = file.readings[file.readings.length - 1] as Reading;
+    //
+    // The subject is the reading whose `status` is `current` -- the rule in the tree --
+    // and not the last row. The last row is the experiment that lost, and a test that
+    // read it would be scoring a rule the repository does not carry.
+    const current = file.readings.filter((reading) => reading.status === 'current');
+    expect(current, 'exactly one reading describes the rule in the tree').toHaveLength(1);
+    const last = current[0] as Reading;
     expect(last.key.size).toBe(30);
     const rate = last.totals.strict / last.samples.length;
     expect(rate).toBeGreaterThanOrEqual(M1_STRICT_THRESHOLD);
@@ -161,29 +171,45 @@ describe('M1’s readings are re-derivable from the repository', () => {
     }
   });
 
-  it('records the four readings in run order with the strict count each one produced', () => {
+  it('records the five readings in run order with the strict count each one produced', () => {
     // A record, not a formula: the progression 9 -> 13 -> 15 (on nineteen samples)
     // and 24 (on thirty) is the history the milestone rests on, and a change to it
     // is an event rather than an edit. Written as a list so a fifth reading is a
     // deliberate addition to a visible sequence.
+    // The fifth entry is the experiment that lost: 22/30 against the 24 it replaced, reverted
+    // rather than kept because its reasoning was better than its number (finding 223). A record
+    // that kept only the improvements would make every rule look like it worked.
     expect(file.readings.map((reading) => [reading.run, reading.key.size, reading.totals.strict])).toEqual([
       [39810137978, 19, 9],
       [39880043431, 19, 13],
       [39881192308, 19, 15],
       [39950191377, 30, 24],
+      [40049467914, 30, 22],
     ]);
   });
 
-  it('separates the readings taken on the old instrument from the one on the current key', () => {
-    // What a reader must not do: read 15/19 as a statement about today. Three
-    // readings carry a nineteen-sample key while the key holds thirty, and exactly
-    // one reading is on the current size -- the newest. Stated as that pair of
-    // facts rather than as a comment, because the next dispatch will change the
-    // second and must not change the first.
-    const onCurrent = file.readings.filter((reading) => reading.key.size === key.samples.length);
-    expect(onCurrent).toHaveLength(1);
-    expect(onCurrent[0]?.run).toBe(Math.max(...file.readings.map((reading) => reading.run)));
-    expect(file.readings.filter((reading) => reading.key.size !== key.samples.length)).toHaveLength(3);
+  it('separates the reading that describes the rule in the tree from every other one', () => {
+    // What a reader must not do: read 15/19 as a statement about today, or 22/30 as
+    // a result the tree contains. Size cannot answer either question -- two readings
+    // are now on the thirty-sample key and only one of them is the rule in the tree --
+    // so each reading carries a status, and the assertions are on that.
+    const current = file.readings.filter((reading) => reading.status === 'current');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.key.size).toBe(key.samples.length);
+    expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(3);
+    const reverted = file.readings.filter((reading) => reading.status === 'reverted');
+    expect(reverted, 'the record must carry the experiment that lost').toHaveLength(1);
+    for (const reading of reverted) {
+      // A reverted reading is a measurement, not a preference: it has to say what it
+      // measured and why it was not kept, or it is an opinion with a run id.
+      expect(reading.statusWhy?.length ?? 0, `run ${String(reading.run)} is reverted without a reason`).toBeGreaterThan(
+        80,
+      );
+      expect(reading.totals.strict).toBeLessThan(
+        (current[0]?.totals.strict ?? 0) + 1,
+        'a reverted reading that scored better than the current one is a revert to explain',
+      );
+    }
   });
 
   it('names the reading it could not re-derive instead of reconstructing it', () => {

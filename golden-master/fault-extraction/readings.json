@@ -269,7 +269,8 @@
             "component": "analytics-replica"
           }
         }
-      ]
+      ],
+      "status": "old-key"
     },
     {
       "run": 39880043431,
@@ -533,7 +534,8 @@
             "component": "analytics-replica"
           }
         }
-      ]
+      ],
+      "status": "old-key"
     },
     {
       "run": 39881192308,
@@ -797,7 +799,8 @@
             "component": "analytics-replica"
           }
         }
-      ]
+      ],
+      "status": "old-key"
     },
     {
       "run": 39950191377,
@@ -1204,7 +1207,417 @@
             "component": "settlement-service"
           }
         }
-      ]
+      ],
+      "status": "current"
+    },
+    {
+      "run": 40049467914,
+      "model": "deepseek-flash",
+      "promptChange": "the component rule stated as a criterion (whose own behaviour failed), with the three relationships excluded, a no-role-suffix clause, and new examples",
+      "key": {
+        "size": 30,
+        "digest": "c85e16931b0604287e92401fab5bdd31a267b48b3cb7d2fe5792b9e3c6131713"
+      },
+      "totals": {
+        "type": 29,
+        "category": 29,
+        "component": 22,
+        "strict": 22
+      },
+      "samples": [
+        {
+          "id": "resource-cpu-saturation-checkout",
+          "expected": {
+            "type": "cpu-saturation",
+            "category": "resource",
+            "component": "checkout-api"
+          },
+          "answered": {
+            "type": "cpu-saturation",
+            "category": "resource",
+            "component": "checkout-api"
+          }
+        },
+        {
+          "id": "resource-memory-leak-recommendation",
+          "expected": {
+            "type": "memory-leak",
+            "category": "resource",
+            "component": "recommendation-service"
+          },
+          "answered": {
+            "type": "memory-leak",
+            "category": "resource",
+            "component": "recommendation-service"
+          }
+        },
+        {
+          "id": "resource-disk-full-log-collector",
+          "expected": {
+            "type": "disk-full",
+            "category": "resource",
+            "component": "log-collector"
+          },
+          "answered": {
+            "type": "disk-full",
+            "category": "resource",
+            "component": "log-collector"
+          }
+        },
+        {
+          "id": "network-delay-cart-to-inventory",
+          "expected": {
+            "type": "network-delay",
+            "category": "network",
+            "component": "cart-service"
+          },
+          "answered": {
+            "type": "network-delay",
+            "category": "network",
+            "component": null
+          }
+        },
+        {
+          "id": "network-loss-payment-gateway",
+          "expected": {
+            "type": "network-loss",
+            "category": "network",
+            "component": "payment-gateway"
+          },
+          "answered": {
+            "type": "network-loss",
+            "category": "network",
+            "component": "order-service"
+          }
+        },
+        {
+          "id": "network-partition-search-cluster",
+          "expected": {
+            "type": "network-partition",
+            "category": "network",
+            "component": "search-cluster"
+          },
+          "answered": {
+            "type": "network-partition",
+            "category": "network",
+            "component": "search-cluster"
+          }
+        },
+        {
+          "id": "runtime-pod-kill-user-profile",
+          "expected": {
+            "type": "pod-kill",
+            "category": "runtime",
+            "component": "user-profile"
+          },
+          "answered": {
+            "type": "pod-kill",
+            "category": "runtime",
+            "component": "user-profile"
+          }
+        },
+        {
+          "id": "runtime-container-crash-loop-media",
+          "expected": {
+            "type": "container-crash",
+            "category": "runtime",
+            "component": "media-transcoder"
+          },
+          "answered": {
+            "type": "container-crash",
+            "category": "runtime",
+            "component": "media-transcoder"
+          }
+        },
+        {
+          "id": "middleware-redis-latency-cache",
+          "expected": {
+            "type": "redis-latency",
+            "category": "middleware",
+            "component": "session-cache"
+          },
+          "answered": {
+            "type": "redis-latency",
+            "category": "middleware",
+            "component": "session-redis"
+          }
+        },
+        {
+          "id": "middleware-kafka-consumer-lag",
+          "expected": {
+            "type": "kafka-consumer-lag",
+            "category": "middleware",
+            "component": "order-events-consumer"
+          },
+          "answered": {
+            "type": "upstream-schema-change",
+            "category": "dependency",
+            "component": "order-events"
+          }
+        },
+        {
+          "id": "middleware-database-connection-pool",
+          "expected": {
+            "type": "database-connection-pool-exhaustion",
+            "category": "middleware",
+            "component": "billing-service"
+          },
+          "answered": {
+            "type": "database-connection-pool-exhaustion",
+            "category": "middleware",
+            "component": "billing-service"
+          }
+        },
+        {
+          "id": "code-null-dereference-reporting",
+          "expected": {
+            "type": "null-dereference",
+            "category": "code",
+            "component": "reporting-service"
+          },
+          "answered": {
+            "type": "null-dereference",
+            "category": "code",
+            "component": "reporting-service"
+          }
+        },
+        {
+          "id": "code-unhandled-exception-export",
+          "expected": {
+            "type": "unhandled-exception",
+            "category": "code",
+            "component": "export-worker"
+          },
+          "answered": {
+            "type": "unhandled-exception",
+            "category": "code",
+            "component": "export-worker"
+          }
+        },
+        {
+          "id": "code-slow-regex-api-gateway",
+          "expected": {
+            "type": "regex-catastrophic-backtracking",
+            "category": "code",
+            "component": "api-gateway"
+          },
+          "answered": {
+            "type": "regex-catastrophic-backtracking",
+            "category": "code",
+            "component": "api-gateway"
+          }
+        },
+        {
+          "id": "config-datasource-url-orders",
+          "expected": {
+            "type": "config-mismatch",
+            "category": "config",
+            "component": "order-service"
+          },
+          "answered": {
+            "type": "config-mismatch",
+            "category": "config",
+            "component": "order-service"
+          }
+        },
+        {
+          "id": "config-feature-flag-checkout",
+          "expected": {
+            "type": "feature-flag-misconfiguration",
+            "category": "config",
+            "component": "storefront"
+          },
+          "answered": {
+            "type": "feature-flag-misconfiguration",
+            "category": "config",
+            "component": "storefront"
+          }
+        },
+        {
+          "id": "dependency-upstream-5xx-pricing",
+          "expected": {
+            "type": "upstream-5xx",
+            "category": "dependency",
+            "component": "tax-calculation"
+          },
+          "answered": {
+            "type": "upstream-5xx",
+            "category": "dependency",
+            "component": "pricing-service"
+          }
+        },
+        {
+          "id": "dependency-version-incompatibility-shipping",
+          "expected": {
+            "type": "library-version-incompatibility",
+            "category": "dependency",
+            "component": "shipping-service"
+          },
+          "answered": {
+            "type": "library-version-incompatibility",
+            "category": "dependency",
+            "component": "shipping-service"
+          }
+        },
+        {
+          "id": "middleware-mysql-replica-lag-analytics",
+          "expected": {
+            "type": "replica-lag",
+            "category": "middleware",
+            "component": "analytics-replica"
+          },
+          "answered": {
+            "type": "replica-lag",
+            "category": "middleware",
+            "component": "replica"
+          }
+        },
+        {
+          "id": "resource-ephemeral-capacity-image-builder",
+          "expected": {
+            "type": "ephemeral-capacity-exceeded",
+            "category": "resource",
+            "component": "image-builder"
+          },
+          "answered": {
+            "type": "ephemeral-capacity-exceeded",
+            "category": "resource",
+            "component": "image-builder"
+          }
+        },
+        {
+          "id": "resource-memory-request-ingest-writer",
+          "expected": {
+            "type": "memory-request-overcommit",
+            "category": "resource",
+            "component": "ingest-writer"
+          },
+          "answered": {
+            "type": "memory-request-overcommit",
+            "category": "resource",
+            "component": "ingest-writer"
+          }
+        },
+        {
+          "id": "network-mtu-catalog-service",
+          "expected": {
+            "type": "network-mtu-blackhole",
+            "category": "network",
+            "component": "catalog-service"
+          },
+          "answered": {
+            "type": "network-mtu-blackhole",
+            "category": "network",
+            "component": "catalog-service"
+          }
+        },
+        {
+          "id": "runtime-container-start-notification-worker",
+          "expected": {
+            "type": "container-start-failure",
+            "category": "runtime",
+            "component": "notification-worker"
+          },
+          "answered": {
+            "type": "container-start-failure",
+            "category": "runtime",
+            "component": "notification-worker"
+          }
+        },
+        {
+          "id": "runtime-pod-shutdown-webhook-dispatcher",
+          "expected": {
+            "type": "pod-shutdown-timeout",
+            "category": "runtime",
+            "component": "webhook-dispatcher"
+          },
+          "answered": {
+            "type": "pod-shutdown-timeout",
+            "category": "runtime",
+            "component": "webhook-dispatcher"
+          }
+        },
+        {
+          "id": "middleware-cache-shard-product-index",
+          "expected": {
+            "type": "cache-shard-unassigned",
+            "category": "middleware",
+            "component": "product-index"
+          },
+          "answered": {
+            "type": "cache-shard-unassigned",
+            "category": "middleware",
+            "component": "product-index"
+          }
+        },
+        {
+          "id": "middleware-queue-watermark-ledger-writer",
+          "expected": {
+            "type": "queue-disk-watermark",
+            "category": "middleware",
+            "component": "ledger-writer"
+          },
+          "answered": {
+            "type": "queue-disk-watermark",
+            "category": "middleware",
+            "component": "ledger-writer"
+          }
+        },
+        {
+          "id": "code-off-by-one-invoice-renderer",
+          "expected": {
+            "type": "logic-off-by-one-pagination",
+            "category": "code",
+            "component": "invoice-renderer"
+          },
+          "answered": {
+            "type": "logic-off-by-one-pagination",
+            "category": "code",
+            "component": "invoice-renderer"
+          }
+        },
+        {
+          "id": "code-timezone-booking-api",
+          "expected": {
+            "type": "timezone-conversion-error",
+            "category": "code",
+            "component": "booking-api"
+          },
+          "answered": {
+            "type": "timezone-conversion-error",
+            "category": "code",
+            "component": "booking-api"
+          }
+        },
+        {
+          "id": "config-ingress-timeout-partner-portal",
+          "expected": {
+            "type": "ingress-timeout-misconfiguration",
+            "category": "config",
+            "component": "partner-portal"
+          },
+          "answered": {
+            "type": "ingress-timeout-misconfiguration",
+            "category": "config",
+            "component": "ingress"
+          }
+        },
+        {
+          "id": "dependency-schema-change-currency-feed",
+          "expected": {
+            "type": "upstream-schema-change",
+            "category": "dependency",
+            "component": "currency-feed"
+          },
+          "answered": {
+            "type": "upstream-schema-change",
+            "category": "dependency",
+            "component": "settlement"
+          }
+        }
+      ],
+      "status": "reverted",
+      "statusWhy": "measured worse than the rule it replaced -- 22/30 against 24/30, with three answers truncated by the suffix clause and one component omitted -- so the rule was reverted rather than kept on the strength of its reasoning (finding 223)"
     }
   ],
   "absent": [

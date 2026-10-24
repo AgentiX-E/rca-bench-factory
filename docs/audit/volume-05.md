@@ -2119,3 +2119,98 @@ change between them. `m1-reading-is-reproducible.test.ts` recomputes every total
 | the guard change | the write scan's git oracle reads `--cached --others --exclude-standard`, because a new test file exists before it is added |
 | `core` / repo | **173 / 4271** · **177 / 4458** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 223 — three changes, one reading: 22/30 against 24, reverted
+
+The thirty-sample baseline was 24/30 with four component misses, three of them one question asked
+three ways — the product a workload runs on, the entity it depends on, the entity that depends on it.
+So the component rule was replaced with a criterion (*whose own behaviour failed*), a clause was
+added forbidding role suffixes, and the examples were changed because one of them, `session-store`,
+was the exact string the model had answered for a different workload in three readings.
+
+**Prediction, committed before the run: component 28/30, strict 27/30.**
+
+**Run `40049467914`: component 22/30, strict 22/30 (73.3%).** M1 is still met — 22 is above the 21
+the threshold requires — and that is exactly why this finding exists.
+
+### What moved
+
+| field | v2.44 rule | this rule | Δ |
+| --- | --- | --- | --- |
+| type | 30 | 29 | −1 |
+| category | 29 | 29 | 0 |
+| component | 25 | **22** | **−3** |
+| strict | 24 | **22** | **−2** |
+
+Nine field misses across eight samples, and the shape of four of them is the suffix clause read
+literally:
+
+| sample | expected | answered | what happened |
+| --- | --- | --- | --- |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | `order-events` | **truncated** |
+| `middleware-mysql-replica-lag-analytics` | `analytics-replica` | `replica` | **truncated** |
+| `dependency-schema-change-currency-feed` | `currency-feed` | `settlement` | truncated, and still the wrong entity |
+| `network-delay-cart-to-inventory` | `cart-service` | *(omitted)* | the answer stopped existing |
+| `config-ingress-timeout-partner-portal` | `partner-portal` | `ingress` | new, wrong layer |
+| `dependency-upstream-5xx-pricing` | `tax-calculation` | `pricing-service` | new, and a suffix |
+| `middleware-kafka-consumer-lag` | type `kafka-consumer-lag` | `upstream-schema-change` | new |
+| `middleware-kafka-consumer-lag` | category `middleware` | `dependency` | third instance of cross-field movement |
+
+`order-events-consumer` → `order-events` is the whole finding in one line. The clause said *add no
+role suffix unless the incident's own name carries one*; the model read *remove role suffixes*, and
+`-consumer`, `-replica` and `-settlement` went the same way as `-service`. The one sample the
+criterion was meant to fix by *relationship* — `settlement-service` for `currency-feed` — was
+answered `settlement`, which is the wrong entity with the right words taken off it.
+
+One target did move: `middleware-queue-watermark-ledger-writer` answers `ledger-writer` now, so the
+"entity it depends on" clause worked for the sample that motivated it.
+
+### Why this is a revert and not a refinement
+
+Three things changed at once — the criterion, the suffix clause, the examples — and **one reading
+cannot attribute the four lost samples between them**. The suffix clause is the obvious suspect,
+because truncation is exactly its shape, and *obvious* is what this repository has been wrong about
+before (findings 61, 84, 96, 190). A refinement on top of an unattributable run would keep the parts
+whose contribution nobody measured.
+
+So `FAULT_COMPONENT_RULE` is **byte-identical** to the text that produced 24/30, restored from the
+commit rather than retyped, and a test asserts the criterion and the clause are absent from the
+prompt.
+
+**And 22/30 is above the threshold.** Keeping the change would have cost two samples, three
+component answers and a type miss, while every gate stayed green and the milestone stayed met. A
+regression that remains above the bar is the case where a number most easily hides a loss, which is
+why the revert is on the record and not on the score.
+
+### What the record does with a failed experiment
+
+`readings.json` carries run `40049467914` with `status: "reverted"` and a reason, beside the
+`current` reading it lost to. The tests hold three things:
+
+- every total is still recomputed from the rows, so the failed reading is as auditable as the good one;
+- the three truncations are asserted **sample by sample**, because they are the evidence the next
+  attempt has to answer for;
+- exactly one reading has `status: "current"`, and a reverted reading is required to have a reason
+  and to score below it. Without that, 22/30 would sit in the file looking like a result — 222's
+  failure mode one layer down.
+
+### What remains untested
+
+The criterion itself. On this run one of its three targets moved and the others were buried under
+the suffix clause. Whether *whose own behaviour failed* helps is still an open question, and the
+next attempt must change **that and nothing else** — no clause, no example churn — or the reading
+will again be unattributable. The same applies to the example hypothesis: removing `session-store`
+did not fix `middleware-redis-latency-cache`, which now answers `session-redis`, so the support for
+"an example primes an answer" is a correlation that survived, not a cause that was shown.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the reading | 22/30, recorded with `status: reverted` and a reason |
+| the revert | byte-identical rule text; the criterion and the suffix clause asserted absent |
+| the evidence | three truncations asserted by sample, plus the omission |
+| the tests | 4 in the reverted block, 8 in `m1-reading-is-reproducible.test.ts` |
+| the batteries | component rule 8/8, M1 ceiling 11/11 and 8/8 — all caught after the revert |
+| `core` / repo | **173 / 4275** · **177 / 4462** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

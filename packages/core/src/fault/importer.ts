@@ -244,43 +244,14 @@ const FAULT_TYPE_SHAPE_RULE =
  * being interpretable. The examples below are chosen to be *unlike* any dataset
  * component for exactly that reason, and a test asserts none of the 19 appears.
  */
-/**
- * `component`, asked as a question rather than answered with a list of exclusions.
- *
- * Three readings have now moved this rule, and each one taught the same thing from a
- * different side:
- *
- *   v2.44 named two exclusions -- the product a workload runs on, and the actor that
- *   triggered a change. On thirty samples one landed and one did not, and two new
- *   samples produced two *more* misses of the same family: `message-broker` for a
- *   ledger writer, `settlement-service` for a currency feed.
- *
- * A list of things not to answer is only as complete as the runs that produced it.
- * The question underneath all five is one question -- *whose own behaviour failed* --
- * so it is stated as that, with the three relationships named because they are the
- * shapes a reader confuses it with: the product it runs on, the entity it depends on,
- * the entity that depends on it.
- *
- * Two details are load-bearing rather than stylistic. The suffix clause is a rule
- * about spelling and is stated as one, because `tax-calculation-service` and
- * `tax-calculation` are the same entity and no answer about ownership can separate
- * them -- folding the suffix out of the comparator was refused in finding 213.
- *
- * And the examples: `session-store` used to be one of them, and the model answered
- * exactly that string for a *different* workload in three of four readings. An example
- * is the most literal instruction in a prompt -- it shows the shape and supplies a
- * plausible value -- so an example that is also a plausible answer is a wrong answer
- * with a rule's clothes on. The three below appear nowhere in the corpus, and a test
- * asserts the prompt carries none of the recorded wrong answers.
- */
 const FAULT_COMPONENT_RULE =
-  '`component` is the deployed workload whose own behaviour failed. Name that ' +
-  'workload, not the product it runs on, not the entity it depends on, not the entity ' +
-  'that depends on it, and not the actor that triggered the change: the job, operator ' +
-  'or script that ran it is the cause, and the workload that broke is the answer. ' +
-  'Give it as a lower-case hyphenated slug using the words the incident uses, and add ' +
-  'no role suffix (`-service`, `-api`, `-worker`) unless the incident\'s own name ' +
-  'carries one -- e.g. `payments-api`, `search-indexer`, `queue-worker`.';
+  '`component` is the deployed workload that owns the fault, not the config ' +
+  'object, code symbol, upstream dependency or UI element involved in it. ' +
+  'Name the service or workload you would page, as a lower-case hyphenated slug, ' +
+  'e.g. `payments-api`, `search-indexer`, `session-store`. ' +
+  'Name it for what it does, not for the product it runs -- `queue-worker`, not ' +
+  '`queue-rabbitmq` -- and name the workload whose behaviour broke rather than the ' +
+  'job, operator or script that triggered the change.';
 
 
 /** Confidence below this threshold is flagged for extra reviewer scrutiny. */

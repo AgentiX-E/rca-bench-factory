@@ -841,106 +841,73 @@ describe('the component rule names the product and the actor, which the exclusio
 });
 
 /**
- * The `component` rule as a criterion, and the example that was an answer.
+ * The component criterion that was measured and reverted.
  *
- * The thirty-sample reading (finding 222) left four component misses, and three of
- * them are the same question asked three ways:
+ * The thirty-sample reading left four component misses, three of them one question
+ * asked three ways — the product a workload runs on, the entity it depends on, the
+ * entity that depends on it — so this round replaced v2.44's two exclusions with a
+ * criterion ("whose own behaviour failed"), added a clause forbidding role suffixes,
+ * and changed the examples, which had included `session-store` — the exact string the
+ * model had answered for a different workload in three readings.
  *
- *   session-cache   -> session-store        the product the workload runs on
- *   ledger-writer   -> message-broker       the entity the workload depends on
- *   currency-feed   -> settlement-service   the entity that depends on it
+ * **The run measured 22/30 against the 24 it replaced.** Three answers were truncated
+ * by the suffix clause (`order-events-consumer` → `order-events`, `analytics-replica`
+ * → `replica`, `settlement-service` → `settlement`), one component was omitted, and
+ * the type and category fields moved too. The rule is not in the tree: `FAULT_COMPONENT_RULE`
+ * is byte-identical to the text that produced 24/30, and this block is what remains of
+ * the experiment.
  *
- * The rule named two things not to answer — the product it runs on, and the actor
- * that triggered the change — and the family has more members than the two. A list
- * of exclusions can only be as complete as the runs that produced it, which is why
- * this one is now a *criterion*: whose own behaviour failed.
+ * ## Why the block is a record and not a rule
  *
- * ## And the example was one of the answers
- *
- * `session-store` was in the rule's example list — "e.g. `payments-api`,
- * `search-indexer`, `session-store`" — and the model answered exactly that string
- * for `middleware-redis-latency-cache` in three of four readings, twice before the
- * examples were written. An example is the most literal instruction in a prompt:
- * it shows the shape *and* supplies a plausible value, and here the plausible value
- * was somebody else's workload. The examples are now three that appear nowhere in
- * the corpus, and a test asserts the prompt carries none of the recorded wrong
- * answers.
+ * Three things changed at once and the run cannot say which one cost the four samples.
+ * The suffix clause is the obvious suspect — truncation is exactly its shape — but
+ * "obvious" is what this repository has been wrong about before. So the *tests* do not
+ * encode the criterion; they encode **what the run measured**, including the misses
+ * that were caused. A future attempt at the criterion is then a separate change with
+ * its own reading, which is the only way the next number is attributable.
  */
-describe('the component rule is a criterion, and its examples are not answers', () => {
-  const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+describe('the component criterion was measured and reverted', () => {
+  const latest = (): ReturnType<typeof goldenReadings>[number] =>
+    goldenReadings()[goldenReadings().length - 1] as ReturnType<typeof goldenReadings>[number];
 
-  /** The three relationship misses, and what the run answered instead. */
-  const RELATIONSHIPS = [
-    ['middleware-redis-latency-cache', 'session-cache', 'session-store'],
-    ['middleware-queue-watermark-ledger-writer', 'ledger-writer', 'message-broker'],
-    ['dependency-schema-change-currency-feed', 'currency-feed', 'settlement-service'],
-  ] as const;
-
-  it('asks whose own behaviour failed, so the question is stated rather than implied', () => {
-    // The criterion, not a list: an exclusion list is only as complete as the runs
-    // that produced it, and the last run produced two new members of the family.
-    expect(prompt()).toMatch(/whose own behaviour failed/i);
+  it('records the run that tried it, and the totals it produced', () => {
+    // The number the revert rests on. If the record is edited, this goes red before any
+    // argument about the rule does.
+    expect(latest().run).toBe(40049467914);
+    expect(latest().totals).toEqual({ type: 29, category: 29, component: 22, strict: 22 });
   });
 
-  it('names the three relationships the recorded misses answered with', () => {
-    // Each of these is a member the two v2.44 exclusions did not cover. Stated as a
-    // list of *relationships* rather than of examples, because a relationship is a
-    // rule and an example is an instance.
-    for (const phrase of ['the product it runs on', 'the entity it depends on', 'the entity that depends on it']) {
-      expect(prompt(), `the criterion must exclude ${phrase}`).toContain(phrase);
-    }
-  });
-
-  it('states the suffix rule separately, because it is a naming convention and not a criterion', () => {
-    // `tax-calculation-service` for `tax-calculation` is the same entity, and no
-    // answer about ownership can distinguish it. Folding it out of the comparator
-    // was refused (finding 213) because it would also make `session-store` match
-    // `session`; stating it in the prompt is the other repair, and it is a rule
-    // about spelling, so it is stated as one.
-    expect(prompt()).toMatch(/role suffix/i);
-    expect(prompt()).toMatch(/unless the incident/i);
-  });
-
-  it('states each relationship once, so two rules cannot disagree about one boundary', () => {
-    // v2.44's two sentences and this criterion overlap; a prompt that says "not the
-    // product it runs on" in two places has no rule, it has a preference with two
-    // readings.
-    const text = prompt();
-    expect(text.split('the product it runs on')).toHaveLength(2);
-    expect(text.split('the actor that triggered the change')).toHaveLength(2);
-  });
-
-  it('carries none of the recorded wrong answers, because an example is an instruction', () => {
-    // The load-bearing assertion of this block. `session-store` was in the example
-    // list and was answered for a different workload in three readings; the general
-    // form of that defect is that any example which is also a plausible answer
-    // supplies it. Every recorded wrong answer is checked, over the shipped record
-    // rather than over a list kept here.
-    const wrong = new Set<string>();
-    for (const reading of goldenReadings()) {
-      for (const sample of reading.samples) {
-        const answered = sample.answered.component;
-        if (answered !== null && answered !== sample.expected.component) wrong.add(answered);
-      }
-    }
-    expect(wrong.size, 'the record must have wrong answers for this to mean anything').toBeGreaterThan(3);
-    const text = prompt();
-    for (const value of wrong) {
-      expect(text, `the prompt carries \`${value}\`, which a run answered for another workload`).not.toContain(value);
-    }
-  });
-
-  it('records the relationship misses, so the criterion cannot outlive its evidence', () => {
-    // Each entry must still be a miss in the shipped record: a criterion justified by
-    // three samples that have since started passing is a criterion justified by
-    // nothing.
-    const latest = goldenReadings().at(-1);
-    expect(latest, 'the readings record must carry at least one reading').toBeDefined();
-    for (const [id, expected, answered] of RELATIONSHIPS) {
-      const sample = latest?.samples.find((entry) => entry.id === id);
-      expect(sample, `${id} is not in the latest reading`).toBeDefined();
+  it('records the truncations the suffix clause caused, sample by sample', () => {
+    // The shape of the damage, in the answers rather than in prose: each of these is the
+    // correct entity with words taken off it, which is what "add no role suffix" was
+    // read as.
+    const truncated = [
+      ['middleware-kafka-consumer-lag', 'order-events-consumer', 'order-events'],
+      ['middleware-mysql-replica-lag-analytics', 'analytics-replica', 'replica'],
+      ['dependency-schema-change-currency-feed', 'currency-feed', 'settlement'],
+    ] as const;
+    for (const [id, expected, answered] of truncated) {
+      const sample = latest().samples.find((entry) => entry.id === id);
+      expect(sample, `${id} is not in the reverted reading`).toBeDefined();
       expect(sample?.expected.component).toBe(expected);
-      expect(sample?.answered.component).toBe(answered);
+      expect(sample?.answered.component, `${id}: the truncation is the evidence`).toBe(answered);
     }
+  });
+
+  it('keeps the prompt at the rule that measured better', () => {
+    // The revert, asserted rather than described: the criterion and the suffix clause are
+    // absent, and the sentence the 24/30 reading was taken with is present.
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+    expect(prompt).not.toMatch(/role suffix/i);
+    expect(prompt).not.toMatch(/whose own behaviour failed/i);
+    expect(prompt).toContain('the deployed workload that owns the fault');
+  });
+
+  it('is not presented as the current reading, so nobody quotes it as a result', () => {
+    // 22/30 is also above the threshold. A record that let it stand as "the" reading
+    // would let a regression be cited as a success, which is the failure mode finding 222
+    // was written about, one layer down.
+    expect(latest().status).toBe('reverted');
+    expect(goldenReadings().filter((reading) => reading.status === 'current')).toHaveLength(1);
   });
 });
