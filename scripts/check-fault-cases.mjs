@@ -203,6 +203,27 @@ for (const entry of index.cases) {
     continue;
   }
 
+  // The case's own L2 contract, which nothing had ever run against this corpus. `assessFourLayer`
+  // answers "are the four layers filled"; it does not answer "is this a well-formed case", and a
+  // case can be four-layer complete with a timestamp that is not canonical UTC or a window that
+  // does not contain its own onset. G1 is the gate that asks, and it needs no telemetry for the
+  // structural half -- so the annotation carries the obligation without carrying signals.
+  const bundle = { irVersion: '1.0.0', graph: parsedGraph, cases: [parsedCase], signals: {} };
+  const structural = core.checkG1Structural(bundle, { requiredSignals: [], requiresQuery: false });
+  for (const violation of structural.violations) {
+    problems.push(`'${caseId}' fails the L2 structural contract: ${violation.message}`);
+  }
+
+  // G2 is the other half of L2: every entity reference resolves, a causal hop exists in the
+  // topology, an onset sits inside its window, and a numeric checkpoint's unit exists in the
+  // conversion table. The last one is what found this: `m`, `messages` and `x` are the units a
+  // person writes and none of them is in the table, so three checkpoints across two cases had
+  // been carrying values no conversion could ever be asked to perform.
+  const semantic = core.checkG2Semantic(bundle);
+  for (const violation of semantic.violations) {
+    problems.push(`'${caseId}' fails the L2 reference contract: ${violation.message}`);
+  }
+
   const reading = core.assessFourLayer({ case: parsedCase, graph: parsedGraph });
   if (!reading.complete) {
     const empty = reading.layers.filter((layer) => !layer.filled).map((layer) => `${layer.layer}: ${String(layer.reason)}`);
@@ -249,6 +270,7 @@ if (index.cases.length < floor) {
 
 console.log(
   `check-fault-cases: OK (${String(index.cases.length)} of ${String(known.size)} sample(s) carry a four-layer ` +
-    `case; each is complete, every reference resolves, and every layer quotes a sentence the incident ` +
-    `text contains; floor ${String(floor)})`,
+    `case; each is complete, every reference resolves, every layer quotes a sentence the incident ` +
+    `text contains, and every case passes the L2 contract -- structure, references and units; ` +
+    `floor ${String(floor)})`,
 );

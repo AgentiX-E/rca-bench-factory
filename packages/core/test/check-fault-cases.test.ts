@@ -108,6 +108,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
     expect(result.out).toContain('3 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
+    expect(result.out).toContain('every case passes the L2 contract -- structure, references and units');
   });
 
   it('accepts a corpus whose only case is the same one copied to a scratch directory', () => {
@@ -344,5 +345,81 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
     const result = run(['--cases', corpus({ entry: { sources: [] } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('cites no sources');
+  });
+});
+
+describe('check-fault-cases · the case is also held to L2, not only to its four layers', () => {
+  // Finding 233: `assessFourLayer` answers "are the layers filled", not "is this a case". The
+  // corpus carried three cases whose timestamps were `...:00Z` -- canonical to a human and not to
+  // `checkG1Structural`, which requires milliseconds. Nothing noticed, because the guard had never
+  // asked G1 anything. These two tests are the ask.
+
+  it('refuses a timestamp that is not canonical UTC ISO-8601', () => {
+    const dir = corpus({
+      mutate: (faultCase) => {
+        faultCase.injectTime = '2026-09-14T02:03:00Z';
+      },
+    });
+    const result = run(['--cases', dir]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('fails the L2 structural contract: injectTime must be canonical UTC ISO-8601');
+    expect(result.out).toContain("got '2026-09-14T02:03:00Z'");
+  });
+
+  it('refuses an onset that falls outside its own declared window', () => {
+    // A four-layer complete case with `injectTime` after `window.end` passes every check in
+    // `assessFourLayer` and is a case no evaluator can score.
+    const dir = corpus({
+      mutate: (faultCase) => {
+        const window = faultCase.window as Record<string, unknown>;
+        window.start = '2026-09-14T03:00:00.000Z';
+        window.end = '2026-09-14T04:00:00.000Z';
+      },
+    });
+    const result = run(['--cases', dir]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('injectTime falls outside the declared window');
+  });
+});
+
+describe('check-fault-cases · the units in a checkpoint have to exist', () => {
+  // The second half of L2 that this guard did not ask for. Two of the three cases carried units a
+  // person writes and the conversion table does not have: `m` for millicores, `messages` for a
+  // lag, `x` for a multiple. Nothing downstream could ever convert them, and nothing noticed
+  // until G2 was asked.
+  it('refuses a checkpoint whose unit is not in the conversion table', () => {
+    const dir = corpus({
+      mutate: (faultCase) => {
+        const truth = faultCase.groundTruth as Record<string, unknown>;
+        const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+        checkpoints[0]!.unit = 'messages';
+      },
+    });
+    const result = run(['--cases', dir]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("fails the L2 reference contract: checkpoint 'cp-cpu-limit' uses unknown unit 'messages'");
+  });
+
+  it('refuses a causal step that the topology does not connect', () => {
+    // The step is annotated, the entities exist, and the graph has no path between them -- a
+    // chain that reads as propagation and cannot be walked.
+    // The chain stays continuous -- step 2 starts where step 1 ended -- and the topology has no
+    // edge in that direction: the graph says checkout-api *calls* payment-service, not the
+    // reverse. A chain that reads as propagation and cannot be walked is what G2 is for; the
+    // break-in-continuity check fires before it, which is why this edit keeps the steps joined.
+    const dir = corpus({
+      mutate: (faultCase) => {
+        const truth = faultCase.groundTruth as Record<string, unknown>;
+        const chain = truth.causalChain as Array<Record<string, unknown>>;
+        // `cart-service` is in the graph and in a different connected component: the edges run
+        // checkout-api -> its pod -> its container, and separately cart-service -> inventory.
+        chain[0]!.toEntityId = 'service:synthetic-storefront/cart-service';
+        chain[1]!.fromEntityId = 'service:synthetic-storefront/cart-service';
+        chain[1]!.toEntityId = 'pod:synthetic-storefront/checkout-api-0';
+      },
+    });
+    const result = run(['--cases', dir]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('asserts propagation with no path in the topology');
   });
 });

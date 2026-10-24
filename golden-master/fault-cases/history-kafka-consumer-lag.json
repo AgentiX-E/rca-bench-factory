@@ -6,10 +6,10 @@
     "version": "2026-09",
     "deployRef": "authored-not-deployed"
   },
-  "injectTime": "2026-09-28T00:00:00Z",
+  "injectTime": "2026-09-28T00:00:00.000Z",
   "window": {
-    "start": "2026-09-28T00:00:00Z",
-    "end": "2026-09-28T06:00:00Z"
+    "start": "2026-09-28T00:00:00.000Z",
+    "end": "2026-09-28T06:00:00.000Z"
   },
   "fault": {
     "type": "kafka-consumer-lag",
@@ -42,7 +42,10 @@
         "fromEntityId": "service:synthetic-storefront/order-events-consumer",
         "toEntityId": "mq:synthetic-storefront/order-events",
         "mechanism": "per-message processing time tripled, so the group drained the topic more slowly than it was written and the lag grew monotonically for six hours",
-        "evidenceRefs": ["cp-processing-tripled", "cp-lag"]
+        "evidenceRefs": [
+          "cp-processing-tripled",
+          "cp-lag"
+        ]
       }
     ],
     "evidenceCheckpoints": [
@@ -52,8 +55,8 @@
         "signalRef": "kafka_consumergroup_lag",
         "comparator": ">",
         "value": 4200000,
-        "unit": "messages",
-        "description": "lag accumulated across the six-hour window"
+        "unit": "count",
+        "description": "lag accumulated across the six-hour window, in messages"
       },
       {
         "checkpointId": "cp-processing-tripled",
@@ -61,8 +64,8 @@
         "signalRef": "per_message_processing_time",
         "comparator": "==",
         "value": 3,
-        "unit": "x",
-        "description": "per-message processing time after the schema change, relative to before it"
+        "unit": "1",
+        "description": "per-message processing time after the schema change, as a multiple of the time before it"
       }
     ],
     "remediation": [

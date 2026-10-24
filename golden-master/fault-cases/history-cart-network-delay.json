@@ -6,17 +6,20 @@
     "version": "2026-09",
     "deployRef": "authored-not-deployed"
   },
-  "injectTime": "2026-09-21T14:05:00Z",
+  "injectTime": "2026-09-21T14:05:00.000Z",
   "window": {
-    "start": "2026-09-21T14:05:00Z",
-    "end": "2026-09-21T14:25:00Z"
+    "start": "2026-09-21T14:05:00.000Z",
+    "end": "2026-09-21T14:25:00.000Z"
   },
   "fault": {
     "type": "network-delay",
     "category": "network",
     "injectionMethod": "historical",
     "parameters": {
-      "between": ["cart-service", "inventory-service"],
+      "between": [
+        "cart-service",
+        "inventory-service"
+      ],
       "sameZone": false
     }
   },
@@ -42,7 +45,10 @@
         "fromEntityId": "service:synthetic-storefront/cart-service",
         "toEntityId": "service:synthetic-storefront/inventory-service",
         "mechanism": "the caller's span rose from 12ms to 900ms while the callee's handler time stayed at 11ms, which locates the added time between the two processes rather than inside either",
-        "evidenceRefs": ["cp-client-span", "cp-server-handler"]
+        "evidenceRefs": [
+          "cp-client-span",
+          "cp-server-handler"
+        ]
       }
     ],
     "evidenceCheckpoints": [

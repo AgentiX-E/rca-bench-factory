@@ -6,10 +6,10 @@
     "version": "2026-09",
     "deployRef": "authored-not-deployed"
   },
-  "injectTime": "2026-09-14T02:03:00Z",
+  "injectTime": "2026-09-14T02:03:00.000Z",
   "window": {
-    "start": "2026-09-14T02:03:00Z",
-    "end": "2026-09-14T02:25:00Z"
+    "start": "2026-09-14T02:03:00.000Z",
+    "end": "2026-09-14T02:25:00.000Z"
   },
   "fault": {
     "type": "cpu-saturation",
@@ -42,14 +42,19 @@
         "fromEntityId": "container:synthetic-storefront/checkout-api-app",
         "toEntityId": "pod:synthetic-storefront/checkout-api-0",
         "mechanism": "the cgroup spent the whole window throttled, because usage sat at the fixed 500m quota",
-        "evidenceRefs": ["cp-cpu-limit", "cp-throttled-counters"]
+        "evidenceRefs": [
+          "cp-cpu-limit",
+          "cp-throttled-counters"
+        ]
       },
       {
         "step": 2,
         "fromEntityId": "pod:synthetic-storefront/checkout-api-0",
         "toEntityId": "service:synthetic-storefront/checkout-api",
         "mechanism": "throttled request handling stretched p99 latency from 180ms to 4.3s while the load generator was unchanged",
-        "evidenceRefs": ["cp-p99"]
+        "evidenceRefs": [
+          "cp-p99"
+        ]
       }
     ],
     "evidenceCheckpoints": [
@@ -58,9 +63,9 @@
         "entityRef": "container:synthetic-storefront/checkout-api-app",
         "signalRef": "container_spec_cpu_quota",
         "comparator": ">=",
-        "value": 500,
-        "unit": "m",
-        "description": "container CPU usage sat pinned at its 500m limit"
+        "value": 0.5,
+        "unit": "1",
+        "description": "container CPU usage sat at its 500m limit, which is half a core"
       },
       {
         "checkpointId": "cp-throttled-counters",

@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **180 files, 4390 tests passed** (as of this commit) |
+| `core` test suite | **180 files, 4394 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **184 files, 4577 tests passed** (as of this commit) |
+| repo test suite | **184 files, 4581 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2115,3 +2115,54 @@ shared graph), 24 over the guard (seven new: six refusals and one acceptance); t
 - **`system` and `injectTime` are declared by the corpus for every case.** `[open: the texts carry no
   date and no system name. A corpus that recorded them per sample would make the declaration
   reviewable one at a time instead of sentence by sentence inside a `why`]`
+
+## v2.61 — the annotated cases had never been asked whether they are cases
+
+`assessFourLayer` answers "are the four layers filled and do their references resolve". It does not
+answer "is this a well-formed `FaultCase`", and nothing else did either, so three cases passed every
+check in the tree while carrying values the repository's own gates reject.
+
+**G1, the first time it was asked**: all three cases, every timestamp --
+`injectTime must be canonical UTC ISO-8601, got 2026-09-14T02:03:00Z`. `ISO_UTC` in `gates.ts`
+requires **milliseconds**; the annotation had been written the way a person writes a time, and
+validated against `z.string().min(1)`, which is the weaker of the two checks the same value passes
+through.
+
+**G2, the next time**: three checkpoints in two cases carried units that are not in the conversion
+table -- `m` for millicores, `messages` for a lag, `x` for a multiple. `m` is the worst of them
+because in UCUM it is *metres*: a table that accepted it would have converted a CPU quota into a
+length. The repair is a translation, not a relaxation: `>= 0.5 1` (a ratio of one core),
+`> 4200000 count`, `== 3 1` (a ratio), with each description now saying the same thing in words.
+
+**Why the structural half is askable at all**: `checkG1Structural` needs no telemetry when
+`requiredSignals` is empty, so an annotated case can carry the L2 obligation without carrying
+signals it does not have. G3/G4/G5 do need telemetry and outcomes and are not asked -- **a case
+that is annotated is not a case that is scoreable**, and conflating the two is how a corpus of
+annotations would come to be quoted as a corpus of measurements.
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; each is complete, every
+reference resolves, every layer quotes a sentence the incident text contains, and every case
+passes the L2 contract -- structure, references and units; floor 3)
+```
+
+**What this says about v2.59 and v2.60**: both claimed their cases were complete, and both were
+right about the four layers. Neither claim covered what G1 and G2 check, and neither round had a
+reason to think it did -- the check that was run answered a narrower question than the sentence it
+was quoted as supporting.
+
+**Acceptance.** 28 tests over the guard (four new: two for the structural half, two for the
+reference half); typecheck, lint, `docs:check` green; `derive-gate-sites --check` green (86 sites,
+46 scripts); `four-layer.ts` **100 ×4**; core **180 / 4394**, cli 4 / 187, repo **184 / 4581**;
+coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–233.
+
+### Left open
+
+- **A case that is annotated is not a case that is scoreable.** `[open: G1's structural half and G2
+  are now asked of every case; G3 (the signal carries an anomaly), G4 (the case is solvable) and G5
+  (anti-pollution) all need telemetry these cases do not have. The gap between the two is the
+  distance from a corpus of annotations to a corpus of measurements, and nothing measures it yet]`
+- **The twenty-seven unannotated samples would fail the same two gates.** `[open: they carry no
+  `FaultCase` at all, so the question does not arise until one is written. Every new annotation now
+  inherits both obligations from the guard, which is the reason to write the next one with the
+  timestamp and unit rules in view rather than after]`

@@ -2975,3 +2975,81 @@ schema requires it, and a case that omitted it would not be a case.
 | the defect it caught | `problems.push(...)` refused by `no-size-dependent-array-is-spread`; replaced with a loop |
 | the module | `four-layer.ts` **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
 | `core` / repo | **180 / 4390** · **184 / 4577** |
+
+## Finding 233 — the annotated cases had never been asked whether they are cases
+
+`assessFourLayer` answers one question: are the four layers filled, and do their references
+resolve. It does not answer "is this a well-formed `FaultCase`", and nothing else did either --
+the guard called `faultCaseSchema.parse` and then the four-layer reader, and stopped. So three
+cases passed every check while carrying timestamps and units that the repository's own gates
+reject.
+
+### What G1 said the first time it was asked
+
+```
+'injectTime must be canonical UTC ISO-8601, got 2026-09-14T02:03:00Z'
+'window.start and window.end must be canonical UTC ISO-8601'
+```
+
+All three cases, every timestamp. `ISO_UTC` in `gates.ts` requires **milliseconds**
+(`\d{2}:\d{2}:\d{2}\.\d{3}Z`), and every case was written `...:03:00Z` -- canonical to a human and
+not to the gate the case would have to pass before it could be scored. The schema accepts both,
+because `faultCaseSchema` says `z.string().min(1)` and leaves canonicality to G1; the annotation
+had been validated against the weaker of the two.
+
+### What G2 said the next time
+
+```
+checkpoint 'cp-cpu-limit' uses unknown unit 'm'
+checkpoint 'cp-lag' uses unknown unit 'messages'
+checkpoint 'cp-processing-tripled' uses unknown unit 'x'
+```
+
+The conversion table is a closed set -- time, bytes, rate, ratio, count -- and the three units are
+the ones a person writes: millicores, a message count, a multiple. `m` is the worst of them,
+because in UCUM it is *metres*: a table that accepted it would have converted a CPU quota into a
+length.
+
+The repair is a translation, not a relaxation:
+
+| annotated | what it meant | what it says now |
+| --- | --- | --- |
+| `>= 500 m` | half a core | `>= 0.5 1` -- a ratio of one core, which is what CPU usage is |
+| `> 4.2e6 messages` | a count of records | `> 4200000 count` |
+| `== 3 x` | three times the time before | `== 3 1` -- a ratio |
+
+Each checkpoint's description now says the same thing in words, so a reader who does not know the
+table does not have to guess.
+
+### Both halves are now asked, and the obligation is the annotation's alone
+
+`check-fault-cases.mjs` runs `checkG1Structural` with `requiredSignals: []` and
+`checkG2Semantic` on a one-case bundle built from the case and its graph. The first is what makes
+this tractable: **the structural half of G1 needs no telemetry**, so an annotated case can carry the
+L2 obligation without carrying signals it does not have. G3, G4 and G5 do need telemetry and
+outcomes, and they are not asked -- a case that is annotated is not a case that is scoreable, and
+conflating the two is how a corpus of annotations would come to be quoted as a corpus of
+measurements.
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; each is complete, every
+reference resolves, every layer quotes a sentence the incident text contains, and every case
+passes the L2 contract -- structure, references and units; floor 3)
+```
+
+### What this says about the earlier rounds
+
+Finding 230 and 232 each claimed their cases were complete, and each was right about the four
+layers. Neither claim covered what G1 and G2 check, and neither round had a reason to think it
+did -- which is the shape this campaign keeps finding one level up: **the check that was run
+answered a narrower question than the sentence it was quoted as supporting.**
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| G1 | three cases, three timestamps repaired to millisecond precision; a missing millisecond now fails the guard |
+| G2 | three checkpoints re-expressed in table units; an unknown unit and a hop the topology does not connect each fail the guard |
+| the guard | 28 tests, four new: two for L2's structural half, two for its reference half |
+| the module | unchanged; `four-layer.ts` **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
+| `core` / repo | **180 / 4394** · **184 / 4581** |
