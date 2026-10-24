@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **180 files, 4382 tests passed** (as of this commit) |
+| `core` test suite | **180 files, 4390 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **184 files, 4569 tests passed** (as of this commit) |
+| repo test suite | **184 files, 4577 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2052,3 +2052,66 @@ guard turns 34 tests red in 1 of 2 naming files); `four-layer.ts` **100 ×4**; c
   a test -- but the two chains duplicate thirteen names each, and the next guard is added to both
   by whoever adds it until that test says no. A derived split is the obvious repair and has not
   been built]`
+
+## v2.60 — three cases, and a quote the machine can check
+
+v2.59 left `1 of 30` on the guard's line and the sentence that one case is a proof, not a corpus.
+This round added two, moved the floor to 3, and made the annotation checkable at the only point
+where a machine can check it.
+
+**Two shapes a single case could not test.** `history-cart-network-delay` has a one-step chain
+*across* a boundary and evidence that is a **comparison** -- 900ms on the caller, 11ms on the
+callee, and neither number means anything alone. `history-kafka-consumer-lag` has a one-step chain
+*towards a shared resource* and evidence that is a **direction** -- the lag is observable on the
+topic, and the text's own last clause ("not broker capacity") is what rules out pointing the chain
+at the broker. Both are cases an annotation could get plausible and wrong; the first would be a
+valid case that recorded either number alone.
+
+**The quote is the one part of an annotation that can be checked.** `why` is prose and cannot be
+verified. A quote is a substring of the incident text: either it is there or it is not. So
+`index.json` went to schema `/2` and every layer must now carry a quote, which must appear in the
+named sample's `incidentText` with whitespace folded, must say what it supports, and must cover
+all four layers. One changed word fails:
+
+```
+'history-checkout-cpu-saturation' cites a entity quote the incident text does not contain:
+'the pod sat pinned at its 400m limit'
+```
+
+The defect it is for is the one an annotator actually makes: working from memory, paraphrasing
+the source, and leaving the case resting on a sentence nobody wrote.
+
+**The guard caught the code that guards.** The first version used
+`problems.push(...sourceProblems(...))` and `no-size-dependent-array-is-spread` refused it: the
+list is one entry per source, so `push(...)` is bounded by the argument limit rather than by
+anything the code decides. Four sources today; the rule is for the four hundred that would not
+fail. Replaced with a loop, with the reason in the code.
+
+**Declared, not extracted.** Two of the three texts give a clock time without a date, a relative
+duration, or no time at all, so `system` and `injectTime` are declared by the corpus -- and each
+entry's `why` says so in its own words rather than leaving a reader to assume the text supplied
+them.
+
+**What it still does not do**: three of thirty, and a quote proves the sentence exists rather than
+that it supports the layer. The guard can hold an annotation to its source; it cannot hold it to
+being right.
+
+**Acceptance.** 15 tests over the definition (one new: the three cases read complete against one
+shared graph), 24 over the guard (seven new: six refusals and one acceptance); typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); `four-layer.ts`
+**100 ×4**; core **180 / 4390**, cli 4 / 187, repo **184 / 4577**; coverage 99.97 / 99.74 / 100 /
+99.97 and 100 ×4; audit 5 volumes, findings 1–232.
+
+### Left open
+
+- **Twenty-seven samples still carry no four-layer case.** `[open: three shapes are covered and each
+  is held to its text. The remaining work is the same judgement repeated, and the machinery now
+  makes each repetition cheaper to review -- but nothing about three makes the twenty-seventh
+  likely, and a round that claims otherwise would be reporting a trend from three points]`
+- **A quote is existence, not support.** `[open: the guard checks that the sentence is in the text,
+  not that it justifies the layer. A second reader is the only check for the second property, and
+  no process here involves one -- the `why` beside each quote is written by the same hand that
+  chose it]`
+- **`system` and `injectTime` are declared by the corpus for every case.** `[open: the texts carry no
+  date and no system name. A corpus that recorded them per sample would make the declaration
+  reviewable one at a time instead of sentence by sentence inside a `why`]`

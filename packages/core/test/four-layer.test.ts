@@ -51,7 +51,7 @@ describe('the corpus carries one case whose four layers are filled', () => {
   it('reads as complete, with every layer carrying something', () => {
     const reading = assessFourLayer({ case: faultCase, graph });
     expect(reading.layers.map((layer) => [layer.layer, layer.filled, layer.items])).toEqual([
-      ['entity', true, 4],
+      ['entity', true, 8],
       ['fault', true, 1],
       ['process', true, 2],
       ['evidence', true, 3],
@@ -94,6 +94,42 @@ describe('the corpus carries one case whose four layers are filled', () => {
       edges: [],
     };
     expect(resolveEntityRef('shared', indexGraph(ambiguous))).toBeNull();
+  });
+});
+
+describe('every annotated case reads as complete against the one graph', () => {
+  it('covers three different fault shapes, each with its own chain and its own numbers', () => {
+    // One case proves the layers can be filled for *this* corpus; three prove it for three
+    // shapes that fail differently -- a resource limit inside one workload, a delay *between*
+    // two workloads, and a consumer that is alive but too slow. The last two are the ones a
+    // single annotation would not have tested: their chains run across a boundary, and their
+    // evidence is a comparison rather than a threshold in one place.
+    //
+    // Read from the index rather than hard-coded, so adding a fourth case to the corpus is a
+    // failure here until it has been read -- which is what "the guard holds whatever number is
+    // reached" means at the level of the module.
+    const index = JSON.parse(readFileSync(resolve(CASES, 'index.json'), 'utf8')) as {
+      cases: Array<{ caseId: string; case: string; graph: string }>;
+    };
+    expect(index.cases.length).toBeGreaterThanOrEqual(3);
+    const readings = index.cases.map((entry) => {
+      const one = faultCaseSchema.parse(
+        JSON.parse(readFileSync(resolve(CASES, entry.case), 'utf8')) as unknown,
+      ) as unknown as FaultCase;
+      const oneGraph = entityGraphSchema.parse(JSON.parse(readFileSync(resolve(CASES, entry.graph), 'utf8')) as unknown);
+      return { caseId: entry.caseId, reading: assessFourLayer({ case: one, graph: oneGraph }) };
+    });
+    for (const { caseId, reading } of readings) {
+      expect(reading.complete, `${caseId} is not complete: ${JSON.stringify(reading.layers)}`).toBe(true);
+      // The chain length is the annotation's, not a shape: a delay between two services needs
+      // one step where a throttled container needs two.
+      expect(reading.layers.find((layer) => layer.layer === 'process')?.items).toBeGreaterThanOrEqual(1);
+      expect(reading.layers.find((layer) => layer.layer === 'evidence')?.items).toBeGreaterThanOrEqual(2);
+    }
+    // All three share one graph, which is the property that makes them one system rather than
+    // three files: the entity layer counts the graph, so equal counts mean one graph.
+    const counts = new Set(readings.map(({ reading }) => reading.layers.find((layer) => layer.layer === 'entity')?.items));
+    expect(counts.size).toBe(1);
   });
 });
 
@@ -209,7 +245,7 @@ describe('the reading is printable, because a verdict nobody can read is a badge
   it('prints one line per layer, the two reference counts, and the verdict', () => {
     const text = formatFourLayerReading(assessFourLayer({ case: faultCase, graph }));
     expect(text.split('\n')).toEqual([
-      '  entity    filled  4 item(s)',
+      '  entity    filled  8 item(s)',
       '  fault     filled  1 item(s)',
       '  process   filled  2 item(s)',
       '  evidence  filled  3 item(s)',

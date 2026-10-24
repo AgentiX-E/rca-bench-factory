@@ -10,7 +10,9 @@
       "entityId": "pod:synthetic-storefront/checkout-api-0",
       "kind": "pod",
       "name": "checkout-api-0",
-      "aliases": ["checkout-api pod"]
+      "aliases": [
+        "checkout-api pod"
+      ]
     },
     {
       "entityId": "container:synthetic-storefront/checkout-api-app",
@@ -22,7 +24,37 @@
       "entityId": "service:synthetic-storefront/payment-service",
       "kind": "service",
       "name": "payment-service",
-      "aliases": ["the downstream payment service"]
+      "aliases": [
+        "the downstream payment service"
+      ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/cart-service",
+      "kind": "service",
+      "name": "cart-service",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/inventory-service",
+      "kind": "service",
+      "name": "inventory-service",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/order-events-consumer",
+      "kind": "service",
+      "name": "order-events-consumer",
+      "aliases": [
+        "Consumer group order-events"
+      ]
+    },
+    {
+      "entityId": "mq:synthetic-storefront/order-events",
+      "kind": "mq",
+      "name": "order-events",
+      "aliases": [
+        "the topic"
+      ]
     }
   ],
   "edges": [
@@ -39,6 +71,16 @@
     {
       "from": "service:synthetic-storefront/checkout-api",
       "to": "service:synthetic-storefront/payment-service",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/cart-service",
+      "to": "service:synthetic-storefront/inventory-service",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/order-events-consumer",
+      "to": "mq:synthetic-storefront/order-events",
       "relation": "calls"
     }
   ]

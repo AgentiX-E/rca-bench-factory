@@ -1,14 +1,94 @@
 {
-  "schema": "rca-bench-fault-cases/1",
-  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve.",
-  "min": 1,
+  "schema": "rca-bench-fault-cases/2",
+  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Three cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
+  "min": 3,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
       "sampleId": "resource-cpu-saturation-checkout",
       "case": "history-checkout-cpu-saturation.json",
       "graph": "synthetic-storefront-graph.json",
-      "why": "annotated from the incident text of `resource-cpu-saturation-checkout`: the container, the pod it belongs to and the service it serves are all named or implied by the text, the two causal steps are the text's own sequence (limit -> throttling -> latency), and the three checkpoints are the three numbers the text states (500m, the throttling counters, 180ms -> 4.3s). The downstream payment service is a graph node because the text names it, but it carries no checkpoint: the text says its error rate did not change, which is an absence rather than a value a checkpoint can hold."
+      "why": "annotated from the incident text of `resource-cpu-saturation-checkout`: the container, the pod it belongs to and the service it serves are all named or implied by the text, the two causal steps are the text's own sequence (limit -> throttling -> latency), and the three checkpoints are the three numbers the text states (500m, the throttling counters, 180ms -> 4.3s). The downstream payment service is a graph node because the text names it, but it carries no checkpoint: the text says its error rate did not change, which is an absence rather than a value a checkpoint can hold.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "the pod sat pinned at its 500m limit",
+          "why": "the workload whose container carries the limit -- the pod is the entity the chain passes through"
+        },
+        {
+          "layer": "fault",
+          "quote": "Container CPU throttling counters climbed the whole time",
+          "why": "the observed mechanism, which is what makes this `resource` and `cpu-saturation` rather than a latency-only fault"
+        },
+        {
+          "layer": "process",
+          "quote": "checkout-api p99 latency went from 180ms to 4.3s over eleven minutes",
+          "why": "the second step's effect, and the sentence that orders it after the throttling rather than beside it"
+        },
+        {
+          "layer": "evidence",
+          "quote": "180ms to 4.3s",
+          "why": "the two numbers the p99 checkpoint holds; a checkpoint with one number would not say what the fault changed"
+        }
+      ]
+    },
+    {
+      "caseId": "history-cart-network-delay",
+      "sampleId": "network-delay-cart-to-inventory",
+      "case": "history-cart-network-delay.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `network-delay-cart-to-inventory`. This case is the one whose answer is a *comparison*: the caller's span carries 900ms and the callee's handler carries 11ms, and neither number means anything alone -- 900ms is a slow service and 11ms is a healthy one, so the fault lives in the difference. The chain is one step because the text supports one: the two services are the two entities, and the sentence that puts the time on the wire is the mechanism. The start time and the system name are declared by the corpus rather than extracted from the text, which states a policy change and no clock.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "while the inventory service's own server-side handler time stayed at 11ms",
+          "why": "the callee, named as the entity whose own time did not move"
+        },
+        {
+          "layer": "fault",
+          "quote": "No packet loss and no retransmits",
+          "why": "what rules out loss and retransmission, leaving delay as the mechanism"
+        },
+        {
+          "layer": "process",
+          "quote": "so the time is being spent on the wire",
+          "why": "the one sentence that locates the added time between the two processes"
+        },
+        {
+          "layer": "evidence",
+          "quote": "rose from 12ms to 900ms",
+          "why": "the two numbers the client-span checkpoint holds, and the baseline it is measured against"
+        }
+      ]
+    },
+    {
+      "caseId": "history-kafka-consumer-lag",
+      "sampleId": "middleware-kafka-consumer-lag",
+      "case": "history-kafka-consumer-lag.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `middleware-kafka-consumer-lag`. The text states the diagnosis and its own control in the same sentence: lag grew, the consumers were alive and polling, and broker throughput was unchanged with spare partitions -- so the case's chain runs from the consumer to the topic rather than the other way, and a case that pointed at the broker would be contradicted by the text's last clause. The six-hour window is the text's; the absolute start time is declared by the corpus.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Consumer group order-events accumulated 4.2 million messages of lag",
+          "why": "the consumer group is the root cause and the topic is where the lag is observed"
+        },
+        {
+          "layer": "fault",
+          "quote": "their per-message processing time tripled after a schema change added a synchronous outbound call per record",
+          "why": "the mechanism, and the change that introduced it"
+        },
+        {
+          "layer": "process",
+          "quote": "so this is consumer-side throughput, not broker capacity",
+          "why": "the sentence that directs the chain from consumer to topic rather than the reverse"
+        },
+        {
+          "layer": "evidence",
+          "quote": "4.2 million messages of lag over six hours",
+          "why": "the lag checkpoint's value and the window it accumulated over"
+        }
+      ]
     }
   ]
 }

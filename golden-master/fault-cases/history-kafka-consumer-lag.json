@@ -1,0 +1,79 @@
+{
+  "caseId": "history-kafka-consumer-lag",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-28T00:00:00Z",
+  "window": {
+    "start": "2026-09-28T00:00:00Z",
+    "end": "2026-09-28T06:00:00Z"
+  },
+  "fault": {
+    "type": "kafka-consumer-lag",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "consumerGroup": "order-events",
+      "trigger": "schema-change"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/order-events-consumer",
+    "rootCauseComponent": "order-events-consumer",
+    "rootCauseReason": "A schema change added a synchronous outbound call per record, which tripled per-message processing time; the consumers stayed alive and kept polling, so the lag was produced by consumer-side throughput rather than by broker capacity.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "kafka_consumergroup_lag",
+        "description": "4.2 million messages of lag accumulated over six hours"
+      },
+      {
+        "type": "metric",
+        "ref": "kafka_consumergroup_members",
+        "description": "the consumers are alive and polling, which separates a stuck consumer group from a slow one"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/order-events-consumer",
+        "toEntityId": "mq:synthetic-storefront/order-events",
+        "mechanism": "per-message processing time tripled, so the group drained the topic more slowly than it was written and the lag grew monotonically for six hours",
+        "evidenceRefs": ["cp-processing-tripled", "cp-lag"]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-lag",
+        "entityRef": "mq:synthetic-storefront/order-events",
+        "signalRef": "kafka_consumergroup_lag",
+        "comparator": ">",
+        "value": 4200000,
+        "unit": "messages",
+        "description": "lag accumulated across the six-hour window"
+      },
+      {
+        "checkpointId": "cp-processing-tripled",
+        "entityRef": "service:synthetic-storefront/order-events-consumer",
+        "signalRef": "per_message_processing_time",
+        "comparator": "==",
+        "value": 3,
+        "unit": "x",
+        "description": "per-message processing time after the schema change, relative to before it"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "move the outbound call off the consume path, or batch it, and let the group drain",
+        "target": "service:synthetic-storefront/order-events-consumer"
+      }
+    ]
+  },
+  "query": "Consumer group order-events accumulated 4.2 million messages of lag over six hours while the consumers stayed alive and polling; per-message processing time tripled after a schema change. What failed?",
+  "difficulty": "L2",
+  "answerKeyIsolated": true
+}

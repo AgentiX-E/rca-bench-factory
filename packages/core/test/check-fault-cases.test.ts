@@ -49,7 +49,11 @@ interface Entry {
   case?: string;
   graph?: string;
   why?: string;
+  sources?: unknown;
 }
+
+const REAL_SOURCES = (JSON.parse(readFileSync(join(CASES, 'index.json'), 'utf8')) as { cases: Array<{ sources: unknown }> })
+  .cases[0]!.sources;
 
 /**
  * A corpus directory with one case, plus whatever the caller wants changed.
@@ -73,7 +77,7 @@ function corpus(options: {
   writeFileSync(join(dir, 'case.json'), `${JSON.stringify(faultCase, null, 2)}\n`);
   writeFileSync(join(dir, 'graph.json'), `${JSON.stringify(graph, null, 2)}\n`);
   const index = options.index ?? {
-    schema: 'rca-bench-fault-cases/1',
+    schema: 'rca-bench-fault-cases/2',
     min: options.min ?? 1,
     cases: [
       {
@@ -82,6 +86,7 @@ function corpus(options: {
         case: 'case.json',
         graph: 'graph.json',
         why: WHY,
+        sources: REAL_SOURCES,
         ...options.entry,
       },
     ],
@@ -100,8 +105,9 @@ describe('check-fault-cases · the corpus as it stands', () => {
   it('accepts the shipped corpus and reports how many samples carry a case', () => {
     const result = run([]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('1 of 30 sample(s) carry a four-layer case');
+    expect(result.out).toContain('3 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
+    expect(result.out).toContain('every layer quotes a sentence the incident text contains');
   });
 
   it('accepts a corpus whose only case is the same one copied to a scratch directory', () => {
@@ -109,6 +115,8 @@ describe('check-fault-cases · the corpus as it stands', () => {
     // lets the negative cases below run without touching the repository.
     const result = run(['--cases', corpus({})]);
     expect(result.status, result.out).toBe(0);
+    // One, because the scratch corpus holds the one case the helper writes -- which is also what
+    // proves the count is read from the directory it was given rather than from the repository.
     expect(result.out).toContain('1 of 30');
   });
 });
@@ -244,7 +252,7 @@ describe('check-fault-cases · inputs it will not guess at', () => {
   });
 
   it('refuses an index with no cases array', () => {
-    const dir = corpus({ index: { schema: 'rca-bench-fault-cases/1' } });
+    const dir = corpus({ index: { schema: 'rca-bench-fault-cases/2' } });
     const result = run(['--cases', dir]);
     expect(result.status).toBe(1);
     expect(result.out).toContain("has no 'cases' array");
@@ -270,5 +278,71 @@ describe('check-fault-cases · inputs it will not guess at', () => {
     const help = run(['--help']);
     expect(help.status).toBe(0);
     expect(help.out).toContain('usage: node scripts/check-fault-cases.mjs');
+  });
+});
+
+describe('check-fault-cases · every layer shows the sentence it came from', () => {
+  type Source = { layer: string; quote: string; why: string };
+
+  /** The real annotation's sources, deep-copied so an edit cannot leak into the next test. */
+  function sources(): Source[] {
+    return JSON.parse(JSON.stringify(REAL_SOURCES)) as Source[];
+  }
+
+  it('refuses a quote the incident text does not contain, one word changed', () => {
+    // The defect this is for: an annotator paraphrases the source from memory and the case then
+    // rests on a sentence nobody wrote. One word is enough to fail it.
+    const edited = sources();
+    edited[0]!.quote = 'the pod sat pinned at its 400m limit';
+    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('cites a entity quote the incident text does not contain');
+    expect(result.out).toContain('the pod sat pinned at its 400m limit');
+  });
+
+  it('accepts a quote whose whitespace differs from the text, because words are the claim', () => {
+    // The comparison folds whitespace rather than bytes: a quote reflowed across two lines is the
+    // same sentence, and failing it would train the annotator to copy line breaks.
+    const edited = sources();
+    edited[1]!.quote = 'Container CPU throttling   counters climbed the whole time';
+    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    expect(result.status, result.out).toBe(0);
+  });
+
+  it('refuses a corpus that quotes three layers and leaves one unsupported', () => {
+    const edited = sources().filter((source) => source.layer !== 'process');
+    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('quotes no sentence for: process');
+  });
+
+  it('refuses a quote too short to be a sentence about anything', () => {
+    const edited = sources();
+    edited[0]!.quote = 'the pod';
+    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('quote shorter than 12 characters');
+  });
+
+  it('refuses a source whose layer is not one of the four', () => {
+    const edited = sources();
+    edited[2]!.layer = 'timeline';
+    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("layer 'timeline', which is not one of entity / fault / process / evidence");
+  });
+
+  it('refuses a quote with no statement of what it supports', () => {
+    const edited = sources();
+    edited[3]!.why = 'because';
+    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('quotes for evidence without saying what it supports');
+  });
+
+  it('refuses an entry that cites no sources at all', () => {
+    const result = run(['--cases', corpus({ entry: { sources: [] } })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('cites no sources');
   });
 });

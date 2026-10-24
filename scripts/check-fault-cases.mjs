@@ -46,7 +46,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..');
 const DEFAULT_CASES = resolve(REPO, 'golden-master', 'fault-cases');
 const DEFAULT_SAMPLES = resolve(REPO, 'golden-master', 'fault-extraction', 'samples.json');
-const INDEX_SCHEMA = 'rca-bench-fault-cases/1';
+const INDEX_SCHEMA = 'rca-bench-fault-cases/2';
 
 function parseArgs(argv) {
   const out = { cases: DEFAULT_CASES, samples: DEFAULT_SAMPLES };
@@ -94,7 +94,63 @@ if (!Array.isArray(index.cases)) {
   process.exit(1);
 }
 const samples = readJson(args.samples, 'extraction key');
-const known = new Set((samples.samples ?? []).map((sample) => sample?.id));
+const sampleById = new Map((samples.samples ?? []).map((sample) => [sample?.id, sample]));
+const known = new Set(sampleById.keys());
+
+const LAYERS = ['entity', 'fault', 'process', 'evidence'];
+const MIN_QUOTE = 12;
+
+/** Whitespace-folded, so a quote is compared on its words rather than on a line break. */
+function fold(text) {
+  return String(text ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Every layer's annotation must show the sentence it came from.
+ *
+ * `why` is prose and cannot be checked; a quote can. The annotations in this directory are made
+ * by reading an incident text and writing four layers from it, so the one property a machine can
+ * hold them to is that the words they lean on are in the text -- an annotator who paraphrases the
+ * source from memory produces a quote that is not there, and the case then rests on a sentence
+ * nobody wrote.
+ */
+function sourceProblems(entry, sample, caseId) {
+  const sources = entry?.sources;
+  if (!Array.isArray(sources) || sources.length === 0) {
+    return [`'${caseId}' cites no sources; each of the four layers must quote the sentence it rests on`];
+  }
+  const problems = [];
+  const covered = new Set();
+  const text = fold(sample?.incidentText);
+  for (const source of sources) {
+    const layer = typeof source?.layer === 'string' ? source.layer : '';
+    const quote = typeof source?.quote === 'string' ? source.quote : '';
+    const why = typeof source?.why === 'string' ? source.why : '';
+    if (!LAYERS.includes(layer)) {
+      problems.push(`'${caseId}' has a source with layer '${layer}', which is not one of ${LAYERS.join(' / ')}`);
+      continue;
+    }
+    covered.add(layer);
+    if (quote.length < MIN_QUOTE) {
+      problems.push(`'${caseId}' has a ${layer} quote shorter than ${String(MIN_QUOTE)} characters: '${quote}'`);
+      continue;
+    }
+    if (why.length < 20) {
+      problems.push(`'${caseId}' quotes for ${layer} without saying what it supports`);
+    }
+    if (!text.includes(fold(quote))) {
+      problems.push(
+        `'${caseId}' cites a ${layer} quote the incident text does not contain: '${quote}'. ` +
+          'Paraphrasing the source from memory produces this, and the case would then rest on a sentence nobody wrote.',
+      );
+    }
+  }
+  const missing = LAYERS.filter((layer) => !covered.has(layer));
+  if (missing.length > 0) {
+    problems.push(`'${caseId}' quotes no sentence for: ${missing.join(', ')}`);
+  }
+  return problems;
+}
 const floor = typeof index.min === 'number' ? index.min : 0;
 
 const problems = [];
@@ -123,6 +179,13 @@ for (const entry of index.cases) {
     // The `why` is the annotation's argument: which parts of the text each layer came from.
     // A case added without it is a case nobody can review.
     problems.push(`'${caseId}' does not say in at least forty characters where the annotation came from`);
+  }
+  // A `for` loop rather than `push(...)`: the list is one entry per source, so its length is a
+  // function of the annotation and `no-size-dependent-array-is-spread` refused the spread. It was
+  // right to -- four sources today, and the rule exists because the argument limit is reached by
+  // a big enough input rather than by a different code path.
+  for (const problem of sourceProblems(entry, sampleById.get(sampleId), caseId)) {
+    problems.push(problem);
   }
 
   const rawCase = readJson(join(args.cases, String(entry.case)), `case file for '${caseId}'`);
@@ -186,5 +249,6 @@ if (index.cases.length < floor) {
 
 console.log(
   `check-fault-cases: OK (${String(index.cases.length)} of ${String(known.size)} sample(s) carry a four-layer ` +
-    `case; each is complete and every reference resolves; floor ${String(floor)})`,
+    `case; each is complete, every reference resolves, and every layer quotes a sentence the incident ` +
+    `text contains; floor ${String(floor)})`,
 );

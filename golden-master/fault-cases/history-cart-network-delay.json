@@ -1,0 +1,79 @@
+{
+  "caseId": "history-cart-network-delay",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-21T14:05:00Z",
+  "window": {
+    "start": "2026-09-21T14:05:00Z",
+    "end": "2026-09-21T14:25:00Z"
+  },
+  "fault": {
+    "type": "network-delay",
+    "category": "network",
+    "injectionMethod": "historical",
+    "parameters": {
+      "between": ["cart-service", "inventory-service"],
+      "sameZone": false
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/cart-service",
+    "rootCauseComponent": "cart-service",
+    "rootCauseReason": "Calls from cart-service to inventory-service took 900ms on the client side while the callee's own handler stayed at 11ms, so the added time was spent on the wire after the two services were scheduled into different availability zones.",
+    "rootCauseIndicators": [
+      {
+        "type": "trace",
+        "ref": "client_span_duration",
+        "description": "the caller's span carries the whole delay; the callee's does not"
+      },
+      {
+        "type": "metric",
+        "ref": "network_retransmits_total",
+        "description": "no loss and no retransmits, which rules out a transport failure as the mechanism"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/cart-service",
+        "toEntityId": "service:synthetic-storefront/inventory-service",
+        "mechanism": "the caller's span rose from 12ms to 900ms while the callee's handler time stayed at 11ms, which locates the added time between the two processes rather than inside either",
+        "evidenceRefs": ["cp-client-span", "cp-server-handler"]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-client-span",
+        "entityRef": "service:synthetic-storefront/cart-service",
+        "signalRef": "client_span_duration",
+        "comparator": ">",
+        "value": 900,
+        "unit": "ms",
+        "description": "the caller's span duration at the peak, up from 12ms"
+      },
+      {
+        "checkpointId": "cp-server-handler",
+        "entityRef": "service:synthetic-storefront/inventory-service",
+        "signalRef": "server_side_handler_time",
+        "comparator": "==",
+        "value": 11,
+        "unit": "ms",
+        "description": "the callee's own handler time, unchanged -- the number that makes this a network fault rather than a slow service"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "schedule the two services in the same availability zone, or move the call off the request path",
+        "target": "service:synthetic-storefront/cart-service"
+      }
+    ]
+  },
+  "query": "Cart-to-inventory calls got slow after a network policy change: client-side span duration rose from 12ms to 900ms while the inventory service's own handler time stayed at 11ms. What failed?",
+  "difficulty": "L2",
+  "answerKeyIsolated": true
+}

@@ -2885,3 +2885,93 @@ than *harmless*, and it says so in the code where the next reader will look.
 | the repair | `/-/ready` ownership check plus a three-attempt loop that stops each attempt before retrying |
 | stability | the file alone **3 × 11 passed**; three consecutive full runs **4382 + 187 passed** |
 | the sites | the stop path's exit moved two lines and kept its proof; nothing was newly unproved (86 of 86 annotations carried) |
+
+## Finding 232 — one case is a proof, three are a shape; and a quote is the only part of an annotation a machine can check
+
+Finding 230 ended with a number the guard prints on every run -- `1 of 30` -- and with the
+statement that one case proves the four layers *can* be filled, not that they can be filled for
+the corpus. This round added two more, and the floor moved from 1 to 3 with them:
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; each is complete, every
+reference resolves, and every layer quotes a sentence the incident text contains; floor 3)
+```
+
+### The two shapes a single case could not test
+
+| case | shape its chain has | what its evidence has to be |
+| --- | --- | --- |
+| `history-checkout-cpu-saturation` | two steps inside one workload: container -> pod -> service | a threshold in one place (`>= 500m`) |
+| `history-cart-network-delay` | one step **across** a boundary: cart-service -> inventory-service | a **comparison** -- 900ms on the caller and 11ms on the callee, neither of which means anything alone |
+| `history-kafka-consumer-lag` | one step **towards a shared resource**: consumer -> topic | a **direction** -- lag grows on the topic, and the text's own last clause ("not broker capacity") is what rules out the other end |
+
+The second is the one that would have been easy to annotate wrongly. `900ms` looks like a slow
+service and `11ms` looks like a healthy one; the fault exists only in the difference, and a case
+that recorded either number alone would have been a valid case with a wrong conclusion. The third
+has the same trap mirrored: the lag is *observable* on the topic, so the annotation could point
+the chain at the broker and the text would contradict it in its final clause.
+
+### The quote: the one part of an annotation that can be checked
+
+An entry's `why` is prose -- an argument about where the annotation came from, unverifiable by
+construction. A **quote** is not: it is a substring of the incident text, and either it is there
+or it is not. So the index schema went to `/2` and every layer must now carry at least one quote
+of twelve characters or more, which
+
+- must appear in the incident text of the sample the case names, compared with whitespace folded
+  (a quote reflowed across a line break is the same sentence, and failing it would train the
+  annotator to copy line breaks);
+- must be accompanied by a sentence saying what it supports;
+- and must cover all four layers -- three quotes and an unsupported layer fails, because the layer
+  is what the exit condition is about.
+
+The defect this catches is specific and common: an annotator works from memory, paraphrases the
+source, and the case then rests on a sentence nobody wrote. One changed word is enough:
+
+```
+FAILED — 'history-checkout-cpu-saturation' cites a entity quote the incident text does not
+contain: 'the pod sat pinned at its 400m limit'.
+```
+
+That message is a test, not a hope: seven cases in `check-fault-cases.test.ts` drive the six
+refusals (a changed word, a missing layer, a quote too short, an unknown layer name, a quote with
+no statement of support, no sources at all) and the one acceptance (whitespace may differ).
+
+### What the guard caught in the code that guards
+
+The first version wrote `problems.push(...sourceProblems(...))`, and
+`no-size-dependent-array-is-spread` refused it: the list is one entry per source, so its length is
+a function of the annotation, and `push(...)` is bounded by the argument limit rather than by
+anything the code decides. Four sources today; the rule exists for the four hundred that would
+not fail. Replaced with a `for` loop, and the site's own comment says why rather than leaving the
+next reader to re-derive it.
+
+### Declared, not extracted
+
+Two of the three cases carry a `system` name and an absolute `injectTime` that the incident text
+does not state: it gives a clock time without a date ("at 02:14 UTC"), a relative duration
+("over six hours"), or a change and no time at all. Those values are **declared by the corpus**,
+and each entry's `why` says so in its own words rather than leaving the reader to infer that the
+text supplied them. The alternative -- leaving `injectTime` out -- is not available, because the
+schema requires it, and a case that omitted it would not be a case.
+
+### What it still does not do
+
+- **3 of 30.** The guard holds the number and the floor is 3; nothing here claims the other
+  twenty-seven can be annotated, only that three of them were and that the machinery to hold each
+  one to its text exists.
+- **A quote proves the sentence exists, not that it supports the layer.** "No packet loss and no
+  retransmits" is in the text and is used to support the *fault* layer; whether it does is a
+  judgement a reader makes. The guard can hold the annotation to its source; it cannot hold it to
+  being right, and saying so is the difference between a gate and a certificate.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **3 of 30**, all complete, 8 references each resolving against one shared eight-node graph |
+| the quotes | 12 quotes, each verbatim in its sample's incident text; whitespace folded |
+| the guard | 24 tests, every exit and every refusal driven |
+| the defect it caught | `problems.push(...)` refused by `no-size-dependent-array-is-spread`; replaced with a loop |
+| the module | `four-layer.ts` **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
+| `core` / repo | **180 / 4390** · **184 / 4577** |
