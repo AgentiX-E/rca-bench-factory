@@ -56,6 +56,31 @@ function goldenSamples(): GoldenSample[] {
   return parsed.samples;
 }
 
+const READINGS = resolve(REPO_ROOT, 'golden-master/fault-extraction/readings.json');
+
+interface GoldenReading {
+  run: number;
+  samples: Array<{
+    id: string;
+    expected: { type: string; category: string; component: string };
+    answered: { type: string | null; category: string | null; component: string | null };
+  }>;
+}
+
+/**
+ * The measured readings, as answers beside the values they were scored against.
+ *
+ * Read here rather than restated, because the component rule's exclusions are
+ * *derived* from what runs actually answered: a test that kept its own list of wrong
+ * answers would keep passing after a new reading added a member to the family, which
+ * is the defect the list is meant to catch.
+ */
+function goldenReadings(): GoldenReading[] {
+  const parsed = JSON.parse(readFileSync(READINGS, 'utf8')) as { readings: GoldenReading[] };
+  expect(parsed.readings.length).toBeGreaterThan(0);
+  return parsed.readings;
+}
+
 describe('both closed fields state their vocabulary, and which list each value comes from', () => {
   it('names the type vocabulary it was given, in the JSON shape it asks for', () => {
     const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
@@ -811,6 +836,111 @@ describe('the component rule names the product and the actor, which the exclusio
       expect(sample.expected.component, `${id}: the key itself is the product or the actor`).not.toMatch(
         /redis|job/,
       );
+    }
+  });
+});
+
+/**
+ * The `component` rule as a criterion, and the example that was an answer.
+ *
+ * The thirty-sample reading (finding 222) left four component misses, and three of
+ * them are the same question asked three ways:
+ *
+ *   session-cache   -> session-store        the product the workload runs on
+ *   ledger-writer   -> message-broker       the entity the workload depends on
+ *   currency-feed   -> settlement-service   the entity that depends on it
+ *
+ * The rule named two things not to answer — the product it runs on, and the actor
+ * that triggered the change — and the family has more members than the two. A list
+ * of exclusions can only be as complete as the runs that produced it, which is why
+ * this one is now a *criterion*: whose own behaviour failed.
+ *
+ * ## And the example was one of the answers
+ *
+ * `session-store` was in the rule's example list — "e.g. `payments-api`,
+ * `search-indexer`, `session-store`" — and the model answered exactly that string
+ * for `middleware-redis-latency-cache` in three of four readings, twice before the
+ * examples were written. An example is the most literal instruction in a prompt:
+ * it shows the shape *and* supplies a plausible value, and here the plausible value
+ * was somebody else's workload. The examples are now three that appear nowhere in
+ * the corpus, and a test asserts the prompt carries none of the recorded wrong
+ * answers.
+ */
+describe('the component rule is a criterion, and its examples are not answers', () => {
+  const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+
+  /** The three relationship misses, and what the run answered instead. */
+  const RELATIONSHIPS = [
+    ['middleware-redis-latency-cache', 'session-cache', 'session-store'],
+    ['middleware-queue-watermark-ledger-writer', 'ledger-writer', 'message-broker'],
+    ['dependency-schema-change-currency-feed', 'currency-feed', 'settlement-service'],
+  ] as const;
+
+  it('asks whose own behaviour failed, so the question is stated rather than implied', () => {
+    // The criterion, not a list: an exclusion list is only as complete as the runs
+    // that produced it, and the last run produced two new members of the family.
+    expect(prompt()).toMatch(/whose own behaviour failed/i);
+  });
+
+  it('names the three relationships the recorded misses answered with', () => {
+    // Each of these is a member the two v2.44 exclusions did not cover. Stated as a
+    // list of *relationships* rather than of examples, because a relationship is a
+    // rule and an example is an instance.
+    for (const phrase of ['the product it runs on', 'the entity it depends on', 'the entity that depends on it']) {
+      expect(prompt(), `the criterion must exclude ${phrase}`).toContain(phrase);
+    }
+  });
+
+  it('states the suffix rule separately, because it is a naming convention and not a criterion', () => {
+    // `tax-calculation-service` for `tax-calculation` is the same entity, and no
+    // answer about ownership can distinguish it. Folding it out of the comparator
+    // was refused (finding 213) because it would also make `session-store` match
+    // `session`; stating it in the prompt is the other repair, and it is a rule
+    // about spelling, so it is stated as one.
+    expect(prompt()).toMatch(/role suffix/i);
+    expect(prompt()).toMatch(/unless the incident/i);
+  });
+
+  it('states each relationship once, so two rules cannot disagree about one boundary', () => {
+    // v2.44's two sentences and this criterion overlap; a prompt that says "not the
+    // product it runs on" in two places has no rule, it has a preference with two
+    // readings.
+    const text = prompt();
+    expect(text.split('the product it runs on')).toHaveLength(2);
+    expect(text.split('the actor that triggered the change')).toHaveLength(2);
+  });
+
+  it('carries none of the recorded wrong answers, because an example is an instruction', () => {
+    // The load-bearing assertion of this block. `session-store` was in the example
+    // list and was answered for a different workload in three readings; the general
+    // form of that defect is that any example which is also a plausible answer
+    // supplies it. Every recorded wrong answer is checked, over the shipped record
+    // rather than over a list kept here.
+    const wrong = new Set<string>();
+    for (const reading of goldenReadings()) {
+      for (const sample of reading.samples) {
+        const answered = sample.answered.component;
+        if (answered !== null && answered !== sample.expected.component) wrong.add(answered);
+      }
+    }
+    expect(wrong.size, 'the record must have wrong answers for this to mean anything').toBeGreaterThan(3);
+    const text = prompt();
+    for (const value of wrong) {
+      expect(text, `the prompt carries \`${value}\`, which a run answered for another workload`).not.toContain(value);
+    }
+  });
+
+  it('records the relationship misses, so the criterion cannot outlive its evidence', () => {
+    // Each entry must still be a miss in the shipped record: a criterion justified by
+    // three samples that have since started passing is a criterion justified by
+    // nothing.
+    const latest = goldenReadings().at(-1);
+    expect(latest, 'the readings record must carry at least one reading').toBeDefined();
+    for (const [id, expected, answered] of RELATIONSHIPS) {
+      const sample = latest?.samples.find((entry) => entry.id === id);
+      expect(sample, `${id} is not in the latest reading`).toBeDefined();
+      expect(sample?.expected.component).toBe(expected);
+      expect(sample?.answered.component).toBe(answered);
     }
   });
 });
