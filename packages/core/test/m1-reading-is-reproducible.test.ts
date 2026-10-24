@@ -67,6 +67,14 @@ interface Readings {
   readings: Reading[];
   absent: Array<{ run: number; why: string }>;
   superseded: Array<{ id: string; renamedTo: string; why: string; finding: number }>;
+  /**
+   * A worse reading kept as the current one, with the reason it was kept.
+   *
+   * Absent, and asserted absent: nothing in this repository has ever argued that a
+   * measured regression should stay. The field exists so that the argument -- if it is
+   * ever made -- has to be written down in the same file as the number it defends.
+   */
+  acceptedRegression?: { run: number; delta: number; why: string };
 }
 
 const file = JSON.parse(readFileSync(READINGS, 'utf8')) as Readings;
@@ -229,6 +237,45 @@ describe('M1’s readings are re-derivable from the repository', () => {
         false,
       );
     }
+  });
+
+  it('keeps the best text any run has scored on this key, not merely a passing one', () => {
+    // The anti-regression rule, and the answer to a question findings 223 and 224 left open:
+    // *22/30 passed every gate and met the milestone, so what would have caught it?* This.
+    //
+    // The prompt in the tree carries one reading. Every other text on the same key is also in
+    // the record, so "is the current prompt the best one measured" is arithmetic rather than
+    // memory -- and a future round that measures 22/30 and marks it current fails here, before
+    // anybody has to remember that 24 existed.
+    const current = file.readings.filter((reading) => reading.status === 'current');
+    expect(current, 'exactly one reading describes the rule in the tree').toHaveLength(1);
+    const me = current[0] as Reading;
+    const peers = file.readings.filter(
+      (reading) => reading.key.size === me.key.size && reading.run !== me.run,
+    );
+    const best = Math.max(...peers.map((reading) => reading.totals.strict));
+    // The escape hatch is a written argument, not a status: a worse reading stays only if the
+    // record says which run it lost to, by how much, and why that was accepted.
+    const accepted = file.acceptedRegression;
+    if (accepted === undefined) {
+      expect(
+        me.totals.strict,
+        `a text on this key scored better: the current reading is ${String(me.totals.strict)}/` +
+          `${String(me.samples.length)} and the best other text scored ${String(best)}. Revert, or add an ` +
+          '`acceptedRegression` entry naming this run, the delta and the reason.',
+      ).toBeGreaterThanOrEqual(best);
+    } else {
+      expect(accepted.run, 'the accepted regression must be the run that is current').toBe(me.run);
+      expect(accepted.delta, 'the accepted regression must state what it cost').toBe(me.totals.strict - best);
+      expect(accepted.why.length, 'an accepted regression must say why it was accepted').toBeGreaterThan(80);
+    }
+  });
+
+  it('has never accepted a regression, which is a state and not an omission', () => {
+    // Asserted rather than left implicit, for the same reason the counts rows are: the moment
+    // somebody adds the field, this fails and the diff shows a decision being made. If a future
+    // round genuinely needs it, deleting this test is the record of the decision.
+    expect(file.acceptedRegression).toBeUndefined();
   });
 
   it('is sensitive to one answer, so the arithmetic is a measurement and not a tautology', () => {

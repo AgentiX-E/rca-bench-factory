@@ -2417,3 +2417,59 @@ been reconstructible only if this had existed before it.
 | the control | the digest moves with the vocabulary and with the incident text |
 | `core` / repo | **176 / 4287** · **179 / 4474** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 227 — a regression that clears the bar is now arithmetic
+
+Findings 223 and 224 both ended with the same unanswered question in their open items: *22/30 passed
+every gate and met the milestone, so what would have caught it?* Nothing did. The gates check that the
+tree is consistent with itself; a worse prompt is perfectly consistent with itself.
+
+The record makes the question answerable. Every text measured on the thirty-sample key is in
+`readings.json`, so **"is the current prompt the best one measured" is arithmetic** — and the test
+that used to check only "exactly one reading is current" now also checks the number:
+
+```
+a text on this key scored better: the current reading is 22/30 and the best other text
+scored 24. Revert, or add an `acceptedRegression` entry naming this run, the delta and
+the reason.
+```
+
+Checked by mutation: marking the 22/30 reading `current` and the 24/30 one `reverted` fails exactly as
+above, and restoring the file passes with an empty diff.
+
+### The escape hatch is a written argument, not a status
+
+A rule that cannot be overridden is a rule that gets deleted the first time it is inconvenient. So
+`acceptedRegression` exists — one entry, naming the run, the delta and a reason of at least eighty
+characters — and a second test asserts that **it has never been used**:
+
+> has never accepted a regression, which is a state and not an omission
+
+Adding the field fails that test, which is the point: the diff then shows a decision being made rather
+than a rule being worked around. Deleting the test is the deliberate act of deciding that a regression
+may be kept, and it leaves a visible trace, which a comment cannot.
+
+Checked by mutation too: with a fabricated `acceptedRegression` the anti-regression rule passes and the
+"never accepted" assertion fails — the two tests divide the work, one for the arithmetic and one for the
+policy.
+
+### What it does not cover
+
+- **Only texts that were measured.** A prompt that was never dispatched is caught by the digest gate
+  (finding 226) rather than by this one; a prompt dispatched and never recorded is caught by nothing,
+  which is why the digest gate and this rule are both needed and neither is sufficient.
+- **Only the same key.** Readings on the nineteen-sample key are not comparable, and the test scopes
+  itself to the current key's size rather than pretending otherwise.
+- **Only the strict rate.** A prompt could trade, say, `type` for `component` at constant strict. The
+  per-field rates are in the record, and no rule reads them this way yet.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the rule | the current reading's strict must be ≥ the best other reading on the same key |
+| the mutation | 22/30 marked current fails with both numbers named; restoring passes, diff empty |
+| the hatch | `acceptedRegression` requires the current run, the exact delta and a reason ≥ 80 characters |
+| the state | "never accepted" is asserted, so using the hatch is a visible edit |
+| `core` / repo | **176 / 4289** · **179 / 4476** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

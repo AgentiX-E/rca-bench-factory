@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **175 files, 4287 tests passed** (as of this commit) |
+| `core` test suite | **175 files, 4289 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **179 files, 4474 tests passed** (as of this commit) |
+| repo test suite | **179 files, 4476 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1799,3 +1799,47 @@ not after it.
 - **A `pending` entry can stay pending for ever.** `[open: nothing ages it. A stale pending entry is
   visible in the record and in review, but no gate fails on age -- there is no date on it, and adding
   one would make "how long has this been unmeasured" a question a test could ask]`
+
+## v2.56 — a regression that clears the bar is now arithmetic
+
+Two findings ended with the same unanswered question: *22/30 passed every gate and met the milestone,
+so what would have caught it?* Nothing did — the gates check that the tree is consistent with itself,
+and a worse prompt is perfectly consistent with itself.
+
+The record makes it answerable. Every text measured on this key is in `readings.json`, so **"is the
+current prompt the best one measured" is arithmetic**, and the test that checked only *exactly one
+reading is current* now also checks the number:
+
+```
+a text on this key scored better: the current reading is 22/30 and the best other text
+scored 24. Revert, or add an `acceptedRegression` entry naming this run, the delta and
+the reason.
+```
+
+Mutation: marking 22/30 `current` and 24/30 `reverted` fails exactly there; restoring passes with an
+empty diff.
+
+**The escape hatch is a written argument, not a status.** `acceptedRegression` names the run, the delta
+and a reason of at least eighty characters — and a second test asserts it **has never been used**.
+Adding the field fails that test, which is the point: the diff shows a decision rather than a rule being
+worked around, and deleting the test is the deliberate act of deciding a regression may be kept.
+Mutation-checked in both directions.
+
+**What it does not cover**, stated rather than implied: only texts that were measured (a never-dispatched
+prompt is the digest gate's job), only readings on the same key, and only the strict rate — a prompt
+could trade `type` for `component` at constant strict, and no rule reads the per-field rates this way yet.
+
+**Acceptance.** 2 new tests in `m1-reading-is-reproducible.test.ts` (10 in the file); typecheck, lint,
+`docs:check` green; two consecutive full runs at **4289 passed**; core **176 / 4289**, cli 4 / 187, repo
+**179 / 4476**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–227.
+
+### Left open
+
+- **The trade between fields is unguarded.** `[open: strict can stay flat while `type` falls and
+  `component` rises. The per-field rates are already in every reading, so a rule is possible -- but
+  which trade is acceptable is a judgement the record cannot make, and a rule that forbade all of them
+  would forbid a genuinely better prompt that happened to shuffle two samples]`
+- **A dispatched run that is never recorded is invisible.** `[open: the digest gate catches an
+  unmeasured prompt and this rule catches a measured worse one; a run that happened and was not written
+  into the record is caught by neither. Closing it needs the record to be built from the workflow's own
+  history rather than by hand]`
