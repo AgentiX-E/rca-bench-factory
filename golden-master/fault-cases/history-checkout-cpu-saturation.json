@@ -1,0 +1,94 @@
+{
+  "caseId": "history-checkout-cpu-saturation",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-14T02:03:00Z",
+  "window": {
+    "start": "2026-09-14T02:03:00Z",
+    "end": "2026-09-14T02:25:00Z"
+  },
+  "fault": {
+    "type": "cpu-saturation",
+    "category": "resource",
+    "injectionMethod": "historical",
+    "parameters": {
+      "container": "checkout-api-app",
+      "limitMillicores": 500
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/checkout-api-app",
+    "rootCauseComponent": "checkout-api",
+    "rootCauseReason": "The container ran at its 500m CPU limit for eleven minutes, so every scheduling period was throttled and p99 latency rose from 180ms to 4.3s with no change in load.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "container_cpu_cfs_throttled_seconds_total",
+        "description": "throttling counters climbed for the whole window"
+      },
+      {
+        "type": "metric",
+        "ref": "container_spec_cpu_quota",
+        "description": "quota fixed at 500m, which is what the usage was pinned against"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/checkout-api-app",
+        "toEntityId": "pod:synthetic-storefront/checkout-api-0",
+        "mechanism": "the cgroup spent the whole window throttled, because usage sat at the fixed 500m quota",
+        "evidenceRefs": ["cp-cpu-limit", "cp-throttled-counters"]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/checkout-api-0",
+        "toEntityId": "service:synthetic-storefront/checkout-api",
+        "mechanism": "throttled request handling stretched p99 latency from 180ms to 4.3s while the load generator was unchanged",
+        "evidenceRefs": ["cp-p99"]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-cpu-limit",
+        "entityRef": "container:synthetic-storefront/checkout-api-app",
+        "signalRef": "container_spec_cpu_quota",
+        "comparator": ">=",
+        "value": 500,
+        "unit": "m",
+        "description": "container CPU usage sat pinned at its 500m limit"
+      },
+      {
+        "checkpointId": "cp-throttled-counters",
+        "entityRef": "pod:synthetic-storefront/checkout-api-0",
+        "signalRef": "container_cpu_cfs_throttled_seconds_total",
+        "comparator": ">",
+        "value": 0,
+        "unit": "s",
+        "description": "throttling counters climbed monotonically across the window"
+      },
+      {
+        "checkpointId": "cp-p99",
+        "entityRef": "service:synthetic-storefront/checkout-api",
+        "comparator": ">",
+        "value": 4300,
+        "unit": "ms",
+        "description": "p99 latency at the peak, up from 180ms before the window"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "raise the CPU limit above the observed peak and confirm throttling stops",
+        "target": "container:synthetic-storefront/checkout-api-app"
+      }
+    ]
+  },
+  "query": "checkout-api p99 latency rose from 180ms to 4.3s over eleven minutes with no change in load; CPU throttling counters climbed the whole time. What failed, and why?",
+  "difficulty": "L2",
+  "answerKeyIsolated": true
+}

@@ -99,6 +99,16 @@ const REGISTER: Record<string, Entry> = {
       'tree that spawns it, because the live form needs a token and a network.',
   },
 
+  'check-fault-cases.mjs': {
+    class: 'gate',
+    why:
+      'It exits 2 when a four-layer case is incomplete, unindexed or below the floor, and 1 when ' +
+      'the index or a case cannot be read, so it is a gate by the inventory rule. ' +
+      '`check-fault-cases.test.ts` spawns it for every exit it owns. The floor it reports is the ' +
+      'only number in this repository that moves as annotation proceeds, which is why it is ' +
+      'printed on every run rather than being a threshold nobody reads.',
+  },
+
   'record-reading.mjs': {
     class: 'gate',
     why:

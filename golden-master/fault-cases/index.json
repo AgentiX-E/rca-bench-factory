@@ -1,0 +1,14 @@
+{
+  "schema": "rca-bench-fault-cases/1",
+  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve.",
+  "min": 1,
+  "cases": [
+    {
+      "caseId": "history-checkout-cpu-saturation",
+      "sampleId": "resource-cpu-saturation-checkout",
+      "case": "history-checkout-cpu-saturation.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "annotated from the incident text of `resource-cpu-saturation-checkout`: the container, the pod it belongs to and the service it serves are all named or implied by the text, the two causal steps are the text's own sequence (limit -> throttling -> latency), and the three checkpoints are the three numbers the text states (500m, the throttling counters, 180ms -> 4.3s). The downstream payment service is a graph node because the text names it, but it carries no checkpoint: the text says its error rate did not change, which is an absence rather than a value a checkpoint can hold."
+    }
+  ]
+}

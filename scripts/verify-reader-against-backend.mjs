@@ -112,7 +112,22 @@ async function waitForReady(url, deadline) {
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${url}/-/ready`);
-      if (response.ok) return true;
+      if (response.ok) {
+        // A `200` on `/-/ready` is not evidence that *this* process answered it. The port came
+        // from `freePort()`, which binds it, releases it and hands the number to a child -- and
+        // between the release and the child's `bind()` any other listener on the machine can take
+        // it. That is how run 40079736470 reported `answered 200 with something that is not JSON
+        // (Unexpected token 'o', "not json at all" ...)` against a stand-in that had never bound
+        // its port at all: the body belonged to a Jaeger stub started by a test file running in
+        // the same suite.
+        //
+        // So the answer is checked for the one word both a Prometheus and the stand-in say and a
+        // stranger does not. It costs nothing when the port is ours and it turns a wrong verdict
+        // into another try when it is not.
+        const body = await response.text();
+        if (/\bready\b/i.test(body)) return true;
+        return `not ours (${body.slice(0, 40).trim()})`;
+      }
       last = `HTTP ${response.status}`;
     } catch (error) {
       last = error.message;
@@ -255,45 +270,70 @@ if (!existsSync(core)) {
   await fail(`the built package is not at ${core}: run pnpm build first`);
 }
 
-const port = await freePort();
-address = `http://127.0.0.1:${port}`;
-const work = mkdtempSync(join(tmpdir(), 'rca-bench-real-backend-'));
-writeFileSync(
-  join(work, 'prometheus.yml'),
-  [
-    'global:',
-    '  scrape_interval: 1s',
-    'scrape_configs:',
-    `  - job_name: ${BACKEND}`,
-    '    static_configs:',
-    `      - targets: ['127.0.0.1:${port}']`,
-    '        labels:',
-    `          service: ${SERVICE}`,
-    '',
-  ].join('\n'),
-);
-
-server = spawn(
-  binary,
-  [
-    `--config.file=${join(work, 'prometheus.yml')}`,
-    `--storage.tsdb.path=${join(work, 'data')}`,
-    `--web.listen-address=127.0.0.1:${port}`,
-  ],
-  { detached: true, stdio: ['ignore', 'ignore', 'pipe'] },
-);
-// Printed before the wait rather than after it, so a run that is still starting is legible to
-// whoever is watching -- and so the guards' own tests can ask afterwards whether it was stopped.
-console.log(`starting ${binary} on ${address}`);
-
 // One budget for "the server became usable", spent in two phases, because the two phases fail for
 // different reasons and the message has to say which one ran out.
 const budget = Number(argValue('--timeout') ?? 30_000);
 const deadline = Date.now() + budget;
 
-const ready = await waitForReady(address, deadline);
-if (ready !== true) {
-  await fail(`nothing answered ${address}/-/ready within ${budget} ms (${ready})`);
+const work = mkdtempSync(join(tmpdir(), 'rca-bench-real-backend-'));
+
+/**
+ * Start the server, taking a fresh port each time the port turns out not to be free.
+ *
+ * `freePort()` cannot promise the number is still free by the time the child binds it -- it
+ * releases the socket and the child is a process spawn away -- so the port is a *guess* and the
+ * readiness check is what turns the guess into a fact. When the answer on `/-/ready` belongs to
+ * something else, the guess was wrong and another one costs a few milliseconds; the alternative
+ * is a gate that reports a stranger's HTTP body as a verdict about this reader, which is exactly
+ * what one run of the suite produced (see the note in `waitForReady`).
+ */
+let launched = false;
+let refusal = 'no answer at all';
+for (let attempt = 1; attempt <= 3 && !launched; attempt += 1) {
+  const port = await freePort();
+  address = `http://127.0.0.1:${port}`;
+  writeFileSync(
+    join(work, 'prometheus.yml'),
+    [
+      'global:',
+      '  scrape_interval: 1s',
+      'scrape_configs:',
+      `  - job_name: ${BACKEND}`,
+      '    static_configs:',
+      `      - targets: ['127.0.0.1:${port}']`,
+      '        labels:',
+      `          service: ${SERVICE}`,
+      '',
+    ].join('\n'),
+  );
+
+  server = spawn(
+    binary,
+    [
+      `--config.file=${join(work, 'prometheus.yml')}`,
+      `--storage.tsdb.path=${join(work, 'data')}`,
+      `--web.listen-address=127.0.0.1:${port}`,
+    ],
+    { detached: true, stdio: ['ignore', 'ignore', 'pipe'] },
+  );
+  // Printed before the wait rather than after it, so a run that is still starting is legible to
+  // whoever is watching -- and so the guards' own tests can ask afterwards whether it was stopped.
+  console.log(`starting ${binary} on ${address}`);
+
+  refusal = await waitForReady(address, deadline);
+  if (refusal === true) {
+    launched = true;
+    break;
+  }
+
+  // This attempt is over: stop what it started before asking for another port, or the retry
+  // leaks one server per attempt -- which is the failure this script's stop path exists for.
+  await stopServer(server, address);
+  server = null;
+}
+
+if (!launched) {
+  await fail(`nothing answered ${address}/-/ready within ${budget} ms across three ports (${refusal})`);
 }
 const warm = await waitForSamples(address, QUERY, deadline);
 if (warm !== true) {

@@ -132,6 +132,7 @@ const ENUMERATED_MODULES = [
   'fault/extraction-scoring.ts',
   'fault/miss-detail.ts',
   'fault/reading-record.ts',
+  'fault/four-layer.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -630,6 +631,9 @@ const TESTED = [
   // in the report; `extraction-diagnostics.test.ts` is the test that drives both.
   'FAILURE_EXCERPT_LIMIT',
   'describeExtractionFailure',
+  // fault/four-layer.ts -- M1's four-layer condition, as a definition that can fail.
+  'assessFourLayer',
+  'formatFourLayerReading',
   // fault/reading-record.ts -- finding 229, the transcription step as code. The record's
   // two derived fields (key.digest, totals) have no path from a keyboard, and
   // `reading-record.test.ts` is what pins the derivation; `record-reading.test.ts` drives

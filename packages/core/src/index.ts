@@ -657,6 +657,20 @@ export type {
   ReadingTotals,
 } from './fault/reading-record.js';
 
+// M1's "GT four-layer annotation can all be filled", as a thing that can fail. The schema marks
+// `causalChain` and `evidenceCheckpoints` optional and `rootCauseEntityId` is a string nothing
+// resolves, so until this existed the condition was met by definition. Exported because the
+// count over a corpus is the evidence for the corpus, and a reading only one test can take is a
+// reading nobody can re-take against the next thirty samples.
+export { assessFourLayer, formatFourLayerReading } from './fault/four-layer.js';
+export type {
+  DanglingEvidenceRef,
+  FourLayerReading,
+  LayerName,
+  LayerReading,
+  UnresolvedRef,
+} from './fault/four-layer.js';
+
 export {
   MISS_DETAIL_TITLE,
   isTruncated,

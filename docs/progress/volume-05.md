@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **178 files, 4348 tests passed** (as of this commit) |
+| `core` test suite | **180 files, 4382 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **182 files, 4535 tests passed** (as of this commit) |
+| repo test suite | **184 files, 4569 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1971,3 +1971,84 @@ coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–
   so like the reconciler it is a tool and not a gate. A scheduled workflow that opens an issue when an
   artefact is about to expire would close the ninety-day half of it -- the download could happen
   before the evidence goes]`
+
+## v2.59 — M1's four-layer condition stops being met by definition
+
+M1 has an exit condition that reads "GT four-layer annotation (entity / fault / process / evidence)
+can all be filled". Nothing could answer it: `causalChain` and `evidenceCheckpoints` are optional
+in `groundTruthSchema`, `rootCauseEntityId` is a non-empty string that no code resolves, and
+`findDanglingEdgeRefs` walks the graph's edges rather than the ground truth. Every case in this
+repository carried a type and a component, declared three of four layers empty, and parsed
+cleanly. A condition no code can fail is a condition met by definition.
+
+**The definition first.** `fault/four-layer.ts` says what filling each layer means, and each
+verdict is about resolution rather than presence: the root cause must name a node, both ends of
+every causal step must, and every checkpoint's `entityRef` must. `category: 'unknown'` counts as
+empty, because it is the taxonomy declining to answer rather than an answer. A step citing a
+checkpoint the case does not carry is reported separately from an unresolved entity -- one is a
+graph missing a node, the other is a step citing evidence the case never states, and they are
+different repairs. `complete` requires both lists to be empty, so four full layers can still be
+incomplete.
+
+**The corpus got its first case.** `golden-master/fault-cases/` holds one `FaultCase` annotated
+from `resource-cpu-saturation-checkout`, with a four-node graph beside it: the container whose
+usage sat at 500m, the pod that was throttled, the service whose p99 went from 180ms to 4.3s, and
+the downstream payment service the text names but which carries no checkpoint -- "error rate did
+not change" is an absence, not a value, and `== 0%` would have invented a measurement.
+
+**The guard prints the number instead of gating it.**
+
+```
+check-fault-cases: OK (1 of 30 sample(s) carry a four-layer case; each is complete and every
+reference resolves; floor 1)
+```
+
+Requiring thirty would make it red for thirty rounds and teach everyone to ignore it; requiring
+nothing would let it reach zero in silence. So `min` is written in the index and moves up as
+annotation proceeds, the same shape `M1_STRICT_THRESHOLD` has.
+
+**One defect of this round.** The guard joined both `docs:check` and `docs:check:cold`, and the
+cold-tree test refused it: `cold-tree-job.test.ts` holds the measured set of guards that run
+without a build, and this one imports `dist`. Removed from the cold aggregate -- the cold job
+would have run it before a build existed, which is precisely the failure that file exists to
+prevent.
+
+**What was discarded.** Before annotating, a rule-based probe was tried against the thirty texts
+to see whether the remaining cases could be generated. It called `copy-paste` and `long-running`
+entities, and missed `400Mi` because Kubernetes spells mebibytes `Mi`. Two numbers came out of it
+and neither is published: a rule that has to be corrected by reading its own output thirty times
+is a first draft of an annotation, not a measurement.
+
+**A latent race stopped being invisible.** The second full run of the round failed one test in
+`reader-against-backend`: the gate reported `answered 200 with something that is not JSON ("not json
+at all")` about a stand-in that had never bound its port. That string belongs to `jaeger.test.ts`'s
+stub. `freePort()` binds, releases and hands the number to a `spawn`, and nothing reserves it across
+that window — so the port was a guess, and a `200` was treated as proof of who answered. The repair
+reads the `/-/ready` body and requires the word both a Prometheus and the stand-in say, then takes
+another port if it is missing: three attempts, each stopping what it started before the next, because
+a retry that leaks a server per attempt is the failure the stop path exists to prevent. The file
+alone passed three times before and after; the difference is that the race now recovers instead of
+misreporting.
+
+**Acceptance.** 14 tests over the definition, 17 over the guard, every exit driven; three
+mutations each turn exactly one test red and the source is restored byte-for-byte; 8 new gate
+sites annotated `proved`; the meta-gate at **46 gates, 46 caught, 0 survived** (hollowing the new
+guard turns 34 tests red in 1 of 2 naming files); `four-layer.ts` **100 ×4**; core **180 / 4382**, cli 4 / 187, repo
+**184 / 4569**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–230.
+
+### Left open
+
+- **Twenty-nine of thirty samples carry no four-layer case.** `[open: the guard reports 1 of 30 and
+  the floor is 1. Each remaining annotation is a person reading one text and writing four layers
+  from it; the work is bounded and the guard will hold whatever number is reached, but no round so
+  far has annotated more than one, and the reason is that each annotation is a judgement nobody has
+  made a rule for -- which is the finding, not an excuse]`
+- **A rule for the remaining annotations was tried and produced noise.** `[open: a slug extractor
+  called `copy-paste` an entity and a unit extractor missed `400Mi`. The next attempt should start
+  from the annotation of one case and ask what a reviewer would need to check it, rather than from
+  what a regex can find in thirty texts]`
+- **`docs:check` now contains a guard that needs `dist`, and `docs:check:cold` does not.** `[open:
+  the split is measured by `cold-tree-job.test.ts`, so a guard added to the wrong aggregate fails
+  a test -- but the two chains duplicate thirteen names each, and the next guard is added to both
+  by whoever adds it until that test says no. A derived split is the obvious repair and has not
+  been built]`

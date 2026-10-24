@@ -2706,3 +2706,182 @@ quietly corrected. The open list now states both figures and says which volume t
 | the register | `record-reading.mjs` classified `gate` with the reason both failure exits exist |
 | coverage | module **100 / 100 / 100 / 100**; package **99.97 / 99.74 / 100 / 99.97** |
 | `core` / repo | **178 / 4348** · **182 / 4535** |
+
+## Finding 230 — the four-layer condition was met by definition, and now one case proves it can be
+
+M1 carries this exit condition:
+
+> GT four-layer annotation (entity / fault / process / evidence) can all be filled.
+
+Nothing in the tree could answer it. `groundTruthSchema` marks `causalChain` and
+`evidenceCheckpoints` **optional**, and `rootCauseEntityId` is `z.string().min(1)` -- a value that
+is checked for being non-empty and for nothing else. `findDanglingEdgeRefs` walks the graph's
+edges, not the ground truth. So every case in this repository carried a type and a component,
+declared three of four layers empty, and was a perfectly valid `FaultCase`. A condition that no
+code can fail is a condition met by definition, and this one had been met that way since M1 was
+written.
+
+### The definition, before the annotation
+
+`packages/core/src/fault/four-layer.ts` says what filling each layer means, in terms that can
+fail:
+
+| layer | filled when | why that and not presence |
+| --- | --- | --- |
+| entity | `rootCauseEntityId` resolves against the graph | a non-empty string that names no node cannot be scored against -- the evaluator has nothing to compare the model's answer to |
+| fault | `type` is non-empty **and** `category` is not `unknown` | `unknown` is a member of the vocabulary on purpose, so it parses; it is the taxonomy declining to answer, and counting it as filled reports a complete case whose category nobody decided |
+| process | at least one step, and both ends of every step resolve | a chain of steps naming nodes the graph lacks reads as a causal account and is not one |
+| evidence | at least one checkpoint, and its `entityRef` resolves | same, one level down |
+
+Two things the layer list alone would miss. A `CausalStep.evidenceRefs` entry naming a checkpoint
+the case does not carry is reported separately from an unresolved entity: one is a graph missing
+a node, the other is a step citing evidence the case never states, and they have different
+repairs. And `complete` requires both lists to be empty, so a case can fill all four layers and
+still be incomplete -- which happened on the first hostile edit tried against it.
+
+### The first case, and what it is annotated from
+
+`golden-master/fault-cases/history-checkout-cpu-saturation.json`, with a four-node graph beside
+it, annotated from `resource-cpu-saturation-checkout` in the extraction key:
+
+```
+container:synthetic-storefront/checkout-api-app    the 500m limit the usage sat against
+pod:synthetic-storefront/checkout-api-0            the workload that was throttled
+service:synthetic-storefront/checkout-api          the p99 the pager fired on
+service:synthetic-storefront/payment-service       named by the text, carries no checkpoint
+```
+
+The causal chain is the text's own sequence -- the cgroup spent the window throttled because
+usage sat at a fixed quota, so request handling stretched p99 from 180ms to 4.3s with the load
+generator unchanged -- in two steps, each citing the checkpoints that state its half. The three
+checkpoints are the three numbers the text states: `>= 500m`, `> 0s` of throttled time, `> 4300ms`.
+
+**The downstream service carries no checkpoint on purpose.** The text says its error rate did
+not change, and "did not change" is an absence, not a value a checkpoint can hold -- writing
+`== 0%` would have invented a measurement. It is a graph node because the text names it, and
+naming a node a case does not score is exactly what an entity graph is for.
+
+### The guard, and the number it prints
+
+`scripts/check-fault-cases.mjs` walks `golden-master/fault-cases/index.json`, parses each case and
+its graph through the shipped schemas, and refuses the file if any case is incomplete:
+
+```
+check-fault-cases: OK (1 of 30 sample(s) carry a four-layer case; each is complete and every
+reference resolves; floor 1)
+```
+
+**The count is reported rather than gated, and the floor is a written number.** Requiring thirty
+would make the guard red for the next thirty rounds and teach everyone to ignore it; requiring
+nothing would let the number reach zero in silence. So `min` sits in the index, is printed on
+every run, and moves up as annotation proceeds -- the shape `M1_STRICT_THRESHOLD` has, for the
+same reason: a threshold that is not written down is a threshold that drifts.
+
+Three refusals with a reason each: a `sampleId` the key does not carry (otherwise the coverage
+figure is a number about a directory rather than about the key), an entry without a `why` of at
+least forty characters (the annotation's argument is which part of the text each layer came from,
+and a case added without it cannot be reviewed), and a file in the directory the index does not
+name (a case that never runs, in a directory that reads as holding one case while holding two).
+
+### What was measured, and what was not
+
+- **One case is annotated.** That is a proof that the four layers *can* be filled for this
+  corpus, and it is not a proof that they can be filled for all thirty. M1's condition stays
+  open, and the honest statement of its state is `1 of 30`, printed by the guard on every run.
+- **The chain's two steps are the text's order, not a measured causal graph.** The text says
+  "the pod sat pinned at its 500m limit" and "p99 latency went from 180ms to 4.3s"; that the
+  first caused the second is what the incident report asserts, and an annotation cannot do
+  better than its source.
+- **No attempt was made to generate the remaining twenty-nine automatically.** An earlier probe
+  in this round measured what a rule can recover and the answer was noise: a slug-shaped token
+  extractor called `copy-paste` and `long-running` entities, and a unit-word extractor missed
+  `400Mi` because Kubernetes spells mebibytes `Mi`. Both numbers were discarded rather than
+  published, because a rule that has to be corrected by reading its output thirty times is not a
+  measurement -- it is a first draft of an annotation.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the definition | 14 tests over four layers, the two reference lists and the printed reading |
+| the mutations | deleting the dangling-evidence term, the `unknown` test, or `from && to` each turns exactly one test red; source restored byte-for-byte |
+| the guard | 17 tests, every exit driven; 8 sites annotated `proved` |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing `check-fault-cases.mjs` turns 34 tests red in 1 of 2 naming files |
+| the corpus | 1 of 30 samples carries a four-layer case; the case parses, and all 8 of its references resolve |
+| `docs:check` | the guard joined the aggregate, and was **removed from `docs:check:cold`** because it imports `dist` -- the cold job would have run it before a build |
+| coverage | `four-layer.ts` **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
+| `core` / repo | **180 / 4382** · **184 / 4569** |
+
+## Finding 231 — a port is a guess, and `200` is not proof of who answered
+
+The second full run of this round failed one test, and it is the kind of failure that gets filed
+as flake:
+
+```
+scripts/verify-reader-against-backend.mjs · fails when the API answers the window with no series at all
+expected 'verify-reader-against-backend: FAILED…' to contain 'never produced a sample'
+  verify-reader-against-backend: FAILED -- the API at http://127.0.0.1:37691 answered 200 with
+  something that is not JSON (Unexpected token 'o', "not json at all" is not valid JSON)
+```
+
+`"not json at all"` is not a string this repository's stand-in produces. It is
+`jaeger.test.ts`'s stub, answering from a different test file in the same run. The gate had asked
+a port a question, got an answer, and reported it as a verdict about the reader.
+
+### The window
+
+```js
+async function freePort() {
+  const probe = createServer();
+  probe.listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => done(port)); });
+}
+```
+
+Bind, read the number, release, then `spawn` a child that binds it. Between the release and the
+child's `bind()` there is a process spawn — tens of milliseconds — and in a suite where several
+files call `listen(0)` concurrently, that window is enough. The port was never reserved; it was
+*guessed*, and nothing checked the guess until the gate read a stranger's HTML.
+
+**It was always there.** Serial runs of this file never hit it, because the window has no
+competitor in a single file. This round added two test files that spawn processes, the suite got
+busier, and the window opened. A latent race is not a new defect; it is an old one that stopped
+being invisible.
+
+### The repair: check who answered, then try again
+
+`/-/ready` returning `200` says *something* is listening. So the body is read, and it must contain
+the word both real Prometheus and the stand-in say and a stranger does not:
+
+| backend | `/-/ready` body |
+| --- | --- |
+| Prometheus | `Prometheus is Ready.` |
+| the stand-in here | `Ready` |
+| a Jaeger stub | `not json at all` |
+
+If the word is missing, the port was not ours, and the loop takes another one — three attempts,
+each with its own `freePort()`, and **each attempt stopping what it started before the next
+begins**. That last clause is not tidiness: without it, a retry leaks one server per attempt, which
+is the exact failure this script's stop path exists to prevent.
+
+Three decisions worth stating:
+
+| decision | why |
+| --- | --- |
+| the ownership test is the body, not a header | both backends answer `200` with a body that says ready, and neither sets a distinctive header; the body is what is already on the wire |
+| three attempts, sharing one budget | the port is external state that can change under the gate, so retrying is the only correct form — and the budget is the deadline, so three attempts cost no more wall clock than one slow one |
+| a non-ours answer is a *retry*, an empty window is a *wait* | they are different findings: one says the address is wrong, the other says the server has not scraped yet, and telling them apart is the same distinction between "could not read it" and "there is nothing there" that this repository keeps having to re-learn |
+
+### What it does not fix
+
+The port is still a guess — there is no way to reserve it across a `spawn`, and Prometheus cannot
+be told to choose its own port and report it. The repair makes a wrong guess *recoverable* rather
+than *harmless*, and it says so in the code where the next reader will look.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the reproduction | full run 2 of 5 failed with the stranger's body; three runs of the file alone never did |
+| the repair | `/-/ready` ownership check plus a three-attempt loop that stops each attempt before retrying |
+| stability | the file alone **3 × 11 passed**; three consecutive full runs **4382 + 187 passed** |
+| the sites | the stop path's exit moved two lines and kept its proof; nothing was newly unproved (86 of 86 annotations carried) |

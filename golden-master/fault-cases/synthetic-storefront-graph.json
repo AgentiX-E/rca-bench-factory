@@ -1,0 +1,45 @@
+{
+  "entities": [
+    {
+      "entityId": "service:synthetic-storefront/checkout-api",
+      "kind": "service",
+      "name": "checkout-api",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/checkout-api-0",
+      "kind": "pod",
+      "name": "checkout-api-0",
+      "aliases": ["checkout-api pod"]
+    },
+    {
+      "entityId": "container:synthetic-storefront/checkout-api-app",
+      "kind": "container",
+      "name": "checkout-api-app",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/payment-service",
+      "kind": "service",
+      "name": "payment-service",
+      "aliases": ["the downstream payment service"]
+    }
+  ],
+  "edges": [
+    {
+      "from": "service:synthetic-storefront/checkout-api",
+      "to": "pod:synthetic-storefront/checkout-api-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/checkout-api-0",
+      "to": "container:synthetic-storefront/checkout-api-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/checkout-api",
+      "to": "service:synthetic-storefront/payment-service",
+      "relation": "calls"
+    }
+  ]
+}
