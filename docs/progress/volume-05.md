@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **174 files, 4283 tests passed** (as of this commit) |
+| `core` test suite | **175 files, 4287 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **178 files, 4470 tests passed** (as of this commit) |
+| repo test suite | **179 files, 4474 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1750,3 +1750,52 @@ green; two consecutive full runs at **4283 passed**; core **175 / 4283**, cli 4 
   round's sequence -- measure, then decide not to build -- is a habit and not a gate. The 25/30
   ceiling and the inside/outside counts are pinned; a *rule* that a proposed answer-space change must
   state its ceiling first would be the mechanism]`
+
+## v2.55 — "one change, one reading" becomes a digest instead of a habit
+
+Findings 223 and 224 both ended with *one change, one reading*, written by someone who had just paid a
+dispatch to learn it. Both times it was a habit, and nothing could have stopped the next round from
+doing the same thing again.
+
+This round makes it a property. The prompt is a **value**: render it with a fixed placeholder incident
+and a fixed vocabulary, hash the string, and the tree has a digest —
+
+```
+05334666cde677b22d7246dccede5be2a5a5ac21f3587451cdbc0e77e4c0a8b6
+```
+
+The reading that produced the current number carries that digest, and
+`prompt-changes-are-measured.test.ts` requires the tree to render to it. **One extra space in one
+fragment fails the suite** (`47fbd0c8… != 05334666…`, checked by mutation, restored with an empty
+`git diff`), and the message is an instruction: dispatch and add the reading, or record a `pending`
+entry with this digest and a reason.
+
+**The second route is what makes it a gate rather than a wall.** A change may land before its run
+finishes; `pending` is that state, and it has two rules — it must say why it is unmeasured, and its
+digest must not be the tree's (which would mean the run has happened, or the entry is stale). Silence
+is the one thing that is not a route.
+
+**Why the rendered string and not the source:** the source is not what the model sees.
+`FAULT_COMPONENT_RULE` is one fragment among several that the builder assembles, so hashing the
+rendered output covers every fragment and the order they arrive in, with no list to maintain. The
+control is in the file: two vocabularies and two incident texts each produce different digests, so a
+constant-returning hash cannot satisfy the block.
+
+**What the record says about the past:** the two reverted readings carry no digest, and the test says
+so rather than letting it be discovered — their texts were reverted before this gate existed and
+cannot be reconstructed. That is precisely why the gate had to be built before the third experiment,
+not after it.
+
+**Acceptance.** 4 new tests; typecheck, lint, `docs:check` green; two consecutive full runs at
+**4287 passed**; core **176 / 4287**, cli 4 / 187, repo **179 / 4474**; coverage 99.97 / 99.74 / 100 /
+99.97 and 100 ×4; audit 5 volumes, findings 1–226.
+
+### Left open
+
+- **The gate covers the prompt, not the scorer.** `[open: a change to `extraction-scoring.ts` moves the
+  number too, and no digest guards it. The same mechanism would work -- hash the scored-field list and
+  the comparison -- but the scorer's behaviour is already pinned by its own tests, so the question is
+  whether a digest adds anything there]`
+- **A `pending` entry can stay pending for ever.** `[open: nothing ages it. A stale pending entry is
+  visible in the record and in review, but no gate fails on age -- there is no date on it, and adding
+  one would make "how long has this been unmeasured" a question a test could ask]`

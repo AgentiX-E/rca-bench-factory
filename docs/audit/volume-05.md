@@ -2352,3 +2352,68 @@ tests pin the numbers so the next proposal starts from them rather than from the
 | dispatches | none |
 | `core` / repo | **175 / 4283** · **178 / 4470** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 226 — "one change, one reading" was a habit, so it became a digest
+
+Findings 223 and 224 each ended with the same sentence: *one change, one reading*. Each time it was
+written by someone who had just paid a dispatch to learn it, and each time it was a habit — nothing
+in the repository could have stopped the next round from editing the prompt and reading the number
+afterwards, or from not reading it at all.
+
+This round turns it into a property. The prompt is a **value**: rendering it with a fixed placeholder
+incident and a fixed vocabulary produces a string, and that string has a digest.
+
+```
+sha256(render(prompt, 'placeholder incident text', ['cpu-saturation']))
+  = 05334666cde677b22d7246dccede5be2a5a5ac21f3587451cdbc0e77e4c0a8b6
+```
+
+The reading that produced the current number carries that digest, and
+`prompt-changes-are-measured.test.ts` requires the tree to render to it. Changing one character of one
+fragment fails the suite, and the failure is an instruction rather than a complaint:
+
+> the prompt in the tree is not the prompt that was measured. Either dispatch
+> fault-extraction-accuracy.yml, read the numbers and add the reading with status "current" and this
+> digest, or add a `pending` entry with this digest and a reason.
+
+Checked by mutation: one extra space in `FAULT_COMPONENT_RULE` turns it red with
+`47fbd0c8… != 05334666…`; restoring it turns it green and leaves `git diff` empty.
+
+### The second route is what makes it a gate rather than a wall
+
+A change can land before its run finishes. `pending` is that state, and it has two rules: it must say
+why it is unmeasured, and **its digest must not be the tree's** — a pending entry describing the text
+that is in the tree means either the run has happened (move it to a reading) or the entry is stale
+(delete it). So the two ways out are "measure it" and "say you have not", and silence is not one of
+them.
+
+### Why the rendered string and not the source
+
+Because the source is not what the model sees. `FAULT_COMPONENT_RULE` is one fragment among several
+that `buildFaultExtractionPrompt` assembles, and a change to the assembly is as much a prompt change
+as a change to a sentence. Hashing the rendered string with fixed arguments covers every fragment and
+the order they arrive in, with no list to maintain when a fragment is added.
+
+The control is in the same file: two vocabularies render two prompts with two digests, and so do two
+incident texts — a digest function that returned a constant would satisfy every other assertion here
+while saying nothing.
+
+### What the record had to say about the past
+
+The two reverted readings carry **no** digest, and the test says so explicitly rather than leaving it
+to be discovered: their texts were reverted before this gate existed and cannot be reconstructed. That
+is the honest state, and it is also why the gate had to be built now — the third experiment would have
+been reconstructible only if this had existed before it.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the digest | of the rendered prompt with fixed arguments; 05334666… for the text in the tree |
+| the assertion | the tree must equal the digest of the `current` reading |
+| the failure | names both digests and both routes |
+| the mutation | one extra space fails with 47fbd0c8…; restoring passes and leaves the tree clean |
+| the escape hatch | `pending` requires a reason and must not describe the tree's own text |
+| the control | the digest moves with the vocabulary and with the incident text |
+| `core` / repo | **176 / 4287** · **179 / 4474** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
