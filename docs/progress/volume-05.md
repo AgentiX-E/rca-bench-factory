@@ -1640,3 +1640,57 @@ coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–
   `order-service` in every reading so far. Its two annotations sit on opposite ends of the same link
   -- recorded in v2.42 as possibly inconsistent -- and re-annotating it must not happen in a round
   that would gain a point from it]`
+
+## v2.53 — the criterion alone: 20/30, milestone not met, reverted again
+
+v2.52 blamed the suffix clause for a bundle's loss and said so with the disclaimer that "obvious" is
+what this repository keeps getting wrong. This round tested it: the criterion **alone**, clause
+asserted absent, examples asserted unchanged.
+
+**Run `40054484628`: component 21/30, strict 20/30 (66.7%), `M1 exit condition: NOT MET`.**
+
+Both halves of the diagnosis were wrong.
+
+| the previous round believed | what the run showed |
+| --- | --- |
+| the clause caused the truncations | `order-events-consumer` still answered `order-events`, with no clause present |
+| the criterion would settle the two relationship samples | `ledger-writer` → `kafka-broker`, `currency-feed` → `settlement-service`, the pre-criterion answers |
+| one sample was "fixed" at 22/30 | it was noise; it moved again |
+
+Three readings of one field now sit in one record: **24/30, 22/30, 20/30**. The text that produced
+the first is back, restored from the commit; the other two are kept as measurements.
+
+**What the truncation actually is.** It happened with the clause and without it, so it is not an
+instruction the prompt gives — it is what the model does with a long slug for a component the
+incident names indirectly. A rule about spelling cannot fix it, and the last round spent a clause on
+it.
+
+**Cost, stated plainly.** Two dispatches bought three facts and no improvement, and the second took
+the milestone **below its exit condition** — the first time a prompt change here has done that. The
+cheaper option was to keep the criterion and tune it: it reads well, it fixed one sample once, and at
+22/30 it still cleared the bar. That is the case the record now exists to refuse.
+
+**Where the next attempt has to go.** Three prose revisions moved this field by −2, +0 and −4 strict
+samples against the same baseline. The remaining misses are *choices of entity* that a rule about
+entities has not changed. That is a mechanism problem, not a wording one: the next lever should
+constrain the **answer** — e.g. compose the component from tokens the incident's own text uses,
+enforced after parsing rather than requested in prose — and it must have its own reading.
+
+**Acceptance.** 4 tests in the second reverted block (prompt 45), 8 in the readings file; typecheck,
+lint, `docs:check` green; two consecutive full runs at **4279 passed**; component-rule battery 8/8,
+M1 ceiling 11/11 and 8/8; core **174 / 4279**, cli 4 / 187, repo **178 / 4466**; coverage 99.97 /
+99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–224.
+
+### Left open
+
+- **The prose lever is exhausted for this field.** `[open: three revisions have produced -2, 0 and -4
+  strict samples; none of the four remaining misses is a wording problem. The next change must
+  constrain the answer after parsing -- a token-overlap rule against the incident text -- or measure
+  something else entirely]`
+- **A regression that clears the bar is still a regression.** `[open: 22/30 passed every gate and met
+  the milestone. Nothing in the gates would have caught it; the record and the revert did, and both
+  were manual. Whether a cheap automatic check exists -- e.g. a scheduled dispatch that compares the
+  newest reading with the current one -- is an open design question]`
+- **The link pair remains the miss no rule produces.** `[open: `payment-gateway` has answered
+  `order-service` in every one of the six readings. Re-annotating it cannot happen in a round that
+  would gain a point from it]`

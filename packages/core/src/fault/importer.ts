@@ -245,13 +245,13 @@ const FAULT_TYPE_SHAPE_RULE =
  * component for exactly that reason, and a test asserts none of the 19 appears.
  */
 const FAULT_COMPONENT_RULE =
-  '`component` is the deployed workload whose own behaviour failed: name that ' +
-  'workload, not the product it runs on, not the entity it depends on, and not the ' +
-  'entity that depends on it. ' +
+  '`component` is the deployed workload that owns the fault, not the config ' +
+  'object, code symbol, upstream dependency or UI element involved in it. ' +
   'Name the service or workload you would page, as a lower-case hyphenated slug, ' +
   'e.g. `payments-api`, `search-indexer`, `session-store`. ' +
-  'Name it for what it does, and name the workload whose behaviour broke rather than ' +
-  'the job, operator or script that triggered the change.';
+  'Name it for what it does, not for the product it runs -- `queue-worker`, not ' +
+  '`queue-rabbitmq` -- and name the workload whose behaviour broke rather than the ' +
+  'job, operator or script that triggered the change.';
 
 
 /** Confidence below this threshold is flagged for extra reviewer scrutiny. */

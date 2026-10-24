@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { buildFaultExtractionPrompt } from '../src/fault/importer.js';
 import { parseFaultExtractionResponse } from '../src/fault/importer.js';
 import { normalizeFaultType } from '../src/fault/collector.js';
+import { M1_STRICT_THRESHOLD } from '../src/fault/extraction-scoring.js';
 import { FAULT_CATEGORIES } from '../src/ir/types.js';
 
 /** Two real labels: enough for the prompt to have an answer space, small enough to read. */
@@ -867,55 +868,77 @@ describe('the component rule names the product and the actor, which the exclusio
  * its own reading, which is the only way the next number is attributable.
  */
 /**
- * The criterion on its own, which is the only form that can be attributed.
+ * The criterion on its own: 20/30, and the milestone stopped being met.
  *
- * v2.52 changed three things at once — the criterion, a no-role-suffix clause, and the
- * examples — and lost two samples to a rule that was read as "remove suffixes". One run
- * cannot say which of the three cost what, so the revert was the whole bundle. This
- * round changes **one** thing: the two exclusion sentences become the criterion, and
- * nothing else moves. The suffix clause is asserted absent, and the example list is
- * asserted unchanged — including `session-store`, which is suspected of priming an
- * answer and is therefore a *separate* hypothesis that must be measured separately.
+ * v2.52 changed three things at once and lost two samples; the suffix clause took the
+ * blame, because truncation is what a "no suffix" clause would cause. So the criterion
+ * was tried **alone** — nothing else moved, and a test asserted that the clause was gone
+ * and the examples untouched — on the theory that the truncation would disappear and the
+ * two relationship misses would resolve.
  *
- * The prediction this test block supports, recorded before the run: the two relationship
- * misses (`ledger-writer` for the broker, `currency-feed` for the settlement) move; the
- * link pair, the `-service` suffix and the primed `session-store` do not; component 27/30,
- * strict 26/30.
+ * **Run `40054484628`: component 21/30, strict 20/30 (66.7%), M1 NOT met.**
+ *
+ * Both halves of that theory were wrong:
+ *
+ * - `order-events-consumer` still came back as `order-events`. The truncation was never
+ *   the clause's doing, and the previous round's diagnosis of it was wrong in the way that
+ *   only a second run can show.
+ * - `ledger-writer` answered `kafka-broker` and `currency-feed` answered
+ *   `settlement-service`, exactly as they had before the criterion existed. The one sample
+ *   that looked fixed at 22/30 was noise.
+ *
+ * That is the whole value of the two dispatches: the criterion is not the lever, and a
+ * diagnosis that a single run supports can be wrong in both directions at once. The text
+ * that produced 24/30 is restored again, and what is left of this line of work is here —
+ * as evidence rather than as a rule.
  */
-describe('the component criterion, with nothing else changed', () => {
-  const prompt = (): string => buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+describe('the component criterion alone measured 20/30 and was reverted too', () => {
+  const byRun = (run: number): ReturnType<typeof goldenReadings>[number] => {
+    const reading = goldenReadings().find((entry) => entry.run === run);
+    expect(reading, `run ${String(run)} is not in the record`).toBeDefined();
+    return reading as ReturnType<typeof goldenReadings>[number];
+  };
 
-  it('asks whose own behaviour failed', () => {
-    expect(prompt()).toMatch(/whose own behaviour failed/i);
+  it('records the totals, including that the milestone stopped being met', () => {
+    // The number the second revert rests on. 20/30 is below the published threshold, and
+    // the workflow said so in its own words; this asserts the same arithmetic.
+    const reading = byRun(40054484628);
+    expect(reading.totals).toEqual({ type: 29, category: 29, component: 21, strict: 20 });
+    expect(reading.totals.strict / reading.samples.length).toBeLessThan(M1_STRICT_THRESHOLD);
   });
 
-  it('names the three relationships, which are the shapes the question is confused with', () => {
-    for (const phrase of ['the product it runs on', 'the entity it depends on', 'the entity that depends on it']) {
-      expect(prompt(), `the criterion must exclude ${phrase}`).toContain(phrase);
-    }
+  it('shows the truncation happened without the suffix clause', () => {
+    // The measurement that falsified the previous diagnosis: the clause was absent from
+    // this prompt, and `order-events-consumer` still answered `order-events`.
+    const sample = byRun(40054484628).samples.find((entry) => entry.id === 'middleware-kafka-consumer-lag');
+    expect(sample?.expected.component).toBe('order-events-consumer');
+    expect(sample?.answered.component).toBe('order-events');
   });
 
-  it('carries no suffix clause, because that is the part that was measured to cost answers', () => {
-    // The discipline of this round, stated as an assertion: the clause is what turned
-    // `order-events-consumer` into `order-events`, and a criterion that arrives with it
-    // again is the same unattributable bundle.
-    expect(prompt()).not.toMatch(/role suffix/i);
+  it('shows the two relationship misses did not move, which is what the criterion was for', () => {
+    const reading = byRun(40054484628);
+    const broker = reading.samples.find((entry) => entry.id === 'middleware-queue-watermark-ledger-writer');
+    const feed = reading.samples.find((entry) => entry.id === 'dependency-schema-change-currency-feed');
+    expect(broker?.answered.component, 'the depends-on clause did not settle this sample').toBe('kafka-broker');
+    expect(feed?.answered.component, 'the depended-on-by clause did not settle this one either').toBe(
+      'settlement-service',
+    );
   });
 
-  it('leaves the example list alone, because the examples are a different hypothesis', () => {
-    // `session-store` is suspected of priming an answer and is *not* changed here. One
-    // change per run is the point; asserting the example list unchanged is what keeps the
-    // next round from bundling them again by accident.
-    const text = prompt();
-    for (const example of ['payments-api', 'search-indexer', 'session-store']) {
-      expect(text, `the example list moved: ${example} is gone`).toContain(example);
-    }
+  it('keeps the prompt at the text that measured best of the three', () => {
+    // The revert, again asserted rather than described. Three texts have now been measured
+    // -- 24/30, 22/30 and 20/30 -- and the one in the tree is the first.
+    const prompt = buildFaultExtractionPrompt('irrelevant incident text', VOCAB);
+    expect(prompt).toContain('the deployed workload that owns the fault');
+    expect(prompt).not.toMatch(/whose own behaviour failed/i);
   });
 });
 
 describe('the component criterion was measured and reverted', () => {
+  // By run id, not "the last row": two experiments have lost to the same text now, and a
+  // helper that read the last row would have silently moved to the second one.
   const latest = (): ReturnType<typeof goldenReadings>[number] =>
-    goldenReadings()[goldenReadings().length - 1] as ReturnType<typeof goldenReadings>[number];
+    goldenReadings().find((entry) => entry.run === 40049467914) as ReturnType<typeof goldenReadings>[number];
 
   it('records the run that tried it, and the totals it produced', () => {
     // The number the revert rests on. If the record is edited, this goes red before any

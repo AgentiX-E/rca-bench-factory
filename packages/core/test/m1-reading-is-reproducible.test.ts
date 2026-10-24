@@ -171,20 +171,25 @@ describe('M1’s readings are re-derivable from the repository', () => {
     }
   });
 
-  it('records the five readings in run order with the strict count each one produced', () => {
+  it('records the six readings in run order with the strict count each one produced', () => {
     // A record, not a formula: the progression 9 -> 13 -> 15 (on nineteen samples)
     // and 24 (on thirty) is the history the milestone rests on, and a change to it
     // is an event rather than an edit. Written as a list so a fifth reading is a
     // deliberate addition to a visible sequence.
-    // The fifth entry is the experiment that lost: 22/30 against the 24 it replaced, reverted
-    // rather than kept because its reasoning was better than its number (finding 223). A record
-    // that kept only the improvements would make every rule look like it worked.
+    // The last two entries are the experiments that lost: 22/30 against the 24 it replaced, reverted
+    // rather than kept because its reasoning was better than its number (finding 223), and 20/30
+    // for the criterion alone with the milestone no longer met (finding 224).
+    // Two entries are experiments that lost: 22/30 for a bundle of three changes, and 20/30
+    // for the criterion alone. Both are kept because a record that only held improvements
+    // would make every rule look like it worked -- and because the second falsifies the
+    // first's diagnosis, which is the only reason the pair is worth two dispatches.
     expect(file.readings.map((reading) => [reading.run, reading.key.size, reading.totals.strict])).toEqual([
       [39810137978, 19, 9],
       [39880043431, 19, 13],
       [39881192308, 19, 15],
       [39950191377, 30, 24],
       [40049467914, 30, 22],
+      [40054484628, 30, 20],
     ]);
   });
 
@@ -198,7 +203,7 @@ describe('M1’s readings are re-derivable from the repository', () => {
     expect(current[0]?.key.size).toBe(key.samples.length);
     expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(3);
     const reverted = file.readings.filter((reading) => reading.status === 'reverted');
-    expect(reverted, 'the record must carry the experiment that lost').toHaveLength(1);
+    expect(reverted, 'the record must carry both experiments that lost').toHaveLength(2);
     for (const reading of reverted) {
       // A reverted reading is a measurement, not a preference: it has to say what it
       // measured and why it was not kept, or it is an opinion with a run id.

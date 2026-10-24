@@ -2214,3 +2214,76 @@ did not fix `middleware-redis-latency-cache`, which now answers `session-redis`,
 | the batteries | component rule 8/8, M1 ceiling 11/11 and 8/8 — all caught after the revert |
 | `core` / repo | **173 / 4275** · **177 / 4462** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 224 — the criterion alone scored 20/30 and took the milestone below the bar
+
+Finding 223 reverted a bundle of three changes and named the suffix clause as the likely cost,
+with the disclaimer that "obvious" is what this repository has been wrong about before. This round
+tested that: the criterion alone, with the clause **asserted absent** and the example list
+**asserted unchanged**.
+
+**Run `40054484628`: component 21/30, strict 20/30 (66.7%), `M1 exit condition: NOT MET`.**
+
+Both halves of the diagnosis were wrong.
+
+| what the previous round believed | what the run showed |
+| --- | --- |
+| the suffix clause caused the truncations | `order-events-consumer` still answered `order-events`, with no clause in the prompt |
+| the criterion would settle the two relationship samples | `ledger-writer` answered `kafka-broker`, `currency-feed` answered `settlement-service` — the pre-criterion answers |
+| one sample was "fixed" at 22/30 | that single sample was noise; it moved again |
+
+Three readings of the same field now sit in one record: **24/30, 22/30, 20/30**. The text that
+produced the first is back in the tree, and the other two are kept as measurements.
+
+### What the truncation actually is
+
+`order-events-consumer` → `order-events` appeared at 22/30 with the clause, and at 20/30 without it.
+So it is not an instruction the prompt gives; it is what this model does with a long slug for a
+component the incident names indirectly. That distinction matters for the next attempt: a rule about
+spelling cannot fix it, and the previous round spent a clause on it.
+
+### Cost, stated plainly
+
+Two dispatches bought three facts and no improvement: the criterion is not the lever, the truncation
+is not clause-caused, and a single sample moving is not evidence of a fix. The second dispatch also
+**took the milestone below its exit condition** — the first time a prompt change in this sequence has
+done that — which is why the revert is not a judgement call.
+
+The alternative was to keep the criterion and tune it: it is a defensible-sounding rule, it fixed one
+sample once, and at 22/30 it still cleared the threshold. That is exactly the case the record now
+exists to refuse.
+
+### What the record holds
+
+| requirement | how |
+| --- | --- |
+| both failures are auditable | every total is recomputed from the rows, failed readings included |
+| the milestone arithmetic is re-derived | the 20/30 reading is asserted to be **below** the imported threshold |
+| the falsified diagnosis is pinned | the same sample is asserted to truncate with and without the clause |
+| the "fix" that was noise is named | the broker and feed answers are asserted at 20/30 |
+| only one reading is the tree's | exactly one `current`; two `reverted`, each with a reason and each scoring below it |
+
+### Where the next attempt has to go
+
+Three prose revisions have moved this field by −2, +0 and −4 strict samples against the same
+baseline. The remaining misses are *choices of entity* that a rule about entities has not changed —
+`order-service` for `payment-gateway`, `session-store` for `session-cache`, `settlement-service` for
+`currency-feed`. That is the shape of a mechanism problem rather than a wording problem: the prompt
+asks the model to name a workload and the model names the thing the text is about.
+
+The next lever should therefore constrain the **answer**, not describe it — for instance requiring
+the component to be composed from tokens the incident's own text uses, checked after parsing rather
+than requested in prose. That is a different kind of change with its own reading, and it is not made
+here: this round's job was to close a line of work with evidence rather than leave it half-tried.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the reading | 20/30, `M1 NOT MET`, recorded with `status: reverted` and a reason |
+| the revert | byte-identical text from the commit that produced 24/30; the criterion asserted absent |
+| the record | six readings, two reverted, one current |
+| the tests | 4 in the second reverted block (prompt 45), 8 in `m1-reading-is-reproducible.test.ts` |
+| the batteries | component rule 8/8, M1 ceiling 11/11 and 8/8 — all caught |
+| `core` / repo | **174 / 4279** · **178 / 4466** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
