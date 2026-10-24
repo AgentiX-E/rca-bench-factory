@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **176 files, 4295 tests passed** (as of this commit) |
+| `core` test suite | **178 files, 4348 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **180 files, 4482 tests passed** (as of this commit) |
+| repo test suite | **182 files, 4535 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1897,3 +1897,77 @@ distinct); three consecutive full runs at **4295 passed**; typecheck, lint, `doc
   from an artefact by hand. `derive-fault-golden.mjs` writes the artefact; a small `--reading` mode that
   writes the record entry too would remove the transcription step, which is where a wrong number would
   come from]`
+
+## v2.58 — the record is derived from the artefact, and one absence turned out to be false
+
+v2.57 closed with the transcription left open:
+
+> **The record's own arithmetic is still hand-made.** `[open: each reading's samples are transcribed
+> from an artefact by hand … a small `--reading` mode that writes the record entry too would remove
+> the transcription step, which is where a wrong number would come from]`
+
+Before writing that tool, the six transcripts were checked against the six artefacts, because a
+transcription tool tested against a transcription measures nothing: if the record is wrong and the
+tool agrees with it, the tool is a second copy of the error.
+
+**All six agreed, field for field.** And the seventh — the run that had been sitting in `absent` for
+five rounds with the reason *"its artefact was not retained"* — had its artefact on the server the
+whole time. GitHub keeps a workflow artefact for ninety days; that run was three weeks old. Downloaded
+and derived, it produces `type 4, category 11, component 14, strict 2`, which is exactly the figure
+the record had been quoting from memory since v2.20.
+
+So `absent` is empty, that run is now the first entry in `readings.json`, and the assertion that used
+to read `absent.length > 0` reads `toEqual([])` — an equality on the whole list, so re-adding an entry
+is a test failure rather than an edit.
+
+**The tool.** `scripts/record-reading.mjs` writes an entry from an artefact, or checks an existing one
+against the artefact it names. `--check` is the half that can be run against history, and it is what
+produced the table above. The arithmetic lives in `packages/core/src/fault/reading-record.ts`:
+
+| what | who supplies it |
+| --- | --- |
+| `key.digest`, `totals`, the rows | derived — the last is in the key's order, not the run's |
+| `promptDigest` | the caller — the digest of the text that *was* measured |
+| `promptChange`, `status` | the caller — prose, and a claim about the tree |
+
+Entries are placed by run id rather than appended, because the record's contract is run order and
+this tool's first real use was backfilling a run older than every entry in the file. Three refusals
+are deliberate: a run already recorded, a run named in `absent` (a run cannot be both), and a run that
+is not wholly graded.
+
+**That last one is a constraint the record's shape cannot express, written down for the first time.** A
+reading counts hits; every reader divides by `samples.length`. The scorer divides `strict` by the
+**graded** count. One unparseable response makes those two numbers disagree — `24/29` against
+`24/30` — and every reading so far has been wholly graded, which is why it has never shown. A run with
+unusable samples is a pipeline finding and belongs in `pending`, not in a reading that would contradict
+the report it preserves.
+
+**Three defects of this round, each caught by a measurement rather than by reading.** Five test
+invocations omitted `--check` and measured the derive path instead — the exit-code assertion caught
+it. `derive-gate-sites.mjs` attributed the refusal exit to the `absent` guard nine lines away, because
+a top-level `try`/`catch` gives it no condition — fixed by returning `{ ok }` and testing that, so the
+published condition is `!derived.ok`. And the module shipped at **97.53 / 88.70** with lines 120–124
+unexecuted; four cases closed it to **100 ×4**, which a 99.9 threshold would have hidden.
+
+**Acceptance.** 30 tests over the derivation, 20 over the command; typecheck, lint green;
+`derive-gate-sites --check` green (78 sites, 45 scripts); the meta-gate at **45 gates, 45 caught, 0
+survived** -- hollowing `record-reading.mjs` turns 38 tests red in 1 of 3 naming files; three
+consecutive full runs at **4348 passed**; core **178 / 4348**, cli 4 / 187, repo **182 / 4535**;
+coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–229.
+
+### Left open
+
+- **`audit/volume-03.md` is 107 bytes from its limit, and it is not the newest volume.** `[open: the
+  guard prints `largest 279,893 of 280,000`, and this round first attributed that number to
+  volume-05 -- the volume being written -- and wrote the claim down before checking it. The largest
+  is volume-03, at 279,893; volume-05 is 153,926 and has room for four more findings. So the split
+  is needed and the object is the third volume: an index plus a sixth volume, with the budget rule
+  that produced the number deciding the boundary rather than whoever writes the next one]`
+- **The tracker's volumes are at half their budget.** `[open: 102,903 / 92,355 / 127,029 / 121,054 /
+  121,095 of 200,000 bytes, index 74,381 of the smallest volume. Nothing here is near a limit, which
+  is why the audit's split is the one to do first -- and why the tracker's is a formatting decision
+  rather than a forced one]`
+- **Nothing forces the new tool to be run.** `[open: `record-reading.mjs` needs a token and a network,
+  so like the reconciler it is a tool and not a gate. A scheduled workflow that opens an issue when an
+  artefact is about to expire would close the ninety-day half of it -- the download could happen
+  before the evidence goes]`

@@ -636,6 +636,27 @@ export type {
   UnusableSample,
 } from './fault/extraction-scoring.js';
 
+// The record's transcription step, as code. `readings.json` was written by hand from a
+// workflow artefact for six readings; a row typed wrongly is self-consistent, and the file
+// it was copied from is on a blob host. Exported so `scripts/record-reading.mjs` derives the
+// entry instead of composing it, and so the two derived fields -- `key.digest` and `totals` --
+// have no path from a human's keyboard.
+export {
+  assembleReading,
+  compareReadingToArtefact,
+  digestExpectedColumn,
+} from './fault/reading-record.js';
+export type {
+  AssembleReadingRequest,
+  ReadingAnswer,
+  ReadingDifference,
+  ReadingEntry,
+  ReadingField,
+  ReadingSample,
+  ReadingStatus,
+  ReadingTotals,
+} from './fault/reading-record.js';
+
 export {
   MISS_DETAIL_TITLE,
   isTruncated,

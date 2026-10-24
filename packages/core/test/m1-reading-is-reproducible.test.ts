@@ -179,19 +179,24 @@ describe('M1’s readings are re-derivable from the repository', () => {
     }
   });
 
-  it('records the six readings in run order with the strict count each one produced', () => {
-    // A record, not a formula: the progression 9 -> 13 -> 15 (on nineteen samples)
-    // and 24 (on thirty) is the history the milestone rests on, and a change to it
-    // is an event rather than an edit. Written as a list so a fifth reading is a
-    // deliberate addition to a visible sequence.
-    // The last two entries are the experiments that lost: 22/30 against the 24 it replaced, reverted
-    // rather than kept because its reasoning was better than its number (finding 223), and 20/30
-    // for the criterion alone with the milestone no longer met (finding 224).
-    // Two entries are experiments that lost: 22/30 for a bundle of three changes, and 20/30
-    // for the criterion alone. Both are kept because a record that only held improvements
-    // would make every rule look like it worked -- and because the second falsifies the
-    // first's diagnosis, which is the only reason the pair is worth two dispatches.
+  it('records all seven readings in run order with the strict count each one produced', () => {
+    // A record, not a formula: 2 -> 9 -> 13 -> 15 on nineteen samples, then 24 on thirty, is
+    // the history the milestone rests on, and a change to it is an event rather than an edit.
+    // Written as a list so an eighth reading is a deliberate addition to a visible sequence.
+    //
+    // The first entry arrived last. It sat in `absent` for five rounds with the reason "its
+    // artefact was not retained", and GitHub had kept it all along (finding 229): the run is
+    // three weeks old and retention is ninety days. `record-reading.mjs` downloaded it, derived
+    // 2/19 from it, and agreed with the number this file had been quoting from memory.
+    //
+    // The last two entries are the experiments that lost: 22/30 against the 24 it replaced,
+    // reverted rather than kept because its reasoning was better than its number (finding 223),
+    // and 20/30 for the criterion alone with the milestone no longer met (finding 224). Both are
+    // kept because a record that only held improvements would make every rule look like it
+    // worked -- and because the second falsifies the first's diagnosis, which is the only reason
+    // the pair is worth two dispatches.
     expect(file.readings.map((reading) => [reading.run, reading.key.size, reading.totals.strict])).toEqual([
+      [39806875985, 19, 2],
       [39810137978, 19, 9],
       [39880043431, 19, 13],
       [39881192308, 19, 15],
@@ -209,7 +214,7 @@ describe('M1’s readings are re-derivable from the repository', () => {
     const current = file.readings.filter((reading) => reading.status === 'current');
     expect(current).toHaveLength(1);
     expect(current[0]?.key.size).toBe(key.samples.length);
-    expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(3);
+    expect(file.readings.filter((reading) => reading.status === 'old-key')).toHaveLength(4);
     const reverted = file.readings.filter((reading) => reading.status === 'reverted');
     expect(reverted, 'the record must carry both experiments that lost').toHaveLength(2);
     for (const reading of reverted) {
@@ -225,18 +230,20 @@ describe('M1’s readings are re-derivable from the repository', () => {
     }
   });
 
-  it('names the reading it could not re-derive instead of reconstructing it', () => {
-    // The first reading (strict 2/19) predates the vocabulary and its artefact was
-    // not kept. A file that invented its rows would be the defect this file exists
-    // to prevent, so the gap is a record with a reason -- and every entry in it is
-    // required to have one.
-    expect(file.absent.length).toBeGreaterThan(0);
-    for (const entry of file.absent) {
-      expect(entry.why.length, `run ${String(entry.run)} is absent without a reason`).toBeGreaterThan(40);
-      expect(file.readings.some((reading) => reading.run === entry.run), 'an absent run must not also be present').toBe(
-        false,
-      );
-    }
+  it('has no reading it cannot re-derive, having found the artefact it once called lost', () => {
+    // This assertion used to be its own opposite: `absent.length > 0`, with run 39806875985
+    // named as the reading whose artefact was gone. It was not gone. GitHub keeps a workflow
+    // artefact for ninety days and the run was three weeks old, so `record-reading.mjs`
+    // downloaded it in one command, derived 2/19 from it, and matched the figure the record had
+    // been carrying as an unattributed number for five rounds (finding 229).
+    //
+    // The list stays in the schema rather than being removed with its last member:
+    // `reconcile-readings.mjs` still accepts an `absent` entry as a way to account for a run,
+    // and that route has to stay open for the run whose artefact really has expired. What this
+    // asserts is that nothing is currently using it -- and because it is an equality on the whole
+    // list, adding an entry fails here, which makes it a deliberate act rather than an edit
+    // somebody makes while looking at something else.
+    expect(file.absent, 'every run in scope can be re-derived from its artefact').toEqual([]);
   });
 
   it('keeps the best text any run has scored on this key, not merely a passing one', () => {

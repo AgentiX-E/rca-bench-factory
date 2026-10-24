@@ -99,6 +99,17 @@ const REGISTER: Record<string, Entry> = {
       'tree that spawns it, because the live form needs a token and a network.',
   },
 
+  'record-reading.mjs': {
+    class: 'gate',
+    why:
+      'It exits 3 when a run cannot be recorded as it stands, 2 when a recorded reading disagrees with ' +
+      'the artefact it names, and 1 when it cannot read its inputs, so it is a gate by the inventory ' +
+      'rule. `record-reading.test.ts` spawns it for every exit it owns. It is also the only script that ' +
+      'writes `readings.json`, which is why its refusals matter more than its successes: a second entry ' +
+      'for one run, or an entry for a run the file calls unreadable, would leave the evidence the M1 ' +
+      'milestone rests on disagreeing with itself.',
+  },
+
   // --- Gates: each has failure exits, all enumerated in gate-sites.json ---
   'apply-pins.mjs': { class: 'gate' },
   'build-example-bundle.mjs': { class: 'gate' },

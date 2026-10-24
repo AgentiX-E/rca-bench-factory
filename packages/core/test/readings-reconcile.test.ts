@@ -109,7 +109,7 @@ describe('scripts/reconcile-readings.mjs · a successful run with no record entr
     expect(result.out).toContain('UNRECORDED 2002');
     expect(result.out).toContain('2026-10-24T00:00:00Z');
     expect(result.out).toContain('abcdef01');
-    expect(result.out).toContain('add the reading with its totals and promptDigest');
+    expect(result.out).toContain('Read the artefact with `record-reading.mjs --write`');
   });
 
   it('does not ask for a record entry for a failed run, which has no numbers', () => {
@@ -157,12 +157,18 @@ describe('scripts/reconcile-readings.mjs · a successful run with no record entr
   });
 
   it('says which way to fix an unrecorded run, including the route for a lost artefact', () => {
-    // The message is the instruction. `absent` is a real route -- run 39806875985 uses it -- and
-    // a tool that only said "record it" would push a reader toward inventing numbers.
+    // The message is the instruction, and it now names the command that does the work:
+    // `record-reading.mjs --write` derives the entry from the artefact, which is what replaced the
+    // transcription this message used to assume.
+    //
+    // `absent` stays in the message because it is a real route -- no run is using it today, and
+    // the one that did (39806875985) turned out to have a readable artefact the whole time
+    // (finding 229) -- and a tool that only said "record it" would push a reader toward inventing
+    // numbers for the run whose artefact really has expired.
     const readings = recordWith([]);
     const runs = runsPayload([{ id: 4004, conclusion: 'success' }]);
     const result = run(['--runs', runs, '--readings', readings]);
     expect(result.status).toBe(3);
-    expect(result.out).toContain('name it in `absent`');
+    expect(result.out).toContain('name the run in `absent`');
   });
 });

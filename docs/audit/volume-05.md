@@ -2545,3 +2545,164 @@ would make the suite depend on the network it exists to measure.
 | the register | classified `gate` with the reason both exits exist |
 | `core` / repo | **177 / 4295** · **180 / 4482** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 229 — the record said the evidence was gone, and the evidence was on the server
+
+Finding 228 closed with two open items, and the sharper one was this:
+
+> **The record's own arithmetic is still hand-made.** `[open: each reading's samples are transcribed
+> from an artefact by hand. `derive-fault-golden.mjs` writes the artefact; a small `--reading` mode
+> that writes the record entry too would remove the transcription step, which is where a wrong number
+> would come from]`
+
+This round went to do that, and the first move was not to write code: it was to download the six
+artefacts and compare them to the six readings. The reason is that a transcription tool cannot be
+tested against a transcription — if the record is wrong and the tool agrees with it, the tool is a
+second copy of the error. So the record was checked against the thing it claims to describe, for the
+first time.
+
+### Six for six, and one absence that was not one
+
+| run | key | samples compared | disagreements |
+| --- | --- | --- | --- |
+| 39806875985 | 19 | 19 | — *the reading did not exist yet* |
+| 39810137978 | 19 | 19 | 0 |
+| 39880043431 | 19 | 19 | 0 |
+| 39881192308 | 19 | 19 | 0 |
+| 39950191377 | 30 | 30 | 0 |
+| 40049467914 | 30 | 30 | 0 |
+| 40054484628 | 30 | 30 | 0 |
+
+Six transcripts, **zero disagreements**. That is a good result and it is not a defence: it is a fact
+about six files typed by one person on six afternoons, and it cannot say anything about the seventh.
+
+The absence is the interesting row. Run `39806875985` was not in the readings at all — it sat in
+`absent` with this reason:
+
+> the first reading, strict 2/19 with type 4/19, taken before the vocabulary existed. **Its artefact
+> was not retained**, so it is named here rather than reconstructed: a number this file cannot
+> re-derive is not evidence, and the audit log is where an unattributed figure belongs.
+
+That reasoning is sound and this repository should keep making it. The premise was false. GitHub
+retains a workflow artefact for **ninety days**; the run was three weeks old; the artefact was on the
+server, 3,977 bytes, not expired. It downloaded in one command.
+
+Derived from the nineteen-sample key and that artefact:
+
+```
+type 4, category 11, component 14, strict 2
+```
+
+Which is *exactly* the figure the record had been quoting from memory for five rounds — and now it
+is arithmetic. The run is the first entry in `readings.json`, `status: old-key`, `key.digest`
+`b7816166…` (the same digest the other three nineteen-sample readings carry, which is how the
+sixteen-month-old key and this run were confirmed to be the same key).
+
+**What was done with the claim.** `absent` is now an empty list, and the assertion that used to read
+`absent.length > 0` reads `toEqual([])`. It is an equality on the whole list rather than a length
+check, so re-adding an entry fails a test — the mechanism stays in the schema, because
+`reconcile-readings.mjs` still accepts it as a way to account for a run and the route has to stay
+open for the run whose artefact really has expired.
+
+### The tool: two numbers with no path from a keyboard
+
+`scripts/record-reading.mjs` derives an entry from an artefact and writes it, or checks an entry that
+is already recorded against the artefact it names. The arithmetic lives in
+`packages/core/src/fault/reading-record.ts`, because a script cannot be imported by the suite that
+would prove it.
+
+| what | who supplies it |
+| --- | --- |
+| `key.digest` | derived — `id\|type\|category\|component`, sorted, newline-terminated |
+| `totals` | derived — counted from the rows it just wrote |
+| the rows | derived — the key's order, not the order the run happened to answer in |
+| `promptDigest` | **the caller** — the digest of the text that was *measured*, which the tree may have moved past |
+| `promptChange`, `status` | **the caller** — prose, and a claim about the tree |
+
+`promptDigest` is the one that had to stay human, and the reason is the whole point of the digest
+gate: a tool that computed it from the current tree would record what is true now under the name of
+what was true then.
+
+Rows follow the key, not the artefact. The artefact's order is the order requests were made in — a
+fact about the run; the record's order is the key's — a fact about the content. Entries are placed by
+run id for the same reason: the record's contract is run order, and this tool was written to backfill
+a run older than every entry in the file.
+
+### The constraint the record's shape cannot express, written down for the first time
+
+A reading counts hits. Nothing in it carries a denominator, so every reader — the test that
+recomputes the totals, the human reading the table — divides by `samples.length`. The scorer does not:
+`buildExtractionReport` divides `strict` by the number of **graded** samples. A run with one
+unparseable response reports `strict 24/29`; the same answers recorded as a reading recompute to
+`24/30`. Both are true of different things, and the record can only hold the second.
+
+Every reading so far has been wholly graded, which is why the two have never disagreed in public.
+`assembleReading` therefore **refuses** a run that is not wholly graded and names the samples that
+stopped it:
+
+```
+record-reading: this run is not a reading: bravo (unparseable) did not reach a scoreable answer.
+The scorer divides strict by the graded count and a record entry divides it by the row count, so
+writing this one would produce a total that disagrees with the report it preserves.
+```
+
+A run with unusable samples is a pipeline finding. It belongs in the report and in `pending`, not in
+a reading that would disagree with the report it claims to preserve.
+
+### Four defects this round produced, and how each was caught
+
+**1. Five test invocations omitted `--check`.** The script fell through to its *derive* path, which
+then asked for `--status`, and the test expecting exit `2` got exit `1` with a message about a
+different question. The assertion caught it — but only because the exit codes differ. A suite whose
+branches share an exit code would have measured the wrong path and passed.
+
+**2. `derive-gate-sites.mjs` attributed the refusal exit to the wrong condition.** The exit sits in a
+top-level `try`/`catch`, so the deriver took the nearest preceding `if` — the `absent` guard, nine
+lines away and about an unrelated question — and published `condition: namedAbsent` for an exit that
+fires when a run cannot be recorded. Fixed by returning a decision (`{ ok }`) and testing it, so the
+condition is `!derived.ok` because the code says so:
+
+```
+scripts/record-reading.mjs:291  !derived.ok  record-reading: ${derived.reason}
+```
+
+**3. The module shipped at 97.53% statements and 88.70% branches.** Three of the four
+"this sample states no field" arms were unexecuted, and so was the partial-answer normalisation.
+Measured, not assumed: the coverage table named lines 120–124. Closed with four cases — three missing
+fields across two functions, a partial answer, a row with no `type` at all, and an unparsed extra
+sample — and the module is now **100 / 100 / 100 / 100**.
+
+The third one matters for the method rather than the code: a threshold of 99.9 would have hidden
+eleven unexecuted branches, and the only reason they were visible is that the table prints the
+per-file column.
+
+**4. This round wrote a false number into two documents before checking it.** The volume guard prints
+`largest 279,893 of 280,000 bytes`, and the first draft of the open list attributed that figure to
+`volume-05` -- the volume being written, and the one whose size was on the author's mind. It is
+`volume-03`: `volume-05` is 153,926 and has room for four more findings. The claim was caught by
+`wc -c` five minutes later, and it is the same shape as everything else in this series -- **a number
+that was read next to its subject, not about it** -- which is why it is written here rather than
+quietly corrected. The open list now states both figures and says which volume the split is for.
+
+### What it still cannot do
+
+- **Nothing forces the tool to be run.** It needs a token and a network, so it is not a gate. The
+  same limit finding 228 recorded for the reconciler, one level down.
+- **In ninety days the artefacts really will be gone.** The `absent` route is not vestigial; it is
+  what this record will need for every reading taken before a habit of downloading exists.
+- **The record still cannot say "the denominator was smaller than the key."** The refusal above is
+  the honest alternative, not a solution.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the record against its artefacts | 7 readings, **0 disagreements**, every sample and every total |
+| the recovered reading | `39806875985`: type 4 / category 11 / component 14 / strict 2, derived from the artefact |
+| `absent` | empty, asserted by equality so re-adding an entry fails |
+| the derivation | 30 tests over the module, 20 over the command; every exit the script owns is driven |
+| the sites | 3 new sites annotated `proved`; `derive-gate-sites --check` green (78 sites, 45 scripts) |
+| the meta-gate | **45 gates, 45 caught, 0 survived**; hollowing `record-reading.mjs` turns 38 tests red in 1 of 3 naming files |
+| the register | `record-reading.mjs` classified `gate` with the reason both failure exits exist |
+| coverage | module **100 / 100 / 100 / 100**; package **99.97 / 99.74 / 100 / 99.97** |
+| `core` / repo | **178 / 4348** · **182 / 4535** |

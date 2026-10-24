@@ -122,8 +122,8 @@ if (unrecorded.length > 0) {
   console.error(
     `reconcile-readings: ${String(unrecorded.length)} successful run(s) of ${WORKFLOW} since id ` +
       `${String(since)} are not in the record. ` +
-      'Read the artefact, add the reading with its totals and promptDigest, or name it in `absent` ' +
-      'with the reason it cannot be read -- the second is how run 39806875985 is handled.',
+      'Read the artefact with `record-reading.mjs --write`, or name the run in `absent` with the ' +
+      'reason it cannot be read -- that route exists for the run whose artefact has really expired.',
   );
   process.exit(3);
 }

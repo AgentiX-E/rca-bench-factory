@@ -1,8 +1,8 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 57,
+  "scanned": 58,
   "excluded": {
-    "zero": 8,
+    "zero": 11,
     "indirect": 3,
     "multiline": 0
   },
@@ -424,6 +424,29 @@
       "diagnostic": "reconcile-readings: ${String(unrecorded.length)} successful run(s) of ${WORKFLOW} since id",
       "status": "proved",
       "provedBy": "packages/core/test/readings-reconcile.test.ts"
+    },
+    {
+      "script": "scripts/record-reading.mjs",
+      "line": 69,
+      "diagnostic": "usage: node scripts/record-reading.mjs --run <id> --artefact <dir|file>",
+      "status": "proved",
+      "provedBy": "packages/core/test/record-reading.test.ts"
+    },
+    {
+      "script": "scripts/record-reading.mjs",
+      "line": 244,
+      "condition": "differences.length > 0",
+      "diagnostic": "record-reading: run ${String(args.run)} in the record disagrees with its artefact in",
+      "status": "proved",
+      "provedBy": "packages/core/test/record-reading.test.ts"
+    },
+    {
+      "script": "scripts/record-reading.mjs",
+      "line": 291,
+      "condition": "!derived.ok",
+      "diagnostic": "record-reading: ${derived.reason}",
+      "status": "proved",
+      "provedBy": "packages/core/test/record-reading.test.ts"
     },
     {
       "script": "scripts/score-fault-extraction.mjs",

@@ -8,6 +8,271 @@
   ],
   "readings": [
     {
+      "run": 39806875985,
+      "model": "deepseek-flash",
+      "promptChange": "the first measurement of the channel, taken before the type vocabulary existed",
+      "key": {
+        "size": 19,
+        "digest": "b78161663a3807692b2960d556ba80263ab979bb355ee4c3526ec0cb4be50d8e"
+      },
+      "totals": {
+        "type": 4,
+        "category": 11,
+        "component": 14,
+        "strict": 2
+      },
+      "status": "old-key",
+      "samples": [
+        {
+          "id": "resource-cpu-saturation-checkout",
+          "expected": {
+            "type": "cpu-saturation",
+            "category": "resource",
+            "component": "checkout-api"
+          },
+          "answered": {
+            "type": "cpu-throttling",
+            "category": "resource",
+            "component": "checkout-api"
+          }
+        },
+        {
+          "id": "resource-memory-leak-recommendation",
+          "expected": {
+            "type": "memory-leak",
+            "category": "resource",
+            "component": "recommendation-service"
+          },
+          "answered": {
+            "type": "unbounded-cache-growth",
+            "category": "code",
+            "component": "recommendation-service"
+          }
+        },
+        {
+          "id": "resource-disk-full-log-collector",
+          "expected": {
+            "type": "disk-full",
+            "category": "resource",
+            "component": "log-collector"
+          },
+          "answered": {
+            "type": "disk-space-exhaustion",
+            "category": "resource",
+            "component": "log-collector"
+          }
+        },
+        {
+          "id": "network-delay-cart-to-inventory",
+          "expected": {
+            "type": "network-delay",
+            "category": "network",
+            "component": "cart-service"
+          },
+          "answered": {
+            "type": "network-delay",
+            "category": "network",
+            "component": "inventory-service"
+          }
+        },
+        {
+          "id": "network-loss-payment-gateway",
+          "expected": {
+            "type": "network-loss",
+            "category": "network",
+            "component": "payment-gateway"
+          },
+          "answered": {
+            "type": "network-packet-drop",
+            "category": "network",
+            "component": "order-service"
+          }
+        },
+        {
+          "id": "network-partition-search-cluster",
+          "expected": {
+            "type": "network-partition",
+            "category": "network",
+            "component": "search-cluster"
+          },
+          "answered": {
+            "type": "network-partition",
+            "category": "network",
+            "component": "search-cluster"
+          }
+        },
+        {
+          "id": "runtime-pod-kill-user-profile",
+          "expected": {
+            "type": "pod-kill",
+            "category": "runtime",
+            "component": "user-profile"
+          },
+          "answered": {
+            "type": "kubelet-eviction",
+            "category": "resource",
+            "component": "user-profile"
+          }
+        },
+        {
+          "id": "runtime-container-crash-loop-media",
+          "expected": {
+            "type": "container-crash",
+            "category": "runtime",
+            "component": "media-transcoder"
+          },
+          "answered": {
+            "type": "segmentation-fault",
+            "category": "dependency",
+            "component": "media-transcoder"
+          }
+        },
+        {
+          "id": "middleware-redis-latency-cache",
+          "expected": {
+            "type": "redis-latency",
+            "category": "middleware",
+            "component": "session-cache"
+          },
+          "answered": {
+            "type": "cpu-saturation",
+            "category": "resource",
+            "component": "session-redis"
+          }
+        },
+        {
+          "id": "middleware-kafka-consumer-lag",
+          "expected": {
+            "type": "kafka-consumer-lag",
+            "category": "middleware",
+            "component": "order-events-consumer"
+          },
+          "answered": {
+            "type": "synchronous-call-overhead",
+            "category": "code",
+            "component": "order-events-consumer"
+          }
+        },
+        {
+          "id": "middleware-database-connection-pool",
+          "expected": {
+            "type": "database-connection-pool-exhaustion",
+            "category": "middleware",
+            "component": "billing-service"
+          },
+          "answered": {
+            "type": "connection-pool-deadlock",
+            "category": "code",
+            "component": "billing-service"
+          }
+        },
+        {
+          "id": "code-null-dereference-reporting",
+          "expected": {
+            "type": "null-dereference",
+            "category": "code",
+            "component": "reporting-service"
+          },
+          "answered": {
+            "type": "null-pointer-dereference",
+            "category": "code",
+            "component": "reporting-service"
+          }
+        },
+        {
+          "id": "code-unhandled-exception-export",
+          "expected": {
+            "type": "unhandled-exception",
+            "category": "code",
+            "component": "export-worker"
+          },
+          "answered": {
+            "type": "unhandled-exception",
+            "category": "code",
+            "component": "export-worker"
+          }
+        },
+        {
+          "id": "code-slow-regex-api-gateway",
+          "expected": {
+            "type": "regex-catastrophic-backtracking",
+            "category": "code",
+            "component": "api-gateway"
+          },
+          "answered": {
+            "type": "regex-catastrophic-backtracking",
+            "category": "config",
+            "component": "api-gateway"
+          }
+        },
+        {
+          "id": "config-datasource-url-orders",
+          "expected": {
+            "type": "config-mismatch",
+            "category": "config",
+            "component": "order-service"
+          },
+          "answered": {
+            "type": "stale-config-key",
+            "category": "config",
+            "component": "order-service"
+          }
+        },
+        {
+          "id": "config-feature-flag-checkout",
+          "expected": {
+            "type": "feature-flag-misconfiguration",
+            "category": "config",
+            "component": "storefront"
+          },
+          "answered": {
+            "type": "wrong-feature-flag-toggle",
+            "category": "config",
+            "component": "feature-flag-scheduler"
+          }
+        },
+        {
+          "id": "dependency-upstream-5xx-pricing",
+          "expected": {
+            "type": "upstream-5xx",
+            "category": "dependency",
+            "component": "tax-calculation"
+          },
+          "answered": {
+            "type": "upstream-dependency-degradation",
+            "category": "dependency",
+            "component": "pricing-service"
+          }
+        },
+        {
+          "id": "dependency-version-incompatibility-shipping",
+          "expected": {
+            "type": "library-version-incompatibility",
+            "category": "dependency",
+            "component": "shipping-service"
+          },
+          "answered": {
+            "type": "dependency-breaking-change",
+            "category": "dependency",
+            "component": "shipping-service"
+          }
+        },
+        {
+          "id": "middleware-mysql-replica-lag-analytics",
+          "expected": {
+            "type": "replica-lag",
+            "category": "middleware",
+            "component": "analytics-replica"
+          },
+          "answered": {
+            "type": "replica-applier-thread-saturation",
+            "category": "resource",
+            "component": "analytics-replica"
+          }
+        }
+      ]
+    },
+    {
       "run": 39810137978,
       "model": "deepseek-flash",
       "promptChange": "the type vocabulary is stated in the prompt and enforced by the parser",
@@ -2031,12 +2296,7 @@
       "statusWhy": "strict fell from 24/30 to 20/30 and the M1 exit condition stopped being met, so the criterion is not the lever the previous run suggested -- and the truncation it was blamed for happened without the suffix clause, which is measured here (finding 224)"
     }
   ],
-  "absent": [
-    {
-      "run": 39806875985,
-      "why": "the first reading, strict 2/19 with type 4/19, taken before the vocabulary existed. Its artefact was not retained, so it is named here rather than reconstructed: a number this file cannot re-derive is not evidence, and the audit log is where an unattributed figure belongs."
-    }
-  ],
+  "absent": [],
   "superseded": [
     {
       "id": "middleware-cache-shard-product-cache",

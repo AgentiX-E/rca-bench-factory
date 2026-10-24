@@ -131,6 +131,7 @@ const ENUMERATED_MODULES = [
   'fault/collector.ts',
   'fault/extraction-scoring.ts',
   'fault/miss-detail.ts',
+  'fault/reading-record.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -629,6 +630,13 @@ const TESTED = [
   // in the report; `extraction-diagnostics.test.ts` is the test that drives both.
   'FAILURE_EXCERPT_LIMIT',
   'describeExtractionFailure',
+  // fault/reading-record.ts -- finding 229, the transcription step as code. The record's
+  // two derived fields (key.digest, totals) have no path from a keyboard, and
+  // `reading-record.test.ts` is what pins the derivation; `record-reading.test.ts` drives
+  // the command that writes the file.
+  'assembleReading',
+  'compareReadingToArtefact',
+  'digestExpectedColumn',
   // fault/miss-detail.ts -- finding 92, reading the published miss detail back.
   'MISS_DETAIL_TITLE',
   'isTruncated',
