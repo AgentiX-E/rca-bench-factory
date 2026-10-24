@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **173 files, 4279 tests passed** (as of this commit) |
+| `core` test suite | **174 files, 4283 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **177 files, 4466 tests passed** (as of this commit) |
+| repo test suite | **178 files, 4470 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -1694,3 +1694,59 @@ M1 ceiling 11/11 and 8/8; core **174 / 4279**, cli 4 / 187, repo **178 / 4466**;
 - **The link pair remains the miss no rule produces.** `[open: `payment-gateway` has answered
   `order-service` in every one of the six readings. Re-annotating it cannot happen in a round that
   would gain a point from it]`
+
+## v2.54 — the mechanism was refuted before it was built
+
+v2.53 closed the prose line of work and proposed the next lever: **constrain the answer**, the shape
+that took `type` from 4/19 to 17/19 when an answer space replaced a convention. This round measured
+that proposal against the key and the five recorded readings **before writing any of it and before
+spending a dispatch**. It does not survive.
+
+**Ground one — a candidate list caps the ceiling at 25/30.** The natural extraction is runs of
+adjacent words joined by a hyphen, which is how every expected component is spelled: **25 of 30**
+are recoverable. The five that are not include three of the hardest samples —
+
+| sample | expected | how the text says it |
+| --- | --- | --- |
+| `network-delay-cart-to-inventory` | `cart-service` | "Cart-to-inventory calls" — the caller, never a run |
+| `middleware-redis-latency-cache` | `session-cache` | "the session Redis" — the store sits between the words |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | "Consumer group order-events" — reversed |
+| `middleware-mysql-replica-lag-analytics` | `analytics-replica` | "the replica of analytics" |
+| `code-timezone-booking-api` | `booking-api` | "Booking reminders"; the API is never named |
+
+so a list that omits them makes them unanswerable, and the mechanism's ceiling is one sample above
+the baseline it would replace. **A smaller benchmark wearing a mechanism's clothes.**
+
+**Ground two — token membership does not separate.** No correct answer is ever outside the text's
+words, so a rejection rule is free. But most wrong answers are **inside** it (2 of 6, 7 of 8, 4 of 9
+across the three readings on this key), because the model builds a plausible slug out of the text's
+own words and points it at the wrong entity — `order-service` for `payment-gateway` is the type
+specimen.
+
+**What that establishes.** The failure is a choice of **referent**, not of **form**. Three form-based
+levers have now been measured and all three are weak: the suffix clause (−2 strict), the candidate
+list (ceiling 25/30), the membership filter (catches ≤5 of 6–9). The next lever has to be about the
+judgement — which workload's own behaviour moved — rather than about how the answer is spelled.
+
+**Cost.** Zero dispatches. The two previous rounds spent one each and learned this more expensively;
+this one spent a measurement, and four tests pin the numbers so the next proposal starts from them.
+
+**Acceptance.** 4 new tests in `m1-component-candidates.test.ts`; typecheck, lint, `docs:check`
+green; two consecutive full runs at **4283 passed**; core **175 / 4283**, cli 4 / 187, repo
+**178 / 4470**; coverage 99.97 / 99.74 / 100 / 99.97 and 100 ×4; audit 5 volumes, findings 1–225.
+
+### Left open
+
+- **The referent question has no instrument yet.** `[open: "which workload's own behaviour failed" is
+  a judgement the prompt has asked for three ways and the model has answered wrongly in the same
+  direction each time. Measuring it needs either a two-step prompt (enumerate the candidates the text
+  names, then choose) or a different model -- both are changes with their own reading, and neither is
+  made here]`
+- **The five unrecoverable components are a corpus fact, not a model one.** `[open: three of them are
+  spelled in ways no adjacent-run extraction can reach. If a future mechanism needs a closed answer
+  space, the corpus has to be re-annotated to be expressible in it -- which is a data decision, and
+  one that would move the milestone's number by construction]`
+- **Nothing prevents the next "obvious" lever from being built before it is measured.** `[open: this
+  round's sequence -- measure, then decide not to build -- is a habit and not a gate. The 25/30
+  ceiling and the inside/outside counts are pinned; a *rule* that a proposed answer-space change must
+  state its ceiling first would be the mechanism]`

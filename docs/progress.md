@@ -1213,7 +1213,7 @@ and this table.
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
 | [volume-04.md](progress/volume-04.md) | 21 | v2.06 | v2.25 |
-| [volume-05.md](progress/volume-05.md) | 28 | v2.26 | v2.53 |
+| [volume-05.md](progress/volume-05.md) | 29 | v2.26 | v2.54 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

@@ -2287,3 +2287,68 @@ here: this round's job was to close a line of work with evidence rather than lea
 | the batteries | component rule 8/8, M1 ceiling 11/11 and 8/8 — all caught |
 | `core` / repo | **174 / 4279** · **178 / 4466** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 225 — the mechanism the previous finding proposed was refuted before it was built
+
+Finding 224 closed the prose line of work and proposed the next lever: *constrain the answer rather
+than describe it*, the shape that took `type` from 4/19 to 17/19 when a stated answer space replaced
+a stated convention. This round measured that proposal against what already exists — the
+thirty-sample key and the five recorded readings — **before writing any of it and before spending a
+dispatch.** It does not survive, on two independent grounds.
+
+### Ground one: a candidate list caps the ceiling at 25/30
+
+The strongest form of "constrain the answer" is to hand the model the components the text supports.
+The natural extraction is *runs of adjacent words joined by a hyphen*, which is how every expected
+component is spelled. **25 of 30** are recoverable that way. The five that are not are not obscure:
+
+| sample | expected | how the text says it |
+| --- | --- | --- |
+| `network-delay-cart-to-inventory` | `cart-service` | "Cart-to-inventory calls" — the workload is the caller, never a two-word run |
+| `middleware-redis-latency-cache` | `session-cache` | "the session Redis" — the kind of store sits between the two words |
+| `middleware-kafka-consumer-lag` | `order-events-consumer` | "Consumer group order-events" — reversed |
+| `middleware-mysql-replica-lag-analytics` | `analytics-replica` | reads are "against the replica of analytics" |
+| `code-timezone-booking-api` | `booking-api` | the text says "Booking reminders"; the API is never named |
+
+Three of those five are the samples that have resisted three rounds of prompt work. A candidate list
+that omits them makes them **unanswerable**, so the mechanism's ceiling is 25/30 strict — one sample
+above the baseline it would replace, with the hardest samples unwinnable. That is a smaller benchmark
+wearing a mechanism's clothes.
+
+### Ground two: token membership does not separate right from wrong
+
+The weaker form is a post-parse rule: reject an answer whose tokens are not all in the text. Measured
+over every reading on the current key:
+
+| reading | correct answers outside the text | wrong answers **inside** the text | wrong answers outside |
+| --- | --- | --- | --- |
+| 24/30 (`39950191377`) | 0 | 2 of 6 | 3 |
+| 22/30 (`40049467914`) | 0 | 7 of 8 | 1 |
+| 20/30 (`40054484628`) | 0 | 4 of 9 | 5 |
+
+The rule is free — it never loses a right answer — and nearly useless: most wrong answers are
+*inside* by construction, because the model builds a plausible slug out of the text's own words and
+points it at the wrong entity. `order-service` for `payment-gateway` is the type specimen: both words
+are in the incident, the slug is well formed, and it names the other end of the link.
+
+### What this establishes, and what it costs
+
+The failure is a choice of **referent**, not of **form**. Every form-based lever now measured —
+suffix clause, candidate list, token membership — scores badly on this corpus, and the reason is the
+same in all three: the answer is spelled correctly and means the wrong thing.
+
+The cost of this round was **zero dispatches**. Two earlier rounds spent one each and learned the
+same lesson more expensively (findings 223 and 224); this one spent a measurement instead, and its
+tests pin the numbers so the next proposal starts from them rather than from the idea.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the candidate ceiling | 25/30, with the five named in the test rather than in prose |
+| the list's size | median 218 candidates per text, max 277 — pinned as a range |
+| the membership rule | free (0 correct answers outside) and weak (2 of 6, 7 of 8, 4 of 9 inside) |
+| the cause | `order-service` for `payment-gateway`, asserted at the current reading |
+| dispatches | none |
+| `core` / repo | **175 / 4283** · **178 / 4470** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
