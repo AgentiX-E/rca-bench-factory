@@ -134,6 +134,7 @@ const ENUMERATED_MODULES = [
   'fault/reading-record.ts',
   'fault/four-layer.ts',
   'fault/baseline-localiser.ts',
+  'fault/robust-localiser.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -636,6 +637,10 @@ const TESTED = [
   'PEAK_Z_METHOD',
   'locateWithPeakZScore',
   'rankServicesByPeakZScore',
+  // fault/robust-localiser.ts -- the second baseline, which fails where the first one succeeds.
+  'ROBUST_SHIFT_METHOD',
+  'locateWithMedianShift',
+  'rankServicesByMedianShift',
   // fault/four-layer.ts -- M1's four-layer condition, as a definition that can fail.
   'assessFourLayer',
   'formatFourLayerReading',

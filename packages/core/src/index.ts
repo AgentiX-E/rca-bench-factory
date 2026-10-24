@@ -667,6 +667,15 @@ export {
 } from './fault/baseline-localiser.js';
 export type { LocalisationReading, ServiceRank } from './fault/baseline-localiser.js';
 
+// The second baseline. G4 with one solver asks whether a method agrees with its own construction;
+// with two that fail differently it asks whether the case carries a locatable structure at all.
+export {
+  ROBUST_SHIFT_METHOD,
+  locateWithMedianShift,
+  rankServicesByMedianShift,
+} from './fault/robust-localiser.js';
+export type { ShiftRank, ShiftReading } from './fault/robust-localiser.js';
+
 // M1's "GT four-layer annotation can all be filled", as a thing that can fail. The schema marks
 // `causalChain` and `evidenceCheckpoints` optional and `rootCauseEntityId` is a string nothing
 // resolves, so until this existed the condition was met by definition. Exported because the

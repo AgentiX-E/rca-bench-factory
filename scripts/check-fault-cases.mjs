@@ -121,6 +121,27 @@ const STEP_MS = 90_000;
 const POINTS = 8;
 const JITTER = [0, 1, -1, 0.5, -0.5, 0.8, -0.8, 0.3];
 
+/**
+ * How a declared series gets from its baseline to its post value. A closed vocabulary.
+ *
+ * - `step` (the default): eight post-onset points at the post value, which is a level change.
+ * - `counter`: an accumulating series, because a counter that jumps to its post value is a level
+ *   wearing a counter's name.
+ * - `spike`: one post-onset point at the post value, then the baseline again -- a brief excursion
+ *   rather than a sustained one.
+ *
+ * `spike` exists because a corpus that can only express a step cannot say what a brief excursion
+ * looks like, and the two baselines treat that shape differently: peak-z cannot distinguish it from
+ * a sustained change (both are one large sample), and a median over eight samples barely notices it.
+ * Without the shape there would be no way to build the negative control that proves G4's two-solver
+ * requirement is doing something (see `check-fault-cases.test.ts`).
+ *
+ * The vocabulary is closed because the first version tested `derivation === 'counter'` and treated
+ * **everything else as a step** -- so a typo would silently produce a different shape from the one
+ * the author wrote, and the derived series would be wrong in a way no reading of the file reveals.
+ */
+const DERIVATIONS = ['step', 'counter', 'spike'];
+
 function expandSeries(declaration, faultCase) {
   const startMs = Date.parse(faultCase.window.start);
   const onsetMs = Date.parse(faultCase.injectTime);
@@ -129,7 +150,9 @@ function expandSeries(declaration, faultCase) {
   const unit = typeof declaration.unit === 'string' ? declaration.unit : undefined;
   const baseline = Number(declaration.baseline);
   const post = Number(declaration.post);
-  const counter = declaration.derivation === 'counter';
+  const derivation = declaration.derivation === undefined ? 'step' : declaration.derivation;
+  const counter = derivation === 'counter';
+  const spike = derivation === 'spike';
   const step = counter ? (post - baseline) / POINTS : 0;
   const out = [];
   const at = (ms) => new Date(ms).toISOString();
@@ -142,7 +165,10 @@ function expandSeries(declaration, faultCase) {
   }
   for (let index = 0; index < POINTS; index += 1) {
     const t = onsetMs + index * STEP_MS;
-    const value = counter ? baseline + (index + 1) * step : post * (1 + JITTER[index] * 0.02);
+    // A spike is one sample at the post value and then the baseline again; the jitter is applied to
+    // the level the sample sits at, so the excursion is post-sized and the return is baseline-sized.
+    const level = counter ? baseline + (index + 1) * step : spike && index > 0 ? baseline : post;
+    const value = counter ? level : level * (1 + JITTER[index] * 0.02);
     out.push({ timestamp: at(t), value });
   }
 
@@ -298,10 +324,27 @@ for (const entry of index.cases) {
     // deployment, or constructed from the annotation? A closed vocabulary is what makes it
     // checkable -- a free string would let a future case say anything that reads well, and the
     // whole report says "derived" on the strength of this field.
-    if (declaration.provenance !== 'derived' && declaration.provenance !== 'captured') {
+    //
+    // The field is `origin`, not `provenance`, and the reason is that this repository already
+    // publishes a `provenance`: `PROVENANCE_SOURCES` in `ir/types.ts` is a four-member per-field
+    // vocabulary (`direct | derived | inferred | defaulted`) describing how an individual value was
+    // obtained. Overloading the word for a two-member axis about a whole series would make
+    // `derived` mean "computed from other values" in one file and "constructed from prose" in
+    // another, and `captured` is not a member of the published set at all. Two vocabularies with one
+    // name is how a reader greps for a word and gets two answers.
+    if (declaration.origin !== 'derived' && declaration.origin !== 'captured') {
       problems.push(
-        `'${caseId}' declares provenance '${String(declaration.provenance)}', which is neither ` +
+        `'${caseId}' declares origin '${String(declaration.origin)}', which is neither ` +
           "'derived' nor 'captured'",
+      );
+    }
+    if ('provenance' in declaration) {
+      // The old name, refused rather than ignored: a declaration that still says `provenance` would
+      // otherwise be read as having no origin at all, and the guard would report a vocabulary error
+      // about an empty string instead of about the field that has to move.
+      problems.push(
+        `'${caseId}' declares 'provenance'; the signals field is 'origin', because this repository ` +
+          'already publishes a different `provenance` (`PROVENANCE_SOURCES`)',
       );
     }
     const text = fold(sampleById.get(sampleId)?.incidentText);
@@ -314,6 +357,16 @@ for (const entry of index.cases) {
       if (!text.includes(fold(quote))) {
         problems.push(
           `'${caseId}' derives '${String(one?.metric)}' from a quote the incident text does not contain: '${quote}'`,
+        );
+      }
+      // The shape of the derived series is part of what the case claims, so an unknown shape is a
+      // refusal rather than a fallback to `step`. The first version had the fallback, and a typo
+      // would have produced a series nobody wrote and no reading of the file would reveal.
+      const derivation = one?.derivation === undefined ? 'step' : one.derivation;
+      if (!DERIVATIONS.includes(derivation)) {
+        problems.push(
+          `'${caseId}' declares derivation '${String(derivation)}' for '${String(one?.metric)}', ` +
+            `which is not one of ${DERIVATIONS.join(' / ')}`,
         );
       }
     }
@@ -332,12 +385,20 @@ for (const entry of index.cases) {
       problems.push(`'${caseId}' signals fail G3: ${violation.message}`);
     }
     // G4 as well: a case whose anomaly no baseline can locate is a case that reads as valid and
-    // cannot be scored. The localiser is the one in `fault/baseline-localiser.ts`, named in the
-    // outcome so a reader knows which run produced the rank, and it never looks at the answer key.
-    const outcome = core.locateWithPeakZScore(parsedCase, signals);
-    const solvability = core.checkG4Solvability(withSignals, [outcome], {});
+    // cannot be scored. Two baselines, and `minSolvers: 2`, because one solver only asks whether a
+    // method agrees with the construction it was pointed at -- peak-z is sensitive to a single
+    // spike and the corpus's series each contain exactly one, so it would have found them whatever
+    // the case was. The second is a robust median shift, which cannot see a lone spike and is
+    // unaffected by a contaminated baseline; the pair is the claim that the structure is locatable
+    // rather than that one inductive bias likes it.
+    const outcomes = [
+      core.locateWithPeakZScore(parsedCase, signals),
+      core.locateWithMedianShift(parsedCase, signals),
+    ];
+    const solvability = core.checkG4Solvability(withSignals, outcomes, { minSolvers: 2 });
     for (const violation of solvability.violations) {
-      problems.push(`'${caseId}' is not solvable by the ${String(outcome.method)} baseline: ${violation.message}`);
+      const ranks = outcomes.map((one) => `${one.method}=${one.rankOfTruth === null ? 'absent' : String(one.rankOfTruth)}`);
+      problems.push(`'${caseId}' is not solvable by both baselines (${ranks.join(', ')}): ${violation.message}`);
     }
     if (
       validity.violations.length === 0 &&
@@ -400,6 +461,6 @@ console.log(
     `case; each is complete, every reference resolves, every layer quotes a sentence the incident ` +
     `text contains, and every case passes G1, G2 and G5 -- structure, references, units, and no ` +
     `leaked identifiers; ${String(withTelemetry.length)} of ${String(index.cases.length)} also carry ` +
-    `telemetry whose provenance is declared, which passes G3, and which the peak-z baseline ` +
-    `locates in its top-K; floor ${String(floor)})`,
+    `telemetry whose origin is declared, which passes G3, and which both the peak-z and the ` +
+    `median-shift baselines place in their top-K; floor ${String(floor)})`,
 );

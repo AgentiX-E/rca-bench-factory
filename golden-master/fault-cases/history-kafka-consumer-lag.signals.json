@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
   "caseId": "history-kafka-consumer-lag",
-  "provenance": "derived",
   "why": "Telemetry for the consumer-lag case, derived from the two numbers its text states. The lag is a counter: it accumulates from a near-zero baseline to 4.2 million messages across the window, and expanding it as a level would have produced a series that jumped once and then sat still, which is not what a lag does. The processing-time series is a ratio because the text says 'tripled' rather than naming a duration, and the two units are different dimensions on purpose: the fault is a rate mismatch, and a corpus whose signals share one unit cannot express that.",
   "series": [
     {

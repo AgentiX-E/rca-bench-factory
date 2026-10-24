@@ -1,8 +1,8 @@
 {
   "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
   "caseId": "history-checkout-cpu-saturation",
-  "provenance": "derived",
-  "why": "Telemetry for the one annotated case, derived from the two numbers the incident text states rather than captured from a deployment. Each series declares a baseline value, a post-onset value and the sentence both come from; the guard requires that sentence to appear verbatim in the incident text, expands the series into metric signals on a fixed cadence, and runs G1, G2 and G3 over the result. What this proves is that the annotation can be *carried into* the shape the gates read -- not that a deployment produced it. The distinction is in `provenance`, and it is the difference between a case that is annotated and a case that is scoreable.",
+  "why": "Telemetry for the one annotated case, derived from the two numbers the incident text states rather than captured from a deployment. Each series declares a baseline value, a post-onset value and the sentence both come from; the guard requires that sentence to appear verbatim in the incident text, expands the series into metric signals on a fixed cadence, and runs G1, G2 and G3 over the result. What this proves is that the annotation can be *carried into* the shape the gates read -- not that a deployment produced it. The distinction is in `origin`, and it is the difference between a case that is annotated and a case that is scoreable.",
   "series": [
     {
       "service": "checkout-api",

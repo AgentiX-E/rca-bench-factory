@@ -452,7 +452,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     const result = run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(
-      '1 of 1 also carry telemetry whose provenance is declared, which passes G3, and which the peak-z baseline locates in its top-K',
+      '1 of 1 also carry telemetry whose origin is declared, which passes G3, and which both the peak-z and the median-shift baselines place in their top-K',
     );
   });
 
@@ -509,10 +509,15 @@ describe('check-fault-cases · G5 is asked of every case, because it needs no te
   });
 });
 
-describe('check-fault-cases · provenance is a closed vocabulary, not a sentence', () => {
+describe('check-fault-cases · origin is a closed vocabulary, not a sentence', () => {
   // The report says which cases carry *derived* signals, and a reader decides how much to trust a
   // number on the strength of that word. A free string would let a case claim anything that reads
   // well, so the field is one of two values and anything else is refused.
+  //
+  // The field is called `origin` because the repository already publishes a `provenance`
+  // (`PROVENANCE_SOURCES`: direct / derived / inferred / defaulted) about how a single value was
+  // obtained. Reusing the word for a two-member axis about a whole series would make `derived` mean
+  // two things in two files, and `captured` is not a member of the published set.
   const REAL_SIGNALS = JSON.parse(
     readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
   ) as Record<string, unknown>;
@@ -521,19 +526,31 @@ describe('check-fault-cases · provenance is a closed vocabulary, not a sentence
     return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
   }
 
-  it('refuses a provenance that is neither derived nor captured', () => {
+  it('refuses an origin that is neither derived nor captured', () => {
     const edited = signals();
-    edited.provenance = 'measured';
+    edited.origin = 'measured';
     const result = run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
-    expect(result.out).toContain("declares provenance 'measured', which is neither 'derived' nor 'captured'");
+    expect(result.out).toContain("declares origin 'measured', which is neither 'derived' nor 'captured'");
+  });
+
+  it('refuses the old field name instead of reading it as no origin at all', () => {
+    // A declaration that still says `provenance` would otherwise arrive with no `origin`, and the
+    // guard would report a vocabulary error about an empty string -- a message pointing at the value
+    // when the thing that has to move is the key.
+    const edited = signals();
+    edited.provenance = edited.origin;
+    delete edited.origin;
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("declares 'provenance'; the signals field is 'origin'");
   });
 
   it('accepts captured, which nothing uses yet and the schema must still admit', () => {
     // The value exists for the case that is eventually collected from a deployment. A vocabulary
     // with one member would make the word "derived" unfalsifiable.
     const edited = signals();
-    edited.provenance = 'captured';
+    edited.origin = 'captured';
     const result = run(['--cases', corpus({ signals: edited })]);
     expect(result.status, result.out).toBe(0);
   });
@@ -558,7 +575,7 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
     const result = run(['--cases', corpus({ signals: signals() })]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('1 of 1 also carry telemetry');
-    expect(result.out).toContain('the peak-z baseline locates in its top-K');
+    expect(result.out).toContain('both the peak-z and the median-shift baselines place in their top-K');
   });
 
   it('refuses a case whose anomaly belongs to a service the annotation does not name', () => {
@@ -571,7 +588,97 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
     }
     const result = run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
-    expect(result.out).toContain('is not solvable by the peak-z-by-service baseline');
+    expect(result.out).toContain('is not solvable by both baselines');
+    // The message names both ranks, because "not solvable" is a claim about two runs and a reader
+    // has to be able to see which one objected.
+    expect(result.out).toContain('peak-z-by-service=absent, median-shift-by-service=absent');
     expect(result.out).toContain('only 0 baseline(s) locate the root cause within top-K');
+  });
+});
+
+describe('check-fault-cases · two baselines, and the shape that separates them', () => {
+  // G4 with one solver asks whether a method agrees with the construction it was pointed at. With
+  // `minSolvers: 2` it asks whether the case is locatable by two methods that fail differently --
+  // and the only way to know the second solver is being consulted rather than counted is a case
+  // that exactly one of them solves.
+
+  /** The four sentences the checkout text offers, each attached to one declared series. */
+  function spikeCase(): Record<string, unknown> {
+    return {
+      schema: 'rca-bench-derived-signals/1',
+      caseId: 'history-checkout-cpu-saturation',
+      origin: 'derived',
+      why:
+        'A declaration built to separate the two baselines: the root cause carries a spike and ' +
+        'three other services carry steps, so peak-z ranks the truth first and a median shift ' +
+        'ranks it last.',
+      series: [
+        {
+          service: 'checkout-api',
+          metric: 'request_duration_p99_ms',
+          unit: 'ms',
+          baseline: 180,
+          post: 4300,
+          derivation: 'spike',
+          quote: '180ms to 4.3s',
+          why: 'the annotation, carrying the fault as a brief excursion rather than a step',
+        },
+        {
+          service: 'checkout-api-0',
+          metric: 'container_cpu_throttled_seconds_total',
+          unit: 's',
+          baseline: 12,
+          post: 96,
+          derivation: 'counter',
+          quote: 'the pod sat pinned at its 500m limit',
+          why: 'the mechanism, as a counter that accumulates',
+        },
+        {
+          service: 'payment-service',
+          metric: 'error_rate_percent',
+          unit: '%',
+          baseline: 1,
+          post: 3,
+          quote: 'No error rate change in the downstream payment service',
+          why: 'a step on a service that is not the root cause',
+        },
+        {
+          service: 'load-generator',
+          metric: 'request_rate_rps',
+          unit: '1',
+          baseline: 100,
+          post: 300,
+          quote: 'The load generator was unchanged from the previous week',
+          why: 'a second step, so that the ranking has four services and top-K is three',
+        },
+      ],
+    };
+  }
+
+  it('refuses a case that only the spike-sensitive baseline can locate', () => {
+    // The negative control for `minSolvers: 2`. Peak-z scores the spike at roughly 1600 and puts
+    // `checkout-api` first; the median of eight samples does not move, so the robust ranking places
+    // it fourth of four -- outside a top-K of three. Under one solver this case would have passed.
+    //
+    // That is the cost of the requirement, and it is stated rather than discovered later: a case
+    // whose only evidence is a brief excursion is refused, because one method finding it is not
+    // evidence that the structure is there rather than that the method is sensitive to it.
+    const result = run(['--cases', corpus({ signals: spikeCase() })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('is not solvable by both baselines');
+    expect(result.out).toContain('peak-z-by-service=1, median-shift-by-service=4');
+  });
+
+  it('refuses a derivation outside the vocabulary instead of treating it as a step', () => {
+    // The first version of the expansion tested `derivation === 'counter'` and let everything else
+    // mean `step`, so `"counters"` would have produced a step series silently -- a file that reads
+    // as a counter and expands as a level.
+    const edited = spikeCase();
+    (edited.series as Array<Record<string, unknown>>)[1]!.derivation = 'counters';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares derivation 'counters' for 'container_cpu_throttled_seconds_total', which is not one of step / counter / spike",
+    );
   });
 });

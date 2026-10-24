@@ -3278,3 +3278,139 @@ declaration that matches, and the test now says why.
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns 72 tests red in 1 of 2 naming files |
 | coverage | module **100 × 4**; package **99.97 / 99.74 / 100 / 99.97** |
 | `core` / repo | **181 / 4419** · **185 / 4606** |
+
+## Finding 237 — one baseline asks whether a method agrees with its own construction
+
+Finding 236 wrote the localiser G4 needed and ended with the sentence that made this round necessary:
+
+> **The baseline is peak-z, and it was chosen because it is dull.** `[open: G4 needs one solver that
+> locates the root cause, and this one does -- on data derived from the same annotation. A second
+> baseline with a different inductive bias would test whether the case is locatable rather than
+> whether one method agrees with the construction]`
+
+G4's rule is "at least one baseline places the true root cause inside its top-K". With one baseline
+that sentence is a statement about *that method*, and the method is a peak |z| statistic on series
+that were constructed to contain exactly one excursion each. A second baseline only helps if it
+**fails differently**, so the second one is a robust median shift:
+
+| | peak-z | median-shift |
+| --- | --- | --- |
+| a lone spike | dominates the statistic | invisible: one sample of eight does not move a median |
+| a contaminated baseline | inflates `sigma` until a real change scores 1.2 | discarded: a median absolute deviation ignores up to half the points |
+| a sustained change | seen, scaled by the baseline's spread | seen, scaled by the baseline's robust spread |
+
+Both disagreement shapes are asserted with hand-built series, because a pair of baselines that
+agreed everywhere would measure nothing:
+
+```
+peak  ['spiky-service', 'steady-service']   robust  ['steady-service', 'spiky-service']
+peak  ['mild-service', 'hiccup-service']    robust  ['hiccup-service', 'mild-service']
+```
+
+The `1.4826 * MAD` consistency constant is there so the two statistics share a scale: **the pair is
+meant to disagree about robustness, not about units**. The `epsilon` floor on the scale is the same
+one `zScore` applies to a zero standard deviation, stated identically in both modules, so the two
+cannot disagree about degenerate input either.
+
+### G4 now requires both, and there is a control that proves it
+
+`minSolvers: 2`, with both outcomes handed to the gate and the message naming both ranks:
+
+```
+'history-checkout-cpu-saturation' is not solvable by both baselines
+(peak-z-by-service=1, median-shift-by-service=4): only 1 baseline(s) locate the root cause within top-K
+```
+
+That message is from a test, not from the corpus. A declaration was written whose root cause carries
+a **spike** and whose three decoys carry steps: peak-z scores the spike at roughly 1600 and ranks the
+truth first, and a median over eight samples does not move, so the robust ranking places it fourth of
+four -- outside a top-K of three. Under one solver that case would have passed.
+
+**That is the cost of `minSolvers: 2` and it is stated rather than discovered later:** a case whose
+only evidence is a brief excursion is refused, because one method finding it is not evidence that the
+structure is there rather than that the method is sensitive to it. If a real incident is genuinely a
+spike, the corpus has to say so with a second series that a robust statistic can see -- which is a
+statement about what a case must carry, not about which solver is right.
+
+### The spike shape exposed a silent fallback
+
+The declaration format could only express a level change or an accumulating counter, and the
+expansion read it as `declaration.derivation === 'counter'` -- **everything else silently meant
+`step`**. So `"counters"`, a typo, would have produced a step series: a file that reads as a counter
+and expands as a level, with nothing in any run to reveal it.
+
+The vocabulary is now closed -- `step | counter | spike` -- and an unknown value is refused:
+
+```
+declares derivation 'counters' for 'container_cpu_throttled_seconds_total', which is not one of
+step / counter / spike
+```
+
+`spike` was added because the control above needs it. That is the honest order of events: the shape
+exists because a test required a shape the format could not express, and the vocabulary became closed
+because writing the shape made the fallback visible.
+
+### Two defects of this round
+
+**1. Every series in the new module's tests had an even length.** `medianOf` averages the two middles
+for an even count and takes the middle sample for an odd one; the second arm was never executed, and
+the coverage table reported **96.55% branches** with the line named. Closed with a five-point baseline
+`[10, 12, 11, 9, 500]` whose mean is 108.4 and whose median is 11: the test that exercises the arm is
+also the clearest statement of the robustness claim, since a post window at 11 scores a shift of
+exactly zero.
+
+**2. The corpus test used one case's timestamps for three cases.** The first version of
+"agrees on the corpus" expanded every declaration against the cart case's window; the checkout case's
+onset is elsewhere, so all its signals landed in the baseline period, the ranking came out empty, and
+the assertion failed with `null` rather than with a wrong rank. The helper now takes the case, and
+the test says why -- a failure that reads as "no rank" instead of "wrong rank" is the one that gets
+misdiagnosed.
+
+### Two vocabularies, one word
+
+`check-data-model-vocabularies` lists the published sets, and reading its output next to this round's
+work showed a collision: the signals declaration called its two-member axis `provenance`, and the
+repository already publishes a `provenance` -- `PROVENANCE_SOURCES`, four members
+(`direct | derived | inferred | defaulted`), describing how a single **value** was obtained.
+
+Two problems, and the second is worse than the first:
+
+- `derived` meant "computed from other values" in the IR and "constructed from prose" in the corpus.
+- `captured` was not a member of the published set at all, so the same word had two vocabularies with
+  one overlapping member.
+
+The field is now `origin: derived | captured`, and the guard refuses a declaration that still says
+`provenance` rather than ignoring it:
+
+```
+'history-checkout-cpu-saturation' declares 'provenance'; the signals field is 'origin', because this
+repository already publishes a different `provenance` (`PROVENANCE_SOURCES`)
+```
+
+Ignoring the old key would have been cheaper and worse: a declaration that still says `provenance`
+would arrive with no `origin`, and the guard would report a vocabulary error about an empty string --
+a message pointing at a **value** when the thing that has to move is the **key**. That is the same
+shape as the `derivation` fallback above, one field over, in the same round.
+
+### What this still does not establish
+
+- **Both baselines are locating a construction.** The series were derived from the annotations, so
+  two methods agreeing raises the claim from "one bias likes it" to "two biases find it", not to
+  "a real RCA system would". `provenance: derived` is still the only thing saying so.
+- **Both aggregate per service with `max`.** Deliberate -- the comparison is about the statistic, not
+  about how metrics combine -- and it means a service with many quiet metrics behaves the same under
+  both. That is a shared assumption the pair does not test.
+- **Three cases, two methods, six outcomes.** A 6/6 is a fact about six outcomes, not a distribution.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the second baseline | 18 tests: ranking, answer-key blindness, both disagreement shapes, all three corpus cases, degenerate inputs, ties, `topK`, odd and even medians |
+| G4 | asked with `minSolvers: 2`; the message names both methods and both ranks |
+| the control | a spike-only case is located by peak-z at rank 1 and by median-shift at rank 4, and is refused |
+| the vocabulary | `step | counter | spike`; an unknown derivation is refused instead of expanding as a step |
+| the corpus | **3 of 3** cases placed in the top-K of *both* baselines |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **78** tests red in 1 of 2 naming files |
+| coverage | both localiser modules **100 × 4**; package **99.97 / 99.75 / 100 / 99.97** |
+| `core` / repo | **182 / 4442** · **186 / 4629** |

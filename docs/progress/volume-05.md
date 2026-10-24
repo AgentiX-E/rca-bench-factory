@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **181 files, 4419 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4443 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **185 files, 4606 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4630 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2317,3 +2317,80 @@ audit 5 volumes, findings 1–236.
 - **Twenty-seven extraction samples carry no case.** `[open: 3 of 30, and each annotation now has to
   satisfy six obligations the guard holds: four layers with quotes, G1, G2, G5, and optionally
   telemetry that passes G3 with a baseline that locates it]`
+
+## v2.65 — a second baseline, because one baseline only asks whether a method agrees with itself
+
+v2.64 ended with the open item that made this round necessary: G4 has one solver, and that solver is
+peak-z on series constructed to contain one excursion each -- so a rank of 1 was close to
+tautological. G4's rule says "at least one baseline places the truth in its top-K", and with one
+baseline that is a statement about that method.
+
+**The second baseline fails differently, or it is the same method twice.** `fault/robust-localiser.ts`
+scores `|median(after) - median(before)| / max(1.4826 * MAD(before), epsilon)` and ranks services by
+the largest such shift. The pair is:
+
+| | peak-z | median-shift |
+| --- | --- | --- |
+| a lone spike | dominates | invisible |
+| a contaminated baseline | inflates `sigma` until a real change scores 1.2 | discarded by the deviation |
+| a sustained change | seen | seen |
+
+Both disagreement shapes are asserted with hand-built series: peak-z ranks the spike first and the
+median ranks it last; peak-z misses a tripling behind one wild baseline point and the median finds it.
+The `1.4826 * MAD` constant keeps the two on one scale, and the `epsilon` floor is the same one
+`zScore` uses -- the pair is meant to disagree about robustness and about nothing else.
+
+**G4 now requires both** (`minSolvers: 2`), and the message names both ranks:
+
+```
+'history-checkout-cpu-saturation' is not solvable by both baselines
+(peak-z-by-service=1, median-shift-by-service=4): only 1 baseline(s) locate the root cause within top-K
+```
+
+That is from a control, not from the corpus: a declaration whose root cause carries a spike and whose
+three decoys carry steps. Peak-z ranks the truth first, the median fourth of four, and the case is
+refused. **The cost is stated rather than discovered later** -- a case whose only evidence is a brief
+excursion does not pass, because one method finding it says more about the method than about the case.
+
+**Writing the control exposed a silent fallback.** The expansion read `derivation === 'counter'` and
+treated everything else as `step`, so a typo would have produced a level series from a file that reads
+as a counter. The vocabulary is now closed (`step | counter | spike`) and an unknown value is refused;
+`spike` was added because the control needed a shape the format could not express.
+
+**The second baseline also exposed a naming collision.** `check-data-model-vocabularies` printed the
+published sets beside this round's work, and the signals declaration's two-member `provenance` sat
+next to the IR's four-member `PROVENANCE_SOURCES` (`direct | derived | inferred | defaulted`): one
+word, two vocabularies, one member in common meaning different things. The field is now
+`origin: derived | captured`, and the old key is **refused** rather than ignored -- a declaration
+still saying `provenance` would otherwise be read as having no origin, and the message would point at
+a value when the key is what has to move.
+
+**Two defects.** Every series in the new test file had an even length, so the odd-count arm of
+`medianOf` was never executed -- the coverage table said **96.55% branches** with the line named, and
+a five-point baseline whose mean is 108.4 and median is 11 closed it. And the corpus test expanded
+every declaration against the cart case's window, so the checkout case's signals all fell before its
+own onset and the assertion failed with `null` -- a failure that reads as "no rank" rather than
+"wrong rank", which is the kind that gets misdiagnosed.
+
+**Acceptance.** 18 tests over the second baseline, 42 over the guard; typecheck, lint, `docs:check`
+green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46 gates, 46
+caught, 0 survived** (hollowing the guard turns 78 tests red); both localiser modules **100 ×4**;
+core **182 / 4443**, cli 4 / 187, repo **186 / 4630**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5
+volumes, findings 1–237.
+
+### Left open
+
+- **Both baselines are locating a construction.** `[open: two methods agreeing raises the claim from
+  "one bias likes it" to "two biases find it", not to "a real RCA system would". The only thing
+  separating the two is `provenance: derived`, and no case has ever been captured]`
+- **Both aggregate per service with `max`.** `[open: deliberate, so the comparison is about the
+  statistic rather than about how metrics combine -- which also means it is a shared assumption the
+  pair does not test. A `sum`-aggregating third baseline would test it, and would need its own
+  justification rather than its own number]`
+- **`origin` has one member in use.** `[open: two values, `derived` and `captured`, and every
+  declaration is `derived`. Admitting the second is what keeps the first falsifiable, and no
+  collection path exists yet to produce one]`
+- **A spike-shaped case is now unrepresentable in the corpus.** `[open: the shape exists in the
+  format and no case uses it, because `minSolvers: 2` refuses a case whose only evidence is a spike.
+  If a real incident is a brief excursion, the annotation has to carry a second series a robust
+  statistic can see -- which is a rule about cases that has not been written down]`
