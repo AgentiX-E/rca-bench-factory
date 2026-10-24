@@ -451,7 +451,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     const dir = corpus({ signals: signals() });
     const result = run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('1 of 1 also carry derived telemetry that passes G3');
+    expect(result.out).toContain('1 of 1 also carry telemetry whose provenance is declared and which passes G3');
   });
 
   it('refuses a series with no anomaly in it', () => {
@@ -504,5 +504,35 @@ describe('check-fault-cases · G5 is asked of every case, because it needs no te
     const result = run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('fails the anti-pollution gate');
+  });
+});
+
+describe('check-fault-cases · provenance is a closed vocabulary, not a sentence', () => {
+  // The report says which cases carry *derived* signals, and a reader decides how much to trust a
+  // number on the strength of that word. A free string would let a case claim anything that reads
+  // well, so the field is one of two values and anything else is refused.
+  const REAL_SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function signals(): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
+  }
+
+  it('refuses a provenance that is neither derived nor captured', () => {
+    const edited = signals();
+    edited.provenance = 'measured';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("declares provenance 'measured', which is neither 'derived' nor 'captured'");
+  });
+
+  it('accepts captured, which nothing uses yet and the schema must still admit', () => {
+    // The value exists for the case that is eventually collected from a deployment. A vocabulary
+    // with one member would make the word "derived" unfalsifiable.
+    const edited = signals();
+    edited.provenance = 'captured';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status, result.out).toBe(0);
   });
 });

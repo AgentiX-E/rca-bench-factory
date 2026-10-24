@@ -3145,3 +3145,66 @@ are still unasked, so the distance from "annotated" to "scoreable" is smaller an
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns 66 tests red in 1 of 2 naming files |
 | `core` / repo | **180 / 4400** · **184 / 4587** |
 | coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |
+
+## Finding 235 — every case now carries telemetry, and one of them carries a control
+
+`1 of 3` became `3 of 3`, and the way it happened says something about what a corpus needs that a
+single case cannot show.
+
+```
+check-fault-cases: OK (3 of 30 sample(s) carry a four-layer case; each is complete, every
+reference resolves, every layer quotes a sentence the incident text contains, and every case
+passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers; 3 of 3 also
+carry telemetry whose provenance is declared and which passes G3; floor 3)
+```
+
+### Three evidence shapes, and a series that does not move
+
+| case | series | what the shape is for |
+| --- | --- | --- |
+| checkout cpu-saturation | `request_duration_p99_ms` 180 -> 4300; `container_cpu_throttled_seconds_total` 12 -> 96 (counter) | a threshold in one place, plus the mechanism that produced it |
+| cart network-delay | `client_span_duration_ms` 12 -> 900; `server_handler_time_ms` **11 -> 11** | a **comparison**, and the second series is the control |
+| kafka consumer-lag | `kafka_consumergroup_lag` 0 -> 4.2e6 (counter); `per_message_processing_seconds` 0.02 -> 0.06 | a **direction**, with a ratio that has something to be a ratio of |
+
+**The flat series is new, and it is the most useful thing here.** G3 needs one sustained anomaly
+and the network case has it in the caller; the callee's series deliberately carries none. Without
+it the corpus could only say "this number moved", and the fault would be indistinguishable from a
+slow service -- the annotation's own reason for calling it a *network* fault is that the callee's
+handler did not move. A corpus whose every series rises has no way to express its own controls.
+
+The kafka case makes the same point in a different dimension: the checkpoints state a **ratio**
+(`== 3 1`), and a ratio is a comparison with nothing to compare until the underlying duration is
+present. So `per_message_processing_seconds` carries 0.02s before and 0.06s after, and the ratio
+becomes checkable against data rather than against itself.
+
+### Provenance is a closed vocabulary now
+
+`provenance` was a free string. It is now `derived | captured`, and anything else is refused:
+
+```
+'history-checkout-cpu-saturation' declares provenance 'measured', which is neither 'derived' nor 'captured'
+```
+
+`captured` is admitted and nothing uses it. That is deliberate: a vocabulary with one member makes
+the word *derived* unfalsifiable, and the report says "derived" on the strength of this field.
+When a case is eventually collected from a deployment, the value is already there and the change is
+a data change rather than a schema change.
+
+### What it still does not do
+
+- **G4 has never been asked.** It needs a baseline localiser's outcome -- a real run, not a
+  derivation -- and no such run exists for these cases. Every claim here is about the shape a case
+  can carry, not about whether a solver can find the answer in it.
+- **All three are `derived`.** The signals are constructed from the annotations, and the words in
+  the report are the only thing keeping that legible.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **3 of 3** cases carry declared telemetry that passes G3; 3 of 30 extraction samples are annotated |
+| the control | the network case's callee series is flat by construction, and the case still passes G3 on one anomaly |
+| provenance | closed vocabulary; `measured` refused, `captured` admitted and unused |
+| the guard | 36 tests (two new: an unknown provenance, and `captured`) |
+| `core` / repo | **180 / 4402** · **184 / 4589** |
+| coverage | 99.97 / 99.74 / 100 / 99.97 and 100 ×4 |

@@ -294,6 +294,16 @@ for (const entry of index.cases) {
     if (declaration.caseId !== caseId) {
       problems.push(`'${caseId}' names signals for '${String(declaration.caseId)}'`);
     }
+    // The one claim a reader must be able to trust at a glance: were these signals taken from a
+    // deployment, or constructed from the annotation? A closed vocabulary is what makes it
+    // checkable -- a free string would let a future case say anything that reads well, and the
+    // whole report says "derived" on the strength of this field.
+    if (declaration.provenance !== 'derived' && declaration.provenance !== 'captured') {
+      problems.push(
+        `'${caseId}' declares provenance '${String(declaration.provenance)}', which is neither ` +
+          "'derived' nor 'captured'",
+      );
+    }
     const text = fold(sampleById.get(sampleId)?.incidentText);
     const series = Array.isArray(declaration.series) ? declaration.series : [];
     if (series.length === 0) {
@@ -378,5 +388,5 @@ console.log(
     `case; each is complete, every reference resolves, every layer quotes a sentence the incident ` +
     `text contains, and every case passes G1, G2 and G5 -- structure, references, units, and no ` +
     `leaked identifiers; ${String(withTelemetry.length)} of ${String(index.cases.length)} also carry ` +
-    `derived telemetry that passes G3; floor ${String(floor)})`,
+    `telemetry whose provenance is declared and which passes G3; floor ${String(floor)})`,
 );

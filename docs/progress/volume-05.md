@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **180 files, 4400 tests passed** (as of this commit) |
+| `core` test suite | **180 files, 4402 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **184 files, 4587 tests passed** (as of this commit) |
+| repo test suite | **184 files, 4589 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2225,3 +2225,45 @@ scripts); the meta-gate at **46 gates, 46 caught, 0 survived** (hollowing the gu
 - **The derived series is a construction, and the report says so in one word.** `[open: `provenance:
   applied` versus `captured` is a string in the signals file, not a schema-level distinction, so a
   future case could claim either. A closed vocabulary would make the claim checkable]`
+
+## v2.63 — every case carries telemetry now, and one of them carries a control
+
+`1 of 3` became `3 of 3`. Two more signal declarations, and the shapes they add matter more than
+the count.
+
+**The cart case carries a series that does not move.** `client_span_duration_ms` runs 12 -> 900 and
+`server_handler_time_ms` runs **11 -> 11**. G3 needs one sustained anomaly and the caller has it;
+the callee's series deliberately carries none, because that is the annotation's whole reason for
+calling this a *network* fault -- the added time is between the two processes. A corpus whose every
+series rises can only say "this number moved", and cannot express its own controls.
+
+**The kafka case makes the same point in another dimension.** Its checkpoint states a ratio
+(`== 3 1`), and a ratio has nothing to be a ratio of until the underlying duration is present, so
+`per_message_processing_seconds` carries 0.02s before and 0.06s after. The lag itself is a counter
+(0 -> 4.2e6), because a lag accumulates rather than stepping.
+
+**Provenance became a closed vocabulary.** `derived | captured`; anything else is refused with
+`declares provenance 'measured', which is neither 'derived' nor 'captured'`. `captured` is admitted
+and nothing uses it -- a vocabulary with one member would make the word *derived* unfalsifiable,
+and the report says "derived" on the strength of this field.
+
+**Still not scoreable.** G4 needs a baseline localiser's outcome, which is a real run rather than a
+derivation, and no such run exists for these cases.
+
+**Acceptance.** 36 tests over the guard (two new: an unknown provenance, and `captured`); typecheck,
+lint, `docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); coverage
+99.97 / 99.74 / 100 / 99.97 and 100 ×4; core **180 / 4402**, cli 4 / 187, repo **184 / 4589**;
+audit 5 volumes, findings 1–235.
+
+### Left open
+
+- **G4 has never been asked.** `[open: it needs a baseline localiser's rank for each case, which is a
+  real run rather than a derivation. The corpus can now carry everything a solver reads except the
+  solver's answer, and that is the last gate between an annotated case and a scoreable one]`
+- **Every series is derived, and no case is captured.** `[open: the vocabulary admits both and only
+  one is used. A captured case would need a deployment and a collection path; until then the word
+  "derived" in the report is the only thing distinguishing a construction from a measurement]`
+- **Twenty-seven extraction samples are still unannotated.** `[open: 3 of 30. Each new case now
+  inherits six obligations -- four layers, a quote per layer, G1, G2, G5, and optionally derived
+  telemetry -- and the guard holds every one of them, which is what makes the next annotation
+  reviewable rather than merely written]`

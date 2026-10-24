@@ -60,7 +60,8 @@
           "quote": "rose from 12ms to 900ms",
           "why": "the two numbers the client-span checkpoint holds, and the baseline it is measured against"
         }
-      ]
+      ],
+      "signals": "history-cart-network-delay.signals.json"
     },
     {
       "caseId": "history-kafka-consumer-lag",
@@ -89,7 +90,8 @@
           "quote": "4.2 million messages of lag over six hours",
           "why": "the lag checkpoint's value and the window it accumulated over"
         }
-      ]
+      ],
+      "signals": "history-kafka-consumer-lag.signals.json"
     }
   ]
 }

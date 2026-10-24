@@ -1,0 +1,26 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "caseId": "history-cart-network-delay",
+  "provenance": "derived",
+  "why": "Telemetry for the network delay case, derived from the two numbers the incident text states. This case is the one whose evidence is a *comparison*: the caller's span moves from 12ms to 900ms and the callee's own handler stays at 11ms, so the second series deliberately carries no anomaly. G3 needs one sustained anomaly and this case has it in the caller; the flat series is the control that makes the fault a network one rather than a slow service, and a corpus that only ever declared moving series would have no way to say 'this one did not move'.",
+  "series": [
+    {
+      "service": "cart-service",
+      "metric": "client_span_duration_ms",
+      "unit": "ms",
+      "baseline": 12,
+      "post": 900,
+      "quote": "rose from 12ms to 900ms",
+      "why": "the checkpoint `cp-client-span` holds the post-onset value, and the text states the baseline in the same sentence"
+    },
+    {
+      "service": "inventory-service",
+      "metric": "server_handler_time_ms",
+      "unit": "ms",
+      "baseline": 11,
+      "post": 11,
+      "quote": "stayed at 11ms",
+      "why": "the checkpoint `cp-server-handler` is the control: the callee's own time did not move, which is what locates the delay on the wire"
+    }
+  ]
+}
