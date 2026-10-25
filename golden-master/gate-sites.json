@@ -115,7 +115,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 438,
+      "line": 487,
       "condition": "invalid.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
@@ -123,7 +123,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 446,
+      "line": 495,
       "condition": "problems.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
@@ -131,7 +131,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 455,
+      "line": 504,
       "condition": "unnamed.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
@@ -139,7 +139,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 463,
+      "line": 512,
       "condition": "index.cases.length < floor",
       "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",

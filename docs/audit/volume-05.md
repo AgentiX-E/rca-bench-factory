@@ -3491,3 +3491,79 @@ subject rather than about it.**
 | the guard | 44 tests; three new, pinning both printed lines and the absence of them when no case carries telemetry |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **82** tests red in 1 of 2 naming files |
 | `core` / repo | **182 / 4446** · **186 / 4633** |
+
+## Finding 239 — a log is not a metric, and the corpus had never carried one
+
+Finding 238 ended with the number that named the hole: `RE2 3 case(s) written, 6 file(s) with no
+rows`, and a coverage report calling `rcaeval-re2 degraded (no log)`. The corpus could not fill a
+`logs.csv` because a declaration could only expand into metric samples, and **a log is not a metric
+standing in for one**:
+
+- a metric has a baseline, a threshold and a z-score; a log has a sentence and a time;
+- G3 reads only metrics, so a log can never be what makes a case *valid*;
+- and the sentence is the point. A log body this repository wrote for itself would be evidence of
+  nothing, which is why the declaration's log entries carry both a `body` (a reconstruction) and a
+  `quote` (verbatim from the incident text), and the guard checks the quote exactly as it checks the
+  four layers'.
+
+### The fourth case, and the first line
+
+`history-queue-watermark-ledger-writer`, annotated from `middleware-queue-watermark-ledger-writer`:
+two series (`broker_disk_watermark_percent` 78 → 92, `producer_buffer_records` 200 → 40000) and one
+log line, `disk watermark crossed 92 percent; producers throttled`, quoting the broker's own words.
+The graph grew to eleven entities and seven edges: `ledger-writer` calls `ledger-events`, and a
+`node` called `kafka-broker-3` **hosts** the topic -- because the watermark is measured on the broker
+and the fault is in the topic's retention, and a graph that could not say where the disk is would
+have made the checkpoint unattributable.
+
+The chain runs writer → topic, and the mechanism sentence carries the real direction ("the topic's
+retention was raised…, so the broker's disk watermark crossed…, and it throttled producers"). A chain
+pointing the other way would need an edge saying the topic calls its producer, which is a topology
+nobody deployed.
+
+### What changed in the numbers
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 ready · rcaeval-re3 degraded (no trace)
+check-fault-cases: export RE1 4 case(s) written, 0 file(s) with no rows · RE2 4 case(s) written, 7 file(s) with no rows · RE3 0 case(s) written, 0 file(s) with no rows, 4 skipped
+```
+
+**`rcaeval-re2` is `ready` for the first time**, and the RE2 export writes four cases where every
+`logs.csv` used to be a header. Seven data-less files remain and every one is a `traces.csv`: a trace
+needs span timings the texts do not state, and inventing them is the one thing this corpus's
+provenance word forbids.
+
+`4 of 30` samples now carry a four-layer case, and the floor moved to 4 with it.
+
+### Three defects of this round
+
+**1. G2 refused the broker.** The first declaration named its series on `kafka-broker-3`, and
+`checkG2Semantic` answered `signal references service 'kafka-broker-3' which is not in the entity
+graph`. I had assumed signal services were free-form because `checkout-api-0` resolves -- it resolves
+because it *is* an entity. The repair was to add the node and its `hosts` edge, not to rename the
+series: a checkpoint on a metric the graph cannot attribute is exactly what G2 is for.
+
+**2. The first log tests passed for the wrong reason.** They fed the ledger declaration to the
+checkout case, and the refusal they asserted also fires because the declaration names a different
+case -- two problems, one assertion, and the test would have kept passing if the log checks were
+removed. Rewritten against the checkout declaration with a log line quoting the checkout's own text,
+so the only thing under test is the log rule.
+
+**3. `filled  11` versus `filled 11`.** The expectation was written by substituting a digit into the
+old string, and the printed reading pads the count to two characters, so eleven loses a space. The
+test caught it; the lesson is the same one the `padEnd` findings have been repeating -- **a formatted
+line is not a string with a number in it.**
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the modality | `logs` in a declaration: three signals after the onset, body and quote checked separately |
+| the case | `history-queue-watermark-ledger-writer`: 2 series, 1 log line, 4 layers, 4 quotes |
+| the graph | eleven entities, seven edges; the broker hosts the topic |
+| the corpus | **4 of 30**, floor 4; every layer quotes its text |
+| the coverage report | `re1 ready`, **`re2 ready`**, `re3 degraded (no trace)` |
+| the export | RE1 4 / 0 data-less; RE2 4 / 7 data-less (all `traces.csv`) |
+| the guard | 49 tests; five new over the log rule, two of them driving the acceptance |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **90** tests red in 1 of 2 naming files |
+| `core` / repo | **182 / 4451** · **186 / 4638** |

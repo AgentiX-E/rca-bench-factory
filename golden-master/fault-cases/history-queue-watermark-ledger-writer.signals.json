@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-queue-watermark-ledger-writer",
+  "why": "Telemetry for the queue-watermark case: two metric series and, for the first time in this corpus, a log line. The log is the broker's own warning, quoted verbatim from the incident text -- `logs show the disk watermark crossed 92 percent` -- because a log body this repository invented would be a sentence nobody wrote, and the guard holds every log body to a quote the same way it holds each layer's prose. What a log series adds that a metric cannot: RE2 and RE3 write a `logs.csv`, and until this case every one of those files in an export of this corpus had a header and no rows.",
+  "series": [
+    {
+      "service": "kafka-broker-3",
+      "metric": "broker_disk_watermark_percent",
+      "unit": "%",
+      "baseline": 78,
+      "post": 92,
+      "quote": "the disk watermark crossed 92 percent",
+      "why": "the checkpoint `cp-watermark` holds the post-onset value, and the text states the threshold it crossed"
+    },
+    {
+      "service": "ledger-writer",
+      "metric": "producer_buffer_records",
+      "unit": "count",
+      "baseline": 200,
+      "post": 40000,
+      "quote": "producer buffer grew to 40,000 records",
+      "why": "the checkpoint `cp-buffer` holds the post-onset value; the buffer grew because publishes were throttled rather than failed"
+    }
+  ],
+  "logs": [
+    {
+      "service": "kafka-broker-3",
+      "severity": "WARN",
+      "body": "disk watermark crossed 92 percent; producers throttled",
+      "quote": "the disk watermark crossed 92 percent",
+      "why": "the broker's own line, which is what makes this case's `logs.csv` a file with a row in it"
+    }
+  ]
+}

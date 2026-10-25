@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4446 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4451 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4633 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4638 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2455,3 +2455,55 @@ red); core **182 / 4446**, cli 4 / 187, repo **186 / 4633**; audit 5 volumes, fi
 - **`buildLogsCsv` cannot return "no file".** `[open: it always emits a header, so the only way a
   caller learns that a case has no logs is by counting rows itself -- which is what the guard now
   does. A null return would make the empty case unrepresentable, and it would change every caller]`
+
+## v2.67 — the first log line, and RE2 stops being degraded
+
+v2.66 ended with the number that named the hole: `RE2 3 case(s) written, 6 file(s) with no rows`,
+because a declaration could only expand into metric samples. **A log is not a metric standing in for
+one**: it has no baseline and no threshold, G3 never reads it, and its content is a sentence. So the
+declaration gained `logs`, whose entries carry a `body` (a reconstruction) and a `quote` (verbatim
+from the incident text) -- the same split as the four layers, and checked the same way, because a log
+body this repository wrote for itself would be evidence of nothing.
+
+**The fourth case** is `history-queue-watermark-ledger-writer`, from
+`middleware-queue-watermark-ledger-writer`: two series (`broker_disk_watermark_percent` 78 → 92,
+`producer_buffer_records` 200 → 40000) and one log line quoting the broker. The graph grew to eleven
+entities and seven edges -- `ledger-writer` calls `ledger-events`, and a `node` called
+`kafka-broker-3` **hosts** the topic, because the watermark is measured on the broker.
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 ready · rcaeval-re3 degraded (no trace)
+check-fault-cases: export RE1 4 case(s) written, 0 file(s) with no rows · RE2 4 case(s) written, 7 file(s) with no rows · RE3 0 case(s) written, 0 file(s) with no rows, 4 skipped
+```
+
+**`rcaeval-re2` is ready for the first time.** The seven data-less files that remain are all
+`traces.csv`: a trace needs span timings the texts do not state. `4 of 30` samples carry a four-layer
+case and the floor is 4.
+
+**Three defects.** G2 refused the broker -- `signal references service 'kafka-broker-3' which is not
+in the entity graph` -- because I had assumed signal services were free-form, when `checkout-api-0`
+resolves because it *is* an entity; the repair was to add the node and its `hosts` edge, not to rename
+the series. The first log tests passed for the wrong reason: they fed the ledger declaration to the
+checkout case, so the caseId mismatch was itself a refusal, and they would have kept passing if the
+log checks were deleted -- rewritten against the checkout declaration. And `filled  11` versus
+`filled 11`: the formatter pads the count to two characters, and the expectation was written by
+substituting a digit into the old string. **A formatted line is not a string with a number in it.**
+
+**Acceptance.** 49 tests over the guard (five new over the log rule); typecheck, lint, `docs:check`
+green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46 gates, 46
+caught, 0 survived** (hollowing the guard turns 90 tests red); four cases and eleven entities; core
+**182 / 4451**, cli 4 / 187, repo **186 / 4638**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5
+volumes, findings 1–239.
+
+### Left open
+
+- **Every data-less file left is a trace.** `[open: a span has a start, a duration and a parent, and
+  none of the thirty texts states one. The corpus can reach RE1 and RE2 honestly and cannot reach
+  RE3, which needs traces -- and RE3 also targets code-level faults, of which the corpus has none,
+  so two independent reasons keep it out]`
+- **A log line has no baseline, so nothing checks its timing.** `[open: the three lines are placed at
+  fixed offsets after the onset, and a declared offset that contradicted the text would pass. The
+  quote holds the content; nothing holds the clock]`
+- **26 samples still carry no case.** `[open: 4 of 30. The annotation now has to satisfy seven
+  obligations -- four layers with quotes, G1, G2, G5, and optionally telemetry with an origin, a
+  series that passes G3, a baseline that locates it, and a log body that quotes its text]`

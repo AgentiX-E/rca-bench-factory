@@ -1,0 +1,80 @@
+{
+  "caseId": "history-queue-watermark-ledger-writer",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-02T21:40:00.000Z",
+  "window": {
+    "start": "2026-10-02T21:28:00.000Z",
+    "end": "2026-10-02T21:56:00.000Z"
+  },
+  "fault": {
+    "type": "queue-disk-watermark",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "watermarkPercent": 92,
+      "retentionRaisedToDays": 7,
+      "volumesSizedForDays": 3
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/ledger-writer",
+    "rootCauseComponent": "ledger-writer",
+    "rootCauseReason": "Publishes timed out because the broker throttled producers once its disk watermark crossed 92 percent, and the watermark crossed because the topic's retention had been raised to seven days on volumes sized for three. The ledger writer is the workload that failed; the retention change is the mechanism, and lowering it restored publishes within a minute.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "broker_disk_watermark_percent",
+        "description": "the broker's own watermark against its threshold, which is what a throttling decision is made on"
+      },
+      {
+        "type": "log",
+        "ref": "broker_disk_watermark_warning",
+        "description": "the broker says so in its own words, which is why this case can carry a log line at all"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/ledger-writer",
+        "toEntityId": "mq:synthetic-storefront/ledger-events",
+        "mechanism": "the topic's retention was raised to seven days on volumes sized for three, so the broker's disk watermark crossed 92 percent and it throttled producers; the writer's publishes then timed out and its buffer grew to 40,000 records",
+        "evidenceRefs": ["cp-watermark", "cp-buffer"]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-watermark",
+        "entityRef": "mq:synthetic-storefront/ledger-events",
+        "signalRef": "broker_disk_watermark_percent",
+        "comparator": ">",
+        "value": 92,
+        "unit": "%",
+        "description": "the broker's disk watermark against the threshold it throttles at, up from a three-day-footprint baseline"
+      },
+      {
+        "checkpointId": "cp-buffer",
+        "entityRef": "service:synthetic-storefront/ledger-writer",
+        "signalRef": "producer_buffer_records",
+        "comparator": ">",
+        "value": 40000,
+        "unit": "count",
+        "description": "the writer's producer buffer, which grew because publishes were throttled rather than failed"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "lower the topic's retention back to three days, which drops the watermark below the throttle threshold",
+        "target": "mq:synthetic-storefront/ledger-events"
+      }
+    ]
+  },
+  "query": "Ledger publishes started timing out at 21:40 and the producer buffer grew to 40,000 records while the broker throttled rather than failed them. The topic's retention had been raised to seven days the week before. What failed?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

@@ -55,6 +55,26 @@
       "aliases": [
         "the topic"
       ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/ledger-writer",
+      "kind": "service",
+      "name": "ledger-writer",
+      "aliases": []
+    },
+    {
+      "entityId": "mq:synthetic-storefront/ledger-events",
+      "kind": "mq",
+      "name": "ledger-events",
+      "aliases": [
+        "the topic"
+      ]
+    },
+    {
+      "entityId": "node:synthetic-storefront/kafka-broker-3",
+      "kind": "node",
+      "name": "kafka-broker-3",
+      "aliases": []
     }
   ],
   "edges": [
@@ -82,6 +102,16 @@
       "from": "service:synthetic-storefront/order-events-consumer",
       "to": "mq:synthetic-storefront/order-events",
       "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/ledger-writer",
+      "to": "mq:synthetic-storefront/ledger-events",
+      "relation": "calls"
+    },
+    {
+      "from": "node:synthetic-storefront/kafka-broker-3",
+      "to": "mq:synthetic-storefront/ledger-events",
+      "relation": "hosts"
     }
   ]
 }

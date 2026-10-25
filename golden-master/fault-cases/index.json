@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
-  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Three cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 3,
+  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Four cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
+  "min": 4,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -92,6 +92,36 @@
         }
       ],
       "signals": "history-kafka-consumer-lag.signals.json"
+    },
+    {
+      "caseId": "history-queue-watermark-ledger-writer",
+      "sampleId": "middleware-queue-watermark-ledger-writer",
+      "case": "history-queue-watermark-ledger-writer.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-queue-watermark-ledger-writer.signals.json",
+      "why": "annotated from the incident text of `middleware-queue-watermark-ledger-writer`. The mechanism lives in a configuration change one level below the workload that failed -- the topic's retention was raised to seven days on volumes sized for three -- so the chain points from the writer to its topic and the mechanism sentence carries the direction, because a graph edge that said 'the topic calls the writer' would be a topology nobody deployed. This is also the first case in the corpus that can fill a logs.csv: the broker states the watermark in its own words, so the log line is quoted rather than invented, and the export stops being a file with a header and no rows for one case out of four.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The ledger writer's publishes began timing out at 21:40",
+          "why": "the failing workload, named as the thing whose publishes stopped"
+        },
+        {
+          "layer": "fault",
+          "quote": "the topic's retention was raised to seven days during the week and the broker volumes were sized for three",
+          "why": "the mechanism: a retention change against a volume footprint that cannot hold it"
+        },
+        {
+          "layer": "process",
+          "quote": "Producers were throttled rather than failed",
+          "why": "what makes this throttling and not an outage -- the writer's buffer grew instead of its publishes erroring"
+        },
+        {
+          "layer": "evidence",
+          "quote": "the disk watermark crossed 92 percent",
+          "why": "the checkpoint's value, stated by the broker rather than inferred"
+        }
+      ]
     }
   ]
 }

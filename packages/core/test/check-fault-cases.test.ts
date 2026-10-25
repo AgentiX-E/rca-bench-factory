@@ -111,7 +111,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
   it('accepts the shipped corpus and reports how many samples carry a case', () => {
     const result = run([]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('3 of 30 sample(s) carry a four-layer case');
+    expect(result.out).toContain('4 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
@@ -721,5 +721,86 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     expect(result.status, result.out).toBe(0);
     expect(result.out).not.toContain('check-fault-cases: coverage');
     expect(result.out).not.toContain('check-fault-cases: export');
+  });
+});
+
+describe('check-fault-cases · a log line, which is the first modality a metric could not supply', () => {
+  // RE2 writes a `logs.csv`, and every one this corpus produced had a header and no rows until
+  // finding 239. A log has no baseline and no threshold, so the only thing that holds it to the
+  // incident is the quote -- the same rule the four layers use, applied to the one modality where
+  // the body is necessarily a reconstruction.
+  //
+  // The three refusals below edit the *checkout* declaration, because the scratch corpus writes the
+  // checkout case: a ledger declaration passed with a checkout case would also be refused, by the
+  // caseId check, and the test would pass for a reason it did not name.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The checkout declaration with one log line appended, quoting its own text. */
+  function withLog(edit: (line: Record<string, unknown>) => void): Record<string, unknown> {
+    const copy = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>;
+    const line: Record<string, unknown> = {
+      service: 'checkout-api-0',
+      severity: 'WARN',
+      body: 'cpu throttling counters climbed for eleven minutes; the pod sat at its limit',
+      quote: 'Container CPU throttling counters climbed the whole time',
+      why: 'the only place the throttling is stated, and it is stated as a condition rather than a spike',
+    };
+    edit(line);
+    copy.logs = [line];
+    return copy;
+  }
+
+  it('accepts the shipped log line, because it quotes the broker and not the author', () => {
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
+    expect(result.out).toContain('rcaeval-re2 ready');
+    expect(result.out).toContain('RE2 4 case(s) written, 7 file(s) with no rows');
+  });
+
+  it('accepts a log line whose quote is in its own case text', () => {
+    const result = run(['--cases', corpus({ signals: withLog(() => undefined) })]);
+    expect(result.status, result.out).toBe(0);
+  });
+
+  it('refuses a log body whose quote is not in the incident text', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withLog((line) => {
+          line.quote = 'Container CPU throttling counters fell the whole time';
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('derives a log line from a quote the incident text does not contain');
+  });
+
+  it('refuses a log body too short to be a line', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withLog((line) => {
+          line.body = 'throttled';
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('declares a log body shorter than twelve characters');
+  });
+
+  it('refuses a log line that does not say what it supports', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withLog((line) => {
+          line.why = 'because';
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('declares a log line without saying what it supports');
   });
 });

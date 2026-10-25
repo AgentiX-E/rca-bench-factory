@@ -182,6 +182,38 @@ function expandSeries(declaration, faultCase) {
 }
 
 /**
+ * Where a declared log line lands, relative to the onset.
+ *
+ * Three lines, a minute and a half apart, all after the onset: a log has no baseline to be
+ * measured against, so there is nothing to place before it, and G3 does not read logs at all. What
+ * the count is for is that a `logs.csv` with three rows is a file an exporter can say something
+ * about, where one row would look like a single event rather than a condition.
+ */
+const LOG_OFFSETS_MS = [30_000, 150_000, 270_000];
+
+/**
+ * A declared log line, expanded into the signals an exporter reads.
+ *
+ * `body` is a reconstruction and `quote` is the verbatim fragment it rests on -- the split is the
+ * same one the four layers use, and for the same reason: a log body this repository invented would be
+ * a sentence nobody wrote, so the quote is what the guard checks against the incident text.
+ */
+function expandLog(declaration, faultCase) {
+  const onsetMs = Date.parse(faultCase.injectTime);
+  return LOG_OFFSETS_MS.map((offset) => ({
+    irVersion: '1.0.0',
+    resource: { 'service.name': String(declaration.service) },
+    timestamp: new Date(onsetMs + offset).toISOString(),
+    signal: 'log',
+    payload: {
+      kind: 'log',
+      body: String(declaration.body),
+      ...(typeof declaration.severity === 'string' ? { severityText: String(declaration.severity) } : {}),
+    },
+  }));
+}
+
+/**
  * Every layer's annotation must show the sentence it came from.
  *
  * `why` is prose and cannot be checked; a quote can. The annotations in this directory are made
@@ -374,7 +406,24 @@ for (const entry of index.cases) {
         );
       }
     }
-    const signals = series.flatMap((one) => expandSeries(one, parsedCase));
+    const logs = Array.isArray(declaration.logs) ? declaration.logs : [];
+    for (const one of logs) {
+      const quote = typeof one?.quote === 'string' ? one.quote : '';
+      const body = typeof one?.body === 'string' ? one.body : '';
+      if (!text.includes(fold(quote))) {
+        problems.push(
+          `'${caseId}' derives a log line from a quote the incident text does not contain: '${quote}'`,
+        );
+      }
+      if (body.length < 12) {
+        problems.push(`'${caseId}' declares a log body shorter than twelve characters: '${body}'`);
+      }
+      if (typeof one?.why !== 'string' || one.why.length < 20) {
+        problems.push(`'${caseId}' declares a log line without saying what it supports`);
+      }
+    }
+
+    const signals = [...series.flatMap((one) => expandSeries(one, parsedCase)), ...logs.flatMap((one) => expandLog(one, parsedCase))];
     telemetryCases.push(parsedCase);
     telemetrySignals[caseId] = signals;
     if (firstGraph === null) firstGraph = parsedGraph;
