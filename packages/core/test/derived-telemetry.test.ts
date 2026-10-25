@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LOG_OFFSETS_MS,
   SERIES_DERIVATIONS,
+  SERIES_NOISE,
   SERIES_POINTS,
   TRACE_OFFSET_MS,
   expandLog,
@@ -175,6 +176,55 @@ describe('expandSeries · the shape each derivation means', () => {
     ).toEqual([99, 100, 97.02, 99.99, 98.01, 100, 97.416, 99.594, 100, 100, 98, 100, 99, 100, 98.4, 100]);
   });
 
+  it('reads a declaration with no sampling noise exactly, on both sides', () => {
+    // Finding 254. A share of 1 that dips to 0.98 is a claim the data does not make: "every request
+    // 503'd" is a ratio of counted events over a scrape interval, and when every request failed at
+    // every scrape the value is exactly 1. Sampling noise belongs to a quantity measured by sampling
+    // -- a latency percentile -- not to one computed from two counters.
+    const declaration: SeriesDeclaration = {
+      service: 'user-profile',
+      metric: 'http_503_ratio',
+      unit: '1',
+      baseline: 0,
+      post: 1,
+      noise: 'none',
+    };
+    expect(values(declaration)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]);
+  });
+
+  it('keeps a condition that reads 1 at exactly 1 when it declares no noise', () => {
+    // The case that found this: `node_condition_ready` is 1 or it is 0. A condition that reads 0.98
+    // is not a condition slightly less ready, it is a different reading wearing a fraction.
+    const samples = values({
+      service: 'worker-3',
+      metric: 'node_condition_ready',
+      unit: '1',
+      baseline: 1,
+      post: 1,
+      noise: 'none',
+    });
+    expect(samples).toEqual(new Array(SERIES_POINTS * 2).fill(1));
+  });
+
+  it('still jitters when the declaration says nothing, which is the default', () => {
+    // The default is `sampled`, and this is the negative control for the field: without it, the two
+    // tests above would pass on a module that had simply stopped adding noise anywhere.
+    const samples = values({
+      service: 'w',
+      metric: 'node_condition_ready',
+      unit: '1',
+      baseline: 1,
+      post: 1,
+    });
+    expect(samples).toContain(0.98);
+  });
+
+  it('treats noise as a closed vocabulary, so a typo is refused rather than read as sampled', () => {
+    // Read through the exported tuple rather than compared against a list here: the guard refuses an
+    // unknown member, and this asserts the tuple is what it says it is.
+    expect([...SERIES_NOISE]).toEqual(['sampled', 'none']);
+  });
+
   it('carries the unit only when the declaration has one', () => {
     const withUnit = expandSeries({ service: 's', metric: 'm', unit: 'ms', baseline: 1, post: 2 }, WHEN);
     expect(withUnit[0]?.payload).toMatchObject({ kind: 'metric', name: 'm', unit: 'ms' });
@@ -335,6 +385,25 @@ describe('the published description', () => {
     }
     const named = [...paragraph.join(' ').matchAll(/`(step|counter|spike)`/g)].map((match) => match[1]);
     expect(named).toEqual([...SERIES_DERIVATIONS]);
+  });
+
+  it('names exactly the members of SERIES_NOISE, in order', () => {
+    // The same shape as the `derivation` check above, for the second closed vocabulary in this file.
+    // `noise` decides whether a reading is exact, so a document listing one member and not the other
+    // is a document that would let an annotator believe the default is the only choice.
+    const text = readFileSync(DOC, 'utf8');
+    const lines = text.split('\n');
+    const start = lines.findIndex((one) => one.startsWith('`noise` is the second closed vocabulary'));
+    expect(start, 'the paragraph describing `noise` is gone from docs/data-model.md').toBeGreaterThan(-1);
+    // Up to the paragraph that follows it, not up to the first blank line: the section is a paragraph
+    // and a table, and stopping at the blank line between them found nothing at all.
+    const end = lines.findIndex((one, at) => at > start && one.startsWith('`derivation` is a closed vocabulary'));
+    expect(end, 'the section after `noise` is gone, so this test cannot find its boundary').toBeGreaterThan(start);
+    const named: string[] = [];
+    for (const match of lines.slice(start, end).join('\n').matchAll(/`(sampled|none)`/g)) {
+      if (!named.includes(match[1] as string)) named.push(match[1] as string);
+    }
+    expect(named).toEqual([...SERIES_NOISE]);
   });
 
   it('states the cadence and the offsets the module implements', () => {

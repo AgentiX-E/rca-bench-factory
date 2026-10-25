@@ -126,6 +126,9 @@ function displayNumber(value) {
  */
 const DERIVATIONS = core.SERIES_DERIVATIONS;
 
+/** Whether a declared series carries sampling noise, read from the module that applies it. */
+const NOISE = core.SERIES_NOISE;
+
 /** The two timestamps the expansion needs, read from the case rather than passed around. */
 function expansionTime(faultCase) {
   return { windowStart: faultCase.window.start, onset: faultCase.injectTime, windowEnd: faultCase.window.end };
@@ -335,6 +338,22 @@ for (const entry of index.cases) {
           `'${caseId}' declares derivation '${String(derivation)}' for '${String(one?.metric)}', ` +
             `which is not one of ${DERIVATIONS.join(' / ')}`,
         );
+      }
+      // Whether the reading is exact. `noise` decides that, so an unknown member is refused rather
+      // than read as the default -- and a counter refuses the field outright, because a counter's
+      // samples are its accumulation and are exact whichever way the field is set (finding 254).
+      if (one?.noise !== undefined) {
+        if (!NOISE.includes(one.noise)) {
+          problems.push(
+            `'${caseId}' declares noise '${String(one.noise)}' for '${String(one?.metric)}', ` +
+              `which is not one of ${NOISE.join(' / ')}`,
+          );
+        } else if (derivation === 'counter') {
+          problems.push(
+            `'${caseId}' declares noise for '${String(one?.metric)}', which is a counter -- its samples ` +
+              'are exact either way, so the field would claim a distinction the shape does not have',
+          );
+        }
       }
       // A reading has to be a value its unit admits. The expansion clamps the *noise* into the unit's
       // range, and this is the other half: the number the annotation states is the author's, and a

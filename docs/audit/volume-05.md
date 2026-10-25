@@ -4594,3 +4594,65 @@ second `code`-category case in the corpus — so the report now writes 2 and ski
 | the exports | RE1 10 / 0 empty, RE2 10 / 14, RE3 **2** / 3 empty / 8 skipped |
 | `core` / repo | **186 / 4593** · **190 / 4780**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 254 — a condition that reads 98 % ready
+
+Finding 252 gave every unit a range and clamped the sampling noise into it, which fixed a share of 1
+becoming 1.02. It left the other half of the same defect in place, and said so: `node_condition_ready`
+read 1, and the negative arms of the ±2 % cycle pulled it to 0.98.
+
+**A condition is 1 or it is 0.** A node that is ready at 98 % is not a node that is nearly ready; it is
+a different reading wearing a fraction. The corpus had been asserting a claim about a *computation*
+with the noise of a *measurement*, and the clamp could not help, because 0.98 is inside `[0, 1]` and
+that is where the defect lives.
+
+### The distinction the corpus was missing
+
+| kind of reading | where its value comes from | noise |
+| --- | --- | --- |
+| a p99 latency, a queue depth | sampling a continuous quantity | ±2 %, the fixed cycle |
+| a share of counted requests | two counters and a division | none: 60 % of the requests is 60, not 58.8 |
+| a probe's success ratio, a node condition | counted outcomes | none: zero means no probe passed |
+
+`SeriesDeclaration.noise` is a closed vocabulary -- `sampled` (the default) and `none` -- and the
+default is the old behaviour, so no existing declaration changes meaning. The guard refuses a member
+outside the vocabulary, and refuses the field on a `counter`: a counter's samples are its accumulation
+and are exact either way, so the field beside it would claim a distinction the shape does not have.
+
+### The corpus adopts it where the text states a counted quantity
+
+Six series across three cases, each with the sentence that makes it exact:
+
+| case | series | why it is exact |
+| --- | --- | --- |
+| pod-kill | `http_503_ratio` 0 → 1 | "every request 503'd" -- every scrape that observed only 503s reads 1 |
+| pod-kill | `node_condition_ready` 1 → 1 | a condition is 1 or 0 |
+| 5xx | `http_502_ratio_percent` 0 → 60 % | a share of counted requests |
+| 5xx | `tax_calculation_503_ratio_percent` 0 → 60 % | the dependency's own responses, counted |
+| 5xx | `other_dependency_error_ratio_percent` 0 → 0 | the absence of errors, counted -- a jittered zero is a measurement nobody took |
+| crash-loop | `liveness_probe_success_ratio` 0 → 0 | probe outcomes are counted |
+
+The series that stay `sampled` are the ones the text describes as measured: `request_duration_p99_ms`,
+`client_span_duration_ms`, `server_handler_time_ms`, `per_message_processing_seconds`. Nothing changes
+about the corpus's ranks: the two baselines already read these series as flat-to-stepped, and G3 and
+G4 pass for all ten cases.
+
+### A test that found nothing, twice
+
+The document test for the noise vocabulary first stopped at the first blank line, and the section is a
+paragraph *and* a table -- so it collected zero members and compared `[]` to `['sampled', 'none']`.
+The fix was to slice to the next section's heading. The first version of the `derivation` test had the
+same shape and was fixed the same way in finding 249; writing the second one by copying the first is
+how the bug came back.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the vocabulary | `sampled` / `none`, default `sampled`, read through the exported tuple by both the module and the guard |
+| the refusal | `'samppling'` refused with the members named; `noise` on a counter refused as a distinction the shape does not have |
+| the values | a share of 1 reads `1` sixteen times; a condition at 1 reads `1`; a `sampled` series still contains `0.98`, so the field is not a global switch |
+| the corpus | six series adopted, each with its sentence; **10 of 30**, `29 of 29` references, `0 of 26` comparable assertions |
+| the document | the vocabulary table is compared against the tuple by a test, and the boundary is the next heading rather than a blank line |
+| `core` / repo | **186 / 4600** · **190 / 4787**; coverage 99.97 / 99.76 / 100 / 99.97, `derived-telemetry.ts` clean |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

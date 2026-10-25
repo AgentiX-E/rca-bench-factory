@@ -1419,3 +1419,53 @@ gates, 46 caught, 0 survived**; core **186 / 4593**, cli 4 / 187, repo **190 / 4
 The two items v2.79 left open that this round did not touch are unchanged: an absence of logs cannot be
 a checkpoint, and a binary reading still wobbles. So are the two long-standing ones: a parameter is
 tied to the text only through the fault layer's quote, and compound units are compared structurally.
+
+## v2.81 — a condition that reads 98 % ready
+
+**What was open.** v2.79's third item: "a binary reading still wobbles -- `node_condition_ready` reads 1
+and the noise pulls it to 0.98, because the model has no way to say a series has no sampling noise; the
+clamp fixes the ceiling and leaves the wobble."
+
+**What changed.** `SeriesDeclaration.noise`, a closed vocabulary of `sampled` (the default) and `none`.
+The distinction is between a reading that is *measured* and one that is *computed*:
+
+| reading | noise | why |
+| --- | --- | --- |
+| a p99 latency, a queue depth | `sampled` | measured by sampling a continuous quantity |
+| a share of counted requests | `none` | two counters and a division: 60 % is 60, not 58.8 |
+| a probe's success ratio, a node condition | `none` | counted outcomes: zero means no probe passed |
+
+The default is the old behaviour, so no existing declaration changes meaning. The guard refuses a
+member outside the vocabulary, and refuses the field on a `counter` -- its samples are its accumulation
+and are exact either way, so the field would claim a distinction the shape does not have.
+
+**Six series adopted**, each with the sentence that makes it exact: pod-kill's `http_503_ratio` (0 → 1,
+"every request 503'd") and `node_condition_ready` (1 → 1, a condition is 1 or 0); the 5xx case's three
+shares, including the counted zero that is its control; and the crash-loop's
+`liveness_probe_success_ratio`. The series the text describes as measured stay `sampled`:
+`request_duration_p99_ms`, `client_span_duration_ms`, `server_handler_time_ms`,
+`per_message_processing_seconds`. Both baselines still place the root cause in top-K for all ten cases.
+
+**A test that found nothing, twice.** The document test for the noise table stopped at the first blank
+line; the section is a paragraph *and* a table, so it compared `[]` to `['sampled', 'none']`. The
+`derivation` test had the same shape and was fixed the same way in finding 249 -- copying the first one
+to write the second is how the bug came back.
+
+**Acceptance.** New tests: 5 over the field and the vocabulary, 2 over the guard's refusals, 1 over the
+document table; `SERIES_NOISE` registered in the export surface (`core` publishes it, so the guard reads
+one tuple rather than its own copy); typecheck, lint, `docs:check` green; `derive-gate-sites --check`
+green (86 sites, 46 scripts); the meta-gate at **46 gates, 46 caught, 0 survived**; core **186 / 4600**,
+cli 4 / 187, repo **190 / 4787**; coverage 99.97 / 99.76 / 100 / 99.97, `derived-telemetry.ts` clean;
+audit 5 volumes, findings 1–254.
+
+### Left open
+
+- **20 samples still carry no case.** `[open: 10 of 30; the corpus is the long pole and the next case is
+  the next round]`
+- **An absence of logs cannot be a checkpoint.** `[open: unchanged from v2.79 -- a `log` reference
+  asserts that a line exists]`
+- **The audit volume is nearly full.** `[open: volume-05 is 272,641 of 280,000 bytes, so the next
+  finding starts volume-06 and its row goes into `docs/audit.md`]`
+
+Unchanged: the chain's first step is not required to be the root cause; a parameter is tied to the text
+only through the fault layer's quote; compound units are compared structurally.

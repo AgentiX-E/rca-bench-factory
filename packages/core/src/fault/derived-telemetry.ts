@@ -38,6 +38,14 @@ import { clampToUnit } from '../util/unit.js';
  * declaration that is itself outside its unit's range is a bad annotation, and `check-fault-cases`
  * refuses it, which is where a bad annotation belongs (finding 252).
  *
+ * ## Two kinds of reading, and one of them is exact
+ *
+ * A latency percentile is a quantity measured by sampling, and the ±2 % cycle below is what a sampled
+ * quantity looks like. A ratio of counted events over a scrape interval is not: when every request
+ * failed at every scrape the share is exactly 1. `noise: 'none'` says so, and without it the corpus
+ * asserted the second kind with the first kind's noise -- a condition reading 1 wobbled to 0.98, and
+ * only the ceiling clamp stopped it going to 1.02 (finding 254).
+ *
  * ## What is fixed rather than random
  *
  * Every value here is a function of the declaration and the timestamps: the jitter is a fixed cycle,
@@ -68,6 +76,26 @@ export const SERIES_DERIVATIONS = ['step', 'counter', 'spike'] as const;
 
 /** How a declared series moves. Derived from `SERIES_DERIVATIONS`. */
 export type SeriesDerivation = (typeof SERIES_DERIVATIONS)[number];
+
+/**
+ * Whether a declared series carries sampling noise.
+ *
+ * - `sampled` (the default): the reading is a quantity measured by sampling -- a latency percentile, a
+ *   queue depth -- and the samples are drawn around it by a fixed cycle of ±2 %.
+ * - `none`: the reading is computed rather than sampled. A ratio of counted events over a scrape
+ *   interval is exact: when every request failed at every scrape, the share is 1 and not 1.02, and a
+ *   condition that reads 1 is ready rather than 98 % ready.
+ *
+ * The field exists because the corpus asserted the second kind with the first kind's noise: a
+ * `node_condition_ready` at 1 wobbled to 0.98 and only the ceiling clamp kept it from 1.02, which was
+ * a claim about the data that the data does not make (finding 254). A closed vocabulary rather than a
+ * boolean, because a third kind -- a reading whose noise is known to be asymmetric, say -- would
+ * otherwise arrive as a new boolean somewhere else.
+ */
+export const SERIES_NOISE = ['sampled', 'none'] as const;
+
+/** How much sampling noise a declared series carries. Derived from `SERIES_NOISE`. */
+export type SeriesNoise = (typeof SERIES_NOISE)[number];
 
 /**
  * Samples per side of the onset.
@@ -116,6 +144,8 @@ export interface SeriesDeclaration {
   baseline: number;
   post: number;
   derivation?: SeriesDerivation;
+  /** Absent means `sampled`. A counter is exact regardless, so the field says nothing about one. */
+  noise?: SeriesNoise;
 }
 
 export interface LogDeclaration {
@@ -145,13 +175,23 @@ function at(epochMs: number): string {
 }
 
 /**
- * A level reading with the sampling noise applied, kept inside the unit's range.
+ * A level reading with its sampling noise applied, kept inside the unit's range.
  *
  * The one place where "a measurement plus noise" happens, so the bound is applied wherever noise is
  * and nowhere else. `clampToUnit` leaves the value alone when the declaration names no unit or names
  * one the table does not know, because then there is no range to keep it in.
+ *
+ * A declaration that says `noise: 'none'` gets its level back unchanged, which is what an exact
+ * reading is: the clamp is then a no-op too, because the level is already inside the range the
+ * declaration was checked against.
  */
-function withNoise(level: number, index: number, unit: string | undefined): number {
+function withNoise(
+  level: number,
+  index: number,
+  unit: string | undefined,
+  noise: SeriesNoise | undefined,
+): number {
+  if (noise === 'none') return clampToUnit(unit, level);
   return clampToUnit(unit, level * (1 + SERIES_JITTER[index]! * 0.02));
 }
 
@@ -183,7 +223,7 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
     const value =
       derivation === 'counter'
         ? declaration.baseline
-        : withNoise(declaration.baseline, index, declaration.unit);
+        : withNoise(declaration.baseline, index, declaration.unit, declaration.noise);
     out.push({ timestamp: at(windowStartMs + index * preSpacing), value });
   }
 
@@ -197,7 +237,8 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
           : declaration.post;
     // The jitter is applied to the level a sample sits at, so a spike's excursion is post-sized and
     // its return is baseline-sized, and a counter's accumulation is exact because it is a total.
-    const value = derivation === 'counter' ? level : withNoise(level, index, declaration.unit);
+    const value =
+      derivation === 'counter' ? level : withNoise(level, index, declaration.unit, declaration.noise);
     out.push({ timestamp: at(onsetMs + (index + 1) * postSpacing), value });
   }
 

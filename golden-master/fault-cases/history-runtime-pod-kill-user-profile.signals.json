@@ -11,7 +11,8 @@
       "baseline": 0,
       "post": 1,
       "quote": "during which every request 503'd",
-      "why": "the checkpoint `cp-503-share` holds the whole share: with one replica there was nothing for a request to land on, so this is the outage rather than a degradation"
+      "why": "the checkpoint `cp-503-share` holds the whole share: with one replica there was nothing for a request to land on, so this is the outage rather than a degradation; a share of counted requests over a scrape interval, so it is exact: every scrape that observed only 503s reads 1, and a wobble would be a reading the data does not contain",
+      "noise": "none"
     },
     {
       "service": "user-profile",
@@ -29,7 +30,8 @@
       "baseline": 1,
       "post": 1,
       "quote": "Node conditions were healthy",
-      "why": "the checkpoint `cp-node-healthy` holds the one: the node stayed ready throughout, so the eviction decision came from pressure measured for another workload, not from anything wrong here"
+      "why": "the checkpoint `cp-node-healthy` holds the one: the node stayed ready throughout, so the eviction decision came from pressure measured for another workload, not from anything wrong here; a condition is 1 or it is 0; a value of 0.98 would be a different reading wearing a fraction, not a condition slightly less ready",
+      "noise": "none"
     }
   ]
 }

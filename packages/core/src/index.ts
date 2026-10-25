@@ -80,6 +80,7 @@ export {
   LOG_OFFSETS_MS,
   SERIES_DERIVATIONS,
   SERIES_JITTER,
+  SERIES_NOISE,
   TRACE_OFFSET_MS,
   expandLog,
   expandSeries,
@@ -90,6 +91,7 @@ export type {
   LogDeclaration,
   SeriesDeclaration,
   SeriesDerivation,
+  SeriesNoise,
   TraceDeclaration,
 } from './fault/derived-telemetry.js';
 

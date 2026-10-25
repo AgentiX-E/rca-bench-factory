@@ -225,9 +225,22 @@ the guard refuses a quote the text does not contain.
 
 | block | fields | expanded into |
 | --- | --- | --- |
-| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `quote`, `why` | metric signals: eight samples per side of the onset, spread across that side's own span of the window |
+| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `noise`, `quote`, `why` | metric signals: eight samples per side of the onset, spread across that side's own span of the window |
 | `logs[]` | `service`, `id`, `body`, `severity`, `quote`, `why` | log signals at onset + 30s, 150s, 270s |
 | `traces[]` | `service`, `spanName`, `durationMs`, `parent`, `quote`, `why` | trace signals at onset + 10s, with span ids derived from `sha256(caseId)` |
+
+`noise` is the second closed vocabulary, and it says whether the reading is a **measurement** or a
+**computation**:
+
+| member | the reading | example |
+| --- | --- | --- |
+| `sampled` (default) | a quantity measured by sampling, drawn with a fixed ±2 % cycle | a p99 latency, a queue depth |
+| `none` | a quantity computed exactly, emitted at its value | a share of counted requests, a probe's success ratio, a node condition |
+
+The distinction is not cosmetic: a share of exactly 1 with ±2 % noise is 1.02 and a condition that
+reads 1 dips to 0.98, and neither is a reading the data contains. A `counter` refuses the field
+outright -- its samples are its accumulation and are exact either way, so the field would claim a
+distinction the shape does not have.
 
 `derivation` is a closed vocabulary in `ir` terms -- `step` (a level change, the default), `counter`
 (an accumulation whose pre-window is flat at `baseline` and whose last sample is exactly `post`), and

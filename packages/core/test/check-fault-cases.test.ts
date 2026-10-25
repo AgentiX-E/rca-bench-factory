@@ -677,6 +677,30 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     expect(result.out).toContain('peak-z-by-service=2, median-shift-by-service=4');
   });
 
+  it('refuses a noise value outside the vocabulary', () => {
+    // Finding 254. The field decides whether a reading is exact, so a typo must not be read as
+    // `sampled`: `"none "` would otherwise produce a jittered series that reads as exact.
+    const edited = spikeCase();
+    (edited.series as Array<Record<string, unknown>>)[0]!.noise = 'samppling';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares noise 'samppling' for 'request_duration_p99_ms', which is not one of sampled / none",
+    );
+  });
+
+  it('refuses a noise claim on a counter, because a counter is already exact', () => {
+    // Two ways to say one thing is one too many: a counter's samples are its accumulation and carry no
+    // noise either way, so the field beside it says nothing and would let a reader believe it did.
+    const edited = spikeCase();
+    (edited.series as Array<Record<string, unknown>>)[1]!.noise = 'none';
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares noise for 'container_cpu_throttled_seconds_total', which is a counter -- its samples are exact either way",
+    );
+  });
+
   it('refuses a derivation outside the vocabulary instead of treating it as a step', () => {
     // The first version of the expansion tested `derivation === 'counter'` and let everything else
     // mean `step`, so `"counters"` would have produced a step series silently -- a file that reads

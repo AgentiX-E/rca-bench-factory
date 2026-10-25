@@ -21,7 +21,8 @@
       "baseline": 0,
       "post": 0,
       "quote": "before the HTTP listener comes up, so no probe ever passes",
-      "why": "the checkpoint `cp-probe` holds the zero: the process exits before the listener can answer a probe, which is why the probe is not the cause"
+      "why": "the checkpoint `cp-probe` holds the zero: the process exits before the listener can answer a probe, which is why the probe is not the cause; probe outcomes are counted, so a run where no probe passed reads exactly zero",
+      "noise": "none"
     }
   ],
   "logs": [
