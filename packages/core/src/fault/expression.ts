@@ -1,4 +1,10 @@
-import { NUMERIC_COMPARATORS, SERIES_POINTS, type NumericComparator, type SeriesPoint } from '../ir/types.js';
+import {
+  NUMERIC_COMPARATORS,
+  SERIES_POINTS,
+  isVocabularyMember,
+  type NumericComparator,
+  type SeriesPoint,
+} from '../ir/types.js';
 
 /**
  * The arithmetic a `derived` checkpoint states, and the only thing that can check it.
@@ -479,9 +485,15 @@ export function holdsWithTolerance(
   }
 }
 
-/** Whether a comparator is one this module can evaluate. Reads `NUMERIC_COMPARATORS`, not a copy. */
+/**
+ * Whether a comparator is one this module can evaluate.
+ *
+ * Reads `NUMERIC_COMPARATORS` through `isVocabularyMember`, the helper `ir/types.ts` provides for
+ * exactly this -- so the tuple stays the only place the members are written, and the narrowing to
+ * the member type comes from the tuple rather than from a cast at the call site.
+ */
 export function isNumericComparator(comparator: string): comparator is NumericComparator {
-  return NUMERIC_COMPARATORS.some((candidate) => candidate === comparator);
+  return isVocabularyMember(NUMERIC_COMPARATORS, comparator);
 }
 
 /** One sentence per problem, in the terms the annotation is written in. */
