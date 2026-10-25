@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **185 files, 4556 tests passed** (as of this commit) |
+| `core` test suite | **186 files, 4580 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **189 files, 4743 tests passed** (as of this commit) |
+| repo test suite | **190 files, 4767 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2941,10 +2941,8 @@ green; the meta-gate at **46 gates, 46 caught, 0 survived**; core **185 / 4556**
 
 ### Left open
 
-- **A counter's pre-window is not its baseline.** `[open: `expandSeries` writes `baseline + 0.1 *
-  index`, so a counter with `baseline: 0` accumulates 0.1 per sample before the onset -- a claim the
-  text does not make. It cannot be fixed here because nothing observes the expanded values; the fix
-  needs the expansion moved into `core` with a test that holds the pre-window to the baseline]`
+- ~~**A counter's pre-window is not its baseline.**~~ Closed by finding 249 (v2.76): the expansion
+  moved into `core` and the pre-window is flat at the baseline.
 - **The parameter is tied to the text only through the fault layer's quote.** `[open: if `1s` in
   `upstreamReadTimeout` is wrong, the checkpoint and the parameter are wrong together and agree]`
 - **24 samples still carry no case.** `[open: 6 of 30 carry one, and five of the eight categories are
@@ -2953,3 +2951,57 @@ green; the meta-gate at **46 gates, 46 caught, 0 survived**; core **185 / 4556**
 
 The v2.74 item about a green suite exiting 1 is unchanged this round: `e7f28b23` reported 4530 of 4530
 tests passing with one unhandled `[vitest-worker]` timeout, and no later run has repeated it.
+
+## v2.76 — the expansion becomes a module, and a counter stops running before the fault
+
+**What was open, and where it came from.** v2.75 recorded it while annotating: `expandSeries` gave a
+counter's pre-window samples `baseline + 0.1 * index`, so a counter with a baseline of zero was
+already accumulating before the onset -- failures before the change, in a text that says they began
+then. It was not repaired then because the expansion lived inside the guard's script and nothing
+observed the values it produced: a change there would have been a change no test could disagree with.
+
+**What changed.** `fault/derived-telemetry.ts` now owns `expandSeries`, `expandLog` and
+`expandTraces`, the closed `SERIES_DERIVATIONS` vocabulary the guard used to keep to itself, and the
+cadence and offset constants. The guard calls into it. A counter's pre-window is flat at its baseline
+-- what "this counter had accumulated this much by the start of the window" means -- and its last
+post-onset sample is still exactly the declared `post`.
+
+| declaration | pre-window | post-window |
+| --- | --- | --- |
+| `step`, 100 → 300 | `100, 102, 98, 101, 99, 101.6, 98.4, 100.6` | `300, 306, 294, 303, 297, 304.8, 295.2, 301.8` |
+| `counter`, 12 → 96 | `12, 12, 12, 12, 12, 12, 12, 12` | `22.5, 33, 43.5, 54, 64.5, 75, 85.5, 96` |
+| `counter`, 0 → 1 | `0, 0, 0, 0, 0, 0, 0, 0` | `0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1` |
+
+**A property that could not be tested before.** Finding 240 replaced a twelve-character *prefix* of
+the case id with a digest because two cases agreeing that far would have shared span ids. That repair
+had no test, because the function was unreachable from the suite. It has one: two ids that agree for
+twelve characters produce different span ids.
+
+**The consequence the fix exposed, and the number it moved.** The negative control for G4's
+two-solver requirement changed its answer: with the throttling counter's pre-window flat, its baseline
+has no spread, the `epsilon` floor turns its rise into an enormous z, and the pod that carries it
+(`checkout-api-0`) now outranks the service. Peak-z places the root cause **second** instead of
+first. The case is still refused for the reason the test is about -- the robust ranking places it
+fourth of four -- but the number moved, and it moved because a claim the expansion used to invent was
+removed.
+
+**The published description was missing too.** `docs/data-model.md` described the IR and not the
+signals file, so the format six cases use had no published specification. It has one now: the three
+blocks, their fields, what each expands into, and the counter's flat pre-window. The three shape
+names in that paragraph are a copy of `SERIES_DERIVATIONS`, so a test compares the paragraph against
+the tuple -- the same shape `check-data-model-vocabularies` gives the vocabularies a zod schema
+admits, applied to the one that reaches no schema at all.
+
+**Acceptance.** 21 tests over the expansion (every one asserting written-out numbers); the guard
+green with the corpus unchanged (`6 of 30`, `16 of 16`, `0 of 14`); `derived-telemetry.ts` at
+100 x4; typecheck, lint, `docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts);
+the meta-gate at **46 gates, 46 caught, 0 survived**; core **186 / 4580**, cli 4 / 187, repo
+**190 / 4767**; coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–249.
+
+### Left open
+
+- **24 samples still carry no case.** `[open: 6 of 30 carry one; five of the eight categories are
+  represented, and `runtime` and `dependency` are not]`
+
+The two items v2.74 and v2.73 left open -- a parameter tied to the text only through the fault layer's
+quote, and compound units compared structurally -- are unchanged this round.

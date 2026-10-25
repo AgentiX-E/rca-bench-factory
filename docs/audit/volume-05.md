@@ -4242,3 +4242,76 @@ its own; this one records the numbers and leaves the item open.
 | the exports | RE1 6 cases, 0 files with no rows; RE2 6 cases, 8 files with no rows; RE3 1 case written, 1 file with no rows, 5 skipped |
 | the baselines | both place `partner-portal` inside top-K, so G4 holds with two solvers |
 | `core` / repo | **185 / 4556** · **189 / 4743**; coverage 99.97 / 99.76 / 100 / 99.97 |
+
+## Finding 249 — the arithmetic nobody could observe, and a counter that was already running
+
+A `*.signals.json` file declares what a case's telemetry says: a baseline reading, a post-onset
+reading, and the sentence both come from. The samples are constructed -- and that construction lived
+in `scripts/check-fault-cases.mjs`, where **nothing printed it**. The guard reports counts of files,
+checkpoints and comparable assertions; it never prints a sample. So the expansion was a piece of
+arithmetic with no reader: every value it produced was used to decide G3 and G4, and no test could
+disagree with any of it.
+
+The first line of it yields the second half of this finding:
+
+```js
+const value = counter ? baseline + index * 0.1 : baseline * (1 + JITTER[index] * 0.02);
+```
+
+A counter's pre-window samples were written `baseline + 0.1 * index`. For the throttling counter
+(baseline 12) that is `12, 12.1, 12.2, 12.3`, which the incident's own words support ("the counters
+climbed the whole time"). For the consumer-lag counter, whose baseline is **0**, it is
+`0, 0.1, 0.2, 0.3` -- **lag before the incident, in a text that says the lag began at it**. The
+increment is an attempt to keep a baseline from being degenerate, and it is wrong exactly where the
+baseline is zero.
+
+It survived four annotation rounds because nothing observed the numbers. Finding 248 found it by
+needing a counter, deciding the shape it produced was a claim the text did not make, and using `step`
+instead -- reading the code, not running anything.
+
+### The repair: the expansion is a module, and the pre-window is flat
+
+`fault/derived-telemetry.ts` holds `expandSeries`, `expandLog` and `expandTraces`, the closed
+`SERIES_DERIVATIONS` vocabulary the guard used to keep for itself, and the constants that decide
+cadence and offsets. A counter's pre-window is now its baseline, which is what "this counter had
+accumulated this much by the start of the window" means; the post-window still accumulates in equal
+steps and its last sample is exactly the declared `post`.
+
+The values are asserted directly, which is the whole point:
+
+| declaration | pre-window | post-window |
+| --- | --- | --- |
+| `step`, 100 → 300 | `100, 102, 98, 101, 99, 101.6, 98.4, 100.6` | `300, 306, 294, 303, 297, 304.8, 295.2, 301.8` |
+| `counter`, 12 → 96 | `12, 12, 12, 12, 12, 12, 12, 12` | `22.5, 33, 43.5, 54, 64.5, 75, 85.5, 96` |
+| `counter`, 0 → 1 | `0, 0, 0, 0, 0, 0, 0, 0` | `0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1` |
+| `spike`, 12 → 900 | jittered around 12 | `900`, then jittered around 12 |
+
+### A property that could not be tested while the code lived in a script
+
+`expandTraces` derives span ids from `sha256(caseId)` -- finding 240's repair, which replaced a
+twelve-character *prefix* of the case id because two cases agreeing that far would have produced the
+same span ids and one case's trace would have pointed into the other's. That repair had no test,
+because the function was unreachable from the suite. It has one now: two case ids that agree for
+twelve characters produce different ids, asserted rather than described.
+
+### The consequence the fix exposed
+
+The negative-control fixture for G4's two-solver requirement changed its answer. Its root cause
+carries a spike and its pod carries the throttling counter; with the counter's pre-window flat, that
+counter's baseline has no spread at all, the `epsilon` floor turns its rise into an enormous z, and
+the *pod* (`checkout-api-0`, a different `service.name`) now outranks the service. Peak-z places the
+root cause second instead of first. The case is still refused, and for the reason the test is about
+-- the robust ranking places it fourth of four -- but the number moved, and it moved because a claim
+the expansion used to invent was removed.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the module | `expandSeries`, `expandLog`, `expandTraces`, `SERIES_DERIVATIONS`, and the cadence constants, all exported and enumerated |
+| the fix | a counter's pre-window is flat at its baseline; `0 → 1` no longer accumulates before the onset |
+| the arithmetic | 19 tests, every one asserting written-out numbers rather than recomputed ones |
+| the ids | two case ids agreeing for twelve characters produce different span ids |
+| the guard | still green, and now reads the vocabulary and the expansion from `core` instead of owning them |
+| `core` / repo | **186 / 4578** · **190 / 4765**; coverage 99.97 / 99.76 / 100 / 99.97, and 100 x4 on the new module |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

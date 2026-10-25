@@ -72,6 +72,28 @@ export {
 export { readDeclaredQuantity } from './ir/parameters.js';
 export type { DeclaredQuantity } from './ir/types.js';
 
+// The corpus's derived telemetry: a declaration's baseline and post reading, turned into the samples
+// an exporter reads. It lived in `scripts/check-fault-cases.mjs` until finding 249 -- where the guard
+// printed counts of what it produced and never the values, so a defect in the arithmetic survived
+// three rounds and five annotations.
+export {
+  LOG_OFFSETS_MS,
+  SERIES_DERIVATIONS,
+  SERIES_JITTER,
+  SERIES_STEP_MS,
+  TRACE_OFFSET_MS,
+  expandLog,
+  expandSeries,
+  expandTraces,
+} from './fault/derived-telemetry.js';
+export type {
+  ExpansionTime,
+  LogDeclaration,
+  SeriesDeclaration,
+  SeriesDerivation,
+  TraceDeclaration,
+} from './fault/derived-telemetry.js';
+
 // A schema refusal with the field and the reason in it. `String(error.message).split('\n')[0]` is
 // `[` for a zod issue list, so the guard that reports parse failures used to name the case and a
 // bracket; the diagnosis was in the lines it dropped.

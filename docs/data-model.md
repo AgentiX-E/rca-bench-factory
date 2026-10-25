@@ -199,6 +199,26 @@ arithmetic produces from the readings it names -- which is what "the value is de
 has to mean if it is to mean anything.
 
 
+### `*.signals.json` — the telemetry a case declares
+
+A case's telemetry is *declared*, not captured: `origin` says which (`derived` today; `captured` is
+accepted and unused), and the samples are constructed from the declaration by
+`fault/derived-telemetry.ts`. The split between `body` and `quote` is the same one the four layers
+use -- `quote` is the verbatim fragment of the incident text and `body` is the reconstruction -- and
+the guard refuses a quote the text does not contain.
+
+| block | fields | expanded into |
+| --- | --- | --- |
+| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `quote`, `why` | metric signals on a ninety-second cadence, eight samples per side of the onset |
+| `logs[]` | `service`, `id`, `body`, `severity`, `quote`, `why` | log signals at onset + 30s, 150s, 270s |
+| `traces[]` | `service`, `spanName`, `durationMs`, `parent`, `quote`, `why` | trace signals at onset + 10s, with span ids derived from `sha256(caseId)` |
+
+`derivation` is a closed vocabulary in `ir` terms -- `step` (a level change, the default), `counter`
+(an accumulation whose pre-window is flat at `baseline` and whose last sample is exactly `post`), and
+`spike` (one sample at `post`, then `baseline`). A counter's pre-window is flat because the
+declaration says what the counter had accumulated by the start of the window; a value that rises
+before the fault is a claim the file does not make.
+
 ## Layer 4 — `QualityGateReport`
 
 The evidence the case is usable. Produced by `runAllGates`.

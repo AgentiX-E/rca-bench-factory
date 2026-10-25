@@ -138,6 +138,7 @@ const ENUMERATED_MODULES = [
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
+  'fault/derived-telemetry.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -246,6 +247,11 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'ir/types.ts::DeclaredQuantity': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::NumericComparator': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::SeriesPoint': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/derived-telemetry.ts::ExpansionTime': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/derived-telemetry.ts::LogDeclaration': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/derived-telemetry.ts::SeriesDeclaration': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/derived-telemetry.ts::SeriesDerivation': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/derived-telemetry.ts::TraceDeclaration': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionOutcome': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionProblem': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionReference': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -667,6 +673,16 @@ const TESTED = [
   // the difference between "the quota is the one the case ran under" and a reading of prose
   // (finding 247).
   'readDeclaredQuantity',
+  // fault/derived-telemetry.ts -- the samples a declaration becomes. It lived in the guard's script
+  // until finding 249, where nothing observed the values and a defect in them survived three rounds.
+  'LOG_OFFSETS_MS',
+  'SERIES_DERIVATIONS',
+  'SERIES_JITTER',
+  'SERIES_STEP_MS',
+  'TRACE_OFFSET_MS',
+  'expandLog',
+  'expandSeries',
+  'expandTraces',
   // fault/expression.ts -- the arithmetic a derived checkpoint states, evaluated rather than
   // believed (finding 245).
   'MAX_EXPRESSION_DEPTH',

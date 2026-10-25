@@ -656,17 +656,20 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
   }
 
   it('refuses a case that only the spike-sensitive baseline can locate', () => {
-    // The negative control for `minSolvers: 2`. Peak-z scores the spike at roughly 1600 and puts
-    // `checkout-api` first; the median of eight samples does not move, so the robust ranking places
-    // it fourth of four -- outside a top-K of three. Under one solver this case would have passed.
+    // The negative control for `minSolvers: 2`. The spike is the root cause's only evidence: peak-z
+    // sees it, the median of the window does not, so the robust ranking places `checkout-api` fourth
+    // of four -- outside a top-K of three -- and the case is refused. Under one solver it would pass.
     //
-    // That is the cost of the requirement, and it is stated rather than discovered later: a case
-    // whose only evidence is a brief excursion is refused, because one method finding it is not
-    // evidence that the structure is there rather than that the method is sensitive to it.
+    // `peak-z-by-service=2` rather than 1 is the counter's doing, and it is a consequence of finding
+    // 249: the throttling counter's pre-window is now flat at its baseline, so its baseline has no
+    // spread at all, the `epsilon` floor turns its rise into an enormous z, and the *pod* that carries
+    // it (`checkout-api-0`, a different `service.name`) outranks the service. The case is still
+    // refused for the reason the test is about; the number moved because a claim the expansion used
+    // to invent -- a rate before the fault -- was removed.
     const result = run(['--cases', corpus({ signals: spikeCase() })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
-    expect(result.out).toContain('peak-z-by-service=1, median-shift-by-service=4');
+    expect(result.out).toContain('peak-z-by-service=2, median-shift-by-service=4');
   });
 
   it('refuses a derivation outside the vocabulary instead of treating it as a step', () => {

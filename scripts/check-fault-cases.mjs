@@ -38,7 +38,6 @@
  *   2  a case is incomplete, or the count is below the floor
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -118,150 +117,18 @@ function displayNumber(value) {
 }
 
 /**
- * Turn a declared series into metric signals on a fixed cadence.
+ * The corpus's derived telemetry is constructed in `core`, not here.
  *
- * The values are derived, not captured: `baseline` and `post` are the two numbers the incident
- * text states, and the jitter is a fixed cycle rather than a random one so that two runs produce
- * the same file. A counter is expanded as an accumulating series, because a counter that jumped
- * to its post value would be a level wearing a counter's name.
- *
- * The cadence is ninety seconds and the counts are eight and eight: enough post-onset samples for
- * G3's sustained-anomaly rule (three consecutive) with room to spare, and short enough to stay
- * inside every window this corpus declares.
+ * It used to live in this file, and that is why a defect in it survived three rounds: the guard
+ * prints counts of files and checkpoints, never the sample values it produced, so the arithmetic was
+ * a change no test could disagree with. `fault/derived-telemetry.ts` holds it now, with the samples
+ * asserted directly (finding 249).
  */
-const STEP_MS = 90_000;
-const POINTS = 8;
-const JITTER = [0, 1, -1, 0.5, -0.5, 0.8, -0.8, 0.3];
+const DERIVATIONS = core.SERIES_DERIVATIONS;
 
-/**
- * How a declared series gets from its baseline to its post value. A closed vocabulary.
- *
- * - `step` (the default): eight post-onset points at the post value, which is a level change.
- * - `counter`: an accumulating series, because a counter that jumps to its post value is a level
- *   wearing a counter's name.
- * - `spike`: one post-onset point at the post value, then the baseline again -- a brief excursion
- *   rather than a sustained one.
- *
- * `spike` exists because a corpus that can only express a step cannot say what a brief excursion
- * looks like, and the two baselines treat that shape differently: peak-z cannot distinguish it from
- * a sustained change (both are one large sample), and a median over eight samples barely notices it.
- * Without the shape there would be no way to build the negative control that proves G4's two-solver
- * requirement is doing something (see `check-fault-cases.test.ts`).
- *
- * The vocabulary is closed because the first version tested `derivation === 'counter'` and treated
- * **everything else as a step** -- so a typo would silently produce a different shape from the one
- * the author wrote, and the derived series would be wrong in a way no reading of the file reveals.
- */
-const DERIVATIONS = ['step', 'counter', 'spike'];
-
-function expandSeries(declaration, faultCase) {
-  const startMs = Date.parse(faultCase.window.start);
-  const onsetMs = Date.parse(faultCase.injectTime);
-  const service = String(declaration.service);
-  const name = String(declaration.metric);
-  const unit = typeof declaration.unit === 'string' ? declaration.unit : undefined;
-  const baseline = Number(declaration.baseline);
-  const post = Number(declaration.post);
-  const derivation = declaration.derivation === undefined ? 'step' : declaration.derivation;
-  const counter = derivation === 'counter';
-  const spike = derivation === 'spike';
-  const step = counter ? (post - baseline) / POINTS : 0;
-  const out = [];
-  const at = (ms) => new Date(ms).toISOString();
-
-  for (let index = 0; index < POINTS; index += 1) {
-    const t = startMs + index * STEP_MS;
-    if (t >= onsetMs) break;
-    const value = counter ? baseline + index * 0.1 : baseline * (1 + JITTER[index] * 0.02);
-    out.push({ timestamp: at(t), value });
-  }
-  for (let index = 0; index < POINTS; index += 1) {
-    const t = onsetMs + index * STEP_MS;
-    // A spike is one sample at the post value and then the baseline again; the jitter is applied to
-    // the level the sample sits at, so the excursion is post-sized and the return is baseline-sized.
-    const level = counter ? baseline + (index + 1) * step : spike && index > 0 ? baseline : post;
-    const value = counter ? level : level * (1 + JITTER[index] * 0.02);
-    out.push({ timestamp: at(t), value });
-  }
-
-  return out.map((row) => ({
-    irVersion: '1.0.0',
-    resource: { 'service.name': service },
-    timestamp: row.timestamp,
-    signal: 'metric',
-    payload: { kind: 'metric', name, ...(unit === undefined ? {} : { unit }), value: Number(row.value.toFixed(6)) },
-  }));
-}
-
-/**
- * Where a declared log line lands, relative to the onset.
- *
- * Three lines, a minute and a half apart, all after the onset: a log has no baseline to be
- * measured against, so there is nothing to place before it, and G3 does not read logs at all. What
- * the count is for is that a `logs.csv` with three rows is a file an exporter can say something
- * about, where one row would look like a single event rather than a condition.
- */
-const LOG_OFFSETS_MS = [30_000, 150_000, 270_000];
-
-/**
- * A declared log line, expanded into the signals an exporter reads.
- *
- * `body` is a reconstruction and `quote` is the verbatim fragment it rests on -- the split is the
- * same one the four layers use, and for the same reason: a log body this repository invented would be
- * a sentence nobody wrote, so the quote is what the guard checks against the incident text.
- */
-function expandLog(declaration, faultCase) {
-  const onsetMs = Date.parse(faultCase.injectTime);
-  return LOG_OFFSETS_MS.map((offset) => ({
-    irVersion: '1.0.0',
-    resource: { 'service.name': String(declaration.service) },
-    timestamp: new Date(onsetMs + offset).toISOString(),
-    signal: 'log',
-    payload: {
-      kind: 'log',
-      body: String(declaration.body),
-      ...(typeof declaration.severity === 'string' ? { severityText: String(declaration.severity) } : {}),
-    },
-  }));
-}
-
-/**
- * Where declared spans land: ten seconds after the onset, which is inside every window this corpus
- * declares and after the fault has begun.
- */
-const TRACE_OFFSET_MS = 10_000;
-
-/**
- * A declared span, expanded into the signals an exporter reads.
- *
- * The span ids are derived from the case id rather than generated, so two runs produce one file --
- * the same reason the series jitter is a fixed cycle. `parent` names another entry's `spanName`,
- * and the guard refuses a parent that names nothing, because a span whose parent is missing is a
- * row an exporter writes and no reader can assemble into a trace.
- */
-function expandTraces(declarations, faultCase, caseId) {
-  const onsetMs = Date.parse(faultCase.injectTime);
-  // A digest, not a prefix of the name. The first version sliced the case id to twelve characters,
-  // which collides for any two cases that agree up to that point -- `history-checkout-a` and
-  // `history-checkout-b` would have produced the same span ids and one case's trace would have
-  // pointed into the other's. A prefix of a name is a name, not an identity.
-  const namespace = createHash('sha256').update(caseId).digest('hex').slice(0, 12);
-  const spanId = (index) => `${namespace}${String(index + 1).padStart(4, '0')}`;
-  const idByName = new Map(declarations.map((one, index) => [String(one.spanName), spanId(index)]));
-  return declarations.map((one, index) => ({
-    irVersion: '1.0.0',
-    resource: { 'service.name': String(one.service) },
-    timestamp: new Date(onsetMs + TRACE_OFFSET_MS).toISOString(),
-    signal: 'trace',
-    payload: {
-      kind: 'trace',
-      traceId: `${namespace}trace`,
-      spanId: spanId(index),
-      ...(typeof one.parent === 'string' ? { parentSpanId: idByName.get(one.parent) } : {}),
-      spanName: String(one.spanName),
-      durationMs: Number(one.durationMs),
-    },
-  }));
+/** The two timestamps the expansion needs, read from the case rather than passed around. */
+function expansionTime(faultCase) {
+  return { windowStart: faultCase.window.start, onset: faultCase.injectTime };
 }
 
 /**
@@ -740,10 +607,11 @@ for (const entry of index.cases) {
       }
     }
 
+    const when = expansionTime(parsedCase);
     const signals = [
-      ...series.flatMap((one) => expandSeries(one, parsedCase)),
-      ...logs.flatMap((one) => expandLog(one, parsedCase)),
-      ...expandTraces(traces, parsedCase, caseId),
+      ...series.flatMap((one) => core.expandSeries(one, when)),
+      ...logs.flatMap((one) => core.expandLog(one, when)),
+      ...core.expandTraces(traces, when, caseId),
     ];
     telemetryCases.push(parsedCase);
     telemetrySignals[caseId] = signals;
