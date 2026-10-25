@@ -189,6 +189,44 @@ describe('G2 semantic', () => {
     );
   });
 
+  it('flags a chain whose steps do not start at one, because a chain states its own order', () => {
+    // `step` is read only to sort, so a chain numbered 2, 3 sorted into a plausible sequence and
+    // nothing said the numbers were wrong. The numbers *are* the order, and 1..n is what a run of
+    // steps is called (finding 253).
+    const fc = validCase();
+    fc.groundTruth.causalChain = [
+      { step: 2, fromEntityId: 'service:default/order', toEntityId: 'service:default/cart', mechanism: 'a', evidenceRefs: [] },
+    ];
+    fc.groundTruth.evidenceCheckpoints = [];
+    const b = validBundle({ cases: [fc] });
+    expect(checkG2Semantic(b).violations).toContainEqual(
+      expect.objectContaining({ code: 'CAUSAL_STEPS_NOT_NUMBERED' }),
+    );
+  });
+
+  it('flags a chain that returns to where it started, which is a loop and not a path', () => {
+    // The defect this rule was written for: `order -> cart -> order` is contiguous at every hop, so the
+    // connectivity check passed it, and the second hop asserted that the cart caused the order. A
+    // propagation run visits an entity once; a control belongs in the evidence layer (finding 253).
+    const fc = validCase();
+    fc.groundTruth.causalChain = [
+      { step: 1, fromEntityId: 'service:default/order', toEntityId: 'service:default/cart', mechanism: 'a', evidenceRefs: [] },
+      { step: 2, fromEntityId: 'service:default/cart', toEntityId: 'service:default/order', mechanism: 'b', evidenceRefs: [] },
+    ];
+    fc.groundTruth.evidenceCheckpoints = [];
+    const b = validBundle({ cases: [fc] });
+    expect(checkG2Semantic(b).violations).toContainEqual(
+      expect.objectContaining({ code: 'CAUSAL_CHAIN_REVISITS' }),
+    );
+  });
+
+  it('says neither thing about the chain it accepts', () => {
+    const b = validBundle();
+    const codes = checkG2Semantic(b).violations.map((v) => v.code);
+    expect(codes).not.toContain('CAUSAL_STEPS_NOT_NUMBERED');
+    expect(codes).not.toContain('CAUSAL_CHAIN_REVISITS');
+  });
+
   it('flags an evidence reference that points at a missing checkpoint', () => {
     const fc = validCase();
     fc.groundTruth.evidenceCheckpoints = [];

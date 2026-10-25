@@ -141,6 +141,18 @@
       "kind": "node",
       "name": "worker-3",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/booking-api",
+      "kind": "service",
+      "name": "booking-api",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/booking-scheduler",
+      "kind": "service",
+      "name": "booking-scheduler",
+      "aliases": []
     }
   ],
   "edges": [
@@ -213,6 +225,11 @@
       "from": "node:synthetic-storefront/worker-3",
       "to": "pod:synthetic-storefront/user-profile-0",
       "relation": "hosts"
+    },
+    {
+      "from": "service:synthetic-storefront/booking-api",
+      "to": "service:synthetic-storefront/booking-scheduler",
+      "relation": "calls"
     }
   ]
 }

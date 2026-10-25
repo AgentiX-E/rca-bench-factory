@@ -88,6 +88,22 @@ interface FaultCase {
 `rootCauseReason`, optional `rootCauseIndicators`, a step-wise `causalChain`
 (`CausalStep[]`), `evidenceCheckpoints` (`EvidenceCheckpoint[]`) and `remediation`.
 
+### `causalChain` — a numbered run of propagation
+
+A chain is a **run**, and G2 holds three things that follow from the word:
+
+| rule | code | what it refuses |
+| --- | --- | --- |
+| the steps are numbered `1..n` | `CAUSAL_STEPS_NOT_NUMBERED` | a chain numbered 2, 3, which sorts into a sequence and therefore looks ordered while saying nothing about its order |
+| each step starts where the last ended | `CAUSAL_CHAIN_BREAK` | two claims presented as a sequence |
+| no entity is visited twice | `CAUSAL_CHAIN_REVISITS` | `a -> b -> a`, which is connected at every hop and asserts that the consequence caused its own cause |
+
+A **self-hop is allowed** (`a -> a`) and is collapsed rather than refused: it states that an entity
+amplified its own condition -- a saturated thread pool whose retries deepen the saturation -- which is
+a claim about one component rather than a loop through two. What a chain never is is a place to record
+a control: "the scheduler dispatched on time" belongs in `evidenceCheckpoints`, and writing it as a
+second hop is how a chain becomes a loop (finding 253).
+
 `FaultCategory` is declared once, as a tuple in this order: `resource`, `network`,
 `runtime`, `middleware`, `code`, `config`, `dependency`, `unknown`. `unknown` is a
 member of the contract, not a fallback: an injector the taxonomy does not know maps

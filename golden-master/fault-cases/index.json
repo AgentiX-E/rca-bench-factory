@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 9,
+  "min": 10,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -270,6 +270,36 @@
           "layer": "evidence",
           "quote": "Node conditions were healthy and memory was well under the limit",
           "why": "the control -- the node's own condition and the pod's own memory are both fine, which is what rules out the two explanations the text raises and rejects"
+        }
+      ]
+    },
+    {
+      "caseId": "history-code-timezone-booking-api",
+      "sampleId": "code-timezone-booking-api",
+      "case": "history-code-timezone-booking-api.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-code-timezone-booking-api.signals.json",
+      "why": "annotated from the incident text of `code-timezone-booking-api`, and the corpus's first case whose evidence is mostly absence: nothing errored and the scheduler was on time. That is the annotation's job here -- the text records a wrong answer (the scheduler) that an evidence layer made only of the symptom cannot exclude, so two of the three checkpoints assert zero and the moving one asserts a whole hour rather than a growing drift. The four layers separate the defect from its victims: the entity layer is the API, the fault layer is the conversion rule that captures an offset at process start, the process layer is the wrong time being handed onward, and the evidence layer is the hour plus the two zeros. The restart that hid it for a week is the reason the corpus cannot rely on a step change at the change itself, and it is why the injection time is the first affected appointment rather than the daylight saving moment.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Booking reminders went out an hour early for every appointment created after the daylight saving change",
+          "why": "the workload the reminders belong to, and the boundary that scopes them: appointments created after the change"
+        },
+        {
+          "layer": "fault",
+          "quote": "then converts with a fixed offset read once at process start",
+          "why": "the defect itself, in one clause: the offset is captured once, so the process is wrong until it restarts"
+        },
+        {
+          "layer": "process",
+          "quote": "Restarting the pods for an unrelated deploy hid it for a week",
+          "why": "the propagation, and the reason the report blamed the scheduler: a fresh process re-read the offset, so the symptom vanished and came back"
+        },
+        {
+          "layer": "evidence",
+          "quote": "which is why the first report blamed the scheduler",
+          "why": "the wrong answer the case has to be able to exclude, held here as the sentence the control checkpoint rests on"
         }
       ]
     }

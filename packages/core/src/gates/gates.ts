@@ -223,6 +223,44 @@ export function checkG2Semantic(bundle: IrBundle): GateResult {
         });
       }
     }
+    // A chain is a *path*, and two things follow from the word that the hop check above does not give
+    // (finding 253). The steps are numbered 1..n -- `step` was read only to sort, so a chain numbered
+    // 2, 3 sorted into a plausible sequence and nothing said the numbers were wrong, which made the
+    // field an ordering hint rather than the order. And no entity is visited twice: `a -> b -> a` is
+    // contiguous at every hop, so connectivity passed it, while the second hop asserts that the
+    // consequence caused its own cause. A control belongs in the evidence layer, not in the chain.
+    if (ordered.length > 0) {
+      const numbers = ordered.map((step) => step.step);
+      const expectedNumbers = numbers.map((_, position) => position + 1);
+      if (numbers.some((number, position) => number !== expectedNumbers[position])) {
+        v.push({
+          code: 'CAUSAL_STEPS_NOT_NUMBERED',
+          message: `causal steps are numbered ${numbers.join(', ')}; a chain is numbered 1..${String(numbers.length)}`,
+          fieldPath: `${c.caseId}.groundTruth.causalChain`,
+        });
+      }
+      // A self-hop is collapsed rather than refused, and the distinction is not a loophole: a step from
+      // an entity to itself states that the entity amplified its own condition -- a saturated thread
+      // pool whose retries deepen the saturation -- which is a claim about one component. A step that
+      // leaves an entity and comes back *through another* states mutual causation, and in a run of
+      // propagation that is a loop: the consequence is asserted to be its own cause.
+      const walk = [ordered[0]!.fromEntityId];
+      for (const step of ordered) {
+        if (step.toEntityId !== walk[walk.length - 1]) walk.push(step.toEntityId);
+      }
+      const visited = new Set<string>();
+      for (const entityId of walk) {
+        if (visited.has(entityId)) {
+          v.push({
+            code: 'CAUSAL_CHAIN_REVISITS',
+            message: `the causal chain visits '${entityId}' twice, so it is a loop rather than a path`,
+            fieldPath: `${c.caseId}.groundTruth.causalChain`,
+          });
+          break;
+        }
+        visited.add(entityId);
+      }
+    }
     for (const step of ordered) {
       for (const ref of step.evidenceRefs) {
         const ids = new Set((c.groundTruth.evidenceCheckpoints ?? []).map((cp) => cp.checkpointId));

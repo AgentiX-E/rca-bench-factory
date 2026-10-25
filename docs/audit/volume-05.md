@@ -4528,3 +4528,69 @@ contain, which is the one thing the guard refuses outright. It is recorded as an
 | the exports | RE1 9 cases / 0 empty, RE2 9 / 12, RE3 1 / 1 / 8 skipped |
 | `core` / repo | **186 / 4590** · **190 / 4777**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 253 — the chain was checked for connectivity and not for being a chain
+
+Writing the tenth case, the causal chain looked obvious: the API computes an hour-wrong reminder
+time and hands it to the scheduler, so the chain is `booking-api -> booking-scheduler`. Then the
+scheduler's innocence — "it dispatched at exactly the time it was given" — wanted a place to live,
+and the chain had a spare step, so I wrote:
+
+```json
+[{ "step": 1, "from": "booking-api",   "to": "booking-scheduler" },
+ { "step": 2, "from": "booking-scheduler", "to": "booking-api" }]
+```
+
+**G2 accepted it.** Every hop resolved, each hop had a path in the topology, and the chain was
+contiguous: step 2 starts exactly where step 1 ended. What it also says, in the same breath, is that
+the scheduler caused the API — the consequence asserted to be its own cause. Nothing refused it.
+
+### Two rules, because `step` was an ordering hint
+
+`CausalStep.step` was read in exactly one place — `[...steps].sort((a, b) => a.step - b.step)` — so a
+chain numbered 2, 3 sorted into a plausible sequence, and a chain numbered 1, 1 sorted stably and
+said nothing. The number *is* the order, and a run of steps is numbered `1..n`:
+
+| rule | code | the case it refuses |
+| --- | --- | --- |
+| numbered `1..n` | `CAUSAL_STEPS_NOT_NUMBERED` | `[2]`, which is one step that claims to be the second |
+| no entity visited twice | `CAUSAL_CHAIN_REVISITS` | `a -> b -> a` |
+
+### A self-hop is not the same thing, and the test that says so was already there
+
+The first version of the rule refused every repeat, and an existing test failed: **"accepts a causal
+step that starts and ends at the same entity"**, whose mechanism sentence reads *"a saturated thread
+pool blocks its own retries"*. That is a real claim about one component — the entity amplifies its own
+condition — and it is what makes a resource fault self-reinforcing. A two-entity cycle is a different
+thing: it asserts mutual causation, and in a run whose purpose is to show how one fault reached the
+symptoms, that is the consequence causing itself.
+
+So the rule collapses self-hops before asking whether anything repeats, and the collapse is a
+decision rather than a convenience: `a -> a -> b` visits `a` once, and `a -> b -> a` visits it twice.
+
+### The tenth case, and what its chain became
+
+`history-code-timezone-booking-api` is the corpus's tenth case: a UTC offset captured at process
+start, a daylight saving change, and every reminder created afterwards going out an hour early. The
+chain is one hop, `booking-api -> booking-scheduler`, with all three checkpoints as its evidence —
+including the scheduler's zero, which is where a control belongs.
+
+Two of the three checkpoints assert **zero**, which is what the evidence layer is for here: the text
+records a wrong answer (the scheduler) that a layer made only of symptoms cannot exclude. The moving
+series steps to exactly 3600 s, because a whole hour is what a stale offset produces and a growing
+drift cannot.
+
+**RE3 grew from one case to two.** The `code` export is selected by category, and this case is the
+second `code`-category case in the corpus — so the report now writes 2 and skips 8.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the numbering | `[2]` refused; `[1, 2]` accepted; the codes are classified as case-level in `export/guard.ts`, so an exporter skips the case rather than the bundle |
+| the revisit | `a -> b -> a` refused; `a -> a` accepted and tested, because the entity that amplifies itself is a claim about one component |
+| the case | tenth case; chain of one hop with three checkpoints behind it; **10 of 30**; **29 of 29** references resolve by kind; **0 of 26** comparable assertions fail |
+| the graph | 24 entities / 15 edges |
+| the exports | RE1 10 / 0 empty, RE2 10 / 14, RE3 **2** / 3 empty / 8 skipped |
+| `core` / repo | **186 / 4593** · **190 / 4780**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

@@ -1,0 +1,96 @@
+{
+  "caseId": "history-code-timezone-booking-api",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-28T08:00:00.000Z",
+  "window": {
+    "start": "2026-09-28T07:48:00.000Z",
+    "end": "2026-09-28T08:20:00.000Z"
+  },
+  "fault": {
+    "type": "timezone-conversion-error",
+    "category": "code",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "booking-api",
+      "offsetSource": "read-once-at-process-start",
+      "shiftMinutes": {
+        "value": 60,
+        "unit": "min"
+      },
+      "affectedReminders": "created-after-the-daylight-saving-change"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/booking-api",
+    "rootCauseComponent": "booking-api",
+    "rootCauseReason": "The API stores a local wall-clock time with a zone name and converts it with a UTC offset captured once when the process starts. After a daylight saving change the captured offset is an hour wrong, so every reminder created from then on is scheduled an hour early. Nothing failed: no request errored, and the scheduler dispatched each reminder at exactly the time it was given. A restart during an unrelated deploy re-read the offset and hid the defect for a week, which is why the first report blamed the scheduler.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "reminder_lead_time_error_seconds",
+        "description": "every reminder created after the change is dispatched an hour early, and the error is a whole hour rather than a drift"
+      },
+      {
+        "type": "metric",
+        "ref": "scheduler_run_delay_seconds",
+        "description": "the scheduler's own dispatch delay, which is zero -- it sent each reminder at the time it was handed"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/booking-api",
+        "toEntityId": "service:synthetic-storefront/booking-scheduler",
+        "mechanism": "the API converts the stored wall-clock time with an offset captured at process start, so after the change it hands the scheduler a time an hour earlier than the appointment's, and the scheduler dispatches at exactly the time it was given",
+        "evidenceRefs": [
+          "cp-lead-time-error",
+          "cp-no-errors",
+          "cp-scheduler-on-time"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-lead-time-error",
+        "entityRef": "service:synthetic-storefront/booking-api",
+        "signalRef": "reminder_lead_time_error_seconds",
+        "comparator": "==",
+        "value": 3600,
+        "unit": "s",
+        "description": "the reminders went out an hour early, and the error is exactly one hour -- what a stale UTC offset produces and what a drift cannot"
+      },
+      {
+        "checkpointId": "cp-no-errors",
+        "entityRef": "service:synthetic-storefront/booking-api",
+        "signalRef": "booking_http_5xx_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "nothing failed: every reminder was accepted and sent, which is what makes this a correctness fault rather than an availability one"
+      },
+      {
+        "checkpointId": "cp-scheduler-on-time",
+        "entityRef": "service:synthetic-storefront/booking-scheduler",
+        "signalRef": "scheduler_run_delay_seconds",
+        "comparator": "==",
+        "value": 0,
+        "unit": "s",
+        "description": "the scheduler dispatched on time throughout, which is the control that rules out the component the first report blamed"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "convert per request with the zone's rules for that date instead of an offset captured at process start, so a daylight saving change cannot leave a process an hour wrong",
+        "target": "service:synthetic-storefront/booking-api"
+      }
+    ]
+  },
+  "query": "Booking reminders went out an hour early for every appointment created after the daylight saving change. Which component is the root cause, and why is the scheduler not it?",
+  "answerKeyIsolated": true
+}

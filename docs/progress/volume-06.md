@@ -1367,3 +1367,55 @@ volumes, findings 1–252.
 
 The two long-standing items are unchanged: a parameter is tied to the text only through the fault
 layer's quote, and compound units are compared structurally.
+
+## v2.80 — the chain was connected at every hop and still was not a chain
+
+**What this round is.** The tenth case, `history-code-timezone-booking-api`: a UTC offset captured at
+process start, a daylight saving change, and every reminder created afterwards going out an hour
+early. Writing it produced a defect in my own annotation, which is what the round is about.
+
+**The chain I wrote, and what it said.** The propagation is `booking-api -> booking-scheduler`. The
+scheduler's innocence — "it dispatched at exactly the time it was given" — wanted a home, and the
+chain had a spare step, so step 2 went back: `booking-scheduler -> booking-api`. **G2 accepted it**:
+every hop resolved, every hop had a path, and step 2 started exactly where step 1 ended. What it also
+asserted is that the scheduler caused the API.
+
+| rule | code | refuses |
+| --- | --- | --- |
+| steps numbered `1..n` | `CAUSAL_STEPS_NOT_NUMBERED` | `[2]` — one step claiming to be the second |
+| no entity visited twice | `CAUSAL_CHAIN_REVISITS` | `a -> b -> a` |
+
+`step` had been read in exactly one place, the sort, so a chain numbered 2, 3 sorted into a plausible
+sequence and nothing said the numbers were wrong.
+
+**The first version of the rule was wrong, and an existing test said so.** Refusing every repeat
+failed *"accepts a causal step that starts and ends at the same entity"*, whose mechanism is "a
+saturated thread pool blocks its own retries". A self-hop is a claim about one component amplifying
+itself; a two-entity cycle is mutual causation. The rule collapses self-hops before asking whether
+anything repeats.
+
+**The case.** Tenth, and the corpus's second `code`-category case — so **RE3 now writes 2**. Two of
+its three checkpoints assert zero (nothing errored; the scheduler was on time), because the text
+records a wrong answer that a symptom-only evidence layer cannot exclude. The moving series steps to
+exactly 3600 s.
+
+**Acceptance.** New tests: 3 over the chain rules, 1 negative control; the two codes classified as
+case-level in `export/guard.ts` (the totality test is what forced the decision); guard prints **10 of
+30**, `29 of 29` references resolved by kind, `0 of 26` comparable assertions failing; RE1 10 / 0
+empty, RE2 10 / 14, **RE3 2** / 3 empty / 8 skipped; 24 entities / 15 edges; pinned counts moved by
+hand (`10 of 30`, `filled 24`, `RE2 … 14`, `RE3 2 … 3`, `29 of 29`, `0 of 26`); typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46
+gates, 46 caught, 0 survived**; core **186 / 4593**, cli 4 / 187, repo **190 / 4780**; coverage
+99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–253.
+
+### Left open
+
+- **20 samples still carry no case.** `[open: 10 of 30 carry one; the remaining 20 include the
+  samples whose text gives no number at all, which is the next shape to solve]`
+- **The chain's first step is not required to be the root cause.** `[open: two cases start above their
+  root cause (`public-ingress`, `worker-3`) because the cause is what an operator names and the chain
+  is how it reached the symptoms; whether that is a rule or an exception has not been decided]`
+
+The two items v2.79 left open that this round did not touch are unchanged: an absence of logs cannot be
+a checkpoint, and a binary reading still wobbles. So are the two long-standing ones: a parameter is
+tied to the text only through the fault layer's quote, and compound units are compared structurally.

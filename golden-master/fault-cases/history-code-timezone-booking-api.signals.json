@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-code-timezone-booking-api",
+  "why": "Telemetry for the daylight-saving case, and the corpus's first whose evidence is two absences: nothing errored and the scheduler was on time. The only moving series is the lead-time error, which steps to exactly one hour -- what a UTC offset captured at process start produces after a change, and what a drift or a slow component cannot. The two flat series are not filler: `booking_http_5xx_ratio` at zero is the sentence that makes this a correctness fault rather than an availability one, and `scheduler_run_delay_seconds` at zero is the control that rules out the component the first report blamed. A corpus that only carried the moving series would be satisfied by 'the scheduler is broken', which is the wrong answer the text records.",
+  "series": [
+    {
+      "service": "booking-api",
+      "metric": "reminder_lead_time_error_seconds",
+      "unit": "s",
+      "baseline": 0,
+      "post": 3600,
+      "quote": "Booking reminders went out an hour early for every appointment created after the daylight saving change",
+      "why": "the checkpoint `cp-lead-time-error` holds the hour: the shift is a whole hour from the first affected appointment, not a growing drift"
+    },
+    {
+      "service": "booking-api",
+      "metric": "booking_http_5xx_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "quote": "then converts with a fixed offset read once at process start",
+      "why": "the checkpoint `cp-no-errors` holds the zero: the conversion succeeded and produced the wrong time, which is why no request failed"
+    },
+    {
+      "service": "booking-scheduler",
+      "metric": "scheduler_run_delay_seconds",
+      "unit": "s",
+      "baseline": 0,
+      "post": 0,
+      "quote": "which is why the first report blamed the scheduler",
+      "why": "the checkpoint `cp-scheduler-on-time` holds the zero: the scheduler dispatched at exactly the time it was handed, so its own delay never moved"
+    }
+  ]
+}

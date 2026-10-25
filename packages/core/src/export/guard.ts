@@ -99,6 +99,11 @@ export const CASE_LEVEL_CODES: ReadonlySet<string> = new Set([
   'UNRESOLVED_CAUSAL_TO',
   'CAUSAL_HOP_NOT_IN_TOPOLOGY',
   'CAUSAL_CHAIN_BREAK',
+  // A chain that is connected at every hop but numbered arbitrarily, or that returns to an entity it
+  // already left, is a defect of one case's annotation rather than of the shared graph -- so it is
+  // skipped with the case, on the same reasoning as the break above (finding 253).
+  'CAUSAL_STEPS_NOT_NUMBERED',
+  'CAUSAL_CHAIN_REVISITS',
   // Quality conditions: exportable so a consumer can inspect them.
   'BAD_SIGNAL_TIMESTAMP',
   'NON_MONOTONIC_TIMESTAMP',
