@@ -1,0 +1,109 @@
+{
+  "caseId": "history-dependency-upstream-5xx-pricing",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-25T09:12:00.000Z",
+  "window": {
+    "start": "2026-09-25T09:00:00.000Z",
+    "end": "2026-09-25T09:42:00.000Z"
+  },
+  "fault": {
+    "type": "upstream-5xx",
+    "category": "dependency",
+    "injectionMethod": "historical",
+    "parameters": {
+      "dependency": "tax-calculation",
+      "answeredWith": 503,
+      "sharePercent": {
+        "value": 60,
+        "unit": "%"
+      },
+      "durationMinutes": {
+        "value": 18,
+        "unit": "min"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "external:synthetic-storefront/tax-calculation",
+    "rootCauseComponent": "tax-calculation",
+    "rootCauseReason": "One upstream answered 503 on 60% of the pricing service's calls to it for eighteen minutes, while the pricing service's error rate against every other dependency stayed at zero and none of its own resources moved.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "tax_calculation_503_ratio_percent",
+        "description": "the dependency's own failure share, which is the same 60% the pricing service reports"
+      },
+      {
+        "type": "metric",
+        "ref": "other_dependency_error_ratio_percent",
+        "description": "zero against every other dependency, which is what localises the fault to one upstream"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "external:synthetic-storefront/tax-calculation",
+        "toEntityId": "service:synthetic-storefront/pricing-service",
+        "mechanism": "the tax service answered 503 to three calls in five for eighteen minutes, and the pricing service returned 502 for every call it could not complete",
+        "evidenceRefs": [
+          "cp-upstream-503",
+          "cp-502-ratio",
+          "cp-other-dependencies"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-502-ratio",
+        "entityRef": "service:synthetic-storefront/pricing-service",
+        "signalRef": "http_502_ratio_percent",
+        "comparator": ">=",
+        "value": 60,
+        "unit": "%",
+        "description": "the share of requests the pricing service refused with 502 for the eighteen minutes the upstream was degraded"
+      },
+      {
+        "checkpointId": "cp-upstream-503",
+        "entityRef": "external:synthetic-storefront/tax-calculation",
+        "signalRef": "tax_calculation_503_ratio_percent",
+        "comparator": ">=",
+        "value": 60,
+        "unit": "%",
+        "description": "the dependency's own failure share -- every failure the pricing service saw came from this call"
+      },
+      {
+        "checkpointId": "cp-other-dependencies",
+        "entityRef": "service:synthetic-storefront/pricing-service",
+        "signalRef": "other_dependency_error_ratio_percent",
+        "comparator": "==",
+        "value": 0,
+        "unit": "%",
+        "description": "the control: every other dependency answered correctly, so the fault is one upstream rather than the pricing service"
+      },
+      {
+        "checkpointId": "cp-declared-share",
+        "entityRef": "external:synthetic-storefront/tax-calculation",
+        "signalKind": "configuration",
+        "signalRef": "sharePercent",
+        "comparator": "==",
+        "value": 60,
+        "unit": "%",
+        "description": "the share the injection declared, which is the same number the telemetry reports -- two statements of one fact that now have to agree"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "fail over tax-calculation calls to the secondary provider while the upstream is degraded",
+        "target": "service:synthetic-storefront/pricing-service"
+      }
+    ]
+  },
+  "query": "The pricing service returned 502 on 60% of requests for eighteen minutes. Which component is the root cause, and what distinguishes it from the pricing service itself?",
+  "answerKeyIsolated": true
+}

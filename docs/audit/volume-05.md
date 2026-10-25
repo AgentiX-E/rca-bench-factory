@@ -4315,3 +4315,76 @@ the expansion used to invent was removed.
 | the guard | still green, and now reads the vocabulary and the expansion from `core` instead of owning them |
 | `core` / repo | **186 / 4578** · **190 / 4765**; coverage 99.97 / 99.76 / 100 / 99.97, and 100 x4 on the new module |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 250 — the first dependency case, the control that names an absence, and two cases refused
+
+The seventh case is `history-dependency-upstream-5xx-pricing`: the first `dependency` category, and
+the first whose root cause is not a component of the system at all.
+
+> The pricing service returned 502 on 60% of requests for 18 minutes. Every failure is an upstream
+> tax-calculation call answering 503; the pricing service's own error rate against all other
+> dependencies is zero. The tax provider's status page shows a degradation window that matches
+> exactly. Nothing in the pricing service's own resources moved.
+
+### The annotation's whole job is to separate the two sentences
+
+"What failed" and "why" are in the same paragraph and every naive annotation collapses them. Each
+layer is chosen to keep them apart:
+
+| layer | quote | what it separates |
+| --- | --- | --- |
+| entity | "Every failure is an upstream tax-calculation call answering 503" | the dependency, not the service that reported the failures |
+| fault | "The tax provider's status page shows a degradation window that matches exactly" | the fault as the provider states it, with a window that lines up rather than merely precedes |
+| process | "The pricing service returned 502 on 60% of requests for 18 minutes" | what the system did with the upstream's answers |
+| evidence | "the pricing service's own error rate against all other dependencies is zero" | the control |
+
+### The evidence layer is a pair plus a control, and the control is a zero
+
+Three series, and the third is the one nobody would think to annotate:
+
+| series | reading | role |
+| --- | --- | --- |
+| `http_502_ratio_percent` on `pricing-service` | 0 → 60 % | the symptom |
+| `tax_calculation_503_ratio_percent` on `tax-calculation` | 0 → 60 % | the cause, with the same share because "every failure" of a 60 % rate is 60 % |
+| `other_dependency_error_ratio_percent` on `pricing-service` | 0 → 0 | the control: `== 0 %` |
+
+A checkpoint asserting a value **equal to zero** is the corpus's first assertion of an absence, and
+without it the case would be satisfied by "the pricing service is broken". With it, the annotation
+names the other dependencies as part of what it claims -- which is what the sentence does.
+
+The injection's own share is also a checkpoint: `fault.parameters.sharePercent` is `60 %`, and
+`cp-declared-share` asserts it as a configuration fact. So the number in the parameters and the
+number in the telemetry have to agree rather than being two statements nobody compares. What this
+does **not** do is derive one from the other: `post` is still written by hand, and a `signals`
+declaration that could say `post: { parameter: 'sharePercent' }` is an idea, not a mechanism.
+
+### Two candidate cases this round refused, and why
+
+Both are `runtime` samples, and both are refused for a reason the corpus's model states rather than
+because they are bad incidents:
+
+- **`runtime-pod-kill-user-profile`** turns on "during which every request 503'd" -- a share of
+  exactly 1. The expansion applies a ±2 % jitter to every level reading, so that series would report
+  1.02: **a 102 % share**, which no system can produce. Using a count instead ("a 503 happened")
+  would be true and weaker than the text. The fix is a declaration that says a series has no sampling
+  noise, and inventing that field for one case is the kind of thing this log keeps recording as a
+  mistake; so the case waits.
+- **`runtime-container-crash-loop-media`** turns on "restarted 178 times in 12 hours". The cadence is
+  ninety seconds and the window is the samples, so declaring `post: 178` would compress twelve hours
+  of restarts into the twelve minutes the post-window covers, and declaring the restarts in a
+  forty-minute window instead would invent a number the text does not give. The case needs a cadence
+  that follows the window, which is a model change rather than an annotation.
+
+Both refusals are recorded as open items with their arithmetic, because a corpus that only records
+what it accepted cannot say what it cannot express.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **7 of 30** samples carry a four-layer case; floor 7 |
+| the graph | 16 entities / 10 edges; the second `external`, and the first root cause that is one |
+| the checkpoints | **20 of 20** resolve by kind -- 15 series, 2 computed from 4 readings, 3 configuration; **0 of 18** comparable assertions fail |
+| the exports | RE1 7 cases, 0 empty files; RE2 7 cases, 9 empty files; RE3 1 case, 1 empty, 6 skipped |
+| the baselines | both place `tax-calculation` inside top-K |
+| `core` / repo | **186 / 4580** · **190 / 4767**; coverage 99.97 / 99.76 / 100 / 99.97 |

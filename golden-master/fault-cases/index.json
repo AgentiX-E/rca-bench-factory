@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 6,
+  "min": 7,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -180,6 +180,36 @@
           "layer": "evidence",
           "quote": "the upload handler needs about eight seconds",
           "why": "the duration the 1s timeout has to be compared with, and the one series that does not move"
+        }
+      ]
+    },
+    {
+      "caseId": "history-dependency-upstream-5xx-pricing",
+      "sampleId": "dependency-upstream-5xx-pricing",
+      "case": "history-dependency-upstream-5xx-pricing.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-dependency-upstream-5xx-pricing.signals.json",
+      "why": "annotated from the incident text of `dependency-upstream-5xx-pricing`, and the corpus's first `dependency` case and its first whose root cause is a third party rather than a component of the system. The annotation's job here is to separate the two services the text keeps together: the pricing service is what failed, and tax-calculation is why. Every layer is chosen to make that separation: the entity layer is the dependency itself rather than the service that reported the failures, the process layer is the mechanism sentence (a 503 answered to three calls in five), and the evidence layer is a pair plus a control -- the pricing service's 502 share, the dependency's own 503 share, and the zero against every other dependency, which is the sentence that rules the reporting service out. The share the injection declares is also a checkpoint, so the number in `fault.parameters` and the number in the telemetry have to agree rather than being two statements nobody compares.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Every failure is an upstream tax-calculation call answering 503",
+          "why": "the component the failures come from, which is the answer the case is asking for"
+        },
+        {
+          "layer": "fault",
+          "quote": "The tax provider's status page shows a degradation window that matches exactly",
+          "why": "the fault as the provider states it, with a window that lines up with the symptom rather than merely preceding it"
+        },
+        {
+          "layer": "process",
+          "quote": "The pricing service returned 502 on 60% of requests for 18 minutes",
+          "why": "what the system did with the upstream's answers, which is the step that turns a dependency failure into a user-visible one"
+        },
+        {
+          "layer": "evidence",
+          "quote": "the pricing service's own error rate against all other dependencies is zero",
+          "why": "the control that localises the fault to one upstream, and the one number that is a zero rather than a share"
         }
       ]
     }

@@ -3005,3 +3005,55 @@ the meta-gate at **46 gates, 46 caught, 0 survived**; core **186 / 4580**, cli 4
 
 The two items v2.74 and v2.73 left open -- a parameter tied to the text only through the fault layer's
 quote, and compound units compared structurally -- are unchanged this round.
+
+## v2.77 — the seventh case, and two that were refused
+
+**What this round is.** Another corpus round, and the first `dependency` case:
+`history-dependency-upstream-5xx-pricing`, whose root cause is a third-party provider rather than a
+component of the system.
+
+**The annotation's job was to keep two sentences apart.** "The pricing service returned 502 on 60% of
+requests" is what failed; "every failure is an upstream tax-calculation call answering 503" is why.
+Entity is the dependency, fault is the provider's status-page window, process is what the pricing
+service did with the answers, and evidence is a pair plus a control:
+
+| series | reading | role |
+| --- | --- | --- |
+| `http_502_ratio_percent` | 0 → 60 % | the symptom |
+| `tax_calculation_503_ratio_percent` | 0 → 60 % | the cause -- "every failure" of a 60 % rate is 60 % |
+| `other_dependency_error_ratio_percent` | 0 → 0 | `== 0 %`, the control that names the absence |
+
+The zero is the corpus's first assertion of an absence: without it, "the pricing service is broken"
+would satisfy the case. And `fault.parameters.sharePercent` is itself a checkpoint, so the declared
+share and the telemetry's share have to agree.
+
+**Two candidates refused, with their arithmetic.** `runtime-pod-kill-user-profile` turns on "every
+request 503'd" -- a share of exactly 1 -- and the expansion's ±2 % jitter would make it 1.02, a 102 %
+share no system can produce; a count would be true and weaker than the text, and a `noise: none`
+field invented for one case is the kind of thing this log keeps recording as a mistake. The
+crash-loop sample turns on "178 restarts in 12 hours" against a ninety-second cadence, so `post: 178`
+would compress twelve hours into the twelve minutes the post-window covers. Both are recorded as open
+items: a corpus that only records what it accepted cannot say what it cannot express.
+
+**Acceptance.** `check-fault-cases` prints **7 of 30**, `20 of 20` references resolved by kind (15
+series, 2 computed from 4 readings, 3 configuration), `0 of 18` comparable assertions failing; RE1 7
+/ 0 empty, RE2 7 / 9, RE3 1 written / 1 empty / 6 skipped; both baselines place `tax-calculation` in
+top-K; the graph is 16 entities / 10 edges. The pinned counts moved by hand again (`6 of 30` → `7 of
+30`, `filled 16`, `RE2 … 9`, `RE3 … 6 skipped`, `20 of 20`, `0 of 18`); typecheck, lint,
+`docs:check` green; the meta-gate at **46 gates, 46 caught, 0 survived**; core **186 / 4580**, cli
+4 / 187, repo **190 / 4767**; coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–250.
+
+### Left open
+
+- **A share at its maximum cannot carry the corpus's noise.** `[open: the expansion applies ±2 % to
+  every level reading, so a series whose post is 1 (`unit: '1'`) or 100 (`%`) reports 1.02 or 102 --
+  a value no system can produce. The pod-kill sample needs exactly that, and the model has no way to
+  say "this series has no sampling noise"]`
+- **The cadence does not follow the window.** `[open: samples are ninety seconds apart and the window
+  only decides where the first one lands, so a reading over twelve hours (`178` restarts) cannot be
+  declared without either compressing it into twelve minutes or inventing a per-window number]`
+- **`post` cannot be derived from a parameter.** `[open: the pricing case declares `sharePercent: 60 %`
+  and a series `post: 60`, and two checkpoints make them agree; nothing makes the second read the
+  first, so a change to one is caught only because both are asserted]`
+- **23 samples still carry no case.** `[open: 7 of 30 carry one; six of the eight categories are
+  represented, and `runtime` is not -- the two refusals above are both `runtime` samples]`

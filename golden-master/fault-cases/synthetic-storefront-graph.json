@@ -93,6 +93,18 @@
       "kind": "external",
       "name": "public-ingress",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/pricing-service",
+      "kind": "service",
+      "name": "pricing-service",
+      "aliases": []
+    },
+    {
+      "entityId": "external:synthetic-storefront/tax-calculation",
+      "kind": "external",
+      "name": "tax-calculation",
+      "aliases": []
     }
   ],
   "edges": [
@@ -139,6 +151,11 @@
     {
       "from": "external:synthetic-storefront/public-ingress",
       "to": "service:synthetic-storefront/partner-portal",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/pricing-service",
+      "to": "external:synthetic-storefront/tax-calculation",
       "relation": "calls"
     }
   ]
