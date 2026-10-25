@@ -1098,14 +1098,42 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain("reads the point 'median' at character 55, which is not one of baseline, post");
   });
 
-  it('refuses arithmetic that joins two units with a plus', () => {
-    // `ms + s` is not a quantity. Before the algebra, a checkpoint could state it and nothing said so.
+  it('adds two units the table can convert, and reports the sum in the left one', () => {
+    // The first version of this test asserted that `ms + s` was refused. It was wrong: the units are
+    // both durations, `util/unit.ts` holds the factor, and a refusal of a legitimate conversion is a
+    // false rejection rather than a check (finding 246). What the guard has to prove end to end is
+    // that the conversion reaches the *stated value*: 4.3s plus eleven minutes is 664,300ms.
+    const signals = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & {
+      series: Array<Record<string, unknown>>;
+    };
+    signals.series.push({
+      service: 'checkout-api',
+      metric: 'window_duration_minutes',
+      unit: 'min',
+      baseline: 11,
+      post: 11,
+      quote: 'over eleven minutes',
+      why: 'the sentence states the window, and the window is a duration in another unit',
+    });
     const result = run([
       '--cases',
-      derived('request_duration_p99_ms.post + container_cpu_throttled_seconds_total.post', { unit: 'ms' }),
+      corpus({
+        signals,
+        mutate: (faultCase) => {
+          const truth = faultCase.groundTruth as Record<string, unknown>;
+          const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+          const checkpoint = checkpoints.find((one) => one.checkpointId === 'cp-p99')!;
+          delete checkpoint.signalRef;
+          checkpoint.signalKind = 'derived';
+          checkpoint.expression = 'request_duration_p99_ms.post + window_duration_minutes.post';
+          checkpoint.comparator = '==';
+          checkpoint.value = 664300;
+          checkpoint.unit = 'ms';
+        },
+      }),
     ]);
-    expect(result.status).toBe(2);
-    expect(result.out).toContain("'+' joins 'ms' and 's', which are not the same unit");
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('0 of 2 comparable assertion(s) fail');
   });
 
   it('refuses a derived checkpoint with no expression, and says which field is missing', () => {

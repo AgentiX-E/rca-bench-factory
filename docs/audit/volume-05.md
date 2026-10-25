@@ -4010,3 +4010,75 @@ it where a reviewer can disagree.
 | the counts | printed on both exits; a failure of one in ten says `1 of 10` |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **144** tests red in 1 of 2 naming files |
 | `core` / repo | **184 / 4530** · **188 / 4717**; coverage 99.97 / 99.76 / 100 / 99.97, and 100 x4 on both new modules |
+
+## Finding 246 — the algebra had a stricter opinion about units than the package did
+
+Finding 245 gave a derived checkpoint an expression language, and gave that language a unit algebra
+whose rule for `+` and `-` was "the two sides must be the same unit". The rule was implemented as
+*the same spelling*:
+
+```ts
+if (!sameUnit(left.unit, right.unit)) throw new Unreadable({ kind: 'unitMismatch', ... });
+```
+
+So `900 ms - 0.9 s` was refused, and the refusal was written into a test as though it were a
+property: `'+' joins 'ms' and 's', which are not the same unit`. **The test encoded the defect.** A
+conversion the repository can do was being reported as a mistake in the annotation.
+
+The package already knew the factors. `util/unit.ts` holds `UNITS` as exact rationals against a
+per-dimension base -- `ns us ms s min h`, `By KiBy MiBy GiBy`, `rps QPS TPS`, `1 %`, `count` -- with
+`convertUnit`, `isConvertible` and `dimensionOf`, and it is what G2 asks when it decides whether a
+checkpoint's unit exists at all. `fault/expression.ts` did not read it. **Two opinions about units in
+one package, and the newer one was stricter than the one everything else trusts.**
+
+### The repair
+
+`+` and `-` now admit three cases:
+
+| case | rule | example |
+| --- | --- | --- |
+| the same map | add directly | `889 ms + 11 ms` |
+| two *atomic* units `isConvertible` accepts | convert the right operand into the left one's unit, then add | `900 ms - 0.9 s` = `0 ms`, `50 % + 0.2` = `70 %` |
+| anything else | a mismatch, naming both dimensions when the table knows both | `900 ms - 11 count` |
+
+The result keeps the **left** operand's unit. Converting to a canonical base instead would render
+`1 min + 30 s` as `90 s` -- the same quantity and not the same sentence -- and the author wrote the
+left one first.
+
+`*` and `/` still do not convert. `1 s * 500 ms` is a composite (`s·ms`) by construction, and making
+composites dimensional would have to decide what they *render* as after an addition; a rendering
+nobody wrote is worse than a refusal. And **compound units still compare structurally**: `MiB/s` and
+`KiB/s` are different units here even though a conversion exists. That limit is now the only one, and
+it is stated in the module comment rather than discovered by the next annotator.
+
+### The defect inside the repair, and it is the same one as last round's
+
+Dimensionless is an *empty* symbol map, and the first version of `atomicSymbol` returned `undefined`
+for it -- so `50 % + 0.2` was a mismatch between a ratio and nothing, even though `util/unit.ts`
+lists `1` in the `ratio` dimension beside `%`. Dimensionless is the symbol `1`, because that is what
+it is called and what the renderer prints.
+
+Then the shape of the function itself: `if (unit.size !== 1) return undefined` followed by
+destructuring produced a bound check the compiler demands and no input can reach -- the same
+unreachable refusal that finding 245 deleted from the number leaf. Rewritten as a counted loop whose
+every branch is reachable: empty is `1`, one entry to the first power is that symbol, one entry with
+another exponent or two entries are `undefined`.
+
+### What this does not change
+
+The corpus. Both derived checkpoints are `ms` over `ms` and `s` over `s`, so nothing in
+`golden-master/` moved; the change is visible only where a conversion is needed, and the guard test
+that used to assert the refusal now asserts the arithmetic: `4.3 s + 11 min == 664,300 ms` through
+the corpus guard, end to end.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| conversion | `900 ms - 0.9 s` = `0 ms`; `1 min + 30 s` = `1.5 min`; `50 % + 0.2 1` = `70 %` |
+| refusal | `ms - count` names both dimensions; `MiB/s + KiB/s` names neither and is still refused |
+| the table | one authority: the factors come from `util/unit.ts`, the same module G2 asks |
+| reachability | every branch of `atomicSymbol` is taken by a test; the bound check that no input could reach is gone |
+| the guard | `4.3 s + 11 min == 664300 ms` accepted end to end, `0 of 2` comparable assertions fail |
+| `core` / repo | **184 / 4535** · **188 / 4722**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

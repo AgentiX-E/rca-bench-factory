@@ -227,13 +227,87 @@ describe('expression · units', () => {
     });
   });
 
-  it('refuses to add two quantities in different units', () => {
-    // The mistake a number alone cannot catch: `900 ms - 11 s` is not 889 of anything.
-    expect(problemOf('client_span_duration_ms.post - server_handler_time_ms.post', [CLIENT, series('server_handler_time_ms', 's', { post: 11 })])).toEqual({
+  it('converts an atomic unit the repository already knows how to convert', () => {
+    // The first draft refused this: `ms` and `s` are different symbols, so `+` and `-` demanded the
+    // same *spelling*. `util/unit.ts` had the factors all along and G2 already asks it whether a
+    // checkpoint's unit exists, so the algebra was the only place in the package that answered
+    // "are these the same quantity?" with "are these the same word?" (finding 246).
+    expect(
+      valueOf('client_span_duration_ms.post - slow_seconds.post', [
+        CLIENT,
+        series('slow_seconds', 's', { post: 0.9 }),
+      ]),
+    ).toBe(0);
+    expect(
+      evaluateExpression('client_span_duration_ms.post - slow_seconds.post', [
+        CLIENT,
+        series('slow_seconds', 's', { post: 0.9 }),
+      ]),
+    ).toMatchObject({ ok: true, value: { unit: 'ms' } });
+  });
+
+  it('keeps the left operand\'s unit, which is the spelling the author wrote', () => {
+    // Converting to a canonical base would render `1 min + 30 s` as `90 s`, the same quantity and not
+    // the same sentence. The answer comes back in the unit the expression opened with.
+    expect(
+      evaluateExpression('window_minutes.post + window_seconds.post', [
+        series('window_minutes', 'min', { post: 1 }),
+        series('window_seconds', 's', { post: 30 }),
+      ]),
+    ).toMatchObject({ ok: true, value: { unit: 'min', value: 1.5 } });
+  });
+
+  it('converts between the two spellings of a ratio', () => {
+    // `%` and `1` are the same dimension with different factors: 20 % is 0.2, so 50 % + 0.2 is 70 %.
+    expect(
+      evaluateExpression('failure_share_percent.post + failure_share.post', [
+        series('failure_share_percent', '%', { post: 50 }),
+        series('failure_share', '1', { post: 0.2 }),
+      ]),
+    ).toMatchObject({ ok: true, value: { unit: '%', value: 70 } });
+  });
+
+  it('refuses to add two quantities of different dimensions, and names both', () => {
+    // The mistake a number alone cannot catch: `900 ms - 11 count` is not 889 of anything.
+    expect(
+      problemOf('client_span_duration_ms.post - restart_count.post', [
+        CLIENT,
+        series('restart_count', 'count', { post: 11 }),
+      ]),
+    ).toEqual({
       kind: 'unitMismatch',
       operator: '-',
       left: 'ms',
-      right: 's',
+      right: 'count',
+      leftDimension: 'time',
+      rightDimension: 'count',
+    });
+  });
+
+  it('reports no dimensions when the table does not know one of the units', () => {
+    // `x` is not a unit `util/unit.ts` has an entry for, so the parenthetical is omitted rather than
+    // half-filled: `(time and undefined)` would be a claim about a dimension nobody declared.
+    const odd = series('odd_unit', 'x', { post: 2 });
+    expect(problemOf('client_span_duration_ms.post + odd_unit.post', [CLIENT, odd])).toEqual({
+      kind: 'unitMismatch',
+      operator: '+',
+      left: 'ms',
+      right: 'x',
+    });
+  });
+
+  it('compares a compound unit structurally, and says so when the table cannot help', () => {
+    // A conversion exists between `MiB/s` and `KiB/s`, and this module does not apply it: making a
+    // compound dimensional would also decide what it *renders* after an addition. The refusal is the
+    // documented limit, and the message carries no dimensions because the table has no entry for a
+    // compound.
+    const left = series('throughput_mib', 'MiB/s', { post: 4 });
+    const right = series('throughput_kib', 'KiB/s', { post: 4 });
+    expect(problemOf('throughput_mib.post + throughput_kib.post', [left, right])).toEqual({
+      kind: 'unitMismatch',
+      operator: '+',
+      left: 'MiB/s',
+      right: 'KiB/s',
     });
   });
 
@@ -392,8 +466,20 @@ describe('expression · the sentences a problem becomes', () => {
     expect(describeExpressionProblem({ kind: 'unsupportedUnit', unit: 'per request' })).toContain(
       "works over a unit 'per request'",
     );
-    expect(describeExpressionProblem({ kind: 'unitMismatch', operator: '-', left: 'ms', right: 's' })).toBe(
-      "'-' joins 'ms' and 's', which are not the same unit",
+    expect(
+      describeExpressionProblem({
+        kind: 'unitMismatch',
+        operator: '-',
+        left: 'ms',
+        right: 'count',
+        leftDimension: 'time',
+        rightDimension: 'count',
+      }),
+    ).toBe("'-' joins 'ms' and 'count', which are not the same unit (time and count)");
+    // No dimensions when the table does not know one of the two, because a parenthetical with one
+    // half missing reads as a claim about the other half.
+    expect(describeExpressionProblem({ kind: 'unitMismatch', operator: '-', left: 'ms', right: 'x' })).toBe(
+      "'-' joins 'ms' and 'x', which are not the same unit",
     );
     expect(describeExpressionProblem({ kind: 'divisionByZero', at: 29 })).toBe('divides by zero at character 29');
     expect(describeExpressionProblem({ kind: 'notFinite' })).toBe('evaluates to a value that is not finite');

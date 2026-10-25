@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **184 files, 4530 tests passed** (as of this commit) |
+| `core` test suite | **184 files, 4535 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **188 files, 4717 tests passed** (as of this commit) |
+| repo test suite | **188 files, 4722 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2782,3 +2782,58 @@ coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–245.
 The `configuration` item from v2.71 is unchanged this round: the only rule is still that a
 configuration reference must not collide with a series, which catches a modelling error and says
 nothing about whether the quota is the one the case ran under.
+
+## v2.73 — the algebra stops having its own opinion about units
+
+**What was open.** v2.72's own second open item: "the unit algebra has no conversions -- `%` and `1`
+are different symbols, as are `1 min` and `60 s`, so a checkpoint that divides a percentage by a
+count is refused rather than converted. The refusal is correct and the corpus has no such reading
+yet; the first one will need a table."
+
+There was already a table. `util/unit.ts` holds `UNITS` as exact rationals per dimension with
+`convertUnit`, `isConvertible` and `dimensionOf`, and it is what G2 asks when it decides whether a
+checkpoint's unit exists. `fault/expression.ts` did not read it, so the package had two opinions
+about units and the newer one was stricter -- `900 ms - 0.9 s` was refused as "not the same unit",
+and the refusal had been written into a test as though it were a property.
+
+**What changed.** `+` and `-` convert when both operands are atomic and the table says they are
+convertible; the result keeps the left operand's unit; dimensionless is the symbol `1` (so `%` and
+`1` interoperate, as the table has always said). Everything else is still a mismatch, now with both
+dimensions named when the table knows them. `*` and `/` do not convert, and compound units still
+compare structurally -- the one remaining limit, stated in the module rather than discovered later.
+
+| reading | before | after |
+| --- | --- | --- |
+| `900 ms - 0.9 s` | refused | `0 ms` |
+| `1 min + 30 s` | refused | `1.5 min` |
+| `50 % + 0.2 1` | refused | `70 %` |
+| `900 ms - 11 count` | refused | refused, `(time and count)` |
+| `MiB/s + KiB/s` | refused | refused, no dimensions |
+
+**Two defects inside the repair.** Dimensionless returned `undefined` from `atomicSymbol`, so
+`50 % + 0.2` was a mismatch between a ratio and nothing; and the function's `size !== 1` guard left a
+bound check no input could reach -- the same unreachable refusal v2.72 deleted from the number leaf.
+Both are gone, the second by counting in the loop instead of guarding before it.
+
+**The corpus did not move**, which is the point of saying so: both derived checkpoints are `ms` over
+`ms` and `s` over `s`. The conversion is proven where it applies -- a scratch corpus asserting
+`4.3 s + 11 min == 664,300 ms` end to end through the guard -- rather than by a corpus edit that would
+have needed an invented number.
+
+**Acceptance.** 40 tests over the grammar (four new over conversions, one over a unit the table does
+not know); the guard test that asserted the refusal now asserts the arithmetic; `expression.ts` at
+100 x4; typecheck, lint, `docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts);
+the meta-gate at **46 gates, 46 caught, 0 survived**; core **184 / 4535**, cli 4 / 187, repo
+**188 / 4722**; coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–246.
+
+### Left open
+
+- **Compound units are compared structurally.** `[open: `MiB/s` and `KiB/s` are different units to
+  the algebra even though `util/unit.ts` has both. Making a composite dimensional would have to
+  decide what it renders as after an addition, and the corpus has no derived reading over a
+  composite yet -- the first one will force the decision]`
+- **The expression is checkable; its choice is not.** `[open: `post / baseline` and
+  `baseline / post` both compute, and only the annotation says which describes the fault]`
+- **25 samples still carry no case.** `[open: 5 of 30 carry one. This item's headline said "24" for
+  two rounds while its own body said "5 of 30", and 30 - 5 is 25 -- the subtraction has been done
+  here, and the count now comes from the two arrays rather than from the sentence beside them]`

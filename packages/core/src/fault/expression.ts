@@ -5,6 +5,7 @@ import {
   type NumericComparator,
   type SeriesPoint,
 } from '../ir/types.js';
+import { convertUnit, dimensionOf, isConvertible, type Dimension } from '../util/unit.js';
 
 /**
  * The arithmetic a `derived` checkpoint states, and the only thing that can check it.
@@ -42,15 +43,29 @@ import {
  * no specification. Multiplication, division, addition, subtraction and parentheses cover every
  * derived quantity this corpus can state: a ratio of two readings and a difference of two readings.
  *
- * ## Units are symbols with exponents, and the algebra says so
+ * ## Units: symbols with exponents, and the repository's conversion table where it applies
  *
- * A quantity here is `(number, unit)`. `*` and `/` add and subtract exponents; `+` and `-` require
- * the two sides to be the *same* unit. That is enough to reject `ms + s` and to compute `s / s` as
- * `1`, and it is **not** dimensional analysis: `%` and `1` are different symbols to this module even
- * though they are the same dimension, and `1 min` and `60 s` are different symbols even though they
- * are the same quantity. A series whose unit is not made of atomic symbols joined by `*`, `/` or `^`
- * is reported as unsupported rather than guessed at, because a unit this module cannot read is a unit
- * whose arithmetic it cannot check.
+ * A quantity here is `(number, unit)`, where the unit is a map from symbol to integer exponent. `*`
+ * and `/` add and subtract exponents; `+` and `-` need the two sides to be the same quantity, which
+ * is a weaker condition than "the same spelling":
+ *
+ * - the same map is the same unit, so `ms + ms` adds directly;
+ * - two *atomic* units that `util/unit.ts` calls convertible are the same dimension, so the right
+ *   operand is converted into the left one's unit before the addition -- `900 ms - 0.9 s` is `0 ms`,
+ *   and `50 % + 0.2 1` is `70 %`;
+ * - anything else is a mismatch, and the message names both dimensions when the table knows them.
+ *
+ * The first draft required the *same spelling* for `+` and `-`, which refused `ms + s` -- a
+ * legitimate conversion stated as an error. `util/unit.ts` already held the conversion factors and
+ * was already what G2 asks whether a unit exists, so the algebra had a second, stricter opinion
+ * about units than the rest of the package (finding 246).
+ *
+ * **The limit that remains:** compound units are compared structurally, not dimensionally. `MiB/s`
+ * and `KiB/s` are different units to this module even though a conversion exists between them,
+ * because turning a compound into base dimensions would also have to decide what `MiB/s` *renders*
+ * as after an addition, and a rendering nobody wrote is worse than a refusal. A series whose unit is
+ * not made of atomic symbols joined by `*`, `/` or `^` is reported as unsupported rather than guessed
+ * at.
  *
  * ## Floating point, stated rather than hidden
  *
@@ -107,7 +122,15 @@ export type ExpressionProblem =
   | { kind: 'unknownSeries'; metric: string }
   | { kind: 'missingPoint'; metric: string; point: SeriesPoint }
   | { kind: 'unsupportedUnit'; unit: string }
-  | { kind: 'unitMismatch'; operator: '+' | '-'; left: string; right: string }
+  | {
+      kind: 'unitMismatch';
+      operator: '+' | '-';
+      left: string;
+      right: string;
+      /** The dimension `util/unit.ts` gives the left unit, when it knows the unit at all. */
+      leftDimension?: Dimension;
+      rightDimension?: Dimension;
+    }
   | { kind: 'divisionByZero'; at: number }
   | { kind: 'notFinite' };
 
@@ -356,6 +379,79 @@ function sameUnit(left: Unit, right: Unit): boolean {
   return true;
 }
 
+/**
+ * The symbol of a unit that is one symbol to the first power, `'1'` for dimensionless, and
+ * `undefined` for anything else.
+ *
+ * Dimensionless is `'1'` rather than nothing because that is what it is called: the empty map renders
+ * as `1`, and `util/unit.ts` has an entry for it in the `ratio` dimension beside `%`. Returning
+ * `undefined` would make `50 % + 0.2` a mismatch between a ratio and nothing, which is a refusal of
+ * a conversion the table can do.
+ */
+function atomicSymbol(unit: Unit): string | undefined {
+  // Counted in the loop rather than checked against `size` first, so every branch here is reachable:
+  // an early `size === 1` guard would leave a destructuring that the compiler types as possibly
+  // absent and a bound check that no input could ever take.
+  let symbol: string | undefined = '1';
+  let seen = 0;
+  for (const [name, exponent] of unit) {
+    if (exponent !== 1) return undefined;
+    symbol = name;
+    seen += 1;
+  }
+  return seen > 1 ? undefined : symbol;
+}
+
+/** `dimensionOf`, for a symbol that may not be a unit the repository knows. */
+function dimensionOfSymbol(symbol: string | undefined): Dimension | undefined {
+  if (symbol === undefined) return undefined;
+  try {
+    return dimensionOf(symbol);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `+` and `-`, with the conversions `util/unit.ts` knows.
+ *
+ * The result keeps the *left* operand's unit, because that is the spelling the author wrote first
+ * and the one they will read the answer in. Converting to a canonical base instead would render
+ * `900 ms - 0.9 s` as `0 s`, which is the same quantity and not the same sentence.
+ */
+function addOrSubtract(operator: '+' | '-', left: Quantity, right: Quantity): Quantity {
+  if (sameUnit(left.unit, right.unit)) {
+    return {
+      value: operator === '+' ? left.value + right.value : left.value - right.value,
+      unit: left.unit,
+    };
+  }
+  const leftSymbol = atomicSymbol(left.unit);
+  const rightSymbol = atomicSymbol(right.unit);
+  if (leftSymbol !== undefined && rightSymbol !== undefined && isConvertible(rightSymbol, leftSymbol)) {
+    const converted = convertUnit(right.value, rightSymbol, leftSymbol);
+    return {
+      value: operator === '+' ? left.value + converted : left.value - converted,
+      unit: left.unit,
+    };
+  }
+  // Both dimensions or neither: the message prints them as a pair, and a problem carrying one half
+  // would describe a fact the reader never sees -- the same shape as a field nothing reads.
+  const leftDimension = dimensionOfSymbol(leftSymbol);
+  const rightDimension = dimensionOfSymbol(rightSymbol);
+  const dimensions =
+    leftDimension === undefined || rightDimension === undefined
+      ? {}
+      : { leftDimension, rightDimension };
+  throw new Unreadable({
+    kind: 'unitMismatch',
+    operator,
+    left: renderUnit(left.unit),
+    right: renderUnit(right.unit),
+    ...dimensions,
+  });
+}
+
 interface Quantity {
   value: number;
   unit: Unit;
@@ -384,18 +480,7 @@ function evaluate(node: Node, series: ReadonlyMap<string, ExpressionSeries>): Qu
       const left = evaluate(node.left, series);
       const right = evaluate(node.right, series);
       if (node.operator === '+' || node.operator === '-') {
-        if (!sameUnit(left.unit, right.unit)) {
-          throw new Unreadable({
-            kind: 'unitMismatch',
-            operator: node.operator,
-            left: renderUnit(left.unit),
-            right: renderUnit(right.unit),
-          });
-        }
-        return {
-          value: node.operator === '+' ? left.value + right.value : left.value - right.value,
-          unit: left.unit,
-        };
+        return addOrSubtract(node.operator, left, right);
       }
       if (node.operator === '*') {
         return { value: left.value * right.value, unit: combineUnits(left.unit, right.unit, 1) };
@@ -514,8 +599,16 @@ export function describeExpressionProblem(problem: ExpressionProblem): string {
       return `reads '${problem.metric}.${problem.point}', and that series declares no ${problem.point} value`;
     case 'unsupportedUnit':
       return `works over a unit '${problem.unit}' that this grammar cannot multiply (atomic symbols, '*' or '/', and '^' exponents)`;
-    case 'unitMismatch':
-      return `'${problem.operator}' joins '${problem.left}' and '${problem.right}', which are not the same unit`;
+    case 'unitMismatch': {
+      const dimensions =
+        problem.leftDimension === undefined || problem.rightDimension === undefined
+          ? ''
+          : ` (${problem.leftDimension} and ${problem.rightDimension})`;
+      return (
+        `'${problem.operator}' joins '${problem.left}' and '${problem.right}', ` +
+        `which are not the same unit${dimensions}`
+      );
+    }
     case 'divisionByZero':
       return `divides by zero at character ${String(problem.at)}`;
     case 'notFinite':

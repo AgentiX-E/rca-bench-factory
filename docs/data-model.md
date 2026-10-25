@@ -144,11 +144,21 @@ well as the grammar.
 `scripts/check-fault-cases.mjs` evaluates every derived expression with
 `fault/expression.ts` and compares the result with the stated `value` and `unit`.
 
-**Units are symbol-exponent pairs, and the algebra is exactly that.** `*` and `/` add
-and subtract exponents; `+` and `-` require the same unit on both sides, which is what
-rejects `900 ms - 11 s`. It is not dimensional analysis: `%` and `1` are different
-symbols here, as are `1 min` and `60 s`. A unit the grammar cannot read is reported as
-unsupported rather than treated as dimensionless.
+**Units are symbol-exponent pairs, and `+`/`-` convert where the package already can.**
+`*` and `/` add and subtract exponents. For `+` and `-` there are three cases: the same
+map adds directly; two *atomic* units that `util/unit.ts` calls convertible are
+converted -- `900 ms - 0.9 s` is `0 ms`, `50 % + 0.2` is `70 %`; anything else is a
+mismatch, and the message names both dimensions when the table knows them (`ms` and
+`count`). The result keeps the left operand's unit, which is the spelling the author
+wrote first.
+
+`util/unit.ts` is the one authority on units: it holds the factors as exact rationals
+per dimension, and it is what G2 asks when it decides whether a checkpoint's unit
+exists. The limit that remains is stated rather than discovered: **compound units
+compare structurally**, so `MiB/s` and `KiB/s` are different units here even though a
+conversion exists, because making a composite dimensional would also decide what it
+renders as after an addition. A unit the grammar cannot read is reported as unsupported
+rather than treated as dimensionless.
 
 **Comparison is tolerant at `1e-9` relative**, because `0.06 / 0.02` is
 `2.9999999999999996` and an exact `==` would reject the annotation that is right. The
