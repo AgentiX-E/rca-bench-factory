@@ -452,6 +452,9 @@ const TESTED = [
   'ENTITY_KINDS',
   'FAULT_CATEGORIES',
   'PROVENANCE_SOURCES',
+  // What a checkpoint's signal reference points at. Added with the schema field, because one
+  // optional string was carrying four different things and nothing could resolve it (finding 243).
+  'CHECKPOINT_REFERENCES',
   'METRIC_SEMANTIC_TYPES',
   'isVocabularyMember',
   // score/dispatch.ts

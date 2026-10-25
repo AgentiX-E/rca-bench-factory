@@ -4,6 +4,7 @@ import {
   ENTITY_KINDS,
   FAULT_CATEGORIES,
   LOG_SEVERITIES,
+  CHECKPOINT_REFERENCES,
   PROVENANCE_SOURCES,
   SPAN_STATUSES,
 } from './types.js';
@@ -185,6 +186,9 @@ export const evidenceCheckpointSchema = z.object({
   checkpointId: z.string().min(1),
   entityRef: z.string().min(1),
   signalRef: z.string().optional(),
+  // Absent means `series`: every checkpoint in the corpus before this field existed meant that, and
+  // a default that changed the meaning of existing data would be a migration dressed as a schema.
+  signalKind: z.enum(CHECKPOINT_REFERENCES).optional(),
   comparator: z.enum(['>', '>=', '<', '<=', '==', '!=', 'contains', 'matches']),
   value: z.union([z.number(), z.string()]),
   unit: z.string().optional(),

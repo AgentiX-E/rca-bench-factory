@@ -741,6 +741,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
   function withLog(edit: (line: Record<string, unknown>) => void): Record<string, unknown> {
     const copy = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>;
     const line: Record<string, unknown> = {
+      id: 'throttling-line',
       service: 'checkout-api-0',
       severity: 'WARN',
       body: 'cpu throttling counters climbed for eleven minutes; the pod sat at its limit',
@@ -923,27 +924,95 @@ describe('check-fault-cases · the first code-level case', () => {
   });
 });
 
-describe('check-fault-cases · what the checkpoints name, counted rather than assumed', () => {
-  // A checkpoint is the evidence for a layer, and `signalRef` is the only field tying it to
-  // telemetry. Nothing had ever resolved those references, so finding 243 measured them: three of
-  // eleven name a series the bundle declares, and all three of the inequalities that can be
-  // evaluated are false at their own post value. The numbers are printed and pinned; the repair is
-  // the next round's, because two of the eleven are not series references at all (a derived ratio,
-  // and a configuration fact).
-  it('prints how many references resolve and how many inequalities are false', () => {
+describe('check-fault-cases · a checkpoint says what its reference is a reference to', () => {
+  // One optional string used to carry four different things and nothing resolved it: eight of eleven
+  // checkpoints named a series that did not exist (finding 243). `signalKind` separates them, and
+  // each kind has the rule that can be applied to it.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The checkout declaration with one checkpoint edited, which is the case the scratch corpus writes. */
+  function withCheckpoint(edit: (checkpoint: Record<string, unknown>) => void): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        const truth = faultCase.groundTruth as Record<string, unknown>;
+        const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+        edit(checkpoints.find((one) => one.checkpointId === 'cp-p99')!);
+      },
+    });
+  }
+
+  it('resolves every reference in the corpus by its own kind', () => {
     const result = run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
+    // Eleven of eleven: nine name a series, one names a log line by id, and one is a configuration
+    // fact that names no series at all. Eight of the nine are comparable against their post value,
+    // and all eight hold.
     expect(result.out).toContain(
-      'checkpoints 3 of 11 signal reference(s) resolve to a declared series; 3 of 3 inequality(ies) are false at the post value',
+      'checkpoints 11 of 11 reference(s) resolve by kind (9 to a series); 0 of 8 comparable assertion(s) fail',
     );
   });
 
-  it('says 0 of 0 rather than dividing when no reference resolves', () => {
-    // The scratch corpus writes the checkout case, whose three references name things its
-    // declaration does not declare -- so there is nothing evaluable, and the line says so instead of
-    // printing a rate over an empty denominator.
-    const result = run(['--cases', corpus({ signals: JSON.parse(readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8')) as Record<string, unknown> })]);
-    expect(result.out).toContain('checkpoints 0 of 3 signal reference(s) resolve');
-    expect(result.out).toContain('0 of 0 inequality(ies) are false');
+  it('refuses a series reference the signals file does not declare', () => {
+    const result = run(['--cases', withCheckpoint((cp) => { cp.signalRef = 'request_duration_p99'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("checkpoint 'cp-p99' names 'request_duration_p99', which the signals file does not declare");
+    expect(result.out).toContain('it declares: request_duration_p99_ms, container_cpu_throttled_seconds_total');
+  });
+
+  it('refuses a checkpoint whose unit disagrees with its series', () => {
+    const result = run(['--cases', withCheckpoint((cp) => { cp.unit = 's'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("is in 's' but the series 'request_duration_p99_ms' is in 'ms'");
+  });
+
+  it('refuses a checkpoint its own series fails', () => {
+    // The defect that only a resolved reference can reveal: `>` against a value equal to the post.
+    const result = run(['--cases', withCheckpoint((cp) => { cp.comparator = '>'; cp.value = 4300; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("asserts request_duration_p99_ms > 4300, and the series' post value is 4300");
+  });
+
+  it('refuses a configuration fact that names a series', () => {
+    // Two statements of one value, one of which the guard would start comparing with telemetry.
+    const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'configuration'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("checkpoint 'cp-p99' calls 'request_duration_p99_ms' a configuration fact");
+  });
+
+  it('refuses a log reference that matches no declared line', () => {
+    const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'log'; cp.signalRef = 'nothing'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("checkpoint 'cp-p99' names log 'nothing', which the signals file does not declare");
+  });
+
+  it('refuses a checkpoint with no reference at all', () => {
+    const result = run(['--cases', withCheckpoint((cp) => { delete cp.signalRef; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("checkpoint 'cp-p99' names no signal, so nothing carries it");
+  });
+
+  it('refuses a signal kind outside the vocabulary, and the schema does it', () => {
+    // `signalKind` is a published vocabulary in `ir/types.ts`, so a bad member fails the parse --
+    // exit 1, "could not be read as a FaultCase" -- rather than the guard's own check. The guard had
+    // a membership test for one round after the schema gained the enum, and it was unreachable: an
+    // unrecognised kind never reached it. Deleted rather than kept as a second opinion.
+    const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'telemetry'; })]);
+    expect(result.status).toBe(1);
+    expect(result.out).toContain('could not be read as a FaultCase');
+    // The message keeps the first line of the parse failure, which is the case id and a bracket; the
+    // field name is on the second and is deliberately truncated, so this asserts the shape rather
+    // than a substring the truncation removes.
+    expect(result.out).toContain("does not parse");
+  });
+
+  it('refuses a log line with no id, because nothing can reference it', () => {
+    const edited = JSON.parse(readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8')) as Record<string, unknown>;
+    edited.logs = [{ service: 'checkout-api-0', body: 'throttled for eleven minutes', quote: 'Container CPU throttling counters climbed the whole time', why: 'a line with no id is a line no checkpoint can name' }];
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('declares a log line with no id, which nothing can reference');
   });
 });

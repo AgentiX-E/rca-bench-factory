@@ -307,7 +307,7 @@ const seen = new Set();
 /** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
 const withTelemetry = [];
 /** What the checkpoints of every annotated case claim about the signals it declares. */
-const checkpointRefs = { total: 0, resolved: 0, inequalities: 0, false: 0 };
+const checkpointRefs = { total: 0, resolved: 0, resolvedAny: 0, inequalities: 0, false: 0 };
 /** The same telemetry, in the shape an exporter reads: cases and the signals attached to them. */
 const telemetryCases = [];
 const telemetrySignals = {};
@@ -486,28 +486,88 @@ for (const entry of index.cases) {
       }
     }
 
-    // What the checkpoints name, measured rather than assumed. A checkpoint is supposed to be the
-    // evidence for a layer, and `signalRef` is the only thing tying it to telemetry -- so a
-    // reference that names nothing is evidence with nothing behind it, and nothing had ever counted
-    // them (finding 243).
-    const metricNames = new Set(series.map((one) => String(one.metric)));
-    const posts = new Map(series.map((one) => [String(one.metric), { post: Number(one.post), unit: one.unit }]));
+    // What each checkpoint's reference is a reference *to*, and whether it resolves.
+    //
+    // `signalRef` was one optional string carrying four different things, and nothing resolved it:
+    // eight of eleven named a series that did not exist (finding 243). `signalKind` says which kind,
+    // and each kind has its own rule, because a rule that treated them alike would be wrong for at
+    // least one of them.
+    const seriesByMetric = new Map(series.map((one) => [String(one.metric), one]));
+    const logIds = new Set();
+    for (const one of logs) {
+      const id = typeof one?.id === 'string' ? one.id : '';
+      if (id === '') {
+        problems.push(`'${caseId}' declares a log line with no id, which nothing can reference`);
+        continue;
+      }
+      if (logIds.has(id)) problems.push(`'${caseId}' declares two log lines with id '${id}'`);
+      logIds.add(id);
+    }
+
     for (const checkpoint of parsedCase.groundTruth.evidenceCheckpoints ?? []) {
+      const id = checkpoint.checkpointId;
+      const kind = checkpoint.signalKind ?? 'series';
+      const ref = typeof checkpoint.signalRef === 'string' ? checkpoint.signalRef : '';
       checkpointRefs.total += 1;
-      const ref = checkpoint.signalRef;
-      if (typeof ref !== 'string' || !metricNames.has(ref)) continue;
+      if (ref === '') {
+        problems.push(`'${caseId}' checkpoint '${id}' names no signal, so nothing carries it`);
+        continue;
+      }
+      if (kind === 'log') {
+        if (logIds.has(ref)) checkpointRefs.resolvedAny += 1;
+        if (!logIds.has(ref)) {
+          problems.push(`'${caseId}' checkpoint '${id}' names log '${ref}', which the signals file does not declare (it declares: ${[...logIds].join(', ') || 'none'})`);
+        }
+        continue;
+      }
+      if (kind === 'configuration') {
+        // A configuration fact that is also a series is a modelling error: two statements of one
+        // value, one of which the guard would start comparing against telemetry.
+        if (!seriesByMetric.has(ref)) checkpointRefs.resolvedAny += 1;
+        if (seriesByMetric.has(ref)) {
+          problems.push(`'${caseId}' checkpoint '${id}' calls '${ref}' a configuration fact, but the signals file declares a series by that name`);
+        }
+        continue;
+      }
+      const declared = seriesByMetric.get(ref);
+      if (declared === undefined) {
+        problems.push(
+          `'${caseId}' checkpoint '${id}' names '${ref}', which the signals file does not declare ` +
+            `(it declares: ${[...seriesByMetric.keys()].join(', ') || 'none'})`,
+        );
+        continue;
+      }
       checkpointRefs.resolved += 1;
-      const seriesEntry = posts.get(ref);
+      checkpointRefs.resolvedAny += 1;
+      // A derived value is computed from the series, so neither its unit nor its number can be
+      // compared with one post value -- `per_message_processing_seconds` carries seconds and the
+      // checkpoint states a ratio of two of them. Before that distinction existed the guard could
+      // only have compared them, which would have rejected the correct annotation and accepted a
+      // wrong one that happened to be in seconds.
+      if (kind === 'derived') continue;
+      if (declared.unit !== checkpoint.unit) {
+        problems.push(
+          `'${caseId}' checkpoint '${id}' is in '${String(checkpoint.unit)}' but the series '${ref}' is in '${String(declared.unit)}'`,
+        );
+      }
       const comparator = checkpoint.comparator;
-      if (seriesEntry === undefined || !['<', '>', '<=', '>='].includes(comparator)) continue;
-      if (seriesEntry.unit !== checkpoint.unit) continue;
+      if (!['>', '>=', '<', '<=', '=='].includes(comparator) || typeof checkpoint.value !== 'number') continue;
+      if (declared.unit !== checkpoint.unit) continue;
       checkpointRefs.inequalities += 1;
+      const post = Number(declared.post);
       const holds =
-        comparator === '>' ? seriesEntry.post > checkpoint.value
-        : comparator === '<' ? seriesEntry.post < checkpoint.value
-        : comparator === '>=' ? seriesEntry.post >= checkpoint.value
-        : seriesEntry.post <= checkpoint.value;
-      if (!holds) checkpointRefs.false += 1;
+        comparator === '>' ? post > checkpoint.value
+        : comparator === '>=' ? post >= checkpoint.value
+        : comparator === '<' ? post < checkpoint.value
+        : comparator === '<=' ? post <= checkpoint.value
+        : post === checkpoint.value;
+      if (!holds) {
+        checkpointRefs.false += 1;
+        problems.push(
+          `'${caseId}' checkpoint '${id}' asserts ${ref} ${comparator} ${String(checkpoint.value)}, ` +
+            `and the series' post value is ${String(post)}`,
+        );
+      }
     }
 
     const signals = [
@@ -656,10 +716,10 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
   if (checkpointRefs.total > 0) {
     console.log(
-      `check-fault-cases: checkpoints ${String(checkpointRefs.resolved)} of ` +
-        `${String(checkpointRefs.total)} signal reference(s) resolve to a declared series; ` +
-        `${String(checkpointRefs.false)} of ${String(checkpointRefs.inequalities)} inequality(ies) ` +
-        `are false at the post value`,
+      `check-fault-cases: checkpoints ${String(checkpointRefs.resolvedAny)} of ` +
+        `${String(checkpointRefs.total)} reference(s) resolve by kind (${String(checkpointRefs.resolved)} to a ` +
+        `series); ${String(checkpointRefs.false)} of ${String(checkpointRefs.inequalities)} comparable ` +
+        `assertion(s) fail on the series' own post value`,
     );
   }
 }

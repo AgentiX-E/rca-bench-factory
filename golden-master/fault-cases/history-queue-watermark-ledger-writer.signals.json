@@ -29,7 +29,8 @@
       "severity": "WARN",
       "body": "disk watermark crossed 92 percent; producers throttled",
       "quote": "the disk watermark crossed 92 percent",
-      "why": "the broker's own line, which is what makes this case's `logs.csv` a file with a row in it"
+      "why": "the broker's own line, which is what makes this case's `logs.csv` a file with a row in it",
+      "id": "watermark-warning"
     }
   ]
 }

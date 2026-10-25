@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4460 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4467 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4647 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4654 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2672,3 +2672,58 @@ meta-gate at **46 gates, 46 caught, 0 survived** (hollowing the guard turns 108 
 - **The three resolvable checkpoints are false under their own comparator.** `[open: `>` against a value
   equal to the post. Either the comparator becomes `>=` or the checkpoint states a threshold the
   series clears -- and choosing per case is a judgement about what the incident asserted]`
+
+## v2.71 — the reference had four meanings, so the repair is a vocabulary
+
+v2.70 measured eight references that named nothing and three that were false under their own
+comparator. The repair is not a rename, because **one optional string was carrying four different
+things**: a series the value is a threshold on, a series the value is *computed from*, a
+configuration fact no telemetry carries, and a log line.
+
+`CHECKPOINT_REFERENCES` (`series | derived | configuration | log`) is now a published vocabulary --
+declared once in `ir/types.ts`, referenced by the schema with `z.enum(...)`, documented in the
+data-model table, so `check-data-model-vocabularies` covers six sets instead of five. Each kind has
+the rule that can be applied to it, and no more:
+
+| kind | checked |
+| --- | --- |
+| `series` | resolves; unit agrees; the assertion holds at the post value |
+| `derived` | resolves only -- a ratio of two durations is not equal to one of them |
+| `configuration` | names *nothing* telemetry-shaped; a series by that name is a modelling error |
+| `log` | resolves to a line `id` the declaration carries |
+
+**Corpus:** four references were a suffix or plural away, `cp-p99` had none, `cp-processing-tripled`
+is `derived`, `cp-cpu-limit` is `configuration`, `cp-typeerror-line` is `log` against a new `id` field
+on log lines, and five comparators became `>=` because `>` against a value equal to the post is false.
+
+```
+check-fault-cases: checkpoints 11 of 11 reference(s) resolve by kind (9 to a series); 0 of 8 comparable assertion(s) fail on the series' own post value
+```
+
+**Two defects.** The unit check ran before the `derived` short-circuit, so the correct annotation was
+refused for being "in `1` but the series is in `s`" -- which is what `derived` means. And the guard
+grew a membership test the schema had already made unreachable: an unknown `signalKind` fails the
+parse before the guard sees the checkpoint, so the test could not fire. Deleted, with the test now
+asserting the parse failure -- **one owner for one vocabulary**.
+
+**Still copied:** `cp-watermark` asserts `>= 92` and the post is 92, both transcribed from one
+sentence. The guard proves they agree; it cannot tell whether 92 is right.
+
+**Acceptance.** 65 tests over the guard (nine new over the four kinds); typecheck, lint, `docs:check`
+green (six vocabularies); `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at
+**46 gates, 46 caught, 0 survived** (hollowing the guard turns 122 tests red); core **182 / 4467**,
+cli 4 / 187, repo **186 / 4654**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5 volumes, findings
+1–244.
+
+### Left open
+
+- **A `derived` reference names one source and not the arithmetic.** `[open: `cp-processing-tripled`
+  says "derived from `per_message_processing_seconds`" and the factor 3 lives only in the value. Two
+  derived checkpoints could name the same series with different arithmetic and nothing would
+  disagree]`
+- **`configuration` refs are checked for the wrong thing.** `[open: the only rule is that they must not
+  collide with a series, which catches a modelling error and says nothing about whether the quota is
+  the one the case ran under]`
+- **24 samples still carry no case.** `[open: 5 of 30. The annotation now satisfies nine obligations,
+  and the newest one -- naming what each reference is -- is the first that can be checked
+  mechanically]`

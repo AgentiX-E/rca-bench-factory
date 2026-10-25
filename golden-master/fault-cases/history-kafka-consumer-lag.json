@@ -53,7 +53,7 @@
         "checkpointId": "cp-lag",
         "entityRef": "mq:synthetic-storefront/order-events",
         "signalRef": "kafka_consumergroup_lag",
-        "comparator": ">",
+        "comparator": ">=",
         "value": 4200000,
         "unit": "count",
         "description": "lag accumulated across the six-hour window, in messages"
@@ -61,11 +61,12 @@
       {
         "checkpointId": "cp-processing-tripled",
         "entityRef": "service:synthetic-storefront/order-events-consumer",
-        "signalRef": "per_message_processing_time",
+        "signalRef": "per_message_processing_seconds",
         "comparator": "==",
         "value": 3,
         "unit": "1",
-        "description": "per-message processing time after the schema change, as a multiple of the time before it"
+        "description": "per-message processing time after the schema change, as a multiple of the time before it",
+        "signalKind": "derived"
       }
     ],
     "remediation": [

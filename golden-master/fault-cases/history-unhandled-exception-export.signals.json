@@ -20,7 +20,8 @@
       "severity": "ERROR",
       "body": "unhandled TypeError in the CSV writer: a column contained an embedded newline",
       "quote": "Logs show an unhandled TypeError in the CSV writer when a column contains an embedded newline",
-      "why": "the mechanism stated in words by the system itself, which is what makes this case a code fault rather than a resource one"
+      "why": "the mechanism stated in words by the system itself, which is what makes this case a code fault rather than a resource one",
+      "id": "typeerror-line"
     }
   ]
 }

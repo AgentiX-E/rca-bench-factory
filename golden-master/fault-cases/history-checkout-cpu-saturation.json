@@ -65,12 +65,13 @@
         "comparator": ">=",
         "value": 0.5,
         "unit": "1",
-        "description": "container CPU usage sat at its 500m limit, which is half a core"
+        "description": "the container quota the usage sat against -- a configuration fact, which no telemetry series carries",
+        "signalKind": "configuration"
       },
       {
         "checkpointId": "cp-throttled-counters",
         "entityRef": "pod:synthetic-storefront/checkout-api-0",
-        "signalRef": "container_cpu_cfs_throttled_seconds_total",
+        "signalRef": "container_cpu_throttled_seconds_total",
         "comparator": ">",
         "value": 0,
         "unit": "s",
@@ -79,10 +80,11 @@
       {
         "checkpointId": "cp-p99",
         "entityRef": "service:synthetic-storefront/checkout-api",
-        "comparator": ">",
+        "comparator": ">=",
         "value": 4300,
         "unit": "ms",
-        "description": "p99 latency at the peak, up from 180ms before the window"
+        "description": "p99 latency at the peak, up from 180ms before the window",
+        "signalRef": "request_duration_p99_ms"
       }
     ],
     "remediation": [

@@ -14,6 +14,7 @@ export {
   SPAN_STATUSES,
   ENTITY_KINDS,
   FAULT_CATEGORIES,
+  CHECKPOINT_REFERENCES,
   SIGNAL_KINDS,
   isVocabularyMember,
 } from './ir/types.js';

@@ -42,15 +42,18 @@
         "fromEntityId": "service:synthetic-storefront/export-worker",
         "toEntityId": "mq:synthetic-storefront/order-events",
         "mechanism": "the exception escapes the worker's handler, so the worker never sends a nack and the broker observes the connection close instead; the job is then never retried, and the failure is silent rather than reported",
-        "evidenceRefs": ["cp-failure-ratio", "cp-typeerror-line"]
+        "evidenceRefs": [
+          "cp-failure-ratio",
+          "cp-typeerror-line"
+        ]
       }
     ],
     "evidenceCheckpoints": [
       {
         "checkpointId": "cp-failure-ratio",
         "entityRef": "service:synthetic-storefront/export-worker",
-        "signalRef": "export_failure_ratio",
-        "comparator": ">",
+        "signalRef": "export_failure_ratio_percent",
+        "comparator": ">=",
         "value": 3,
         "unit": "%",
         "description": "the share of exports failing, which the text states as roughly three percent and matches the share of datasets carrying an embedded newline"
@@ -58,11 +61,11 @@
       {
         "checkpointId": "cp-typeerror-line",
         "entityRef": "service:synthetic-storefront/export-worker",
-        "signalRef": "unhandled_type_error_log",
-        "comparator": "==",
-        "value": 1,
-        "unit": "count",
-        "description": "one log line carrying the uncaught TypeError, which is where the mechanism is stated rather than measured"
+        "signalRef": "typeerror-line",
+        "comparator": "contains",
+        "value": "unhandled TypeError",
+        "description": "the log line carrying the uncaught TypeError, referenced by the line id rather than counted as a quantity",
+        "signalKind": "log"
       }
     ],
     "remediation": [

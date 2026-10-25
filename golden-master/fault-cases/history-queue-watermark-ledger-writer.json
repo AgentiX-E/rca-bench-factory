@@ -43,7 +43,10 @@
         "fromEntityId": "service:synthetic-storefront/ledger-writer",
         "toEntityId": "mq:synthetic-storefront/ledger-events",
         "mechanism": "the topic's retention was raised to seven days on volumes sized for three, so the broker's disk watermark crossed 92 percent and it throttled producers; the writer's publishes then timed out and its buffer grew to 40,000 records",
-        "evidenceRefs": ["cp-watermark", "cp-buffer"]
+        "evidenceRefs": [
+          "cp-watermark",
+          "cp-buffer"
+        ]
       }
     ],
     "evidenceCheckpoints": [
@@ -51,7 +54,7 @@
         "checkpointId": "cp-watermark",
         "entityRef": "mq:synthetic-storefront/ledger-events",
         "signalRef": "broker_disk_watermark_percent",
-        "comparator": ">",
+        "comparator": ">=",
         "value": 92,
         "unit": "%",
         "description": "the broker's disk watermark against the threshold it throttles at, up from a three-day-footprint baseline"
@@ -60,7 +63,7 @@
         "checkpointId": "cp-buffer",
         "entityRef": "service:synthetic-storefront/ledger-writer",
         "signalRef": "producer_buffer_records",
-        "comparator": ">",
+        "comparator": ">=",
         "value": 40000,
         "unit": "count",
         "description": "the writer's producer buffer, which grew because publishes were throttled rather than failed"

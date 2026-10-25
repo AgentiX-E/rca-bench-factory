@@ -45,6 +45,7 @@ both directions and in order.
 |---|---|---|
 | `LogPayload.severityText` | `LOG_SEVERITIES` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
 | `TracePayload.status` | `SPAN_STATUSES` | `OK`, `ERROR`, `UNSET` |
+| `EvidenceCheckpoint.signalKind` | `CHECKPOINT_REFERENCES` | `series`, `derived`, `configuration`, `log` |
 
 ## Layer 2 — `EntityGraph`
 

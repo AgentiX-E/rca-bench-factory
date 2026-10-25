@@ -307,12 +307,34 @@ export type FaultCategory = (typeof FAULT_CATEGORIES)[number];
 
 export type Comparator = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'contains' | 'matches';
 
+/**
+ * What a checkpoint's `signalRef` is a reference *to*.
+ *
+ * One optional string used to carry four different things, and nothing resolved it: of the eleven
+ * checkpoints in the corpus, eight named a series that did not exist (finding 243). The four cases
+ * are genuinely different and a rule that treats them alike is wrong in one direction or the other:
+ *
+ * - `series`: the value is a threshold on a metric the bundle declares, so it can be evaluated
+ *   against that series' post value;
+ * - `derived`: the value is computed from one or more series (a ratio of two durations), so the
+ *   reference resolves but the number cannot be compared with a single post value;
+ * - `configuration`: the value is a fact about how the system was configured (a CPU quota), which no
+ *   telemetry carries, and naming a series by the same name is a modelling error;
+ * - `log`: the value is a property of a declared log line, referenced by the line's id.
+ */
+export const CHECKPOINT_REFERENCES = ['series', 'derived', 'configuration', 'log'] as const;
+
+/** What a checkpoint's signal reference points at. Derived from `CHECKPOINT_REFERENCES`. */
+export type CheckpointReference = (typeof CHECKPOINT_REFERENCES)[number];
+
 export interface EvidenceCheckpoint {
   checkpointId: string;
   /** Must resolve against the EntityGraph. */
   entityRef: string;
   /** Optional pointer to the concrete metric / log / trace. */
   signalRef?: string;
+  /** What `signalRef` names. Absent means `series`, which is what every checkpoint meant by default. */
+  signalKind?: CheckpointReference;
   comparator: Comparator;
   value: number | string;
   /** UCUM-style unit. Required whenever `value` is numeric. */

@@ -3823,3 +3823,70 @@ this round's contribution is the number that makes it urgent rather than hypothe
 | the empty case | `0 of 0` rather than a division, asserted |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **108** tests red in 1 of 2 naming files |
 | `core` / repo | **182 / 4460** · **186 / 4647** |
+
+## Finding 244 — the reference had four meanings, and the guard could only compare one
+
+Finding 243 measured the problem: eight of eleven checkpoints named a series that did not exist, and
+the three that resolved were false under their own comparator. This round repairs it, and the repair
+is a vocabulary rather than a rename, because **one optional string was carrying four different
+things**:
+
+| `signalKind` | the reference is | what the guard can check |
+| --- | --- | --- |
+| `series` (default) | a metric the bundle declares | resolves; unit agrees; the assertion holds at the post value |
+| `derived` | a metric the value is computed from | resolves only -- a ratio of two durations is not equal to one of them |
+| `configuration` | a fact about how the system was configured | resolves to *nothing* telemetry-shaped: naming a series is a modelling error |
+| `log` | a declared log line, by id | resolves to a line id the declaration carries |
+
+`CHECKPOINT_REFERENCES` is a published vocabulary in `ir/types.ts`, referenced by the schema with
+`z.enum(...)` and documented in the data-model table -- so `check-data-model-vocabularies` now covers
+six sets instead of five, and the field cannot be re-spelled anywhere.
+
+### What the corpus had to change
+
+Nine references were repointed or repaired:
+
+- four were a suffix or a plural away (`client_span_duration` → `client_span_duration_ms`,
+  `server_side_handler_time` → `server_handler_time_ms`, `export_failure_ratio` →
+  `export_failure_ratio_percent`, `container_cpu_cfs_throttled_seconds_total` →
+  `container_cpu_throttled_seconds_total`);
+- `cp-p99` had no reference at all and now names its series;
+- `cp-processing-tripled` is `derived` -- the ratio is 3x and the series carries seconds, so the
+  guard would have rejected the correct annotation had it compared them;
+- `cp-cpu-limit` is `configuration` -- a 500m quota that no telemetry carries;
+- `cp-typeerror-line` is `log`, and log lines now carry an `id` so a checkpoint can name one;
+- five comparators became `>=`, because `>` against a value equal to the post is false.
+
+```
+check-fault-cases: checkpoints 11 of 11 reference(s) resolve by kind (9 to a series); 0 of 8 comparable assertion(s) fail on the series' own post value
+```
+
+### Two defects this round, one of them mine by construction
+
+**1. `configuration` refs cannot be compared, and the first version tried.** The unit check ran
+before the `derived` short-circuit, so `cp-processing-tripled` was refused for being "in `1` but the
+series is in `s`" -- which is the whole point of a derived value. The check moved behind the
+short-circuit.
+
+**2. The guard grew a membership test that the schema had already made unreachable.** With
+`signalKind` an enum in the schema, an unknown value fails the parse (exit 1) before the guard sees
+the checkpoint, so `CHECKPOINT_REFERENCES.includes(kind)` could not fire. Deleted, and the test now
+asserts the parse failure instead -- **one owner for one vocabulary**, which is what
+`check-data-model-vocabularies` exists to protect.
+
+### What this round did not do
+
+The values themselves are still copied: `cp-watermark` asserts `>= 92` and the series' post is 92,
+and both are transcriptions of the same sentence. The guard now proves they agree, which is the most
+it can do -- **it cannot tell whether 92 is the right number, only that two files say it**.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the vocabulary | `CHECKPOINT_REFERENCES` published, schema-referenced, documented; six sets checked |
+| the rules | one per kind, each refused by its own test: undeclared series, unit mismatch, a false assertion, a configuration that names a series, an unmatched log id, a checkpoint with no reference |
+| the corpus | **11 of 11** references resolve by kind; **0 of 8** comparable assertions fail |
+| the log ids | a log line without one is refused, because nothing can reference it |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **122** tests red in 1 of 2 naming files |
+| `core` / repo | **182 / 4467** · **186 / 4654** |

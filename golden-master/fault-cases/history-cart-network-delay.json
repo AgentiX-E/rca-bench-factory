@@ -55,8 +55,8 @@
       {
         "checkpointId": "cp-client-span",
         "entityRef": "service:synthetic-storefront/cart-service",
-        "signalRef": "client_span_duration",
-        "comparator": ">",
+        "signalRef": "client_span_duration_ms",
+        "comparator": ">=",
         "value": 900,
         "unit": "ms",
         "description": "the caller's span duration at the peak, up from 12ms"
@@ -64,7 +64,7 @@
       {
         "checkpointId": "cp-server-handler",
         "entityRef": "service:synthetic-storefront/inventory-service",
-        "signalRef": "server_side_handler_time",
+        "signalRef": "server_handler_time_ms",
         "comparator": "==",
         "value": 11,
         "unit": "ms",
