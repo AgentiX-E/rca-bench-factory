@@ -234,6 +234,10 @@ const invalid = [];
 const seen = new Set();
 /** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
 const withTelemetry = [];
+/** The same telemetry, in the shape an exporter reads: cases and the signals attached to them. */
+const telemetryCases = [];
+const telemetrySignals = {};
+let firstGraph = null;
 
 for (const entry of index.cases) {
   const caseId = typeof entry?.caseId === 'string' ? entry.caseId : '';
@@ -371,6 +375,9 @@ for (const entry of index.cases) {
       }
     }
     const signals = series.flatMap((one) => expandSeries(one, parsedCase));
+    telemetryCases.push(parsedCase);
+    telemetrySignals[caseId] = signals;
+    if (firstGraph === null) firstGraph = parsedGraph;
     const withSignals = { ...bundle, signals: { [caseId]: signals } };
     const signalStructure = core.checkG1Structural(withSignals, { requiredSignals: ['metric'], requiresQuery: false });
     for (const violation of signalStructure.violations) {
@@ -454,6 +461,59 @@ if (index.cases.length < floor) {
       `${String(floor)}. The floor is raised as annotation proceeds; lowering it is a decision, not a repair.`,
   );
   process.exit(2);
+}
+
+// The corpus through the two modules that decide whether it can be evaluated at all. Neither number
+// existed before this round: the coverage report was only ever handed bundles bound for official
+// scoring, and the exporter only ever saw datasets that already had what it needs. Asked of the
+// annotated corpus, they disagree, and the disagreement is the finding (238).
+/**
+ * Whether an exported file exists but carries no data.
+ *
+ * The first version of this counted lines, which called `metrics.json` empty -- it is one line of
+ * JSON -- and `inject_time.txt` empty, which is one line *by design*. Emptiness is a property of the
+ * content: a CSV with no rows below its header, or a JSON object with no keys.
+ */
+function isEmptyDataFile(path, body) {
+  if (path.endsWith('.json')) {
+    try {
+      const parsed = JSON.parse(String(body));
+      if (Array.isArray(parsed)) return parsed.length === 0;
+      return typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length === 0;
+    } catch {
+      return false;
+    }
+  }
+  if (path.endsWith('.csv')) return String(body).trimEnd().split('\n').length <= 1;
+  return false;
+}
+
+const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', 'rcaeval-re3']];
+const exportLines = [];
+
+if (telemetryCases.length > 0 && firstGraph !== null) {
+  const bundle = { irVersion: '1.0.0', graph: firstGraph, cases: telemetryCases, signals: telemetrySignals };
+  const { feasibility } = core.computeCoverage(bundle);
+  const coverageLine = SUITE_TARGETS.map(([, target]) => {
+    const entry = feasibility.find((f) => f.target === target);
+    const missing = entry === undefined || entry.missingSignals.length === 0 ? '' : ` (no ${entry.missingSignals.join(', ')})`;
+    return `${target} ${entry === undefined ? 'absent' : entry.status}${missing}`;
+  });
+  console.log(`check-fault-cases: coverage ${coverageLine.join(' · ')}`);
+
+  for (const [suite] of SUITE_TARGETS) {
+    const outcome = core.exportRcaEval(bundle, suite);
+    // A CSV with a header and no rows is a file that exists and says nothing. Counted rather than
+    // refused, because refusing would change a shared contract the official round trip depends on
+    // (the round trip's own RE2 case carries metrics only) -- so the count is the report.
+    const emptyFiles = Object.entries(outcome.files).filter(([path, body]) => isEmptyDataFile(path, body));
+    const dirs = new Set(Object.keys(outcome.files).map((path) => path.slice(0, path.indexOf('/'))));
+    exportLines.push(
+      `${suite} ${String(dirs.size)} case(s) written, ${String(emptyFiles.length)} file(s) with no rows` +
+        (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
+    );
+  }
+  console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
 }
 
 console.log(

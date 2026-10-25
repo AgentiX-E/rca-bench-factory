@@ -3414,3 +3414,80 @@ shape as the `derivation` fallback above, one field over, in the same round.
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **78** tests red in 1 of 2 naming files |
 | coverage | both localiser modules **100 × 4**; package **99.97 / 99.75 / 100 / 99.97** |
 | `core` / repo | **182 / 4442** · **186 / 4629** |
+
+## Finding 238 — three modules, three answers about whether the corpus can be exported
+
+M1 carries the condition "RCAEval RE1/RE2 export passes L2". It has a passing unit suite and an
+official round trip behind it, and **neither had ever been pointed at the annotated corpus**. The
+corpus stores its telemetry as declarations that only `check-fault-cases.mjs` expands, so a bundle
+built the obvious way carries `signals: {}` and every exporter skips every case:
+
+```
+RE1 files: 0  skipped: [{"reason":"no telemetry signals attached"}, ...]
+```
+
+Wiring the expansion in changes the answer, and produces three of them:
+
+| suite | cases written | data-less files | coverage report, same bundle |
+| --- | --- | --- | --- |
+| RE1 | 3 | **0** | `rcaeval-re1 ready` |
+| RE2 | 3 | **6** (`logs.csv`, `traces.csv` × 3) | `rcaeval-re2 degraded (no log)` |
+| RE3 | 0, 3 skipped | 0 | `rcaeval-re3 degraded (no log, trace)` |
+
+**The exporter and the coverage report disagree, and both are right about different questions.** The
+report answers "can this dataset be evaluated for the target"; the exporter answers "what files can I
+write". A CSV with a header and no rows satisfies the second and not the first, and nothing connected
+them -- `buildLogsCsv` has never returned null.
+
+### The repair that was tried, and the anchor that refused it
+
+The obvious fix is for the exporter to skip a case that cannot fill every file its suite writes,
+the way RE3 already skips non-code cases before writing anything. It was implemented, and it turned
+the official round trip red:
+
+```
+ROUNDTRIP SKIP   1/1 RE2-ob-cpu_1   target=rcaeval-re2    oracle=0.00 signals=80
+```
+
+The round trip's own RE2 case carries **80 metric signals and no log** -- it was passing on exactly
+the behaviour the repair removes. That is a fact about the anchor, not about the repair: the strongest
+artefact in this repository had never exercised RE2's log path either.
+
+**The change was reverted byte-for-byte.** A shared contract that the official round trip depends on
+is not rewritten on the strength of one corpus; the disagreement is recorded at the caller instead,
+where the corpus is known and where a wrong answer is a finding rather than a regression.
+
+### What is printed now, on every guard run
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 degraded (no log) · rcaeval-re3 degraded (no log, trace)
+check-fault-cases: export RE1 3 case(s) written, 0 file(s) with no rows · RE2 3 case(s) written, 6 file(s) with no rows · RE3 0 case(s) written, 0 file(s) with no rows, 3 skipped
+```
+
+Two numbers that had never existed, printed where the corpus is checked, and pinned by a test:
+`RE1 0` and `RE2 6`. A change in either module that moves one of them is now a deliberate edit.
+
+**What this says about M1's condition**: RE1 is met -- three cases, no data-less files. **RE2 is not,
+and the blocker is the corpus's modality, not the exporter**: the annotated cases carry metrics only,
+and a log cannot be derived from a sentence that does not state one. RE3 is not applicable: it targets
+code-level faults and the corpus's three categories are `resource`, `network` and `middleware`.
+
+### One defect of this round
+
+**The counter counted lines.** The first version called a file data-less when its body had at most one
+line, which reported `RE1 3 file(s) with no rows` while RE1 was writing real data: `metrics.json` is
+one line of JSON, and `inject_time.txt` is one line by design. Emptiness is a property of content --
+a JSON object with no keys, a CSV with no rows below its header -- and the pinned numbers were wrong
+until it said so. The mistake is the same one this series keeps meeting: **a measure read next to its
+subject rather than about it.**
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus through the exporters | RE1 3 written / 0 data-less; RE2 3 written / 6 data-less; RE3 0 written / 3 skipped |
+| the coverage report | `re1 ready`, `re2 degraded (no log)`, `re3 degraded (no log, trace)` on the same bundle |
+| the rejected repair | exporter-side refusal turned the official round trip red (`RE2-ob-cpu_1`, 80 metric signals); reverted byte-for-byte |
+| the guard | 44 tests; three new, pinning both printed lines and the absence of them when no case carries telemetry |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **82** tests red in 1 of 2 naming files |
+| `core` / repo | **182 / 4446** · **186 / 4633** |

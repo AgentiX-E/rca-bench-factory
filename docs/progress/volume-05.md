@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4443 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4446 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4630 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4633 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2375,7 +2375,7 @@ own onset and the assertion failed with `null` -- a failure that reads as "no ra
 **Acceptance.** 18 tests over the second baseline, 42 over the guard; typecheck, lint, `docs:check`
 green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46 gates, 46
 caught, 0 survived** (hollowing the guard turns 78 tests red); both localiser modules **100 ×4**;
-core **182 / 4443**, cli 4 / 187, repo **186 / 4630**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5
+core **182 / 4446**, cli 4 / 187, repo **186 / 4633**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5
 volumes, findings 1–237.
 
 ### Left open
@@ -2394,3 +2394,64 @@ volumes, findings 1–237.
   format and no case uses it, because `minSolvers: 2` refuses a case whose only evidence is a spike.
   If a real incident is a brief excursion, the annotation has to carry a second series a robust
   statistic can see -- which is a rule about cases that has not been written down]`
+
+## v2.66 — the corpus had never been exported, and three modules disagree about whether it can be
+
+M1 says "RCAEval RE1/RE2 export passes L2". It had a passing unit suite and a passing official round
+trip, and **neither had been pointed at the annotated corpus**. The telemetry lives in declarations
+that only the guard expands, so a bundle built the obvious way has `signals: {}` and every exporter
+skips everything with `no telemetry signals attached`.
+
+Wiring the expansion in gives three answers instead of one:
+
+| suite | written | data-less files | coverage report, same bundle |
+| --- | --- | --- | --- |
+| RE1 | 3 | **0** | `rcaeval-re1 ready` |
+| RE2 | 3 | **6** | `rcaeval-re2 degraded (no log)` |
+| RE3 | 0 / 3 skipped | 0 | `rcaeval-re3 degraded (no log, trace)` |
+
+The exporter and the coverage report answer different questions -- "what files can I write" versus
+"can this dataset be evaluated" -- and a CSV with a header and no rows satisfies the first and not the
+second. Nothing connected them.
+
+**The repair was tried and the anchor refused it.** Making the exporter skip a case that cannot fill
+every file its suite writes turned the official round trip red: `ROUNDTRIP SKIP 1/1 RE2-ob-cpu_1
+target=rcaeval-re2 oracle=0.00 signals=80` -- the round trip's own RE2 case carries 80 metric signals
+and no log, and was passing on exactly the behaviour the repair removes. Reverted byte-for-byte. A
+shared contract the strongest anchor depends on is not rewritten on the strength of one corpus, so
+the disagreement is recorded at the caller:
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 degraded (no log) · rcaeval-re3 degraded (no log, trace)
+check-fault-cases: export RE1 3 case(s) written, 0 file(s) with no rows · RE2 3 case(s) written, 6 file(s) with no rows · RE3 0 case(s) written, 0 file(s) with no rows, 3 skipped
+```
+
+Both numbers are pinned by tests, so a change in either module that moves one is a deliberate edit.
+
+**For M1 this means**: RE1 met, with no data-less files. RE2 **not** met, and the blocker is the
+corpus's modality rather than the exporter -- the annotated cases carry metrics only, and a log cannot
+be derived from a sentence that never states one. RE3 does not apply: code-level faults only, and the
+corpus's categories are `resource`, `network`, `middleware`.
+
+**One defect.** The data-less counter counted lines, so `metrics.json` (one line of JSON) and
+`inject_time.txt` (one line by design) were both called empty and RE1 reported three empty files while
+writing real data. Emptiness is a property of content; the pinned numbers were wrong until it said so.
+
+**Acceptance.** 44 tests over the guard (three new: both printed lines, and their absence when no case
+carries telemetry); typecheck, lint, `docs:check` green; `derive-gate-sites --check` green (86 sites,
+46 scripts); the meta-gate at **46 gates, 46 caught, 0 survived** (hollowing the guard turns 82 tests
+red); core **182 / 4446**, cli 4 / 187, repo **186 / 4633**; audit 5 volumes, findings 1–238.
+
+### Left open
+
+- **RE2 is blocked by the corpus, not by the code.** `[open: three cases carry metrics only. A log line
+  cannot be derived from prose that never quotes one, so the honest route is either a corpus case
+  whose incident text states a log line, or an acceptance that this half of M1 waits for captured
+  telemetry -- and the guard now prints which of the two it is on every run]`
+- **The official round trip's RE2 case has never exercised the log path.** `[open: `RE2-ob-cpu_1`
+  carries 80 metric signals and no log, so `logs.csv` is header-only there too. The anchor that
+  proves the official path is not proving this part of it, and that gap was invisible until a repair
+  tried to close the hole]`
+- **`buildLogsCsv` cannot return "no file".** `[open: it always emits a header, so the only way a
+  caller learns that a case has no logs is by counting rows itself -- which is what the guard now
+  does. A null return would make the empty case unrepresentable, and it would change every caller]`

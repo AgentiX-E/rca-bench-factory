@@ -682,3 +682,44 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     );
   });
 });
+
+describe('check-fault-cases · the corpus through the coverage report and the exporter', () => {
+  // Neither number existed before finding 238. The coverage report was only ever handed bundles
+  // bound for official scoring, and the exporter only ever saw datasets that already carried the
+  // modalities it writes. Asked of the annotated corpus, the two disagree: coverage says RE2 is
+  // degraded for want of a log, and the exporter writes RE2's `logs.csv` and `traces.csv` anyway.
+  const REAL_SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function signals(): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
+  }
+
+  it('prints what the coverage report says about each suite the corpus could be exported to', () => {
+    const result = run(['--cases', corpus({ signals: signals() })]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain(
+      'coverage rcaeval-re1 ready · rcaeval-re2 degraded (no log) · rcaeval-re3 degraded (no log, trace)',
+    );
+  });
+
+  it('prints how many exported files exist with no data in them', () => {
+    // Two per case for RE2: `logs.csv` and `traces.csv`, header only. `metrics.json` is one line of
+    // JSON and `inject_time.txt` is one line by design, so neither is counted -- the first version
+    // counted lines and reported RE1 as three empty files when it was writing real data.
+    const result = run(['--cases', corpus({ signals: signals() })]);
+    expect(result.out).toContain('export RE1 1 case(s) written, 0 file(s) with no rows');
+    expect(result.out).toContain('RE2 1 case(s) written, 2 file(s) with no rows');
+    expect(result.out).toContain('RE3 0 case(s) written, 0 file(s) with no rows, 1 skipped');
+  });
+
+  it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', () => {
+    // A corpus with no signals has no coverage to report, and printing `0%` for every modality would
+    // be a measurement of nothing. The line is absent, which is the honest form of "not asked".
+    const result = run(['--cases', corpus({})]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).not.toContain('check-fault-cases: coverage');
+    expect(result.out).not.toContain('check-fault-cases: export');
+  });
+});
