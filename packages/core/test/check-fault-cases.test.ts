@@ -922,3 +922,28 @@ describe('check-fault-cases · the first code-level case', () => {
     expect(result.out).toContain('RE3 1 case(s) written, 1 file(s) with no rows, 4 skipped');
   });
 });
+
+describe('check-fault-cases · what the checkpoints name, counted rather than assumed', () => {
+  // A checkpoint is the evidence for a layer, and `signalRef` is the only field tying it to
+  // telemetry. Nothing had ever resolved those references, so finding 243 measured them: three of
+  // eleven name a series the bundle declares, and all three of the inequalities that can be
+  // evaluated are false at their own post value. The numbers are printed and pinned; the repair is
+  // the next round's, because two of the eleven are not series references at all (a derived ratio,
+  // and a configuration fact).
+  it('prints how many references resolve and how many inequalities are false', () => {
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain(
+      'checkpoints 3 of 11 signal reference(s) resolve to a declared series; 3 of 3 inequality(ies) are false at the post value',
+    );
+  });
+
+  it('says 0 of 0 rather than dividing when no reference resolves', () => {
+    // The scratch corpus writes the checkout case, whose three references name things its
+    // declaration does not declare -- so there is nothing evaluable, and the line says so instead of
+    // printing a rate over an empty denominator.
+    const result = run(['--cases', corpus({ signals: JSON.parse(readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8')) as Record<string, unknown> })]);
+    expect(result.out).toContain('checkpoints 0 of 3 signal reference(s) resolve');
+    expect(result.out).toContain('0 of 0 inequality(ies) are false');
+  });
+});

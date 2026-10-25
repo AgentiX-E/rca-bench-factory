@@ -3757,3 +3757,69 @@ and the honest description is that the corpus has no mechanism for "the same num
 | the assertions moved | three counts, each caught by a failing test rather than by memory |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **104** tests red in 1 of 2 naming files |
 | `core` / repo | **182 / 4458** · **186 / 4645** |
+
+## Finding 243 — eight of eleven checkpoints name a signal that does not exist
+
+The evidence layer has a `signalRef`, and it is the only field tying a checkpoint to telemetry. Every
+round so far has checked that a checkpoint's `entityRef` resolves -- G2 does that -- and **nothing has
+ever resolved `signalRef`**. Counted for the first time:
+
+```
+check-fault-cases: checkpoints 3 of 11 signal reference(s) resolve to a declared series; 3 of 3 inequality(ies) are false at the post value
+```
+
+| case | checkpoint | `signalRef` | the series it declares |
+| --- | --- | --- | --- |
+| checkout | `cp-cpu-limit` | `container_spec_cpu_quota` | `container_cpu_throttled_seconds_total` |
+| checkout | `cp-throttled-counters` | `container_cpu_cfs_throttled_seconds_total` | `container_cpu_throttled_seconds_total` |
+| checkout | `cp-p99` | **null** | `request_duration_p99_ms` |
+| cart | `cp-client-span` | `client_span_duration` | `client_span_duration_ms` |
+| cart | `cp-server-handler` | `server_side_handler_time` | `server_handler_time_ms` |
+| kafka | `cp-lag` | `kafka_consumergroup_lag` | **the same name** |
+| kafka | `cp-processing-tripled` | `per_message_processing_time` | `per_message_processing_seconds` |
+| ledger | `cp-watermark` | `broker_disk_watermark_percent` | **the same name** |
+| ledger | `cp-buffer` | `producer_buffer_records` | **the same name** |
+| export | `cp-failure-ratio` | `export_failure_ratio` | `export_failure_ratio_percent` |
+| export | `cp-typeerror-line` | `unhandled_type_error_log` | none: it is a log line |
+
+Three resolve -- `cp-lag`, `cp-watermark`, `cp-buffer` -- and **eight do not**, by a suffix, by a
+plural, by a synonym, or by naming nothing at all. **Each of them reads correctly**, which is why five rounds of review did not see it: the failure
+mode is a reference that is plausible rather than absent.
+
+**One row of this table was written wrong.** The first draft listed `cp-buffer` as a mismatch --
+`producer_record_buffer` against `producer_buffer_records` -- because it was typed from memory, and a
+synonym is exactly what four of the real mismatches look like. The printed number said three
+references resolve and the table showed two, and that disagreement is what caught it: **the count and
+the table were two statements of one fact, and one of them was checked by a machine.**
+
+### And the three that resolve are false at their own value
+
+`cp-lag` asserts `> 4200000` against a series whose post value is 4200000. `cp-watermark` asserts
+`> 92` against 92. `cp-buffer` asserts `> 40000` against 40000. A checkpoint that its own telemetry
+fails is worse than a dangling reference, because a reader who resolves the name still gets a
+contradiction -- and the annotation was written with the value copied from the text rather than from
+the series.
+
+### Why this round measures and does not repair
+
+Two of the eleven are not series references at all, and a rule written without them would be wrong:
+
+- `cp-processing-tripled` names a **ratio** (3x) whose series carries seconds (0.06s), so "the series
+  must satisfy the checkpoint" is false for it by construction -- the checkpoint is derived from the
+  series, not equal to it;
+- `cp-cpu-limit` names a **configuration fact** (a 500m quota), which no telemetry series carries.
+
+So the repair needs a vocabulary the corpus does not have: a checkpoint says whether it is *about* a
+series, *derived from* one, or *stated by* one and carried nowhere. That is a schema decision, and
+this round's contribution is the number that makes it urgent rather than hypothetical.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the measurement | **3 of 11** references resolve; **3 of 3** evaluable inequalities are false |
+| the table | every mismatch named, with the series it should have named |
+| the printout | a third line on every guard run, pinned by two tests |
+| the empty case | `0 of 0` rather than a division, asserted |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **108** tests red in 1 of 2 naming files |
+| `core` / repo | **182 / 4460** · **186 / 4647** |

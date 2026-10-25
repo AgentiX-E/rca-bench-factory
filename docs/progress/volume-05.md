@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4458 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4460 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4645 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4647 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2622,3 +2622,53 @@ entities; core **182 / 4458**, cli 4 / 187, repo **186 / 4645**; coverage 99.97 
 - **25 samples still carry no case.** `[open: 5 of 30. Two of the three rcaeval suites now export
   every annotated case; RE3 exports the one whose category it accepts, and the next code-level
   sample is what would make that more than a single row]`
+
+## v2.70 — eight of eleven checkpoints name a signal that does not exist
+
+The evidence layer's `signalRef` is the only field tying a checkpoint to telemetry. G2 resolves
+`entityRef`; **nothing has ever resolved `signalRef`**. Counted for the first time, printed on every
+guard run:
+
+```
+check-fault-cases: checkpoints 3 of 11 signal reference(s) resolve to a declared series; 3 of 3 inequality(ies) are false at the post value
+```
+
+Three resolve, eight do not: by a suffix (`client_span_duration` vs `client_span_duration_ms`), a
+plural, a synonym (`per_message_processing_time` vs `per_message_processing_seconds`), or by naming
+nothing at all (`cp-p99` has no `signalRef`, and `cp-typeerror-line` names a log). **Every one of them
+reads correctly** -- which is why five rounds of review did not see it. The failure mode is a
+reference that is plausible rather than absent.
+
+And the three that do resolve are **false at their own value**: `> 4200000` against a post of
+4200000, `> 92` against 92, `> 40000` against 40000. The annotation copied the number from the text
+rather than from the series, so a reader who resolves the name gets a contradiction.
+
+**This round measures and does not repair, on purpose.** Two of the eleven are not series references:
+`cp-processing-tripled` names a ratio (3x) whose series carries seconds (0.06s), and `cp-cpu-limit`
+names a configuration fact (a 500m quota) that no telemetry carries. A rule written without them
+would be wrong, and the repair needs a vocabulary the corpus does not have -- a checkpoint that says
+whether it is *about* a series, *derived from* one, or *stated by* one and carried nowhere.
+
+**One row of the finding's table was wrong when first written** -- `cp-buffer` was listed as a
+mismatch because it was typed from memory, and a synonym is exactly what four of the real mismatches
+look like. The printed count said three and the table showed two, and that disagreement is what
+caught it: the count and the table were two statements of one fact, and one of them was checked by a
+machine.
+
+**Acceptance.** 58 tests over the guard (two new: the numbers, and `0 of 0` rather than a division);
+typecheck, lint, `docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the
+meta-gate at **46 gates, 46 caught, 0 survived** (hollowing the guard turns 108 tests red); core
+**182 / 4460**, cli 4 / 187, repo **186 / 4647**; audit 5 volumes, findings 1–243.
+
+### Left open
+
+- **A checkpoint needs to say what kind of reference it is.** `[open: about a series, derived from one,
+  or stated by one and carried nowhere -- three cases that today share one optional string. Until the
+  vocabulary exists, `3 of 11` can only be printed, not gated]`
+- **Eight references to fix, and the fix is not a rename.** `[open: renaming `client_span_duration` to
+  `client_span_duration_ms` resolves it; re-pointing `cp-processing-tripled` needs the ratio to name
+  its source series and the arithmetic. The first is mechanical, the second is a schema decision, and
+  doing them together would hide which was which]`
+- **The three resolvable checkpoints are false under their own comparator.** `[open: `>` against a value
+  equal to the post. Either the comparator becomes `>=` or the checkpoint states a threshold the
+  series clears -- and choosing per case is a judgement about what the incident asserted]`
