@@ -80,7 +80,6 @@ export {
   LOG_OFFSETS_MS,
   SERIES_DERIVATIONS,
   SERIES_JITTER,
-  SERIES_STEP_MS,
   TRACE_OFFSET_MS,
   expandLog,
   expandSeries,

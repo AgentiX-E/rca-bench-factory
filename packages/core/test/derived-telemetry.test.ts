@@ -7,7 +7,6 @@ import {
   LOG_OFFSETS_MS,
   SERIES_DERIVATIONS,
   SERIES_POINTS,
-  SERIES_STEP_MS,
   TRACE_OFFSET_MS,
   expandLog,
   expandSeries,
@@ -26,7 +25,13 @@ import {
  * numbers are written out rather than recomputed from the constants.
  */
 
-const WHEN = { windowStart: '2026-09-23T09:08:00.000Z', onset: '2026-09-23T09:20:00.000Z' };
+// A twelve-minute pre-window and a twenty-minute post-window, which is the shape the corpus uses:
+// eight samples on each side, spread across that side's own span.
+const WHEN = {
+  windowStart: '2026-09-23T09:08:00.000Z',
+  onset: '2026-09-23T09:20:00.000Z',
+  windowEnd: '2026-09-23T09:40:00.000Z',
+};
 
 function values(declaration: SeriesDeclaration): number[] {
   return expandSeries(declaration, WHEN).map((one) => (one.payload as { value: number }).value);
@@ -127,25 +132,47 @@ describe('expandSeries · the shape each derivation means', () => {
 });
 
 describe('expandSeries · the timestamps', () => {
-  it('places the pre-window on the window start and the post-window on the onset', () => {
+  it('spreads each side across its own span, ending on the window end', () => {
+    // Twelve minutes before the onset divide into eight intervals of ninety seconds, so the first
+    // sample is the window start and the last pre-onset one is ninety seconds before the fault.
+    // Twenty minutes after divide into eight intervals of a hundred and fifty seconds, and the last
+    // one is the window end -- which is what lets a declaration mean "this reading, at that time".
     const stamps = timestamps({ service: 's', metric: 'm', baseline: 1, post: 2 });
     expect(stamps[0]).toBe('2026-09-23T09:08:00.000Z');
     expect(stamps[1]).toBe('2026-09-23T09:09:30.000Z');
-    expect(stamps[SERIES_POINTS]).toBe('2026-09-23T09:20:00.000Z');
-    expect(stamps.at(-1)).toBe('2026-09-23T09:30:30.000Z');
+    expect(stamps[SERIES_POINTS - 1]).toBe('2026-09-23T09:18:30.000Z');
+    expect(stamps[SERIES_POINTS]).toBe('2026-09-23T09:22:30.000Z');
+    expect(stamps.at(-1)).toBe('2026-09-23T09:40:00.000Z');
   });
 
-  it('stops the pre-window at the onset rather than crossing it', () => {
-    // A window that opens ninety seconds before the onset can only hold one pre-onset sample: the
-    // loop breaks rather than placing a sample at or after the onset in the "before" half.
-    const short = { windowStart: '2026-09-23T09:18:30.000Z', onset: '2026-09-23T09:20:00.000Z' };
+  it('keeps every pre-onset sample strictly before the fault, however short the window', () => {
+    // The pre-side is left-aligned on the window start and its last sample lands one eighth of a span
+    // before the onset, so a ninety-second window still puts all eight samples before it -- there is
+    // no break to reach, because the spacing is derived from the span rather than from a constant.
+    const short = {
+      windowStart: '2026-09-23T09:18:30.000Z',
+      onset: '2026-09-23T09:20:00.000Z',
+      windowEnd: '2026-09-23T09:30:00.000Z',
+    };
     const sample = expandSeries({ service: 's', metric: 'm', baseline: 1, post: 2 }, short);
-    expect(sample).toHaveLength(1 + SERIES_POINTS);
-    expect(sample[1]?.timestamp).toBe('2026-09-23T09:20:00.000Z');
+    expect(sample).toHaveLength(SERIES_POINTS * 2);
+    for (const one of sample.slice(0, SERIES_POINTS)) {
+      expect(Date.parse(one.timestamp)).toBeLessThan(Date.parse(short.onset));
+    }
   });
 
-  it('uses a ninety-second cadence, and the length of the window is not consulted', () => {
-    expect(SERIES_STEP_MS).toBe(90_000);
+  it('does not consult a cadence constant, because there is none', () => {
+    // A twelve-hour window and a thirty-minute one both get eight samples a side: what changes is the
+    // spacing, which is what makes "178 restarts in 12 hours" expressible at all (finding 251).
+    const long = {
+      windowStart: '2026-09-23T09:08:00.000Z',
+      onset: '2026-09-23T09:20:00.000Z',
+      windowEnd: '2026-09-23T21:20:00.000Z',
+    };
+    const sample = expandSeries({ service: 's', metric: 'm', baseline: 0, post: 178, derivation: 'counter' }, long);
+    expect(sample).toHaveLength(SERIES_POINTS * 2);
+    expect(sample.at(-1)?.timestamp).toBe('2026-09-23T21:20:00.000Z');
+    expect((sample.at(-1)?.payload as { value: number }).value).toBe(178);
   });
 });
 
@@ -252,6 +279,6 @@ describe('the published description', () => {
     const text = readFileSync(DOC, 'utf8');
     expect(text).toContain(`onset + ${String(LOG_OFFSETS_MS[0]! / 1000)}s`);
     expect(text).toContain(`onset + ${String(TRACE_OFFSET_MS / 1000)}s`);
-    expect(text).toContain('ninety-second');
+    expect(text).toContain('eight samples per side');
   });
 });

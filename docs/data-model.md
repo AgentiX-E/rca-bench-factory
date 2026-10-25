@@ -209,7 +209,7 @@ the guard refuses a quote the text does not contain.
 
 | block | fields | expanded into |
 | --- | --- | --- |
-| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `quote`, `why` | metric signals on a ninety-second cadence, eight samples per side of the onset |
+| `series[]` | `service`, `metric`, `unit`, `baseline`, `post`, `derivation`, `quote`, `why` | metric signals: eight samples per side of the onset, spread across that side's own span of the window |
 | `logs[]` | `service`, `id`, `body`, `severity`, `quote`, `why` | log signals at onset + 30s, 150s, 270s |
 | `traces[]` | `service`, `spanName`, `durationMs`, `parent`, `quote`, `why` | trace signals at onset + 10s, with span ids derived from `sha256(caseId)` |
 

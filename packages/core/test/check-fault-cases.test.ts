@@ -111,7 +111,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
   it('accepts the shipped corpus and reports how many samples carry a case', () => {
     const result = run([]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('7 of 30 sample(s) carry a four-layer case');
+    expect(result.out).toContain('8 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
@@ -762,7 +762,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
     // Six, not seven: the cart case's two spans fill one `traces.csv` (finding 240).
-    expect(result.out).toContain('RE2 7 case(s) written, 9 file(s) with no rows');
+    expect(result.out).toContain('RE2 8 case(s) written, 10 file(s) with no rows');
   });
 
   it('accepts a log line whose quote is in its own case text', () => {
@@ -923,7 +923,7 @@ describe('check-fault-cases · the first code-level case', () => {
     // hidden.
     const result = run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('RE3 1 case(s) written, 1 file(s) with no rows, 6 skipped');
+    expect(result.out).toContain('RE3 1 case(s) written, 1 file(s) with no rows, 7 skipped');
   });
 });
 
@@ -954,8 +954,8 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // (one of the two reads two points of one series), one names a log line by id, and one is a
     // configuration fact that names no series at all. Ten are comparable, and all ten hold.
     expect(result.out).toContain(
-      'checkpoints 20 of 20 reference(s) resolve by kind (15 over a series, 2 of them computed from ' +
-        '4 reading(s), 3 citing a declared configuration fact); 0 of 18 comparable assertion(s) fail',
+      'checkpoints 23 of 23 reference(s) resolve by kind (17 over a series, 2 of them computed from ' +
+        '4 reading(s), 3 citing a declared configuration fact); 0 of 20 comparable assertion(s) fail',
     );
   });
 
@@ -1228,7 +1228,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // One of the twelve resolves to a declared configuration fact, and it is *comparable* -- the
     // denominator went from ten to eleven when it stopped being uncheckable.
     expect(result.out).toContain('3 citing a declared configuration fact');
-    expect(result.out).toContain('0 of 18 comparable assertion(s) fail');
+    expect(result.out).toContain('0 of 20 comparable assertion(s) fail');
   });
 
   it('refuses a configuration fact the case does not declare, and names what it does', () => {

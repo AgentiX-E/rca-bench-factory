@@ -4388,3 +4388,60 @@ what it accepted cannot say what it cannot express.
 | the exports | RE1 7 cases, 0 empty files; RE2 7 cases, 9 empty files; RE3 1 case, 1 empty, 6 skipped |
 | the baselines | both place `tax-calculation` inside top-K |
 | `core` / repo | **186 / 4580** · **190 / 4767**; coverage 99.97 / 99.76 / 100 / 99.97 |
+
+## Finding 251 — the samples did not span the window, so `post` was not the reading at its end
+
+Finding 250 refused a case rather than annotate it badly: `runtime-container-crash-loop-media` turns on
+"restarted 178 times in 12 hours", and with eight samples ninety seconds apart the whole series covered
+twelve minutes. Declaring `post: 178` would have said that 178 restarts happened in the first twelve
+minutes of the post-window; declaring the restarts in a forty-minute window would have invented a
+number the text does not give.
+
+The cause was in the expansion, and it was older than the case: **the cadence was a constant**
+(`SERIES_STEP_MS = 90_000`) and the window only decided where the first sample landed. Every series in
+the corpus therefore described the same twelve minutes whatever window it declared, and the two ends of
+the window -- which is what `baseline` and `post` name -- were not where the samples were:
+
+| | before | after |
+| --- | --- | --- |
+| pre-side | eight samples from the window start, ninety seconds apart | eight samples from the window start, spread across `(onset - start) / 8` |
+| post-side | eight samples from the onset, ninety seconds apart | eight samples ending on the window end, spaced `(end - onset) / 8` |
+| `post` means | the level after the onset | the reading at the end of the window |
+| a twenty-minute post-window | twelve minutes of it are represented | all twenty |
+
+`SERIES_STEP_MS` is gone. The count is fixed at eight per side and the spacing is derived, so a
+declaration now means what it says: `baseline` is the reading at the start and `post` the reading at the
+end.
+
+### A refusal that became unreachable, and was deleted rather than kept
+
+The old loop carried `if (timestamp >= onsetMs) break;`. It existed because a constant cadence could
+run past the onset; with the spacing derived from the span, the eighth pre-onset sample lands at
+seven eighths of the span and **no input can reach the break**. It is gone, and the test that used to
+demonstrate it now demonstrates the property instead: however short the pre-window, all eight samples
+are strictly before the fault.
+
+### What it costs, and what it did not change
+
+Every corpus case's post-window samples moved apart: a twenty-minute post-window now steps 150
+seconds where it stepped 90. The **values** are unchanged -- the jitter cycle, the counter's
+accumulation and the spike's excursion are all functions of the index, not of the timestamp -- so both
+baselines rank the same services and G3 and G4 are unaffected. What changed is what the timestamps
+mean, which is the point.
+
+### The case the refusal was blocking
+
+`history-runtime-container-crash-loop-media` is the corpus's eighth case and its first `runtime` one,
+and its window is the text's own: twelve hours, eight samples a side, the counter accumulating to 178
+by the end. The evidence layer is the count the text gives and a probe ratio at exactly zero -- "no
+probe ever passes" -- which is also the sentence that rules the liveness probe out as the cause.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the expansion | spacing derived per side; `post` lands on the window end; `SERIES_STEP_MS` deleted |
+| the tests | the twenty-one assertions hold with the new timestamps, including a twelve-hour window whose last sample is the declared 178 at the window end |
+| the guard | **8 of 30**; **23 of 23** references resolve by kind; **0 of 20** comparable assertions fail; RE1 8 / 0 empty, RE2 8 / 10, RE3 1 / 1 / 7 skipped |
+| the baselines | both place the root cause in top-K for every case, including the new one |
+| `core` / repo | **186 / 4580** · **190 / 4767**; coverage 99.97 / 99.76 / 100 / 99.97 |

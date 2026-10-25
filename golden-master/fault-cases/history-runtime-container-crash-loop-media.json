@@ -1,0 +1,104 @@
+{
+  "caseId": "history-runtime-container-crash-loop-media",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-26T00:00:00.000Z",
+  "window": {
+    "start": "2026-09-25T23:48:00.000Z",
+    "end": "2026-09-26T12:00:00.000Z"
+  },
+  "fault": {
+    "type": "container-crash",
+    "category": "runtime",
+    "injectionMethod": "historical",
+    "parameters": {
+      "container": "media-transcoder-app",
+      "restarts": 178,
+      "windowHours": {
+        "value": 12,
+        "unit": "h"
+      },
+      "signal": "SIGSEGV"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/media-transcoder-app",
+    "rootCauseComponent": "media-transcoder",
+    "rootCauseReason": "The container segfaults in the native ffmpeg binding about two seconds after each start takes its first job, before the HTTP listener is up, so the liveness probe never passes and the process is restarted again -- 178 times in twelve hours. The exits all predate the probe window, which is what rules the probe out as the cause.",
+    "rootCauseIndicators": [
+      {
+        "type": "log",
+        "ref": "segfault-on-first-job",
+        "description": "the crash is in the native binding, two seconds after the first job, on every start"
+      },
+      {
+        "type": "metric",
+        "ref": "liveness_probe_success_ratio",
+        "description": "no probe ever passes, because the listener never comes up to answer one"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/media-transcoder-app",
+        "toEntityId": "pod:synthetic-storefront/media-transcoder-0",
+        "mechanism": "each start takes a job, segfaults in the native binding about two seconds later, and the container exits before the listener is up",
+        "evidenceRefs": [
+          "cp-restarts",
+          "cp-segfault"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/media-transcoder-0",
+        "toEntityId": "service:synthetic-storefront/media-transcoder",
+        "mechanism": "the pod never reaches a state where the probe can pass, so the service has no healthy replica to transcode anything",
+        "evidenceRefs": [
+          "cp-probe"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-restarts",
+        "entityRef": "pod:synthetic-storefront/media-transcoder-0",
+        "signalRef": "container_restarts_total",
+        "comparator": ">=",
+        "value": 178,
+        "unit": "count",
+        "description": "restarts by the end of the twelve-hour window -- the text's own count, which is why the window is twelve hours rather than the corpus's usual half hour"
+      },
+      {
+        "checkpointId": "cp-probe",
+        "entityRef": "service:synthetic-storefront/media-transcoder",
+        "signalRef": "liveness_probe_success_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "no probe ever passes, which is the second sentence's mechanism: the process exits before the listener can answer"
+      },
+      {
+        "checkpointId": "cp-segfault",
+        "entityRef": "container:synthetic-storefront/media-transcoder-app",
+        "signalKind": "log",
+        "signalRef": "segfault-on-first-job",
+        "comparator": "contains",
+        "value": "segmentation fault",
+        "description": "the native binding's fault, logged on every start within two seconds of the first job"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "pin the ffmpeg native binding to the version before the upgrade, or run it out of process so a fault cannot take the container down",
+        "target": "container:synthetic-storefront/media-transcoder-app"
+      }
+    ]
+  },
+  "query": "The media-transcoder container has restarted 178 times in twelve hours. What is the root cause, and why are the liveness probes not it?",
+  "answerKeyIsolated": true
+}

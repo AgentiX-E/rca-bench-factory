@@ -54,11 +54,19 @@ export const SERIES_DERIVATIONS = ['step', 'counter', 'spike'] as const;
 /** How a declared series moves. Derived from `SERIES_DERIVATIONS`. */
 export type SeriesDerivation = (typeof SERIES_DERIVATIONS)[number];
 
-/** Samples per side of the onset. */
+/**
+ * Samples per side of the onset.
+ *
+ * The *count* is fixed and the cadence is derived from the window, which is the reverse of how this
+ * started. A fixed ninety-second cadence meant eight samples covered twelve minutes whatever the
+ * window was: for a twenty-minute post-window the series described its first twelve minutes and said
+ * nothing about the rest, and a reading over twelve hours -- "restarted 178 times in 12 hours" -- could
+ * not be declared at all without compressing the twelve hours into twelve minutes (finding 251).
+ *
+ * The declaration states the reading at the start of the window and the reading at its end, so the
+ * samples are placed at those two ends and spread between them.
+ */
 export const SERIES_POINTS = 8;
-
-/** The cadence: ninety seconds, so a window holds both sides without crowding the onset. */
-export const SERIES_STEP_MS = 90_000;
 
 /** The fixed jitter cycle, as a fraction of the reading. */
 export const SERIES_JITTER = [0, 1, -1, 0.5, -0.5, 0.8, -0.8, 0.3] as const;
@@ -69,12 +77,21 @@ export const LOG_OFFSETS_MS = [30_000, 150_000, 270_000] as const;
 /** Where a declared span lands: ten seconds after the onset, inside every window this corpus uses. */
 export const TRACE_OFFSET_MS = 10_000;
 
-/** The window a case declares, which is all the expansion needs from the case. */
+/**
+ * The window a case declares, which is all the expansion needs from the case.
+ *
+ * The window is required to hold the onset strictly inside it -- `checkG1Structural` is what enforces
+ * that, and this module does not repeat the check. A window whose start were the onset would leave
+ * the pre-side with nowhere to put its samples, and adding a guard here would be a second opinion
+ * about a contract the schema already owns.
+ */
 export interface ExpansionTime {
   /** Canonical UTC ISO-8601 window start. */
   windowStart: string;
   /** Canonical UTC ISO-8601 onset. */
   onset: string;
+  /** Canonical UTC ISO-8601 window end. */
+  windowEnd: string;
 }
 
 export interface SeriesDeclaration {
@@ -122,19 +139,24 @@ function at(epochMs: number): string {
 export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime): TelemetrySignal[] {
   const windowStartMs = Date.parse(when.windowStart);
   const onsetMs = Date.parse(when.onset);
+  const windowEndMs = Date.parse(when.windowEnd);
   const derivation = declaration.derivation ?? 'step';
   const out: Array<{ timestamp: string; value: number }> = [];
 
+  // The pre-side is left-aligned on the window start and the post-side is right-aligned on the end,
+  // so the two readings the declaration states sit at the two ends of the window it declares. Each
+  // side keeps `SERIES_POINTS` samples and divides its own span into that many intervals.
+  const preSpacing = (onsetMs - windowStartMs) / SERIES_POINTS;
+  const postSpacing = (windowEndMs - onsetMs) / SERIES_POINTS;
+
   for (let index = 0; index < SERIES_POINTS; index += 1) {
-    const timestamp = windowStartMs + index * SERIES_STEP_MS;
-    if (timestamp >= onsetMs) break;
     // A counter's pre-window is flat: the declaration's baseline is what it had accumulated by the
     // start of the window, and a value that rises before the fault is a claim the file does not make.
     const value =
       derivation === 'counter'
         ? declaration.baseline
         : declaration.baseline * (1 + SERIES_JITTER[index]! * 0.02);
-    out.push({ timestamp: at(timestamp), value });
+    out.push({ timestamp: at(windowStartMs + index * preSpacing), value });
   }
 
   const increment = (declaration.post - declaration.baseline) / SERIES_POINTS;
@@ -148,7 +170,7 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
     // The jitter is applied to the level a sample sits at, so a spike's excursion is post-sized and
     // its return is baseline-sized, and a counter's accumulation is exact because it is a total.
     const value = derivation === 'counter' ? level : level * (1 + SERIES_JITTER[index]! * 0.02);
-    out.push({ timestamp: at(onsetMs + index * SERIES_STEP_MS), value });
+    out.push({ timestamp: at(onsetMs + (index + 1) * postSpacing), value });
   }
 
   return out.map((row) =>

@@ -105,6 +105,24 @@
       "kind": "external",
       "name": "tax-calculation",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/media-transcoder",
+      "kind": "service",
+      "name": "media-transcoder",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/media-transcoder-0",
+      "kind": "pod",
+      "name": "media-transcoder-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/media-transcoder-app",
+      "kind": "container",
+      "name": "media-transcoder-app",
+      "aliases": []
     }
   ],
   "edges": [
@@ -157,6 +175,16 @@
       "from": "service:synthetic-storefront/pricing-service",
       "to": "external:synthetic-storefront/tax-calculation",
       "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/media-transcoder",
+      "to": "pod:synthetic-storefront/media-transcoder-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/media-transcoder-0",
+      "to": "container:synthetic-storefront/media-transcoder-app",
+      "relation": "contains"
     }
   ]
 }

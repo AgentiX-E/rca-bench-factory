@@ -3049,11 +3049,61 @@ top-K; the graph is 16 entities / 10 edges. The pinned counts moved by hand agai
   every level reading, so a series whose post is 1 (`unit: '1'`) or 100 (`%`) reports 1.02 or 102 --
   a value no system can produce. The pod-kill sample needs exactly that, and the model has no way to
   say "this series has no sampling noise"]`
-- **The cadence does not follow the window.** `[open: samples are ninety seconds apart and the window
-  only decides where the first one lands, so a reading over twelve hours (`178` restarts) cannot be
-  declared without either compressing it into twelve minutes or inventing a per-window number]`
+- ~~**The cadence does not follow the window.**~~ Closed by finding 251 (v2.78): the spacing is derived
+  from each side's span and `post` is the reading at the window end.
 - **`post` cannot be derived from a parameter.** `[open: the pricing case declares `sharePercent: 60 %`
   and a series `post: 60`, and two checkpoints make them agree; nothing makes the second read the
   first, so a change to one is caught only because both are asserted]`
 - **23 samples still carry no case.** `[open: 7 of 30 carry one; six of the eight categories are
   represented, and `runtime` is not -- the two refusals above are both `runtime` samples]`
+
+## v2.78 — the samples span the window, and the eighth case stops being refused
+
+**What was open.** v2.77 refused `runtime-container-crash-loop-media` because "restarted 178 times in
+12 hours" could not be declared: eight samples ninety seconds apart cover twelve minutes whatever the
+window says, so `post: 178` would have compressed twelve hours into the first twelve minutes of the
+post-window.
+
+**What changed.** The count is fixed at eight per side and the **spacing is derived from each side's own
+span**: the pre-side is left-aligned on the window start, the post-side is right-aligned on the window
+end. `SERIES_STEP_MS` is deleted.
+
+| | before | after |
+| --- | --- | --- |
+| pre-side | 8 samples, 90 s apart, from the window start | 8 samples spread across `(onset - start)`, last one 1/8 of a span before the fault |
+| post-side | 8 samples, 90 s apart, from the onset | 8 samples ending on the window end |
+| `post` means | the level after the onset | the reading at the end of the window |
+| a 20-minute post-window | 12 minutes represented | all 20 |
+
+**A refusal that became unreachable.** The old loop's `if (timestamp >= onsetMs) break;` existed because
+a constant cadence could run past the onset; with spacing `span/8` the last pre-onset sample sits at
+`7/8 span`, so **no input can reach the break**. Deleted, and the test that demonstrated it now
+demonstrates the property (every pre-onset sample is strictly before the fault, however short the
+window).
+
+**What it did not change.** The values: the jitter cycle, the counter's accumulation and the spike's
+excursion are functions of the index, not of the timestamp, so both baselines rank the same services and
+G3/G4 are unaffected. What changed is what the timestamps *mean*.
+
+**The case it unblocked.** `history-runtime-container-crash-loop-media` — the corpus's eighth case, its
+first `runtime` one, and its first whose window is a number the text states: twelve hours, the counter
+accumulating to 178 by the end, and a probe ratio at exactly zero ("no probe ever passes"), which is
+also the sentence that rules the probe out as the cause.
+
+**Acceptance.** `check-fault-cases` prints **8 of 30**, `23 of 23` references resolved by kind (17
+series, 2 computed from 4 readings, 3 configuration), `0 of 20` comparable assertions failing; RE1 8 /
+0 empty, RE2 8 / 10, RE3 1 written / 1 empty / 7 skipped; both baselines place the root cause in top-K
+for all eight. Pinned counts moved by hand (`8 of 30`, `filled 19`, `RE2 … 10`, `RE3 … 7 skipped`,
+`23 of 23`, `0 of 20`); typecheck, lint, `docs:check` green; the meta-gate at **46 gates, 46 caught, 0
+survived**; core **186 / 4580**, cli 4 / 187, repo **190 / 4767**; coverage 99.97 / 99.76 / 100 /
+99.97; audit 5 volumes, findings 1–251.
+
+### Left open
+
+- **22 samples still carry no case.** `[open: 8 of 30 carry one, and all eight categories are now
+  represented -- `resource`, `network`, `runtime`, `middleware`, `code`, `config`, `dependency`; the
+  remaining 22 are the work]`
+- **A share at its maximum still cannot carry the corpus's noise.** `[open: the expansion applies
+  ±2 % to every level reading, so a series whose post is 1 (`unit: '1'`) reports 1.02 -- the reason
+  `runtime-pod-kill-user-profile` is still refused, and the model still has no way to say a series has
+  no sampling noise]`

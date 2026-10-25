@@ -128,7 +128,7 @@ const DERIVATIONS = core.SERIES_DERIVATIONS;
 
 /** The two timestamps the expansion needs, read from the case rather than passed around. */
 function expansionTime(faultCase) {
-  return { windowStart: faultCase.window.start, onset: faultCase.injectTime };
+  return { windowStart: faultCase.window.start, onset: faultCase.injectTime, windowEnd: faultCase.window.end };
 }
 
 /**
