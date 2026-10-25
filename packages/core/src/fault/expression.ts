@@ -552,21 +552,38 @@ export function holdsWithTolerance(
   const scale = Math.max(Math.abs(computed), Math.abs(stated), 1);
   const difference = computed - stated;
   if (Math.abs(difference) <= RELATIVE_TOLERANCE * scale) {
+    // Inside the tolerance the two are *equal*, and `>` and `<` are false of equal numbers.
     return comparator === '==' || comparator === '>=' || comparator === '<=';
   }
+  return compareExactly(comparator, computed, stated);
+}
+
+/**
+ * Whether two numbers satisfy a comparator, exactly.
+ *
+ * The one implementation of "compare two numbers with a comparator" in the package. It was three:
+ * the corpus guard had a ternary chain of its own for a series' post value, this module had a switch
+ * for computed values, and the configuration branch would have needed a third. Three copies of four
+ * operators is three chances for one of them to treat `>=` as `>`.
+ *
+ * Exact, not tolerant: a series' post value and a case's declared parameter are both literals someone
+ * wrote, so a difference between them is a mistake rather than floating-point drift. The tolerance
+ * belongs to values this package *computed*, which is why it lives in `holdsWithTolerance`.
+ */
+export function compareExactly(comparator: NumericComparator, left: number, right: number): boolean {
   switch (comparator) {
-    // Grouped because outside the tolerance the pair really is one comparison: `>=` differs from `>`
-    // only for a difference inside it, and that case has already returned.
     case '>':
+      return left > right;
     case '>=':
-      return difference > 0;
+      return left >= right;
     case '<':
+      return left < right;
     case '<=':
-      return difference < 0;
-    case '!=':
-      return true;
+      return left <= right;
     case '==':
-      return false;
+      return left === right;
+    case '!=':
+      return left !== right;
   }
 }
 

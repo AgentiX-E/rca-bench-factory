@@ -324,6 +324,7 @@ const checkpointRefs = {
   resolvedAny: 0,
   derived: 0,
   derivedRefs: 0,
+  configuration: 0,
   inequalities: 0,
   false: 0,
 };
@@ -535,6 +536,14 @@ for (const entry of index.cases) {
       }
       return { metric: String(one?.metric), unit: typeof one?.unit === 'string' ? one.unit : '', points };
     });
+    // The case's own statements about how the system was configured. A configuration checkpoint cites
+    // one of these instead of naming a metric-shaped string that nothing resolves: the rule used to be
+    // negative ("must not collide with a series"), which caught a modelling error and said nothing
+    // about whether the fact was the one the case ran under (finding 247).
+    const parameters = typeof rawCase?.fault?.parameters === 'object' && rawCase.fault.parameters !== null
+      ? rawCase.fault.parameters
+      : {};
+    const parameterKeys = Object.keys(parameters);
     const logIds = new Set();
     for (const one of logs) {
       const id = typeof one?.id === 'string' ? one.id : '';
@@ -617,11 +626,78 @@ for (const entry of index.cases) {
         continue;
       }
       if (kind === 'configuration') {
-        // A configuration fact that is also a series is a modelling error: two statements of one
-        // value, one of which the guard would start comparing against telemetry.
-        if (!seriesByMetric.has(ref)) checkpointRefs.resolvedAny += 1;
+        // Two rules, and they are different rules. A configuration fact that is also a series is a
+        // modelling error -- two statements of one value, one of which the guard would compare against
+        // telemetry. And the fact has to *be a fact the case declares*: `signalRef` names a key of
+        // `fault.parameters`, and the comparison is against what that key holds.
         if (seriesByMetric.has(ref)) {
           problems.push(`'${caseId}' checkpoint '${id}' calls '${ref}' a configuration fact, but the signals file declares a series by that name`);
+          continue;
+        }
+        if (!Object.hasOwn(parameters, ref)) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' calls '${ref}' a configuration fact, but fault.parameters ` +
+              `declares no such key (it declares: ${parameterKeys.join(', ') || 'nothing'})`,
+          );
+          continue;
+        }
+        const declaredQuantity = core.readDeclaredQuantity(parameters[ref]);
+        if (declaredQuantity === undefined) {
+          // A string is an identifier, not a fact a comparison can be about: `container == 'x'` only
+          // restates the parameter in another place, and the parameter is already in the file.
+          problems.push(
+            `'${caseId}' checkpoint '${id}' cites parameter '${ref}', whose value ` +
+              `${JSON.stringify(parameters[ref])} is not a number or a { value, unit } quantity`,
+          );
+          continue;
+        }
+        checkpointRefs.resolvedAny += 1;
+        checkpointRefs.configuration += 1;
+        if (typeof checkpoint.value !== 'number' || !core.isNumericComparator(checkpoint.comparator)) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' cites the number '${ref}', and states ` +
+              `'${String(checkpoint.value)}' with '${String(checkpoint.comparator)}' beside it`,
+          );
+          continue;
+        }
+        // The unit has to be the declared unit, or one the table can convert into it. A unit beside a
+        // parameter that carries none is a claim nothing here can check, and the same is true of a
+        // parameter with a unit and a checkpoint that states none.
+        let stated = declaredQuantity.value;
+        if (declaredQuantity.unit === undefined && checkpoint.unit !== undefined) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' states '${String(checkpoint.unit)}' for '${ref}', which ` +
+              'fault.parameters declares without a unit, so the unit is a claim nothing here can check',
+          );
+          continue;
+        }
+        if (declaredQuantity.unit !== undefined && checkpoint.unit === undefined) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' cites '${ref}' without a unit, and fault.parameters ` +
+              `declares it in '${declaredQuantity.unit}'`,
+          );
+          continue;
+        }
+        if (declaredQuantity.unit !== undefined && checkpoint.unit !== declaredQuantity.unit) {
+          if (!core.isConvertible(declaredQuantity.unit, checkpoint.unit)) {
+            problems.push(
+              `'${caseId}' checkpoint '${id}' is in '${String(checkpoint.unit)}' and '${ref}' is ` +
+                `declared in '${declaredQuantity.unit}', which are not the same unit and not convertible`,
+            );
+            continue;
+          }
+          stated = core.convertUnit(declaredQuantity.value, declaredQuantity.unit, checkpoint.unit);
+        }
+        checkpointRefs.inequalities += 1;
+        // Exact: both sides are literals a person wrote, so a difference is a mistake rather than
+        // floating-point drift. The tolerance exists for values this package computed.
+        if (!core.compareExactly(checkpoint.comparator, stated, checkpoint.value)) {
+          checkpointRefs.false += 1;
+          problems.push(
+            `'${caseId}' checkpoint '${id}' asserts '${ref}' ${checkpoint.comparator} ` +
+              `${String(checkpoint.value)}, and fault.parameters declares ${displayNumber(stated)}` +
+              (declaredQuantity.unit === undefined ? '' : ` ${declaredQuantity.unit}`),
+          );
         }
         continue;
       }
@@ -746,8 +822,9 @@ function logCheckpointCounts() {
     `check-fault-cases: checkpoints ${String(checkpointRefs.resolvedAny)} of ` +
       `${String(checkpointRefs.total)} reference(s) resolve by kind (${String(checkpointRefs.resolved)} over a ` +
       `series, ${String(checkpointRefs.derived)} of them computed from ` +
-      `${String(checkpointRefs.derivedRefs)} reading(s)); ${String(checkpointRefs.false)} of ` +
-      `${String(checkpointRefs.inequalities)} comparable assertion(s) fail against the series they name`,
+      `${String(checkpointRefs.derivedRefs)} reading(s), ${String(checkpointRefs.configuration)} citing a ` +
+      `declared configuration fact); ${String(checkpointRefs.false)} of ` +
+      `${String(checkpointRefs.inequalities)} comparable assertion(s) fail against the data they name`,
   );
 }
 

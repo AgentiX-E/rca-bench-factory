@@ -4,6 +4,7 @@ import { NUMERIC_COMPARATORS, SERIES_POINTS } from '../src/ir/types.js';
 import {
   MAX_EXPRESSION_DEPTH,
   RELATIVE_TOLERANCE,
+  compareExactly,
   describeExpressionProblem,
   evaluateExpression,
   holdsWithTolerance,
@@ -435,6 +436,22 @@ describe('expression · the comparison the guard uses', () => {
     // `RELATIVE_TOLERANCE`, and both boundaries are asserted here so neither can drift.
     expect(holdsWithTolerance('==', 1e9, 1e9 + 1e9 * RELATIVE_TOLERANCE * 0.5)).toBe(true);
     expect(holdsWithTolerance('==', 1e9, 1e9 + 1e9 * RELATIVE_TOLERANCE * 2)).toBe(false);
+  });
+
+  it('compares two literals exactly, which is the rule a declared parameter needs', () => {
+    // The tolerant function is for values this package *computed*. A series' post value and a case's
+    // parameter are both literals, so `compareExactly` is what a checkpoint citing one has to use --
+    // otherwise 499.9999999 would pass for 500 (the tolerance is 5e-7 at that magnitude).
+    expect(holdsWithTolerance('==', 499.9999999, 500)).toBe(true);
+    expect(compareExactly('==', 499.9999999, 500)).toBe(false);
+    expect(compareExactly('==', 500, 500)).toBe(true);
+    expect(compareExactly('!=', 500, 500)).toBe(false);
+    expect(compareExactly('>=', 500, 500)).toBe(true);
+    expect(compareExactly('>', 500, 500)).toBe(false);
+    expect(compareExactly('<=', 500, 500)).toBe(true);
+    expect(compareExactly('<', 500, 500)).toBe(false);
+    expect(compareExactly('>', 501, 500)).toBe(true);
+    expect(compareExactly('<', 499, 500)).toBe(true);
   });
 
   it('reads its vocabulary from NUMERIC_COMPARATORS, not from a list of its own', () => {

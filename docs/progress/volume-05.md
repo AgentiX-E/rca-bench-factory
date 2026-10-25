@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **184 files, 4535 tests passed** (as of this commit) |
+| `core` test suite | **185 files, 4556 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **188 files, 4722 tests passed** (as of this commit) |
+| repo test suite | **189 files, 4743 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2837,3 +2837,66 @@ the meta-gate at **46 gates, 46 caught, 0 survived**; core **184 / 4535**, cli 4
 - **25 samples still carry no case.** `[open: 5 of 30 carry one. This item's headline said "24" for
   two rounds while its own body said "5 of 30", and 30 - 5 is 25 -- the subtraction has been done
   here, and the count now comes from the two arrays rather than from the sentence beside them]`
+
+## v2.74 — a configuration reference stops being a rule about what it must not be
+
+**What was open.** v2.71's third item, restated in v2.72 and v2.73: "`configuration` refs are checked
+for the wrong thing -- the only rule is that they must not collide with a series, which catches a
+modelling error and says nothing about whether the quota is the one the case ran under."
+
+The corpus's only configuration checkpoint did what a negative rule permits. `cp-cpu-limit` named
+`container_spec_cpu_quota` -- a plausible cAdvisor metric name that nothing in the case declares --
+and asserted `>= 0.5 1`. The 0.5 was the incident's "500m" divided by a thousand, by a division no
+file recorded, while `fault.parameters.limitMillicores: 500` sat three lines away, unread.
+
+**What changed.** A configuration checkpoint cites a key of the case's own `fault.parameters`, and
+the guard compares against what that key holds. Parameters may now be quantities
+(`{ "value": 500, "unit": "mcore" }`), read by `readDeclaredQuantity`, so the unit travels with the
+value instead of being reintroduced by hand. `util/unit.ts` gains a `cores` dimension (`core`,
+`mcore`) because the table had no way to write `500m` -- which is *why* the annotation had divided.
+
+| the parameter | the checkpoint | result |
+| --- | --- | --- |
+| `500 mcore` | `== 500 mcore` | compared as written |
+| `500 mcore` | `== 0.5 core` | converted, then compared |
+| `500 mcore` | no unit | refused -- the parameter has one |
+| a bare number | a unit | refused -- nothing could check the unit |
+| a string | anything numeric | refused -- an identifier restated is not a fact |
+
+**A third copy of four operators, deleted.** The guard had a ternary chain for a series' post value
+and `expression.ts` had a switch for a computed one; the configuration branch needed a third.
+`compareExactly` is now the only implementation, and `holdsWithTolerance` is that plus the tolerance
+branch -- which is what the tolerance always was: a correction for computed values, not for literals.
+`499.9999999` against a declared `500` is a mistake, and the tolerant comparison accepts it.
+
+**Corpus:** `limitMillicores: 500` became `cpuLimit: { value: 500, unit: "mcore" }`, and the
+checkpoint cites `cpuLimit` with `== 500 mcore`. The comparable denominator went from ten to eleven:
+the checkpoint stopped being an assertion whose reference resolved to nothing.
+
+**A note on the CI, recorded rather than argued away.** The run for `e7f28b23` failed with
+`Test Files 184 passed`, `Tests 4530 passed`, coverage at 99.97 / 99.76 / 100 / 99.97, and **one
+unhandled error**: `[vitest-worker]: Timeout calling "onTaskUpdate"`. Every test passed and the job
+was red. The next commit -- same suite plus one refactor -- was green, and `9886a2f1` is that run.
+One observation of a rare event is not a rate, so this is an open item rather than a fix; what it
+establishes is that a green suite can exit 1, which is a fact about the runner and not about the tree.
+
+**Acceptance.** 8 tests over `readDeclaredQuantity`, 8 over the guard's configuration rules, 6 over
+`cores`/`mcore`, 1 over `compareExactly` with both directions of the tolerance boundary; typecheck,
+lint, `docs:check` green (six vocabularies); `derive-gate-sites --check` green (86 sites, 46 scripts);
+the meta-gate at **46 gates, 46 caught, 0 survived**; core **185 / 4556**, cli 4 / 187, repo
+**189 / 4743**; coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–247.
+
+### Left open
+
+- **A green suite can exit 1, and nothing here can prevent it.** `[open: `e7f28b23` reported 4530 of
+  4530 tests passed, coverage above every threshold, and one unhandled
+  `[vitest-worker]: Timeout calling "onTaskUpdate"` -- so the job was red. Raising a worker timeout is
+  not a repair, and a retry would hide the next real hang; the item stays until a second observation
+  says whether it is a rate or an accident]`
+- **The parameter is tied to the text only through the fault layer's quote.** `[open: if `500m` in
+  `cpuLimit` is wrong, the checkpoint and the parameter are wrong together and agree -- the guard
+  proves they are one statement, not that the statement is right]`
+- **Compound units are compared structurally.** `[open: `MiB/s` and `KiB/s` are different units to the
+  algebra even though `util/unit.ts` has both]`
+- **25 samples still carry no case.** `[open: 5 of 30 carry one, and the arithmetic is now done from
+  the two arrays rather than from the sentence beside them]`

@@ -17,7 +17,10 @@
     "injectionMethod": "historical",
     "parameters": {
       "container": "checkout-api-app",
-      "limitMillicores": 500
+      "cpuLimit": {
+        "value": 500,
+        "unit": "mcore"
+      }
     }
   },
   "groundTruth": {
@@ -61,11 +64,11 @@
       {
         "checkpointId": "cp-cpu-limit",
         "entityRef": "container:synthetic-storefront/checkout-api-app",
-        "signalRef": "container_spec_cpu_quota",
-        "comparator": ">=",
-        "value": 0.5,
-        "unit": "1",
-        "description": "the container quota the usage sat against -- a configuration fact, which no telemetry series carries",
+        "signalRef": "cpuLimit",
+        "comparator": "==",
+        "value": 500,
+        "unit": "mcore",
+        "description": "the container quota the usage sat against, cited from the injection's own parameter rather than from prose",
         "signalKind": "configuration"
       },
       {

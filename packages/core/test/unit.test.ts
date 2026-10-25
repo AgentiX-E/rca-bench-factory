@@ -20,6 +20,18 @@ describe('convertUnit', () => {
     expect(convertUnit(120, 'TPS', 'rps')).toBe(120);
   });
 
+  it('converts millicores into cores, which is how incident texts state a CPU quota', () => {
+    // `500m` in a Kubernetes-style text is 500 millicores. The dimension is its own rather than a
+    // second spelling of `count`: a table that let `core` and `count` convert would add a restart
+    // count to a CPU quota without complaining.
+    expect(convertUnit(500, 'mcore', 'core')).toBe(0.5);
+    expect(convertUnit(2, 'core', 'mcore')).toBe(2000);
+    expect(dimensionOf('mcore')).toBe('cores');
+    expect(isConvertible('mcore', 'core')).toBe(true);
+    expect(isConvertible('mcore', 'count')).toBe(false);
+    expect(() => convertUnit(1, 'mcore', 'count')).toThrow(UnitError);
+  });
+
   it('converts percent into a ratio', () => {
     expect(convertUnit(90, '%', '1')).toBe(0.9);
   });
@@ -77,5 +89,6 @@ describe('knownUnits', () => {
     expect(new Set(all).size).toBe(all.length);
     expect(groups.time).toContain('ms');
     expect(groups.bytes).toContain('By');
+    expect(groups.cores).toEqual(['core', 'mcore']);
   });
 });

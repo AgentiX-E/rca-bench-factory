@@ -6,7 +6,7 @@
  * so that the table stays small, exact and reviewable.
  */
 
-export type Dimension = 'time' | 'bytes' | 'rate' | 'ratio' | 'count';
+export type Dimension = 'time' | 'bytes' | 'rate' | 'ratio' | 'count' | 'cores';
 
 interface UnitDef {
   dimension: Dimension;
@@ -21,7 +21,8 @@ interface UnitDef {
 }
 
 /**
- * Base units: time -> `s`, bytes -> `By`, rate -> `rps`, ratio -> `1`, count -> `1`.
+ * Base units: time -> `s`, bytes -> `By`, rate -> `rps`, ratio -> `1`, count -> `1`,
+ * cores -> `core`.
  */
 const UNITS: Record<string, UnitDef> = {
   // ── time ──────────────────────────────────────────────────────────────
@@ -46,6 +47,13 @@ const UNITS: Record<string, UnitDef> = {
   '%': { dimension: 'ratio', num: 1, den: 100, base: '1' },
   // ── dimensionless count ───────────────────────────────────────────────
   count: { dimension: 'count', num: 1, den: 1, base: 'count' },
+  // ── CPU cores, which the incident texts write in millicores ────────────
+  //
+  // A separate dimension rather than another `count`: `count` and `core` both mean "a number of
+  // things", and a table that let them convert would add a restart count to a CPU quota without
+  // complaining. `500m` in a Kubernetes-style text is `500 mcore`, and the 1/1000 factor is exact.
+  core: { dimension: 'cores', num: 1, den: 1, base: 'core' },
+  mcore: { dimension: 'cores', num: 1, den: 1e3, base: 'core' },
 };
 
 export class UnitError extends Error {
@@ -100,6 +108,7 @@ export function knownUnits(): Record<Dimension, string[]> {
     rate: [],
     ratio: [],
     count: [],
+    cores: [],
   };
   for (const [name, def] of Object.entries(UNITS)) out[def.dimension].push(name);
   for (const key of Object.keys(out) as Dimension[]) out[key].sort();

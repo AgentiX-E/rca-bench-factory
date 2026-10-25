@@ -66,6 +66,12 @@ export {
   telemetrySignalSchema,
 } from './ir/schema.js';
 
+// A quantity a case declares about itself, and the reader that decides whether a value is one. A
+// configuration checkpoint cites these instead of prose, so "the quota is the one the case ran under"
+// is a comparison rather than a reading (finding 247).
+export { readDeclaredQuantity } from './ir/parameters.js';
+export type { DeclaredQuantity } from './ir/types.js';
+
 // A schema refusal with the field and the reason in it. `String(error.message).split('\n')[0]` is
 // `[` for a zod issue list, so the guard that reports parse failures used to name the case and a
 // bracket; the diagnosis was in the lines it dropped.
@@ -695,6 +701,7 @@ export type { ShiftRank, ShiftReading } from './fault/robust-localiser.js';
 export {
   MAX_EXPRESSION_DEPTH,
   RELATIVE_TOLERANCE,
+  compareExactly,
   describeExpressionProblem,
   evaluateExpression,
   holdsWithTolerance,

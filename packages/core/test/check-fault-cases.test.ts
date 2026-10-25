@@ -952,7 +952,7 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // configuration fact that names no series at all. Ten are comparable, and all ten hold.
     expect(result.out).toContain(
       'checkpoints 12 of 12 reference(s) resolve by kind (10 over a series, 2 of them computed from ' +
-        '4 reading(s)); 0 of 10 comparable assertion(s) fail',
+        '4 reading(s), 1 citing a declared configuration fact); 0 of 11 comparable assertion(s) fail',
     );
   });
 
@@ -1133,7 +1133,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
       }),
     ]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('0 of 2 comparable assertion(s) fail');
+    expect(result.out).toContain('0 of 3 comparable assertion(s) fail');
   });
 
   it('refuses a derived checkpoint with no expression, and says which field is missing', () => {
@@ -1190,6 +1190,113 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     // The count is what makes the corpus's own line meaningful: a checkpoint that could not be
     // evaluated must not appear in the denominator as though it had been checked.
     const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 })]);
-    expect(result.out).toContain('1 of 2 comparable assertion(s) fail');
+    expect(result.out).toContain('1 of 3 comparable assertion(s) fail');
+  });
+});
+describe('check-fault-cases · a configuration checkpoint cites a fact the case declares', () => {
+  // Finding 247. The rule used to be negative -- "must not collide with a series" -- which caught a
+  // modelling error and said nothing about whether the quota was the one the case ran under. Now the
+  // reference names a key of `fault.parameters` and the comparison is against what that key holds.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The checkout case with its `cp-cpu-limit` checkpoint edited, and optionally its parameters. */
+  function withConfiguration(
+    edit: (checkpoint: Record<string, unknown>) => void,
+    parameters?: (record: Record<string, unknown>) => void,
+  ): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        const fault = faultCase.fault as Record<string, unknown>;
+        const declared = fault.parameters as Record<string, unknown>;
+        parameters?.(declared);
+        const truth = faultCase.groundTruth as Record<string, unknown>;
+        const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+        edit(checkpoints.find((one) => one.checkpointId === 'cp-cpu-limit')!);
+      },
+    });
+  }
+
+  it('accepts the corpus checkpoint, which cites the injection\'s own parameter', () => {
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    // One of the twelve resolves to a declared configuration fact, and it is *comparable* -- the
+    // denominator went from ten to eleven when it stopped being uncheckable.
+    expect(result.out).toContain('1 citing a declared configuration fact');
+    expect(result.out).toContain('0 of 11 comparable assertion(s) fail');
+  });
+
+  it('refuses a configuration fact the case does not declare, and names what it does', () => {
+    // This is the defect itself: `container_spec_cpu_quota` is a plausible metric name that nothing
+    // in the case declares, so the checkpoint was citing prose.
+    const result = run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container_spec_cpu_quota'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "calls 'container_spec_cpu_quota' a configuration fact, but fault.parameters declares no such key " +
+        '(it declares: container, cpuLimit)',
+    );
+  });
+
+  it('refuses a stated value the case does not declare', () => {
+    const result = run(['--cases', withConfiguration((cp) => { cp.value = 600; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("asserts 'cpuLimit' == 600, and fault.parameters declares 500 mcore");
+  });
+
+  it('converts a checkpoint stated in another unit of the same dimension', () => {
+    // 500 mcore is 0.5 cores, and the table says so: the checkpoint may state the quota in either
+    // unit and the comparison is against the converted value.
+    const result = run(['--cases', withConfiguration((cp) => { cp.unit = 'core'; cp.value = 0.5; })]);
+    expect(result.status, result.out).toBe(0);
+    // One case: three checkpoints, all comparable, none failing. The conversion is visible in the
+    // fact that the assertion is counted at all -- `0.5 core` is compared with `500 mcore`.
+    expect(result.out).toContain('1 citing a declared configuration fact); 0 of 3 comparable assertion(s) fail');
+  });
+
+  it('refuses a unit the table cannot convert into the declared one', () => {
+    const result = run(['--cases', withConfiguration((cp) => { cp.unit = 's'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "is in 's' and 'cpuLimit' is declared in 'mcore', which are not the same unit and not convertible",
+    );
+  });
+
+  it('refuses a unit beside a parameter that declares none', () => {
+    // A unit nothing can check is a claim, not a fact: the parameter holds a bare number.
+    const result = run([
+      '--cases',
+      withConfiguration(
+        (cp) => {
+          cp.signalRef = 'replicas';
+          cp.unit = 'count';
+          cp.value = 3;
+        },
+        (parameters) => {
+          parameters.replicas = 3;
+        },
+      ),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "states 'count' for 'replicas', which fault.parameters declares without a unit",
+    );
+  });
+
+  it('refuses a parameter cited without the unit it is declared in', () => {
+    const result = run(['--cases', withConfiguration((cp) => { delete cp.unit; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("cites 'cpuLimit' without a unit, and fault.parameters declares it in 'mcore'");
+  });
+
+  it('refuses a string parameter, which is an identifier rather than a fact', () => {
+    // `container == 'checkout-api-app'` restates the parameter in a second place, and the parameter is
+    // already in the file.
+    const result = run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container'; cp.unit = '1'; })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "cites parameter 'container', whose value \"checkout-api-app\" is not a number or a { value, unit } quantity",
+    );
   });
 });

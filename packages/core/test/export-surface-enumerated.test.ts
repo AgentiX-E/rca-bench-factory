@@ -107,6 +107,7 @@ const ENUMERATED_MODULES = [
   'index.ts',
   'ir/assembler.ts',
   'ir/guards.ts',
+  'ir/parameters.ts',
   'ir/schema.ts',
   'ir/schema-errors.ts',
   'ir/types.ts',
@@ -242,6 +243,7 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'ir/types.ts::GateResult': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::QualityGateReport': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::IrBundle': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::DeclaredQuantity': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::NumericComparator': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::SeriesPoint': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionOutcome': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -661,10 +663,15 @@ const TESTED = [
   // ir/schema-errors.ts -- a zod refusal with the field in it, so a case that does not parse is not
   // reported as a case id followed by a bracket.
   'describeSchemaFailure',
+  // ir/parameters.ts -- whether a value a case declares is a quantity a checkpoint can cite, which is
+  // the difference between "the quota is the one the case ran under" and a reading of prose
+  // (finding 247).
+  'readDeclaredQuantity',
   // fault/expression.ts -- the arithmetic a derived checkpoint states, evaluated rather than
   // believed (finding 245).
   'MAX_EXPRESSION_DEPTH',
   'RELATIVE_TOLERANCE',
+  'compareExactly',
   'describeExpressionProblem',
   'evaluateExpression',
   'holdsWithTolerance',

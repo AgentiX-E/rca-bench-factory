@@ -4082,3 +4082,90 @@ the corpus guard, end to end.
 | the guard | `4.3 s + 11 min == 664300 ms` accepted end to end, `0 of 2` comparable assertions fail |
 | `core` / repo | **184 / 4535** · **188 / 4722**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 247 — a configuration reference resolved to nothing, and the rule was negative
+
+Finding 244 gave `EvidenceCheckpoint.signalKind` four members and one rule per member. Three of those
+rules are positive -- a series reference must resolve to a declared series, a `log` reference to a
+declared line `id`, a `derived` one to the readings its expression names. The fourth was:
+
+> `configuration`: the value is a fact about how the system was configured, which no telemetry
+> carries, and naming a series by the same name is a modelling error.
+
+That is a rule about what the reference must *not* be. The corpus's only configuration checkpoint
+then did what a negative rule permits:
+
+```json
+{ "checkpointId": "cp-cpu-limit", "signalKind": "configuration",
+  "signalRef": "container_spec_cpu_quota", "comparator": ">=", "value": 0.5, "unit": "1" }
+```
+
+`container_spec_cpu_quota` is a plausible cAdvisor metric name. Nothing in the case declares it, no
+series carries it, and the check could only ask whether a string looked telemetry-shaped. The number
+`0.5` was transcribed from the incident's "500m" -- **in a different unit, by a division nothing
+recorded** -- while `fault.parameters.limitMillicores: 500` sat in the same file, three lines away,
+unread.
+
+### The repair: cite the case's own declaration
+
+A configuration checkpoint's `signalRef` now names a key of `fault.parameters`, and the guard
+compares the checkpoint against what that key holds. The case declares:
+
+```json
+"parameters": { "container": "checkout-api-app", "cpuLimit": { "value": 500, "unit": "mcore" } }
+```
+
+and the checkpoint cites `cpuLimit` with `== 500 mcore`. The comparison is `compareExactly`, and the
+unit rules are:
+
+| the parameter | the checkpoint | result |
+| --- | --- | --- |
+| a quantity in `mcore` | a quantity in `mcore` | compared as written |
+| a quantity in `mcore` | a quantity in `core` | converted through `util/unit.ts`, then compared |
+| a quantity in `mcore` | no unit | refused: the parameter has a unit and the checkpoint does not say so |
+| a bare number | a unit | refused: the unit is a claim nothing in the file can check |
+| a string | anything numeric | refused: `container == 'x'` restates the parameter, and the parameter is already there |
+
+`readDeclaredQuantity` (`ir/parameters.ts`) is the boundary that decides whether a value is a
+quantity at all: a number is one with no unit, `{ value, unit? }` is one with, and a boolean, an
+array, a nested object without `value`, a non-finite number or a blank unit is not. It lives in `core`
+rather than in the guard because a rule only a script can exercise is a rule whose tests are all
+subprocess spawns.
+
+### A unit the table could not state, and why it is its own dimension
+
+The incident says "pinned at its 500m limit", and `util/unit.ts` had no way to write `500m` -- which
+is *why* the annotation had divided by 1000 into a bare ratio. The table gains a `cores` dimension
+with `core` and `mcore` (1/1000, exact). It is a separate dimension rather than a second spelling of
+`count`, because a table that let them convert would add a restart count to a CPU quota and report a
+number.
+
+### Three copies of four operators, reduced to one
+
+Comparing a checkpoint with its data was already implemented twice: the guard had a ternary chain for
+a series' post value and this module had a switch for a computed one. The configuration branch needed
+a third. `compareExactly` is now the only implementation, and `holdsWithTolerance` is
+`compareExactly` plus the tolerance branch -- which is what the tolerance always was: a correction for
+values the package computed, not for literals a person wrote. `499.9999999` against a declared `500`
+is a mistake, and the tolerant comparison would have accepted it (the tolerance is `5e-7` there).
+
+### What this still does not prove
+
+That the parameter is the configuration the run actually had. The parameter is tied to the incident
+text only through the fault layer's quote, so if the annotation's `500m` is wrong, the checkpoint and
+the parameter are wrong together and agree. What changed is that **there is no longer a second,
+independent number that could disagree in silence**: the checkpoint's value is now derived from the
+case's own statement, and the unit travels with it instead of being reintroduced by hand.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the reference | names a key of `fault.parameters`; a key it does not declare is refused and the message lists the ones it does |
+| the value | `== 600` against a declared `500 mcore` is refused, and the message says which |
+| the unit | `core` is converted (`500 mcore == 0.5 core`); `s` is refused as not convertible; a unit beside a unitless parameter is refused |
+| the corpus | `cp-cpu-limit` cites `cpuLimit`; comparable assertions **10 → 11**, failures 0 |
+| the table | `cores`/`mcore` added with an exact 1/1000 factor and its own dimension |
+| the comparison | one implementation: `compareExactly`; `holdsWithTolerance` is it plus the tolerance |
+| `core` / repo | **185 / 4556** · **189 / 4743**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| tests | 8 over `readDeclaredQuantity`, 8 over the guard's configuration rules, 6 over `cores`/`mcore`, 1 over `compareExactly` |

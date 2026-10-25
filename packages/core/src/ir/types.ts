@@ -393,6 +393,20 @@ export interface EvidenceCheckpoint {
   description: string;
 }
 
+/**
+ * A numeric fact a case declares about itself, with the unit it is in.
+ *
+ * `FaultCase.fault.parameters` holds the injector's knobs, and a knob that a checkpoint wants to cite
+ * has to carry its unit -- otherwise the checkpoint's unit is a claim about a number that says
+ * nothing about it, which is what finding 247 found behind `cp-cpu-limit`. A bare number is still
+ * allowed (a container name, a replica count) and reads as a quantity with no unit; a checkpoint that
+ * cites one may not state a unit either.
+ */
+export interface DeclaredQuantity {
+  value: number;
+  unit?: string;
+}
+
 export interface CausalStep {
   step: number;
   fromEntityId: string;

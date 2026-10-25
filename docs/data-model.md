@@ -114,8 +114,34 @@ string was carrying four different kinds of reference and nothing resolved it: o
 eleven checkpoints the corpus held at the time, eight named a series that did not
 exist. Each kind has the rule that can actually be applied to it -- a series reference
 must resolve to a declared series whose unit agrees and whose post value satisfies the
-assertion, a `log` reference must name a declared line `id`, and a `configuration`
-reference must name *nothing* telemetry-shaped.
+assertion, a `log` reference must name a declared line `id`, a `derived` one carries an
+`expression` over the readings it names, and a `configuration` reference must name a
+key of the case's own `fault.parameters` and agree with what that key holds.
+
+### `fault.parameters` — the facts a checkpoint can cite
+
+`fault.parameters` is the injector's record, open by design: a `container`, a
+`failureShare`, a CPU limit. A value may be a bare number or string, or a **quantity**
+`{ "value": 500, "unit": "mcore" }`, and a unit may only come from `util/unit.ts`.
+`readDeclaredQuantity` (`ir/parameters.ts`) decides which of those a value is; a
+boolean, an array, a nested object without `value`, a non-finite number or a blank unit
+is not a quantity and a checkpoint cannot cite it.
+
+A configuration checkpoint compares against the declaration, so the check is a
+comparison rather than a reading of prose:
+
+| the parameter | the checkpoint | result |
+| --- | --- | --- |
+| `{ "value": 500, "unit": "mcore" }` | `== 500 mcore` | compared as written |
+| `{ "value": 500, "unit": "mcore" }` | `== 0.5 core` | converted through the table, then compared |
+| `{ "value": 500, "unit": "mcore" }` | no unit | refused -- the parameter has one |
+| a bare number | a unit | refused -- nothing in the file could check the unit |
+| a string | anything numeric | refused -- an identifier restated is not a fact |
+
+The comparison is exact: both sides are literals a person wrote, so a difference is a
+mistake rather than floating-point drift. The `1e-9` tolerance belongs to values the
+package *computed*, which is why it lives in `holdsWithTolerance` and not in
+`compareExactly`.
 
 ### `expression` — the arithmetic a derived checkpoint states
 
