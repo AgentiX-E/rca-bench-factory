@@ -1213,10 +1213,18 @@ and this table.
 | [volume-02.md](progress/volume-02.md) | 16 | Pass 35 | Pass 48 |
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
 | [volume-04.md](progress/volume-04.md) | 21 | v2.06 | v2.25 |
-| [volume-05.md](progress/volume-05.md) | 53 | v2.26 | v2.78 |
+| [volume-05.md](progress/volume-05.md) | 30 | v2.26 | v2.55 |
+| [volume-06.md](progress/volume-06.md) | 24 | v2.56 | v2.79 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
-becomes diffing the pile -- start the next volume, holding the new round and nothing
-else, and add its row above. A round is never split across two volumes: a boundary
-falls between two `## ` headings or it does not exist.
+becomes diffing the pile -- start the next volume and add its row above. A round is
+never split across two volumes: a boundary falls between two `## ` headings or it
+does not exist.
+
+The new volume takes a contiguous **run** of the most recent rounds, not one, and the
+run has to be larger than this file. That is not a preference: a volume holding one
+round was 4,250 bytes against an index of 74,443, and the checker refused it, because
+an index bigger than the smallest thing it indexes is no longer an index -- the reader
+who follows it lands in a document larger than its target. `v2.56`--`v2.79` moved
+together for that reason, and the run will be longer next time.

@@ -219,6 +219,30 @@ the guard refuses a quote the text does not contain.
 declaration says what the counter had accumulated by the start of the window; a value that rises
 before the fault is a claim the file does not make.
 
+### A reading is a measurement, and a measurement stays inside its unit
+
+`baseline` and `post` are what the annotation says the reading was; the samples are what an exporter
+would have written down. Both have to be values their unit admits, and `util/unit.ts` is the one place
+that says what those are: `measurementBounds(unit)` returns `{ min, max }` for a unit it knows and
+`undefined` for one it does not.
+
+| unit | range | why |
+| --- | --- | --- |
+| `1` | `[0, 1]` | a share is a fraction of a whole |
+| `%` | `[0, 100]` | the same dimension, a different scale -- the ceiling is per unit, not per dimension |
+| `ms`, `s`, `count`, `By`, `rps`, `core`, `mcore` | `[0, ∞)` | every unit here counts something, and none of them is signed |
+
+Two rules follow, and they are different rules:
+
+- **The declaration is refused if it is out of range.** `check-fault-cases` says which point, which
+  metric, which unit and what range, because `post: 120` in `%` is not a noisy measurement, it is a
+  number no measurement can be.
+- **The noise is clamped.** The sampling noise is a fraction of the reading, so a share of exactly 1
+  came out as `1.02` -- a 102 % share. At a bound the noise becomes one-sided, which is what a real
+  measurement at a ceiling looks like: there is nothing above 100 % to be noisy about. Only noisy
+  samples are clamped; a counter's samples are exact totals and clamping them would rewrite the
+  declaration's own arithmetic.
+
 ## Layer 4 — `QualityGateReport`
 
 The evidence the case is usable. Produced by `runAllGates`.

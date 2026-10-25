@@ -111,7 +111,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
   it('accepts the shipped corpus and reports how many samples carry a case', () => {
     const result = run([]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('8 of 30 sample(s) carry a four-layer case');
+    expect(result.out).toContain('9 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
@@ -645,7 +645,12 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
         {
           service: 'load-generator',
           metric: 'request_rate_rps',
-          unit: '1',
+          // `rps`, not `1`. This fixture declared a rate of 100 in the dimensionless ratio unit, which
+          // G2 accepted -- `1` is a published unit -- until the bounds rule asked what a reading in
+          // `1` can be and found that 100 is not one (finding 252). The clamp then flattened the
+          // series to 1 and the negative control stopped being one, which is how the fixture's own
+          // modelling error surfaced.
+          unit: 'rps',
           baseline: 100,
           post: 300,
           quote: 'The load generator was unchanged from the previous week',
@@ -762,7 +767,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
     // Six, not seven: the cart case's two spans fill one `traces.csv` (finding 240).
-    expect(result.out).toContain('RE2 8 case(s) written, 10 file(s) with no rows');
+    expect(result.out).toContain('RE2 9 case(s) written, 12 file(s) with no rows');
   });
 
   it('accepts a log line whose quote is in its own case text', () => {
@@ -923,7 +928,7 @@ describe('check-fault-cases · the first code-level case', () => {
     // hidden.
     const result = run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('RE3 1 case(s) written, 1 file(s) with no rows, 7 skipped');
+    expect(result.out).toContain('RE3 1 case(s) written, 1 file(s) with no rows, 8 skipped');
   });
 });
 
@@ -954,8 +959,8 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // (one of the two reads two points of one series), one names a log line by id, and one is a
     // configuration fact that names no series at all. Ten are comparable, and all ten hold.
     expect(result.out).toContain(
-      'checkpoints 23 of 23 reference(s) resolve by kind (17 over a series, 2 of them computed from ' +
-        '4 reading(s), 3 citing a declared configuration fact); 0 of 20 comparable assertion(s) fail',
+      'checkpoints 26 of 26 reference(s) resolve by kind (20 over a series, 2 of them computed from ' +
+        '4 reading(s), 3 citing a declared configuration fact); 0 of 23 comparable assertion(s) fail',
     );
   });
 
@@ -1228,7 +1233,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // One of the twelve resolves to a declared configuration fact, and it is *comparable* -- the
     // denominator went from ten to eleven when it stopped being uncheckable.
     expect(result.out).toContain('3 citing a declared configuration fact');
-    expect(result.out).toContain('0 of 20 comparable assertion(s) fail');
+    expect(result.out).toContain('0 of 23 comparable assertion(s) fail');
   });
 
   it('refuses a configuration fact the case does not declare, and names what it does', () => {
@@ -1301,5 +1306,62 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     expect(result.out).toContain(
       "cites parameter 'container', whose value \"checkout-api-app\" is not a number or a { value, unit } quantity",
     );
+  });
+});
+
+describe('check-fault-cases · a declared reading stays inside the range its unit admits', () => {
+  // Finding 252. A share of exactly 1 -- "every request 503'd" -- used to come out of the expansion as
+  // 1.02, and the annotation could not fix it: any value at or below 0.98 understates the sentence.
+  // The clamp handles the noise; this rule handles the declaration, because `post: 120` in `%` is a
+  // number no reading can be, and a corpus that accepted it would ship an impossible row.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The checkout signals plus a scratch series, with the fields the caller chooses. */
+  function withSeries(fields: Record<string, unknown>): string {
+    const signals = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & {
+      series: Array<Record<string, unknown>>;
+    };
+    signals.series.push({
+      service: 'checkout-api',
+      metric: 'scratch_reading',
+      quote: 'No error rate change in the downstream payment service',
+      why: 'a scratch series the bounds rule is asked about',
+      ...fields,
+    });
+    return corpus({ signals });
+  }
+
+  it('refuses a share above 100 per cent, and says what the unit admits', () => {
+    const result = run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1.2 })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares post 1.2 for 'scratch_reading' in '1', and a reading in '1' lies in [0, 1]",
+    );
+    expect(result.out).toContain('FAILED — 1 problem(s)');
+  });
+
+  it('accepts a share of exactly 1, which is the sentence "every request failed"', () => {
+    const result = run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1 })]);
+    expect(result.status, result.out).toBe(0);
+  });
+
+  it('refuses a negative duration, because a duration is not signed', () => {
+    // The lower bound is a statement rather than a default: nothing in this table is a signed
+    // quantity, so -1 ms is not a small duration, it is the wrong shape.
+    const result = run(['--cases', withSeries({ unit: 'ms', baseline: -1, post: 4300 })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares baseline -1 for 'scratch_reading' in 'ms', and a reading in 'ms' lies in [0, ∞)",
+    );
+  });
+
+  it('says nothing about a unit the table does not know, because it has no range to state', () => {
+    // `MiB/s` is a compound the conversion table has no entry for. Refusing a reading in it would be
+    // this rule inventing a bound, which is the failure mode it exists to prevent at the other end.
+    const result = run(['--cases', withSeries({ unit: 'MiB/s', baseline: -5, post: 4 })]);
+    // G2 refuses the unit itself, which is a different rule and the one that should speak here.
+    expect(result.out).not.toContain('lies in');
   });
 });

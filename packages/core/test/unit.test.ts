@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { convertUnit, dimensionOf, isConvertible, knownUnits, UnitError } from '../src/util/unit.js';
+import {
+  clampToUnit,
+  convertUnit,
+  dimensionOf,
+  isConvertible,
+  knownUnits,
+  measurementBounds,
+  UnitError,
+} from '../src/util/unit.js';
 
 describe('convertUnit', () => {
   it('converts time units against the second base', () => {
@@ -18,6 +26,33 @@ describe('convertUnit', () => {
   it('treats QPS and TPS as aliases of rps', () => {
     expect(convertUnit(120, 'QPS', 'rps')).toBe(120);
     expect(convertUnit(120, 'TPS', 'rps')).toBe(120);
+  });
+
+  it('states the range a reading in a unit can occupy, and only for units it knows', () => {
+    // A reading is a measurement, and a measurement cannot report a value its unit does not admit: a
+    // share above 100 % is not a noisy share, and a negative duration is not a small one. The table
+    // is the only place that knows what a unit admits, so the bounds live beside the factors.
+    expect(measurementBounds('1')).toEqual({ min: 0, max: 1 });
+    expect(measurementBounds('%')).toEqual({ min: 0, max: 100 });
+    expect(measurementBounds('ms')).toEqual({ min: 0, max: Number.POSITIVE_INFINITY });
+    expect(measurementBounds('count')).toEqual({ min: 0, max: Number.POSITIVE_INFINITY });
+    // `MiB/s` is not a unit this table knows, so it has no range to state. `undefined` rather than a
+    // guessed `[0, ∞)`: a bound nobody declared is a claim, and the caller decides what to do with it.
+    expect(measurementBounds('MiB/s')).toBeUndefined();
+    expect(measurementBounds('m')).toBeUndefined();
+  });
+
+  it('clamps a value into its unit range, and leaves it alone when it is already inside', () => {
+    expect(clampToUnit('1', 1.02)).toBe(1);
+    expect(clampToUnit('1', -0.02)).toBe(0);
+    expect(clampToUnit('1', 0.6)).toBe(0.6);
+    expect(clampToUnit('%', 102)).toBe(100);
+    expect(clampToUnit('ms', -1)).toBe(0);
+    expect(clampToUnit('ms', 4300)).toBe(4300);
+    // No unit declared, or one the table does not know: nothing to clamp against, because a bound
+    // nobody declared would be this table inventing a limit on someone else's unit.
+    expect(clampToUnit(undefined, -1)).toBe(-1);
+    expect(clampToUnit('MiB/s', -1)).toBe(-1);
   });
 
   it('converts millicores into cores, which is how incident texts state a CPU quota', () => {

@@ -18,6 +18,15 @@ interface UnitDef {
   num: number;
   den: number;
   base: string;
+  /**
+   * The largest reading this unit can carry, when it has one.
+   *
+   * Absent means unbounded, which is right for every unit that counts something: a duration, a byte
+   * count, a rate and a count of restarts have no ceiling. A *share* does. `1` and `%` are the same
+   * dimension with different factors and different ceilings, which is why this is per unit and not
+   * per dimension -- a bound stated in base units would clamp 92 % to 1.
+   */
+  max?: number;
 }
 
 /**
@@ -43,8 +52,8 @@ const UNITS: Record<string, UnitDef> = {
   TPS: { dimension: 'rate', num: 1, den: 1, base: 'rps' },
   'rps/min': { dimension: 'rate', num: 1, den: 60, base: 'rps' },
   // ── ratio / percentage ────────────────────────────────────────────────
-  '1': { dimension: 'ratio', num: 1, den: 1, base: '1' },
-  '%': { dimension: 'ratio', num: 1, den: 100, base: '1' },
+  '1': { dimension: 'ratio', num: 1, den: 1, base: '1', max: 1 },
+  '%': { dimension: 'ratio', num: 1, den: 100, base: '1', max: 100 },
   // ── dimensionless count ───────────────────────────────────────────────
   count: { dimension: 'count', num: 1, den: 1, base: 'count' },
   // ── CPU cores, which the incident texts write in millicores ────────────
@@ -98,6 +107,50 @@ export function convertUnit(value: number, from: string, to: string): number {
   if (a.num === b.num && a.den === b.den) return value;
   // value * (a.num / a.den) / (b.num / b.den)
   return (value * a.num * b.den) / (a.den * b.num);
+}
+
+/** The range a reading in a unit can occupy: a lower bound and an upper one, possibly infinite. */
+export interface MeasurementBounds {
+  min: number;
+  max: number;
+}
+
+/**
+ * The range a reading in this unit can occupy, or `undefined` for a unit the table does not know.
+ *
+ * A reading is a *measurement*, and a measurement cannot report a value its unit does not admit: a
+ * share above 100 % is not a noisy share, and a negative duration is not a small one. This is the
+ * table's business because the table is the only place that knows what a unit is -- and the reason it
+ * returns `undefined` rather than a guessed `[0, Infinity)` for an unknown unit is that a bound nobody
+ * declared is a claim about someone else's unit (finding 252).
+ *
+ * The lower bound is zero for every unit here, and that is a statement rather than a default: time,
+ * bytes, rate, ratio, count and cores are all counts of something, and none of them is signed. A
+ * signed unit would need a `min` in `UnitDef` beside the `max`, and this table would grow one the day
+ * a gauge like temperature arrives.
+ */
+export function measurementBounds(unit: string): MeasurementBounds | undefined {
+  const def = UNITS[unit];
+  if (def === undefined) return undefined;
+  return { min: 0, max: def.max ?? Number.POSITIVE_INFINITY };
+}
+
+/**
+ * A reading clamped into its unit's range.
+ *
+ * Used where a value is *derived* rather than declared: the corpus's sampling noise is a fraction of
+ * the reading, so a share of exactly 1 came out as 1.02 -- a value no system can produce. At a bound
+ * the noise is one-sided, which is what a real measurement at a ceiling looks like: there is nothing
+ * above 100 % to be noisy about.
+ *
+ * Nothing is clamped when no unit is declared or the table does not know the unit, because there is
+ * no bound to clamp against. `undefined` is returned never; the value comes back unchanged.
+ */
+export function clampToUnit(unit: string | undefined, value: number): number {
+  if (unit === undefined) return value;
+  const bounds = measurementBounds(unit);
+  if (bounds === undefined) return value;
+  return Math.min(Math.max(value, bounds.min), bounds.max);
 }
 
 /** All units known to the converter, grouped by dimension. */

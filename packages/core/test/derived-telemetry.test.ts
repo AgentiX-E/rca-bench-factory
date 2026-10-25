@@ -113,6 +113,68 @@ describe('expandSeries · the shape each derivation means', () => {
     expect(sample.slice(SERIES_POINTS + 1)).toEqual([12.24, 11.76, 12.12, 11.88, 12.192, 11.808, 12.072]);
   });
 
+  it('keeps a reading at its unit\'s ceiling, where the noise can only go down', () => {
+    // Finding 252. A share of exactly 1 -- "every request 503'd" -- used to come out as 1.02 on the
+    // +2 % arm of the jitter: a 102 % share, which no system can produce. The clamp is what makes
+    // the case expressible at all, and what it produces is the physically correct reading: at the
+    // ceiling, measurement noise is one-sided, because there is nothing above it to be noisy about.
+    const declaration: SeriesDeclaration = {
+      service: 'user-profile',
+      metric: 'http_503_ratio',
+      unit: '1',
+      baseline: 0,
+      post: 1,
+    };
+    expect(values(declaration)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0.98, 1, 0.99, 1, 0.984, 1]);
+    // The last sample is exactly the declared post, which for a `step` series is otherwise only true
+    // by luck of the jitter cycle -- the +0.3 % arm would have made it 1.006.
+    expect(values(declaration).at(-1)).toBe(1);
+  });
+
+  it('keeps a series that reads 1 at its ceiling, where only the downward arms survive', () => {
+    // The same bound applies to a series that never moves: a condition that reads 1 is ready, and
+    // 1.02 is a condition more ready than the scale has room for. What is left is one-sided -- 1,
+    // 1, 0.98, ... -- which is the same asymmetry the previous test shows from the other side, and
+    // it is what a measurement at a ceiling looks like: noise can only pull it down.
+    const declaration: SeriesDeclaration = {
+      service: 'worker-3',
+      metric: 'node_condition_ready',
+      unit: '1',
+      baseline: 1,
+      post: 1,
+    };
+    const samples = values(declaration);
+    expect(samples).toEqual([1, 1, 0.98, 1, 0.99, 1, 0.984, 1, 1, 1, 0.98, 1, 0.99, 1, 0.984, 1]);
+    expect(Math.max(...samples)).toBe(1);
+  });
+
+  it('leaves a reading inside its range alone, so the clamp is not a rescaling', () => {
+    // 78 % to 92 % is inside [0, 100] and the numbers are the ones the jitter cycle gives, digit for
+    // digit: a clamp that moved an in-range sample would be a model change wearing a bound's clothes.
+    const declaration: SeriesDeclaration = {
+      service: 'kafka-broker-3',
+      metric: 'broker_disk_watermark_percent',
+      unit: '%',
+      baseline: 78,
+      post: 92,
+    };
+    expect(values(declaration)).toEqual([
+      78, 79.56, 76.44, 78.78, 77.22, 79.248, 76.752, 78.468, 92, 93.84, 90.16, 92.92, 91.08, 93.472,
+      90.528, 92.552,
+    ]);
+  });
+
+  it('clamps a percent at its own ceiling, not at the ratio ceiling', () => {
+    // `%` and `1` are the same dimension with different factors, so a bound stated once in base units
+    // would clamp 92 % to 1. The bounds are per unit for exactly this reason.
+    // 99 -> 100 in `%`: 100 is a reading, 100.98 is not. The clamp reaches the pre-window too, because
+    // a baseline of 99 % has a +2 % arm as well, and that arm is 100.98 -- so the bound is a property
+    // of every noisy sample rather than of the post-window.
+    expect(
+      values({ service: 's', metric: 'percent_at_max', unit: '%', baseline: 99, post: 100 }),
+    ).toEqual([99, 100, 97.02, 99.99, 98.01, 100, 97.416, 99.594, 100, 100, 98, 100, 99, 100, 98.4, 100]);
+  });
+
   it('carries the unit only when the declaration has one', () => {
     const withUnit = expandSeries({ service: 's', metric: 'm', unit: 'ms', baseline: 1, post: 2 }, WHEN);
     expect(withUnit[0]?.payload).toMatchObject({ kind: 'metric', name: 'm', unit: 'ms' });

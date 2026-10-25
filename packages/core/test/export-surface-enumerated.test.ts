@@ -802,6 +802,7 @@ const TESTED = [
   'buildPackManifest',
   'buildRulegenPrompt',
   'checkNoSilentLoss',
+  'clampToUnit',
   'computeCoverage',
   'computeRegression',
   'computeStaleCases',
@@ -847,6 +848,7 @@ const TESTED = [
   'isoUtcToEpochMs',
   'isoUtcToOffsetIso',
   'knownUnits',
+  'measurementBounds',
   'normalizeAliases',
   'normalizeFaultType',
   'normalizePackEntries',
@@ -1041,11 +1043,13 @@ const TESTED = [
   'parseTimestamp',
   // util/unit.ts
   'UnitError',
+  'clampToUnit',
   'convertUnit',
   'dimensionOf',
   'getUnitDef',
   'isConvertible',
   'knownUnits',
+  'measurementBounds',
 ];
 
 /**

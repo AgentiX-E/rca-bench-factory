@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { LogSeverity, SignalPayload, TelemetrySignal } from '../ir/types.js';
+import { clampToUnit } from '../util/unit.js';
 
 /**
  * The corpus's derived telemetry, as a module rather than as a script's private helper.
@@ -22,6 +23,20 @@ import type { LogSeverity, SignalPayload, TelemetrySignal } from '../ir/types.js
  * *before* the fault: 0, 0.1, 0.2, 0.3 in a text that says the failures began at the change. The
  * pre-window of a counter is now flat at its baseline, which is what "the counter had accumulated
  * this much by the start of the window" means.
+ *
+ * ## A reading is a measurement, so it stays inside its unit
+ *
+ * The noise below is a fraction of the reading, which is fine in the middle of a scale and wrong at
+ * its edges: a share of exactly 1 -- "every request 503'd" -- came out as `1.02`, a **102 % share**
+ * that no system can produce, and a negative duration is not a small one either. `clampToUnit` keeps
+ * every noisy sample inside the range `util/unit.ts` states for its unit, and what that produces at a
+ * ceiling is the physically correct reading rather than a compromise: noise at a bound is one-sided,
+ * because there is nothing above 100 % to be noisy about.
+ *
+ * Only the *noisy* samples are clamped. A counter's samples are exact totals -- its baseline, then
+ * its increments -- and clamping those would silently rewrite arithmetic the declaration states. A
+ * declaration that is itself outside its unit's range is a bad annotation, and `check-fault-cases`
+ * refuses it, which is where a bad annotation belongs (finding 252).
  *
  * ## What is fixed rather than random
  *
@@ -130,11 +145,24 @@ function at(epochMs: number): string {
 }
 
 /**
+ * A level reading with the sampling noise applied, kept inside the unit's range.
+ *
+ * The one place where "a measurement plus noise" happens, so the bound is applied wherever noise is
+ * and nowhere else. `clampToUnit` leaves the value alone when the declaration names no unit or names
+ * one the table does not know, because then there is no range to keep it in.
+ */
+function withNoise(level: number, index: number, unit: string | undefined): number {
+  return clampToUnit(unit, level * (1 + SERIES_JITTER[index]! * 0.02));
+}
+
+/**
  * A declared series, expanded into one signal per sample.
  *
- * The last post-onset sample is exactly `post` and the pre-window is drawn around `baseline`, so the
- * two numbers the declaration states are the two numbers a reader can find in the output -- which is
- * what makes a checkpoint asserting `>= post` a statement about data rather than about a file.
+ * The last post-onset sample is `post` up to the sampling noise, and exactly `post` when the reading
+ * sits at a bound of its unit -- the `+0.3 %` arm would otherwise overshoot, and the clamp is what
+ * makes a share of 1 read as 1. The pre-window is drawn around `baseline`, so the two numbers the
+ * declaration states are the two numbers a reader can find in the output -- which is what makes a
+ * checkpoint asserting `>= post` a statement about data rather than about a file.
  */
 export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime): TelemetrySignal[] {
   const windowStartMs = Date.parse(when.windowStart);
@@ -155,7 +183,7 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
     const value =
       derivation === 'counter'
         ? declaration.baseline
-        : declaration.baseline * (1 + SERIES_JITTER[index]! * 0.02);
+        : withNoise(declaration.baseline, index, declaration.unit);
     out.push({ timestamp: at(windowStartMs + index * preSpacing), value });
   }
 
@@ -169,7 +197,7 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
           : declaration.post;
     // The jitter is applied to the level a sample sits at, so a spike's excursion is post-sized and
     // its return is baseline-sized, and a counter's accumulation is exact because it is a total.
-    const value = derivation === 'counter' ? level : level * (1 + SERIES_JITTER[index]! * 0.02);
+    const value = derivation === 'counter' ? level : withNoise(level, index, declaration.unit);
     out.push({ timestamp: at(onsetMs + (index + 1) * postSpacing), value });
   }
 

@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-runtime-pod-kill-user-profile",
+  "why": "Telemetry for the pod-kill case, and the corpus's first series whose post value is at the ceiling of its unit: `http_503_ratio` goes to exactly 1, because the sentence says every request failed. That is why this case waited a round -- the expansion applies +/-2% sampling noise to every level reading, so a share of 1 came out as 1.02, a 102% share no system can produce, and no declaration could avoid it (anything at or below 0.98 understates the sentence). The clamp in fault/derived-telemetry.ts holds a noisy sample to the range util/unit.ts states for its unit, and at a ceiling the noise is one-sided, which is what a real measurement at 100% looks like. The node condition is the second half of that: it reads 1 both before and after, and 1 is the largest value the scale has room for. It is also the control -- the node never left ready, which is what rules the node out.",
+  "series": [
+    {
+      "service": "user-profile",
+      "metric": "http_503_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 1,
+      "quote": "during which every request 503'd",
+      "why": "the checkpoint `cp-503-share` holds the whole share: with one replica there was nothing for a request to land on, so this is the outage rather than a degradation"
+    },
+    {
+      "service": "user-profile",
+      "metric": "pod_ready_after_start_seconds",
+      "unit": "s",
+      "baseline": 0,
+      "post": 40,
+      "quote": "a fresh one took 40 seconds to become ready",
+      "why": "the checkpoint `cp-ready-seconds` holds the text's forty seconds; zero is what the reading is when no pod is starting, which is the state before the kill"
+    },
+    {
+      "service": "worker-3",
+      "metric": "node_condition_ready",
+      "unit": "1",
+      "baseline": 1,
+      "post": 1,
+      "quote": "Node conditions were healthy",
+      "why": "the checkpoint `cp-node-healthy` holds the one: the node stayed ready throughout, so the eviction decision came from pressure measured for another workload, not from anything wrong here"
+    }
+  ]
+}

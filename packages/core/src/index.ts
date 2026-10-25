@@ -291,13 +291,15 @@ export {
 export type { ParsedTime, TimeLayout } from './util/time.js';
 
 export {
+  clampToUnit,
   convertUnit,
   dimensionOf,
   getUnitDef,
   isConvertible,
   knownUnits,
+  measurementBounds,
 } from './util/unit.js';
-export type { Dimension } from './util/unit.js';
+export type { Dimension, MeasurementBounds } from './util/unit.js';
 
 export {
   detectFileLayout,

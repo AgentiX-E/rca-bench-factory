@@ -336,6 +336,29 @@ for (const entry of index.cases) {
             `which is not one of ${DERIVATIONS.join(' / ')}`,
         );
       }
+      // A reading has to be a value its unit admits. The expansion clamps the *noise* into the unit's
+      // range, and this is the other half: the number the annotation states is the author's, and a
+      // share of 120 % in `%` is not a noisy measurement, it is a number no measurement can be. The
+      // bound comes from `util/unit.ts`, so a unit with no stated ceiling (`ms`, `count`) has none
+      // here either -- inventing one would be this rule doing exactly what it exists to prevent
+      // (finding 252).
+      const bounds = typeof one?.unit === 'string' ? core.measurementBounds(one.unit) : undefined;
+      if (bounds !== undefined) {
+        // `[0, 1]` when the ceiling is a number and `[0, ∞)` when it is not: a closed bracket on an
+        // infinite bound would be a claim that the range ends somewhere.
+        const unbounded = bounds.max === Number.POSITIVE_INFINITY;
+        const range = `[${String(bounds.min)}, ${unbounded ? '∞)' : `${String(bounds.max)}]`}`;
+        for (const point of core.SERIES_POINTS) {
+          const value = one?.[point];
+          if (typeof value !== 'number') continue;
+          if (value < bounds.min || value > bounds.max) {
+            problems.push(
+              `'${caseId}' declares ${point} ${String(value)} for '${String(one?.metric)}' in ` +
+                `'${one.unit}', and a reading in '${one.unit}' lies in ${range}`,
+            );
+          }
+        }
+      }
     }
     const logs = Array.isArray(declaration.logs) ? declaration.logs : [];
     for (const one of logs) {

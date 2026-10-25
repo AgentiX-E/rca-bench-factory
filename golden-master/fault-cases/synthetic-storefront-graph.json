@@ -123,6 +123,24 @@
       "kind": "container",
       "name": "media-transcoder-app",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/user-profile",
+      "kind": "service",
+      "name": "user-profile",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/user-profile-0",
+      "kind": "pod",
+      "name": "user-profile-0",
+      "aliases": []
+    },
+    {
+      "entityId": "node:synthetic-storefront/worker-3",
+      "kind": "node",
+      "name": "worker-3",
+      "aliases": []
     }
   ],
   "edges": [
@@ -185,6 +203,16 @@
       "from": "pod:synthetic-storefront/media-transcoder-0",
       "to": "container:synthetic-storefront/media-transcoder-app",
       "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/user-profile",
+      "to": "pod:synthetic-storefront/user-profile-0",
+      "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/worker-3",
+      "to": "pod:synthetic-storefront/user-profile-0",
+      "relation": "hosts"
     }
   ]
 }

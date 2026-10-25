@@ -4445,3 +4445,86 @@ probe ever passes" -- which is also the sentence that rules the liveness probe o
 | the guard | **8 of 30**; **23 of 23** references resolve by kind; **0 of 20** comparable assertions fail; RE1 8 / 0 empty, RE2 8 / 10, RE3 1 / 1 / 7 skipped |
 | the baselines | both place the root cause in top-K for every case, including the new one |
 | `core` / repo | **186 / 4580** · **190 / 4767**; coverage 99.97 / 99.76 / 100 / 99.97 |
+
+## Finding 252 — a share of 102 %, and a fixture that had been lying for three rounds
+
+Finding 250 refused `runtime-pod-kill-user-profile` for a reason that had nothing to do with the
+incident: its symptom is "during which every request 503'd", a share of exactly **1**, and the
+expansion applies ±2 % of sampling noise to every level reading. A share of 1 with that noise is
+`1.02` -- **a 102 % share**, which no system can produce. The annotation could not fix it either:
+anything at or below `0.98` understates the sentence.
+
+### The repair has two halves, and they are different rules
+
+`util/unit.ts` now states the range a reading can occupy, beside the conversion factors that are
+already there:
+
+| unit | range | why |
+| --- | --- | --- |
+| `1` | `[0, 1]` | a share is a fraction of a whole |
+| `%` | `[0, 100]` | same dimension, different scale -- the ceiling is **per unit**, not per dimension |
+| `ms`, `s`, `count`, `By`, `rps`, `core`, `mcore` | `[0, ∞)` | every unit here counts something, and none of them is signed |
+
+- **A declared reading out of range is refused**, by the guard, with the point, the metric, the unit
+  and the range in the message. `post: 120` in `%` is a bad annotation, and a bad annotation belongs
+  in a refusal rather than in a clamp.
+- **A derived sample out of range is clamped**, in the expansion, at the one place where noise is
+  applied. At a bound the noise becomes one-sided, which is not a compromise but the correct model: a
+  measurement at 100 % has nothing above it to be noisy about.
+
+A counter is not clamped, and that is deliberate. Its samples are exact totals -- `baseline`, then its
+increments -- and clamping an exact total would silently rewrite the declaration's own arithmetic.
+
+### What the rule found in a test fixture, before it was ever asked about the corpus
+
+The negative control for G4's two-solver requirement declares four services, one of them a load
+generator whose `request_rate_rps` goes 100 → 300 **in unit `1`**. That is a rate declared in the
+dimensionless ratio unit, and every unit rule the corpus had passed it, because `1` is a published
+unit and nothing asked what a reading *in* it can be.
+
+The bounds rule asked, found that 100 is not a share, and the clamp then flattened the series to 1 --
+so the fixture stopped being a negative control and the case was accepted. The failure surfaced as
+`expected 'is not solvable by both baselines'`, one layer away from its cause, which is how a
+modelling error usually arrives. The unit is now `rps`, and the fixture is the same negative control
+it was written to be, with `peak-z-by-service=2, median-shift-by-service=4` -- the numbers finding 251
+left behind.
+
+### The ninth case
+
+`history-runtime-pod-kill-user-profile` is the corpus's ninth case and its second `runtime` one. The
+text's four sentences separate cleanly, and the separation is the point:
+
+| layer | quote | why |
+| --- | --- | --- |
+| entity | "The user-profile pod was terminated without a shutdown hook at 14:07" | the thing that stopped |
+| fault | "this was the kubelet acting on an eviction decision made for a different workload on the same node" | the cause, outside the application entirely |
+| process | "a fresh one took 40 seconds to become ready, during which every request 503'd" | the propagation: one replica, no readiness, every request failed |
+| evidence | "Node conditions were healthy and memory was well under the limit" | the control that rules out the node and the pod's own memory |
+
+Three series: `http_503_ratio` 0 → **1** (the reading this round made expressible),
+`pod_ready_after_start_seconds` 0 → 40 s, and `node_condition_ready` 1 → 1 on `worker-3` -- a
+condition that never moved, and whose checkpoint `== 1` holds only because the clamp keeps a healthy
+reading at its own ceiling rather than at 1.02. The graph grows to 22 entities / 14 edges, with
+`node:worker-3` `hosts` the pod: the corpus's first node, and the first causal chain that starts
+above the workload it breaks.
+
+### The absence the corpus still cannot state
+
+The text's last sentence is *"No application exception was logged because the process never got to
+handle a signal."* That is evidence, and it is evidence of **nothing happening**. A `log` checkpoint
+names a declared line and asserts something about its body, so the corpus can say a line exists and
+cannot say no line exists. Annotating it would mean declaring a log line that the text does not
+contain, which is the one thing the guard refuses outright. It is recorded as an open item.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the bounds | `1 → [0,1]`, `% → [0,100]`, everything else `[0, ∞)`; unknown units have none and are left alone |
+| the clamp | a share of 1 reads `1, 1, 0.98, 1, ...`, never above 1; a `%` series at 99 → 100 clamps its pre-window's `+2 %` arm too |
+| the refusal | `post 1.2` in `1` and `baseline -1` in `ms` both refused, with the range in the message; `MiB/s` gets no bounds because the table has none |
+| the fixture | the load generator's rate moved from `1` to `rps`; the negative control reproduces its own numbers |
+| the corpus | **9 of 30**; **26 of 26** references resolve by kind (20 series, 2 computed from 4 readings, 3 configuration); **0 of 23** comparable assertions fail; 22 entities / 14 edges |
+| the exports | RE1 9 cases / 0 empty, RE2 9 / 12, RE3 1 / 1 / 8 skipped |
+| `core` / repo | **186 / 4590** · **190 / 4777**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 8,
+  "min": 9,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -240,6 +240,36 @@
           "layer": "evidence",
           "quote": "Liveness probes are not the cause: the exits all predate the probe window",
           "why": "the sentence that excludes the probe as the cause, and the one the zero checkpoint rests on"
+        }
+      ]
+    },
+    {
+      "caseId": "history-runtime-pod-kill-user-profile",
+      "sampleId": "runtime-pod-kill-user-profile",
+      "case": "history-runtime-pod-kill-user-profile.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-runtime-pod-kill-user-profile.signals.json",
+      "why": "annotated from the incident text of `runtime-pod-kill-user-profile`, and the case the corpus's noise model could not express until this round: the symptom is a share of exactly 1, and a share of 1 with two per cent of sampling noise is a share of 1.02. Three layers keep the eviction out of the application: the entity layer is the pod, which is the thing that stopped; the fault layer is the kubelet acting on an eviction decision taken for a different workload, which is where the cause sits; the process layer is the forty seconds without a ready replica, which is what turned it into failed requests. The evidence layer is the share, the readiness time, and a node condition that never moved -- and that last one is a control rather than an observation, because `Node conditions were healthy` is the sentence that rules the node out. The text also says nothing was logged; that absence is not a checkpoint, because a `log` reference asserts that a line exists, and it is recorded as an open item rather than annotated as something it is not.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The user-profile pod was terminated without a shutdown hook at 14:07",
+          "why": "the entity the case is about, named with the termination and the fact that no hook ran"
+        },
+        {
+          "layer": "fault",
+          "quote": "this was the kubelet acting on an eviction decision made for a different workload on the same node",
+          "why": "the cause, which is outside the application entirely: another workload's pressure, measured on a shared node"
+        },
+        {
+          "layer": "process",
+          "quote": "a fresh one took 40 seconds to become ready, during which every request 503'd",
+          "why": "the propagation, which is the whole outage: one replica, no readiness for forty seconds, every request failed"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Node conditions were healthy and memory was well under the limit",
+          "why": "the control -- the node's own condition and the pod's own memory are both fine, which is what rules out the two explanations the text raises and rejects"
         }
       ]
     }

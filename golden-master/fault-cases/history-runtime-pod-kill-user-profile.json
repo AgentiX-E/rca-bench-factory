@@ -1,0 +1,109 @@
+{
+  "caseId": "history-runtime-pod-kill-user-profile",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-27T14:07:00.000Z",
+  "window": {
+    "start": "2026-09-27T13:55:00.000Z",
+    "end": "2026-09-27T14:27:00.000Z"
+  },
+  "fault": {
+    "type": "pod-kill",
+    "category": "runtime",
+    "injectionMethod": "historical",
+    "parameters": {
+      "pod": "user-profile-0",
+      "node": "worker-3",
+      "readyAfterSeconds": {
+        "value": 40,
+        "unit": "s"
+      },
+      "evictionTrigger": "another-workload-on-the-same-node"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "pod:synthetic-storefront/user-profile-0",
+    "rootCauseComponent": "user-profile",
+    "rootCauseReason": "The kubelet terminated the user-profile pod at 14:07 without letting it run a shutdown hook, acting on an eviction decision taken for a different workload on the same node. Nothing in the pod or in the application explains it: memory was well under the limit, the node's conditions were healthy, and no exception was logged because the process never received a signal it could handle. The service had no ready replica for the forty seconds a replacement took to start, and every request in that window failed.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "http_503_ratio",
+        "description": "the whole request share fails for the readiness window, which is what an evicted single-replica service looks like from outside"
+      },
+      {
+        "type": "metric",
+        "ref": "pod_ready_after_start_seconds",
+        "description": "the replacement's time to readiness, which is the length of the outage rather than a symptom of the application"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "node:synthetic-storefront/worker-3",
+        "toEntityId": "pod:synthetic-storefront/user-profile-0",
+        "mechanism": "the kubelet acts on an eviction decision taken for another workload on the node and terminates the pod without a shutdown hook",
+        "evidenceRefs": [
+          "cp-node-healthy"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/user-profile-0",
+        "toEntityId": "service:synthetic-storefront/user-profile",
+        "mechanism": "the service is left with no ready replica for the forty seconds the replacement takes to start, so every request in that window fails",
+        "evidenceRefs": [
+          "cp-503-share",
+          "cp-ready-seconds"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-503-share",
+        "entityRef": "service:synthetic-storefront/user-profile",
+        "signalRef": "http_503_ratio",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "every request fails for the outage window -- the sentence that says the whole service was gone rather than degraded, and the reading that could not be declared before the sampling noise was held to the unit's range"
+      },
+      {
+        "checkpointId": "cp-ready-seconds",
+        "entityRef": "pod:synthetic-storefront/user-profile-0",
+        "signalRef": "pod_ready_after_start_seconds",
+        "comparator": ">=",
+        "value": 40,
+        "unit": "s",
+        "description": "the replacement's time to readiness, which is the length of the outage; `>=` because the text gives forty seconds as the wait, not as a bound"
+      },
+      {
+        "checkpointId": "cp-node-healthy",
+        "entityRef": "node:synthetic-storefront/worker-3",
+        "signalRef": "node_condition_ready",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "the node's own condition never left ready, which is what rules the node out as the thing that broke"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "give the workload a disruption budget and spread its replicas across nodes, so an eviction decision taken for one workload cannot leave a service with no ready replica",
+        "target": "service:synthetic-storefront/user-profile"
+      },
+      {
+        "step": 2,
+        "action": "terminate with a grace period that lets the process run its shutdown hook, so a deliberate eviction and an unplanned kill do not look identical from inside the container",
+        "target": "pod:synthetic-storefront/user-profile-0"
+      }
+    ]
+  },
+  "query": "The user-profile pod was terminated at 14:07 and every request 503'd until a replacement was ready forty seconds later. What is the root cause, and why is the node not it?",
+  "answerKeyIsolated": true
+}
