@@ -1,0 +1,108 @@
+{
+  "caseId": "history-config-ingress-timeout-partner-portal",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-23T09:20:00.000Z",
+  "window": {
+    "start": "2026-09-23T09:08:00.000Z",
+    "end": "2026-09-23T09:40:00.000Z"
+  },
+  "fault": {
+    "type": "ingress-timeout-misconfiguration",
+    "category": "config",
+    "injectionMethod": "historical",
+    "parameters": {
+      "ingressRule": "partner-portal",
+      "upstreamReadTimeout": {
+        "value": 1,
+        "unit": "s"
+      },
+      "previousUpstreamReadTimeout": {
+        "value": 600,
+        "unit": "s"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/partner-portal",
+    "rootCauseComponent": "partner-portal",
+    "rootCauseReason": "The ingress annotation set the upstream read timeout to 1s where it had been 600s, and the upload handler needs about eight seconds, so the ingress answered 504 before the handler could finish. Nothing in the application changed and its own logs show the work completing, which is what puts the cause on the ingress rather than on the upload path.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "ingress_504_responses_total",
+        "description": "504 responses begin at the annotation change, and no application series moves"
+      },
+      {
+        "type": "log",
+        "ref": "upload-completed",
+        "description": "the application's own line shows the upload handled to completion, which rules out an application fault"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "external:synthetic-storefront/public-ingress",
+        "toEntityId": "service:synthetic-storefront/partner-portal",
+        "mechanism": "the ingress waited 1s for an upstream read that needs about eight seconds, so it answered 504 while the handler kept working on a request nobody was waiting for any more",
+        "evidenceRefs": [
+          "cp-timeout",
+          "cp-504-responses",
+          "cp-upload-completed"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-timeout",
+        "entityRef": "external:synthetic-storefront/public-ingress",
+        "signalKind": "configuration",
+        "signalRef": "upstreamReadTimeout",
+        "comparator": "==",
+        "value": 1,
+        "unit": "s",
+        "description": "the upstream read timeout the ingress ran with, written as 1s where the previous value was 600s"
+      },
+      {
+        "checkpointId": "cp-504-responses",
+        "entityRef": "service:synthetic-storefront/partner-portal",
+        "signalRef": "ingress_504_responses_total",
+        "comparator": ">=",
+        "value": 1,
+        "unit": "count",
+        "description": "504 responses began after the change; the text states the failure and gives no count, so the series carries the smallest number that says it happened"
+      },
+      {
+        "checkpointId": "cp-handler-seconds",
+        "entityRef": "service:synthetic-storefront/partner-portal",
+        "signalRef": "upload_handler_seconds",
+        "comparator": "==",
+        "value": 8,
+        "unit": "s",
+        "description": "what the upload handler needs, unchanged by the fault -- the control that makes the timeout the cause rather than the handler"
+      },
+      {
+        "checkpointId": "cp-upload-completed",
+        "entityRef": "service:synthetic-storefront/partner-portal",
+        "signalKind": "log",
+        "signalRef": "upload-completed",
+        "comparator": "contains",
+        "value": "upload handled",
+        "description": "the handler's own line, showing it completed the work the ingress had already refused"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "restore the upstream read timeout annotation to 600s",
+        "target": "external:synthetic-storefront/public-ingress"
+      }
+    ]
+  },
+  "query": "Partner portal uploads fail with 504 for files over 5MB after an ingress change. Which component is the root cause, and what about it changed?",
+  "answerKeyIsolated": true
+}

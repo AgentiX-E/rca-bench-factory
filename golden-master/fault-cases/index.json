@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 5,
+  "min": 6,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -150,6 +150,36 @@
           "layer": "evidence",
           "quote": "Roughly 3% of exports fail",
           "why": "the only number the text states, and the checkpoint that carries it"
+        }
+      ]
+    },
+    {
+      "caseId": "history-config-ingress-timeout-partner-portal",
+      "sampleId": "config-ingress-timeout-partner-portal",
+      "case": "history-config-ingress-timeout-partner-portal.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-config-ingress-timeout-partner-portal.signals.json",
+      "why": "annotated from the incident text of `config-ingress-timeout-partner-portal`, and the corpus's first `config` case and its first whose root cause is not in the application at all. The mechanism is one number against another: the ingress waits 1s for a read the handler needs about eight seconds to finish, so the two causal layers are the annotation (fault) and what the application did anyway (process -- its own logs show the work completing, which is why this is a timeout and not a crash). The evidence is split for the same reason: the only quantities the text gives are the two timeouts and the handler's need, plus the fact that 504s began, so the checkpoints are a configuration fact cited from the case's own parameters, the existence of the failures, the unchanged handler, and the log line that shows the work finishing after the client was gone. The previous value of 600s is declared beside the injected one rather than turned into a second checkpoint: it is history, not something the case ran under.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Partner portal uploads began failing with 504 for files over 5MB",
+          "why": "the service the failures are reported against, and the size threshold that scopes them"
+        },
+        {
+          "layer": "fault",
+          "quote": "The annotation that sets the upstream read timeout was written as 1s where the previous value was 600s",
+          "why": "the configuration change itself, in both its value and the value it replaced"
+        },
+        {
+          "layer": "process",
+          "quote": "its own logs show the work completing",
+          "why": "what the application did while the ingress was refusing: the work finished, which turns the 504 into a timeout rather than a failure of the handler"
+        },
+        {
+          "layer": "evidence",
+          "quote": "the upload handler needs about eight seconds",
+          "why": "the duration the 1s timeout has to be compared with, and the one series that does not move"
         }
       ]
     }

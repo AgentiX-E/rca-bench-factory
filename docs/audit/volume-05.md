@@ -4169,3 +4169,76 @@ case's own statement, and the unit travels with it instead of being reintroduced
 | the comparison | one implementation: `compareExactly`; `holdsWithTolerance` is it plus the tolerance |
 | `core` / repo | **185 / 4556** · **189 / 4743**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | tests | 8 over `readDeclaredQuantity`, 8 over the guard's configuration rules, 6 over `cores`/`mcore`, 1 over `compareExactly` |
+
+## Finding 248 — the corpus's first fault that is not in the application
+
+The sixth case is `history-config-ingress-timeout-partner-portal`, and it is the first whose
+`FaultCategory` is `config` and whose root cause is outside every process the text names:
+
+> Partner portal uploads began failing with 504 for files over 5MB, immediately after an ingress
+> change. The annotation that sets the upstream read timeout was written as 1s where the previous
+> value was 600s, and the upload handler needs about eight seconds. Nothing in the application
+> changed and its own logs show the work completing. Restoring the annotation to 600s fixed every
+> failure.
+
+### What the four layers had to say, and why each is where it is
+
+| layer | quote | why there |
+| --- | --- | --- |
+| entity | "Partner portal uploads began failing with 504 for files over 5MB" | the service the failures are reported against, and the size threshold that scopes them |
+| fault | "The annotation that sets the upstream read timeout was written as 1s where the previous value was 600s" | the change itself, in both its value and the value it replaced |
+| process | "its own logs show the work completing" | what the application did while the ingress refused -- the sentence that turns a 504 into a timeout rather than a crash |
+| evidence | "the upload handler needs about eight seconds" | the duration the 1s has to be compared with |
+
+The graph grows by two entities, and one of them is the corpus's first `external`:
+`service:partner-portal` and `external:public-ingress`, with the ingress `calls` the service. The
+root cause is the *service*, because that is what an operator names; the ingress is the mechanism the
+chain passes through, and it is therefore the entity the configuration checkpoint sits on.
+
+The evidence layer is four checkpoints and no more, because the text gives four facts: the timeout
+(1s, a configuration fact cited from `fault.parameters.upstreamReadTimeout`), the failures (504s
+began), the handler's need (8s, unchanged), and the log line showing the work finishing. The
+previous timeout of 600s is declared as a parameter and deliberately **not** a checkpoint: the case
+did not run under it, so a checkpoint asserting it would be asserting history.
+
+### The number the text does not give
+
+"How many 504s" is never stated. The series is `baseline: 0, post: 1` and the checkpoint asserts
+`>= 1`, so the annotation says *that* failures happened rather than pretending to measure a rate
+nobody measured. The `why` in the signals file says exactly that, because a reviewer who reads
+`post: 1` as a count of the incident's failures would be reading a floor as a measurement.
+
+### A defect this case had to route around, and cannot yet fix
+
+The obvious shape for "a count that starts at zero" is `derivation: 'counter'`. Expanding it reveals
+that `expandSeries` gives a counter's *pre-window* samples `baseline + 0.1 * index`:
+
+| index | 0 | 1 | 2 | 3 |
+| --- | --- | --- | --- | --- |
+| pre-window, baseline 0 | 0 | 0.1 | 0.2 | 0.3 |
+
+For a baseline of 0 that is a series which was **already accumulating before the onset** -- four
+hundredths of a 504 per sample, in a text that says uploads *began* failing. The same formula gives
+`12, 12.1, 12.2, 12.3` for the throttling counter, where the text does say the counters "climbed the
+whole time", so the increment looks like an attempt to keep a baseline from being degenerate and is
+wrong exactly where the baseline is zero.
+
+The case therefore uses `step`, which is what the text describes: it was not happening, then it was.
+The expansion itself is **not repaired here**, and the reason is a property of this repository's
+standards rather than of the fix: the expansion lives inside `scripts/check-fault-cases.mjs`, and
+nothing observes the values it produces -- the guard prints counts of files and checkpoints, not
+samples. A change to it would be a change no test could disagree with. The repair is to move the
+expansion into `core` where a test can hold the pre-window to its baseline, and that is a round of
+its own; this one records the numbers and leaves the item open.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **6 of 30** samples carry a four-layer case; floor 6 |
+| the layers | one source per layer, each quoted verbatim; the process layer is the application's behaviour rather than the failure |
+| the graph | 14 entities / 9 edges, and the corpus's first `external` |
+| the checkpoints | **16 of 16** resolve by kind -- 12 over a series, 2 computed from 4 readings, 2 citing a declared configuration fact; **0 of 14** comparable assertions fail |
+| the exports | RE1 6 cases, 0 files with no rows; RE2 6 cases, 8 files with no rows; RE3 1 case written, 1 file with no rows, 5 skipped |
+| the baselines | both place `partner-portal` inside top-K, so G4 holds with two solvers |
+| `core` / repo | **185 / 4556** · **189 / 4743**; coverage 99.97 / 99.76 / 100 / 99.97 |

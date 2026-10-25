@@ -2900,3 +2900,56 @@ the meta-gate at **46 gates, 46 caught, 0 survived**; core **185 / 4556**, cli 4
   algebra even though `util/unit.ts` has both]`
 - **25 samples still carry no case.** `[open: 5 of 30 carry one, and the arithmetic is now done from
   the two arrays rather than from the sentence beside them]`
+
+## v2.75 — the sixth case, and the first fault that is not in the application
+
+**What this round is.** The corpus is the long pole -- 5 of 30 samples carry a four-layer case -- and
+every annotation round so far has found something the guard could not see. This one adds
+`history-config-ingress-timeout-partner-portal`: the first `config` case, and the first whose root
+cause is outside every process the text names.
+
+**The four layers, and why each quote is where it is.** Entity: the partner portal, because that is
+what the failures are reported against. Fault: the annotation that wrote 1s where 600s had been.
+Process: "its own logs show the work completing" -- the application's behaviour is the discriminator,
+and it is what makes this a timeout rather than a crash. Evidence: the handler's eight seconds, the
+existence of 504s, the unchanged handler as a control, and the log line.
+
+**The graph gains the corpus's first `external`.** `external:public-ingress` calls
+`service:partner-portal`; the root cause is the service, because that is the name an operator gives,
+and the ingress is the mechanism -- which is why the configuration checkpoint sits on it. 14 entities
+/ 9 edges.
+
+**No number for the failures.** The text says uploads began failing and never says how many. The
+series is `baseline: 0, post: 1` and the checkpoint asserts `>= 1`, so the annotation says that
+failures happened instead of measuring a rate nobody measured.
+
+**A defect found by needing a counter and choosing not to use one.** `expandSeries` gives a counter's
+pre-window samples `baseline + 0.1 * index`, which for a baseline of zero is a series that was
+already accumulating before the onset -- failures before the change, in a text that says they began
+then. The case uses `step`, which is what the text describes. The expansion is not repaired, and the
+reason is the standard rather than the difficulty: it lives inside the guard's script where nothing
+observes the values it produces, so a change to it would be a change no test could disagree with. The
+item is open, with the numbers written down.
+
+**Acceptance.** `check-fault-cases` prints **6 of 30**, `16 of 16` references resolved by kind (12
+series, 2 computed from 4 readings, 2 configuration), `0 of 14` comparable assertions failing; RE1 6
+cases / 0 empty files, RE2 6 / 8, RE3 1 written / 1 empty / 5 skipped; both baselines place
+`partner-portal` in top-K. Guard tests 84 (the pinned counts moved by hand: `5 of 30` → `6 of 30`,
+`filled 12` → `filled 14`, `RE2 … 7` → `8`, `RE3 … 4 skipped` → `5`); typecheck, lint, `docs:check`
+green; the meta-gate at **46 gates, 46 caught, 0 survived**; core **185 / 4556**, cli 4 / 187, repo
+**189 / 4743**; coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–248.
+
+### Left open
+
+- **A counter's pre-window is not its baseline.** `[open: `expandSeries` writes `baseline + 0.1 *
+  index`, so a counter with `baseline: 0` accumulates 0.1 per sample before the onset -- a claim the
+  text does not make. It cannot be fixed here because nothing observes the expanded values; the fix
+  needs the expansion moved into `core` with a test that holds the pre-window to the baseline]`
+- **The parameter is tied to the text only through the fault layer's quote.** `[open: if `1s` in
+  `upstreamReadTimeout` is wrong, the checkpoint and the parameter are wrong together and agree]`
+- **24 samples still carry no case.** `[open: 6 of 30 carry one, and five of the eight categories are
+  now represented (`resource`, `network`, `middleware`, `code`, `config`); `runtime` and `dependency`
+  are not, and the remaining 24 samples hold both]`
+
+The v2.74 item about a green suite exiting 1 is unchanged this round: `e7f28b23` reported 4530 of 4530
+tests passing with one unhandled `[vitest-worker]` timeout, and no later run has repeated it.

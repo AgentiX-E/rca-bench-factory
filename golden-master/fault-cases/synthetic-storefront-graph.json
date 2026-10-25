@@ -81,6 +81,18 @@
       "kind": "service",
       "name": "export-worker",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/partner-portal",
+      "kind": "service",
+      "name": "partner-portal",
+      "aliases": []
+    },
+    {
+      "entityId": "external:synthetic-storefront/public-ingress",
+      "kind": "external",
+      "name": "public-ingress",
+      "aliases": []
     }
   ],
   "edges": [
@@ -122,6 +134,11 @@
     {
       "from": "service:synthetic-storefront/export-worker",
       "to": "mq:synthetic-storefront/order-events",
+      "relation": "calls"
+    },
+    {
+      "from": "external:synthetic-storefront/public-ingress",
+      "to": "service:synthetic-storefront/partner-portal",
       "relation": "calls"
     }
   ]

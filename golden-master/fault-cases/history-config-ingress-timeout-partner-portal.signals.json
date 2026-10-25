@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-config-ingress-timeout-partner-portal",
+  "why": "Telemetry for the ingress timeout case, derived from the numbers the text states. This case is the corpus's first whose fault leaves the application untouched, so the two series are deliberately of different kinds: the failure is a count that starts at zero and the control is a duration that does not move. The 504 series is a `step` rather than a `counter` because the text says uploads *began* failing -- there were none before the change, and a counter expanded from a baseline of zero is a series that was already accumulating. The count is one because the text states that failures happened and gives no number: one is the smallest count that says so, and the checkpoint asserts `>= 1` rather than an equality so the series is not pretending to measure a rate nobody measured.",
+  "series": [
+    {
+      "service": "partner-portal",
+      "metric": "ingress_504_responses_total",
+      "unit": "count",
+      "baseline": 0,
+      "post": 1,
+      "quote": "began failing with 504 for files over 5MB",
+      "why": "the checkpoint `cp-504-responses` holds the existence of the failure, which is all the text gives: a 504 that was not happening and then was"
+    },
+    {
+      "service": "partner-portal",
+      "metric": "upload_handler_seconds",
+      "unit": "s",
+      "baseline": 8,
+      "post": 8,
+      "quote": "the upload handler needs about eight seconds",
+      "why": "the control, and the number the timeout has to be compared with: it is the same before and after, which is what makes the ingress the cause rather than the handler"
+    }
+  ],
+  "logs": [
+    {
+      "service": "partner-portal",
+      "id": "upload-completed",
+      "body": "upload handled in 8210 ms for a 6.1 MiB file, response written after the client had gone",
+      "quote": "its own logs show the work completing",
+      "why": "the application finished the work the ingress had already given up on -- the sentence that turns a 504 into a timeout rather than a crash"
+    }
+  ]
+}
