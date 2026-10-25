@@ -3696,3 +3696,64 @@ finding says so rather than claiming a fix it cannot demonstrate.
 | the runs | **4 consecutive full runs green** after the fix, against 1 failure in 3 before |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing `check-doc-counts.mjs` turns **54** tests red |
 | `core` / repo | **182 / 4457** · **186 / 4644** |
+
+## Finding 242 — RE3's second blocker, and a mechanism that is an absence
+
+Two rounds ago RE3 had two independent reasons to write nothing: it needs traces, and it selects on
+`category === 'code'` with none in the corpus. The first was fixed when the cart case got spans
+(finding 240). This round removes the second.
+
+### The fifth case
+
+`history-unhandled-exception-export`, from `code-unhandled-exception-export`. Its mechanism is an
+**absence**: the worker's CSV writer throws on an embedded newline, the exception escapes the
+worker's own handler, and no nack is ever sent -- so the broker sees a closed connection, the job is
+never retried, and a dead job looks like a finished one.
+
+That shapes all four layers:
+
+| layer | what it had to be |
+| --- | --- |
+| process | the sentence about **what the broker saw** (`the connection close rather than a nack`), because the causal step *is* the missing signal |
+| evidence | **split deliberately** -- the only number the text states (3% failures) is a metric checkpoint, and the mechanism exists only as a log line, so the second checkpoint is a quotation with `== 1 count` |
+| fault | the exception and its trigger in one clause, because that clause is the whole fault |
+| entity | `export-worker`, added to the graph with an edge to the topic it publishes to |
+
+**No span, and that is printed rather than hidden**: the text gives a consequence and no duration, and
+a span without a duration would be a number nobody wrote. So RE3 writes the case with exactly one
+data-less file -- its `traces.csv` -- and the line says so.
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 ready · rcaeval-re3 ready
+check-fault-cases: export RE1 5 case(s) written, 0 file(s) with no rows · RE2 5 case(s) written, 7 file(s) with no rows · RE3 1 case(s) written, 1 file(s) with no rows, 4 skipped
+check-fault-cases: OK (5 of 30 ...; floor 5)
+```
+
+`RE3 0 case(s) written, 4 skipped` had been that line's tail for three rounds.
+
+### What this round did not find
+
+No defect in the code. What it produced instead was **three counts that had to be moved by hand** --
+`4 of 30` became `5 of 30`, `entity filled 11` became `12`, and `RE2 ... 6 file(s)` became `7` -- and
+each one failed a test until it was updated. That is the pinning working exactly as intended, and it
+is also the cost of pinning: **every annotated case edits three assertions in two files**, and a
+round that forgot one would be caught, which is the point.
+
+### The 3% now exists in three places
+
+`fault.parameters.failureShare: 0.03`, the checkpoint's `value: 3` with `unit: '%'`, and the series'
+`post: 3`. Nothing ties them together, and nothing would notice if one drifted. They are three
+statements of one fact in three vocabularies -- a probability, a percentage, and a series value --
+and the honest description is that the corpus has no mechanism for "the same number, said twice".
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **5 of 30**, floor 5; the first code-level case |
+| the graph | twelve entities, eight edges; `export-worker` calls the topic it publishes to |
+| the export | RE1 5 / 0 data-less; RE2 5 / 7; **RE3 1 written, 1 data-less, 4 skipped** |
+| the layers | one metric checkpoint and one log checkpoint, because the mechanism has no number |
+| the assertions moved | three counts, each caught by a failing test rather than by memory |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **104** tests red in 1 of 2 naming files |
+| `core` / repo | **182 / 4458** · **186 / 4645** |

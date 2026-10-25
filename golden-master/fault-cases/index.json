@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
-  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Four cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 4,
+  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
+  "min": 5,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -120,6 +120,36 @@
           "layer": "evidence",
           "quote": "the disk watermark crossed 92 percent",
           "why": "the checkpoint's value, stated by the broker rather than inferred"
+        }
+      ]
+    },
+    {
+      "caseId": "history-unhandled-exception-export",
+      "sampleId": "code-unhandled-exception-export",
+      "case": "history-unhandled-exception-export.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-unhandled-exception-export.signals.json",
+      "why": "annotated from the incident text of `code-unhandled-exception-export`, and the corpus's first code-level case. The mechanism is an absence -- the worker never sends a nack, so the broker sees a closed connection and the job is never retried -- which is why the process layer quotes the sentence about what the broker saw rather than a sentence about the failure itself. The evidence is split deliberately: the only number the text states is the failure share, and the mechanism exists only as a log line, so the two checkpoints are a measurement and a quotation. There is no span because the text gives no duration.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The export worker dies mid-job and the job is never retried",
+          "why": "the workload, named with the property that makes it a code fault -- it dies without reporting"
+        },
+        {
+          "layer": "fault",
+          "quote": "an unhandled TypeError in the CSV writer when a column contains an embedded newline",
+          "why": "the exception and its trigger, which is the whole mechanism in one clause"
+        },
+        {
+          "layer": "process",
+          "quote": "the broker sees the connection close rather than a nack",
+          "why": "the shape of the propagation: silence instead of a signal, so the failure is not retried"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Roughly 3% of exports fail",
+          "why": "the only number the text states, and the checkpoint that carries it"
         }
       ]
     }

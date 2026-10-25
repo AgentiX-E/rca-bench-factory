@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4457 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4458 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4644 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4645 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2572,3 +2572,53 @@ volumes, findings 1–241.
   shape -- truncate, slugify, then treat the result as unique -- is what produced the unresolvable
   component names in the extraction key (finding 190). The digest here fixes one instance; the habit
   is what to look for]`
+
+## v2.69 — RE3's second blocker, and a mechanism that is an absence
+
+RE3 had two independent reasons to write nothing: it needs traces, and it selects on
+`category === 'code'` with none in the corpus. v2.68 removed the first. This round removes the
+second, with `history-unhandled-exception-export` from `code-unhandled-exception-export`.
+
+**The mechanism is an absence.** The CSV writer throws on an embedded newline, the exception escapes
+the worker's own handler, and no nack is ever sent -- so the broker sees a closed connection, the job
+is never retried, and a dead job looks like a finished one. That shapes the layers: the process step
+is the sentence about *what the broker saw*, and the evidence is split deliberately, because the only
+number the text states (3% failures) is a metric checkpoint while the mechanism exists only as a log
+line -- so the second checkpoint is a quotation with `== 1 count`.
+
+**No span, and the line says so.** The text gives a consequence and no duration; a span without a
+duration would be a number nobody wrote. So RE3 writes the case with exactly one data-less file.
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 ready · rcaeval-re3 ready
+check-fault-cases: export RE1 5 case(s) written, 0 file(s) with no rows · RE2 5 case(s) written, 7 file(s) with no rows · RE3 1 case(s) written, 1 file(s) with no rows, 4 skipped
+```
+
+`RE3 0 case(s) written, 4 skipped` had been that line's tail for three rounds. `5 of 30`, floor 5.
+
+**No defect in the code this round.** What it produced instead was three counts that had to be moved
+by hand -- `4 of 30` → `5 of 30`, `entity filled 11` → `12`, `RE2 ... 6` → `7` -- each caught by a
+failing test. That is the pinning working, and it is also its cost: every annotation edits three
+assertions in two files.
+
+**The 3% now exists in three places** -- `parameters.failureShare: 0.03`, the checkpoint's `3 %`, and
+the series' `post: 3` -- and nothing ties them together.
+
+**Acceptance.** 56 tests over the guard (one new: the first RE3 case written); typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46
+gates, 46 caught, 0 survived** (hollowing the guard turns 104 tests red); five cases, twelve
+entities; core **182 / 4458**, cli 4 / 187, repo **186 / 4645**; coverage 99.97 / 99.75 / 100 /
+99.97; audit 5 volumes, findings 1–242.
+
+### Left open
+
+- **One number, said three times, with nothing tying the copies.** `[open: the failure share is in
+  `fault.parameters`, in a checkpoint, and in a series. A checkpoint could name the parameter it
+  expresses, and the guard could refuse a disagreement -- which is the shape every other duplicated
+  fact in this corpus was given]`
+- **The second checkpoint is a quotation with a count of one.** `[open: `== 1 count` on a log line is
+  the only way the schema can hold "this line exists", and it reads as a measurement of a quantity
+  that is really a presence. A comparator for existence would say what it means]`
+- **25 samples still carry no case.** `[open: 5 of 30. Two of the three rcaeval suites now export
+  every annotated case; RE3 exports the one whose category it accepts, and the next code-level
+  sample is what would make that more than a single row]`

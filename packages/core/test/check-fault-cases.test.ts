@@ -111,7 +111,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
   it('accepts the shipped corpus and reports how many samples carry a case', () => {
     const result = run([]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('4 of 30 sample(s) carry a four-layer case');
+    expect(result.out).toContain('5 of 30 sample(s) carry a four-layer case');
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
@@ -758,7 +758,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
     // Six, not seven: the cart case's two spans fill one `traces.csv` (finding 240).
-    expect(result.out).toContain('RE2 4 case(s) written, 6 file(s) with no rows');
+    expect(result.out).toContain('RE2 5 case(s) written, 7 file(s) with no rows');
   });
 
   it('accepts a log line whose quote is in its own case text', () => {
@@ -907,5 +907,18 @@ describe('check-fault-cases · a span, which is the last modality and the only o
     ]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares a span without saying what it supports');
+  });
+});
+
+describe('check-fault-cases · the first code-level case', () => {
+  it('writes an RE3 case, which no annotation could do before', () => {
+    // RE3 selects on `category === 'code'`, and the corpus had none: four cases of resource,
+    // network and middleware. The fifth is an uncaught exception in a CSV writer, so the suite that
+    // had always reported `0 case(s) written, 4 skipped` now writes one -- and the reason its
+    // `traces.csv` is empty is that the text states no duration, which is printed rather than
+    // hidden.
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('RE3 1 case(s) written, 1 file(s) with no rows, 4 skipped');
   });
 });

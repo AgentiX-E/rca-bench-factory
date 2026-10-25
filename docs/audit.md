@@ -65,7 +65,7 @@ of the repository cites.
 | [volume-02.md](audit/volume-02.md) | 83–112 | 30 | the stability gate was never run, and four of its properties ... |
 | [volume-03.md](audit/volume-03.md) | 113–159 | 44 | the anchor workflow cited a helper that does not exist, and t... |
 | [volume-04.md](audit/volume-04.md) | 160–195 | 36 | the second backend was declared unimplementable, and the decl... |
-| [volume-05.md](audit/volume-05.md) | 196–241 | 46 | the gate that could not be proved, and the verdict lost on the way out |
+| [volume-05.md](audit/volume-05.md) | 196–242 | 47 | the gate that could not be proved, and the mechanism that is an absence |
 
 **Where a new finding goes.** Append to the last volume. When it would grow past
 280,000 bytes, start the next volume -- one number higher than the last, holding the

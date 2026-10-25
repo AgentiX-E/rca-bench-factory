@@ -75,6 +75,12 @@
       "kind": "node",
       "name": "kafka-broker-3",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/export-worker",
+      "kind": "service",
+      "name": "export-worker",
+      "aliases": []
     }
   ],
   "edges": [
@@ -112,6 +118,11 @@
       "from": "node:synthetic-storefront/kafka-broker-3",
       "to": "mq:synthetic-storefront/ledger-events",
       "relation": "hosts"
+    },
+    {
+      "from": "service:synthetic-storefront/export-worker",
+      "to": "mq:synthetic-storefront/order-events",
+      "relation": "calls"
     }
   ]
 }

@@ -1,0 +1,79 @@
+{
+  "caseId": "history-unhandled-exception-export",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-09T06:20:00.000Z",
+  "window": {
+    "start": "2026-10-09T06:08:00.000Z",
+    "end": "2026-10-09T06:40:00.000Z"
+  },
+  "fault": {
+    "type": "unhandled-exception",
+    "category": "code",
+    "injectionMethod": "historical",
+    "parameters": {
+      "failureShare": 0.03,
+      "trigger": "a CSV column containing an embedded newline"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/export-worker",
+    "rootCauseComponent": "export-worker",
+    "rootCauseReason": "The export worker's CSV writer throws a TypeError when a column contains an embedded newline. The exception escapes the worker's own handler, so the job is never retried: the broker sees the connection close rather than a nack, which is why a dead job looks like a finished one.",
+    "rootCauseIndicators": [
+      {
+        "type": "log",
+        "ref": "unhandled_type_error_log",
+        "description": "the stack the worker never caught, in the log rather than in a metric"
+      },
+      {
+        "type": "metric",
+        "ref": "export_failure_ratio",
+        "description": "the share of exports that fail, which is the only number the incident states"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/export-worker",
+        "toEntityId": "mq:synthetic-storefront/order-events",
+        "mechanism": "the exception escapes the worker's handler, so the worker never sends a nack and the broker observes the connection close instead; the job is then never retried, and the failure is silent rather than reported",
+        "evidenceRefs": ["cp-failure-ratio", "cp-typeerror-line"]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-failure-ratio",
+        "entityRef": "service:synthetic-storefront/export-worker",
+        "signalRef": "export_failure_ratio",
+        "comparator": ">",
+        "value": 3,
+        "unit": "%",
+        "description": "the share of exports failing, which the text states as roughly three percent and matches the share of datasets carrying an embedded newline"
+      },
+      {
+        "checkpointId": "cp-typeerror-line",
+        "entityRef": "service:synthetic-storefront/export-worker",
+        "signalRef": "unhandled_type_error_log",
+        "comparator": "==",
+        "value": 1,
+        "unit": "count",
+        "description": "one log line carrying the uncaught TypeError, which is where the mechanism is stated rather than measured"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "quote the CSV column before writing it, and let the worker's handler nack the job so it is retried",
+        "target": "service:synthetic-storefront/export-worker"
+      }
+    ]
+  },
+  "query": "About three percent of exports fail and the jobs are never retried. The broker sees the connection close rather than a nack, and the logs show an unhandled TypeError in the CSV writer when a column contains an embedded newline. What failed?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

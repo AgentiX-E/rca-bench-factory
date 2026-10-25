@@ -1,0 +1,26 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-unhandled-exception-export",
+  "why": "Telemetry for the code case: one metric series and one log line. The series is the only number the text states -- roughly three percent of exports fail -- and the log line is the only place the mechanism appears, because an uncaught exception is not a metric. There is no span: the text gives a consequence (`the broker sees the connection close`) and no duration, and a span without a duration would be a number nobody wrote.",
+  "series": [
+    {
+      "service": "export-worker",
+      "metric": "export_failure_ratio_percent",
+      "unit": "%",
+      "baseline": 0,
+      "post": 3,
+      "quote": "Roughly 3% of exports fail",
+      "why": "the checkpoint `cp-failure-ratio` holds it; the baseline of zero is the text's own framing of a fault that began with a change in the data, not in the code path"
+    }
+  ],
+  "logs": [
+    {
+      "service": "export-worker",
+      "severity": "ERROR",
+      "body": "unhandled TypeError in the CSV writer: a column contained an embedded newline",
+      "quote": "Logs show an unhandled TypeError in the CSV writer when a column contains an embedded newline",
+      "why": "the mechanism stated in words by the system itself, which is what makes this case a code fault rather than a resource one"
+    }
+  ]
+}
