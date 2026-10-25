@@ -47,7 +47,8 @@
         "mechanism": "the caller's span rose from 12ms to 900ms while the callee's handler time stayed at 11ms, which locates the added time between the two processes rather than inside either",
         "evidenceRefs": [
           "cp-client-span",
-          "cp-server-handler"
+          "cp-server-handler",
+          "cp-network-overhead"
         ]
       }
     ],
@@ -69,6 +70,16 @@
         "value": 11,
         "unit": "ms",
         "description": "the callee's own handler time, unchanged -- the number that makes this a network fault rather than a slow service"
+      },
+      {
+        "checkpointId": "cp-network-overhead",
+        "entityRef": "service:synthetic-storefront/cart-service",
+        "signalKind": "derived",
+        "expression": "client_span_duration_ms.post - server_handler_time_ms.post",
+        "comparator": "==",
+        "value": 889,
+        "unit": "ms",
+        "description": "the caller's span minus the callee's own handler time: the part of the 900ms that neither process accounts for"
       }
     ],
     "remediation": [

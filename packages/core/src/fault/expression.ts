@@ -1,0 +1,512 @@
+import { NUMERIC_COMPARATORS, SERIES_POINTS, type NumericComparator, type SeriesPoint } from '../ir/types.js';
+
+/**
+ * The arithmetic a `derived` checkpoint states, and the only thing that can check it.
+ *
+ * ## The defect this exists for
+ *
+ * A derived checkpoint used to be a number and a `signalRef` naming one series -- and the number was
+ * not that series' post value. `cp-processing-tripled` asserted `== 3` over
+ * `per_message_processing_seconds`, whose post value is `0.06 s`; the 3 was `0.06 / 0.02`, and the
+ * divisor appeared nowhere in the annotation. The guard could only check that the series existed, so
+ * **two derived checkpoints could name the same series with different arithmetic and nothing would
+ * disagree** (finding 244 left this open, finding 245 closes it).
+ *
+ * The repair is to make the arithmetic part of the annotation and evaluate it. This module is the
+ * evaluator: a deliberately small grammar, no `eval`, and a unit algebra that catches the mistake a
+ * number alone cannot -- `900 ms - 11 ms` is `889 ms`, while `900 ms - 11 s` is not a quantity at
+ * all.
+ *
+ * ## The grammar
+ *
+ * ```
+ * expression := term (('+' | '-') term)*
+ * term       := unary (('*' | '/') unary)*
+ * unary      := '-' unary | primary
+ * primary    := number | reference | '(' expression ')'
+ * number     := digit+ ('.' digit+)? (('e' | 'E') ('+' | '-')? digit+)?
+ * reference  := identifier '.' point
+ * identifier := [A-Za-z_][A-Za-z0-9_]*
+ * point      := a member of SERIES_POINTS
+ * ```
+ *
+ * Twelve lines of grammar is the whole language, and that is a decision rather than a limitation.
+ * Every operator added is an operator the guard must evaluate the same way the annotator meant, and
+ * an expression language that grew functions and conditionals would be a programming language with
+ * no specification. Multiplication, division, addition, subtraction and parentheses cover every
+ * derived quantity this corpus can state: a ratio of two readings and a difference of two readings.
+ *
+ * ## Units are symbols with exponents, and the algebra says so
+ *
+ * A quantity here is `(number, unit)`. `*` and `/` add and subtract exponents; `+` and `-` require
+ * the two sides to be the *same* unit. That is enough to reject `ms + s` and to compute `s / s` as
+ * `1`, and it is **not** dimensional analysis: `%` and `1` are different symbols to this module even
+ * though they are the same dimension, and `1 min` and `60 s` are different symbols even though they
+ * are the same quantity. A series whose unit is not made of atomic symbols joined by `*`, `/` or `^`
+ * is reported as unsupported rather than guessed at, because a unit this module cannot read is a unit
+ * whose arithmetic it cannot check.
+ *
+ * ## Floating point, stated rather than hidden
+ *
+ * `0.06 / 0.02` is `2.9999999999999996`, so an exact `==` would reject the correct annotation. The
+ * comparisons therefore allow a relative tolerance of `1e-9`, applied so that a difference inside the
+ * tolerance counts as *equal* for every comparator -- `>` is `computed - stated > tolerance`, not
+ * `computed > stated`. The alternative, tolerance only for `==`, would let `>=` fail on a value that
+ * came out one ulp low, which is the same defect at a different operator.
+ *
+ * ## One problem per call
+ *
+ * Evaluation stops at the first problem. An expression is one assertion, and after a reference fails
+ * to resolve the remaining terms are not values -- reporting a second and third consequence of the
+ * first mistake would say less than reporting the first.
+ */
+
+/** The relative tolerance within which two computed quantities count as equal. */
+export const RELATIVE_TOLERANCE = 1e-9;
+
+/** How deeply parentheses may nest before the parser refuses the expression. */
+export const MAX_EXPRESSION_DEPTH = 32;
+
+/** One series as an expression sees it: its metric name, its unit, and the points it declares. */
+export interface ExpressionSeries {
+  metric: string;
+  unit: string;
+  points: Partial<Record<SeriesPoint, number>>;
+}
+
+/** One reading an expression took. */
+export interface ExpressionReference {
+  metric: string;
+  point: SeriesPoint;
+}
+
+/** What an expression evaluated to: a number, the unit that number is in, and what it read. */
+export interface ExpressionValue {
+  value: number;
+  unit: string;
+  references: ExpressionReference[];
+}
+
+/**
+ * Why an expression could not be evaluated.
+ *
+ * Each kind is one repair. `at` is a character offset into the text so the message can point at the
+ * position rather than describe the concept -- an author looking at `2 * 3 +` needs the end of the
+ * string, not "syntax error".
+ */
+export type ExpressionProblem =
+  | { kind: 'syntax'; at: number; expected: string }
+  | { kind: 'tooDeep'; at: number }
+  | { kind: 'unknownPoint'; at: number; point: string }
+  | { kind: 'unknownSeries'; metric: string }
+  | { kind: 'missingPoint'; metric: string; point: SeriesPoint }
+  | { kind: 'unsupportedUnit'; unit: string }
+  | { kind: 'unitMismatch'; operator: '+' | '-'; left: string; right: string }
+  | { kind: 'divisionByZero'; at: number }
+  | { kind: 'notFinite' };
+
+/** Evaluation either produced a quantity or named the one thing that stopped it. */
+export type ExpressionOutcome = { ok: true; value: ExpressionValue } | { ok: false; problem: ExpressionProblem };
+
+type Node =
+  | { kind: 'number'; value: number }
+  | { kind: 'reference'; metric: string; point: SeriesPoint; at: number }
+  | { kind: 'negate'; operand: Node }
+  | { kind: 'binary'; operator: '+' | '-' | '*' | '/'; left: Node; right: Node; at: number };
+
+/** A unit as symbol-exponent pairs. Empty means dimensionless, which is written `1`. */
+type Unit = Map<string, number>;
+
+interface Cursor {
+  text: string;
+  at: number;
+  depth: number;
+}
+
+class Unreadable extends Error {
+  constructor(readonly problem: ExpressionProblem) {
+    super(problem.kind);
+  }
+}
+
+function skipSpace(cursor: Cursor): void {
+  while (cursor.at < cursor.text.length && /\s/.test(cursor.text.charAt(cursor.at))) cursor.at += 1;
+}
+
+function readPattern(cursor: Cursor, pattern: RegExp): string | undefined {
+  const match = pattern.exec(cursor.text.slice(cursor.at));
+  if (match === null) return undefined;
+  cursor.at += match[0].length;
+  return match[0];
+}
+
+/**
+ * The two leaves, and why they answer `undefined` instead of raising.
+ *
+ * A number leaf cannot fail: the caller has already looked at the first character and only calls it
+ * when that character is a digit, so its own "not a number" throw was unreachable -- a refusal that
+ * no input could produce, in the parser whose whole job is refusing. Returning `undefined` moves the
+ * refusal to the one place that knows what the alternatives were, and leaves each leaf with a single
+ * question: can I read something here?
+ */
+function numberNode(cursor: Cursor): Node | undefined {
+  const literal = readPattern(cursor, /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+  if (literal === undefined) return undefined;
+  return { kind: 'number', value: Number(literal) };
+}
+
+function referenceNode(cursor: Cursor): Node | undefined {
+  const at = cursor.at;
+  const metric = readPattern(cursor, /^[A-Za-z_][A-Za-z0-9_]*/);
+  if (metric === undefined) return undefined;
+  if (cursor.text.charAt(cursor.at) !== '.') {
+    throw new Unreadable({ kind: 'syntax', at: cursor.at, expected: `"." after the series name '${metric}'` });
+  }
+  cursor.at += 1;
+  const pointAt = cursor.at;
+  const point = readPattern(cursor, /^[A-Za-z][A-Za-z0-9_]*/);
+  if (point === undefined) {
+    throw new Unreadable({ kind: 'syntax', at: cursor.at, expected: 'a series point after the "."' });
+  }
+  const known = SERIES_POINTS.some((candidate) => candidate === point);
+  if (!known) {
+    // The offset is the point's, not the reference's: `foo.after` is wrong at `after`, and a caret
+    // under `foo` would send the author to the metric name, which is right.
+    throw new Unreadable({ kind: 'unknownPoint', at: pointAt, point });
+  }
+  return { kind: 'reference', metric, point: point as SeriesPoint, at };
+}
+
+function primary(cursor: Cursor): Node {
+  skipSpace(cursor);
+  if (cursor.text.charAt(cursor.at) === '(') {
+    const opened = cursor.at;
+    cursor.at += 1;
+    cursor.depth += 1;
+    if (cursor.depth > MAX_EXPRESSION_DEPTH) {
+      throw new Unreadable({ kind: 'tooDeep', at: opened });
+    }
+    const inner = sum(cursor);
+    skipSpace(cursor);
+    if (cursor.text.charAt(cursor.at) !== ')') {
+      throw new Unreadable({ kind: 'syntax', at: cursor.at, expected: '")"' });
+    }
+    cursor.at += 1;
+    cursor.depth -= 1;
+    return inner;
+  }
+  const number = numberNode(cursor);
+  if (number !== undefined) return number;
+  const reference = referenceNode(cursor);
+  if (reference !== undefined) return reference;
+  throw new Unreadable({
+    kind: 'syntax',
+    at: cursor.at,
+    expected: cursor.at >= cursor.text.length ? 'more of the expression' : 'a number, a series reference or "("',
+  });
+}
+
+function unary(cursor: Cursor): Node {
+  skipSpace(cursor);
+  if (cursor.text.charAt(cursor.at) === '-') {
+    cursor.at += 1;
+    return { kind: 'negate', operand: unary(cursor) };
+  }
+  return primary(cursor);
+}
+
+function product(cursor: Cursor): Node {
+  let left = unary(cursor);
+  for (;;) {
+    skipSpace(cursor);
+    const operator = cursor.text.charAt(cursor.at);
+    if (operator !== '*' && operator !== '/') return left;
+    const at = cursor.at;
+    cursor.at += 1;
+    left = { kind: 'binary', operator, left, right: unary(cursor), at };
+  }
+}
+
+function sum(cursor: Cursor): Node {
+  let left = product(cursor);
+  for (;;) {
+    skipSpace(cursor);
+    const operator = cursor.text.charAt(cursor.at);
+    if (operator !== '+' && operator !== '-') return left;
+    const at = cursor.at;
+    cursor.at += 1;
+    left = { kind: 'binary', operator, left, right: product(cursor), at };
+  }
+}
+
+/**
+ * Parse an expression, or name the position at which it stopped being one.
+ *
+ * Trailing text is a failure rather than a suffix to ignore: `3 4` and `a.post b.post` are two
+ * quantities with no operator between them, and reading the first and discarding the second would
+ * report a value for an expression nobody wrote.
+ */
+function parseExpression(text: string): Node {
+  const cursor: Cursor = { text, at: 0, depth: 0 };
+  const node = sum(cursor);
+  skipSpace(cursor);
+  if (cursor.at < text.length) {
+    throw new Unreadable({ kind: 'syntax', at: cursor.at, expected: 'an operator, or the end of the expression' });
+  }
+  return node;
+}
+
+/**
+ * A unit string as symbol-exponent pairs, or `undefined` when this module cannot read it.
+ *
+ * Supported: atomic symbols (`ms`, `%`, `count`, `MiB`), `1` for dimensionless, `*` and `·` between
+ * factors, `/` for a denominator, and `^` with a positive integer exponent. Anything else -- a
+ * function, a bracket, a decimal exponent -- is unsupported, and the caller reports that rather than
+ * treating the unit as dimensionless, which would silently make the arithmetic check nothing.
+ */
+function parseUnit(text: string): Unit | undefined {
+  const trimmed = text.trim();
+  if (trimmed === '') return undefined;
+  const exponents: Unit = new Map();
+  let at = 0;
+  let sign = 1;
+  let expectingAtom = true;
+  while (at < trimmed.length) {
+    const char = trimmed.charAt(at);
+    if (/\s/.test(char)) {
+      at += 1;
+      continue;
+    }
+    if (char === '*' || char === '·' || char === '/') {
+      if (expectingAtom) return undefined;
+      sign = char === '/' ? -1 : 1;
+      expectingAtom = true;
+      at += 1;
+      continue;
+    }
+    if (char === '1') {
+      // `1` is how a dimensionless quantity is written; `1` inside a product (`1/s`) means the same.
+      if (!expectingAtom) return undefined;
+      at += 1;
+      expectingAtom = false;
+      continue;
+    }
+    const symbol = /^[A-Za-z%µ][A-Za-z0-9%_]*/.exec(trimmed.slice(at));
+    if (symbol === null || !expectingAtom) return undefined;
+    at += symbol[0].length;
+    let exponent = 1;
+    if (trimmed.charAt(at) === '^') {
+      const digits = /^\^(\d+)/.exec(trimmed.slice(at));
+      if (digits === null) return undefined;
+      exponent = Number(digits[1]);
+      if (exponent === 0) return undefined;
+      at += digits[0].length;
+    }
+    const total = (exponents.get(symbol[0]) ?? 0) + sign * exponent;
+    if (total === 0) exponents.delete(symbol[0]);
+    else exponents.set(symbol[0], total);
+    expectingAtom = false;
+  }
+  if (expectingAtom) return undefined;
+  return exponents;
+}
+
+/** A unit in the one spelling a checkpoint has to match: sorted, `·`-joined, `/` before the denominator. */
+function renderUnit(unit: Unit): string {
+  if (unit.size === 0) return '1';
+  // Two entries never share a symbol -- `Unit` is a `Map`, and `combineUnits` deletes a symbol whose
+  // exponent reaches zero -- so the comparator has two outcomes rather than three. The `0` arm this
+  // used to carry was unreachable, and a sort comparator with an arm no input can produce is the
+  // same defect as a refusal no input can reach.
+  const entries = [...unit.entries()].sort((left, right) => (left[0] < right[0] ? -1 : 1));
+  const factor = (symbol: string, exponent: number): string => (exponent === 1 ? symbol : `${symbol}^${String(exponent)}`);
+  const numerator = entries
+    .filter(([, exponent]) => exponent > 0)
+    .map(([symbol, exponent]) => factor(symbol, exponent))
+    .join('·');
+  const denominator = entries
+    .filter(([, exponent]) => exponent < 0)
+    .map(([symbol, exponent]) => factor(symbol, -exponent))
+    .join('·');
+  if (denominator === '') return numerator;
+  return `${numerator === '' ? '1' : numerator}/${denominator}`;
+}
+
+function combineUnits(left: Unit, right: Unit, scale: 1 | -1): Unit {
+  const combined: Unit = new Map(left);
+  for (const [symbol, exponent] of right) {
+    const total = (combined.get(symbol) ?? 0) + scale * exponent;
+    if (total === 0) combined.delete(symbol);
+    else combined.set(symbol, total);
+  }
+  return combined;
+}
+
+function sameUnit(left: Unit, right: Unit): boolean {
+  if (left.size !== right.size) return false;
+  for (const [symbol, exponent] of left) {
+    if (right.get(symbol) !== exponent) return false;
+  }
+  return true;
+}
+
+interface Quantity {
+  value: number;
+  unit: Unit;
+}
+
+function evaluate(node: Node, series: ReadonlyMap<string, ExpressionSeries>): Quantity {
+  switch (node.kind) {
+    case 'number':
+      return { value: node.value, unit: new Map() };
+    case 'negate': {
+      const operand = evaluate(node.operand, series);
+      return { value: -operand.value, unit: operand.unit };
+    }
+    case 'reference': {
+      const declared = series.get(node.metric);
+      if (declared === undefined) throw new Unreadable({ kind: 'unknownSeries', metric: node.metric });
+      const unit = parseUnit(declared.unit);
+      if (unit === undefined) throw new Unreadable({ kind: 'unsupportedUnit', unit: declared.unit });
+      const value = declared.points[node.point];
+      if (typeof value !== 'number') {
+        throw new Unreadable({ kind: 'missingPoint', metric: node.metric, point: node.point });
+      }
+      return { value, unit };
+    }
+    case 'binary': {
+      const left = evaluate(node.left, series);
+      const right = evaluate(node.right, series);
+      if (node.operator === '+' || node.operator === '-') {
+        if (!sameUnit(left.unit, right.unit)) {
+          throw new Unreadable({
+            kind: 'unitMismatch',
+            operator: node.operator,
+            left: renderUnit(left.unit),
+            right: renderUnit(right.unit),
+          });
+        }
+        return {
+          value: node.operator === '+' ? left.value + right.value : left.value - right.value,
+          unit: left.unit,
+        };
+      }
+      if (node.operator === '*') {
+        return { value: left.value * right.value, unit: combineUnits(left.unit, right.unit, 1) };
+      }
+      if (right.value === 0) throw new Unreadable({ kind: 'divisionByZero', at: node.at });
+      return { value: left.value / right.value, unit: combineUnits(left.unit, right.unit, -1) };
+    }
+  }
+}
+
+function collectReferences(node: Node, into: ExpressionReference[]): void {
+  switch (node.kind) {
+    case 'number':
+      return;
+    case 'negate':
+      collectReferences(node.operand, into);
+      return;
+    case 'reference': {
+      const seen = into.some((one) => one.metric === node.metric && one.point === node.point);
+      if (!seen) into.push({ metric: node.metric, point: node.point });
+      return;
+    }
+    case 'binary':
+      collectReferences(node.left, into);
+      collectReferences(node.right, into);
+  }
+}
+
+/**
+ * Evaluate an expression against the series a case declares.
+ *
+ * The series are passed in rather than looked up by the caller so that "the metric does not exist"
+ * and "the metric has no value at that point" are problems this module names, in the position they
+ * were read -- a caller with its own lookup would have to invent both messages, and two callers would
+ * invent them differently.
+ */
+export function evaluateExpression(text: string, series: readonly ExpressionSeries[]): ExpressionOutcome {
+  const byMetric = new Map<string, ExpressionSeries>();
+  for (const one of series) if (!byMetric.has(one.metric)) byMetric.set(one.metric, one);
+  let node: Node;
+  let quantity: Quantity;
+  // One `catch`, so there is one place that decides what an unreadable expression is and one place
+  // that rethrows something else. Two of each is two chances to swallow a bug as a syntax error --
+  // and `Unreadable` is the only thing this module throws on purpose.
+  try {
+    node = parseExpression(text);
+    quantity = evaluate(node, byMetric);
+  } catch (error) {
+    if (error instanceof Unreadable) return { ok: false, problem: error.problem };
+    throw error;
+  }
+  if (!Number.isFinite(quantity.value)) return { ok: false, problem: { kind: 'notFinite' } };
+  const references: ExpressionReference[] = [];
+  collectReferences(node, references);
+  return { ok: true, value: { value: quantity.value, unit: renderUnit(quantity.unit), references } };
+}
+
+/**
+ * Whether a computed value satisfies a numeric assertion, allowing for floating point.
+ *
+ * See the module comment: a difference inside the tolerance counts as equal for every comparator, so
+ * `2.9999999999999996 >= 3` holds and `2.9999999999999996 > 3` does not.
+ */
+export function holdsWithTolerance(
+  comparator: NumericComparator,
+  computed: number,
+  stated: number,
+): boolean {
+  const scale = Math.max(Math.abs(computed), Math.abs(stated), 1);
+  const difference = computed - stated;
+  if (Math.abs(difference) <= RELATIVE_TOLERANCE * scale) {
+    return comparator === '==' || comparator === '>=' || comparator === '<=';
+  }
+  switch (comparator) {
+    // Grouped because outside the tolerance the pair really is one comparison: `>=` differs from `>`
+    // only for a difference inside it, and that case has already returned.
+    case '>':
+    case '>=':
+      return difference > 0;
+    case '<':
+    case '<=':
+      return difference < 0;
+    case '!=':
+      return true;
+    case '==':
+      return false;
+  }
+}
+
+/** Whether a comparator is one this module can evaluate. Reads `NUMERIC_COMPARATORS`, not a copy. */
+export function isNumericComparator(comparator: string): comparator is NumericComparator {
+  return NUMERIC_COMPARATORS.some((candidate) => candidate === comparator);
+}
+
+/** One sentence per problem, in the terms the annotation is written in. */
+export function describeExpressionProblem(problem: ExpressionProblem): string {
+  switch (problem.kind) {
+    case 'syntax':
+      return `is not arithmetic I can read: at character ${String(problem.at)} I expected ${problem.expected}`;
+    case 'tooDeep':
+      return `nests parentheses more than ${String(MAX_EXPRESSION_DEPTH)} deep, which is past the limit this grammar accepts`;
+    case 'unknownPoint':
+      return (
+        `reads the point '${problem.point}' at character ${String(problem.at)}, ` +
+        `which is not one of ${SERIES_POINTS.join(', ')}`
+      );
+    case 'unknownSeries':
+      return `reads '${problem.metric}', which the signals file does not declare`;
+    case 'missingPoint':
+      return `reads '${problem.metric}.${problem.point}', and that series declares no ${problem.point} value`;
+    case 'unsupportedUnit':
+      return `works over a unit '${problem.unit}' that this grammar cannot multiply (atomic symbols, '*' or '/', and '^' exponents)`;
+    case 'unitMismatch':
+      return `'${problem.operator}' joins '${problem.left}' and '${problem.right}', which are not the same unit`;
+    case 'divisionByZero':
+      return `divides by zero at character ${String(problem.at)}`;
+    case 'notFinite':
+      return 'evaluates to a value that is not finite';
+  }
+}

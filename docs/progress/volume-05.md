@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4467 tests passed** (as of this commit) |
+| `core` test suite | **184 files, 4530 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4654 tests passed** (as of this commit) |
+| repo test suite | **188 files, 4717 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2727,3 +2727,58 @@ cli 4 / 187, repo **186 / 4654**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5 
 - **24 samples still carry no case.** `[open: 5 of 30. The annotation now satisfies nine obligations,
   and the newest one -- naming what each reference is -- is the first that can be checked
   mechanically]`
+
+## v2.72 — the arithmetic moved from the number into the annotation
+
+**What was open.** Finding 244's first open item: a `derived` reference named one series and the
+factor lived only in the value. `cp-processing-tripled` asserted `== 3` over a series whose readings
+are `0.02 s` and `0.06 s`, and no file said "divided by". The guard resolved the series and stopped,
+because a ratio cannot be compared with a duration -- so of the four kinds of reference, this was the
+one where "resolves" was the entire check.
+
+**What changed.**
+
+| layer | before | after |
+| --- | --- | --- |
+| the checkpoint | `signalRef` + a number | `expression` **instead of** `signalRef`; the value is what it computes |
+| the schema | `signalKind` an enum | a biconditional: expression present exactly when `derived`, and `signalRef` forbidden beside it |
+| the grammar | none | `fault/expression.ts`: 12 lines, `+ - * /`, parentheses, `<metric>.<point>`, no `eval` |
+| the units | not compared for derived | symbol-exponent algebra; `+`/`-` require the same unit, `s/s` is `1` |
+| the comparison | none | relative tolerance `1e-9`, because `0.06 / 0.02` is `2.9999999999999996` |
+| the corpus | 1 derived checkpoint, 1 reading | 2 derived checkpoints over 4 readings; the cart case gains the first *difference* |
+
+`cp-network-overhead` is `client_span_duration_ms.post - server_handler_time_ms.post == 889 ms`: the
+part of the 900ms neither process accounts for. Both operands were already quoted from the sentence
+that states them, so the checkpoint adds arithmetic rather than a new claim -- which is the only
+honest way to add a derived checkpoint to a corpus derived from text.
+
+**Five defects, and two came from the check itself.** The unit algebra rejected my own
+division-by-zero test (`ms - 1` is a mismatch, not a division); the number leaf carried a refusal that
+no input could reach because its caller had already tested the first character; the counts line was
+printed only on the success path, so `0 of 10` was a decoration and vanished exactly when a corpus was
+red; a test that meant to prove "a wrong value is refused" passed because `cp-p99` is `>=` and
+`4120 >= 4100`; and every schema refusal had been reported as `does not parse: [` because
+`String(error.message).split('\n')[0]` on a zod issue list is a bracket.
+
+**Acceptance.** 35 tests over the grammar, 6 over `describeSchemaFailure`, 78 over the corpus guard
+(12 new); both new modules at 100 x4; typecheck, lint, `docs:check` green (six vocabularies in the
+table, nine inline `z.enum`s remaining); `derive-gate-sites --check` green (86 sites, 46 scripts --
+same count, four line numbers moved); the meta-gate at **46 gates, 46 caught, 0 survived**
+(hollowing the guard turns **144** tests red); core **184 / 4530**, cli 4 / 187, repo **188 / 4717**;
+coverage 99.97 / 99.76 / 100 / 99.97; audit 5 volumes, findings 1–245.
+
+### Left open
+
+- **The expression is checkable; its choice is not.** `[open: `post / baseline` and
+  `baseline / post` both compute, and only the annotation says which describes the fault. The guard
+  now proves the number is the number the annotation's own arithmetic produces -- not that the
+  arithmetic is the right reading]`
+- **The unit algebra has no conversions.** `[open: `%` and `1` are different symbols, as are `1 min`
+  and `60 s`, so a checkpoint that divides a percentage by a count is refused rather than converted.
+  The refusal is correct and the corpus has no such reading yet; the first one will need a table]`
+- **24 samples still carry no case.** `[open: 5 of 30. Ten obligations now, and the newest -- stating
+  the arithmetic rather than the number -- is the first that can be computed]`
+
+The `configuration` item from v2.71 is unchanged this round: the only rule is still that a
+configuration reference must not collide with a series, which catches a modelling error and says
+nothing about whether the quota is the one the case ran under.

@@ -107,6 +107,17 @@ function fold(text) {
 }
 
 /**
+ * A computed value as a person wrote it, without pretending it is exact.
+ *
+ * `0.06 / 0.02` is `2.9999999999999996`, and a failure message that prints all seventeen digits makes
+ * the author hunt for a difference that is not there. Twelve significant digits is finer than the
+ * `RELATIVE_TOLERANCE` the comparison uses, so nothing reported as equal can print as unequal.
+ */
+function displayNumber(value) {
+  return String(Number(value.toPrecision(12)));
+}
+
+/**
  * Turn a declared series into metric signals on a fixed cadence.
  *
  * The values are derived, not captured: `baseline` and `post` are the two numbers the incident
@@ -307,7 +318,15 @@ const seen = new Set();
 /** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
 const withTelemetry = [];
 /** What the checkpoints of every annotated case claim about the signals it declares. */
-const checkpointRefs = { total: 0, resolved: 0, resolvedAny: 0, inequalities: 0, false: 0 };
+const checkpointRefs = {
+  total: 0,
+  resolved: 0,
+  resolvedAny: 0,
+  derived: 0,
+  derivedRefs: 0,
+  inequalities: 0,
+  false: 0,
+};
 /** The same telemetry, in the shape an exporter reads: cases and the signals attached to them. */
 const telemetryCases = [];
 const telemetrySignals = {};
@@ -354,8 +373,10 @@ for (const entry of index.cases) {
     parsedGraph = core.entityGraphSchema.parse(rawGraph);
   } catch (error) {
     // A case that does not parse is an unreadable input, not a case with an empty layer: the
-    // two call for different repairs, so they get different exit codes.
-    invalid.push(`'${caseId}' does not parse: ${String(error instanceof Error ? error.message : error).split('\n')[0]}`);
+    // two call for different repairs, so they get different exit codes. The message is composed by
+    // `describeSchemaFailure`, because `String(error.message).split('\n')[0]` is `[` for a zod issue
+    // list -- every refusal used to be reported as the case id and a bracket.
+    invalid.push(`'${caseId}' does not parse: ${core.describeSchemaFailure(error)}`);
     continue;
   }
 
@@ -492,7 +513,28 @@ for (const entry of index.cases) {
     // eight of eleven named a series that did not exist (finding 243). `signalKind` says which kind,
     // and each kind has its own rule, because a rule that treated them alike would be wrong for at
     // least one of them.
-    const seriesByMetric = new Map(series.map((one) => [String(one.metric), one]));
+    const seriesByMetric = new Map();
+    for (const one of series) {
+      const metric = String(one?.metric);
+      // Two declarations of one metric: a reference resolves to whichever came second, and nothing in
+      // the file says which of them the checkpoint meant. Reported because the resolution that
+      // follows would otherwise be a coin toss the guard does not know it is making.
+      if (seriesByMetric.has(metric)) {
+        problems.push(`'${caseId}' declares two series named '${metric}', so a reference to it names neither`);
+        continue;
+      }
+      seriesByMetric.set(metric, one);
+    }
+    // The same series in the shape the expression evaluator reads, with every point in
+    // `SERIES_POINTS` read through the tuple -- so a third point needs an edit in one place.
+    const expressionSeries = series.map((one) => {
+      const points = {};
+      for (const point of core.SERIES_POINTS) {
+        const value = one?.[point];
+        if (typeof value === 'number') points[point] = value;
+      }
+      return { metric: String(one?.metric), unit: typeof one?.unit === 'string' ? one.unit : '', points };
+    });
     const logIds = new Set();
     for (const one of logs) {
       const id = typeof one?.id === 'string' ? one.id : '';
@@ -507,8 +549,62 @@ for (const entry of index.cases) {
     for (const checkpoint of parsedCase.groundTruth.evidenceCheckpoints ?? []) {
       const id = checkpoint.checkpointId;
       const kind = checkpoint.signalKind ?? 'series';
-      const ref = typeof checkpoint.signalRef === 'string' ? checkpoint.signalRef : '';
       checkpointRefs.total += 1;
+
+      // A derived checkpoint states arithmetic, and the arithmetic is what gets evaluated: the number
+      // is a consequence of the expression rather than a second claim standing beside it. Before
+      // finding 245 it carried one `signalRef` and the computation lived only in the value, so `== 3`
+      // over a series whose post is `0.06` could not be checked at all -- and two checkpoints could
+      // state different arithmetic over the same series and nothing would disagree.
+      if (kind === 'derived') {
+        const text = typeof checkpoint.expression === 'string' ? checkpoint.expression : '';
+        const outcome = core.evaluateExpression(text, expressionSeries);
+        if (!outcome.ok) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' has an expression that ` +
+              `${core.describeExpressionProblem(outcome.problem)} -- '${text}'`,
+          );
+          continue;
+        }
+        checkpointRefs.resolved += 1;
+        checkpointRefs.resolvedAny += 1;
+        checkpointRefs.derived += 1;
+        checkpointRefs.derivedRefs += outcome.value.references.length;
+        if (checkpoint.unit !== outcome.value.unit) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' computes '${text}' to a value in '${outcome.value.unit}', ` +
+              `but states '${String(checkpoint.unit)}'`,
+          );
+          continue;
+        }
+        if (typeof checkpoint.value !== 'number') {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' computes '${text}' to a number, but states ` +
+              `'${String(checkpoint.value)}' beside it`,
+          );
+          continue;
+        }
+        if (!core.isNumericComparator(checkpoint.comparator)) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' compares a computed number with ` +
+              `'${String(checkpoint.comparator)}', which does not order two numbers`,
+          );
+          continue;
+        }
+        checkpointRefs.inequalities += 1;
+        // With the tolerance `fault/expression.ts` documents: `0.06 / 0.02` is `2.9999999999999996`,
+        // and an exact `==` would have refused the annotation that is right.
+        if (!core.holdsWithTolerance(checkpoint.comparator, outcome.value.value, checkpoint.value)) {
+          checkpointRefs.false += 1;
+          problems.push(
+            `'${caseId}' checkpoint '${id}' asserts '${text}' ${checkpoint.comparator} ` +
+              `${String(checkpoint.value)}, and it computes to ${displayNumber(outcome.value.value)}`,
+          );
+        }
+        continue;
+      }
+
+      const ref = typeof checkpoint.signalRef === 'string' ? checkpoint.signalRef : '';
       if (ref === '') {
         problems.push(`'${caseId}' checkpoint '${id}' names no signal, so nothing carries it`);
         continue;
@@ -539,19 +635,16 @@ for (const entry of index.cases) {
       }
       checkpointRefs.resolved += 1;
       checkpointRefs.resolvedAny += 1;
-      // A derived value is computed from the series, so neither its unit nor its number can be
-      // compared with one post value -- `per_message_processing_seconds` carries seconds and the
-      // checkpoint states a ratio of two of them. Before that distinction existed the guard could
-      // only have compared them, which would have rejected the correct annotation and accepted a
-      // wrong one that happened to be in seconds.
-      if (kind === 'derived') continue;
       if (declared.unit !== checkpoint.unit) {
         problems.push(
           `'${caseId}' checkpoint '${id}' is in '${String(checkpoint.unit)}' but the series '${ref}' is in '${String(declared.unit)}'`,
         );
       }
       const comparator = checkpoint.comparator;
-      if (!['>', '>=', '<', '<=', '=='].includes(comparator) || typeof checkpoint.value !== 'number') continue;
+      // `NUMERIC_COMPARATORS`, read from the IR rather than restated. This list used to be written
+      // here by hand and omitted `!=`, which the schema admits: a `!=` checkpoint was neither
+      // compared nor counted, and the count said `8 of 8` as though there had been nothing to check.
+      if (!core.isNumericComparator(comparator) || typeof checkpoint.value !== 'number') continue;
       if (declared.unit !== checkpoint.unit) continue;
       checkpointRefs.inequalities += 1;
       const post = Number(declared.post);
@@ -560,6 +653,7 @@ for (const entry of index.cases) {
         : comparator === '>=' ? post >= checkpoint.value
         : comparator === '<' ? post < checkpoint.value
         : comparator === '<=' ? post <= checkpoint.value
+        : comparator === '!=' ? post !== checkpoint.value
         : post === checkpoint.value;
       if (!holds) {
         checkpointRefs.false += 1;
@@ -638,8 +732,28 @@ if (invalid.length > 0) {
   process.exit(1);
 }
 
+/**
+ * The checkpoint counts, printed on both exits.
+ *
+ * They used to be printed only on success, which made them a decoration on a green run and an
+ * absence on a red one -- the numbers that say *how much of the corpus is actually being checked*
+ * were missing exactly when something was wrong with it. A run with one failing assertion of ten now
+ * says `1 of 10` and then says which one.
+ */
+function logCheckpointCounts() {
+  if (checkpointRefs.total === 0) return;
+  console.log(
+    `check-fault-cases: checkpoints ${String(checkpointRefs.resolvedAny)} of ` +
+      `${String(checkpointRefs.total)} reference(s) resolve by kind (${String(checkpointRefs.resolved)} over a ` +
+      `series, ${String(checkpointRefs.derived)} of them computed from ` +
+      `${String(checkpointRefs.derivedRefs)} reading(s)); ${String(checkpointRefs.false)} of ` +
+      `${String(checkpointRefs.inequalities)} comparable assertion(s) fail against the series they name`,
+  );
+}
+
 if (problems.length > 0) {
   for (const problem of problems) console.error(`check-fault-cases: ${problem}`);
+  logCheckpointCounts();
   console.error(
     `check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)`,
   );
@@ -714,14 +828,7 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
     );
   }
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
-  if (checkpointRefs.total > 0) {
-    console.log(
-      `check-fault-cases: checkpoints ${String(checkpointRefs.resolvedAny)} of ` +
-        `${String(checkpointRefs.total)} reference(s) resolve by kind (${String(checkpointRefs.resolved)} to a ` +
-        `series); ${String(checkpointRefs.false)} of ${String(checkpointRefs.inequalities)} comparable ` +
-        `assertion(s) fail on the series' own post value`,
-    );
-  }
+  logCheckpointCounts();
 }
 
 console.log(

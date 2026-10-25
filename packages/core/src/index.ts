@@ -15,6 +15,9 @@ export {
   ENTITY_KINDS,
   FAULT_CATEGORIES,
   CHECKPOINT_REFERENCES,
+  COMPARATORS,
+  NUMERIC_COMPARATORS,
+  SERIES_POINTS,
   SIGNAL_KINDS,
   isVocabularyMember,
 } from './ir/types.js';
@@ -42,10 +45,12 @@ export type {
   LogSeverity,
   MetricPayload,
   MetricSemanticType,
+  NumericComparator,
   ProfilePayload,
   ProvenanceSource,
   QualityGateReport,
   RootCauseIndicator,
+  SeriesPoint,
   SignalKind,
   SignalPayload,
   SpanStatus,
@@ -60,6 +65,11 @@ export {
   irBundleSchema,
   telemetrySignalSchema,
 } from './ir/schema.js';
+
+// A schema refusal with the field and the reason in it. `String(error.message).split('\n')[0]` is
+// `[` for a zod issue list, so the guard that reports parse failures used to name the case and a
+// bracket; the diagnosis was in the lines it dropped.
+export { describeSchemaFailure } from './ir/schema-errors.js';
 
 export { assembleBundle } from './ir/assembler.js';
 export type { BundleAssemblyResult, BundleDraft, CaseDraft } from './ir/assembler.js';
@@ -676,6 +686,27 @@ export {
   rankServicesByMedianShift,
 } from './fault/robust-localiser.js';
 export type { ShiftRank, ShiftReading } from './fault/robust-localiser.js';
+
+// The arithmetic a `derived` checkpoint states. A derived checkpoint used to carry one `signalRef`
+// and put the computation in its number, so the annotation stated a calculation nothing read and two
+// checkpoints could name one series with different arithmetic and agree (finding 245). The grammar
+// lives here rather than in the guard because the guard's message has to say where an expression
+// stopped being arithmetic, and that is a function of the parse.
+export {
+  MAX_EXPRESSION_DEPTH,
+  RELATIVE_TOLERANCE,
+  describeExpressionProblem,
+  evaluateExpression,
+  holdsWithTolerance,
+  isNumericComparator,
+} from './fault/expression.js';
+export type {
+  ExpressionOutcome,
+  ExpressionProblem,
+  ExpressionReference,
+  ExpressionSeries,
+  ExpressionValue,
+} from './fault/expression.js';
 
 // M1's "GT four-layer annotation can all be filled", as a thing that can fail. The schema marks
 // `causalChain` and `evidenceCheckpoints` optional and `rootCauseEntityId` is a string nothing

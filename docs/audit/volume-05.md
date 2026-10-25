@@ -3890,3 +3890,123 @@ it can do -- **it cannot tell whether 92 is the right number, only that two file
 | the log ids | a log line without one is refused, because nothing can reference it |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **122** tests red in 1 of 2 naming files |
 | `core` / repo | **182 / 4467** · **186 / 4654** |
+
+## Finding 245 — the arithmetic was in the number, so nothing could check it
+
+Finding 244 left this open in as many words: "a `derived` reference names one source and not the
+arithmetic". The corpus's only derived checkpoint was the demonstration:
+
+```json
+{ "checkpointId": "cp-processing-tripled", "signalKind": "derived",
+  "signalRef": "per_message_processing_seconds", "comparator": "==", "value": 3, "unit": "1" }
+```
+
+The series it named carries `baseline: 0.02, post: 0.06` seconds. The `3` is `0.06 / 0.02`, and
+nothing in the annotation says so. The guard could resolve the reference and then had to stop: it
+could not compare a ratio with a duration, so it compared nothing. **Two derived checkpoints could
+name the same series with different arithmetic and both would pass**, which makes `derived` a label
+rather than a claim.
+
+### The repair is to make the arithmetic part of the annotation and evaluate it
+
+`EvidenceCheckpoint.expression` is a small arithmetic language, and it **replaces** `signalRef` for a
+derived checkpoint rather than sitting beside it -- the expression *is* the reference, and a
+checkpoint that named one series and computed over another would be two statements of which one is
+silently not the one being checked:
+
+```
+expression := term (('+' | '-') term)*
+term       := unary (('*' | '/') unary)*
+unary      := '-' unary | primary
+primary    := number | reference | '(' expression ')'
+reference  := identifier '.' point          -- point ∈ SERIES_POINTS
+```
+
+Twelve lines of grammar, because every operator is one the guard must evaluate the way the annotator
+meant, and `fault/expression.ts` evaluates rather than `eval`s. `SERIES_POINTS` (`baseline`, `post`)
+is a tuple the parser reads, so the grammar has no second list of point names.
+
+**Units are symbol-exponent pairs**: `*` and `/` add and subtract exponents, `+` and `-` require the
+same unit on both sides. That is what rejects `900 ms - 11 s`, and it is not dimensional analysis --
+`%` and `1` are different symbols here, as are `1 min` and `60 s`. A unit the grammar cannot read is
+refused as unsupported rather than read as dimensionless, because a unit this module cannot multiply
+is a unit whose arithmetic it cannot check.
+
+**The comparison is tolerant at `1e-9` relative**, and this is not politeness: `0.06 / 0.02` is
+`2.9999999999999996`, so an exact `==` would have rejected the annotation that is right. The
+tolerance makes a difference inside it *equal* for every comparator -- `>=` holds on a value one ulp
+low, `>` does not -- so no comparator is stricter than the data can be.
+
+### The corpus
+
+`cp-processing-tripled` now states `per_message_processing_seconds.post /
+per_message_processing_seconds.baseline` and computes 3. The cart case gains the corpus's second
+derived checkpoint, and its first *difference*:
+
+```json
+{ "checkpointId": "cp-network-overhead", "signalKind": "derived",
+  "expression": "client_span_duration_ms.post - server_handler_time_ms.post",
+  "comparator": "==", "value": 889, "unit": "ms" }
+```
+
+900 ms minus 11 ms is the part of the delay neither process accounts for, and both operands are
+already declared with the sentences that state them -- the checkpoint adds arithmetic, not a new
+claim about the world. It is also the first use of the `+`/`-` unit rule: both sides are `ms`, and
+the result is `ms`.
+
+```
+check-fault-cases: checkpoints 12 of 12 reference(s) resolve by kind (10 over a series, 2 of them computed from 4 reading(s)); 0 of 10 comparable assertion(s) fail against the series they name
+```
+
+### Five defects, and two of them were found by the new check
+
+**1. The unit algebra caught the test I wrote for it.** The first division-by-zero test was
+`client_span_duration_ms.post / (client_span_duration_ms.post - 900)`. It never reached the division:
+`ms - 1` is a unit mismatch, and the guard said so. A bare number is dimensionless here, which is the
+whole reason `900 ms - 11 s` is not 889 of anything.
+
+**2. The number leaf's refusal was unreachable.** `primary` tested the first character before calling
+`numberNode`, so the "this is not a number" throw inside `numberNode` could not fire for any input --
+a refusal, in the parser, that no text could produce. The two leaves now answer `undefined` and
+`primary` owns the one refusal message that lists the alternatives.
+
+**3. The counts line was printed only on success.** `0 of 10 comparable assertion(s) fail` is implied
+by exit 0, so on a green run it was a decoration and on a red run it was absent -- the numbers that
+say *how much of the corpus is actually being checked* vanished exactly when something was wrong with
+it. `logCheckpointCounts()` now runs on both exits, and a run with one failing assertion of ten says
+`1 of 10` before it says which one.
+
+**4. The test that meant to prove a wrong value is refused passed for the wrong reason.** `cp-p99` is
+a `>=` threshold; `4120 >= 4100` holds, so the scratch corpus accepted the "wrong" value and the test
+saw exit 0. The comparator is now stated by the fixture rather than inherited from the checkpoint it
+edited -- and the fact that it took a real run to see this is the argument for writing the test before
+believing the guard.
+
+**5. Every parse failure was reported as `does not parse: [`.** `String(error.message).split('\n')[0]`
+on a zod issue list is the opening bracket; the field, the path and the reason were on the lines that
+got dropped. That was survivable while refusals were missing strings and stopped being survivable the
+moment the schema grew a biconditional whose message *is* the diagnosis. `describeSchemaFailure`
+composes `path: message`, one line, and the guard prints it.
+
+### What this does not prove
+
+The expression is checkable; **its choice is not**. `post / baseline` and `baseline / post` both
+compute, and only the annotation says which describes the fault. What the guard now establishes is
+narrower and stronger than before: the number beside a derived checkpoint is the number that
+checkpoint's own arithmetic produces from the readings it names. Whether `889` is the right way to
+say "the delay was on the wire" is still a reading of the incident, and the corpus's job is to state
+it where a reviewer can disagree.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the field | `expression` present exactly when `signalKind` is `derived`; both halves refused by a test, one at the schema and one at the guard |
+| the grammar | 35 tests over precedence, associativity, unary minus, every leaf, every refusal, and the depth limit |
+| the units | symbol algebra with a documented limit; `ms - s` and an unreadable unit both refused |
+| the tolerance | `0.06 / 0.02 == 3` holds, `3.0000001 == 3` does not; relative, so `1e9` and `1e9 + 1` are not equal |
+| the corpus | **12 of 12** references resolve by kind; **0 of 10** comparable assertions fail; 2 derived over 4 readings |
+| the parse message | `path: message` instead of `[`; six tests, one through a real schema |
+| the counts | printed on both exits; a failure of one in ten says `1 of 10` |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **144** tests red in 1 of 2 naming files |
+| `core` / repo | **184 / 4530** · **188 / 4717**; coverage 99.97 / 99.76 / 100 / 99.97, and 100 x4 on both new modules |

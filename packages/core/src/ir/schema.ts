@@ -5,6 +5,7 @@ import {
   FAULT_CATEGORIES,
   LOG_SEVERITIES,
   CHECKPOINT_REFERENCES,
+  COMPARATORS,
   PROVENANCE_SOURCES,
   SPAN_STATUSES,
 } from './types.js';
@@ -182,18 +183,54 @@ export const entityGraphSchema = z.object({
   edges: z.array(entityEdgeSchema),
 });
 
-export const evidenceCheckpointSchema = z.object({
-  checkpointId: z.string().min(1),
-  entityRef: z.string().min(1),
-  signalRef: z.string().optional(),
-  // Absent means `series`: every checkpoint in the corpus before this field existed meant that, and
-  // a default that changed the meaning of existing data would be a migration dressed as a schema.
-  signalKind: z.enum(CHECKPOINT_REFERENCES).optional(),
-  comparator: z.enum(['>', '>=', '<', '<=', '==', '!=', 'contains', 'matches']),
-  value: z.union([z.number(), z.string()]),
-  unit: z.string().optional(),
-  description: z.string().min(1),
-});
+/**
+ * A checkpoint, and the two shapes a reference may take.
+ *
+ * `derived` is the kind whose reference *is* arithmetic, so the rule is a biconditional rather than a
+ * default: an expression is present exactly when the kind is `derived`, and a `derived` checkpoint
+ * carries no `signalRef`. Before finding 245 a derived checkpoint named one series and put the
+ * arithmetic in its number, which meant the annotation stated a computation that nothing read.
+ */
+export const evidenceCheckpointSchema = z
+  .object({
+    checkpointId: z.string().min(1),
+    entityRef: z.string().min(1),
+    signalRef: z.string().optional(),
+    // Absent means `series`: every checkpoint in the corpus before this field existed meant that, and
+    // a default that changed the meaning of existing data would be a migration dressed as a schema.
+    signalKind: z.enum(CHECKPOINT_REFERENCES).optional(),
+    // Not validated as arithmetic here: the grammar lives in `fault/expression.ts`, which is the one
+    // place that can say *why* an expression is unreadable and where it stopped.
+    expression: z.string().trim().min(1).optional(),
+    comparator: z.enum(COMPARATORS),
+    value: z.union([z.number(), z.string()]),
+    unit: z.string().optional(),
+    description: z.string().min(1),
+  })
+  .superRefine((checkpoint, ctx) => {
+    const derived = checkpoint.signalKind === 'derived';
+    if (derived && checkpoint.expression === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expression'],
+        message: 'a derived checkpoint states the arithmetic that produces its value, and this one has none',
+      });
+    }
+    if (derived && checkpoint.signalRef !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['signalRef'],
+        message: 'a derived checkpoint is referenced by its expression; naming one series beside it would state two references',
+      });
+    }
+    if (!derived && checkpoint.expression !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expression'],
+        message: `only a derived checkpoint carries an expression; this one is '${String(checkpoint.signalKind ?? 'series')}'`,
+      });
+    }
+  });
 
 export const causalStepSchema = z.object({
   step: z.number().int().nonnegative(),

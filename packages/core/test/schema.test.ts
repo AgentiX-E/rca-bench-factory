@@ -180,6 +180,69 @@ describe('faultCaseSchema', () => {
     ] as unknown as (typeof fc)['groundTruth']['evidenceCheckpoints'];
     expect(faultCaseSchema.safeParse(fc).success).toBe(false);
   });
+
+  describe('the shape a derived checkpoint has and the shape it forbids', () => {
+    // Finding 245: `expression` is present exactly when `signalKind` is `derived`. A biconditional
+    // rather than a default, because both one-sided versions are wrong in a way that reads as
+    // correct: a derived checkpoint without arithmetic is the defect, and a series checkpoint with
+    // arithmetic is a second statement of where its number came from that nothing compares.
+    function checkpoint(over: Record<string, unknown>): Record<string, unknown> {
+      return {
+        checkpointId: 'cp',
+        entityRef: 'service:default/order',
+        comparator: '==',
+        value: 1,
+        unit: '1',
+        description: 'd',
+        ...over,
+      };
+    }
+
+    function withCheckpoint(over: Record<string, unknown>): boolean {
+      const fc = validCase();
+      fc.groundTruth.evidenceCheckpoints = [checkpoint(over)] as unknown as (typeof fc)['groundTruth']['evidenceCheckpoints'];
+      return faultCaseSchema.safeParse(fc).success;
+    }
+
+    it('accepts a derived checkpoint that carries an expression and no signalRef', () => {
+      expect(withCheckpoint({ signalKind: 'derived', expression: 'a.post / a.baseline' })).toBe(true);
+    });
+
+    it('refuses a derived checkpoint with no expression, and says which field', () => {
+      const fc = validCase();
+      fc.groundTruth.evidenceCheckpoints = [checkpoint({ signalKind: 'derived' })] as unknown as (typeof fc)['groundTruth']['evidenceCheckpoints'];
+      const outcome = faultCaseSchema.safeParse(fc);
+      expect(outcome.success).toBe(false);
+      expect(JSON.stringify(outcome.error?.issues)).toContain('a derived checkpoint states the arithmetic that produces its value');
+    });
+
+    it('refuses a derived checkpoint that also names one series', () => {
+      const fc = validCase();
+      fc.groundTruth.evidenceCheckpoints = [
+        checkpoint({ signalKind: 'derived', expression: 'a.post', signalRef: 'a' }),
+      ] as unknown as (typeof fc)['groundTruth']['evidenceCheckpoints'];
+      const outcome = faultCaseSchema.safeParse(fc);
+      expect(outcome.success).toBe(false);
+      expect(JSON.stringify(outcome.error?.issues)).toContain('a derived checkpoint is referenced by its expression');
+    });
+
+    it('refuses an expression on a series checkpoint', () => {
+      const fc = validCase();
+      fc.groundTruth.evidenceCheckpoints = [
+        checkpoint({ signalRef: 'a', expression: 'a.post' }),
+      ] as unknown as (typeof fc)['groundTruth']['evidenceCheckpoints'];
+      const outcome = faultCaseSchema.safeParse(fc);
+      expect(outcome.success).toBe(false);
+      expect(JSON.stringify(outcome.error?.issues)).toContain("only a derived checkpoint carries an expression; this one is 'series'");
+    });
+
+    it('refuses an expression that is present but empty', () => {
+      // `''` is not arithmetic, and a checkpoint that states it would pass a presence check while
+      // saying nothing -- so the field refuses the empty string at the schema and the grammar is
+      // never asked.
+      expect(withCheckpoint({ signalKind: 'derived', expression: '   ' })).toBe(false);
+    });
+  });
 });
 
 describe('entityGraphSchema', () => {

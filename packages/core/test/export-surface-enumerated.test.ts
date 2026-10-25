@@ -108,6 +108,7 @@ const ENUMERATED_MODULES = [
   'ir/assembler.ts',
   'ir/guards.ts',
   'ir/schema.ts',
+  'ir/schema-errors.ts',
   'ir/types.ts',
   'score/dispatch.ts',
   'score/official.ts',
@@ -135,6 +136,7 @@ const ENUMERATED_MODULES = [
   'fault/four-layer.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
+  'fault/expression.ts',
   'fault/miss-adjudication.ts',
   'fault/miss-distractor.ts',
   'fault/denial-inventory.ts',
@@ -240,6 +242,13 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'ir/types.ts::GateResult': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::QualityGateReport': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::IrBundle': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::NumericComparator': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'ir/types.ts::SeriesPoint': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/expression.ts::ExpressionOutcome': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/expression.ts::ExpressionProblem': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/expression.ts::ExpressionReference': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/expression.ts::ExpressionSeries': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/expression.ts::ExpressionValue': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::ValidityCheck': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::FaultValidityVerdict': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::FaultValidityReport': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -455,6 +464,11 @@ const TESTED = [
   // What a checkpoint's signal reference points at. Added with the schema field, because one
   // optional string was carrying four different things and nothing could resolve it (finding 243).
   'CHECKPOINT_REFERENCES',
+  // The comparator's two halves and the point set an expression reads, declared as tuples so the
+  // schema's admission list and the evaluator's grammar have one owner each (finding 245).
+  'NUMERIC_COMPARATORS',
+  'COMPARATORS',
+  'SERIES_POINTS',
   'METRIC_SEMANTIC_TYPES',
   'isVocabularyMember',
   // score/dispatch.ts
@@ -644,6 +658,17 @@ const TESTED = [
   'ROBUST_SHIFT_METHOD',
   'locateWithMedianShift',
   'rankServicesByMedianShift',
+  // ir/schema-errors.ts -- a zod refusal with the field in it, so a case that does not parse is not
+  // reported as a case id followed by a bracket.
+  'describeSchemaFailure',
+  // fault/expression.ts -- the arithmetic a derived checkpoint states, evaluated rather than
+  // believed (finding 245).
+  'MAX_EXPRESSION_DEPTH',
+  'RELATIVE_TOLERANCE',
+  'describeExpressionProblem',
+  'evaluateExpression',
+  'holdsWithTolerance',
+  'isNumericComparator',
   // fault/four-layer.ts -- M1's four-layer condition, as a definition that can fail.
   'assessFourLayer',
   'formatFourLayerReading',

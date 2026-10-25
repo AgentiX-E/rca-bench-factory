@@ -947,11 +947,12 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
   it('resolves every reference in the corpus by its own kind', () => {
     const result = run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    // Eleven of eleven: nine name a series, one names a log line by id, and one is a configuration
-    // fact that names no series at all. Eight of the nine are comparable against their post value,
-    // and all eight hold.
+    // Twelve of twelve: eight name a series, two are derived and read four readings between them
+    // (one of the two reads two points of one series), one names a log line by id, and one is a
+    // configuration fact that names no series at all. Ten are comparable, and all ten hold.
     expect(result.out).toContain(
-      'checkpoints 11 of 11 reference(s) resolve by kind (9 to a series); 0 of 8 comparable assertion(s) fail',
+      'checkpoints 12 of 12 reference(s) resolve by kind (10 over a series, 2 of them computed from ' +
+        '4 reading(s)); 0 of 10 comparable assertion(s) fail',
     );
   });
 
@@ -1002,10 +1003,9 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'telemetry'; })]);
     expect(result.status).toBe(1);
     expect(result.out).toContain('could not be read as a FaultCase');
-    // The message keeps the first line of the parse failure, which is the case id and a bracket; the
-    // field name is on the second and is deliberately truncated, so this asserts the shape rather
-    // than a substring the truncation removes.
-    expect(result.out).toContain("does not parse");
+    // The message carries the field and the reason -- `describeSchemaFailure` composes it, because
+    // the first line of a zod issue list is `[` and that was the whole diagnosis for every refusal.
+    expect(result.out).toContain('signalKind: Invalid enum value.');
   });
 
   it('refuses a log line with no id, because nothing can reference it', () => {
@@ -1014,5 +1014,154 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     const result = run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares a log line with no id, which nothing can reference');
+  });
+});
+
+describe('check-fault-cases · a derived checkpoint states the arithmetic it claims', () => {
+  // Finding 245. `cp-processing-tripled` asserted `== 3` over a series whose post value is `0.06`,
+  // because the 3 was `0.06 / 0.02` and the divisor appeared nowhere in the annotation. The guard
+  // could only check that the series existed. Now the expression is the reference and the number is
+  // checked against what the expression computes -- so the tests below are about a *value*, not
+  // about a field being present.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The p99 checkpoint turned into a derived one, with the caller's expression and value. */
+  function derived(
+    expression: unknown,
+    options: { value?: unknown; unit?: unknown; comparator?: string; extra?: Record<string, unknown> } = {},
+  ): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        const truth = faultCase.groundTruth as Record<string, unknown>;
+        const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+        const checkpoint = checkpoints.find((one) => one.checkpointId === 'cp-p99')!;
+        delete checkpoint.signalRef;
+        checkpoint.signalKind = 'derived';
+        checkpoint.expression = expression;
+        checkpoint.value = options.value ?? 4120;
+        checkpoint.unit = options.unit ?? 'ms';
+        // `cp-p99` is a `>=` threshold; the derived shape here is an equality, so the comparison is
+        // stated rather than inherited -- otherwise `4120 >= 4100` would hold and the test that
+        // means to prove a wrong value is refused would pass for the wrong reason.
+        checkpoint.comparator = options.comparator ?? '==';
+        Object.assign(checkpoint, options.extra ?? {});
+      },
+    });
+  }
+
+  it('accepts a derived checkpoint that computes what the data says', () => {
+    // 4300ms at the post onset, 180ms at the baseline, both declared beside the sentence that states
+    // them: the difference is 4120ms and the annotation now has to say so in arithmetic.
+    const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline')]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('1 of them computed from 2 reading(s)');
+  });
+
+  it('refuses a stated value the expression does not produce', () => {
+    const result = run([
+      '--cases',
+      derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "checkpoint 'cp-p99' asserts 'request_duration_p99_ms.post - request_duration_p99_ms.baseline' == 4100, " +
+        'and it computes to 4120',
+    );
+  });
+
+  it('reports a computed value at twelve significant digits, not seventeen', () => {
+    // `4300 / 180` is 23.88888888888889. Printing all of it makes an author hunt for a difference
+    // that is not the one the message is about.
+    const result = run([
+      '--cases',
+      derived('request_duration_p99_ms.post / request_duration_p99_ms.baseline', { value: 24, unit: '1' }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('and it computes to 23.8888888889');
+  });
+
+  it('refuses a computed value stated in the wrong unit', () => {
+    const result = run([
+      '--cases',
+      derived('request_duration_p99_ms.post / request_duration_p99_ms.baseline', { value: 23.8888888889, unit: 'ms' }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("computes 'request_duration_p99_ms.post / request_duration_p99_ms.baseline' to a value in '1', but states 'ms'");
+  });
+
+  it('refuses arithmetic over a metric the signals file does not declare', () => {
+    const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.median')]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("reads the point 'median' at character 55, which is not one of baseline, post");
+  });
+
+  it('refuses arithmetic that joins two units with a plus', () => {
+    // `ms + s` is not a quantity. Before the algebra, a checkpoint could state it and nothing said so.
+    const result = run([
+      '--cases',
+      derived('request_duration_p99_ms.post + container_cpu_throttled_seconds_total.post', { unit: 'ms' }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("'+' joins 'ms' and 's', which are not the same unit");
+  });
+
+  it('refuses a derived checkpoint with no expression, and says which field is missing', () => {
+    const dir = derived('request_duration_p99_ms.post');
+    const text = readFileSync(join(dir, 'case.json'), 'utf8');
+    const edited = JSON.parse(text) as Record<string, unknown>;
+    const truth = edited.groundTruth as Record<string, unknown>;
+    const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+    delete checkpoints.find((one) => one.checkpointId === 'cp-p99')!.expression;
+    writeFileSync(join(dir, 'case.json'), `${JSON.stringify(edited, null, 2)}\n`);
+    const result = run(['--cases', dir]);
+    expect(result.status).toBe(1);
+    expect(result.out).toContain('expression: a derived checkpoint states the arithmetic that produces its value');
+  });
+
+  it('refuses a derived checkpoint that also names one series', () => {
+    const result = run([
+      '--cases',
+      derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', {
+        extra: { signalRef: 'request_duration_p99_ms' },
+      }),
+    ]);
+    expect(result.status).toBe(1);
+    expect(result.out).toContain('signalRef: a derived checkpoint is referenced by its expression');
+  });
+
+  it('refuses an expression on a checkpoint that is not derived', () => {
+    // One field with one meaning: a series checkpoint carrying arithmetic would be a second statement
+    // of how its number was obtained, which nothing would compare.
+    const result = run([
+      '--cases',
+      corpus({
+        signals: JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>,
+        mutate: (faultCase) => {
+          const truth = faultCase.groundTruth as Record<string, unknown>;
+          const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+          checkpoints.find((one) => one.checkpointId === 'cp-p99')!.expression = 'request_duration_p99_ms.post';
+        },
+      }),
+    ]);
+    expect(result.status).toBe(1);
+    expect(result.out).toContain("only a derived checkpoint carries an expression; this one is 'series'");
+  });
+
+  it('refuses two series with one name, because a reference to it names neither', () => {
+    const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & { series: Array<Record<string, unknown>> };
+    edited.series.push({ ...edited.series[0]!, post: 1 });
+    const result = run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("declares two series named 'request_duration_p99_ms', so a reference to it names neither");
+  });
+
+  it('counts a derived assertion among the comparable ones, and only one that resolves', () => {
+    // The count is what makes the corpus's own line meaningful: a checkpoint that could not be
+    // evaluated must not appear in the denominator as though it had been checked.
+    const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 })]);
+    expect(result.out).toContain('1 of 2 comparable assertion(s) fail');
   });
 });

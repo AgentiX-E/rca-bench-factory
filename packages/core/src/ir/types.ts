@@ -305,7 +305,47 @@ export const FAULT_CATEGORIES = [
 /** A fault category. Derived from `FAULT_CATEGORIES`. */
 export type FaultCategory = (typeof FAULT_CATEGORIES)[number];
 
-export type Comparator = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'contains' | 'matches';
+/**
+ * The comparators that order two numbers.
+ *
+ * Declared as a tuple because two places decide whether an assertion is *comparable* -- the schema's
+ * admitted set and the corpus guard's `if this comparator has a number on both sides` -- and the
+ * guard kept the list by hand while omitting `!=`, which the schema admits. A `!=` checkpoint was
+ * therefore neither compared nor counted, and nothing said so. The subset and the union are stated
+ * once here so a comparator is numeric in exactly one place.
+ */
+export const NUMERIC_COMPARATORS = ['>', '>=', '<', '<=', '==', '!='] as const;
+
+/** A comparator that orders two numbers. Derived from `NUMERIC_COMPARATORS`. */
+export type NumericComparator = (typeof NUMERIC_COMPARATORS)[number];
+
+/**
+ * Every comparator, in one tuple, so the union and the schema's admission list cannot disagree.
+ *
+ * The textual two are spelled here rather than in the union, because a union stated separately from
+ * the tuple is a second list: `Comparator` used to be a literal union while `schema.ts` admitted its
+ * own literal list, and a comparator added to one would be rejected by the other with nothing to say
+ * which was right.
+ */
+export const COMPARATORS = [...NUMERIC_COMPARATORS, 'contains', 'matches'] as const;
+
+/** Every comparator, numeric or textual. Derived from `COMPARATORS`. */
+export type Comparator = (typeof COMPARATORS)[number];
+
+/**
+ * The points of a series that an expression may read.
+ *
+ * A `derived` checkpoint states arithmetic over one or more series, and arithmetic has to say *which
+ * reading* of a series it means: the value before the onset or the value at it. That is this tuple,
+ * and `fault/expression.ts` parses the suffix of a reference against it -- so the grammar has no
+ * second list of point names, and adding a member here is enough to make the parser accept it. The
+ * parser then reads the series through the same name, so the tuple describes the data as well as the
+ * grammar; an `if (suffix === 'post')` in the parser would describe only the grammar.
+ */
+export const SERIES_POINTS = ['baseline', 'post'] as const;
+
+/** A point of a series. Derived from `SERIES_POINTS`. */
+export type SeriesPoint = (typeof SERIES_POINTS)[number];
 
 /**
  * What a checkpoint's `signalRef` is a reference *to*.
@@ -316,8 +356,11 @@ export type Comparator = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'contains' | 'm
  *
  * - `series`: the value is a threshold on a metric the bundle declares, so it can be evaluated
  *   against that series' post value;
- * - `derived`: the value is computed from one or more series (a ratio of two durations), so the
- *   reference resolves but the number cannot be compared with a single post value;
+ * - `derived`: the value is computed from one or more series (a ratio of two durations), so it
+ *   carries an `expression` instead of a `signalRef`; the reference is the set of series the
+ *   arithmetic reads. Until finding 245 it carried one `signalRef` and the arithmetic lived only in
+ *   the number, so two derived checkpoints could name the same series with different arithmetic and
+ *   nothing would disagree;
  * - `configuration`: the value is a fact about how the system was configured (a CPU quota), which no
  *   telemetry carries, and naming a series by the same name is a modelling error;
  * - `log`: the value is a property of a declared log line, referenced by the line's id.
@@ -335,6 +378,14 @@ export interface EvidenceCheckpoint {
   signalRef?: string;
   /** What `signalRef` names. Absent means `series`, which is what every checkpoint meant by default. */
   signalKind?: CheckpointReference;
+  /**
+   * The arithmetic a `derived` checkpoint states, over references of the form `<metric>.<point>`.
+   *
+   * Present if and only if `signalKind` is `derived`: for that kind it *is* the reference, and
+   * `signalRef` is forbidden beside it, because a derived checkpoint that named one series and
+   * computed over another would be two statements of which one is silently not the one being checked.
+   */
+  expression?: string;
   comparator: Comparator;
   value: number | string;
   /** UCUM-style unit. Required whenever `value` is numeric. */

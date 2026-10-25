@@ -61,12 +61,12 @@
       {
         "checkpointId": "cp-processing-tripled",
         "entityRef": "service:synthetic-storefront/order-events-consumer",
-        "signalRef": "per_message_processing_seconds",
+        "signalKind": "derived",
+        "expression": "per_message_processing_seconds.post / per_message_processing_seconds.baseline",
         "comparator": "==",
         "value": 3,
         "unit": "1",
-        "description": "per-message processing time after the schema change, as a multiple of the time before it",
-        "signalKind": "derived"
+        "description": "per-message processing time after the schema change, as the ratio of the post reading to the baseline one"
       }
     ],
     "remediation": [

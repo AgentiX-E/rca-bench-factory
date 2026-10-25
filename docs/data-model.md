@@ -93,6 +93,76 @@ interface FaultCase {
 member of the contract, not a fallback: an injector the taxonomy does not know maps
 to it rather than to a guessed category.
 
+### `EvidenceCheckpoint` — what a checkpoint's reference is
+
+```ts
+interface EvidenceCheckpoint {
+  checkpointId: string;
+  entityRef: string;                  // must resolve against the EntityGraph
+  signalRef?: string;                 // the series, the log line's id, or the configuration key
+  signalKind?: CheckpointReference;    // absent means 'series'
+  expression?: string;                // present exactly when signalKind is 'derived'
+  comparator: Comparator;
+  value: number | string;
+  unit?: string;                      // required whenever value is numeric
+  description: string;
+}
+```
+
+`signalKind` is a published vocabulary (`CHECKPOINT_REFERENCES`) because one optional
+string was carrying four different kinds of reference and nothing resolved it: of the
+eleven checkpoints the corpus held at the time, eight named a series that did not
+exist. Each kind has the rule that can actually be applied to it -- a series reference
+must resolve to a declared series whose unit agrees and whose post value satisfies the
+assertion, a `log` reference must name a declared line `id`, and a `configuration`
+reference must name *nothing* telemetry-shaped.
+
+### `expression` — the arithmetic a derived checkpoint states
+
+A derived checkpoint's value is computed from one or more series, so it carries an
+`expression` **instead of** a `signalRef`. Before this field existed,
+`cp-processing-tripled` asserted `== 3` over a series whose post value is `0.06 s`:
+the 3 was `0.06 / 0.02`, and the divisor appeared nowhere in the annotation. A guard
+could only check that the series existed, so two derived checkpoints could state
+different arithmetic over one series and both pass.
+
+```
+expression := term (('+' | '-') term)*
+term       := unary (('*' | '/') unary)*
+unary      := '-' unary | primary
+primary    := number | reference | '(' expression ')'
+number     := digit+ ('.' digit+)? (('e' | 'E') ('+' | '-')? digit+)?
+reference  := identifier '.' point
+identifier := [A-Za-z_][A-Za-z0-9_]*
+point      := a member of SERIES_POINTS
+```
+
+The point a reference may name is a member of `SERIES_POINTS` (`baseline`, `post`), a
+tuple in `ir/types.ts`. The parser reads that tuple, so a third point needs an edit in
+one place, and the same name then reads the series -- the tuple describes the data as
+well as the grammar.
+`scripts/check-fault-cases.mjs` evaluates every derived expression with
+`fault/expression.ts` and compares the result with the stated `value` and `unit`.
+
+**Units are symbol-exponent pairs, and the algebra is exactly that.** `*` and `/` add
+and subtract exponents; `+` and `-` require the same unit on both sides, which is what
+rejects `900 ms - 11 s`. It is not dimensional analysis: `%` and `1` are different
+symbols here, as are `1 min` and `60 s`. A unit the grammar cannot read is reported as
+unsupported rather than treated as dimensionless.
+
+**Comparison is tolerant at `1e-9` relative**, because `0.06 / 0.02` is
+`2.9999999999999996` and an exact `==` would reject the annotation that is right. The
+tolerance makes a difference inside it *equal* for every comparator, so
+`2.9999999999999996 >= 3` holds and `2.9999999999999996 > 3` does not.
+
+**What this still does not prove.** That the expression is the arithmetic the incident
+merits: `post / baseline` and `post * 3 / baseline` over different readings both
+compute, and only the annotation says which one describes the fault. What it does
+prove is that the number beside the annotation is the number the annotation's own
+arithmetic produces from the readings it names -- which is what "the value is derived"
+has to mean if it is to mean anything.
+
+
 ## Layer 4 — `QualityGateReport`
 
 The evidence the case is usable. Produced by `runAllGates`.
