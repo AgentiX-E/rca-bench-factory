@@ -757,7 +757,8 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.status, result.out).toBe(0);
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
-    expect(result.out).toContain('RE2 4 case(s) written, 7 file(s) with no rows');
+    // Six, not seven: the cart case's two spans fill one `traces.csv` (finding 240).
+    expect(result.out).toContain('RE2 4 case(s) written, 6 file(s) with no rows');
   });
 
   it('accepts a log line whose quote is in its own case text', () => {
@@ -802,5 +803,109 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     ]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares a log line without saying what it supports');
+  });
+});
+
+describe('check-fault-cases · a span, which is the last modality and the only one with a parent', () => {
+  // A span has a start, a duration and a parent, and the cart case states both of its durations --
+  // 900ms on the caller and 11ms in the callee -- so the pair is quoted rather than invented. What
+  // the parent adds is the property a metric and a log cannot express: that the 11ms sits *inside*
+  // the 900ms, which is what makes the difference the time on the wire.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The checkout declaration with one span pair, quoting its own text. */
+  function withTraces(edit: (spans: Array<Record<string, unknown>>) => void): Record<string, unknown> {
+    const copy = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>;
+    const spans: Array<Record<string, unknown>> = [
+      {
+        service: 'checkout-api',
+        spanName: 'POST /checkout',
+        durationMs: 4300,
+        quote: '180ms to 4.3s',
+        why: 'the caller span, which carries the whole change the pager fired on',
+      },
+      {
+        service: 'checkout-api-0',
+        spanName: 'render_cart',
+        durationMs: 500,
+        parent: 'POST /checkout',
+        quote: 'the pod sat pinned at its 500m limit',
+        why: 'a child span, so that the parent holds the total and the child holds one hop',
+      },
+    ];
+    edit(spans);
+    copy.traces = spans;
+    return copy;
+  }
+
+  it('makes the coverage report call every suite ready, which it never could before', () => {
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('rcaeval-re3 ready');
+  });
+
+  it('accepts a parent that names a span in the same file, and fills traces.csv', () => {
+    const result = run(['--cases', corpus({ signals: withTraces(() => undefined) })]);
+    expect(result.status, result.out).toBe(0);
+    // One data-less file for this case, and it is `logs.csv`: the spans were emitted, so
+    // `traces.csv` has rows. That is the whole point of the modality -- a file that used to be a
+    // header now carries the two spans the incident text states.
+    expect(result.out).toContain('RE2 1 case(s) written, 1 file(s) with no rows');
+  });
+
+  it('refuses a span whose quote is not in the incident text', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withTraces((spans) => {
+          spans[0]!.quote = '180ms to 5.3s';
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('derives a span from a quote the incident text does not contain');
+  });
+
+  it('refuses a duration of zero, which is a span that did not happen', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withTraces((spans) => {
+          spans[1]!.durationMs = 0;
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("declares span 'render_cart' with a duration of 0");
+  });
+
+  it('refuses a parent that names no span in the file', () => {
+    // A row whose parent id belongs to nothing is a span an exporter writes and no reader can
+    // assemble, which is worse than a missing row because it looks complete.
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withTraces((spans) => {
+          spans[1]!.parent = 'POST /nothing';
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("whose parent 'POST /nothing' is not declared in the same file");
+  });
+
+  it('refuses a span that does not say what it supports', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        signals: withTraces((spans) => {
+          spans[0]!.why = 'because';
+        }),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain('declares a span without saying what it supports');
   });
 });

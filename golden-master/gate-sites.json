@@ -78,28 +78,28 @@
     },
     {
       "script": "scripts/check-doc-counts.mjs",
-      "line": 222,
+      "line": 237,
       "diagnostic": "check-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-doc-counts.test.ts"
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 61,
+      "line": 62,
       "diagnostic": "usage: node scripts/check-fault-cases.mjs [--cases <dir>] [--samples <file>]",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 76,
+      "line": 77,
       "diagnostic": "check-fault-cases: could not read the ${what} at ${path}: ${String(error instanceof Error ? error.message : error)}",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 90,
+      "line": 91,
       "condition": "index.schema !== INDEX_SCHEMA",
       "diagnostic": "check-fault-cases: the index has schema '${String(index.schema)}', not '${INDEX_SCHEMA}'",
       "status": "proved",
@@ -107,7 +107,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 94,
+      "line": 95,
       "condition": "!Array.isArray(index.cases)",
       "diagnostic": "cases",
       "status": "proved",
@@ -115,7 +115,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 487,
+      "line": 552,
       "condition": "invalid.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
@@ -123,7 +123,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 495,
+      "line": 560,
       "condition": "problems.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
@@ -131,7 +131,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 504,
+      "line": 569,
       "condition": "unnamed.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
@@ -139,7 +139,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 512,
+      "line": 577,
       "condition": "index.cases.length < floor",
       "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",

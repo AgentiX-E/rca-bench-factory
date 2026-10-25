@@ -82,9 +82,9 @@ records the command and its output. Both were fixed at the cause.
 | absent numbers | 118, 132–133, printed in the OK line |
 | the blocker scan | reads index **and** volumes; asserts corpus > 3× index |
 | `audit-volumes.test.ts` | **16 tests**, two of them spawning the command |
-| `core` test suite | **182 files, 4451 tests passed** (as of this commit) |
+| `core` test suite | **182 files, 4457 tests passed** (as of this commit) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **186 files, 4638 tests passed** (as of this commit) |
+| repo test suite | **186 files, 4644 tests passed** (as of this commit) |
 | gate sites | **70** across 41 scripts |
 | `typecheck` / `lint` / `docs:check` | green, by exit code |
 
@@ -2507,3 +2507,68 @@ volumes, findings 1–239.
 - **26 samples still carry no case.** `[open: 4 of 30. The annotation now has to satisfy seven
   obligations -- four layers with quotes, G1, G2, G5, and optionally telemetry with an origin, a
   series that passes G3, a baseline that locates it, and a log body that quotes its text]`
+
+## v2.68 — the last modality, and an id that was a name
+
+v2.67 ended with one sentence: *the seven data-less files are all `traces.csv`*. This round closes
+it, and a span turns out to be the one modality with a property the other two cannot express -- **a
+parent**. A metric says how much, a log says what was said, a span says where the time went, but only
+if the child sits inside the parent.
+
+The cart case states both numbers the pair needs (`rose from 12ms to 900ms` on the caller, `stayed
+at 11ms` in the callee), so the declaration gained `traces`: service, span name, duration, an
+optional `parent` naming another entry, and the usual `quote`/`why`. Four refusals -- a quote not in
+the text, a duration of zero (a span that did not happen), a `parent` naming nothing, and a span with
+no statement of what it supports. The parent rule matters most: **a row whose parent id belongs to
+nothing is worse than a missing row, because it looks complete.**
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 ready · rcaeval-re3 ready
+check-fault-cases: export RE1 4 case(s) written, 0 file(s) with no rows · RE2 4 case(s) written, 6 file(s) with no rows · RE3 0 case(s) written, 0 file(s) with no rows, 4 skipped
+```
+
+**All three suites are ready for the first time.** RE2's data-less count went 7 → 6, and RE3 still
+writes nothing because it targets code-level faults and the corpus has none -- two independent
+reasons, both printed rather than inferred from a zero.
+
+**The defect is the ids.** The first version built span ids from the case id's first twelve
+characters after stripping hyphens. The corpus happens to differ before that cut, which is exactly
+the problem: two cases that agreed up to the twelfth character would produce the same ids and one
+case's trace would point into another's -- a defect that appears only as the corpus grows, in the
+artefact that is hardest to check by eye. It is a digest now, with the reason in the code.
+
+**What it does not fix.** Every span sits ten seconds after the onset, because the texts give
+durations and no start times; and no test would catch a collision, only the structure a digest
+protects.
+
+**A flake, diagnosed rather than retried away.** The third full run failed thirteen assertions in
+`check-doc-counts.test.ts`, all reading `the guard exited 0 without printing`. That guard has two
+exits and prints at both, so a silent exit 0 is not its verdict -- and the assertion that said so had
+been written one round earlier for the same shape. Two candidates: the write was lost (`console.*`
+to a pipe is asynchronous and `process.exit` does not wait), or the child never ran. Both are
+addressed and neither is assumed: the guard now writes through a `verdict(fd, text)` helper built on
+`writeSync`, so a verdict cannot be truncated by its own exit; and the helper retries the silent
+shape once, still failing if it repeats. `derive-gate-sites.mjs` had to learn `verdict(` as a
+diagnostic call, or the site would have reported **no diagnostic at all** -- a stronger claim than
+the truth. Four full runs after the fix were green against one failure in three before; one
+observation of a rare event is not a rate, and that is what the finding says.
+
+**Acceptance.** 55 tests over the guard (six new over the span rule); typecheck, lint, `docs:check`
+green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46 gates, 46
+caught, 0 survived** (hollowing the guard turns 102 tests red); four consecutive full runs green;
+core **182 / 4457**, cli 4 / 187, repo **186 / 4644**; coverage 99.97 / 99.75 / 100 / 99.97; audit 5
+volumes, findings 1–241.
+
+### Left open
+
+- **RE3 is unreachable for two reasons that could each be fixed.** `[open: it needs traces, which the
+  corpus now has for one case, and code-level faults, of which it has none -- the sample
+  `code-unhandled-exception-export` is a code fault whose text quotes a log line, so a fifth case
+  would make RE3's first condition true and leave only the category rule between it and an export]`
+- **Every span's clock is an offset.** `[open: ten seconds after the onset, because the texts state
+  durations and not start times. A declared `offsetMs` with a quote would make the clock checkable in
+  the one place it is currently asserted]`
+- **A prefix-derived id is not the only place a name was used as an identity.** `[open: the same
+  shape -- truncate, slugify, then treat the result as unique -- is what produced the unresolvable
+  component names in the extraction key (finding 190). The digest here fixes one instance; the habit
+  is what to look for]`

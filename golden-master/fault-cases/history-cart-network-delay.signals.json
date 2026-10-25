@@ -2,7 +2,7 @@
   "schema": "rca-bench-derived-signals/1",
   "origin": "derived",
   "caseId": "history-cart-network-delay",
-  "why": "Telemetry for the network delay case, derived from the two numbers the incident text states. This case is the one whose evidence is a *comparison*: the caller's span moves from 12ms to 900ms and the callee's own handler stays at 11ms, so the second series deliberately carries no anomaly. G3 needs one sustained anomaly and this case has it in the caller; the flat series is the control that makes the fault a network one rather than a slow service, and a corpus that only ever declared moving series would have no way to say 'this one did not move'.",
+  "why": "Telemetry for the network delay case, derived from the two numbers the incident text states. This case is the one whose evidence is a *comparison*: the caller's span moves from 12ms to 900ms and the callee's own handler stays at 11ms, so the second series deliberately carries no anomaly. G3 needs one sustained anomaly and this case has it in the caller; the flat series is the control that makes the fault a network one rather than a slow service, and a corpus that only ever declared moving series would have no way to say 'this one did not move'. This case is also the corpus's first with spans: the text states both the caller's span and the callee's handler, so the client/child pair is quoted rather than invented, and `traces.csv` stops being a header-only file.",
   "series": [
     {
       "service": "cart-service",
@@ -21,6 +21,23 @@
       "post": 11,
       "quote": "stayed at 11ms",
       "why": "the checkpoint `cp-server-handler` is the control: the callee's own time did not move, which is what locates the delay on the wire"
+    }
+  ],
+  "traces": [
+    {
+      "service": "cart-service",
+      "spanName": "POST /cart/checkout",
+      "durationMs": 900,
+      "quote": "rose from 12ms to 900ms",
+      "why": "the caller's span, which carries the whole delay and is the only place the 900ms exists"
+    },
+    {
+      "service": "inventory-service",
+      "spanName": "reserve_stock",
+      "durationMs": 11,
+      "parent": "POST /cart/checkout",
+      "quote": "stayed at 11ms",
+      "why": "the callee's own span as a child of the caller's, so the difference between the two durations is the time on the wire"
     }
   ]
 }

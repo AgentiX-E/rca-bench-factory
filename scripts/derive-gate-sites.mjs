@@ -273,7 +273,12 @@ function fingerprint(rawLines, index) {
     // report. Excluding it left that site with no fingerprint at all, which is
     // the least useful answer -- it reads identically to "the guard has no
     // diagnostic", which is a different and much stronger claim.
-    if (!/(console\.(?:error|log)|process\.stderr\.write)\s*\(/.test(rawLines[j])) continue;
+    // `verdict(...)` is `check-doc-counts.mjs`'s synchronous write helper: it exists because
+    // `console.*` writes to a pipe asynchronously and `process.exit` does not wait for them, so a
+    // verdict could be lost while its exit code survived. A diagnostic written through it is still
+    // this gate's diagnostic, and excluding the call left the site with no fingerprint at all --
+    // which reads identically to "this guard has no diagnostic", a much stronger claim.
+    if (!/(console\.(?:error|log)|process\.stderr\.write|\bverdict)\s*\(/.test(rawLines[j])) continue;
     const call = joined(rawLines, j);
     // The first argument's text, before the closing paren of the call.
     const body = call.slice(call.indexOf('(') + 1);

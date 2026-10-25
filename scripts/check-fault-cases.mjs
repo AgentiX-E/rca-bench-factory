@@ -38,6 +38,7 @@
  *   2  a case is incomplete, or the count is below the floor
  */
 
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -209,6 +210,45 @@ function expandLog(declaration, faultCase) {
       kind: 'log',
       body: String(declaration.body),
       ...(typeof declaration.severity === 'string' ? { severityText: String(declaration.severity) } : {}),
+    },
+  }));
+}
+
+/**
+ * Where declared spans land: ten seconds after the onset, which is inside every window this corpus
+ * declares and after the fault has begun.
+ */
+const TRACE_OFFSET_MS = 10_000;
+
+/**
+ * A declared span, expanded into the signals an exporter reads.
+ *
+ * The span ids are derived from the case id rather than generated, so two runs produce one file --
+ * the same reason the series jitter is a fixed cycle. `parent` names another entry's `spanName`,
+ * and the guard refuses a parent that names nothing, because a span whose parent is missing is a
+ * row an exporter writes and no reader can assemble into a trace.
+ */
+function expandTraces(declarations, faultCase, caseId) {
+  const onsetMs = Date.parse(faultCase.injectTime);
+  // A digest, not a prefix of the name. The first version sliced the case id to twelve characters,
+  // which collides for any two cases that agree up to that point -- `history-checkout-a` and
+  // `history-checkout-b` would have produced the same span ids and one case's trace would have
+  // pointed into the other's. A prefix of a name is a name, not an identity.
+  const namespace = createHash('sha256').update(caseId).digest('hex').slice(0, 12);
+  const spanId = (index) => `${namespace}${String(index + 1).padStart(4, '0')}`;
+  const idByName = new Map(declarations.map((one, index) => [String(one.spanName), spanId(index)]));
+  return declarations.map((one, index) => ({
+    irVersion: '1.0.0',
+    resource: { 'service.name': String(one.service) },
+    timestamp: new Date(onsetMs + TRACE_OFFSET_MS).toISOString(),
+    signal: 'trace',
+    payload: {
+      kind: 'trace',
+      traceId: `${namespace}trace`,
+      spanId: spanId(index),
+      ...(typeof one.parent === 'string' ? { parentSpanId: idByName.get(one.parent) } : {}),
+      spanName: String(one.spanName),
+      durationMs: Number(one.durationMs),
     },
   }));
 }
@@ -423,7 +463,32 @@ for (const entry of index.cases) {
       }
     }
 
-    const signals = [...series.flatMap((one) => expandSeries(one, parsedCase)), ...logs.flatMap((one) => expandLog(one, parsedCase))];
+    const traces = Array.isArray(declaration.traces) ? declaration.traces : [];
+    const spanNames = new Set(traces.map((one) => String(one?.spanName)));
+    for (const one of traces) {
+      const quote = typeof one?.quote === 'string' ? one.quote : '';
+      if (!text.includes(fold(quote))) {
+        problems.push(`'${caseId}' derives a span from a quote the incident text does not contain: '${quote}'`);
+      }
+      const duration = Number(one?.durationMs);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        problems.push(`'${caseId}' declares span '${String(one?.spanName)}' with a duration of ${String(one?.durationMs)}`);
+      }
+      if (typeof one?.why !== 'string' || one.why.length < 20) {
+        problems.push(`'${caseId}' declares a span without saying what it supports`);
+      }
+      if (typeof one?.parent === 'string' && !spanNames.has(one.parent)) {
+        problems.push(
+          `'${caseId}' declares span '${String(one?.spanName)}' whose parent '${one.parent}' is not declared in the same file`,
+        );
+      }
+    }
+
+    const signals = [
+      ...series.flatMap((one) => expandSeries(one, parsedCase)),
+      ...logs.flatMap((one) => expandLog(one, parsedCase)),
+      ...expandTraces(traces, parsedCase, caseId),
+    ];
     telemetryCases.push(parsedCase);
     telemetrySignals[caseId] = signals;
     if (firstGraph === null) firstGraph = parsedGraph;

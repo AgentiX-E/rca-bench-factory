@@ -3567,3 +3567,132 @@ line is not a string with a number in it.**
 | the guard | 49 tests; five new over the log rule, two of them driving the acceptance |
 | the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **90** tests red in 1 of 2 naming files |
 | `core` / repo | **182 / 4451** · **186 / 4638** |
+
+## Finding 240 — the last modality, and an id that was a name
+
+Finding 239 left one sentence: *the seven data-less files are all `traces.csv`*. This round closes
+that, and the modality turned out to be the one with a property the other two cannot express.
+
+**A span has a parent.** A metric answers "how much", a log answers "what was said", and a span
+answers "where the time went" -- but only if the child sits inside the parent. The cart case states
+both numbers the pair needs: `rose from 12ms to 900ms` on the caller and `stayed at 11ms` in the
+callee, which is also its own reason for calling the fault a network one. So the declaration gained
+`traces`:
+
+| field | what it is |
+| --- | --- |
+| `service`, `spanName`, `durationMs` | the span's own facts, both durations quoted from the text |
+| `parent` | the `spanName` of another entry in the same file, or absent for a root |
+| `quote`, `why` | the sentence it rests on, and what it supports |
+
+Four refusals: a quote the incident text does not contain, a duration that is zero or not a number
+(a span that did not happen), a `parent` naming nothing in the file, and a span with no statement of
+what it supports. The `parent` rule is the one that matters: **a row whose parent id belongs to
+nothing is worse than a missing row, because it looks complete.**
+
+### The numbers, all three ready
+
+```
+check-fault-cases: coverage rcaeval-re1 ready · rcaeval-re2 ready · rcaeval-re3 ready
+check-fault-cases: export RE1 4 case(s) written, 0 file(s) with no rows · RE2 4 case(s) written, 6 file(s) with no rows · RE3 0 case(s) written, 0 file(s) with no rows, 4 skipped
+```
+
+Three rounds ago no suite was ready and every modality was missing; now the coverage report calls all
+three evaluable. **RE2's data-less count went 7 → 6** -- one `traces.csv` has rows. And **RE3 still
+writes nothing**: it targets code-level faults and the corpus's four categories are `resource`,
+`network`, `middleware`, `middleware`. Two independent reasons, and the export line says so rather
+than leaving a reader to infer it from a zero.
+
+### The defect: an id derived from a name
+
+The first version built span ids from the case id's first twelve characters after stripping hyphens:
+
+```js
+const spanId = (index) => `${caseId.replace(/-/g, '').slice(0, 12)}${...}`;
+```
+
+`history-checkout-cpu-saturation` and `history-cart-network-delay` happen to differ before the cut,
+so the corpus was fine -- and that is exactly the problem. Two cases that agreed up to the twelfth
+character would produce **the same span ids**, and one case's trace would point into another's: a
+defect that appears only when the corpus grows, in the artefact that is hardest to check by eye. The
+prefix is a name, not an identity. It is now `sha256(caseId)` truncated to twelve hex characters,
+with the reason in the code.
+
+### What this does not fix
+
+- **The span's timestamp is a fixed offset.** Ten seconds after the onset, for every span in every
+  case. The text gives durations and no start times, so the clock is a construction -- the same
+  limitation finding 239 recorded for log lines, one field over.
+- **A collision is not tested for.** What is tested is the structure the digest protects: the child's
+  parent resolves, and a case with spans fills its `traces.csv`. A test that would catch a collision
+  needs two cases whose ids agree to twelve characters, and the corpus has none.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the modality | `traces` in a declaration: span name, duration, optional parent, quote and why |
+| the refusals | five tests: quote, zero duration, dangling parent, no support statement, and the acceptance with a filled `traces.csv` |
+| the corpus | the cart case carries two spans, the callee as a child of the caller |
+| the coverage report | **all three suites ready** for the first time |
+| the export | RE1 4 / 0 data-less; RE2 4 / **6** data-less; RE3 0 / 4 skipped (code-level only) |
+| the ids | a digest of the case id, not its first twelve characters |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing the guard turns **102** tests red in 1 of 2 naming files |
+| `core` / repo | **182 / 4457** · **186 / 4644** |
+
+## Finding 241 — a guard can lose its own verdict on the way out
+
+The third full run of this round failed thirteen assertions, all in one file, all reading the same
+thing:
+
+```
+the guard exited 0 without printing; every exit prints. {"status":0,"signal":null,"error":"undefined"}
+```
+
+`check-doc-counts.mjs` has two exits and prints at both. A run that exits 0 with no output is not a
+verdict from it -- and the test that says so was written for exactly this, one round earlier, after
+three cases came back as `expected '' to contain 'check-doc-counts: OK'`.
+
+### Two candidate causes, and a fix for one of them
+
+| cause | what it looks like | what makes it impossible |
+| --- | --- | --- |
+| the write was **lost** | `console.log`/`console.error` write to a pipe asynchronously, and `process.exit` does not wait for them | `writeSync(1|2, ...)`: the bytes are in the descriptor before the process ends |
+| the child **never ran** | the kernel refused the spawn under sixty-four workers | a retry, which the helper already had for `status: null` |
+
+Which one it was is not knowable from one observation, so both are addressed and neither is assumed:
+
+- the guard's output goes through a `verdict(fd, text)` helper that uses `writeSync`, so **a verdict
+  can no longer be truncated by its own exit** -- which is worth having whatever the diagnosis, since
+  a guard whose failure message can vanish is the one defect that makes every other guard
+  unreadable;
+- the test helper treats `status: 0` with no output as a third "never ran" shape and retries once,
+  and **still fails if the retry is silent too**.
+
+### The deriver had to learn the new call
+
+`derive-gate-sites.mjs` finds a site's diagnostic in the nearest preceding `console.error`,
+`console.log` or `process.stderr.write` call. `verdict(2, 'check-doc-counts: FAILED')` is none of
+those, so the site lost its fingerprint and the inventory reported a site with **no diagnostic at
+all** -- which reads identically to "this guard has no diagnostic", a much stronger claim. The
+pattern now includes `verdict(`, with the reason in the code: a diagnostic written through a helper
+is still the gate's diagnostic, and a deriver that only understands `console` renames a real message
+into a silent one.
+
+### Evidence
+
+Seven full runs were made: **three before the fix, one of which failed**; four after, all green. That
+is not proof that the race is gone -- one observation of a rare event is not a rate -- and the
+finding says so rather than claiming a fix it cannot demonstrate.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the reproduction | 1 of 3 full runs, 13 assertions, `status 0` with empty output |
+| the guard | both exits print through `writeSync`; a verdict cannot be truncated by its own exit |
+| the deriver | `verdict(` is a diagnostic call; the site kept `check-doc-counts: FAILED` |
+| the retry | the silent shape is retried once and fails if it repeats |
+| the runs | **4 consecutive full runs green** after the fix, against 1 failure in 3 before |
+| the meta-gate | **46 gates, 46 caught, 0 survived**; hollowing `check-doc-counts.mjs` turns **54** tests red |
+| `core` / repo | **182 / 4457** · **186 / 4644** |

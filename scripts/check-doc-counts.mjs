@@ -97,7 +97,7 @@
  * table's own three refusal branches.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
@@ -216,9 +216,24 @@ const UNMEASURED = [
 
 const MIN_REASON = 40;
 
+/**
+ * Print and exit, synchronously.
+ *
+ * `console.log`/`console.error` write to a pipe asynchronously, and `process.exit` does not wait
+ * for them -- so a verdict can be *lost* while the exit code survives, and a caller sees "exit 1
+ * with no message" or, worse, nothing at all. A whole-suite run produced thirteen assertions in
+ * `check-doc-counts.test.ts` reading `the guard exited 0 without printing` from a guard that has
+ * exactly two exits and prints at both; whether that was a lost write or a child that never got
+ * scheduled, the fix on this side is the same: the bytes go into the descriptor before the process
+ * ends, so a verdict cannot be truncated by its own exit.
+ */
+function verdict(fd, text) {
+  writeSync(fd, `${text}\n`);
+}
+
 function fail(lines) {
-  console.error('check-doc-counts: FAILED');
-  for (const line of lines) console.error(`  ${line}`);
+  verdict(2, 'check-doc-counts: FAILED');
+  for (const line of lines) verdict(2, `  ${line}`);
   process.exit(1);
 }
 
@@ -502,7 +517,8 @@ function main() {
   if (problems.length) fail(problems);
 
   const scopes = [...lastByScope.keys()].join(', ');
-  console.log(
+  verdict(
+    1,
     `check-doc-counts: OK (${read.length} published count(s), each naming its scope; ` +
       `scope(s) covered: ${scopes}; ${excused} unread phrase(s) excused in writing)`,
   );

@@ -128,8 +128,13 @@ function run(body: string, unmeasured?: unknown) {
   // the guard, when the guard had produced no verdict whatsoever. Neither shape
   // is a verdict, so both are retried once; a *wrong* verdict is not retried,
   // because retrying a red would be masking it.
+  //
+  // And a third shape, which cost a whole-suite run: `status: 0` with no output at all. The guard
+  // has two exits and prints at both, and its output is written with `writeSync` precisely so the
+  // exit cannot truncate it -- so a silent exit 0 cannot be this guard's verdict either, and it is
+  // retried once. If the retry is silent too, the assertion below still fails.
   const neverRan = (): boolean =>
-    failure() === 'EAGAIN' || failure() === 'ENOMEM' || r.status === null;
+    failure() === 'EAGAIN' || failure() === 'ENOMEM' || r.status === null || (r.status === 0 && `${r.stdout}${r.stderr}` === '');
   if (neverRan()) {
     r = spawnSync('node', argv, { cwd: ROOT, encoding: 'utf8' });
   }
