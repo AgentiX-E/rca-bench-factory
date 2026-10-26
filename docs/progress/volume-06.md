@@ -1892,6 +1892,13 @@ against Zenodo, EOCD → directory → local slice → inflate, so 740 KB rather
 **191 / 4825**; `docs:check` green; audit 6 volumes, findings 1–263. The round's product is the
 measurement and the specification the next round implements.
 
+**One more red, and where it came from.** The commit that carried the resume fix took CI red on
+master: `battery-witnesses.test.ts` asserts `OK (5 witness(es) across 5 injection(s))`, and the sixth
+injection made it six. Locally I had run the battery itself (6 of 6 caught, pristine green) and the
+document gates, but not the test that reads the battery's row count — adding a row felt like a change
+to the battery rather than to the suite. **The reader was one file away.** Fixed in `d582bef5b`; the
+count is part of the battery's published shape, which is exactly why the suite holds it.
+
 ### Left open
 
 - **The reader knows one corpus shape.** `[open: RE2's per-case layout is measured and quoted in
