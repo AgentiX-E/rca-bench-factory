@@ -803,3 +803,78 @@ readable.
 | the tests | 5, **4 red against the pre-fix reader**; the fifth is the RE1 regression guard and passes both ways by design |
 | the cost | 0.19 s per case at the real shape; 270 cases ≈ 50 s |
 | `core` / repo | **187 / 4643** · **191 / 4830**; coverage unchanged |
+
+## Finding 265 — 270 of 270, and the three defects the battery found in my own round
+
+Run `40400190945` at `fe871088b` is the first dispatch in this repository's history to fetch an
+anchor, round-trip every case in it, and score all of them:
+
+```
+21:05:08  VERIFIED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36c…
+21:11:25  VERIFIED  rcaeval-re2-ss: bytes=245629018 sha256=7aff9a3a…
+21:25:43  VERIFIED  rcaeval-re2-tt: bytes=2801345134 sha256=6706311d…
+21:27:31  REPORT    …/pins.json: 3 pin(s) measured
+21:27:31  registry pins agree with this download
+21:27:31  ROUNDTRIP declared 270 case(s), found 2978 file(s), 364 directory(ies)
+21:28:34  ROUNDTRIP context 270 case(s) carried other entities in their table; 44154 column(s) …
+21:28:34  ROUNDTRIP report …/rcaeval-scores.json: 270 scored, 0 skipped, 0 failed
+21:28:34  ROUNDTRIP PASSED (270 case(s) round-tripped through the official layout)
+```
+
+**270 of 270 at `oracle=1.00`**, 0 skipped, 0 failed. With RE1's 375 of 375 that is two corpora —
+645 cases — through ingest, export and the upstream rule, on data this repository did not write.
+
+The run took 31 minutes: 26 to transfer 4.2 GB (two cut transfers resumed), 1 to round-trip 270
+cases. The 0.19 s-per-case estimate from finding 264 held.
+
+### The number needed a reader, not a log line
+
+A result that exists only in a run's log is finding 153's defect, so it went into
+`golden-master/roundtrip.json` — which had to change shape, because it held one record and there are
+now two anchors. It is `{ records: [...] }`, one entry per measured anchor, and
+`check-roundtrip-record.mjs` checks each entry against the registry and against the block the
+document publishes. `docs/progress.md`'s section became one `### <anchor>` block per record, because a
+single table cannot carry two numbers for "cases round-tripped" without one of them being a sum of
+things that are not the same thing.
+
+That migration produced a defect worth recording: the section rewrite used
+`indexOf('## The last measured round trip')`, which matched a **cross-reference to the section** in the
+L4 table at line 16, and replaced 170 lines of history before the guard was ever run. `git checkout`
+restored it, and the second attempt anchored on the heading with its newline. **A pointer to a section
+is not the section** — the guard's own header said so, and I made the mistake it describes.
+
+### The battery found three defects in the rewrite
+
+`scripts/injection/roundtrip-record.py` runs 25 mutations against the guard. After the rewrite:
+
+| what it said | what it meant |
+| --- | --- |
+| `ANCHOR MISSING` ×2 | two injections pointed at lines the rewrite moved and renamed — the battery **refuses to run** rather than skipping them, which is why the failure named the injection instead of silently passing |
+| `SURVIVED` (1) | "stop comparing the document's mean" left every test green: one test still called `doc()` with the old flat signature, which produced a block with figures and no anchor, so the run failed for *that* reason and the assertion on "mean oracle" was satisfied by an unrelated message |
+
+The third is the one that matters. A test that asserts on a failure it did not cause is a test that
+pins nothing, and it went green precisely because I changed the fixture's shape and not the test's
+expectation. It now asserts the reason **and** that the reason is not the other one. 25 of 25 caught,
+0 survived, 0 inert.
+
+### What this does not do
+
+It does not turn `oracle=1.00` into a claim about upstream's published numbers. The oracle is the
+official rule applied to the ground-truth root cause — the metric's ceiling. Upstream publishes *solver*
+accuracies. Comparing them is P0-2 and remains unmeasured.
+
+It does not read RE2's traces or logs, so those cases carry one of the IR's four layers
+(finding 264's limitation, unchanged).
+
+It does not cover `rcaeval-re3`, which is still `pending` — five assets, none pinned.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the run | 270/270 at `oracle=1.00`, 0 skipped, 0 failed, 3 pins agreeing |
+| the record | one entry per anchor; the guard checks both against the registry |
+| the document | one `### <anchor>` block per record, held to it by the same guard |
+| the tests | 34 in `check-roundtrip-record.test.ts` (5 new), all green |
+| the battery | **25 injections, 25 caught, 0 survived, 0 inert** after two retargets |
+| `core` / repo | **187 / 4648** · **191 / 4835**; coverage unchanged |

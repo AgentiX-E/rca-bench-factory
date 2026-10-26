@@ -97,7 +97,7 @@ def assert_vitest_is_callable() -> None:
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("stop refusing a record with no anchor", "if (typeof record.anchor !== 'string' || record.anchor === '') {", "if (false) {", "refuses a record with no anchor"),
+    ("stop refusing a record with no anchor", "if (typeof anchor !== 'string' || anchor === '') {", "if (false) {", "refuses a record with no anchor"),
     ("stop refusing a record with no run id", "if (!Number.isInteger(run.id) || run.id <= 0) {", "if (false) {", "refuses a record with no run id"),
     ("stop refusing a record with no commit", "if (typeof run.headSha !== 'string' || !/^[0-9a-f]{7,40}$/.test(run.headSha)) {", "if (false) {", "refuses a record with no commit"),
     ("stop refusing a corpus of no cases", "if (!Number.isInteger(declaredCases) || declaredCases <= 0) {", "if (false) {", "refuses a corpus of no cases"),
@@ -109,7 +109,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("stop refusing a pin the registry denies", "if (asset.sha256 !== pin.sha256 || asset.bytes !== pin.bytes) {", "if (false) {", "refuses a pin whose bytes or digest the registry denies"),
     ("stop refusing a record that omits a pinned asset", "if (!pins.some((pin) => pin.id === asset.id)) {", "if (false) {", "refuses a record that omits an asset"),
     ("stop refusing a document with no section", "if (published === null) {", "if (false) {", "refuses a document with no such section"),
-    ("stop comparing the document's anchor", "if (published.anchor !== record.anchor) {", "if (false) {", "refuses a document that publishes another anchor"),
+    ("stop looking the document up by anchor", "const published = blocks.get(anchor);", "const published = [...blocks.values()][0];", "refuses a document that publishes another anchor"),
     ("stop comparing the document's declared cases", "if (published.declaredCases !== declaredCases) {", "if (false) {", "refuses a document whose declared case count"),
     ("stop comparing the document's pass count", "if (published.roundTripped !== roundTripped) {", "if (false) {", "refuses the document that stood at 253 of 375"),
     ("stop comparing the document's failure count", "if (published.failed !== failed) {", "if (false) {", "refuses a document whose failure count"),

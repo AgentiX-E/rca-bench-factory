@@ -1962,3 +1962,51 @@ audit 6 volumes, findings 1–264; the corpus is unchanged at **13 of 30**.
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint; no relation is checked for direction.
+
+## v2.92 — 270 of 270
+
+**What was open.** v2.91's first item: "the anchor is readable but unscored". The dispatch answered it:
+run `40400190945` at `fe871088b` fetched all three RE2 assets, agreed with the registry on all three
+pins, declared 270 cases, and **round-tripped 270 of 270 at `oracle=1.00`** — 0 skipped, 0 failed.
+
+31 minutes: 26 to transfer 4.2 GB (two cut transfers resumed), 1 to round-trip 270 cases. The
+0.19 s-per-case estimate held, and the context line reported 44 154 columns across 8 289 entity
+references that were not the case's component and were not attributed to it.
+
+**What changed after it.** The number needed a reader, not a log line, so
+`golden-master/roundtrip.json` became `{ records: [...] }` — one entry per measured anchor — and
+`check-roundtrip-record.mjs` checks each entry against the registry and against the block
+`docs/progress.md` publishes. The document's section became one `### <anchor>` block per record,
+because one table cannot hold two numbers for "cases round-tripped" without summing things that are
+not the same thing.
+
+**Two things went wrong inside this round, and both were caught.**
+
+The section rewrite used `indexOf('## The last measured round trip')`, which matched a
+*cross-reference* to the section in the L4 table at line 16 and replaced 170 lines of history.
+`git checkout` restored it; the second attempt anchored on the heading with its newline. The guard's
+own header warns about exactly this — "a pointer to a section is not the section".
+
+The injection battery then found three defects in the rewrite: two injections whose anchors the
+rewrite moved (`ANCHOR MISSING`, which the battery refuses to run rather than skipping), and one
+`SURVIVED` — a test that had gone green for the **wrong reason**, because it still called `doc()` with
+the old flat signature and the run failed on the anonymous block instead of on the mean. That test now
+asserts the reason and that it is not the other one. 25 of 25 caught, 0 survived, 0 inert.
+
+**Acceptance.** 5 new tests (34 in `check-roundtrip-record.test.ts`); `pnpm test` green at core
+**187 / 4648**, cli 4 / 187, repo **191 / 4835**; `docs:check` green; audit 6 volumes, findings 1–265;
+the corpus is unchanged at **13 of 30**.
+
+### Left open
+
+- **`oracle` is a ceiling, not an accuracy.** `[open: the official rule applied to the ground-truth
+  root cause; upstream publishes solver accuracies, and comparing the two is P0-2]`
+- **RE2's traces and logs are not read.** `[open: `tracets_lat.csv` and `logts.csv` sit in every case
+  directory unopened, so those cases carry one of the IR's four layers]`
+- **`rcaeval-re3` is still pending.** `[open: five fetchable assets, none pinned, no round trip]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and five rounds have gone to the
+  anchor]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint; no relation is checked for direction.

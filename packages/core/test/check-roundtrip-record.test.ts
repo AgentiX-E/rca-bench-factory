@@ -62,23 +62,45 @@ function record(overrides: Record<string, unknown> = {}) {
 
 const REGISTRY = [{ id: 'rcaeval-re1-ob', bytes: 10, sha256: SHA }];
 
-function doc(figures: Record<string, string> = {}): string {
-  const rows = {
-    anchor: '`rcaeval-re1`',
-    'cases declared by the corpus': '**375**',
-    'cases round-tripped at `oracle=1.00`': '**375**',
-    'cases that did not': '**0**',
-    'mean oracle score across the scored cases': '**1.00**',
-    'worst per-case oracle score': '**1.00**',
-    ...figures,
-  };
+/**
+ * A document publishing one block per anchor.
+ *
+ * The section holds a block per measured anchor since RE2 was measured, so the
+ * fixture mirrors that shape rather than the single table it replaced: a guard
+ * tested against a shape the document no longer has is a guard about the past.
+ */
+function doc(blocks: Record<string, Record<string, string>> = {}): string {
+  const anchors = Object.keys(blocks).length === 0 ? { 'rcaeval-re1': {} } : blocks;
+  const sections = Object.entries(anchors)
+    .map(([anchor, figures]) => {
+      const rows: Record<string, string> = {
+        anchor: `\`${anchor}\``,
+        'cases declared by the corpus': '**375**',
+        'cases round-tripped at `oracle=1.00`': '**375**',
+        'cases that did not': '**0**',
+        'mean oracle score across the scored cases': '**1.00**',
+        'worst per-case oracle score': '**1.00**',
+        ...figures,
+      };
+      return (
+        `### ${anchor}\n\n| item | value |\n| --- | --- |\n` +
+        Object.entries(rows)
+          .map(([k, v]) => `| ${k} | ${v} |`)
+          .join('\n')
+      );
+    })
+    .join('\n\n');
   return (
-    '# Progress tracking\n\n## The last measured round trip\n\n| item | value |\n| --- | --- |\n' +
-    Object.entries(rows)
-      .map(([k, v]) => `| ${k} | ${v} |`)
-      .join('\n') +
-    '\n\n## Audit passes\n\n| Pass | Scope |\n| --- | --- |\n'
+    '# Progress tracking\n\n## The last measured round trip\n\n' +
+    sections +
+    '\n\n### What these tables do not claim\n\nA prose block, with no figures.\n' +
+    '\n## Audit passes\n\n| Pass | Scope |\n| --- | --- |\n'
   );
+}
+
+/** The record file holds one record per measured anchor. */
+function recordFile(records: unknown[]): { records: unknown[] } {
+  return { rule: 'fixture', records };
 }
 
 /** Run the guard against fixture files. */
@@ -90,7 +112,23 @@ function run(
   const recordPath = join(dir, 'roundtrip.json');
   const registryPath = join(dir, 'official-assets.json');
   const docPath = join(dir, 'progress.md');
-  writeFileSync(recordPath, options.raw?.record ?? JSON.stringify(options.record ?? record(), null, 2));
+  /**
+   * A bare record is wrapped into the file's list.
+   *
+   * Every refusal below is about *a record*, and the file that carries records
+   * became `{ records: [...] }` when a second anchor was measured. Wrapping here
+   * keeps each test's subject the same -- the record it mutated -- while the shape
+   * on disk stays the shape the guard reads. The one test that is *about* the file
+   * shape passes `raw`, which is not wrapped.
+   */
+  const given = options.record;
+  const file =
+    given === undefined
+      ? recordFile([record()])
+      : Array.isArray((given as { records?: unknown[] }).records)
+        ? given
+        : recordFile([given]);
+  writeFileSync(recordPath, options.raw?.record ?? JSON.stringify(file, null, 2));
   writeFileSync(registryPath, JSON.stringify(options.registry ?? REGISTRY, null, 2));
   writeFileSync(docPath, options.doc ?? doc());
   const r = spawnSync('node', [SCRIPT, '--record', recordPath, '--registry', registryPath, '--doc', docPath], {
@@ -199,13 +237,17 @@ describe('check-roundtrip-record', () => {
   });
 
   it('refuses a document that publishes another anchor', () => {
-    const r = run({ doc: doc({ anchor: '`rcaeval-re2`' }) });
+    // The document has a block, and it is for an anchor nothing measured. Both
+    // halves are violations now that the section is a map rather than one table:
+    // the record's anchor has no block, and the block's anchor has no record.
+    const r = run({ doc: doc({ 'rcaeval-re2': {} }) });
     expect(r.code).toBe(1);
-    expect(r.out).toContain('publishes anchor');
+    expect(r.out).toContain("publishes no '### rcaeval-re1' block");
+    expect(r.out).toContain('no record measured it');
   });
 
   it('refuses a document whose declared case count is another run\'s', () => {
-    const r = run({ doc: doc({ 'cases declared by the corpus': '**999**' }) });
+    const r = run({ doc: doc({ 'rcaeval-re1': { 'cases declared by the corpus': '**999**' } }) });
     expect(r.code).toBe(1);
     expect(r.out).toContain('different run');
   });
@@ -215,8 +257,10 @@ describe('check-roundtrip-record', () => {
   it('refuses the document that stood at 253 of 375', () => {
     const r = run({
       doc: doc({
-        'cases round-tripped at `oracle=1.00`': '**253**',
-        'cases that did not': '**122**',
+        'rcaeval-re1': {
+          'cases round-tripped at `oracle=1.00`': '**253**',
+          'cases that did not': '**122**',
+        },
       }),
     });
     expect(r.code).toBe(1);
@@ -224,7 +268,7 @@ describe('check-roundtrip-record', () => {
   });
 
   it('refuses a document whose failure count does not complete the partition', () => {
-    const r = run({ doc: doc({ 'cases that did not': '**1**' }) });
+    const r = run({ doc: doc({ 'rcaeval-re1': { 'cases that did not': '**1**' } }) });
     expect(r.code).toBe(1);
     expect(r.out).toContain('did not round-trip');
   });
@@ -357,19 +401,110 @@ describe('check-roundtrip-record', () => {
         scores: { scored: 0, skipped: 0, failed: 1, oracle: { min: 0, max: null, mean: null, distribution: {} }, source: 'fixture' },
         pins: [{ id: 'rcaeval-re1-ob', bytes: 10, sha256: SHA }],
       }),
-      doc: doc({ 'cases round-tripped at `oracle=1.00`': '**0**', 'cases that did not': '**1**' }),
+      doc: doc({
+        'rcaeval-re1': { 'cases round-tripped at `oracle=1.00`': '**0**', 'cases that did not': '**1**' },
+      }),
     });
     expect(r.code).toBe(1);
     expect(r.out).toContain('absence of one');
   });
 
   it('refuses a document whose mean disagrees with the record', () => {
-    const r = run({ doc: doc({ 'mean oracle score across the scored cases': '**0.98**' }) });
+    const r = run({
+      doc: doc({ 'rcaeval-re1': { 'mean oracle score across the scored cases': '**0.98**' } }),
+    });
     expect(r.code).toBe(1);
+    // The assertion is on the *reason*, because the wrong reason is reachable here:
+    // a flat call to `doc()` produces a block with figures and no anchor, which
+    // fails the run for a different cause and leaves this test green while the
+    // comparison it exists to pin has been deleted. The injection battery caught
+    // exactly that, as a SURVIVED on this witness.
     expect(r.out).toContain('mean oracle');
+    expect(r.out).not.toContain('name no');
   });
 
   it('declares the script it spawns, because gate-sites rule 7 reconciles it', () => {
     expect(DRIVES).toEqual(['scripts/check-roundtrip-record.mjs']);
+  });
+});
+
+/**
+ * The file became a list when a second anchor was measured, and each half of that
+ * change has a way to be wrong: a file with no list, two records claiming one
+ * anchor, a document missing one anchor's block, a document publishing an anchor
+ * nothing measured.
+ */
+describe('check-roundtrip-record · two anchors', () => {
+  it('refuses a file that holds no records array, rather than reading it as one record', () => {
+    const r = run({ raw: { record: JSON.stringify(record(), null, 2) } });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('holds no `records` array');
+  });
+
+  it('refuses two records claiming one anchor', () => {
+    const r = run({ record: recordFile([record(), record()]) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('two records claim the same anchor');
+  });
+
+  it('accepts two records when the document publishes both', () => {
+    const second = record({
+      anchor: 'rcaeval-re2',
+      run: { id: 2, headSha: 'deadbef' },
+      corpus: { declaredCases: 270, roundTripped: 270, oracle: 1 },
+      scores: {
+        scored: 270,
+        skipped: 0,
+        failed: 0,
+        oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 270 } },
+        source: 'fixture',
+      },
+      pins: [{ id: 'rcaeval-re2-ob', bytes: 10, sha256: SHA }],
+    });
+    const registry = [...REGISTRY, { id: 'rcaeval-re2-ob', bytes: 10, sha256: SHA }];
+    const docText = doc({
+      'rcaeval-re1': {},
+      'rcaeval-re2': {
+        'cases declared by the corpus': '**270**',
+        'cases round-tripped at `oracle=1.00`': '**270**',
+        'cases that did not': '**0**',
+      },
+    });
+    const r = run({
+      record: recordFile([record(), second]),
+      registry,
+      doc: docText,
+    });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('rcaeval-re1: 375/375');
+    expect(r.out).toContain('rcaeval-re2: 270/270');
+  });
+
+  it('refuses a document that publishes only one of the two blocks', () => {
+    const second = record({
+      anchor: 'rcaeval-re2',
+      run: { id: 2, headSha: 'deadbef' },
+      corpus: { declaredCases: 270, roundTripped: 270, oracle: 1 },
+      scores: {
+        scored: 270,
+        skipped: 0,
+        failed: 0,
+        oracle: { min: 1, max: 1, mean: 1, distribution: { 1: 270 } },
+        source: 'fixture',
+      },
+      pins: [{ id: 'rcaeval-re2-ob', bytes: 10, sha256: SHA }],
+    });
+    const registry = [...REGISTRY, { id: 'rcaeval-re2-ob', bytes: 10, sha256: SHA }];
+    const r = run({ record: recordFile([record(), second]), registry, doc: doc({ 'rcaeval-re1': {} }) });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("publishes no '### rcaeval-re2' block");
+  });
+
+  it('ignores a prose sub-section that publishes no figures', () => {
+    // The document's "what these tables do not claim" block has no table. Requiring
+    // every `###` to name an anchor would make that note illegal, so the rule is
+    // about blocks that publish figures rather than about headings.
+    const r = run();
+    expect(r.code).toBe(0);
   });
 });

@@ -85,7 +85,7 @@ function registryAssets(registry) {
 }
 
 /**
- * The numeric and named figures the document publishes, read from its own rows.
+ * The numeric and named figures the document publishes, one block per anchor.
  *
  * Scoped to the section rather than to the file, so a `253 / 375` left standing
  * inside a *dated* record elsewhere in the same file cannot satisfy this: those
@@ -97,6 +97,17 @@ function registryAssets(registry) {
  * this section from the headline table near the top of the file, so it read the
  * L5 row and the prose under it and reported every figure as `undefined`. A
  * pointer to a section is not the section.
+ *
+ * ## Why the section holds one block per anchor
+ *
+ * It held one table, because there was one measured anchor. There are two now, and
+ * a single table cannot carry two numbers for "cases round-tripped" without one of
+ * them being a sum of things that are not the same thing. So each anchor gets a
+ * `### <anchor>` sub-section with the same rows, and this reads them as a map.
+ * A block with no `anchor` row, and a record with no block, are both violations --
+ * the first because a table a reader cannot attribute is a table that will be read
+ * as being about whatever they were looking for, the second because it is the
+ * original defect: a measurement that exists only in a log.
  */
 function readPublished(doc) {
   const lines = doc.split('\n');
@@ -105,58 +116,95 @@ function readPublished(doc) {
   );
   if (start === -1) return null;
 
-  const figures = {};
+  const blocks = new Map();
+  let anonymous = 0;
+  let current = null;
+  /**
+   * A block is a *record* block when it publishes figures, and only then does it
+   * need an anchor.
+   *
+   * The section also holds prose sub-sections -- "what these tables do not claim"
+   * is one, and it has no table at all. Requiring every `###` to name an anchor
+   * would forbid a reader-facing note inside the section, and silently ignoring a
+   * block that *did* publish figures would be worse: a typo in one row label would
+   * turn a record into prose and nothing would say so. So the test is whether the
+   * block carries any of the five figures.
+   */
+  const CARRIES_FIGURES = ['declaredCases', 'roundTripped', 'failed', 'meanOracle', 'worstOracle'];
+  const flush = () => {
+    if (current === null) return;
+    const published = CARRIES_FIGURES.some((key) => current.figures[key] !== undefined);
+    if (!published) return;
+    if (current.anchor === null) {
+      anonymous += 1;
+      return;
+    }
+    blocks.set(current.anchor, current.figures);
+  };
+
   for (let i = start + 1; i < lines.length; i += 1) {
     const line = lines[i];
-    if (line.startsWith('#')) break;
+    // A new section or a new top-level heading ends this one; a `###` starts a new
+    // anchor block inside it.
+    if (/^#{1,2} /.test(line)) break;
+    if (/^### /.test(line)) {
+      flush();
+      current = { anchor: null, figures: {} };
+      continue;
+    }
+    if (current === null) continue;
     if (!line.trimStart().startsWith('|')) continue;
     const cells = line.split('|').slice(1, -1);
     if (cells.length < 2) continue;
     const key = cells[0].replace(/`/g, '').trim().toLowerCase();
     const value = cells[1].replace(/`/g, '').trim();
-    if (key.includes('anchor')) figures.anchor = value;
-    else if (key.includes('cases declared')) figures.declaredCases = Number(value.replace(/[^0-9]/g, ''));
-    else if (key.includes('round-tripped')) figures.roundTripped = Number(value.replace(/[^0-9]/g, ''));
-    else if (key.includes('did not')) figures.failed = Number(value.replace(/[^0-9]/g, ''));
-    else if (key.includes('mean oracle')) figures.meanOracle = Number(value.replace(/[^0-9.]/g, ''));
-    else if (key.includes('worst per-case')) figures.worstOracle = Number(value.replace(/[^0-9.]/g, ''));
+    if (key.includes('anchor')) {
+      current.anchor = value;
+      current.figures.anchor = value;
+    } else if (key.includes('cases declared')) current.figures.declaredCases = Number(value.replace(/[^0-9]/g, ''));
+    else if (key.includes('round-tripped')) current.figures.roundTripped = Number(value.replace(/[^0-9]/g, ''));
+    else if (key.includes('did not')) current.figures.failed = Number(value.replace(/[^0-9]/g, ''));
+    else if (key.includes('mean oracle')) current.figures.meanOracle = Number(value.replace(/[^0-9.]/g, ''));
+    else if (key.includes('worst per-case')) current.figures.worstOracle = Number(value.replace(/[^0-9.]/g, ''));
   }
-  return figures;
+  flush();
+  return { blocks, anonymous };
 }
 
-function main() {
-  const recordPath = argValue('--record') ?? RECORD;
-  const registryPath = argValue('--registry') ?? REGISTRY;
-  const docPath = argValue('--doc') ?? DOC;
-
-  const record = readJson(recordPath, 'the round-trip record');
-  const problems = [];
+/**
+ * Check one anchor's record, and hold it to the block the document publishes.
+ *
+ * Returns a one-line summary for the OK message; every failure is appended to
+ * `problems` so one run reports all of them rather than the first.
+ */
+function checkRecord(record, registry, blocks, problems) {
+  const anchor = record.anchor;
 
   // 1. A record with no run is a claim with no source.
   const run = record.run ?? {};
-  if (typeof record.anchor !== 'string' || record.anchor === '') {
-    problems.push('the record names no anchor, so nothing says what was round-tripped');
+  if (typeof anchor !== 'string' || anchor === '') {
+    problems.push('a record names no anchor, so nothing says what was round-tripped');
   }
   if (!Number.isInteger(run.id) || run.id <= 0) {
-    problems.push('the record names no run id, so its numbers cannot be traced to a run');
+    problems.push(`${anchor}: the record names no run id, so its numbers cannot be traced to a run`);
   }
   if (typeof run.headSha !== 'string' || !/^[0-9a-f]{7,40}$/.test(run.headSha)) {
-    problems.push('the record names no commit, so there is no revision its numbers were measured at');
+    problems.push(`${anchor}: the record names no commit, so there is no revision its numbers were measured at`);
   }
 
   // 2. The counts have to be a partition of the corpus.
   const corpus = record.corpus ?? {};
   const { declaredCases, roundTripped } = corpus;
   if (!Number.isInteger(declaredCases) || declaredCases <= 0) {
-    problems.push('the record declares no cases, so a pass rate over it would be undefined');
+    problems.push(`${anchor}: the record declares no cases, so a pass rate over it would be undefined`);
   } else if (!Number.isInteger(roundTripped) || roundTripped < 0 || roundTripped > declaredCases) {
     problems.push(
-      `the record reports ${roundTripped} round-tripped out of ${declaredCases}, which is not a ` +
+      `${anchor}: the record reports ${roundTripped} round-tripped out of ${declaredCases}, which is not a ` +
         'subset of the corpus',
     );
   }
   if (typeof corpus.oracle !== 'number' || corpus.oracle <= 0 || corpus.oracle > 1) {
-    problems.push(`the record reports oracle ${corpus.oracle}, which is not a score in (0, 1]`);
+    problems.push(`${anchor}: the record reports oracle ${corpus.oracle}, which is not a score in (0, 1]`);
   }
 
   // 3. The score block, and the partition it claims.
@@ -171,66 +219,70 @@ function main() {
   const oracle = scores.oracle ?? {};
   const distribution = oracle.distribution ?? {};
   if (typeof scores.source !== 'string' || scores.source === '') {
-    problems.push('the score block does not say where its numbers came from, which is the defect this record exists to fix');
+    problems.push(
+      `${anchor}: the score block does not say where its numbers came from, which is the defect this ` +
+        'record exists to fix',
+    );
   }
   const partition = (scores.scored ?? 0) + (scores.skipped ?? 0) + (scores.failed ?? 0);
   if (!Number.isInteger(scores.scored) || partition !== declaredCases) {
     problems.push(
-      `the score block accounts for ${partition} of ${declaredCases} declared case(s) ` +
+      `${anchor}: the score block accounts for ${partition} of ${declaredCases} declared case(s) ` +
         `(${scores.scored} scored + ${scores.skipped} skipped + ${scores.failed} failed). A report whose ` +
         'records do not cover the declared set is a report about a subset.',
     );
   }
   if (scores.scored !== roundTripped) {
     problems.push(
-      `the record says ${roundTripped} case(s) round-tripped and ${scores.scored} scored; those are two ` +
-        'names for the same fact and they disagree',
+      `${anchor}: the record says ${roundTripped} case(s) round-tripped and ${scores.scored} scored; those ` +
+        'are two names for the same fact and they disagree',
     );
   }
   const distributionTotal = Object.values(distribution).reduce((a, b) => a + b, 0);
   if (Object.keys(distribution).length > 0 && distributionTotal !== scores.scored) {
     problems.push(
-      `the distribution accounts for ${distributionTotal} case(s) and ${scores.scored} were scored, so it ` +
-        'is a second, independent count that can disagree with the first',
+      `${anchor}: the distribution accounts for ${distributionTotal} case(s) and ${scores.scored} were ` +
+        'scored, so it is a second, independent count that can disagree with the first',
     );
   }
   if (scores.scored === 0) {
     for (const field of ['min', 'max', 'mean']) {
       if (oracle[field] !== null) {
         problems.push(
-          `no case was scored and the oracle's ${field} is ${oracle[field]}; an empty score set has no ` +
-            `${field}, and zero is a score rather than the absence of one`,
+          `${anchor}: no case was scored and the oracle's ${field} is ${oracle[field]}; an empty score set ` +
+            `has no ${field}, and zero is a score rather than the absence of one`,
         );
       }
     }
   } else {
     for (const field of ['min', 'max', 'mean']) {
       if (typeof oracle[field] !== 'number') {
-        problems.push(`the oracle's ${field} is not a number, so the score block is not readable`);
+        problems.push(`${anchor}: the oracle's ${field} is not a number, so the score block is not readable`);
       }
     }
     if (typeof oracle.min === 'number' && typeof oracle.max === 'number' && typeof oracle.mean === 'number') {
       if (!(oracle.min <= oracle.mean && oracle.mean <= oracle.max)) {
         problems.push(
-          `the oracle's mean (${oracle.mean}) is outside [${oracle.min}, ${oracle.max}], which no set of ` +
-            'scores can produce',
+          `${anchor}: the oracle's mean (${oracle.mean}) is outside [${oracle.min}, ${oracle.max}], which no ` +
+            'set of scores can produce',
         );
       }
       for (const [score, count] of Object.entries(distribution)) {
         const value = Number(score);
         if (!(value >= oracle.min && value <= oracle.max)) {
-          problems.push(`the distribution holds a score of ${score}, outside [${oracle.min}, ${oracle.max}]`);
+          problems.push(`${anchor}: the distribution holds a score of ${score}, outside [${oracle.min}, ${oracle.max}]`);
         }
         if (!Number.isInteger(count) || count <= 0) {
-          problems.push(`the distribution holds ${count} case(s) at ${score}, which is not a count`);
+          problems.push(`${anchor}: the distribution holds ${count} case(s) at ${score}, which is not a count`);
         }
       }
       if (Object.keys(distribution).length > 0) {
-        const weighted = Object.entries(distribution).reduce((a, [score, count]) => a + Number(score) * count, 0) / distributionTotal;
+        const weighted =
+          Object.entries(distribution).reduce((a, [score, count]) => a + Number(score) * count, 0) / distributionTotal;
         if (Math.abs(weighted - oracle.mean) > 1e-9) {
           problems.push(
-            `the mean is ${oracle.mean} and the distribution's mean is ${weighted}; a mean written beside ` +
-              'a distribution rather than computed from it is a second number that can drift',
+            `${anchor}: the mean is ${oracle.mean} and the distribution's mean is ${weighted}; a mean written ` +
+              'beside a distribution rather than computed from it is a second number that can drift',
           );
         }
       }
@@ -238,24 +290,23 @@ function main() {
   }
 
   // 4. The pins, against the registry the workflow itself verifies a fetch against.
-  const registry = registryAssets(readJson(registryPath, 'the asset registry'));
   const pins = Array.isArray(record.pins) ? record.pins : [];
   if (pins.length === 0) {
-    problems.push('the record carries no pins, so nothing ties it to a particular download');
+    problems.push(`${anchor}: the record carries no pins, so nothing ties it to a particular download`);
   }
   for (const pin of pins) {
     if (!/^[0-9a-f]{64}$/.test(String(pin.sha256))) {
-      problems.push(`pin '${pin.id}': sha256 is not 64 hex characters, so it is not a digest`);
+      problems.push(`${anchor}: pin '${pin.id}': sha256 is not 64 hex characters, so it is not a digest`);
       continue;
     }
     const asset = registry.find((a) => a.id === pin.id);
     if (asset === undefined) {
-      problems.push(`pin '${pin.id}': the registry does not list this asset, so the pin is about nothing`);
+      problems.push(`${anchor}: pin '${pin.id}': the registry does not list this asset, so the pin is about nothing`);
       continue;
     }
     if (asset.sha256 !== pin.sha256 || asset.bytes !== pin.bytes) {
       problems.push(
-        `pin '${pin.id}': the record says ${pin.bytes} bytes / ${pin.sha256}, the registry says ` +
+        `${anchor}: pin '${pin.id}': the record says ${pin.bytes} bytes / ${pin.sha256}, the registry says ` +
           `${asset.bytes} bytes / ${asset.sha256}. A record cannot claim a download the registry denies.`,
       );
     }
@@ -264,16 +315,81 @@ function main() {
   // must appear, or a record could quietly drop the one that failed to verify.
   for (const asset of registry) {
     if (typeof asset.sha256 !== 'string') continue;
-    if (!asset.id.startsWith(`${record.anchor}-`)) continue;
+    if (!asset.id.startsWith(`${anchor}-`)) continue;
     if (!pins.some((pin) => pin.id === asset.id)) {
       problems.push(
-        `the registry pins '${asset.id}' and the record does not mention it, so the record is a ` +
+        `${anchor}: the registry pins '${asset.id}' and the record does not mention it, so the record is a ` +
           'partial account of the download that a reader would take as complete',
       );
     }
   }
 
-  // 5. The documents, scoped to the section that claims to be current.
+  // 5. The document, one block per anchor.
+  const published = blocks.get(anchor);
+  if (published === undefined) {
+    problems.push(
+      `${anchor}: the document publishes no '### ${anchor}' block under '${SECTION}', so the measurement has ` +
+        'no reader -- which is the state this guard exists to end',
+    );
+    return `${anchor}: ${roundTripped}/${declaredCases} (unpublished)`;
+  }
+  if (published.declaredCases !== declaredCases) {
+    problems.push(
+      `${anchor}: the document says the corpus declares ${published.declaredCases} cases and the record says ` +
+        `${declaredCases}. One of the two is a different run's number.`,
+    );
+  }
+  if (published.roundTripped !== roundTripped) {
+    problems.push(
+      `${anchor}: the document says ${published.roundTripped} cases round-tripped and the record says ` +
+        `${roundTripped}. This is the sentence that stood at 253 for two passes after the run reported 375.`,
+    );
+  }
+  const failed = declaredCases - roundTripped;
+  if (published.failed !== failed) {
+    problems.push(`${anchor}: the document says ${published.failed} cases did not round-trip; the record implies ${failed}`);
+  }
+  if (scores.scored > 0 && typeof oracle.mean === 'number') {
+    if (published.meanOracle !== Number(oracle.mean.toFixed(2))) {
+      problems.push(
+        `${anchor}: the document publishes a mean oracle of ${published.meanOracle} and the record's ` +
+          `distribution has a mean of ${oracle.mean.toFixed(2)}. This is the number P0-2 asks for, so it is ` +
+          'the one a reader compares against upstream.',
+      );
+    }
+    if (typeof oracle.min === 'number' && published.worstOracle !== Number(oracle.min.toFixed(2))) {
+      problems.push(
+        `${anchor}: the document publishes a worst case of ${published.worstOracle} and the record's minimum ` +
+          `is ${oracle.min.toFixed(2)}`,
+      );
+    }
+  }
+
+  return (
+    `${anchor}: ${roundTripped}/${declaredCases} at oracle=${corpus.oracle}, mean ${oracle.mean ?? 'n/a'} over ` +
+    `${scores.scored} scored (${scores.skipped} skipped, ${scores.failed} failed), ${pins.length} pin(s) agree ` +
+    `with the registry, run ${run.id} on ${run.headSha}`
+  );
+}
+
+function main() {
+  const recordPath = argValue('--record') ?? RECORD;
+  const registryPath = argValue('--registry') ?? REGISTRY;
+  const docPath = argValue('--doc') ?? DOC;
+
+  const file = readJson(recordPath, 'the round-trip record');
+  const records = file.records;
+  if (!Array.isArray(records) || records.length === 0) {
+    fail([
+      `${recordPath} holds no \`records\` array.`,
+      'One record per measured anchor, so a second anchor is a second entry rather than',
+      'a rewritten file: the first version of this file held one record and adding the',
+      'second would have replaced the first.',
+    ]);
+  }
+
+  const problems = [];
+  const registry = registryAssets(readJson(registryPath, 'the asset registry'));
   const published = readPublished(readFileSync(docPath, 'utf8'));
   if (published === null) {
     fail([
@@ -282,40 +398,28 @@ function main() {
       'file nobody reads -- which is the state this guard exists to end.',
     ]);
   }
-  if (published.anchor !== record.anchor) {
+  const { blocks } = published;
+  if (published.anonymous > 0) {
     problems.push(
-      `the document publishes anchor '${published.anchor}' and the record measured '${record.anchor}'`,
+      `the document has ${published.anonymous} block(s) under '${SECTION}' that publish figures and name no ` +
+        'anchor, so a reader cannot say which run they describe',
     );
   }
-  if (published.declaredCases !== declaredCases) {
-    problems.push(
-      `the document says the corpus declares ${published.declaredCases} cases and the record says ` +
-        `${declaredCases}. One of the two is a different run's number.`,
-    );
-  }
-  if (published.roundTripped !== roundTripped) {
-    problems.push(
-      `the document says ${published.roundTripped} cases round-tripped and the record says ` +
-        `${roundTripped}. This is the sentence that stood at 253 for two passes after the run ` +
-        'reported 375.',
-    );
-  }
-  const failed = declaredCases - roundTripped;
-  if (published.failed !== failed) {
-    problems.push(`the document says ${published.failed} cases did not round-trip; the record implies ${failed}`);
-  }
-  if (scores.scored > 0 && typeof oracle.mean === 'number') {
-    if (published.meanOracle !== Number(oracle.mean.toFixed(2))) {
-      problems.push(
-        `the document publishes a mean oracle of ${published.meanOracle} and the record's distribution has ` +
-          `a mean of ${oracle.mean.toFixed(2)}. This is the number P0-2 asks for, so it is the one a reader ` +
-          'compares against upstream.',
-      );
+
+  const measured = new Set();
+  const summaries = [];
+  for (const record of records) {
+    if (measured.has(record.anchor)) {
+      problems.push(`${record.anchor}: two records claim the same anchor, so one of them is stale`);
     }
-    if (typeof oracle.min === 'number' && published.worstOracle !== Number(oracle.min.toFixed(2))) {
+    measured.add(record.anchor);
+    summaries.push(checkRecord(record, registry, blocks, problems));
+  }
+  for (const anchor of blocks.keys()) {
+    if (!measured.has(anchor)) {
       problems.push(
-        `the document publishes a worst case of ${published.worstOracle} and the record's minimum is ` +
-          `${oracle.min.toFixed(2)}`,
+        `${anchor}: the document publishes a block for it and no record measured it, so the block is a ` +
+          'number nothing holds',
       );
     }
   }
@@ -323,11 +427,8 @@ function main() {
   if (problems.length) fail(problems);
 
   console.log(
-    `check-roundtrip-record: OK (${record.anchor}: ${roundTripped}/${declaredCases} at ` +
-      `oracle=${corpus.oracle}, mean ${oracle.mean ?? 'n/a'} over ${scores.scored} scored ` +
-      `(${scores.skipped} skipped, ${scores.failed} failed), ${pins.length} pin(s) agree with the registry, ` +
-      `run ${run.id} on ${run.headSha}; and ${docPath.endsWith('progress.md') ? 'docs/progress.md' : docPath} ` +
-      'publishes the same)',
+    `check-roundtrip-record: OK (${summaries.join('; ')}; and ` +
+      `${docPath.endsWith('progress.md') ? 'docs/progress.md' : docPath} publishes the same)`,
   );
 }
 

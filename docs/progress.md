@@ -13,7 +13,7 @@ vendored.
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
 | L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across **every module in `src/` (47 at this revision), 538 runtime symbols, 0 orphans**, exemptions keyed by symbol rather than by module |
-| L4 | Official reproduction | **3 of 4 anchors met; the fourth's path now runs on the real corpus** | Golden Master, mutation suite and the official-metric regression are green in CI every push; the real-corpus round trip round-tripped **375 / 375 at `oracle=1.00`** (run `38250480271`, see `## The last measured round trip`). **The number is still not reproduced**: no comparison against upstream published figures exists, which is P0-2 |
+| L4 | Official reproduction | **3 of 4 anchors met; the fourth now round-trips two corpora** | Golden Master, mutation suite and the official-metric regression are green in CI every push; the real-corpus round trip is **375 / 375** on `rcaeval-re1` (run `38250480271`) and **270 / 270** on `rcaeval-re2` (run `40400190945`), both at `oracle=1.00` -- see `## The last measured round trip`. **The number is still not reproduced**: `oracle` is the metric's ceiling, not a solver's accuracy, so no comparison against upstream published figures exists, which is P0-2 |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
 
 **Both CI workflows are green on the revision this document describes** (`4181060ee`):
@@ -182,12 +182,16 @@ the logic is; the figure is recorded because it is measured on every run.
 
 ## The last measured round trip
 
-The fourth anchor's path now runs on the real corpus. Measured by
-`official-data.yml` run `38250480271` at `167e08f28`; the figures below are held to
-`golden-master/roundtrip.json` by `scripts/check-roundtrip-record.mjs`, and that
-file's pins are held to `golden-master/official-assets.json` by the same guard --
-so a number here that stops matching the record fails the documentation gate in
-both the warm and the cold-tree job.
+The fourth anchor's path now runs on the real corpus, twice. Each figure below is held to
+`golden-master/roundtrip.json` by `scripts/check-roundtrip-record.mjs`, and that file's pins are held to
+`golden-master/official-assets.json` by the same guard -- so a number here that stops matching the
+record fails the documentation gate in both the warm and the cold-tree job. One block per anchor,
+because the two runs measured different corpora and a single table would have to sum things that are
+not the same thing.
+
+### rcaeval-re1
+
+Measured by `official-data.yml` run `38250480271` at `167e08f28`.
 
 | item | value |
 | --- | --- |
@@ -198,17 +202,36 @@ both the warm and the cold-tree job.
 | mean oracle score across the scored cases | **1.00** |
 | worst per-case oracle score | **1.00** |
 
-Three things about this table are deliberately absent from it. It does **not**
-claim the score agrees with upstream's published numbers -- `oracle=1.00` is the
-official rule applied to the ground-truth root cause, which is the scorer's own
-ceiling and not a solver's accuracy. Upstream's published figures are *solver*
-accuracies over the same corpora; ours is the metric's ceiling, so the two are not
-comparable as they stand. What would make them comparable is running upstream's own
-scorer, with its own answer key, over the same corpus -- that is the remaining half
-of P0-2 and it is unmeasured. It
-does **not** cover RE2 or RE3, which are separate anchors with separate fetches. And
-it does **not** replace the dated per-pass records further down this file, which
-say what each pass measured at the time.
+### rcaeval-re2
+
+Measured by `official-data.yml` run `40400190945` at `fe871088b`. This is the run that closed the gap
+findings 261 to 264 worked through: the fetch ran to completion against a destination that can hold the
+corpus, the two cut transfers resumed, the registry's three pins agreed with a fresh measurement, and
+the 270 cases loaded once the reader learned the corpus's second shape.
+
+| item | value |
+| --- | --- |
+| anchor | `rcaeval-re2` |
+| cases declared by the corpus | **270** |
+| cases round-tripped at `oracle=1.00` | **270** |
+| cases that did not | **0** |
+| mean oracle score across the scored cases | **1.00** |
+| worst per-case oracle score | **1.00** |
+
+### What these tables do not claim
+
+They do **not** claim either score agrees with upstream's published numbers.
+`oracle=1.00` is the official rule applied to the ground-truth root cause, which is the scorer's own
+ceiling and not a solver's accuracy. Upstream's published figures are *solver* accuracies over the same
+corpora; ours is the metric's ceiling, so the two are not comparable as they stand. What would make
+them comparable is running upstream's own scorer, with its own answer key, over the same corpus --
+that is the remaining half of P0-2 and it is unmeasured.
+
+They do **not** cover `rcaeval-re3`, which is a separate anchor with its own fetch and is still
+`pending`.
+
+And they do **not** replace the dated per-pass records further down this file, which say what each
+pass measured at the time.
 
 ## Audit passes
 
@@ -1214,7 +1237,7 @@ and this table.
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
 | [volume-04.md](progress/volume-04.md) | 21 | v2.06 | v2.25 |
 | [volume-05.md](progress/volume-05.md) | 30 | v2.26 | v2.55 |
-| [volume-06.md](progress/volume-06.md) | 36 | v2.56 | v2.91 |
+| [volume-06.md](progress/volume-06.md) | 37 | v2.56 | v2.92 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round
