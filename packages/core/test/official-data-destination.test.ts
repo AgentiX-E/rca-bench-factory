@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -94,20 +96,28 @@ function commands(text: string): string[] {
 /**
  * The destination is the runner's own temp directory, and it is named once.
  *
- * Once means: in the naming step, from `$RUNNER_TEMP`, and nowhere else. The
- * first version of this change named it at job level with `${{ runner.temp }}`,
- * which GitHub rejects -- the `runner` context does not exist there, the file did
- * not parse, and the push run failed in zero seconds. So the rule is about the
- * mechanism as well as the value: a step that exports it, and no second spelling.
+ * Once means: one shell assignment per directory in the naming step, from
+ * `$RUNNER_TEMP`, then exported through `$GITHUB_ENV`. The first version of this
+ * change named it at job level with `${{ runner.temp }}`, which GitHub rejects --
+ * the `runner` context does not exist there, the file did not parse, and the push
+ * run failed in zero seconds. So the rule is about the mechanism as well as the
+ * value.
  */
 function checkDestination(text: string): string[] {
   const violations: string[] = [];
-  if (!/^\s+echo "OFFICIAL_DIR=\$RUNNER_TEMP\/official"$/m.test(text)) {
-    violations.push('no step names OFFICIAL_DIR as `$RUNNER_TEMP/official`');
-  }
-  const assignments = executableLines(text).filter(({ line }) => /OFFICIAL_DIR=/.test(line));
-  if (assignments.length !== 1) {
-    violations.push(`OFFICIAL_DIR is assigned in ${assignments.length} places, and one of them will lag`);
+  for (const [name, tail] of [
+    ['OFFICIAL_DIR', 'official'],
+    ['REPORTS', 'reports'],
+  ]) {
+    const assignments = executableLines(text).filter(({ line }) =>
+      new RegExp(`^\\s+${name}="\\$RUNNER_TEMP/${tail}"\\s*$`).test(line),
+    );
+    if (assignments.length !== 1) {
+      violations.push(`${name} is assigned as \`$RUNNER_TEMP/${tail}\` in ${assignments.length} places, and the copies will drift`);
+    }
+    if (!text.includes(`echo "${name}=$${name}"`)) {
+      violations.push(`${name} is never exported to $GITHUB_ENV`);
+    }
   }
   return violations;
 }
@@ -232,7 +242,7 @@ function checkArtifactPaths(text: string): string[] {
   // spellings: the basename the upload uses has to be the one the naming step
   // declared, so a renamed directory fails here rather than silently uploading
   // nothing (which `if-no-files-found: warn` would report as a warning).
-  const declared = /echo "REPORTS=\$RUNNER_TEMP\/([^"]+)"/.exec(text);
+  const declared = /REPORTS="\$RUNNER_TEMP\/([^"]+)"/.exec(text);
   if (declared === null) {
     violations.push('no step declares REPORTS under $RUNNER_TEMP');
   } else if (!path.endsWith(`/${declared[1]}`)) {
@@ -286,8 +296,8 @@ describe('official-data.yml · the rules can fail', () => {
   const CASES: [string, string, string][] = [
     [
       'the destination moved back to /tmp',
-      'echo "OFFICIAL_DIR=$RUNNER_TEMP/official"',
-      'echo "OFFICIAL_DIR=/tmp/official"',
+      'OFFICIAL_DIR="$RUNNER_TEMP/official"',
+      'OFFICIAL_DIR="/tmp/official"',
     ],
     [
       'a runner expression where the context does not exist',
@@ -316,8 +326,8 @@ describe('official-data.yml · the rules can fail', () => {
     ],
     [
       'a report directory the upload does not name',
-      'echo "REPORTS=$RUNNER_TEMP/reports"',
-      'echo "REPORTS=$RUNNER_TEMP/out"',
+      'REPORTS="$RUNNER_TEMP/reports"',
+      'REPORTS="$RUNNER_TEMP/out"',
     ],
     [
       // The creation moved into the naming step when the job-level `env:` had to go,
@@ -338,4 +348,121 @@ describe('official-data.yml · the rules can fail', () => {
       expect(caught.length).toBeGreaterThan(0);
     });
   }
+});
+
+/**
+ * The naming step, executed rather than read.
+ *
+ * ## Why this block is not checked as text
+ *
+ * The second dispatch of this workflow failed nine seconds in, at this step, with
+ * `##[error]Process completed with exit code 1` and nothing else. The reason was a
+ * scope error no text rule can see: the step exported `OFFICIAL_DIR` to
+ * `$GITHUB_ENV` and then used `$OFFICIAL_DIR` two lines later, in the same step.
+ * A name exported for *later* steps does not exist in *this* one, and `set -u`
+ * turns that into an unbound-variable exit.
+ *
+ * The two rules above are about the document -- one assignment, one export, no
+ * `runner` above `steps:`. This one is about behaviour, and it is the only kind of
+ * check that could have caught the defect: it runs the block with a temporary
+ * `RUNNER_TEMP` and a temporary `GITHUB_ENV`, exactly as the runner would, and
+ * asserts the exit status, the exported names, and the two directories.
+ *
+ * The negative control below is the defect itself: drop the assignment and keep
+ * the export, and the block must fail. Without it, "the block exits 0" could be
+ * true of a block that does nothing.
+ */
+describe('official-data.yml · the naming step, executed', () => {
+  const text = readFileSync(WORKFLOW_PATH, 'utf8');
+
+  /** The `run:` block of the step named `name`, with the block scalar's indent removed. */
+  function runBlockOf(source: string, name: string): string {
+    const lines = source.split('\n');
+    const at = lines.findIndex((line) => line.trim() === `- name: ${name}`);
+    if (at === -1) throw new Error(`no step is named '${name}'`);
+    let runAt = -1;
+    for (let i = at + 1; i < lines.length; i += 1) {
+      if (/^\s+- name: /.test(lines[i])) break;
+      if (/^\s+run: \|\s*$/.test(lines[i])) {
+        runAt = i;
+        break;
+      }
+    }
+    if (runAt === -1) throw new Error(`step '${name}' has no 'run: |' block`);
+    const block: string[] = [];
+    for (let i = runAt + 1; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (line.trim() === '') {
+        block.push('');
+        continue;
+      }
+      if (line.length - line.trimStart().length < 10) break;
+      block.push(line.slice(10));
+    }
+    return block.join('\n');
+  }
+
+  interface Run {
+    status: number | null;
+    stderr: string;
+    exported: string;
+  }
+
+  /**
+   * Run `block` with `tmp` standing in for `RUNNER_TEMP`, capturing what it exports.
+   *
+   * The temporary directory is passed in rather than created here, so the caller
+   * owns exactly one binding for it -- the one it deletes. A helper that returned
+   * the path inside its result object made `rmSync(result.tmp)` look, to this
+   * repository's no-writes-inside-the-package scan, like a write whose value came
+   * from the repository: the object is built from the workflow text, and the text
+   * is read through a repository path. The scan follows bindings by name, so the
+   * fix is a binding whose value is `mkdtempSync(join(tmpdir(), ...))` and nothing
+   * else.
+   */
+  function runBlockIn(tmp: string, block: string): Run {
+    const envFile = join(tmp, 'github-env');
+    writeFileSync(envFile, '');
+    const result = spawnSync('bash', ['-c', block], {
+      env: { ...process.env, RUNNER_TEMP: tmp, GITHUB_ENV: envFile },
+      encoding: 'utf8',
+    });
+    return { status: result.status, stderr: result.stderr, exported: readFileSync(envFile, 'utf8') };
+  }
+
+  it('exports every path, and creates both directories, in one run', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'rca-bench-name-'));
+    try {
+      const run = runBlockIn(tmp, runBlockOf(text, 'Name the destination once'));
+      expect(run.status, run.stderr).toBe(0);
+      for (const name of ['OFFICIAL_DIR', 'REPORTS', 'PINS', 'CASES', 'SCORES']) {
+        expect(run.exported).toMatch(new RegExp(`^${name}=${tmp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'm'));
+      }
+      // Every report is inside the directory the upload publishes, which is the
+      // fact that makes the artefact path valid rather than merely plausible.
+      expect(run.exported).toMatch(/^PINS=.*\/reports\/pins\.json$/m);
+      expect(run.exported).toMatch(/^CASES=.*\/reports\/rcaeval-cases\.json$/m);
+      expect(run.exported).toMatch(/^SCORES=.*\/reports\/rcaeval-scores\.json$/m);
+      expect(existsSync(join(tmp, 'official'))).toBe(true);
+      expect(existsSync(join(tmp, 'reports'))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('fails a block that uses a name it has only exported', () => {
+    // The shipped defect, exactly: the assignment removed, the use retained.
+    const broken = runBlockOf(text, 'Name the destination once').replace(
+      'OFFICIAL_DIR="$RUNNER_TEMP/official"\n',
+      '',
+    );
+    const tmp = mkdtempSync(join(tmpdir(), 'rca-bench-name-'));
+    try {
+      const run = runBlockIn(tmp, broken);
+      expect(run.status).not.toBe(0);
+      expect(run.stderr).toContain('OFFICIAL_DIR');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

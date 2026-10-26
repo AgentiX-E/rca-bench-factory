@@ -467,8 +467,30 @@ evaluator rather than about the document.
 So the repair is two things: `$GITHUB_ENV` for the values, which is the mechanism that exists for
 "name this once and use it below"; and a seventh rule that reads the same text for the same class —
 no `runner` or `steps` expression may appear above `steps:`. That is narrow, and it is decidable, and
-it would have refused the file that GitHub refused. It is also the only part of this finding that a
-dispatch had to teach me.
+it would have refused the file that GitHub refused.
+
+### The second version ran, and failed nine seconds in
+
+`##[error]Process completed with exit code 1`, at the naming step, with nothing else. The step
+exported `OFFICIAL_DIR` to `$GITHUB_ENV` and then used `$OFFICIAL_DIR` two lines later. **A name
+exported for later steps does not exist in the step that exports it**, and under `set -u` that is an
+unbound variable.
+
+Two failures, two dispatches, and the second one is the more interesting: the first was a fact about
+GitHub's expression evaluator that the document could in principle encode, and the second is a fact
+about shell scope that no reading of the document can decide. **The text rules were the wrong
+instrument for this step** — they can say "the destination is named once" and cannot say "the block
+runs".
+
+So the step now has a third check, and it is not a reading: `official-data-destination.test.ts` runs
+the naming step's `run:` block under `bash` with a temporary `RUNNER_TEMP` and a temporary
+`GITHUB_ENV`, and asserts the exit status, the five exported names, and that both directories exist.
+Alongside it sits the negative control — the assignment deleted, the export kept — which must exit
+non-zero and name the variable. That control is the shipped defect, and it is the reason the positive
+test means something.
+
+Shell locals now come first and the export second, so the block is written in the only order that can
+work: values, then the environment that carries them forward.
 
 ### Reading the archive's own statement
 
@@ -499,6 +521,10 @@ skips were accounted for somewhere. Deleted.
 It does not make the anchor pass. It makes the next scheduled run *able* to pass, and makes a failure
 of this kind legible if it does not; the proof is the run, and no test in this tree can stand in for it.
 
+It does not validate the rest of the workflow's steps the way it validates the naming step. Two
+dispatches found two defects that no test could see, and only one of them now has a check that
+executes rather than reads; the other steps are still read as text.
+
 It does not check an anchor's peak usage in one number. Each asset is measured when it is fetched, which
 is exact because the archives are deleted as they are unpacked — but the check is per-asset by
 construction, not per-run.
@@ -517,7 +543,7 @@ filesystem today; the check is what will say so if that changes, in six seconds 
 | the destination | one variable, `$RUNNER_TEMP/official`, assigned once; no executable line in the workflow names `/tmp` |
 | the preflights | two per asset, exact; 4 tests, all four red against the pre-fix script |
 | the vocabulary | five codes documented in the script, five branches in the workflow, a `*` that names no cause |
-| the workflow rules | 7 rules over the text, each re-run against a mutation that must trip it |
-| `core` / repo | **187 / 4633** · **191 / 4820**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the workflow rules | 7 rules over the text, each re-run against a mutation that must trip it, plus 2 that execute the naming step |
+| `core` / repo | **187 / 4635** · **191 / 4822**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the site inventory | **88 failure sites across 46 scripts**; the two new sites annotated `proved` |
 | the documents | typecheck, lint, `docs:check` green; audit 6 volumes, findings 1–261 |

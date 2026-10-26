@@ -154,12 +154,19 @@ jobs:
       - name: Name the destination once
         run: |
           set -eu
+          # Shell locals first, `$GITHUB_ENV` second: a name exported here does
+          # not exist *in this step*, and the first version of this step used
+          # `$OFFICIAL_DIR` two lines after exporting it. Under `set -u` that is
+          # an unbound variable and the step exits 1 -- which is what the second
+          # dispatch measured, nine seconds in.
+          OFFICIAL_DIR="$RUNNER_TEMP/official"
+          REPORTS="$RUNNER_TEMP/reports"
           {
-            echo "OFFICIAL_DIR=$RUNNER_TEMP/official"
-            echo "REPORTS=$RUNNER_TEMP/reports"
-            echo "PINS=$RUNNER_TEMP/reports/pins.json"
-            echo "CASES=$RUNNER_TEMP/reports/rcaeval-cases.json"
-            echo "SCORES=$RUNNER_TEMP/reports/rcaeval-scores.json"
+            echo "OFFICIAL_DIR=$OFFICIAL_DIR"
+            echo "REPORTS=$REPORTS"
+            echo "PINS=$REPORTS/pins.json"
+            echo "CASES=$REPORTS/rcaeval-cases.json"
+            echo "SCORES=$REPORTS/rcaeval-scores.json"
           } >> "$GITHUB_ENV"
           mkdir -p "$OFFICIAL_DIR" "$REPORTS"
 
