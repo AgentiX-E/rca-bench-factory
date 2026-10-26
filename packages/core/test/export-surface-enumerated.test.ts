@@ -473,6 +473,7 @@ const TESTED = [
   // What a checkpoint's signal reference points at. Added with the schema field, because one
   // optional string was carrying four different things and nothing could resolve it (finding 243).
   'CHECKPOINT_REFERENCES',
+  'EDGE_RELATIONS',
   // The comparator's two halves and the point set an expression reads, declared as tuples so the
   // schema's admission list and the evaluator's grammar have one owner each (finding 245).
   'NUMERIC_COMPARATORS',

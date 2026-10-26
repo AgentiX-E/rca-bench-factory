@@ -46,6 +46,7 @@ both directions and in order.
 | `LogPayload.severityText` | `LOG_SEVERITIES` | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
 | `TracePayload.status` | `SPAN_STATUSES` | `OK`, `ERROR`, `UNSET` |
 | `EvidenceCheckpoint.signalKind` | `CHECKPOINT_REFERENCES` | `series`, `derived`, `configuration`, `log` |
+| `EntityEdge.relation` | `EDGE_RELATIONS` | `contains`, `hosts`, `calls`, `same_as`, `routes` |
 
 ## Layer 2 — `EntityGraph`
 
@@ -54,9 +55,16 @@ Aliases are merged with union-find over `same_as` edges.
 
 ```ts
 interface Entity { entityId: string; kind: EntityKind; name: string; aliases: string[]; }
-interface EntityEdge { from: string; to: string; relation: 'contains'|'hosts'|'calls'|'same_as'; }
+interface EntityEdge { from: string; to: string; relation: EdgeRelation; }
 interface EntityGraph { entities: Entity[]; edges: EntityEdge[]; }
 ```
+
+`routes` is the newest member and the only one that describes a *path* rather than a containment or
+a call: `node:edge-router-2 --routes--> pod:catalog-service-0` says traffic for that pod passes
+through that router. It exists because a network fault's evidence had an owner and the graph had no
+word for it: the MTU case cites the path's MTU, and without `routes` the device that reports it could
+not be an entity at all -- an edge would have had to say `calls`, which is a lie about direction, or
+`hosts`, which is a lie about containment (finding 260).
 
 `EntityKind` is declared once, as a tuple: `service`, `pod`, `node`, `container`,
 `db`, `mq`, `host`, `cluster`, `external`. Formats that accept only some of them

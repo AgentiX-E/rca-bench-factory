@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  EDGE_RELATIONS,
   ENTITY_KINDS,
   FAULT_CATEGORIES,
   LOG_SEVERITIES,
@@ -174,7 +175,7 @@ export const entitySchema = z.object({
 export const entityEdgeSchema = z.object({
   from: nonBlank,
   to: nonBlank,
-  relation: z.enum(['contains', 'hosts', 'calls', 'same_as']),
+  relation: z.enum(EDGE_RELATIONS),
   attributes: z.record(z.string()).optional(),
 });
 

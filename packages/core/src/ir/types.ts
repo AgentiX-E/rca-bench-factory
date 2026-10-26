@@ -244,6 +244,24 @@ export interface TelemetrySignal {
  * tuple rather than a bare union so that the runtime consumers -- AIOps2025's
  * `instance_type` set among them -- narrow it instead of copying it.
  */
+/**
+ * How one entity relates to another.
+ *
+ * Declared once, as a tuple, and read by the schema's `z.enum` -- the same arrangement the other
+ * published vocabularies use, after this set spent its whole life as an inline enum in the schema
+ * beside a second copy in `docs/data-model.md` (finding 260).
+ *
+ * - `contains`: a service has a pod, a pod has a container -- part-of, inside.
+ * - `hosts`: a node runs a pod -- where it lives.
+ * - `calls`: one service invokes another, or a service uses a datastore or a broker.
+ * - `same_as`: two names are one entity; merged with union-find over aliases.
+ * - `routes`: traffic for the target passes through the source -- a router, a switch, a load
+ *   balancer. Added because a network fault's evidence had an owner and the graph had no word for
+ *   it: the MTU case cites a path's MTU and, without this, the device that reports it could not be
+ *   an entity without an edge that lied about the direction.
+ */
+export const EDGE_RELATIONS = ['contains', 'hosts', 'calls', 'same_as', 'routes'] as const;
+
 export const ENTITY_KINDS = [
   'service',
   'pod',
@@ -270,7 +288,14 @@ export interface Entity {
   attributes?: Record<string, string>;
 }
 
-export type EntityRelation = 'contains' | 'hosts' | 'calls' | 'same_as';
+/**
+ * A relation between two entities. Derived from `EDGE_RELATIONS`.
+ *
+ * The name `EntityRelation` predates the tuple and is the one the tree uses; `EdgeRelation` was a
+ * second name introduced beside it and is gone, because two names for one type is the same defect as
+ * two lists for one vocabulary, one step earlier (finding 260).
+ */
+export type EntityRelation = (typeof EDGE_RELATIONS)[number];
 
 export interface EntityEdge {
   from: string;

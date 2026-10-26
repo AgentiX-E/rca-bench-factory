@@ -1704,12 +1704,55 @@ gates, 46 caught, 0 survived**; core **186 / 4613**, cli 4 / 187, repo **190 / 4
 
 ### Left open
 
-- **17 samples still carry no case.** `[open: 13 of 30 carry one; the corpus is the long pole]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and this round spent itself on the
+  graph's vocabulary rather than on an annotation -- the corpus is still the long pole]`
 - **A device on the network path has no entity.** `[open: the graph's relations are `contains`, `hosts`,
   `calls` and `same_as`, and none of them describes "traffic passes through"; a router, a switch or a
   load balancer therefore cannot be an entity without an edge that lies]`
 - **An absence of logs cannot be a checkpoint.** `[open: unchanged; every log checkpoint asserts that a
   line exists, and this case declares none]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause.
+
+## v2.87 — a vocabulary in four places, and the member that found them
+
+**What was open.** v2.86's second item: "a device on the network path has no entity — the graph's
+relations are `contains`, `hosts`, `calls` and `same_as`, and none of them describes 'traffic passes
+through'".
+
+**What changed.** One member, `routes`, and the admission that adding it was an experiment in how many
+places a vocabulary can live. It found four: the schema's inline `z.enum`, the `EntityRelation` union,
+`VALID_RELATIONS` in `entity/graph.ts`, and the union inside the document's `EntityEdge` snippet. Adding
+the member to two of them produced a graph the schema admitted and the validity guard refused —
+`unknown relation 'routes'` — which is exactly the split the published-vocabulary gate exists to
+prevent, for the six vocabularies that *had* a table. The relation set had none, so nothing read it.
+
+Now `EDGE_RELATIONS` is a tuple, `EntityRelation` derives from it, the schema is
+`z.enum(EDGE_RELATIONS)`, `VALID_RELATIONS` *is* the tuple, and the document has a row. The gate reports
+**seven** published vocabularies and **eight** inline enums, down from six and nine.
+
+`EdgeRelation` — a second type name I introduced beside `EntityRelation` in the same edit — is deleted.
+Two names for one type is the same defect as two lists for one vocabulary, one level up.
+
+**What the member buys.** `node:edge-router-2 --routes--> pod:catalog-service-0`: the MTU case's
+path-MTU checkpoint now has an owner, the device that reports dropping fragments, and the graph says
+why. The case's `why` no longer explains what the graph cannot say.
+
+**Acceptance.** Typecheck, lint, `docs:check` green; `check-data-model-vocabularies` at 7 vocabularies;
+`derive-gate-sites --check` green (86 sites, 46 scripts, four line numbers moved); the meta-gate at
+**46 gates, 46 caught, 0 survived**; core **186 / 4613**, cli 4 / 187, repo **190 / 4800**; coverage
+99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–260; the corpus is unchanged at **13 of 30**
+with 31 entities / 19 edges.
+
+### Left open
+
+- **17 samples still carry no case.** `[open: 13 of 30 carry one; the corpus is the long pole]`
+- **An absence of logs cannot be a checkpoint.** `[open: every log checkpoint asserts that a line
+  exists, and the pod-kill case's "nothing was logged" still cannot be said]`
+- **No relation is checked for direction.** `[open: `routes` says traffic for the target passes through
+  the source, and nothing refuses an edge written the other way round -- the graph has no notion of
+  which end is upstream]`
 
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause.

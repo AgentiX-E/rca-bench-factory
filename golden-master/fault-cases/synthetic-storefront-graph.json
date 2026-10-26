@@ -189,6 +189,12 @@
       "kind": "pod",
       "name": "catalog-service-0",
       "aliases": []
+    },
+    {
+      "entityId": "node:synthetic-storefront/edge-router-2",
+      "kind": "node",
+      "name": "edge-router-2",
+      "aliases": []
     }
   ],
   "edges": [
@@ -281,6 +287,11 @@
       "from": "service:synthetic-storefront/catalog-service",
       "to": "pod:synthetic-storefront/catalog-service-0",
       "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/edge-router-2",
+      "to": "pod:synthetic-storefront/catalog-service-0",
+      "relation": "routes"
     }
   ]
 }

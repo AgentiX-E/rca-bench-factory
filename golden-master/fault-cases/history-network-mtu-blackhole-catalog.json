@@ -35,7 +35,7 @@
   "groundTruth": {
     "rootCauseEntityId": "pod:synthetic-storefront/catalog-service-0",
     "rootCauseComponent": "catalog-service",
-    "rootCauseReason": "The overlay was rebuilt onto a path whose MTU is 1,400 bytes while the pod's interface still advertises 1,500. A large response leaves in full-size segments, the router on the new path drops the fragments it cannot forward, and the connection sits waiting for bytes that will never arrive -- so the request hangs rather than failing. Responses that fit in one segment are unaffected, which is why the health check stayed green while real traffic stalled.",
+    "rootCauseReason": "The overlay was rebuilt onto a path whose MTU is 1,400 bytes while the pod's interface still advertises 1,500. A large response leaves in full-size segments, the router on the new path -- which this case's graph carries as `routes` -- drops the fragments it cannot forward, and the connection sits waiting for bytes that will never arrive -- so the request hangs rather than failing. Responses that fit in one segment are unaffected, which is why the health check stayed green while real traffic stalled.",
     "rootCauseIndicators": [
       {
         "type": "metric",
@@ -91,7 +91,7 @@
       },
       {
         "checkpointId": "cp-path-mtu",
-        "entityRef": "pod:synthetic-storefront/catalog-service-0",
+        "entityRef": "node:synthetic-storefront/edge-router-2",
         "signalRef": "pathMtu",
         "comparator": "==",
         "value": 1400,

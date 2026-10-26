@@ -1,4 +1,5 @@
 import type { Entity, EntityEdge, EntityGraph, EntityKind, EntityRelation } from '../ir/types.js';
+import { EDGE_RELATIONS } from '../ir/types.js';
 
 /**
  * Entity graph helpers.
@@ -9,7 +10,14 @@ import type { Entity, EntityEdge, EntityGraph, EntityKind, EntityRelation } from
  * ourselves to 100% because a dangling reference is a defect, not a rounding error.
  */
 
-export const VALID_RELATIONS: readonly EntityRelation[] = ['contains', 'hosts', 'calls', 'same_as'];
+/**
+ * The relations the graph accepts.
+ *
+ * This was a second copy of the vocabulary beside the schema's inline enum, so adding a member meant
+ * remembering two places -- and `routes` was added to one of them first, which is how the copy was
+ * found (finding 260). It reads the published tuple now.
+ */
+export const VALID_RELATIONS: readonly EntityRelation[] = EDGE_RELATIONS;
 
 export function entityId(kind: EntityKind, namespace: string | undefined, name: string): string {
   return namespace ? `${kind}:${namespace}/${name}` : `${kind}:${name}`;

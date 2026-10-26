@@ -302,3 +302,64 @@ in `1`.
 | the baselines | both place `catalog-service` in top-K |
 | `core` / repo | **186 / 4613** · **190 / 4800**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 260 — a vocabulary in four places, and the member that found them
+
+Finding 259's case needed an entity the graph had no word for: a router on the network path. The
+relation set was `contains`, `hosts`, `calls`, `same_as`, and none of them describes "traffic for this
+target passes through this source" — `calls` lies about the direction, `hosts` lies about containment.
+So the router stayed out of the graph and the annotation said so in prose.
+
+The repair is one member, `routes`, and adding it was an experiment in how many places a vocabulary
+can live. It found four:
+
+| place | what it was |
+| --- | --- |
+| `ir/schema.ts` | an inline `z.enum(['contains', 'hosts', 'calls', 'same_as'])` — the admission list |
+| `ir/types.ts` | `type EntityRelation = 'contains' | 'hosts' | 'calls' | 'same_as'` — the union |
+| `entity/graph.ts` | `VALID_RELATIONS = ['contains', 'hosts', 'calls', 'same_as']` — the runtime guard |
+| `docs/data-model.md` | an inline union inside the `EntityEdge` interface snippet — the document |
+
+Adding `routes` to the first and the third, and to neither of the others, produced a graph the schema
+admitted and the validity check refused (`unknown relation 'routes'`), which is exactly the split the
+campaign's published-vocabulary gate exists to prevent — for the six vocabularies that had a table. The
+relation set had no table, so nothing read it.
+
+### What it is now
+
+`EDGE_RELATIONS` is a tuple in `ir/types.ts`, `EntityRelation` is derived from it, the schema is
+`z.enum(EDGE_RELATIONS)`, `VALID_RELATIONS` *is* the tuple, and `docs/data-model.md` has a row in the
+published-vocabulary table. The gate went from six vocabularies to seven and from nine inline enums to
+eight.
+
+`EdgeRelation` — a second type name I introduced beside `EntityRelation` in the same edit — is gone.
+Two names for one type is the same defect as two lists for one vocabulary, one level up.
+
+### What the member buys
+
+```json
+{ "from": "node:synthetic-storefront/edge-router-2",
+  "to":   "pod:synthetic-storefront/catalog-service-0",
+  "relation": "routes" }
+```
+
+The MTU case's path-MTU checkpoint now has an owner — the device that reports dropping fragments —
+and the graph says why: traffic for that pod passes through that router. The case's `why` no longer
+explains what the graph cannot say, because the graph can say it.
+
+### What this does not do
+
+It does not add `depends_on`, `replicates_to`, `reads_from` or the other relations a real topology
+would want. Each one needs a *reader* that would use it, and a vocabulary member nobody writes is a
+member nobody can check.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the vocabulary | seven published, each declared once; `EDGE_RELATIONS` read by the schema, the union, the validity guard and the document |
+| the types | one name: `EntityRelation`, derived from the tuple |
+| the corpus | the router is an entity; 31 entities / 19 edges; the path-MTU checkpoint cites it |
+| the gate | `check-data-model-vocabularies` reports 7 vocabularies and 8 inline enums |
+| `core` / repo | **186 / 4613** · **190 / 4800**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |
