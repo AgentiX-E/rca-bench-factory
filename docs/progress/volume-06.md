@@ -2060,9 +2060,12 @@ The round's first coverage run showed branch 99.74 and named the file; that is w
 
 ### Left open
 
-- **Our export is not loadable by upstream's harness.** `[open: `main.py` globs `**/data.csv`, then
-  `**/simple_metrics.csv`; we emit `metrics.json`, so the published loader would find zero cases in our
-  output. The metric formula is reproduced; the layout the loader reads is not]`
+- **Our export is not loadable by upstream's harness.** `[open: `main.py` globs `**/data.csv` then
+  `**/simple_metrics.csv` and takes the answer key from the *path* -- `service, metric =
+  basename(dirname(dirname(data_path))).split("_")` -- so it needs `{system}/{service}_{fault}/{run}/`
+  and a `time` column it can compare against `inject_time`. We emit `metrics.json` in a flat
+  `RE2-{service}-{fault}_{n}/` directory, which that glob never matches and that unpack would crash on.
+  Both halves are measurable and neither is done]`
 - **RE1's archive is unmeasured.** `[open: RE2-OB and RE3-OB were measured this round; whether
   RE1-{OB,SS,TT} ship log and trace tables at all is not known, and "RE1 is metrics-only" is a
   statement about our export contract]`
