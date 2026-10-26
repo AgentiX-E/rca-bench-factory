@@ -10,7 +10,12 @@ import { parseCsvObjects } from '../util/csv.js';
 import { parseOpenRcaScoringPoints, readOpenRcaRoots } from './official.js';
 import type { ScoreTargetId } from './targets.js';
 import { OPENRCA_GROUNDTRUTH_HEADER } from '../export/openrca.js';
-import type { RcaEvalSuite } from '../export/rcaeval.js';
+import {
+  RCAEVAL_LOGS_COLUMNS,
+  RCAEVAL_TRACES_COLUMNS,
+  type RcaEvalLogsSuite,
+  type RcaEvalSuite,
+} from '../export/rcaeval.js';
 
 /** Number of scoring criteria an OpenRCA `scoring_points` block declares. */
 function parseOpenRcaScoringCount(text: string): number {
@@ -72,8 +77,18 @@ const OPENRCA_METRIC_HEADER = 'timestamp,cmdb_id,kpi_name,value';
 const OPENRCA_LOG_HEADER = 'timestamp,cmdb_id,severity,message';
 const OPENRCA_TRACE_HEADER = 'timestamp,trace_id,span_id,parent_span_id,cmdb_id,span_name,duration_ms,status';
 
-const RCAEVAL_LOGS_HEADER = 'timestamp,service,severity,message';
-const RCAEVAL_TRACES_HEADER = 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status';
+/**
+ * The RCAEval log and trace headers are *read from the exporter*, not restated.
+ *
+ * They used to be two string literals here, and the exporter had its own two --
+ * four literals for two facts, both pairs matching each other and neither pair
+ * matching the corpus. `checkRcaEvalStructure` therefore certified the export by
+ * comparing it to a copy of itself, which is why 270 RE2 cases could pass this
+ * check while carrying a `traces.csv` no corpus has (finding 266).
+ *
+ * Importing the tables makes that shape unrepeatable: one list, measured, used by
+ * the emitter and by the check.
+ */
 
 function rcaevalTarget(suite: RcaEvalSuite): ScoreTargetId {
   return `rcaeval-${suite.toLowerCase()}` as ScoreTargetId;
@@ -325,21 +340,27 @@ export function checkRcaEvalStructure(files: Record<string, string>, suite: RcaE
     check('modality-set', modalityOk, `${suite} expects logs/traces=${expectModalities}, found logs=${hasLogs} traces=${hasTraces}`),
   );
 
+  // The log header is per suite because the corpora disagree about it: RE2-OB
+  // ships nine columns and RE3-OB six, sharing only the first four.
+  const expectedLogs = expectModalities
+    ? RCAEVAL_LOGS_COLUMNS[suite as RcaEvalLogsSuite].join(',')
+    : '';
   const logHeader = first(files, logFiles);
   checks.push(
     check(
       'logs-header',
-      logHeader === undefined ? !expectModalities : csvHeader(logHeader).join(',') === RCAEVAL_LOGS_HEADER,
-      `expected '${RCAEVAL_LOGS_HEADER}'`,
+      logHeader === undefined ? !expectModalities : csvHeader(logHeader).join(',') === expectedLogs,
+      `expected '${expectedLogs}'`,
     ),
   );
 
+  const expectedTraces = expectModalities ? RCAEVAL_TRACES_COLUMNS.join(',') : '';
   const traceHeader = first(files, traceFiles);
   checks.push(
     check(
       'traces-header',
-      traceHeader === undefined ? !expectModalities : csvHeader(traceHeader).join(',') === RCAEVAL_TRACES_HEADER,
-      `expected '${RCAEVAL_TRACES_HEADER}'`,
+      traceHeader === undefined ? !expectModalities : csvHeader(traceHeader).join(',') === expectedTraces,
+      `expected '${expectedTraces}'`,
     ),
   );
 

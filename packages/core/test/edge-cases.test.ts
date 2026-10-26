@@ -141,7 +141,14 @@ describe('exporters with optional fields absent', () => {
     expect(csv).toContain('order,,plain message');
     const re = exportRcaEval(b, 'RE2');
     const logsCsv = Object.entries(re.files).find(([p]) => p.endsWith('/logs.csv'))?.[1] as string;
-    expect(logsCsv).toContain('order,,plain message');
+    // Read by column name: `level` sits fifth in the corpus's nine-column log table,
+    // and the row this test is about is "a log with no level", so the assertion has
+    // to name the cell rather than match a substring of the whole line.
+    const [header, firstRow] = logsCsv.split('\n') as [string, string];
+    const columns = header.split(',');
+    const cells = firstRow.split(',');
+    expect(cells[columns.indexOf('level')]).toBe('');
+    expect(cells[columns.indexOf('message')]).toBe('plain message');
   });
 
   it('emits an empty status cell for a span without a status', () => {

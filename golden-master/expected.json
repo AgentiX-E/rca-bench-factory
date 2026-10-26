@@ -38,12 +38,12 @@
       "bytes": 10
     },
     "RE2-order-cpu_1/logs.csv": {
-      "sha256": "c42675abf5554ccbcb5b6ac4da35843d391156f4830c648141b314959b33afaf",
-      "bytes": 98
+      "sha256": "be7057e0b07431582bfd44666d3c29eecbe01f0ca852649b31830ac73e397515",
+      "bytes": 148
     },
     "RE2-order-cpu_1/traces.csv": {
-      "sha256": "039730eede5f9b3df7b3deb0ab8f07050df2a95664c003ff62f651526fd7c541",
-      "bytes": 209
+      "sha256": "cec8cdf896b9b4ddb15d60f82de50083b41c0bb3ba9857eaac760f779e81ae92",
+      "bytes": 276
     }
   }
 }

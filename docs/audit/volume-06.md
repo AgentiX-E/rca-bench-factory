@@ -878,3 +878,114 @@ It does not cover `rcaeval-re3`, which is still `pending` — five assets, none 
 | the tests | 34 in `check-roundtrip-record.test.ts` (5 new), all green |
 | the battery | **25 injections, 25 caught, 0 survived, 0 inert** after two retargets |
 | `core` / repo | **187 / 4648** · **191 / 4835**; coverage unchanged |
+
+## Finding 266 — two files whose names the corpus shares and whose columns it does not
+
+`logs.csv` and `traces.csv` are the only two files this project writes whose *names* the RCAEval
+corpora also ship. Until this round that was the whole of the agreement.
+
+### What the archives say
+
+Measured 2026-10-27 from `RE2-OB` by range-reading one case's local header and inflating it, and from
+`RE3-OB` from the extracted archive:
+
+| file | RE2-OB | RE3-OB |
+| --- | --- | --- |
+| `traces.csv` | `time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID` | the same eleven columns |
+| `logs.csv` | `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template` | `time,timestamp,container_name,message,pod_name,node_name` |
+
+And what we wrote:
+
+| file | ours |
+| --- | --- |
+| `traces.csv` | `timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status` — eight columns |
+| `logs.csv` | `timestamp,service,severity,message` — four |
+
+Two facts, and the shape of the defect is in the counting: **there were four string literals for those
+two facts** — `buildTracesCsv` and `buildLogsCsv` in the exporter, and `RCAEVAL_TRACES_HEADER` /
+`RCAEVAL_LOGS_HEADER` in the scorer. The pairs matched each other exactly and neither matched the
+corpus. `checkRcaEvalStructure` therefore certified the export **by comparing it to a copy of itself**,
+and it did so on 645 cases: 375 RE1 and 270 RE2, all at `oracle=1.00`.
+
+The same two archives also settle a question the code had answered by assumption — whether one list can
+serve both suites. The trace tables agree, so one list is right; the log tables do not, so a single list
+had to be wrong for one of them. `RCAEVAL_LOGS_COLUMNS` is a map for that reason and not for symmetry.
+
+### Why the round trip did not catch it, twice over
+
+Two independent reasons, and both are this project's recurring shape:
+
+1. **The check compared a constant to a copy of the constant.** A header assertion whose expected value
+   is written beside its actual value asserts only that two literals were typed the same way.
+2. **The real-data path never ran that check.** `check-official.mjs` calls
+   `runAllOfficialRegressions`, which applies the published *metric*; the metric reads the case
+   directory name, not the files. `checkRcaEvalStructure` lived one function away, was green against
+   our own fixtures, and had never been called on a corpus.
+
+So the defect could not have been found by a passing anchor: 270 of 270 at `oracle=1.00` is exactly
+what a wrong `traces.csv` looks like from in front of that metric.
+
+### What it is now
+
+- **One source per fact.** `RCAEVAL_TRACES_COLUMNS` and `RCAEVAL_LOGS_COLUMNS` live in the exporter;
+  `checkRcaEvalStructure` imports them. The scorer's two literals are gone.
+- **The corpus's columns, in the corpus's order, in the corpus's units.** `time` is `HH:MM` UTC;
+  `timestamp` and `startTime` are Unix **microseconds**; `duration` is microseconds where the IR
+  carries milliseconds; `statusCode` is the OTel code (0/1/2) the column holds.
+- **The losses are stated, not filled.** `RCAEVAL_UNFILLED_COLUMNS` names each column the IR does not
+  carry and why: `methodName` (the two corpora disagree — RE2-OB derives it from `operationName`,
+  RE3-OB leaves it empty for spans that have one), and RE2's `req_path`, `error`, `cluster_id`,
+  `log_template` (HTTP-shape fields a gRPC stack does not fill; a corpus-side cluster handle; and a
+  rendered template where the IR carries an id). A test builds a signal with *every* IR field
+  populated and asserts the empty set equals that list — the only form in which "we do not carry this"
+  can be distinguished from "this row had none".
+- **The shape check now runs on real data.** `check-official.mjs` calls `scoreExport` per case and
+  fails the case on a contract mismatch, naming each failing check. Skips are exempt, because an RE3
+  case the exporter refuses writes no files and judging that directory against the layout would report
+  the refusal as malformed.
+
+### A test that asserted the opposite
+
+`structure-dispatch.test.ts` held: *"RE2 and RE3 accept the same shaped files, because the shapes are
+identical"*, with a comment explaining that `RE2-.../logs.csv` "has exactly the shape RE3 would have
+given it". It was true while one list served both suites, and the corpora deny it. It now asserts the
+pair that is true: the file *names* are identical, the trace header crosses cleanly, and the log header
+does not — which is a statement about the format rather than about our consistency.
+
+### What this does not do
+
+**It does not make our export loadable by the upstream harness, and that is the larger defect of the
+same kind.** `main.py` locates cases by globbing, not by reading a layout:
+
+```python
+data_paths = list(glob.glob(os.path.join(dataset, "**/data.csv"), recursive=True))
+if not data_paths:
+    data_paths = list(glob.glob(os.path.join(dataset, "**/simple_metrics.csv"), recursive=True))
+```
+
+We emit `metrics.json`, which that glob never matches. Every `oracle=1.00` in this repository is
+therefore our own reader over our own file names with the published *formula* — not the upstream
+loader over the published *layout*. Changing the metric file is a second change with its own blast
+radius (golden anchors, four test files, the round trip), and it is the next round's subject rather
+than this one's; finding it here and acting on it in the same commit would leave neither attributable.
+
+It does not measure RE1's archive. This round measured RE2-OB and RE3-OB; whether RE1-{OB,SS,TT} ship
+log and trace tables at all is unmeasured, and "RE1 is metrics-only" is currently a statement about our
+export contract rather than about the corpus.
+
+It does not read either corpus's log or trace tables into the IR. The exporter now *writes* the right
+columns; nothing *reads* them from the corpus, so a round-tripped RE2 case still carries metric signals
+only (finding 264's limitation, unchanged).
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the trace header | the corpus's eleven columns, asserted against a literal measured from both archives |
+| the log header | nine for RE2, six for RE3, asserted separately and asserted to differ |
+| the units | `HH:MM` UTC, microseconds ×2, `duration` in µs, `statusCode` 0/1/2 |
+| the losses | `RCAEVAL_UNFILLED_COLUMNS` equals the empty set of a fully-populated signal |
+| the tests | 8 new; **4 red against a one-character-per-table column mutation**; 1 of the 8 is the negative control for the structure check |
+| the golden anchor | `rcaevalRe2Files` re-anchored, 4 files, and only `logs.csv`/`traces.csv` changed |
+| `core` / repo | **187 / 4656** · **191 / 4843**; coverage 99.97 / 99.76 / 100 / 99.97; `rcaeval.ts` 100 across all four |
+| the site inventory | 88 failure sites across 46 scripts, unchanged; six line numbers moved |

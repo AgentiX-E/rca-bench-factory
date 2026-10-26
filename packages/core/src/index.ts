@@ -205,15 +205,18 @@ export type { ExportOutcome, ExportedFiles, SkippedCase } from './export/openrca
 
 export {
   RCAEVAL_CONTRACT_VERSION,
+  RCAEVAL_LOGS_COLUMNS,
   RCAEVAL_SUITES,
   RCAEVAL_TARGET_ID,
+  RCAEVAL_TRACES_COLUMNS,
+  RCAEVAL_UNFILLED_COLUMNS,
   buildLogsCsv,
   buildMetricsJson,
   buildTracesCsv,
   caseDirName,
   exportRcaEval,
 } from './export/rcaeval.js';
-export type { RcaEvalSuite } from './export/rcaeval.js';
+export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';
 
 export {
   RCA100_CONTRACT_VERSION,

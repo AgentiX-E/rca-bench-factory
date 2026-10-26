@@ -922,99 +922,169 @@ window.RBF_DATA = {
         {
           "path": "{suite}-{service}-{fault}_{n}/logs.csv",
           "format": "csv",
-          "purpose": "Log table (RE2 / RE3 only).",
+          "purpose": "Log table (RE2 / RE3 only). Nine columns in RE2, six in RE3 — the corpora disagree, so there is one row per suite.",
           "emitter": "buildLogsCsv",
           "fields": [
+            {
+              "name": "time",
+              "type": "string",
+              "required": true,
+              "source": "HH:MM of TelemetrySignal.timestamp, UTC",
+              "notes": "Both suites."
+            },
             {
               "name": "timestamp",
               "type": "string",
               "required": true,
-              "source": "TelemetrySignal.timestamp",
-              "notes": "Canonical UTC ISO-8601 (not offset-shifted)."
+              "source": "Date.parse(TelemetrySignal.timestamp) * 1000",
+              "notes": "Unix microseconds, as the corpus writes it."
             },
             {
-              "name": "service",
+              "name": "container_name",
               "type": "string",
               "required": true,
               "source": "resource['service.name']",
-              "notes": ""
-            },
-            {
-              "name": "severity",
-              "type": "string",
-              "required": false,
-              "source": "LogPayload.severityText ?? \"\"",
-              "notes": ""
+              "notes": "Both suites."
             },
             {
               "name": "message",
               "type": "string",
               "required": true,
               "source": "LogPayload.body",
-              "notes": ""
+              "notes": "Both suites."
+            },
+            {
+              "name": "level",
+              "type": "string",
+              "required": false,
+              "source": "LogPayload.severityText ?? \"\"",
+              "notes": "RE2 only."
+            },
+            {
+              "name": "req_path",
+              "type": "string",
+              "required": false,
+              "source": "(not carried)",
+              "notes": "RE2 only. Empty; see RCAEVAL_UNFILLED_COLUMNS."
+            },
+            {
+              "name": "error",
+              "type": "string",
+              "required": false,
+              "source": "(not carried)",
+              "notes": "RE2 only. Empty."
+            },
+            {
+              "name": "cluster_id",
+              "type": "string",
+              "required": false,
+              "source": "(not carried)",
+              "notes": "RE2 only. Empty."
+            },
+            {
+              "name": "log_template",
+              "type": "string",
+              "required": false,
+              "source": "(not carried)",
+              "notes": "RE2 only. The corpus writes rendered template text; the IR carries an id."
+            },
+            {
+              "name": "pod_name",
+              "type": "string",
+              "required": false,
+              "source": "resource['k8s.pod.name'] ?? ''",
+              "notes": "RE3 only."
+            },
+            {
+              "name": "node_name",
+              "type": "string",
+              "required": false,
+              "source": "resource['k8s.node.name'] ?? ''",
+              "notes": "RE3 only."
             }
           ]
         },
         {
           "path": "{suite}-{service}-{fault}_{n}/traces.csv",
           "format": "csv",
-          "purpose": "Span table (RE2 / RE3 only).",
+          "purpose": "Span table (RE2 / RE3 only). Eleven columns, identical in both corpora.",
           "emitter": "buildTracesCsv",
           "fields": [
             {
-              "name": "timestamp",
+              "name": "time",
               "type": "string",
               "required": true,
-              "source": "TelemetrySignal.timestamp",
-              "notes": "Canonical UTC ISO-8601."
+              "source": "HH:MM of TelemetrySignal.timestamp, UTC",
+              "notes": ""
             },
             {
-              "name": "trace_id",
+              "name": "traceID",
               "type": "string",
               "required": true,
               "source": "TracePayload.traceId",
               "notes": ""
             },
             {
-              "name": "span_id",
+              "name": "spanID",
               "type": "string",
               "required": true,
               "source": "TracePayload.spanId",
               "notes": ""
             },
             {
-              "name": "parent_span_id",
-              "type": "string",
-              "required": false,
-              "source": "TracePayload.parentSpanId ?? \"\"",
-              "notes": ""
-            },
-            {
-              "name": "service",
+              "name": "serviceName",
               "type": "string",
               "required": true,
               "source": "resource['service.name']",
               "notes": ""
             },
             {
-              "name": "span_name",
+              "name": "methodName",
+              "type": "string",
+              "required": false,
+              "source": "(not carried)",
+              "notes": "The two corpora disagree about what it means; empty."
+            },
+            {
+              "name": "operationName",
               "type": "string",
               "required": true,
               "source": "TracePayload.spanName",
               "notes": ""
             },
             {
-              "name": "duration_ms",
-              "type": "number",
+              "name": "startTimeMillis",
+              "type": "string",
               "required": true,
-              "source": "TracePayload.durationMs",
-              "notes": ""
+              "source": "Date.parse(TelemetrySignal.timestamp)",
+              "notes": "Unix milliseconds."
             },
             {
-              "name": "status",
+              "name": "startTime",
+              "type": "string",
+              "required": true,
+              "source": "Date.parse(TelemetrySignal.timestamp) * 1000",
+              "notes": "Unix microseconds."
+            },
+            {
+              "name": "duration",
+              "type": "string",
+              "required": true,
+              "source": "round(TracePayload.durationMs * 1000)",
+              "notes": "Microseconds; the IR carries milliseconds."
+            },
+            {
+              "name": "statusCode",
               "type": "string",
               "required": false,
-              "source": "TracePayload.status ?? \"\"",
+              "source": "SPAN_STATUSES -> 0/1/2",
+              "notes": "OTel codes: unset/ok/error. Empty when the span has no status."
+            },
+            {
+              "name": "parentSpanID",
+              "type": "string",
+              "required": false,
+              "source": "TracePayload.parentSpanId ?? \"\"",
               "notes": ""
             }
           ]
@@ -2181,12 +2251,12 @@ window.RBF_DATA = {
             {
               "id": "logs-header",
               "passed": true,
-              "detail": "expected 'timestamp,service,severity,message'"
+              "detail": "expected ''"
             },
             {
               "id": "traces-header",
               "passed": true,
-              "detail": "expected 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status'"
+              "detail": "expected ''"
             }
           ]
         }
@@ -2197,8 +2267,8 @@ window.RBF_DATA = {
       "files": {
         "RE2-order-cpu_1/metrics.json": "{\"cpu_usage\":[20,21,19,20,22,18,20,21,19,20,95,96,97,98,99]}",
         "RE2-order-cpu_1/inject_time.txt": "1788653400",
-        "RE2-order-cpu_1/logs.csv": "timestamp,service,severity,message\n2026-09-06T00:10:10.000Z,order,ERROR,Connection pool exhausted\n",
-        "RE2-order-cpu_1/traces.csv": "timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status\n2026-09-06T00:10:15.000Z,tr-1,sp-1,,order,GET /checkout,120,OK\n2026-09-06T00:10:16.000Z,tr-1,sp-2,sp-1,order,GET /checkout,120,OK\n"
+        "RE2-order-cpu_1/logs.csv": "time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template\n00:10,1788653410000000,order,Connection pool exhausted,ERROR,,,,\n",
+        "RE2-order-cpu_1/traces.csv": "time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID\n00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,\n00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,1,sp-1\n"
       },
       "skipped": [],
       "report": {
@@ -2232,12 +2302,12 @@ window.RBF_DATA = {
             {
               "id": "logs-header",
               "passed": true,
-              "detail": "expected 'timestamp,service,severity,message'"
+              "detail": "expected 'time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template'"
             },
             {
               "id": "traces-header",
               "passed": true,
-              "detail": "expected 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status'"
+              "detail": "expected 'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID'"
             }
           ]
         }
@@ -2283,12 +2353,12 @@ window.RBF_DATA = {
             {
               "id": "logs-header",
               "passed": false,
-              "detail": "expected 'timestamp,service,severity,message'"
+              "detail": "expected 'time,timestamp,container_name,message,pod_name,node_name'"
             },
             {
               "id": "traces-header",
               "passed": false,
-              "detail": "expected 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status'"
+              "detail": "expected 'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID'"
             }
           ]
         }

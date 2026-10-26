@@ -7,7 +7,15 @@ import {
   injectTimeUnixSeconds,
 } from '../src/export/openrca.js';
 import { exportOpenRca2 } from '../src/export/openrca2.js';
-import { buildLogsCsv, buildMetricsJson, caseDirName, exportRcaEval } from '../src/export/rcaeval.js';
+import {
+  RCAEVAL_UNFILLED_COLUMNS,
+  buildLogsCsv,
+  buildMetricsJson,
+  buildTracesCsv,
+  caseDirName,
+  exportRcaEval,
+} from '../src/export/rcaeval.js';
+import { checkRcaEvalStructure } from '../src/score/score.js';
 import { parseRcaEvalDirectory } from '../src/score/official.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
@@ -271,17 +279,22 @@ describe('RCAEval exporter', () => {
   });
 
   it('escapes CSV special characters in log messages', () => {
-    const csv = buildLogsCsv([logAt(610, 'pool "primary" exhausted, retrying')]);
+    const csv = buildLogsCsv([logAt(610, 'pool "primary" exhausted, retrying')], 'RE3');
     expect(csv).toContain('"pool ""primary"" exhausted, retrying"');
   });
 
-  it('emits an empty service column when the signal carries no service name', () => {
+  it('emits an empty container_column when the signal carries no service name', () => {
     const signal: TelemetrySignal = {
       ...logAt(610, 'no service name'),
       resource: {} as unknown as TelemetrySignal['resource'],
     };
-    const row = parseCsv(buildLogsCsv([signal]))[1] as string[];
-    expect(row[1]).toBe('');
+    const rows = parseCsv(buildLogsCsv([signal], 'RE3'));
+    const header = rows[0] as string[];
+    // Looked up by name rather than by position: the position is what changed
+    // when this file started carrying the corpus's columns, and a positional
+    // assertion would have kept passing while reading a different column.
+    const row = rows[1] as string[];
+    expect(row[header.indexOf('container_name')]).toBe('');
   });
 
   it('accepts code-level faults for RE3', () => {
@@ -399,19 +412,36 @@ describe('CSV cells · an absent value is an empty cell, not the word "null"', (
    * defect was that the two files could answer differently, so a test that
    * only measures one of them cannot see it return.
    */
-  const writers: Array<[string, () => string]> = [
-    ['rcaeval', rcaevalTraceCsv],
-    ['openrca', openrcaTraceCsv],
+  /**
+   * Every writer, the name *it* gives each optional field, and how wide its row is.
+   *
+   * The names are per writer because the two formats spell the same fields
+   * differently -- and they are looked up rather than indexed because the indices
+   * are exactly what stopped being comparable: `rcaeval`'s `traces.csv` carries the
+   * corpus's eleven columns (finding 266) and `openrca`'s carries eight, so a shared
+   * positional assertion would have measured one column in one file and a different
+   * one in the other while reading as agreement between them.
+   */
+  const writers: Array<[string, () => string, string, string, number]> = [
+    ['rcaeval', rcaevalTraceCsv, 'parentSpanID', 'statusCode', 11],
+    ['openrca', openrcaTraceCsv, 'parent_span_id', 'status', 8],
   ];
 
-  it.each(writers)('writes an empty parent span id for a root span (%s)', (_name, csvOf) => {
-    const row = parseCsv(csvOf())[1] as string[];
-    expect(row[3]).toBe('');
+  /** One cell of the first data row, by the writer's own column name. */
+  function cell(csv: string, column: string): string {
+    const rows = parseCsv(csv);
+    const header = rows[0] as string[];
+    const at = header.indexOf(column);
+    expect(at, `no '${column}' column in '${header.join(',')}'`).toBeGreaterThanOrEqual(0);
+    return (rows[1] as string[])[at] as string;
+  }
+
+  it.each(writers)('writes an empty parent span id for a root span (%s)', (_name, csvOf, parentColumn) => {
+    expect(cell(csvOf(), parentColumn)).toBe('');
   });
 
-  it.each(writers)('writes an empty status cell for a span whose status is absent (%s)', (_name, csvOf) => {
-    const row = parseCsv(csvOf())[1] as string[];
-    expect(row[7]).toBe('');
+  it.each(writers)('writes an empty status cell for a span whose status is absent (%s)', (_name, csvOf, _p, statusColumn) => {
+    expect(cell(csvOf(), statusColumn)).toBe('');
   });
 
   it.each(writers)('never spells an absent value as "null" or "undefined" (%s)', (_name, csvOf) => {
@@ -423,22 +453,190 @@ describe('CSV cells · an absent value is an empty cell, not the word "null"', (
     expect(csv).not.toContain('undefined');
   });
 
-  it.each(writers)('keeps the column count fixed when optional fields are absent (%s)', (_name, csvOf) => {
+  it.each(writers)('keeps the column count fixed when optional fields are absent (%s)', (_name, csvOf, _p, _s, width) => {
     // A shorter row would be padded by the reader, so the row length is what
-    // distinguishes "an absent value" from "a column this writer forgot".
+    // distinguishes "an absent value" from "a column this writer forgot". The
+    // width is per writer and comes from the format's own header, which for
+    // `rcaeval` is the corpus's eleven rather than a number this repository chose.
     const rows = parseCsv(csvOf());
-    expect(rows[0]).toHaveLength(8);
-    expect(rows[1]).toHaveLength(8);
+    expect(rows[0]).toHaveLength(width);
+    expect(rows[1]).toHaveLength(width);
   });
 
   it('spells an absent value the same way in both writers', () => {
-    // The differential, kept as the statement of the invariant itself: one
-    // format, one answer. It is a weaker test than the four above -- it says
-    // the writers agree, not that they agree on the right thing -- which is
-    // exactly why the value is asserted separately rather than here alone.
-    const rcaevalCell = (parseCsv(rcaevalTraceCsv())[1] as string[])[3];
-    const openrcaCell = (parseCsv(openrcaTraceCsv())[1] as string[])[3];
+    // The differential, kept as the statement of the invariant itself: one value,
+    // one answer. It is a weaker test than the four above -- it says the writers
+    // agree, not that they agree on the right thing -- which is exactly why the
+    // value is asserted separately rather than here alone.
+    const rcaevalCell = cell(rcaevalTraceCsv(), 'parentSpanID');
+    const openrcaCell = cell(openrcaTraceCsv(), 'parent_span_id');
     expect(openrcaCell).toBe(rcaevalCell);
     expect(openrcaCell).toBe('');
+  });
+});
+
+/**
+ * The log and trace columns, as the corpora spell them.
+ *
+ * ## Why the expected header is a literal here
+ *
+ * Every other assertion in this file is derived — from the format, from the
+ * exporter, from another writer. These three strings are the exception on
+ * purpose: they were read out of the archives, and a value read out of a real
+ * artifact is the one thing a test cannot derive from the code it is testing.
+ * Deriving them (from `RCAEVAL_LOGS_COLUMNS`, say) would make the test agree with
+ * whatever the exporter does, which is exactly the defect finding 266 records.
+ *
+ * Provenance, both measured 2026-10-27:
+ *
+ *   RE2-OB/checkoutservice_cpu/1/traces.csv   first row, 11 columns
+ *   RE3-OB/emailservice_f1/1/traces.csv       first row, identical
+ *   RE2-OB/checkoutservice_cpu/1/logs.csv     9 columns
+ *   RE3-OB/emailservice_f1/1/logs.csv         6 columns
+ *
+ * The two `traces.csv` files agreeing and the two `logs.csv` files not is why
+ * there is one trace list and two log lists; a test that only looked at one
+ * archive would have been consistent with both designs.
+ */
+describe('RCAEval exporter · the columns are the corpora’s, measured', () => {
+  const MEASURED_TRACES =
+    'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID';
+  const MEASURED_LOGS_RE2 = 'time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template';
+  const MEASURED_LOGS_RE3 = 'time,timestamp,container_name,message,pod_name,node_name';
+
+  /**
+   * A log signal with every field the IR has, populated.
+   *
+   * The "everything" matters: the claim under test is not that these columns are
+   * usually empty but that they are empty *even when there is something to say*,
+   * which is the only form in which the statement can be falsified.
+   */
+  const fullLog: TelemetrySignal = {
+    irVersion: '2.0',
+    resource: {
+      'service.name': 'checkoutservice',
+      'k8s.pod.name': 'checkoutservice-588fbcd66b-rzd62',
+      'k8s.node.name': 'ip-192-168-24-141',
+    },
+    timestamp: '2024-01-15T21:24:06.067Z',
+    signal: 'log',
+    payload: { kind: 'log', body: 'request started', severityText: 'ERROR', templateId: 'L007' },
+  };
+
+  /** A span with a parent and a status: nothing absent but the columns we do not carry. */
+  const fullSpan: TelemetrySignal = {
+    irVersion: '2.0',
+    resource: { 'service.name': 'frontendservice' },
+    timestamp: '2024-01-15T21:24:06.065Z',
+    signal: 'trace',
+    payload: {
+      kind: 'trace',
+      traceId: '46d5d1e1fc25a09db4a81d4d105cee3d',
+      spanId: '433c41ba31b519dd',
+      parentSpanId: '6de46372468bc931',
+      spanName: 'grpc.hipstershop.CurrencyService/Convert',
+      durationMs: 4.133,
+      status: 'OK',
+    },
+  };
+
+  function headerOf(csv: string): string {
+    return (csv.split('\n')[0] as string).trimEnd();
+  }
+
+  function rowOf(csv: string, column: string): string {
+    const rows = parseCsv(csv);
+    const header = rows[0] as string[];
+    const at = header.indexOf(column);
+    expect(at, `no '${column}' in '${header.join(',')}'`).toBeGreaterThanOrEqual(0);
+    return (rows[1] as string[])[at] as string;
+  }
+
+  function emptyColumns(csv: string): string[] {
+    const rows = parseCsv(csv);
+    const header = rows[0] as string[];
+    const row = rows[1] as string[];
+    return header.filter((_name, index) => row[index] === '');
+  }
+
+  it('writes the traces header both archives carry, byte for byte', () => {
+    expect(headerOf(buildTracesCsv([fullSpan]))).toBe(MEASURED_TRACES);
+  });
+
+  it('writes nine log columns for RE2 and six for RE3', () => {
+    expect(headerOf(buildLogsCsv([fullLog], 'RE2'))).toBe(MEASURED_LOGS_RE2);
+    expect(headerOf(buildLogsCsv([fullLog], 'RE3'))).toBe(MEASURED_LOGS_RE3);
+    // Stated as a difference, because the defect was a single list standing in for
+    // both: an exporter with one log schema cannot be right for these two archives.
+    expect(MEASURED_LOGS_RE2).not.toBe(MEASURED_LOGS_RE3);
+  });
+
+  it('converts the units the corpus’s columns are in', () => {
+    const trace = buildTracesCsv([fullSpan]);
+    // Microseconds, twice: the corpus's `timestamp`/`start` are µs and its
+    // `duration` is µs, while the IR carries milliseconds for both.
+    expect(rowOf(trace, 'startTimeMillis')).toBe(String(Date.parse(fullSpan.timestamp)));
+    expect(rowOf(trace, 'startTime')).toBe(String(Date.parse(fullSpan.timestamp) * 1000));
+    expect(rowOf(trace, 'duration')).toBe('4133');
+    // The corpus's `time` column is `HH:MM` of the instant, in UTC.
+    expect(rowOf(trace, 'time')).toBe('21:24');
+    expect(rowOf(buildLogsCsv([fullLog], 'RE3'), 'timestamp')).toBe(String(Date.parse(fullLog.timestamp) * 1000));
+  });
+
+  it('spells the span status as the OTel code the column holds', () => {
+    const span = fullSpan.payload as Extract<TelemetrySignal['payload'], { kind: 'trace' }>;
+    const codeOf = (status: 'OK' | 'ERROR' | 'UNSET' | undefined): string => {
+      // Built field by field rather than spread-then-override: `{...span, status: undefined}`
+      // keeps the key with an undefined value, and `p.status === undefined` cannot
+      // tell that from an absent key -- which would make the last assertion below
+      // test the spread rather than the writer.
+      const payload: TelemetrySignal['payload'] =
+        status === undefined
+          ? { kind: 'trace', traceId: span.traceId, spanId: span.spanId, parentSpanId: span.parentSpanId, spanName: span.spanName, durationMs: span.durationMs }
+          : { ...span, status };
+      return rowOf(buildTracesCsv([{ ...fullSpan, payload }]), 'statusCode');
+    };
+    expect(codeOf('UNSET')).toBe('0');
+    expect(codeOf('OK')).toBe('1');
+    expect(codeOf('ERROR')).toBe('2');
+    // Absent stays absent: `0` is a status, not the absence of one.
+    expect(codeOf(undefined)).toBe('');
+  });
+
+  it('leaves exactly the columns it declares it does not carry', () => {
+    // The list is the export's own statement about its losses, so the observation
+    // is set equality against it rather than "these cells happen to be empty".
+    expect(emptyColumns(buildTracesCsv([fullSpan]))).toEqual([...RCAEVAL_UNFILLED_COLUMNS.traces]);
+    expect(emptyColumns(buildLogsCsv([fullLog], 'RE2'))).toEqual([...RCAEVAL_UNFILLED_COLUMNS['logs/RE2']]);
+    expect(emptyColumns(buildLogsCsv([fullLog], 'RE3'))).toEqual([...RCAEVAL_UNFILLED_COLUMNS['logs/RE3']]);
+  });
+
+  it('carries the pod and node the corpus’s RE3 log table asks for', () => {
+    const logs = buildLogsCsv([fullLog], 'RE3');
+    expect(rowOf(logs, 'pod_name')).toBe('checkoutservice-588fbcd66b-rzd62');
+    expect(rowOf(logs, 'node_name')).toBe('ip-192-168-24-141');
+    // And RE2's table has no such columns, so the same signal loses them -- which is
+    // the format, not a bug: a suite's log table is the suite's.
+    expect(headerOf(buildLogsCsv([fullLog], 'RE2'))).not.toContain('pod_name');
+  });
+
+  it('passes the structure check because the check reads the same table', () => {
+    const exported = exportRcaEval(validBundle({ signals: { 'case-001': [fullLog, fullSpan] } }), 'RE2');
+    const report = checkRcaEvalStructure(exported.files, 'RE2');
+    const failed = report.checks.filter((check) => !check.passed).map((check) => `${check.id}: ${check.detail}`);
+    expect(failed).toEqual([]);
+  });
+
+  it('fails the structure check for the header this module used to write', () => {
+    // The negative control, and it is the shipped defect: eight columns spelled
+    // `timestamp,trace_id,...`. Without this, "the structure check passes" could be
+    // true of a check that passes everything.
+    const exported = exportRcaEval(validBundle({ signals: { 'case-001': [fullLog, fullSpan] } }), 'RE2');
+    const dir = Object.keys(exported.files).find((path) => path.endsWith('/traces.csv')) as string;
+    const legacy = 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status\nt1,s1,,order,GET,120,OK\n';
+    const report = checkRcaEvalStructure({ ...exported.files, [dir]: legacy }, 'RE2');
+    const traceCheck = report.checks.find((check) => check.id === 'traces-header');
+    expect(traceCheck?.passed).toBe(false);
+    expect(traceCheck?.detail).toContain('time,traceID');
   });
 });

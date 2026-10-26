@@ -67,6 +67,7 @@ import {
   parseDelimited,
   runAllOfficialRegressions,
   SCORE_TARGET_IDS,
+  scoreExport,
 } from '../packages/core/dist/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -854,6 +855,19 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
 
   const target = `rcaeval-${entry.suite.toLowerCase()}`;
   const exported = exportForScoreTarget(ingested.bundle, target);
+
+  // The shape contract, run on real data -- which it never was.
+  //
+  // `runAllOfficialRegressions` below applies the published *metric*, and the
+  // metric reads the case directory name, not the files. So 270 RE2 cases scored
+  // 1.00 while carrying a `traces.csv` with eight invented columns: the check that
+  // would have refused it existed, was green against our own fixtures, and was
+  // never called on a corpus (finding 266).
+  //
+  // It is called here rather than added to the metric on purpose: they answer
+  // different questions, and folding one into the other is how a shape failure
+  // would come to be reported as a wrong answer.
+  const shape = scoreExport(target, exported.files);
   const report = runAllOfficialRegressions(
     Object.fromEntries(SCORE_TARGET_IDS.map((t) => [t, t === target ? exported.files : {}])),
     { allowEmptyReason: 'the round trip names the single target under test' },
@@ -880,6 +894,18 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: 'the target refuses this fault class' });
     continue;
   }
+  // A skip is not a shape: an RE3 case the exporter refuses writes no files at all,
+  // and judging that empty directory against the layout would report the refusal as
+  // a malformed export.
+  if (!skipped && !shape.passed) {
+    const failing = shape.checks.filter((c) => !c.passed).map((c) => `${c.id} (${c.detail})`);
+    const reason = `${entry.caseId}: the export does not match ${target}'s field contract - ${failing.join('; ')}`;
+    console.log(`ROUNDTRIP FAIL ${label} shape=${shape.checks.filter((c) => !c.passed).length}`);
+    roundTripFailures.push(reason);
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason });
+    continue;
+  }
+
   if (scored !== 1) {
     const reason =
       `${entry.caseId}: our own export does not score 1.0 under ${target}'s published rule (got ${scored}); ` +

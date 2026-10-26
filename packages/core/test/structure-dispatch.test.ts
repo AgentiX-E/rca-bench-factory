@@ -93,17 +93,29 @@ describe('a structural check refuses a shape it does not describe', () => {
   });
 
   // RE1 and RE2 are separated by their file *set*, which is visible in the
-  // directory listing. RE2 and RE3 share that set exactly. A first draft of this
-  // test asserted that RE3 therefore *rejects* RE2's resource-fault files, and
-  // was wrong: `checkRcaEvalStructure` is a shape check, and `RE2-.../logs.csv`
-  // has exactly the shape RE3 would have given it. The difference between the
-  // two targets is which cases the *exporter* admits, one layer up, and no
-  // structural check can see it. Recorded here because the distinction is what
-  // makes the suite worth reading from a ledger at all.
-  it('RE2 and RE3 accept the same shaped files, because the shapes are identical', () => {
-    const resourceFiles = exportForScoreTarget(validBundle(), 'rcaeval-re2').files;
-    expect(scoreExport('rcaeval-re2', resourceFiles).passed).toBe(true);
-    expect(scoreExport('rcaeval-re3', resourceFiles).passed).toBe(true);
+  // directory listing. RE2 and RE3 share that set, and this test used to say they
+  // therefore share the *shape* -- "RE2-.../logs.csv has exactly the shape RE3
+  // would have given it" -- which was true only while one column list served both
+  // suites. The corpora disagree: RE2-OB's log table carries nine columns and
+  // RE3-OB's six (finding 266). So the honest statement is the pair below: the
+  // file names are identical, and the check for one suite refuses the other's log
+  // table, by name.
+  it('RE2 and RE3 emit the same file set, and disagree about the log table in it', () => {
+    const suffixes = (files: Record<string, string>): string[] =>
+      Object.keys(files)
+        .map((path) => path.slice(path.indexOf('/') + 1))
+        .sort();
+    const re2 = exportForScoreTarget(validBundle(), 'rcaeval-re2').files;
+    const re3 = exportForScoreTarget(codeBundle(), 'rcaeval-re3').files;
+    expect(suffixes(re3)).toEqual(suffixes(re2));
+
+    expect(scoreExport('rcaeval-re2', re2).passed).toBe(true);
+    const crossed = checkRcaEvalStructure(re2, 'RE3');
+    const logs = crossed.checks.find((c) => c.id === 'logs-header');
+    expect(logs?.passed).toBe(false);
+    // The trace table is the one the two corpora *do* agree about, so it is the
+    // control: crossing the suites changes exactly one of the two headers.
+    expect(crossed.checks.find((c) => c.id === 'traces-header')?.passed).toBe(true);
   });
 
   it('RE3 emits nothing for a case it refuses, which is the real separation', () => {
@@ -141,9 +153,13 @@ describe('checkRcaEvalStructure states the modality rule per suite', () => {
   });
 
   it.each(['RE2', 'RE3'] as const)('%s demands the presence of both logs and traces', (suite) => {
+    // The modality rule, read from the check that states it. `report.passed` was
+    // asserted here too, which made this test depend on RE2's *headers* being
+    // acceptable to RE3 -- a fact about the corpora rather than about the modality
+    // rule, and one the corpora deny (finding 266).
     const report = checkRcaEvalStructure(ownFiles('rcaeval-re2'), suite);
-    expect(report.passed).toBe(true);
     expect(report.checks.find((c) => c.id === 'modality-set')?.detail).toContain(`${suite} expects logs/traces=true`);
+    expect(report.checks.find((c) => c.id === 'modality-set')?.passed).toBe(true);
   });
 
   it('RE1 rejects the RE2 shape when called directly', () => {

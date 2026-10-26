@@ -56,14 +56,34 @@ The upstream corpus is **nested**, and the suite is fused to the *system* rather
 
 ```text
 {suite}-{system}/{service}_{fault}/{run}/
-├── metrics.json        # { metricName: number[] }
-├── inject_time.txt     # Unix seconds
-├── logs.csv            # RE2 / RE3 only
-├── traces.csv          # RE2 / RE3 only
-├── logts.csv           # RE2 / RE3, pre-aggregated event counts at 15s
-├── tracets_err.csv     # RE2 / RE3 (OB and TT)
-└── tracets_lat.csv     # RE2 / RE3 (OB and TT)
+├── metrics.csv                 # wide, per pod      (RE2 / RE3)
+├── simple_metrics.csv          # wide, per service  (RE2 / RE3)
+├── metrics.json                # { metricName: number[] }  (RE1)
+├── data.csv                    # long, one row a sample    (RE1)
+├── inject_time.txt             # Unix seconds
+├── logs.csv                    # RE2 / RE3, raw log lines
+├── traces.csv                  # RE2 / RE3, raw spans
+├── logts.csv                   # RE2, pre-aggregated event counts
+├── tracets_err.csv             # RE2 (OB and TT)
+├── tracets_lat.csv             # RE2 (OB and TT)
+├── cluster_info.json           # RE2, log templates per node
+├── pod-node-{1,2}.csv          # RE2, placement
+└── metrics.png, metrics_postprocess.log
 ```
+
+**The file set is not the same in the two corpora that ship logs and traces**, and neither is the
+schema of the two files whose *names* match ours. Measured from the archives (finding 266):
+
+| file | RE2-OB | RE3-OB |
+| --- | --- | --- |
+| `traces.csv` | 11 columns, `time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID` | the same 11, identical |
+| `logs.csv` | 9 columns, `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template` | 6 columns, `time,timestamp,container_name,message,pod_name,node_name` |
+| units | `timestamp`/`startTime` are Unix **microseconds**; `duration` is microseconds; `time` is `HH:MM` UTC | the same |
+
+So the trace table is one schema across both suites and the log table is two, which is why
+`RCAEVAL_TRACES_COLUMNS` is a list and `RCAEVAL_LOGS_COLUMNS` is a map. The columns the IR does not
+carry (`methodName`; RE2's `req_path`, `error`, `cluster_id`, `log_template`) are emitted empty and
+named in `RCAEVAL_UNFILLED_COLUMNS` rather than filled with an invention.
 
 So a corpus case reads `RE2-OB/checkoutservice_cpu/1/`, not `RE2-checkoutservice-cpu_1/`. Two
 components carry labels that a single flat token cannot:
@@ -136,16 +156,23 @@ anomalous window. Unix seconds, no trailing newline.
 <!-- fields: rcaeval/{suite}-{service}-{fault}_{n}/logs.csv -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
-| `timestamp` | string | yes | `TelemetrySignal.timestamp` | Canonical UTC ISO-8601 (not offset-shifted). |
-| `service` | string | yes | `resource['service.name']` |  |
-| `severity` | string | no | `LogPayload.severityText ?? ""` |  |
-| `message` | string | yes | `LogPayload.body` |  |
+| `time` | string | yes | `HH:MM of TelemetrySignal.timestamp, UTC` | Both suites. |
+| `timestamp` | string | yes | `Date.parse(TelemetrySignal.timestamp) * 1000` | Unix microseconds, as the corpus writes it. |
+| `container_name` | string | yes | `resource['service.name']` | Both suites. |
+| `message` | string | yes | `LogPayload.body` | Both suites. |
+| `level` | string | no | `LogPayload.severityText ?? ""` | RE2 only. |
+| `req_path` | string | no | `(not carried)` | RE2 only. Empty; see RCAEVAL_UNFILLED_COLUMNS. |
+| `error` | string | no | `(not carried)` | RE2 only. Empty. |
+| `cluster_id` | string | no | `(not carried)` | RE2 only. Empty. |
+| `log_template` | string | no | `(not carried)` | RE2 only. The corpus writes rendered template text; the IR carries an id. |
+| `pod_name` | string | no | `resource['k8s.pod.name'] ?? ''` | RE3 only. |
+| `node_name` | string | no | `resource['k8s.node.name'] ?? ''` | RE3 only. |
 <!-- /fields -->
 
 <!-- example: rcaeval-re2/RE2-order-cpu_1/logs.csv -->
 ```csv
-timestamp,service,severity,message
-2026-09-06T00:10:10.000Z,order,ERROR,Connection pool exhausted
+time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template
+00:10,1788653410000000,order,Connection pool exhausted,ERROR,,,,
 ```
 
 ### `{suite}-{service}-{fault}_{n}/traces.csv` (RE2 / RE3)
@@ -153,21 +180,24 @@ timestamp,service,severity,message
 <!-- fields: rcaeval/{suite}-{service}-{fault}_{n}/traces.csv -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
-| `timestamp` | string | yes | `TelemetrySignal.timestamp` | Canonical UTC ISO-8601. |
-| `trace_id` | string | yes | `TracePayload.traceId` |  |
-| `span_id` | string | yes | `TracePayload.spanId` |  |
-| `parent_span_id` | string | no | `TracePayload.parentSpanId ?? ""` |  |
-| `service` | string | yes | `resource['service.name']` |  |
-| `span_name` | string | yes | `TracePayload.spanName` |  |
-| `duration_ms` | number | yes | `TracePayload.durationMs` |  |
-| `status` | string | no | `TracePayload.status ?? ""` |  |
+| `time` | string | yes | `HH:MM of TelemetrySignal.timestamp, UTC` |  |
+| `traceID` | string | yes | `TracePayload.traceId` |  |
+| `spanID` | string | yes | `TracePayload.spanId` |  |
+| `serviceName` | string | yes | `resource['service.name']` |  |
+| `methodName` | string | no | `(not carried)` | The two corpora disagree about what it means; empty. |
+| `operationName` | string | yes | `TracePayload.spanName` |  |
+| `startTimeMillis` | string | yes | `Date.parse(TelemetrySignal.timestamp)` | Unix milliseconds. |
+| `startTime` | string | yes | `Date.parse(TelemetrySignal.timestamp) * 1000` | Unix microseconds. |
+| `duration` | string | yes | `round(TracePayload.durationMs * 1000)` | Microseconds; the IR carries milliseconds. |
+| `statusCode` | string | no | `SPAN_STATUSES -&gt; 0/1/2` | OTel codes: unset/ok/error. Empty when the span has no status. |
+| `parentSpanID` | string | no | `TracePayload.parentSpanId ?? ""` |  |
 <!-- /fields -->
 
 <!-- example: rcaeval-re2/RE2-order-cpu_1/traces.csv -->
 ```csv
-timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status
-2026-09-06T00:10:15.000Z,tr-1,sp-1,,order,GET /checkout,120,OK
-2026-09-06T00:10:16.000Z,tr-1,sp-2,sp-1,order,GET /checkout,120,OK
+time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID
+00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,
+00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,1,sp-1
 ```
 
 ## Exporting
