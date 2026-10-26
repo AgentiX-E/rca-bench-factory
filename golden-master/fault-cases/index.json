@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 11,
+  "min": 12,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -330,6 +330,36 @@
           "layer": "evidence",
           "quote": "Application-side connection pool utilisation is normal, so clients are not the bottleneck",
           "why": "the control that rules the clients out, and the sentence the pool checkpoint rests on"
+        }
+      ]
+    },
+    {
+      "caseId": "history-middleware-database-pool-deadlock-billing",
+      "sampleId": "middleware-database-connection-pool",
+      "case": "history-middleware-database-pool-deadlock-billing.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-middleware-database-pool-deadlock-billing.signals.json",
+      "why": "annotated from the incident text of `middleware-database-connection-pool`, and the corpus's first case whose causal chain is a **self-hop**: the deadlock is a cycle among the service's own threads, so there is no second entity to reach. That shape is what finding 253 kept the self-hop for -- an entity that amplifies its own condition -- and this is the first annotation that needs it, which is why the chain is one step from `billing-service` to itself rather than a hop into the database. The four layers keep the pool and the server apart: the entity layer is the service, the fault layer is the cycle in words (threads holding connections while waiting on a lock held by a transaction that waits for a connection), the process layer is the error the service raises, and the evidence layer is the pool at its ceiling, the ceiling itself cited from the case's parameters, the server's counted zero, and the error string. The database is in the graph and in the evidence and is still not the cause, which is the discrimination the text spends half its sentences on.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The billing service began throwing 'connection pool exhausted' after the replica promotion",
+          "why": "the service that reported the failures, and the trigger that preceded them"
+        },
+        {
+          "layer": "fault",
+          "quote": "Pool size is 20 and all 20 are held by threads waiting on a lock held by a transaction that is itself waiting for a connection, so no thread can make progress",
+          "why": "the cycle itself, in one sentence: every element of it is inside the pool"
+        },
+        {
+          "layer": "process",
+          "quote": "the deadlock is entirely inside the service's client pool",
+          "why": "the propagation's boundary -- the sentence that says where the wait lives, and therefore where the repair goes"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Postgres reports no long-running query on the primary",
+          "why": "the control: the server has nothing running, which is what rules it out"
         }
       ]
     }

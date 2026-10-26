@@ -1,0 +1,39 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-middleware-database-pool-deadlock-billing",
+  "why": "Telemetry for the pool-deadlock case, and the first that carries a log line as evidence rather than as decoration: the service's own error string is the symptom a human reported, and the checkpoint asserts it verbatim. The connections-in-use series is a count of a resource the service holds itself, so it is exact -- no sampling noise -- and it reaches the pool's declared size rather than approaching it, which is what a deadlock looks like from the pool's side. The database's long-running-query count is the control and it is a counted zero: the transactions the threads wait on are queued in the client, so the server has nothing running to report. A corpus that carried only the pool and the error would be satisfied by 'the database is slow', which is the answer this case exists to rule out.",
+  "series": [
+    {
+      "service": "billing-service",
+      "metric": "client_pool_connections_in_use",
+      "unit": "count",
+      "baseline": 3,
+      "post": 20,
+      "noise": "none",
+      "derivation": "step",
+      "quote": "Pool size is 20 and all 20 are held by threads waiting on a lock",
+      "why": "the checkpoint `cp-connections-held` holds the twenty: the pool is a counted resource, so the reading is exact, and it reaches the ceiling rather than trending toward it"
+    },
+    {
+      "service": "billing-db",
+      "metric": "db_long_running_queries",
+      "unit": "count",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "Postgres reports no long-running query on the primary",
+      "why": "the control `cp-no-long-query`: a counted zero on the server, which is the reading that puts the wait inside the client pool instead of in the database"
+    }
+  ],
+  "logs": [
+    {
+      "service": "billing-service",
+      "id": "pool-exhausted-errors",
+      "severity": "error",
+      "body": "failed to acquire a connection from the billing pool within 30s: connection pool exhausted (20 of 20 held)",
+      "quote": "began throwing 'connection pool exhausted' after the replica promotion",
+      "why": "the error a human reported, in the service's own words, and the string the log checkpoint asserts"
+    }
+  ]
+}

@@ -128,3 +128,62 @@ because that is where the propagation began.
 | the baselines | both place `session-cache` in top-K |
 | `core` / repo | **186 / 4604** · **190 / 4791**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 257 — the first chain with one entity, and a paraphrase the quote check caught
+
+`middleware-database-connection-pool` is the corpus's twelfth case, and the first whose causal chain is
+a **self-hop**:
+
+```json
+{ "step": 1, "from": "service:.../billing-service",
+  "to":   "service:.../billing-service",
+  "mechanism": "twenty threads hold twenty connections while waiting on a lock held by a transaction
+                that is itself waiting for a connection" }
+```
+
+That shape is why finding 253's rule collapses self-hops instead of refusing them, and this is the
+first annotation that needed it: the deadlock is a cycle among the service's own threads, so there is
+no second entity to reach. The rule was written against a unit-test fixture; a corpus case is the first
+time it paid.
+
+### The case, and the three things it exercises
+
+The billing service throws `connection pool exhausted` after a replica promotion; the pool's twenty
+connections are all held; the primary reports no long-running query.
+
+- **a log line as evidence rather than decoration.** The checkpoint asserts `contains` the error string
+  the service itself logs, which is the symptom a human reported. The corpus's other log checkpoints
+  quote a fault's own line; this one quotes the *victim's*.
+- **two numbers that are one fact.** `cp-connections-held == 20 count` and `cp-pool-size == 20 count`
+  (a configuration fact) state the ceiling twice — once as a reading, once as the pool's declared size —
+  so a change to one makes the other fail rather than drifting quietly.
+- **a database that is in the graph, in the evidence, and still not the cause.** `cp-no-long-query
+  == 0 count` is the control, and it is a counted zero: the transactions the threads wait on are queued
+  in the client, so the server has nothing running to report.
+
+### The paraphrase
+
+The first run refused the annotation:
+
+```
+cites a process quote the incident text does not contain:
+'The deadlock is entirely inside the service's client pool'.
+Paraphrasing the source from memory produces this, and the case would then rest on a sentence nobody
+wrote.
+```
+
+The text says *"the deadlock is entirely inside the service's client pool"* — lowercase, because it
+continues the sentence before it. One character of case, and the check caught it because it compares a
+folded substring rather than my memory of the paragraph.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **12 of 30**; floor 12 |
+| the references | **37 of 37** resolve by kind -- 28 series, 2 computed from 4 readings, **5** configuration facts, 2 log lines; **0 of 33** comparable assertions fail |
+| the chain | the corpus's first self-hop, and the first case that justifies the collapse rule |
+| the graph | 28 entities / 17 edges |
+| the exports | RE1 12 / 0 empty, RE2 12 / 17, RE3 2 / 3 empty / 10 skipped |
+| `core` / repo | **186 / 4604** · **190 / 4791**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

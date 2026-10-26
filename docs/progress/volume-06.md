@@ -1573,3 +1573,50 @@ gates, 46 caught, 0 survived**; core **186 / 4604**, cli 4 / 187, repo **190 / 4
 
 Unchanged: a parameter is tied to the text only through the fault layer's quote; compound units are
 compared structurally; a chain's first step is not required to be the root cause.
+
+## v2.84 — the twelfth case: a chain with one entity, and a paraphrase the check caught
+
+**What this round is.** `middleware-database-connection-pool` — the billing service throws `connection
+pool exhausted` after a replica promotion, all twenty pool connections are held, and the primary
+reports no long-running query.
+
+**The first self-hop in the corpus.** The deadlock is a cycle among the service's own threads, so the
+chain has nowhere else to go: `billing-service -> billing-service`, mechanism "twenty threads hold
+twenty connections while waiting on a lock held by a transaction that is itself waiting for a
+connection". Finding 253's rule kept that shape deliberately, against a unit-test fixture; this is the
+first annotation that needs it.
+
+**Three things the case exercises.**
+
+| what | how |
+| --- | --- |
+| a log line as evidence | the checkpoint asserts `contains` the error string the *victim* logs, not the fault's own line |
+| two numbers that are one fact | `connections in use == 20 count` and the pool's declared `poolSize == 20 count` — a reading and its ceiling, so a change to one fails the other |
+| a database that is not the cause | `db_long_running_queries == 0 count`, a counted zero: the wait is queued in the client, so the server has nothing running |
+
+**The paraphrase.** The first run refused the annotation: the process quote I wrote was `The deadlock is
+entirely inside the service's client pool`, and the text says `the deadlock …` — lowercase, because it
+continues the sentence before it. One character of case, caught because the check compares a folded
+substring rather than my memory of the paragraph.
+
+**Acceptance.** `check-fault-cases` prints **12 of 30**, `37 of 37` references resolved by kind (28
+series, 2 computed from 4 readings, 5 configuration, 2 log), `0 of 33` comparable assertions failing;
+RE1 12 / 0 empty, RE2 12 / 17, RE3 2 / 3 empty / 10 skipped; 28 entities / 17 edges; both baselines
+place `billing-service` in top-K. Pinned counts moved by hand (`12 of 30`, `filled 28`, `RE2 … 17`,
+`RE3 … 10 skipped`, `37 of 37`, `0 of 33`, `5 citing a declared configuration fact`); typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46
+gates, 46 caught, 0 survived**; core **186 / 4604**, cli 4 / 187, repo **190 / 4791**; coverage
+99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–257.
+
+### Left open
+
+- **18 samples still carry no case.** `[open: 12 of 30 carry one; each needs its own reading of the text
+  rather than a template, and the slow ones are the samples whose prose gives no number]`
+- **The two numbers that are one fact are not linked.** `[open: the pool ceiling appears as a reading
+  and as a parameter, and two checkpoints make them agree; nothing makes the series' post value *read*
+  the parameter, so a change to the pool size still requires editing both]`
+- **An absence of logs cannot be a checkpoint.** `[open: this case needed a line that exists, which is
+  why it could be written; the pod-kill case's "nothing was logged" still cannot]`
+
+Unchanged: a parameter is tied to the text only through the fault layer's quote; compound units are
+compared structurally; a chain's first step need not be the root cause.

@@ -1,0 +1,111 @@
+{
+  "caseId": "history-middleware-database-pool-deadlock-billing",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-30T05:40:00.000Z",
+  "window": {
+    "start": "2026-09-30T05:28:00.000Z",
+    "end": "2026-09-30T06:00:00.000Z"
+  },
+  "fault": {
+    "type": "database-connection-pool-exhaustion",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "billing-service",
+      "datastore": "billing-db",
+      "poolSize": {
+        "value": 20,
+        "unit": "count"
+      },
+      "trigger": "replica-promotion"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/billing-service",
+    "rootCauseComponent": "billing-service",
+    "rootCauseReason": "The service's client pool has twenty connections, and after the replica promotion all twenty were held by threads waiting on a lock that a transaction held while waiting for a connection of its own. That is a cycle entirely inside the pool: no thread can release a connection, so no thread can finish, so the pool never frees one. The database is not part of it -- the primary reports no long-running query, because the transactions the threads are waiting on are queued in the client rather than running on the server.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "client_pool_connections_in_use",
+        "description": "every connection in the pool is held, which is the state from which nothing can proceed"
+      },
+      {
+        "type": "log",
+        "ref": "pool-exhausted-errors",
+        "description": "the service's own error, raised when a request asks for a connection and there is none to give"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/billing-service",
+        "toEntityId": "service:synthetic-storefront/billing-service",
+        "mechanism": "twenty threads hold twenty connections while waiting on a lock held by a transaction that is itself waiting for a connection, so the pool can never free one and the service deadlocks against itself",
+        "evidenceRefs": [
+          "cp-connections-held",
+          "cp-pool-size",
+          "cp-no-long-query"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-connections-held",
+        "entityRef": "service:synthetic-storefront/billing-service",
+        "signalRef": "client_pool_connections_in_use",
+        "comparator": "==",
+        "value": 20,
+        "unit": "count",
+        "description": "all twenty connections are held, which is the whole pool — the reading that says the service ran out of a resource it holds itself"
+      },
+      {
+        "checkpointId": "cp-pool-size",
+        "entityRef": "service:synthetic-storefront/billing-service",
+        "signalRef": "poolSize",
+        "comparator": "==",
+        "value": 20,
+        "unit": "count",
+        "description": "the pool's size, cited from the case's own parameters: the ceiling the connections-in-use reading reaches, so the two numbers are one fact stated twice rather than two facts",
+        "signalKind": "configuration"
+      },
+      {
+        "checkpointId": "cp-no-long-query",
+        "entityRef": "db:synthetic-storefront/billing-db",
+        "signalRef": "db_long_running_queries",
+        "comparator": "==",
+        "value": 0,
+        "unit": "count",
+        "description": "the primary reports no long-running query, which is the control that puts the deadlock in the client rather than in the database"
+      },
+      {
+        "checkpointId": "cp-pool-exhausted-errors",
+        "entityRef": "service:synthetic-storefront/billing-service",
+        "signalKind": "log",
+        "signalRef": "pool-exhausted-errors",
+        "comparator": "contains",
+        "value": "connection pool exhausted",
+        "description": "the service's own words for the state, logged when a request asks the pool for a connection and finds none"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "acquire the connection after the lock rather than before it, so a thread waiting on a lock cannot hold the connection the lock holder needs",
+        "target": "service:synthetic-storefront/billing-service"
+      },
+      {
+        "step": 2,
+        "action": "bound the wait on a pooled connection with a timeout, so a cycle fails a request instead of stopping every thread",
+        "target": "service:synthetic-storefront/billing-service"
+      }
+    ]
+  },
+  "query": "The billing service began throwing 'connection pool exhausted' after the replica promotion. What is the root cause, and why is the database not it?",
+  "answerKeyIsolated": true
+}

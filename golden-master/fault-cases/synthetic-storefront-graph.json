@@ -165,6 +165,18 @@
       "kind": "db",
       "name": "session-redis",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/billing-service",
+      "kind": "service",
+      "name": "billing-service",
+      "aliases": []
+    },
+    {
+      "entityId": "db:synthetic-storefront/billing-db",
+      "kind": "db",
+      "name": "billing-db",
+      "aliases": []
     }
   ],
   "edges": [
@@ -246,6 +258,11 @@
     {
       "from": "service:synthetic-storefront/session-cache",
       "to": "db:synthetic-storefront/session-redis",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/billing-service",
+      "to": "db:synthetic-storefront/billing-db",
       "relation": "calls"
     }
   ]
