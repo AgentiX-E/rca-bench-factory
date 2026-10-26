@@ -1771,8 +1771,11 @@ the ~74 GiB root disk on 24.04, and `ubuntu-latest` moved on 2026-10-19. The cor
 
 Three layers, three fixes:
 
-- **destination** — `OFFICIAL_DIR: ${{ runner.temp }}/official`, declared once at job level and read by
-  every step. The workflow no longer contains `/tmp` in executable text, and a test says so.
+- **destination** — `OFFICIAL_DIR=$RUNNER_TEMP/official`, assigned in the first step and exported
+  through `$GITHUB_ENV`, read by every later step. The workflow no longer contains `/tmp` in
+  executable text, and a test says so. The first version named it in `jobs.<id>.env` and GitHub
+  refused the file (`Unrecognized named-value: 'runner'` — the context does not exist there); no test
+  could see that, so the rule set gained one that refuses a `runner` expression above `steps:`.
 - **check** — two exact preflights in `fetch-official.mjs`: the registry's pinned byte count before the
   transfer, and the archive's own central-directory total before extraction (zip64 included, four
   syscalls, no `unzip -l`). A shortfall prints both numbers and exits **3**.
@@ -1789,10 +1792,10 @@ since it was written. It printed `7.8G` available and nothing compared it to any
 lives where the requirement is known, and the `df` steps name the same variable the fetch writes to.
 
 **Acceptance.** 4 new tests in the fetch suite (all four red against the pre-fix script, measured by
-stashing it), 13 in the new `official-data-destination.test.ts` (6 rules, each re-run against a
+stashing it), 16 in the new `official-data-destination.test.ts` (7 rules, each re-run against a
 mutation that must trip it); typecheck, lint, `docs:check` green; `derive-gate-sites --check` green
-(**88 sites, 46 scripts**, both new sites annotated `proved`); core **187 / 4630**, cli 4 / 187, repo
-**191 / 4817**; coverage 99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–261; the corpus is
+(**88 sites, 46 scripts**, both new sites annotated `proved`); core **187 / 4633**, cli 4 / 187, repo
+**191 / 4820**; coverage 99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–261; the corpus is
 unchanged at **13 of 30** with 31 entities / 19 edges.
 
 ### Left open

@@ -415,11 +415,11 @@ confidence of a check.
 Three changes, one per layer, because the defect has three layers and fixing two of them would leave
 the anchor broken in a way that reads as working.
 
-**The destination.** `OFFICIAL_DIR: ${{ runner.temp }}/official`, declared once at job level, read by
-every step that writes or measures. `runner.temp` is `$RUNNER_TEMP`, on the root filesystem; the
-workflow header says why, with the dates. One variable because the previous arrangement had the
-destination in the fetch step and the destination *measurement* in a step that named a different path —
-two copies of one fact, which drifted the moment the first one changed.
+**The destination.** `OFFICIAL_DIR=$RUNNER_TEMP/official`, assigned in the job's first step and
+exported through `$GITHUB_ENV`, read by every later step that writes or measures. `$RUNNER_TEMP` is on
+the root filesystem; the workflow header says why, with the dates. One variable because the previous
+arrangement had the destination in the fetch step and the destination *measurement* in a step that
+named a different path — two copies of one fact, which drifted the moment the first one changed.
 
 **The check.** `scripts/fetch-official.mjs` now measures twice per asset, exactly:
 
@@ -448,6 +448,27 @@ The workflow's `case` now has a branch for every one of them, and its `*` fallba
 all. That last part matters more than it looks: the fallback used to say "an asset could not be
 downloaded" and so described an unrecognised status — a signal, an OOM kill — as a network problem.
 **A fallback that asserts a cause it cannot know is how a full disk came to be called unreachable.**
+
+### The fix's first version did not parse
+
+It named the four paths in `jobs.<id>.env` as `${{ runner.temp }}/...`, which is the obvious place and
+is invalid: the `runner` context does not exist at job level. GitHub rejected the file outright —
+
+```
+HTTP 422: Invalid Argument - failed to parse workflow: (Line: 136, Col: 21):
+  Unrecognized named-value: 'runner'
+```
+
+— and the push-triggered run failed in zero seconds. **Nothing in this repository caught it**, and the
+reason is worth stating exactly: every rule in the new test file reads the workflow as *text*, and the
+text was fine. What was wrong was which contexts exist where, a fact about GitHub's expression
+evaluator rather than about the document.
+
+So the repair is two things: `$GITHUB_ENV` for the values, which is the mechanism that exists for
+"name this once and use it below"; and a seventh rule that reads the same text for the same class —
+no `runner` or `steps` expression may appear above `steps:`. That is narrow, and it is decidable, and
+it would have refused the file that GitHub refused. It is also the only part of this finding that a
+dispatch had to teach me.
 
 ### Reading the archive's own statement
 
@@ -493,10 +514,10 @@ filesystem today; the check is what will say so if that changes, in six seconds 
 
 | gate | result |
 | --- | --- |
-| the destination | one variable, `${{ runner.temp }}/official`; no executable line in the workflow names `/tmp` |
+| the destination | one variable, `$RUNNER_TEMP/official`, assigned once; no executable line in the workflow names `/tmp` |
 | the preflights | two per asset, exact; 4 tests, all four red against the pre-fix script |
 | the vocabulary | five codes documented in the script, five branches in the workflow, a `*` that names no cause |
-| the workflow rules | 6 rules over the text, each re-run against a mutation that must trip it |
-| `core` / repo | **187 / 4630** · **191 / 4817**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the workflow rules | 7 rules over the text, each re-run against a mutation that must trip it |
+| `core` / repo | **187 / 4633** · **191 / 4820**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the site inventory | **88 failure sites across 46 scripts**; the two new sites annotated `proved` |
 | the documents | typecheck, lint, `docs:check` green; audit 6 volumes, findings 1–261 |

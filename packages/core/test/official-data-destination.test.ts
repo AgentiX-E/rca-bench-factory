@@ -91,10 +91,45 @@ function commands(text: string): string[] {
   return out;
 }
 
-/** The destination is the runner's own temp directory, and it is named once. */
+/**
+ * The destination is the runner's own temp directory, and it is named once.
+ *
+ * Once means: in the naming step, from `$RUNNER_TEMP`, and nowhere else. The
+ * first version of this change named it at job level with `${{ runner.temp }}`,
+ * which GitHub rejects -- the `runner` context does not exist there, the file did
+ * not parse, and the push run failed in zero seconds. So the rule is about the
+ * mechanism as well as the value: a step that exports it, and no second spelling.
+ */
 function checkDestination(text: string): string[] {
-  const declared = /^\s+OFFICIAL_DIR: \$\{\{ runner\.temp \}\}\/official$/m.test(text);
-  return declared ? [] : ['the job does not declare OFFICIAL_DIR under `${{ runner.temp }}`'];
+  const violations: string[] = [];
+  if (!/^\s+echo "OFFICIAL_DIR=\$RUNNER_TEMP\/official"$/m.test(text)) {
+    violations.push('no step names OFFICIAL_DIR as `$RUNNER_TEMP/official`');
+  }
+  const assignments = executableLines(text).filter(({ line }) => /OFFICIAL_DIR=/.test(line));
+  if (assignments.length !== 1) {
+    violations.push(`OFFICIAL_DIR is assigned in ${assignments.length} places, and one of them will lag`);
+  }
+  return violations;
+}
+
+/**
+ * No expression outside `steps:` uses a context that does not exist there.
+ *
+ * This is the defect the first version of this change shipped: `runner` is
+ * available in steps and not in `jobs.<id>.env`, and the failure is total -- the
+ * workflow does not parse, so nothing runs and every other rule in this file
+ * still reads a document that looks fine. Only `steps:` and step-level keys may
+ * name `runner` or `steps`.
+ */
+function checkExpressionContexts(text: string): string[] {
+  const lines = text.split('\n');
+  const stepsAt = lines.findIndex((line) => /^\s+steps:\s*$/.test(line));
+  if (stepsAt === -1) return ['the job declares no `steps:`'];
+  return lines
+    .slice(0, stepsAt)
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => !line.trimStart().startsWith('#') && /\$\{\{\s*(runner|steps)\./.test(line))
+    .map(({ line, index }) => `line ${index + 1} uses a runner/steps context above the steps: ${line.trim()}`);
 }
 
 /** No executable line names a path outside the variables the job declares. */
@@ -185,24 +220,30 @@ function checkDiskReport(text: string): string[] {
  * pins would silently stop being published while the job stayed green.
  */
 function checkArtifactPaths(text: string): string[] {
-  const block = /path: \|\n((?:\s{12}.+\n)+)/.exec(text);
-  if (block === null) return ['the upload step has no `path: |` block'];
-  const paths = block[1].split('\n').map((line) => line.trim()).filter((line) => line !== '');
-  if (paths.length !== 3) return [`expected three artefacts, found ${paths.length}`];
+  const block = /^\s+path: (.+)$/m.exec(text);
+  if (block === null) return ['the upload step has no `path:` line'];
+  const path = block[1].trim();
   const violations: string[] = [];
-  for (const path of paths) {
-    if (!path.startsWith('${{ runner.temp }}/')) {
-      violations.push(`an artefact path is not a runner.temp expression: ${path}`);
-    }
+  if (!path.startsWith('${{ runner.temp }}/')) {
+    violations.push(`the artefact path is not a runner.temp expression: ${path}`);
   }
-  if (!paths.some((path) => path.endsWith('/pins.json'))) {
-    violations.push('the pin report is not published as an artefact');
+  // The naming step and the upload step spell the report directory twice, because
+  // `with:` is evaluated before the runtime export exists. This ties the two
+  // spellings: the basename the upload uses has to be the one the naming step
+  // declared, so a renamed directory fails here rather than silently uploading
+  // nothing (which `if-no-files-found: warn` would report as a warning).
+  const declared = /echo "REPORTS=\$RUNNER_TEMP\/([^"]+)"/.exec(text);
+  if (declared === null) {
+    violations.push('no step declares REPORTS under $RUNNER_TEMP');
+  } else if (!path.endsWith(`/${declared[1]}`)) {
+    violations.push(`the artefact path '${path}' does not end in the declared report directory '${declared[1]}'`);
   }
   return violations;
 }
 
 const RULES: [string, (text: string) => string[]][] = [
   ['the destination', checkDestination],
+  ['the expression contexts', checkExpressionContexts],
   ['no hard-coded temp path', checkNoHardcodedTempPath],
   ['the paths handed to the scripts', checkPathsAreVariables],
   ['the outcome vocabulary', checkOutcomeVocabulary],
@@ -245,8 +286,13 @@ describe('official-data.yml · the rules can fail', () => {
   const CASES: [string, string, string][] = [
     [
       'the destination moved back to /tmp',
-      'OFFICIAL_DIR: ${{ runner.temp }}/official',
-      'OFFICIAL_DIR: /tmp/official',
+      'echo "OFFICIAL_DIR=$RUNNER_TEMP/official"',
+      'echo "OFFICIAL_DIR=/tmp/official"',
+    ],
+    [
+      'a runner expression where the context does not exist',
+      '    timeout-minutes: 90',
+      '    timeout-minutes: 90\n    env:\n      OFFICIAL_DIR: ${{ runner.temp }}/official',
     ],
     [
       'a script handed a literal path',
@@ -264,17 +310,22 @@ describe('official-data.yml · the rules can fail', () => {
       'df -h "${{ runner.temp }}"',
     ],
     [
-      // Indented to the upload block on purpose: the unindented form also appears
-      // in the job's `env:`, and a mutation that only changed the declaration
-      // would test nothing about the block this rule is about.
       'an artefact path written as a variable',
-      '            ${{ runner.temp }}/pins.json',
-      '            $PINS',
+      '          path: ${{ runner.temp }}/reports',
+      '          path: $REPORTS',
     ],
     [
-      'the destination created after it is measured',
-      'mkdir -p "$OFFICIAL_DIR"\n          df -h "$OFFICIAL_DIR"',
-      'df -h "$OFFICIAL_DIR"\n          mkdir -p "$OFFICIAL_DIR"',
+      'a report directory the upload does not name',
+      'echo "REPORTS=$RUNNER_TEMP/reports"',
+      'echo "REPORTS=$RUNNER_TEMP/out"',
+    ],
+    [
+      // The creation moved into the naming step when the job-level `env:` had to go,
+      // so the mutation is its absence rather than its order: `df` on a path that
+      // does not exist fails, and the free-space report then reports nothing at all.
+      'the destination never created',
+      '          mkdir -p "$OFFICIAL_DIR" "$REPORTS"\n',
+      '',
     ],
   ];
 

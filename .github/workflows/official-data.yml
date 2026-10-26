@@ -73,10 +73,18 @@ name: Official data
 # not. Nothing in this repository measured the assumption, and the workflow's own
 # `df -h /tmp` step printed the number without anything comparing it to anything.
 #
-# `runner.temp` is `$RUNNER_TEMP`, on the root filesystem, and every step below
-# reads the same `OFFICIAL_DIR` from it. The destination is one variable because a
-# second copy of a path is a second thing that can drift -- and the failure mode
-# here was a destination chosen in one place and measured in another.
+# `runner.temp` is `$RUNNER_TEMP`, on the root filesystem. The destination is named
+# once, in the first step, and every later step reads it from the environment --
+# one variable because a second copy of a path is a second thing that can drift,
+# and the failure mode here was a destination chosen in one place and measured in
+# another.
+#
+# It cannot be `jobs.<id>.env`, which is where it went first: the `runner` context
+# does not exist at job level, and GitHub refused the whole file with
+# `Unrecognized named-value: 'runner'`, so the workflow did not parse and the push
+# run failed in zero seconds. `$GITHUB_ENV` is the mechanism that exists for this,
+# and `packages/core/test/official-data-destination.test.ts` now refuses a `runner`
+# expression anywhere above `steps:`.
 
 on:
   workflow_dispatch:
@@ -130,14 +138,31 @@ jobs:
     # do not control. Bounded so a stalled download fails rather than occupying a
     # runner for hours.
     timeout-minutes: 90
-    # One destination, named once. `runner.temp` is on the runner's root
-    # filesystem; `/tmp` is a tmpfs there, and finding 261 is what that cost.
-    env:
-      OFFICIAL_DIR: ${{ runner.temp }}/official
-      PINS: ${{ runner.temp }}/pins.json
-      CASES: ${{ runner.temp }}/rcaeval-cases.json
-      SCORES: ${{ runner.temp }}/rcaeval-scores.json
     steps:
+      # The destination is named once, here, and every later step reads it from
+      # the environment. `runner.temp` is on the runner's root filesystem; `/tmp`
+      # is a tmpfs there, and finding 261 is what that cost.
+      #
+      # It is a step rather than `jobs.<id>.env` because the `runner` context does
+      # not exist there. The first version of this change put four
+      # `${{ runner.temp }}` expressions at job level and GitHub refused the file
+      # outright -- `Unrecognized named-value: 'runner'` -- which no test in this
+      # repository could have seen, because the rule was about text and the defect
+      # was about which contexts exist where. A workflow that does not parse is a
+      # workflow that does not run at all, and the push-triggered run failed in
+      # zero seconds saying so.
+      - name: Name the destination once
+        run: |
+          set -eu
+          {
+            echo "OFFICIAL_DIR=$RUNNER_TEMP/official"
+            echo "REPORTS=$RUNNER_TEMP/reports"
+            echo "PINS=$RUNNER_TEMP/reports/pins.json"
+            echo "CASES=$RUNNER_TEMP/reports/rcaeval-cases.json"
+            echo "SCORES=$RUNNER_TEMP/reports/rcaeval-scores.json"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$OFFICIAL_DIR" "$REPORTS"
+
       - name: Check out
         uses: actions/checkout@v4
 
@@ -166,10 +191,7 @@ jobs:
       # this line is the evidence a human reads afterwards, and it is about the
       # same path the fetch uses because it reads the same variable.
       - name: Report free disk at the destination
-        run: |
-          set -eu
-          mkdir -p "$OFFICIAL_DIR"
-          df -h "$OFFICIAL_DIR"
+        run: df -h "$OFFICIAL_DIR"
 
       # The measurement is written to a file rather than left in the log.
       #
@@ -341,10 +363,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-${{ steps.fetch.outputs.anchor || 'rcaeval-re2' }}-round-trip
-          path: |
-            ${{ runner.temp }}/rcaeval-cases.json
-            ${{ runner.temp }}/rcaeval-scores.json
-            ${{ runner.temp }}/pins.json
+          # `with:` is evaluated before the step runs, so it cannot read the
+          # variables the naming step exported at run time. The directory is
+          # named again here as an expression -- and a test holds this path's
+          # basename to the `REPORTS` the naming step declares, so the two
+          # spellings cannot drift apart silently.
+          path: ${{ runner.temp }}/reports
           if-no-files-found: warn
           retention-days: 30
 
