@@ -187,3 +187,68 @@ folded substring rather than my memory of the paragraph.
 | the exports | RE1 12 / 0 empty, RE2 12 / 17, RE3 2 / 3 empty / 10 skipped |
 | `core` / repo | **186 / 4604** · **190 / 4791**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 258 — two numbers that stayed in step by being edited together
+
+Finding 257's case states one fact twice:
+
+```json
+{ "checkpointId": "cp-connections-held", "signalRef": "client_pool_connections_in_use",
+  "comparator": "==", "value": 20, "unit": "count" }        // a reading
+{ "checkpointId": "cp-pool-size", "signalRef": "poolSize",
+  "comparator": "==", "value": 20, "unit": "count" }        // a parameter
+```
+
+Both are twenty, and the corpus asserted both, so a change to the pool's size would have made one of
+them fail. That is a real check and it was the best available: a series' `baseline` and `post` were
+numbers, and a number cannot read a parameter. The item had been open since finding 250 — "a parameter
+is tied to the text only through the fault layer's quote" — and restated in v2.84 as "the two numbers
+that are one fact are not linked".
+
+### The reading may now be a reference
+
+```json
+{ "metric": "client_pool_connections_in_use", "unit": "count",
+  "baseline": 3, "post": { "parameter": "poolSize" } }
+```
+
+`readDeclaredReading` (`ir/parameters.ts`) is the shape reader, and the guard is the resolver: it owns
+the case's parameters, and the split matters because a malformed reference and a reference to something
+absent are two different repairs. Its refusals:
+
+| the file says | the guard says |
+| --- | --- |
+| `post: { parameter: 'poolSize' }` in a case that declares no such key | which keys it does declare |
+| `post: { parameter: 'container' }`, and `container` is a name | the value is not a number or a `{ value, unit }` quantity |
+| `post: { parameter: 'cpuLimit' }` in a series in `count`, `cpuLimit` in `mcore` | not convertible |
+| `post: "five"` | neither a number nor a `{ parameter }` reference |
+
+**Resolution happens once**, into a hash that four consumers read: the unit-range check, the expansion,
+the expression evaluator, and the checkpoint comparison. Before this, each of them read `declared.post`
+directly, which is also how the *third* copy of the six comparison operators survived finding 247: this
+round found it still in the series branch, and it is now `compareExactly` like the others.
+
+### The corpus
+
+Two series now cite instead of copying: the billing case's `client_pool_connections_in_use.post` is
+`{ parameter: 'poolSize' }`, and the pod-kill case's `pod_ready_after_start_seconds.post` is
+`{ parameter: 'readyAfterSeconds' }`. Editing a parameter now moves the reading, which is what "the
+reading reaches the ceiling because it *is* the ceiling" should have meant all along.
+
+### What this does not do
+
+It does not derive a reading from arithmetic over several parameters: the expression language reads
+series, and a parameter is not a series. It also does not check that the parameter is *true* — the
+value is still tied to the text only through the fault layer's quote, and that item stays open.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the shape | `readDeclaredReading`: finite number → literal; `{ parameter: <non-blank> }` with no other key → reference; everything else → `undefined` |
+| the refusals | four, each with its own message, each tested through a real guard run |
+| the resolution | one hash read by the range check, the expansion, the evaluator and the checkpoint comparison |
+| the comparison | the series branch now calls `compareExactly`; the package has one implementation of the six operators again |
+| the corpus | two series cite a parameter; **12 of 30**, `37 of 37` references, `0 of 33` comparable assertions |
+| `core` / repo | **186 / 4613** · **190 / 4800**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

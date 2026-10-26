@@ -1620,3 +1620,48 @@ gates, 46 caught, 0 survived**; core **186 / 4604**, cli 4 / 187, repo **190 / 4
 
 Unchanged: a parameter is tied to the text only through the fault layer's quote; compound units are
 compared structurally; a chain's first step need not be the root cause.
+
+## v2.85 — a reading can cite a parameter instead of copying it
+
+**What was open, twice.** Finding 250's item — "a parameter is tied to the text only through the fault
+layer's quote" — and v2.84's restatement: "the two numbers that are one fact are not linked". The
+billing case stated the pool's ceiling twice, as a reading and as a parameter, and the two stayed in
+step by being edited together.
+
+**What changed.** A series' `baseline` and `post` may be `{ "parameter": "poolSize" }`.
+`readDeclaredReading` reads the shape; the guard resolves it against the case's own parameters, because
+a *malformed* reference and a reference to something *absent* are two different repairs. Four
+refusals, each with its own message: no such key (it lists the ones there are), a value that is not a
+quantity, a unit that cannot convert (`cpuLimit` in `mcore`, series in `count`), and a reading that is
+neither a number nor a reference (`"five"`).
+
+**Resolution happens once**, into a hash the four consumers read: the unit-range check, the expansion,
+the expression evaluator and the checkpoint comparison. That also flushed out the **third** copy of the
+six comparison operators, still in the series branch after finding 247 consolidated the other two; it is
+`compareExactly` now.
+
+**The corpus.** Two series cite instead of copying: the billing case's
+`client_pool_connections_in_use.post` → `{ parameter: 'poolSize' }`, and the pod-kill case's
+`pod_ready_after_start_seconds.post` → `{ parameter: 'readyAfterSeconds' }`. Editing a parameter now
+moves the reading, which is what "the reading reaches the ceiling because it *is* the ceiling" should
+have meant all along.
+
+**What it does not do.** No arithmetic over parameters — the expression language reads series. And the
+parameter's *truth* is still tied to the text only through the fault layer's quote.
+
+**Acceptance.** 4 tests over the shape reader (nine malformed values refused), 5 over the guard's
+resolution and refusals; `parameters.ts` at 100 × 4; typecheck, lint, `docs:check` green;
+`derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46 gates, 46 caught, 0
+survived**; core **186 / 4613**, cli 4 / 187, repo **190 / 4800**; coverage 99.97 / 99.76 / 100 /
+99.97; audit 6 volumes, findings 1–258.
+
+### Left open
+
+- **18 samples still carry no case.** `[open: 12 of 30 carry one; the corpus is the long pole and every
+  case needs its own reading of the text]`
+- **An absence of logs cannot be a checkpoint.** `[open: the pod-kill case's "nothing was logged" is
+  still unexpressible; every log checkpoint asserts that a line exists]`
+- **A parameter's truth is still a quote.** `[open: the reading now reads the parameter, so the two
+  cannot disagree; nothing makes the parameter agree with the sentence it was transcribed from]`
+
+Unchanged: compound units are compared structurally; a chain's first step need not be the root cause.

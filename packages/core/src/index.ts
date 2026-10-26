@@ -69,7 +69,8 @@ export {
 // A quantity a case declares about itself, and the reader that decides whether a value is one. A
 // configuration checkpoint cites these instead of prose, so "the quota is the one the case ran under"
 // is a comparison rather than a reading (finding 247).
-export { readDeclaredQuantity } from './ir/parameters.js';
+export { readDeclaredQuantity, readDeclaredReading } from './ir/parameters.js';
+export type { ReadingResolution } from './ir/parameters.js';
 export type { DeclaredQuantity } from './ir/types.js';
 
 // The corpus's derived telemetry: a declaration's baseline and post reading, turned into the samples

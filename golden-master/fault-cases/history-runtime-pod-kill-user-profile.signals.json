@@ -19,9 +19,11 @@
       "metric": "pod_ready_after_start_seconds",
       "unit": "s",
       "baseline": 0,
-      "post": 40,
+      "post": {
+        "parameter": "readyAfterSeconds"
+      },
       "quote": "a fresh one took 40 seconds to become ready",
-      "why": "the checkpoint `cp-ready-seconds` holds the text's forty seconds; zero is what the reading is when no pod is starting, which is the state before the kill"
+      "why": "the checkpoint `cp-ready-seconds` holds the text's forty seconds; zero is what the reading is when no pod is starting, which is the state before the kill; the case's own `readyAfterSeconds`, cited rather than copied, so the reading and the parameter cannot disagree"
     },
     {
       "service": "worker-3",

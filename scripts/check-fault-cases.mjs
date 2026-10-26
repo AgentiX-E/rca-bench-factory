@@ -346,6 +346,78 @@ for (const entry of index.cases) {
     if (series.length === 0) {
       problems.push(`'${caseId}' declares an empty signal series`);
     }
+    // The case's own statements about how the system was configured. A configuration checkpoint cites
+    // one of these instead of naming a metric-shaped string that nothing resolves: the rule used to be
+    // negative ("must not collide with a series"), which caught a modelling error and said nothing
+    // about whether the fact was the one the case ran under (finding 247).
+    const parameters = typeof rawCase?.fault?.parameters === 'object' && rawCase.fault.parameters !== null
+      ? rawCase.fault.parameters
+      : {};
+    const parameterKeys = Object.keys(parameters);
+    // A reading may be a literal or a reference to a quantity the case declares about itself. The
+    // resolution happens once, here, and everything downstream -- the range check, the expansion, the
+    // expression evaluator, the checkpoint comparison -- reads the hash rather than the file. The
+    // alternative was two numbers that stay in step by being edited together, which is how a pool
+    // ceiling becomes a reading that disagrees with its own parameter (finding 258).
+    const resolvedReadings = new Map();
+    for (const one of series) {
+      const metric = String(one?.metric);
+      const points = {};
+      for (const point of core.SERIES_POINTS) {
+        const resolution = core.readDeclaredReading(one?.[point]);
+        if (resolution === undefined) {
+          problems.push(
+            `'${caseId}' declares ${point} '${JSON.stringify(one?.[point])}' for '${metric}', which is ` +
+              'neither a number nor a { parameter } reference',
+          );
+          continue;
+        }
+        if (resolution.kind === 'literal') {
+          points[point] = resolution.value;
+          continue;
+        }
+        const parameterName = resolution.parameter;
+        if (!Object.hasOwn(parameters, parameterName)) {
+          problems.push(
+            `'${caseId}' declares ${point} as parameter '${parameterName}' for '${metric}', and ` +
+              `fault.parameters declares no such key (it declares: ${parameterKeys.join(', ') || 'nothing'})`,
+          );
+          continue;
+        }
+        const quantity = core.readDeclaredQuantity(parameters[parameterName]);
+        if (quantity === undefined) {
+          problems.push(
+            `'${caseId}' declares ${point} as parameter '${parameterName}' for '${metric}', whose value ` +
+              `${JSON.stringify(parameters[parameterName])} is not a number or a { value, unit } quantity`,
+          );
+          continue;
+        }
+        // The unit has to agree, or be convertible into the series' unit: a reading in `ms` that
+        // cites a parameter declared in `count` is a comparison nobody can make.
+        const seriesUnit = typeof one?.unit === 'string' ? one.unit : undefined;
+        if (quantity.unit !== undefined && seriesUnit !== undefined && quantity.unit !== seriesUnit) {
+          if (!core.isConvertible(quantity.unit, seriesUnit)) {
+            problems.push(
+              `'${caseId}' declares ${point} for '${metric}' in '${seriesUnit}', and parameter ` +
+                `'${parameterName}' is declared in '${quantity.unit}', which is not convertible`,
+            );
+            continue;
+          }
+          points[point] = core.convertUnit(quantity.value, quantity.unit, seriesUnit);
+          continue;
+        }
+        if (quantity.unit !== undefined && seriesUnit === undefined) {
+          problems.push(
+            `'${caseId}' declares ${point} for '${metric}' with no unit, and parameter ` +
+              `'${parameterName}' is declared in '${quantity.unit}'`,
+          );
+          continue;
+        }
+        points[point] = quantity.value;
+      }
+      resolvedReadings.set(metric, points);
+    }
+
     for (const one of series) {
       const quote = typeof one?.quote === 'string' ? one.quote : '';
       if (!text.includes(fold(quote))) {
@@ -392,7 +464,7 @@ for (const entry of index.cases) {
         const unbounded = bounds.max === Number.POSITIVE_INFINITY;
         const range = `[${String(bounds.min)}, ${unbounded ? '∞)' : `${String(bounds.max)}]`}`;
         for (const point of core.SERIES_POINTS) {
-          const value = one?.[point];
+          const value = resolvedReadings.get(String(one?.metric))?.[point];
           if (typeof value !== 'number') continue;
           if (value < bounds.min || value > bounds.max) {
             problems.push(
@@ -461,22 +533,11 @@ for (const entry of index.cases) {
     }
     // The same series in the shape the expression evaluator reads, with every point in
     // `SERIES_POINTS` read through the tuple -- so a third point needs an edit in one place.
-    const expressionSeries = series.map((one) => {
-      const points = {};
-      for (const point of core.SERIES_POINTS) {
-        const value = one?.[point];
-        if (typeof value === 'number') points[point] = value;
-      }
-      return { metric: String(one?.metric), unit: typeof one?.unit === 'string' ? one.unit : '', points };
-    });
-    // The case's own statements about how the system was configured. A configuration checkpoint cites
-    // one of these instead of naming a metric-shaped string that nothing resolves: the rule used to be
-    // negative ("must not collide with a series"), which caught a modelling error and said nothing
-    // about whether the fact was the one the case ran under (finding 247).
-    const parameters = typeof rawCase?.fault?.parameters === 'object' && rawCase.fault.parameters !== null
-      ? rawCase.fault.parameters
-      : {};
-    const parameterKeys = Object.keys(parameters);
+    const expressionSeries = series.map((one) => ({
+      metric: String(one?.metric),
+      unit: typeof one?.unit === 'string' ? one.unit : '',
+      points: resolvedReadings.get(String(one?.metric)) ?? {},
+    }));
     const logIds = new Set();
     for (const one of logs) {
       const id = typeof one?.id === 'string' ? one.id : '';
@@ -656,15 +717,14 @@ for (const entry of index.cases) {
       if (!core.isNumericComparator(comparator) || typeof checkpoint.value !== 'number') continue;
       if (declared.unit !== checkpoint.unit) continue;
       checkpointRefs.inequalities += 1;
-      const post = Number(declared.post);
-      const holds =
-        comparator === '>' ? post > checkpoint.value
-        : comparator === '>=' ? post >= checkpoint.value
-        : comparator === '<' ? post < checkpoint.value
-        : comparator === '<=' ? post <= checkpoint.value
-        : comparator === '!=' ? post !== checkpoint.value
-        : post === checkpoint.value;
-      if (!holds) {
+      // The resolved reading, and `compareExactly` rather than a chain of ternaries: this branch
+      // carried its own copy of the six operators until finding 258, which is the third time the
+      // package had implemented "compare two numbers" (finding 247 consolidated the other two).
+      const post = resolvedReadings.get(ref)?.post;
+      // A reading that did not resolve already produced a problem; comparing `undefined` here would
+      // report it a second time as a failing assertion.
+      if (typeof post !== 'number') continue;
+      if (!core.compareExactly(comparator, post, checkpoint.value)) {
         checkpointRefs.false += 1;
         problems.push(
           `'${caseId}' checkpoint '${id}' asserts ${ref} ${comparator} ${String(checkpoint.value)}, ` +
@@ -675,7 +735,12 @@ for (const entry of index.cases) {
 
     const when = expansionTime(parsedCase);
     const signals = [
-      ...series.flatMap((one) => core.expandSeries(one, when)),
+      ...series.flatMap((one) =>
+        core.expandSeries(
+          { ...one, ...(resolvedReadings.get(String(one?.metric)) ?? {}) },
+          when,
+        ),
+      ),
       ...logs.flatMap((one) => core.expandLog(one, when)),
       ...core.expandTraces(traces, when, caseId),
     ];

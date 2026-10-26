@@ -674,6 +674,7 @@ const TESTED = [
   // the difference between "the quota is the one the case ran under" and a reading of prose
   // (finding 247).
   'readDeclaredQuantity',
+  'readDeclaredReading',
   // fault/derived-telemetry.ts -- the samples a declaration becomes. It lived in the guard's script
   // until finding 249, where nothing observed the values and a defect in them survived three rounds.
   'LOG_OFFSETS_MS',

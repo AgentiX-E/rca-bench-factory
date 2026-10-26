@@ -1446,3 +1446,75 @@ describe('check-fault-cases · a declared reading stays inside the range its uni
     expect(result.out).not.toContain('lies in');
   });
 });
+
+describe('check-fault-cases · a reading can cite a parameter instead of copying it', () => {
+  // Finding 258. The pool's ceiling was a reading (`connections in use == 20`) and a parameter
+  // (`poolSize: 20`), kept in step by being edited together. `post` may now be `{ parameter: 'x' }`,
+  // resolved against the case's own parameters, and the four refusals below are the ways that can go
+  // wrong: a name that is not there, a value that is not a quantity, a unit that does not convert, and
+  // a reading that is neither a number nor a reference.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /** The checkout signals plus a scratch series whose `post` the caller chooses. */
+  function withPost(post: unknown, unit: unknown = 'count'): string {
+    const signals = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & {
+      series: Array<Record<string, unknown>>;
+    };
+    signals.series.push({
+      service: 'checkout-api',
+      metric: 'scratch_reading',
+      unit,
+      baseline: 0,
+      post,
+      quote: 'No error rate change in the downstream payment service',
+      why: 'a scratch series the parameter-reference rule is asked about',
+    });
+    return corpus({ signals });
+  }
+
+  it('accepts a reference to a quantity the case declares, and expands the resolved number', () => {
+    // `cpuLimit` is `{ value: 500, unit: 'mcore' }`, so a series in `mcore` can cite it. The case is
+    // accepted, which is the whole point: the reading and the parameter are one number.
+    const result = run(['--cases', withPost({ parameter: 'cpuLimit' }, 'mcore')]);
+    expect(result.status, result.out).toBe(0);
+  });
+
+  it('refuses a reference to a parameter the case does not declare, and lists the ones it does', () => {
+    const result = run(['--cases', withPost({ parameter: 'poolSize' })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares post as parameter 'poolSize' for 'scratch_reading', and fault.parameters declares no " +
+        'such key (it declares: container, cpuLimit)',
+    );
+  });
+
+  it('refuses a parameter whose value is not a quantity', () => {
+    // `container` is a name, not a number: a reading that cites it has no value to be.
+    const result = run(['--cases', withPost({ parameter: 'container' })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares post as parameter 'container' for 'scratch_reading', whose value \"checkout-api-app\" " +
+        'is not a number or a { value, unit } quantity',
+    );
+  });
+
+  it('refuses a parameter whose unit cannot convert into the series unit', () => {
+    const result = run(['--cases', withPost({ parameter: 'cpuLimit' }, 'count')]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares post for 'scratch_reading' in 'count', and parameter 'cpuLimit' is declared in " +
+        "'mcore', which is not convertible",
+    );
+  });
+
+  it('refuses a reading that is neither a number nor a reference', () => {
+    const result = run(['--cases', withPost('five')]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares post '\"five\"' for 'scratch_reading', which is neither a number nor a { parameter } " +
+        'reference',
+    );
+  });
+});

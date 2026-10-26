@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readDeclaredQuantity } from '../src/ir/parameters.js';
+import { readDeclaredQuantity, readDeclaredReading } from '../src/ir/parameters.js';
 
 /**
  * Whether a value a case declares is a quantity a checkpoint can cite.
@@ -62,5 +62,33 @@ describe('readDeclaredQuantity · what it refuses', () => {
     // checkpoint with it would answer "no" to every comparator including `!=`.
     expect(readDeclaredQuantity(Number.NaN)).toBeUndefined();
     expect(readDeclaredQuantity({ value: Number.POSITIVE_INFINITY })).toBeUndefined();
+  });
+});
+
+describe('readDeclaredReading · a reading is a literal or a reference', () => {
+  it('reads a finite number as a literal', () => {
+    expect(readDeclaredReading(20)).toEqual({ kind: 'literal', value: 20 });
+    expect(readDeclaredReading(0)).toEqual({ kind: 'literal', value: 0 });
+    expect(readDeclaredReading(-1.5)).toEqual({ kind: 'literal', value: -1.5 });
+  });
+
+  it('reads an object with one parameter key as a reference', () => {
+    expect(readDeclaredReading({ parameter: 'poolSize' })).toEqual({
+      kind: 'parameter',
+      parameter: 'poolSize',
+    });
+  });
+
+  it('refuses everything that is neither', () => {
+    // A bare string is the legacy shape and is refused rather than read as a parameter name: the
+    // field used to be a number, and `"poolSize"` in its place would otherwise become a reference
+    // nobody wrote.
+    for (const value of ['poolSize', null, true, [], { parameter: 3 }, { parameter: '  ' }, { parameter: 'a', value: 1 }, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(readDeclaredReading(value)).toBeUndefined();
+    }
+  });
+
+  it('refuses a reference that also carries a value, which is two claims about one number', () => {
+    expect(readDeclaredReading({ parameter: 'poolSize', unit: 'count' })).toBeUndefined();
   });
 });

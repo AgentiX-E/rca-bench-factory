@@ -9,11 +9,13 @@
       "metric": "client_pool_connections_in_use",
       "unit": "count",
       "baseline": 3,
-      "post": 20,
+      "post": {
+        "parameter": "poolSize"
+      },
       "noise": "none",
       "derivation": "step",
       "quote": "Pool size is 20 and all 20 are held by threads waiting on a lock",
-      "why": "the checkpoint `cp-connections-held` holds the twenty: the pool is a counted resource, so the reading is exact, and it reaches the ceiling rather than trending toward it"
+      "why": "the checkpoint `cp-connections-held` holds the twenty: the pool is a counted resource, so the reading is exact, and it reaches the ceiling rather than trending toward it; the pool's own declared size, cited rather than copied: the reading reaches the ceiling because it *is* the ceiling, and a change to `poolSize` moves the series with it"
     },
     {
       "service": "billing-db",
