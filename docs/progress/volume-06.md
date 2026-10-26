@@ -1756,3 +1756,56 @@ with 31 entities / 19 edges.
 
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause.
+
+## v2.88 — the anchor that died of a filesystem nobody measured
+
+**What was open.** Nothing on the list said "the fourth anchor is broken". The trigger was a CI
+reading: `gh run list` showed the 2026-10-26 scheduled `official-data` run as `failure`, and the two
+before it too, except one dispatch on 2026-10-12. Twelve failures had been recorded as "the upstream
+is flaky" because the run's own summary said so.
+
+**What changed.** The summary was wrong. The fetch had downloaded and verified `RE2-OB`
+(1 191 025 569 bytes, digest matching the registry) and then `unzip` wrote 6.3 GB into `/tmp` and hit
+`write error (disk full?)`. `/tmp` is a 7.9 GiB tmpfs on the ubuntu-26.04 runner image; it was part of
+the ~74 GiB root disk on 24.04, and `ubuntu-latest` moved on 2026-10-19. The corpus never changed.
+
+Three layers, three fixes:
+
+- **destination** — `OFFICIAL_DIR: ${{ runner.temp }}/official`, declared once at job level and read by
+  every step. The workflow no longer contains `/tmp` in executable text, and a test says so.
+- **check** — two exact preflights in `fetch-official.mjs`: the registry's pinned byte count before the
+  transfer, and the archive's own central-directory total before extraction (zip64 included, four
+  syscalls, no `unzip -l`). A shortfall prints both numbers and exits **3**.
+- **vocabulary** — five exit codes (0 fetched, 1 unreachable, 2 pin mismatch, 3 does not fit, 4 could
+  not unpack), five branches in the workflow's `case`, and a `*` fallback that names no cause. The old
+  `*` called every unrecognised status "an asset could not be downloaded", which is how a full disk
+  came to be described as unreachable.
+
+`extract()` no longer calls `fail()` mid-loop, so a failed unpack leaves the pin report intact — the
+report's own comment promised that and an `unzip` failure broke it.
+
+**The measurement that had no reader.** The workflow had run `df -h /tmp` before and after the fetch
+since it was written. It printed `7.8G` available and nothing compared it to anything. The check now
+lives where the requirement is known, and the `df` steps name the same variable the fetch writes to.
+
+**Acceptance.** 4 new tests in the fetch suite (all four red against the pre-fix script, measured by
+stashing it), 13 in the new `official-data-destination.test.ts` (6 rules, each re-run against a
+mutation that must trip it); typecheck, lint, `docs:check` green; `derive-gate-sites --check` green
+(**88 sites, 46 scripts**, both new sites annotated `proved`); core **187 / 4630**, cli 4 / 187, repo
+**191 / 4817**; coverage 99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–261; the corpus is
+unchanged at **13 of 30** with 31 entities / 19 edges.
+
+### Left open
+
+- **The anchor is not yet green.** `[open: the next scheduled run is the proof, and nothing in this
+  tree can stand in for it -- the fix makes the run able to pass and makes a failure legible if it
+  does not]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, unchanged for two rounds -- this
+  round's gap was below the corpus, in the workflow that would prove the corpus scores]`
+- **No relation is checked for direction.** `[open: nothing refuses a `routes` edge written backwards,
+  so the graph can state the opposite of the truth and every guard still passes]`
+- **An absence of logs cannot be a checkpoint.** `[open: a log checkpoint can only assert that a line
+  exists; the pod-kill case still cannot say "nothing was logged"]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause.

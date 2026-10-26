@@ -341,14 +341,22 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 81,
+      "line": 131,
       "diagnostic": "error: ${message}",
       "status": "proved",
       "provedBy": "packages/core/test/fetch-official.test.ts"
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 628,
+      "line": 955,
+      "condition": "noRoom.length > 0",
+      "diagnostic": "\\nno room for '${asset.id}' at '${directory}': ${claim} ${bytesWithUnits(needBytes)}",
+      "status": "proved",
+      "provedBy": "packages/core/test/fetch-official.test.ts"
+    },
+    {
+      "script": "scripts/fetch-official.mjs",
+      "line": 965,
       "condition": "pinMismatches.length > 0",
       "diagnostic": "\\n${pinMismatches.length} of ${results.length} asset(s) downloaded a file that does not",
       "status": "proved",
@@ -356,7 +364,15 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 637,
+      "line": 975,
+      "condition": "unpackFailures.length > 0",
+      "diagnostic": "\\n${unpackFailures.length} of ${results.length} asset(s) matched their pin and could not be",
+      "status": "proved",
+      "provedBy": "packages/core/test/fetch-official.test.ts"
+    },
+    {
+      "script": "scripts/fetch-official.mjs",
+      "line": 984,
       "condition": "unreachable.length > 0",
       "diagnostic": "\\n${unreachable.length} of ${results.length} asset(s) could not be reached.",
       "status": "proved",

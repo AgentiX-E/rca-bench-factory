@@ -363,3 +363,140 @@ member nobody can check.
 | the gate | `check-data-model-vocabularies` reports 7 vocabularies and 8 inline enums |
 | `core` / repo | **186 / 4613** · **190 / 4800**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 261 — the fourth anchor died of a filesystem nobody measured
+
+The scheduled run of `official-data.yml` on 2026-10-26 downloaded `RE2-OB`, verified it, and then
+stopped:
+
+```
+VERIFIED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36cdcad8a6ae0107f2357c9c91ecee2c4ab5d72579bffea0372d9747513
+error: rcaeval-re2-ob: unzip failed - /tmp/official/RE2-OB/recommendationservice_mem/2/traces.csv:
+       write error (disk full?).  Continue? (y/n/^C)
+```
+
+and wrote this in its own summary:
+
+> **Unreachable** (exit status 1). An asset could not be downloaded. The per-asset reason is in the log
+> above, one `SKIPPED` line per asset, and re-running is a reasonable next step.
+
+Three claims, all false. The asset *was* downloaded — that is what `VERIFIED` means, and the digest
+matched the registry to the byte. The status was not a download failure. And re-running was the one
+thing that could not help: the run had spent six minutes and 1.2 GB establishing that the destination
+is too small.
+
+### The filesystem was the thing that changed
+
+`/tmp` on the ubuntu-24.04 runner image is part of the ~74 GiB root disk. On ubuntu-26.04 it is a
+tmpfs. The same workflow, unchanged, succeeded on 2026-10-12 — the log's own first lines say
+`Image: ubuntu-24.04` — and `ubuntu-latest` moved to 26.04 on 2026-10-19, which the run's annotations
+also said out loud:
+
+```
+! The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026.
+```
+
+The failure measured itself and nothing read it. Before the fetch: `tmpfs 7.9G 52M 7.8G 1% /tmp`. After
+the failure: `tmpfs 7.9G 6.3G 1.6G 80% /tmp`. The extraction had written 6.3 GB of a tree that needed
+more and had 1.6 GB left — in the one directory the workflow had built its design around.
+
+**A measurement with no reader.** The workflow ran `df -h /tmp` twice, before and after, on purpose:
+the step's name is "Report free disk before the fetch". It reported. Nothing compared. That is this
+project's oldest shape — a claim nobody reads — arriving at the layer below the code, where the
+"claim" is a filesystem assumption and the "reader" is a number printed into a log.
+
+The second half is the vocabulary. `fetch-official.mjs` documented three exit statuses (0, 1, 2) and
+`unzip`'s failure was not one of them, so it fell to `fail()` → 1 → "could not be downloaded" → "try
+again". The advice was not merely unhelpful; it was the opposite of the truth, delivered with the
+confidence of a check.
+
+### What it is now
+
+Three changes, one per layer, because the defect has three layers and fixing two of them would leave
+the anchor broken in a way that reads as working.
+
+**The destination.** `OFFICIAL_DIR: ${{ runner.temp }}/official`, declared once at job level, read by
+every step that writes or measures. `runner.temp` is `$RUNNER_TEMP`, on the root filesystem; the
+workflow header says why, with the dates. One variable because the previous arrangement had the
+destination in the fetch step and the destination *measurement* in a step that named a different path —
+two copies of one fact, which drifted the moment the first one changed.
+
+**The check.** `scripts/fetch-official.mjs` now measures twice per asset, exactly:
+
+| when | requirement | where it comes from |
+| --- | --- | --- |
+| before the transfer | the archive | `asset.bytes`, the registry's pin |
+| after it, before extraction | the tree it expands to | the archive's own central directory |
+
+The first exists because a 1.2 GB transfer into 900 MB is a minute of network spent learning what
+`statfs` already knew. The second is the one that would have caught this run, and it is exact rather
+than estimated: the central directory is the archive's own statement of what extraction writes. No
+ratio, no margin, no rule of thumb — the two numbers are compared to the byte, and the refusal prints
+both.
+
+**The vocabulary.** Five codes, each naming a different thing to change:
+
+| code | meaning | what to do |
+| --- | --- | --- |
+| 0 | fetched, verified, unpacked | nothing |
+| 1 | an asset could not be obtained | wait, then retry |
+| 2 | the bytes do not match the pin | read the digest |
+| 3 | the destination cannot hold the corpus | move the destination |
+| 4 | matched its pin, would not unpack | look at what upstream serves |
+
+The workflow's `case` now has a branch for every one of them, and its `*` fallback names no cause at
+all. That last part matters more than it looks: the fallback used to say "an asset could not be
+downloaded" and so described an unrecognised status — a signal, an OOM kill — as a network problem.
+**A fallback that asserts a cause it cannot know is how a full disk came to be called unreachable.**
+
+### Reading the archive's own statement
+
+The expansion is read from the central directory with four syscalls, not from `unzip -l`. The reason is
+ordering rather than taste: the number decides whether to run `unzip`, and taking it from the output of
+the program being decided about cannot happen before the damage. It is also one less format to keep
+agreeing with another program's version.
+
+The reader follows zip64 (all three sentinels — count, directory size, directory offset — and the
+`0x0001` extra field for a 4 GiB entry), and it refuses to guess. An archive it cannot parse yields
+`UNMEASURED <asset>: <reason>` and extraction proceeds, because **a parser limitation is not a
+statement about the destination** — collapsing the two would refuse a corpus over a bug in my own
+reader. The distinction is asserted directly: the test that serves a file which is not a zip expects
+`UNMEASURED` and exit 4, while the tests that serve a lying central directory expect `NOROOM` and exit 3.
+
+### Two smaller things in the same class
+
+The script's header said "Three properties are enforced rather than assumed" and then listed four. A
+hand-counted number nothing reads, one paragraph above the code that this finding is about; it now says
+five and lists five.
+
+`const skipped = results.filter((r) => r.status === 'skipped');` was declared and never read — the
+unreachable calculation below it had its own filter. The binding produced the reassuring impression that
+skips were accounted for somewhere. Deleted.
+
+### What this does not do
+
+It does not make the anchor pass. It makes the next scheduled run *able* to pass, and makes a failure
+of this kind legible if it does not; the proof is the run, and no test in this tree can stand in for it.
+
+It does not check an anchor's peak usage in one number. Each asset is measured when it is fetched, which
+is exact because the archives are deleted as they are unpacked — but the check is per-asset by
+construction, not per-run.
+
+It does not catch a destination that shrinks *during* a long extraction. The preflight reads free space
+at one instant; a concurrent writer between that instant and `unzip` could still exhaust it, and the
+result would be exit 4 with `unzip`'s own words rather than exit 3.
+
+It does not verify that `runner.temp` is large enough on a future runner image. It is on the root
+filesystem today; the check is what will say so if that changes, in six seconds instead of six minutes.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the destination | one variable, `${{ runner.temp }}/official`; no executable line in the workflow names `/tmp` |
+| the preflights | two per asset, exact; 4 tests, all four red against the pre-fix script |
+| the vocabulary | five codes documented in the script, five branches in the workflow, a `*` that names no cause |
+| the workflow rules | 6 rules over the text, each re-run against a mutation that must trip it |
+| `core` / repo | **187 / 4630** · **191 / 4817**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the site inventory | **88 failure sites across 46 scripts**; the two new sites annotated `proved` |
+| the documents | typecheck, lint, `docs:check` green; audit 6 volumes, findings 1–261 |

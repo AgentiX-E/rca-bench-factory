@@ -256,8 +256,8 @@ when the caller supplies it, and is **absent** from CLI output otherwise.
     anchors for data we do not have. Two workflows run this anchor:
     `anchor-roundtrip.yml` on every push against a synthetic corpus in the official
     layout (no network, no upstream data), and `official-data.yml` on a runner against
-    the real corpora, fetched to `/tmp`. §2.40 states what each one does and does not
-    establish.
+    the real corpora, fetched to the runner's temp directory outside the working tree.
+    §2.40 states what each one does and does not establish.
 
 ### 2.39 CLI argument contract (audit pass 5)
 
@@ -329,7 +329,9 @@ number — it is a green run that established nothing.
 
 - **The corpus is fetched, not stored.** `scripts/fetch-official.mjs` writes to a path
   outside the working tree and refuses a destination under the repository root. Only
-  the anchor-4 workflow may call it, and it fetches to `/tmp`. `check-no-vendored-data.mjs`
+  the anchor-4 workflow may call it, and it fetches to `${{ runner.temp }}/official`
+  -- not `/tmp`, which is a 7.9 GiB tmpfs on the ubuntu-26.04 runner image and cannot
+  hold the corpus (finding 261). `check-no-vendored-data.mjs`
   fails the build if telemetry-shaped data (`.json`, `.csv`, `.tsv`, `.jsonl`,
   `.ndjson`, `.parquet`, `.zip`, `.gz`, `.tar` over 1 MiB, inside a corpus directory
   segment) appears in the tracked tree. Both directions are tested: a committed corpus

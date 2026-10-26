@@ -1,6 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync, rmSync, statSync, statfsSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -210,7 +210,25 @@ const CHUNKED_BODY = (() => {
 })();
 
 /**
- * Build a real zip archive in memory.
+ * One entry of a fixture archive.
+ *
+ * `declares` is the entry's *central-directory* uncompressed size when it has to
+ * disagree with the bytes actually stored. It exists for the space tests: the
+ * only honest way to ask "what happens when the archive expands past the
+ * destination" without writing an 80 GB fixture is to hand the script an archive
+ * that says it will. The archive is then genuinely unextractable, which is why
+ * those tests assert on the refusal and on the archive still being on disk rather
+ * than on an exit code alone -- a script that ignored the declaration would fall
+ * through to `unzip` and fail for the wrong reason.
+ */
+interface ZipEntry {
+  name: string;
+  content: string;
+  declares?: number;
+}
+
+/**
+ * Build a real zip archive in memory, from one or more entries.
  *
  * A stored (method 0) entry with a correct CRC-32, so `unzip` accepts it for the
  * same reason it accepts a real corpus. Shelling out to `zip` would need a
@@ -220,60 +238,103 @@ const CHUNKED_BODY = (() => {
  * The field layout is documented at the fixture above, where the three fields
  * that decide whether extraction works are called out. The directory entry is
  * emitted ahead of the file entry, which is the order `zip` itself produces.
+ *
+ * Several entries exist because the space preflight *sums* them, and a fixture
+ * with one entry cannot tell a sum from a first-element read.
  */
-function buildZip(entryName: string, content: string): Buffer {
-  const name = Buffer.from(entryName, 'utf8');
-  const data = Buffer.from(content, 'utf8');
-  const crc = crc32(data);
+function buildZipEntries(entries: ZipEntry[]): Buffer {
+  const locals: Buffer[] = [];
+  const directoryParts: Buffer[] = [];
+  let offset = 0;
 
-  const local = Buffer.alloc(30);
-  local.writeUInt32LE(0x04034b50, 0);
-  local.writeUInt16LE(20, 4); // version needed to extract (2.0)
-  local.writeUInt16LE(0, 6); // general purpose flags
-  local.writeUInt16LE(0, 8); // compression method: stored
-  local.writeUInt16LE(0, 10); // modification time
-  local.writeUInt16LE(0, 12); // modification date
-  local.writeUInt32LE(crc, 14);
-  local.writeUInt32LE(data.length, 18); // compressed size
-  local.writeUInt32LE(data.length, 22); // uncompressed size
-  local.writeUInt16LE(name.length, 26);
-  local.writeUInt16LE(0, 28); // extra field length
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8');
+    const data = Buffer.from(entry.content, 'utf8');
+    const crc = crc32(data);
+    const declares = entry.declares ?? data.length;
+    // A declared size past 4 GiB cannot be written in the classic field, so it
+    // goes in the zip64 extra field and the classic one carries the sentinel --
+    // which is what a real archiver does, and what the reader under test has to
+    // follow. The space tests need this by construction: their requirement is
+    // "more than this machine has free", and no machine has under 4 GiB.
+    const zip64 = declares > 0xffffffff;
+    const extra = zip64 ? zip64UncompressedExtra(declares) : Buffer.alloc(0);
 
-  const central = Buffer.alloc(46);
-  central.writeUInt32LE(0x02014b50, 0);
-  // The central directory's field offsets are *not* the local header's, and
-  // copying one to the other is the mistake this fixture made twice. Local
-  // header: [signature, version needed @4, flags @6, method @8]. Central
-  // directory: [signature, version made by @4, version needed @6, flags @8,
-  // method @10].
-  central.writeUInt16LE((3 << 8) | 20, 4); // version made by: Unix, 2.0
-  central.writeUInt16LE(20, 6); // version needed to extract
-  central.writeUInt16LE(0, 8); // general purpose flags
-  central.writeUInt16LE(0, 10); // compression method: stored
-  central.writeUInt16LE(0, 12); // modification time
-  central.writeUInt16LE(0, 14); // modification date
-  central.writeUInt32LE(crc, 16);
-  central.writeUInt32LE(data.length, 20); // compressed size
-  central.writeUInt32LE(data.length, 24); // uncompressed size
-  central.writeUInt16LE(name.length, 28);
-  central.writeUInt16LE(0, 30); // extra field length
-  central.writeUInt16LE(0, 32); // comment length
-  central.writeUInt16LE(0, 34); // disk number start
-  central.writeUInt16LE(0, 36); // internal attributes
-  // Unix mode in the high half, matching the "version made by" above. `>>> 0`
-  // because the shift overflows into the sign bit and `writeUInt32LE` refuses
-  // a negative.
-  central.writeUInt32LE((0o100644 << 16) >>> 0, 38);
-  central.writeUInt32LE(0, 42); // relative offset of the local header
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(zip64 ? 45 : 20, 4); // version needed to extract
+    local.writeUInt16LE(0, 6); // general purpose flags
+    local.writeUInt16LE(0, 8); // compression method: stored
+    local.writeUInt16LE(0, 10); // modification time
+    local.writeUInt16LE(0, 12); // modification date
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18); // compressed size
+    local.writeUInt32LE(zip64 ? 0xffffffff : declares, 22); // uncompressed size
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(extra.length, 28); // extra field length
 
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    // The central directory's field offsets are *not* the local header's, and
+    // copying one to the other is the mistake this fixture made twice. Local
+    // header: [signature, version needed @4, flags @6, method @8]. Central
+    // directory: [signature, version made by @4, version needed @6, flags @8,
+    // method @10].
+    central.writeUInt16LE((3 << 8) | (zip64 ? 45 : 20), 4); // version made by: Unix
+    central.writeUInt16LE(zip64 ? 45 : 20, 6); // version needed to extract
+    central.writeUInt16LE(0, 8); // general purpose flags
+    central.writeUInt16LE(0, 10); // compression method: stored
+    central.writeUInt16LE(0, 12); // modification time
+    central.writeUInt16LE(0, 14); // modification date
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20); // compressed size
+    central.writeUInt32LE(zip64 ? 0xffffffff : declares, 24); // uncompressed size
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(extra.length, 30); // extra field length
+    central.writeUInt16LE(0, 32); // comment length
+    central.writeUInt16LE(0, 34); // disk number start
+    central.writeUInt16LE(0, 36); // internal attributes
+    // Unix mode in the high half, matching the "version made by" above. `>>> 0`
+    // because the shift overflows into the sign bit and `writeUInt32LE` refuses
+    // a negative.
+    central.writeUInt32LE((0o100644 << 16) >>> 0, 38);
+    central.writeUInt32LE(offset, 42); // relative offset of the local header
+
+    locals.push(local, name, extra, data);
+    directoryParts.push(central, name, extra);
+    offset += local.length + name.length + extra.length + data.length;
+  }
+
+  const directory = Buffer.concat(directoryParts);
   const end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(1, 8);
-  end.writeUInt16LE(1, 10);
-  end.writeUInt32LE(central.length + name.length, 12);
-  end.writeUInt32LE(local.length + name.length + data.length, 16);
+  end.writeUInt16LE(entries.length, 8); // entries on this disk
+  end.writeUInt16LE(entries.length, 10); // entries in total
+  end.writeUInt32LE(directory.length, 12); // size of the central directory
+  end.writeUInt32LE(offset, 16); // offset of the central directory
+  end.writeUInt16LE(0, 20); // comment length
 
-  return Buffer.concat([local, name, data, central, name, end]);
+  return Buffer.concat([...locals, directory, end]);
+}
+
+/** A one-entry archive, which is what most of these tests need. */
+function buildZip(entryName: string, content: string): Buffer {
+  return buildZipEntries([{ name: entryName, content }]);
+}
+
+/**
+ * The zip64 extra field carrying an uncompressed size that does not fit in 32 bits.
+ *
+ * Header id `0x0001`, length 8, then the value -- the first of the four fields the
+ * id can carry, which is the order the format defines and the reason the reader
+ * takes the first 8 bytes rather than searching for a marker.
+ */
+function zip64UncompressedExtra(declares: number): Buffer {
+  const extra = Buffer.alloc(4 + 8);
+  extra.writeUInt16LE(0x0001, 0);
+  extra.writeUInt16LE(8, 2);
+  extra.writeBigUInt64LE(BigInt(declares), 4);
+  return extra;
 }
 
 function crc32(buf: Buffer): number {
@@ -1055,6 +1116,174 @@ describe('scripts/fetch-official.mjs · the digest pin', () => {
     expect(result.stdout).toContain('EXTRACTED fixture-zip');
     expect(readFileSync(join(out, 'dataset', 'case', 'metrics.json'), 'utf8')).toBe(PAYLOAD);
     expect(existsSync(join(out, 'fixture-zip.zip'))).toBe(false);
+  });
+});
+
+/**
+ * The destination: how much the archive will write, and whether there is room.
+ *
+ * ## The defect these tests exist for
+ *
+ * The 2026-10-26 scheduled run of `official-data.yml` downloaded `RE2-OB`
+ * (1 191 025 569 bytes, digest verified), then died inside `unzip` with
+ * `write error (disk full?)`. The destination was `/tmp`, which is a 7.9 GiB
+ * tmpfs on the ubuntu-26.04 runner image; it had been part of a 74 GiB root disk
+ * when the workflow was written, and `ubuntu-latest` moved on 2026-10-19. The
+ * corpus did not change; the filesystem under it did.
+ *
+ * Worse than the failure was its name: the exit status fell into the "unreachable"
+ * class, whose advice is "re-running is a reasonable next step" -- and the run had
+ * already proved that re-running was futile, having spent six minutes and 1.2 GB
+ * discovering it.
+ *
+ * ## What is asserted, and why each assertion is not substitutable
+ *
+ *  - **exit status 3**, not merely non-zero. A script that ignored the space
+ *    check would fall through to `unzip`, fail, and exit 4 -- which is a *passing*
+ *    test if the only assertion were "non-zero".
+ *  - **the requirement** printed exactly as the archive declares it, which is the
+ *    only observation of the parser's output.
+ *  - **the supply** printed as the free space at the destination, which is what
+ *    distinguishes a measurement from a constant.
+ *  - **nothing extracted, archive retained**: the refusal happens before the
+ *    damage, and the file the number came from is still there to be inspected.
+ *
+ * ## Why the archive lies about its size
+ *
+ * Because the alternative is an 80 GB fixture. The declared size in a central
+ * directory is what `unzip` writes, and the tests hand the script a declaration it
+ * cannot satisfy. Such an archive genuinely cannot be extracted -- which is why
+ * these tests also assert that extraction was *not* attempted, rather than
+ * trusting the exit code to mean that.
+ */
+describe('scripts/fetch-official.mjs · the destination', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-room-'));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  const outputs: string[] = [];
+  const makeOut = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-bench-room-out-'));
+    outputs.push(dir);
+    return dir;
+  };
+  afterAll(() => {
+    for (const dir of outputs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * Free bytes at `dir`, measured here rather than compared to a constant.
+   *
+   * The test needs a requirement *just above* what is free, and the free space of
+   * the machine running the suite is not known in advance. `bavail` and `bsize`
+   * are read the same way the script reads them, so the two numbers describe the
+   * same quantity -- a test that used `bfree`, or a size in blocks, would build a
+   * fixture on one scale and assert about another.
+   */
+  const freeAt = (dir: string): number => {
+    const stats = statfsSync(dir, { bigint: true });
+    return Number(stats.bsize * stats.bavail);
+  };
+  const GIB = 1024 ** 3;
+
+  it('refuses an extraction the destination cannot hold, and names both numbers', async () => {
+    const out = makeOut();
+    const declared = freeAt(out) + GIB;
+    serveZip = buildZipEntries([{ name: CORPUS_ENTRY, content: PAYLOAD, declares: declared }]);
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/corpus.zip`,
+      id: 'fixture-zip',
+      sha256: createHash('sha256').update(serveZip).digest('hex'),
+      bytes: serveZip.length,
+    });
+
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain('NOROOM');
+    // The requirement, as the archive itself declares it.
+    expect(result.stdout).toContain(`${declared} bytes`);
+    // The supply, measured at the destination. A message carrying a constant
+    // here would read the same on every machine and tell the reader nothing.
+    expect(result.stdout).toContain(`are free at '${out}'`);
+    // Nothing was unpacked, and the archive the number came from is still there.
+    expect(existsSync(join(out, 'dataset', 'case', 'metrics.json'))).toBe(false);
+    expect(existsSync(join(out, 'fixture-zip.zip'))).toBe(true);
+  });
+
+  it('sums every entry, so an archive that fits one at a time still does not fit', async () => {
+    const out = makeOut();
+    const free = freeAt(out);
+    // Each entry alone fits; together they do not. A reader that took the first
+    // entry, or the largest, would pass the check and then fail in `unzip` --
+    // exit 4 -- which is why the assertion is on the sum and on status 3.
+    const declaredEach = Math.floor(free / 2) + GIB;
+    serveZip = buildZipEntries([
+      { name: 'dataset/a.bin', content: PAYLOAD, declares: declaredEach },
+      { name: 'dataset/b.bin', content: PAYLOAD, declares: declaredEach },
+    ]);
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/corpus.zip`,
+      id: 'fixture-zip',
+      sha256: createHash('sha256').update(serveZip).digest('hex'),
+      bytes: serveZip.length,
+    });
+
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain(`the 2 entries declare ${declaredEach * 2} bytes`);
+    expect(existsSync(join(out, 'dataset', 'a.bin'))).toBe(false);
+  });
+
+  it('refuses before the transfer when the archive alone cannot fit', async () => {
+    const out = makeOut();
+    const before = hits;
+    const declared = freeAt(out) + GIB;
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/corpus.zip`,
+      id: 'fixture-zip',
+      bytes: declared,
+    });
+
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain('the archive needs');
+    expect(result.stdout).toContain(`${declared} bytes`);
+    // The point of a pre-transfer check: not one byte crossed the network. A
+    // check placed after the download would refuse for the same reason and cost
+    // the whole transfer, which is exactly what the production run paid.
+    expect(hits).toBe(before);
+  });
+
+  it('reports an archive that verifies but will not unpack as its own failure class', async () => {
+    const out = makeOut();
+    serveZip = Buffer.from('this is not an archive at all\n', 'utf8');
+    const digest = createHash('sha256').update(serveZip).digest('hex');
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/corpus.zip`,
+      id: 'fixture-zip',
+      sha256: digest,
+      bytes: serveZip.length,
+    });
+    const report = join(out, 'pins.json');
+
+    const result = await runScriptAsync([
+      '--anchor', 'rcaeval-re2', '--out', out, '--registry', registry, '--report-pins', report,
+    ]);
+
+    expect(result.status).toBe(4);
+    // The archive was downloaded and measured, and its expansion could not be
+    // read -- so extraction was attempted rather than refused, which is the
+    // distinction between "this parser cannot measure it" and "it does not fit".
+    expect(result.stdout).toContain('UNMEASURED fixture-zip');
+    expect(result.stdout).toContain('FAILED    fixture-zip');
+    // The pin report still describes the asset that was measured. Ending the
+    // process from inside the unpack broke exactly this promise: the digests of
+    // the assets fetched before the failure were lost with it.
+    const written = JSON.parse(readFileSync(report, 'utf8'));
+    expect(written.assets[0].id).toBe('fixture-zip');
+    expect(written.assets[0].sha256).toBe(digest);
   });
 });
 

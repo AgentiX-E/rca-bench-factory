@@ -8,7 +8,7 @@
  * intention rather than a fact. This one performs the fetch, and the documents
  * now point here.
  *
- * Three properties are enforced rather than assumed:
+ * Five properties are enforced rather than assumed:
  *
  *   1. **Nothing lands in the repository.** `--out` is resolved and refused if
  *      it lies inside the working tree. The anchor design exists so that no
@@ -28,6 +28,43 @@
  *      step, in the one place where the whole design is about not transcribing.
  *      Writing a report is *not* pinning: the registry is never modified here,
  *      so a report cannot silently become the thing future runs verify against.
+ *   5. **The destination can hold the corpus.** Both the archive and the tree it
+ *      expands to are measured against the free space at `--out` before the
+ *      bytes are written, and a shortfall is refused with both numbers rather
+ *      than attempted (finding 261).
+ *
+ * ## Why property 5 exists, and why it is a refusal rather than a warning
+ *
+ * The 2026-10-26 scheduled run downloaded and verified `RE2-OB` -- 1 191 025 569
+ * bytes, digest matching the registry -- and then died inside `unzip` with
+ * `write error (disk full?)`. The destination was `/tmp`, which had been part of
+ * the runner's 74 GiB root disk when the workflow was written; the `ubuntu-latest`
+ * label moved from 24.04 to 26.04 on 2026-10-19, and `/tmp` there is a 7.9 GiB
+ * tmpfs. The corpus did not change. The filesystem under it did, silently, and
+ * nothing in this repository measured the assumption.
+ *
+ * A partial extraction is worse than no extraction: the ingest reads whatever
+ * landed, the round trip scores it, and a truncated corpus produces a score that
+ * looks like a statement about our exporter. So the check refuses, and it says
+ * both numbers so the reader knows which one to change.
+ *
+ * The requirement is exact rather than estimated. For the archive it is the
+ * registry's pinned byte count; for the expansion it is read out of the archive's
+ * own central directory, which is what `unzip` will write -- no ratio, no margin,
+ * no rule of thumb.
+ *
+ * ## Exit codes
+ *
+ *   0  every selected asset was fetched, verified and (if an archive) unpacked
+ *   1  an asset could not be obtained: transport, or a URL that no longer serves it
+ *   2  an asset's bytes do not match the registry pin -- the transfer completed
+ *   3  the destination cannot hold the corpus; nothing was written for that asset
+ *   4  an asset verified and then could not be unpacked -- the file is not the
+ *      archive the registry says it is
+ *
+ * Each code names a different thing to change, which is the whole reason there
+ * are five of them: 1 is answered by waiting, 2 by reading a digest, 3 by moving
+ * the destination, 4 by looking at what upstream now serves under that URL.
  *
  *   node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official
  *   node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official --report-pins /tmp/pins.json
@@ -36,7 +73,20 @@
 
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createReadStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  createReadStream,
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  rmSync,
+  statfsSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -149,6 +199,209 @@ function formatDuration(ms) {
   if (seconds < 1) return `${seconds.toFixed(1)}s`;
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+/**
+ * Zip record signatures, and the extra-field id that carries a 64-bit size.
+ *
+ * Declared here rather than beside the reader because they are the format, and
+ * `bytesWithUnits` and `hasRoomFor` sit between the reader and its callers.
+ */
+const EOCD_SIGNATURE = 0x06054b50;
+const ZIP64_EOCD_SIGNATURE = 0x06064b50;
+const ZIP64_LOCATOR_SIGNATURE = 0x07064b50;
+const CENTRAL_SIGNATURE = 0x02014b50;
+const ZIP64_EXTRA_ID = 0x0001;
+
+/** Assets refused for space. Read once at the end, to choose the exit code. */
+const noRoom = [];
+
+/**
+ * A byte count with the unit a human would have chosen: `1191025569 bytes (1.1 GiB)`.
+ *
+ * Both forms, in that order, because the two readers want different halves. A
+ * log paragraph is read in GiB; the registry, the shell and `df` are compared in
+ * bytes, and a message that says only `1.1 GiB` cannot be checked against the
+ * pinned `bytes` field without arithmetic in the reader's head. The first real
+ * diagnosis of this failure was done by subtracting a `df` figure from a registry
+ * figure, which is exactly the step this removes.
+ */
+function bytesWithUnits(bytes) {
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  if (unit === 0) return `${bytes} bytes`;
+  return `${bytes} bytes (${value.toFixed(1)} ${units[unit]})`;
+}
+
+/**
+ * Bytes available to an unprivileged writer on the filesystem holding `directory`.
+ *
+ * `bavail` and not `bfree`: the two differ by the root reserve, and the reserve is
+ * not ours to spend. `bigint` because a filesystem is allowed to be larger than
+ * 2^53 bytes, and the multiplication `bsize * bavail` is done before the
+ * conversion so no intermediate rounds -- a float here would be off by a few
+ * bytes at these sizes, and the check compares to the byte.
+ */
+function freeBytesAt(directory) {
+  const stats = statfsSync(directory, { bigint: true });
+  return Number(stats.bsize * stats.bavail);
+}
+
+/**
+ * How much a `.zip` will write when it is unpacked, read from the archive itself.
+ *
+ * ## Why the central directory and not `unzip -l`
+ *
+ * Because the number is used to *decide* whether to run `unzip`, and a decision
+ * whose input is the output of the thing being decided about is a decision that
+ * cannot be made before the damage. `unzip -l` also prints a table whose total
+ * has to be parsed out of column positions, which is a second format to keep
+ * agreeing with a second program's version.
+ *
+ * The central directory is the archive's own statement of what extraction will
+ * write -- it is the structure `unzip` itself reads first -- and it can be read
+ * with four syscalls: the tail (for the end-of-central-directory record), the
+ * record, the directory, and nothing else. No extraction, no temporary tree, no
+ * dependency on a tool beyond the ones already required.
+ *
+ * ## What it refuses to guess
+ *
+ * Returns `{ reason }` rather than a number when the file is not a zip, is
+ * truncated, or carries a 4 GiB entry without the zip64 extra field that says how
+ * large it really is. The caller prints the reason and proceeds to extraction,
+ * which will fail with its own message if the archive is unusable -- an
+ * unmeasurable archive is not the same finding as a destination that is too small,
+ * and collapsing the two would refuse a corpus over a parser limitation.
+ */
+function readZipDirectory(path) {
+  const fd = openSync(path, 'r');
+  try {
+    const size = fstatSync(fd).size;
+    // The record is 22 bytes plus a comment of at most 64 KiB, so the search
+    // window is bounded by the format rather than by a number chosen here.
+    const tailLength = Math.min(size, 22 + 0xffff);
+    if (tailLength < 22) return { reason: 'the file is smaller than a zip end-of-central-directory record' };
+    const tail = Buffer.alloc(tailLength);
+    readSync(fd, tail, 0, tailLength, size - tailLength);
+
+    let eocd = -1;
+    for (let at = tailLength - 22; at >= 0; at -= 1) {
+      if (tail.readUInt32LE(at) === EOCD_SIGNATURE) {
+        eocd = at;
+        break;
+      }
+    }
+    if (eocd === -1) return { reason: 'no end-of-central-directory record, so the file is not a zip archive' };
+
+    let count = tail.readUInt16LE(eocd + 10);
+    let directoryBytes = tail.readUInt32LE(eocd + 12);
+    let directoryOffset = tail.readUInt32LE(eocd + 16);
+
+    // Zip64 replaces any field that does not fit by writing the maximum in the
+    // classic record and the real value in a second one. All three markers are
+    // tested, because a 4 GiB entry can set the size marker while the count and
+    // the offset stay classic.
+    if (count === 0xffff || directoryBytes === 0xffffffff || directoryOffset === 0xffffffff) {
+      const locatorAt = eocd - 20;
+      if (locatorAt < 0 || tail.readUInt32LE(locatorAt) !== ZIP64_LOCATOR_SIGNATURE) {
+        return { reason: 'the archive uses zip64 sentinels but carries no zip64 locator' };
+      }
+      const recordAt = Number(tail.readBigUInt64LE(locatorAt + 8));
+      const record = Buffer.alloc(56);
+      if (readSync(fd, record, 0, 56, recordAt) !== 56 || record.readUInt32LE(0) !== ZIP64_EOCD_SIGNATURE) {
+        return { reason: 'the zip64 end-of-central-directory record is not where the locator points' };
+      }
+      count = Number(record.readBigUInt64LE(32));
+      directoryBytes = Number(record.readBigUInt64LE(40));
+      directoryOffset = Number(record.readBigUInt64LE(48));
+    }
+
+    // A directory that does not fit inside the file is a corrupt record, and
+    // allocating it would be the one way this function could exhaust memory.
+    if (directoryOffset + directoryBytes > size) {
+      return { reason: 'the central directory lies outside the file' };
+    }
+
+    const directory = Buffer.alloc(directoryBytes);
+    if (readSync(fd, directory, 0, directoryBytes, directoryOffset) !== directoryBytes) {
+      return { reason: 'the central directory is shorter than the record declares' };
+    }
+
+    let at = 0;
+    let seen = 0;
+    let uncompressedBytes = 0;
+    while (seen < count) {
+      if (at + 46 > directoryBytes) return { reason: `the central directory ends after ${seen} of ${count} entries` };
+      if (directory.readUInt32LE(at) !== CENTRAL_SIGNATURE) {
+        return { reason: `entry ${seen + 1} does not start with a central-directory signature` };
+      }
+      let uncompressed = directory.readUInt32LE(at + 24);
+      const nameLength = directory.readUInt16LE(at + 28);
+      const extraLength = directory.readUInt16LE(at + 30);
+      const commentLength = directory.readUInt16LE(at + 32);
+      if (uncompressed === 0xffffffff) {
+        const zip64 = readZip64Uncompressed(directory, at + 46 + nameLength, extraLength);
+        if (zip64 === null) {
+          return { reason: `entry ${seen + 1} declares a 4 GiB size and carries no zip64 extra field` };
+        }
+        uncompressed = zip64;
+      }
+      uncompressedBytes += uncompressed;
+      seen += 1;
+      at += 46 + nameLength + extraLength + commentLength;
+    }
+
+    return { entries: seen, uncompressedBytes };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** The zip64 extra field's uncompressed size, or `null` when the field is absent. */
+function readZip64Uncompressed(directory, start, length) {
+  let at = start;
+  const end = start + length;
+  while (at + 4 <= end) {
+    const headerId = directory.readUInt16LE(at);
+    const fieldLength = directory.readUInt16LE(at + 2);
+    if (headerId === ZIP64_EXTRA_ID && fieldLength >= 8 && at + 4 + 8 <= end) {
+      return Number(directory.readBigUInt64LE(at + 4));
+    }
+    at += 4 + fieldLength;
+  }
+  return null;
+}
+
+/**
+ * Refuse, by name, when `directory` cannot hold `needBytes`.
+ *
+ * Returns `true` when there is room. When there is not, the shortfall is recorded
+ * and printed, and `false` tells the caller to stop fetching -- later assets would
+ * only produce the same refusal for a destination that is already too small.
+ *
+ * The check is `needBytes <= freeBytes` rather than a margin, because both numbers
+ * are exact: the requirement comes from the registry's pin or from the archive's
+ * own directory, and the supply comes from `statfs` at this instant. A margin
+ * would be a number nobody could defend and nobody would ever measure.
+ *
+ * The refusal is recorded rather than thrown so the pin report still describes the
+ * assets that were measured before the destination ran out -- the same promise the
+ * reporting already makes for an unreachable asset.
+ */
+function hasRoomFor({ asset, needBytes, directory, claim }) {
+  const freeBytes = freeBytesAt(directory);
+  if (needBytes <= freeBytes) return true;
+  noRoom.push({ asset, needBytes, freeBytes, directory, claim });
+  console.log(
+    `NOROOM    ${asset.id}: ${claim} ${bytesWithUnits(needBytes)} and ` +
+      `${bytesWithUnits(freeBytes)} are free at '${directory}'`,
+  );
+  return false;
 }
 
 /**
@@ -515,10 +768,19 @@ function isArchive(url) {
 async function extract(asset, destination, outDir) {
   const { code, stderr } = await run('unzip', ['-o', '-q', destination, '-d', outDir]);
   if (code !== 0) {
-    fail(`${asset.id}: unzip failed - ${stderr.trim()}`);
+    // Reported, not thrown. This used to be `fail()`, which ended the process
+    // inside the loop and so skipped the pin report for every asset already
+    // measured -- the one thing the reporting claims never to do. It is also a
+    // different failure class from a transport one: the bytes arrived and are
+    // not the archive the registry describes, which no amount of re-downloading
+    // changes.
+    const detail = stderr.split('\n').find((line) => line.trim() !== '') ?? `unzip exited ${code}`;
+    console.log(`FAILED    ${asset.id}: the archive could not be unpacked - ${detail.trim()}`);
+    return { ok: false, reason: detail.trim() };
   }
   rmSync(destination, { force: true });
   console.log(`EXTRACTED ${asset.id}`);
+  return { ok: true };
 }
 
 const registryRaw = readFileSync(REGISTRY_PATH, 'utf8');
@@ -556,19 +818,66 @@ if (selected.length === 0) {
 
 console.log(`Fetching ${selected.length} asset(s) for '${anchor}' into ${outDir}\n`);
 
+/**
+ * Fetch, then either unpack or refuse -- one asset at a time, in registry order.
+ *
+ * Two space checks bracket the download, and they are not redundant:
+ *
+ *  - **before** it, against the registry's pinned byte count, because a 1.2 GB
+ *    transfer into a 900 MB filesystem is a minute of network spent to learn
+ *    something `statfs` already knew;
+ *  - **after** it and before extraction, against the archive's own central
+ *    directory, because that is the number `unzip` is about to write and it is
+ *    not derivable from the compressed size.
+ *
+ * An unpinned asset has no byte count to check the first way; the second check
+ * still applies to it, because the archive arrived and can be read.
+ *
+ * Both refusals stop the loop. A destination that is too small for this asset is
+ * too small for the next one, and continuing would print the same sentence once
+ * per asset while spending the time to download each.
+ */
 const results = [];
+const unpackFailures = [];
 for (const asset of selected) {
+  if (asset.bytes !== null && !hasRoomFor({ asset, needBytes: asset.bytes, directory: outDir, claim: 'the archive needs' })) {
+    break;
+  }
+
   const result = await fetchAsset(asset, outDir);
+  results.push(result);
+
   // Only an archive is extracted. A `.csv` asset is already the file the caller
   // wanted, and running `unzip` over it produced a message about zip internals
   // for a download that had succeeded and verified.
-  if (result.archive === true) {
-    await extract(asset, result.destination, outDir);
+  if (result.archive !== true || result.status === 'skipped') continue;
+
+  const expansion = readZipDirectory(result.destination);
+  if (expansion.reason !== undefined) {
+    // Not a refusal: an archive this reader cannot measure is a limitation of
+    // this parser, not a statement about the destination. Extraction proceeds and
+    // reports its own failure if the file is unusable, which is the honest
+    // division -- the two outcomes have different causes and different fixes.
+    console.log(`UNMEASURED ${asset.id}: ${expansion.reason}; extraction proceeds`);
+  } else if (
+    !hasRoomFor({
+      asset,
+      needBytes: expansion.uncompressedBytes,
+      directory: outDir,
+      claim: `the ${expansion.entries} entr${expansion.entries === 1 ? 'y' : 'ies'} declare`,
+    })
+  ) {
+    // The archive stays on disk: it is the evidence for the number just printed.
+    break;
   }
-  results.push(result);
+
+  const unpacked = await extract(asset, result.destination, outDir);
+  if (!unpacked.ok) {
+    unpackFailures.push({ asset, reason: unpacked.reason });
+    break;
+  }
 }
 
-const skipped = results.filter((r) => r.status === 'skipped');
 
 /**
  * Write the measured digests, if asked.
@@ -606,18 +915,46 @@ if (reportPath !== undefined) {
   console.log(`\nREPORT    ${reportPath}: ${report.assets.length} pin(s) measured`);
 }
 
-// Two failure classes, two exit codes.
+// Four failure classes, four exit codes.
 //
-// Both end the run and neither is tolerated silently, but they are answered by
-// opposite actions: an unreachable host is retried when it comes back, whereas a
-// file that does not match its pin needs a human to look at the digest. One code
-// for both is what made the anchor's twelve consecutive failures take a re-run
-// and a log excavation to understand, because "the fetch failed" was all the run
+// All of them end the run and none is tolerated silently, but each is answered by
+// a different action: an unreachable host is retried when it comes back, a file
+// that does not match its pin needs a human to read a digest, a destination that
+// is too small needs a different filesystem, and an archive that will not unpack
+// needs someone to look at what upstream serves under that URL. One code for all
+// of them is what made the anchor's twelve consecutive failures take a re-run and
+// a log excavation to understand, because "the fetch failed" was all the run
 // itself would say.
 //
-// A pin mismatch is checked first: it is the more specific statement, and a run
-// that has one should not be described as having hit the network.
+// ## Why this order
+//
+// Most specific and most actionable first, weakest claim last:
+//
+//   3  no room            -- a fact about the destination, decided before most of
+//                            the work happened, and nothing downstream can be
+//                            trusted while it holds
+//   2  pin mismatch       -- a fact about the registry, measured on bytes that did
+//                            arrive; the more specific half of "the download was
+//                            wrong" and the half a retry cannot fix
+//   4  unpack failed      -- a fact about the file upstream serves, discovered on a
+//                            download that matched its pin, so it outranks the
+//                            network by having already ruled it out
+//   1  unreachable        -- the weakest claim: nothing was measured about the
+//                            asset at all
+//
+// A run can only report one code, and the log above it names every class it hit.
 const pinMismatches = results.filter((r) => r.pinProblem === true);
+if (noRoom.length > 0) {
+  const { asset, needBytes, freeBytes, directory, claim } = noRoom[0];
+  console.error(
+    `\nno room for '${asset.id}' at '${directory}': ${claim} ${bytesWithUnits(needBytes)} ` +
+      `and ${bytesWithUnits(freeBytes)} are free. Nothing was unpacked for it, and the assets ` +
+      `after it were not attempted -- a destination that is too small stays too small. ` +
+      `Re-running on the same filesystem will fail identically; point --out at one with room.`,
+  );
+  process.exit(3);
+}
+
 if (pinMismatches.length > 0) {
   console.error(
     `\n${pinMismatches.length} of ${results.length} asset(s) downloaded a file that does not ` +
@@ -626,6 +963,16 @@ if (pinMismatches.length > 0) {
       `will produce the same result. Re-measure with --report-pins and review the pin.`,
   );
   process.exit(2);
+}
+
+if (unpackFailures.length > 0) {
+  console.error(
+    `\n${unpackFailures.length} of ${results.length} asset(s) matched their pin and could not be ` +
+      `unpacked: ${unpackFailures.map((f) => `'${f.asset.id}' (${f.reason})`).join(', ')}. ` +
+      `The bytes are the bytes the registry describes, so this is not a transfer problem and ` +
+      `not a pin problem -- the archive upstream is unusable, or it is no longer a zip.`,
+  );
+  process.exit(4);
 }
 
 const unreachable = results.filter((r) => r.status === 'skipped' && r.pinProblem !== true);

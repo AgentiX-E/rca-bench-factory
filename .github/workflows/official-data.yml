@@ -54,11 +54,29 @@ name: Official data
 #
 # ## What is fetched, and what is kept
 #
-# The data goes to `/tmp` on the runner, outside the working tree, and is
+# The data goes to the runner's temp directory, outside the working tree, and is
 # discarded with the runner. `scripts/fetch-official.mjs` refuses a destination
 # inside the repository, and `scripts/check-no-vendored-data.mjs` fails the build
 # if any of it ever reaches git. Nothing here is committed except the reported
 # outcome.
+#
+# ## Why `runner.temp` and not `/tmp`
+#
+# It was `/tmp`, and that is what broke the anchor on 2026-10-26 (finding 261).
+# The run downloaded and verified `RE2-OB` -- 1 191 025 569 bytes, digest matching
+# the registry -- and then died inside `unzip` with `write error (disk full?)`.
+#
+# The corpus was fine. The filesystem was not. `/tmp` is a 7.9 GiB tmpfs on the
+# ubuntu-26.04 image, and `ubuntu-latest` moved from 24.04 to 26.04 on 2026-10-19;
+# on 24.04 the same path was part of the runner's ~74 GiB root disk, which is why
+# the 2026-10-12 dispatch of this workflow succeeded and the next scheduled run did
+# not. Nothing in this repository measured the assumption, and the workflow's own
+# `df -h /tmp` step printed the number without anything comparing it to anything.
+#
+# `runner.temp` is `$RUNNER_TEMP`, on the root filesystem, and every step below
+# reads the same `OFFICIAL_DIR` from it. The destination is one variable because a
+# second copy of a path is a second thing that can drift -- and the failure mode
+# here was a destination chosen in one place and measured in another.
 
 on:
   workflow_dispatch:
@@ -112,6 +130,13 @@ jobs:
     # do not control. Bounded so a stalled download fails rather than occupying a
     # runner for hours.
     timeout-minutes: 90
+    # One destination, named once. `runner.temp` is on the runner's root
+    # filesystem; `/tmp` is a tmpfs there, and finding 261 is what that cost.
+    env:
+      OFFICIAL_DIR: ${{ runner.temp }}/official
+      PINS: ${{ runner.temp }}/pins.json
+      CASES: ${{ runner.temp }}/rcaeval-cases.json
+      SCORES: ${{ runner.temp }}/rcaeval-scores.json
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -132,8 +157,19 @@ jobs:
       - name: Build (the round trip reads core's dist)
         run: pnpm build
 
-      - name: Report free disk before the fetch
-        run: df -h /tmp
+      # The destination is created here, so this line measures the filesystem the
+      # fetch will write to. The version of this step that ran `df -h /tmp`
+      # measured a directory the fetch had stopped using -- a number about
+      # somewhere else, printed with nothing to compare it against, which is how a
+      # 7.9 GiB tmpfs stayed invisible for a week (finding 261). The check that
+      # refuses is in the fetch script, where it can name the requirement too;
+      # this line is the evidence a human reads afterwards, and it is about the
+      # same path the fetch uses because it reads the same variable.
+      - name: Report free disk at the destination
+        run: |
+          set -eu
+          mkdir -p "$OFFICIAL_DIR"
+          df -h "$OFFICIAL_DIR"
 
       # The measurement is written to a file rather than left in the log.
       #
@@ -147,16 +183,26 @@ jobs:
       # reason a 12-minute fetch failed was the one thing the first real run
       # did not record, and it took a re-run to find out.
       #
-      # The three statuses are named separately because they call for different
+      # The statuses are named separately because they call for different
       # actions, and collapsing them is what made twelve consecutive failures
       # require log excavation to understand:
       #
       #   124  the workflow's own per-asset bound fired; no measurement
+      #   3    the destination cannot hold the corpus. This is a fact about the
+      #        filesystem, not about the network: the same re-run on the same
+      #        destination fails identically (finding 261)
       #   2    an asset downloaded a file that does not match the registry pin.
       #        This is *not* a network problem -- the bytes arrived -- so
       #        re-running is wasted; the registry or the upstream asset has to
       #        be looked at
+      #   4    an asset matched its pin and would not unpack. The bytes are the
+      #        bytes the registry describes, so the archive upstream is unusable
       #   1    an asset could not be reached at all; re-running is reasonable
+      #
+      # The list is the script's own vocabulary, and the script's header states
+      # the same five. A case that is missing here would fall into `*` and be
+      # described as a network failure -- which is precisely what happened to a
+      # full disk, the one failure among these that re-running can never fix.
       - name: Fetch the corpus outside the working tree
         id: fetch
         env:
@@ -171,7 +217,7 @@ jobs:
           # reports no measurement and no reason.
           status=0
           timeout 3000 node scripts/fetch-official.mjs \
-            --anchor "$ANCHOR" --out /tmp/official --report-pins /tmp/pins.json || status=$?
+            --anchor "$ANCHOR" --out "$OFFICIAL_DIR" --report-pins "$PINS" || status=$?
           {
             echo "### Fetch outcome"
             echo
@@ -182,6 +228,19 @@ jobs:
               0)
                 echo "All assets for \`${ANCHOR}\` fetched."
                 ;;
+              1)
+                echo "**Unreachable** (exit status 1). An asset could not be downloaded. The"
+                echo "per-asset reason is in the log above, one \`SKIPPED\` line per asset, and"
+                echo "re-running is a reasonable next step."
+                ;;
+              3)
+                echo "**Does not fit.** The destination is smaller than the corpus, so nothing was"
+                echo "unpacked for the asset that did not fit and the assets after it were not attempted."
+                echo "This is **not** a network failure -- re-running on the same filesystem fails"
+                echo "identically. The log names the requirement and the free space; \`OFFICIAL_DIR\` is on"
+                echo "the runner's root filesystem, and a destination with less room has to be chosen"
+                echo "deliberately rather than by pointing at the first path that exists."
+                ;;
               2)
                 echo "**Pin mismatch.** An asset completed its transfer and the bytes do not match the"
                 echo "registry: the file is not the file \`golden-master/official-assets.json\` describes."
@@ -189,10 +248,24 @@ jobs:
                 echo "Check the pin against a fresh \`--report-pins\` measurement, and check whether the"
                 echo "upstream asset changed under us. This is **not** a network failure."
                 ;;
+              4)
+                echo "**Could not unpack** (exit status 4). An asset matched its pin and \`unzip\` refused"
+                echo "it, so the bytes are the bytes the registry describes and the archive is not usable."
+                echo "Re-downloading fetches the same file; the upstream asset or the registry entry"
+                echo "needs a human."
+                ;;
               *)
-                echo "**Unreachable** (exit status ${status}). An asset could not be downloaded. The"
-                echo "per-asset reason is in the log above, one \`SKIPPED\` line per asset, and re-running"
-                echo "is a reasonable next step."
+                # No cause is named here on purpose. Every status the script documents
+                # is handled above; what reaches this branch is a status nothing
+                # anticipated -- an OOM kill (137), a signal, the timeout wrapper's own
+                # convention -- and the previous version of this branch described all of
+                # them as "an asset could not be downloaded". That is the same mistake in
+                # miniature as the one this whole change is about: a fallback asserting a
+                # cause it cannot know.
+                echo "**Unrecognised exit status ${status}.** The fetch script documents 0 to 4, and"
+                echo "\`scripts/fetch-official.mjs\` is the authority on what each one means. Something"
+                echo "outside that vocabulary ended this run -- a signal, a kill, or the timeout wrapper."
+                echo "The reason is in the log above, not in this summary."
                 ;;
             esac
           } >> "$GITHUB_STEP_SUMMARY"
@@ -218,15 +291,15 @@ jobs:
           set -u
           node scripts/fetch-official.mjs --list
           echo
-          if [ ! -f /tmp/pins.json ]; then
+          if [ ! -f "$PINS" ]; then
             echo "no pin report was written; the fetch did not complete"
             exit 0
           fi
-          if node scripts/apply-pins.mjs --report /tmp/pins.json --check; then
+          if node scripts/apply-pins.mjs --report "$PINS" --check; then
             echo "registry pins agree with this download"
           else
             echo
-            echo "::warning title=Unpinned or drifted assets::The registry does not record these measured digests. Merge /tmp/pins.json into golden-master/official-assets.json in a reviewed commit; the values are in the run summary."
+            echo "::warning title=Unpinned or drifted assets::The registry does not record these measured digests. Merge $PINS into golden-master/official-assets.json in a reviewed commit; the values are in the run summary."
           fi
 
       # The descriptors are derived from the download, never committed.
@@ -238,7 +311,7 @@ jobs:
       - name: Derive the case descriptors from what was downloaded
         run: |
           set -eu
-          node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official --out /tmp/rcaeval-cases.json
+          node scripts/gen-rcaeval-cases.mjs --official-dir "$OFFICIAL_DIR" --out "$CASES"
 
       - name: Round-trip the corpus and score it with the official rule
         run: |
@@ -250,11 +323,11 @@ jobs:
           # carried the descriptors and the pins and no scores -- so the answer to
           # P0-2's "a score report on the real corpus" was a line in a log, which
           # is what finding 155 is about.
-          node scripts/check-official.mjs --official-dir /tmp/official --cases /tmp/rcaeval-cases.json --report /tmp/rcaeval-scores.json
+          node scripts/check-official.mjs --official-dir "$OFFICIAL_DIR" --cases "$CASES" --report "$SCORES"
 
-      - name: Report free disk after the fetch
+      - name: Report free disk at the destination after the fetch
         if: always()
-        run: df -h /tmp
+        run: df -h "$OFFICIAL_DIR"
 
       # Two artefacts, and they are different kinds of thing:
       #
@@ -269,9 +342,9 @@ jobs:
         with:
           name: rcaeval-${{ steps.fetch.outputs.anchor || 'rcaeval-re2' }}-round-trip
           path: |
-            /tmp/rcaeval-cases.json
-            /tmp/rcaeval-scores.json
-            /tmp/pins.json
+            ${{ runner.temp }}/rcaeval-cases.json
+            ${{ runner.temp }}/rcaeval-scores.json
+            ${{ runner.temp }}/pins.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -281,7 +354,7 @@ jobs:
         if: always()
         run: |
           set -eu
-          if [ ! -f /tmp/pins.json ]; then
+          if [ ! -f "$PINS" ]; then
             echo "### No pin report" >> "$GITHUB_STEP_SUMMARY"
             echo >> "$GITHUB_STEP_SUMMARY"
             echo "The fetch produced no measurements, so there is nothing to pin. The job log above says why." >> "$GITHUB_STEP_SUMMARY"
@@ -291,15 +364,20 @@ jobs:
             echo "### Measured pins"
             echo
             echo "Merge these into \`golden-master/official-assets.json\` in a reviewed commit;"
-            echo "\`scripts/apply-pins.mjs --report /tmp/pins.json\` writes exactly these two fields."
+            echo "\`scripts/apply-pins.mjs --report $PINS\` writes exactly these two fields."
             echo
             echo "| asset | bytes | sha256 |"
             echo "| --- | --- | --- |"
+            # The path arrives as an argument rather than interpolated into the
+            # program, because a shell-expanded path inside a single-quoted
+            # program is a literal and one inside a double-quoted program is a
+            # expansion that strips the quoting -- the defect
+            # `check-no-unsafe-shell.mjs` exists for.
             node -e '
-              const r = require("/tmp/pins.json");
+              const r = require(process.argv[1]);
               for (const a of r.assets) {
                 console.log(`| ${a.id} | ${a.bytes} | \`${a.sha256}\` |`);
               }
               if (r.assets.length === 0) console.log("| _(none measured)_ | | |");
-            '
+            ' "$PINS"
           } >> "$GITHUB_STEP_SUMMARY"
