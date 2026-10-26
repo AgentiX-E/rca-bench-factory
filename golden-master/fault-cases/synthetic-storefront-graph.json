@@ -177,6 +177,18 @@
       "kind": "db",
       "name": "billing-db",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/catalog-service",
+      "kind": "service",
+      "name": "catalog-service",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/catalog-service-0",
+      "kind": "pod",
+      "name": "catalog-service-0",
+      "aliases": []
     }
   ],
   "edges": [
@@ -264,6 +276,11 @@
       "from": "service:synthetic-storefront/billing-service",
       "to": "db:synthetic-storefront/billing-db",
       "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/catalog-service",
+      "to": "pod:synthetic-storefront/catalog-service-0",
+      "relation": "contains"
     }
   ]
 }

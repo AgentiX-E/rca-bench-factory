@@ -252,3 +252,53 @@ value is still tied to the text only through the fault layer's quote, and that i
 | the corpus | two series cite a parameter; **12 of 30**, `37 of 37` references, `0 of 33` comparable assertions |
 | `core` / repo | **186 / 4613** · **190 / 4800**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 259 — a fault whose scope is a size, and a device the graph has no word for
+
+`network-mtu-catalog-service` is the thirteenth case: after the overlay was rebuilt onto a path whose
+MTU is 1,400 bytes, catalog responses larger than one segment hang, while the pod's interface still
+advertises 1,500 and its health checks stay green.
+
+### Two of the four checkpoints are the absence of a symptom
+
+| checkpoint | reading | role |
+| --- | --- | --- |
+| `cp-large-hang == 1` | every large request hangs | the symptom |
+| `cp-small-unaffected == 0` | small payloads are untouched | the control that makes this a *size threshold* |
+| `cp-health-green == 1` | the probe never failed | the control that explains the alerting gap |
+| `cp-path-mtu == 1400 By` | the path's MTU, from the case's parameters | the fact the interface has to fit inside |
+
+Without the first zero the case reads as "the network broke"; with it, the case says something a solver
+has to reason about — a threshold, not an outage. Without the green health check there is no reason the
+orchestrator saw nothing. **This is the corpus's first case where two of four checkpoints assert that
+nothing happened**, and it is the reason the case is worth having.
+
+### The device the graph has no word for
+
+The text says "a router on the new path reports dropping fragments". The graph's kinds are `service`,
+`pod`, `node`, `container`, `db`, `mq`, `host`, `cluster`, `external` — a router is a `node`, but an
+edge from a service to a router has no relation in the vocabulary (`contains`, `hosts`, `calls`,
+`same_as`), and `calls` would be a lie about the direction of the relationship. So the router is named
+in `rootCauseReason` and is **not** an entity, the chain is `pod -> service`, and the annotation's
+`why` says so in as many words. The alternative — an edge whose relation is wrong — would have put a
+false statement in the graph to make a chain pass, which is the trade this repository refuses
+everywhere else.
+
+### The unit that had never been used
+
+`By` and its 1,024-family have been in `util/unit.ts` since the conversion table was written and no
+corpus case had a reading in bytes. This one has two: the path's MTU and the interface's, both exact,
+both in `By`. The configuration checkpoint cites the path's and the series with the size threshold stay
+in `1`.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **13 of 30**; floor 13 |
+| the references | **41 of 41** resolve by kind -- 31 series, 2 computed from 4 readings, **6** configuration facts; **0 of 37** comparable assertions fail |
+| the graph | 30 entities / 18 edges |
+| the exports | RE1 13 / 0 empty, RE2 13 / 19, RE3 2 / 3 empty / 11 skipped |
+| the baselines | both place `catalog-service` in top-K |
+| `core` / repo | **186 / 4613** · **190 / 4800**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

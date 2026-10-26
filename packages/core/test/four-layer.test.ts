@@ -51,7 +51,7 @@ describe('the corpus carries one case whose four layers are filled', () => {
   it('reads as complete, with every layer carrying something', () => {
     const reading = assessFourLayer({ case: faultCase, graph });
     expect(reading.layers.map((layer) => [layer.layer, layer.filled, layer.items])).toEqual([
-      ['entity', true, 28],
+      ['entity', true, 30],
       ['fault', true, 1],
       ['process', true, 2],
       ['evidence', true, 3],
@@ -245,7 +245,7 @@ describe('the reading is printable, because a verdict nobody can read is a badge
   it('prints one line per layer, the two reference counts, and the verdict', () => {
     const text = formatFourLayerReading(assessFourLayer({ case: faultCase, graph }));
     expect(text.split('\n')).toEqual([
-      '  entity    filled 28 item(s)',
+      '  entity    filled 30 item(s)',
       '  fault     filled  1 item(s)',
       '  process   filled  2 item(s)',
       '  evidence  filled  3 item(s)',

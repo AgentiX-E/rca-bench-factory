@@ -1,0 +1,38 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-network-mtu-blackhole-catalog",
+  "why": "Telemetry for the MTU case, and the first whose three series are all exact and two of them are controls: this fault is a size threshold, so the interesting readings are a share that went to one, a share that stayed at zero, and a health check that never noticed. Sampling noise would be a claim about measurement where the text states counts of requests, so all three declare `noise: none`. A corpus that carried only the hanging share would be satisfied by 'the network is broken'; the zero on small payloads is what makes it a threshold, and the green health check is what explains the alerting gap.",
+  "series": [
+    {
+      "service": "catalog-service",
+      "metric": "large_request_hang_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 1,
+      "noise": "none",
+      "quote": "catalog service requests larger than about 1,400 bytes started hanging",
+      "why": "the checkpoint `cp-large-hang` holds the one: every response over one segment stalls, which is a threshold rather than a rate"
+    },
+    {
+      "service": "catalog-service",
+      "metric": "small_request_failure_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "Small payloads were unaffected",
+      "why": "the control `cp-small-unaffected`: a counted zero, and the reading that makes the fault a size threshold rather than a broken path"
+    },
+    {
+      "service": "catalog-service",
+      "metric": "health_check_success_ratio",
+      "unit": "1",
+      "baseline": 1,
+      "post": 1,
+      "noise": "none",
+      "quote": "while its health checks stayed green",
+      "why": "the control `cp-health-green`: the probe's own response fits in one segment, so it passes while real traffic does not"
+    }
+  ]
+}

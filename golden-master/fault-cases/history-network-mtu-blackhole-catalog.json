@@ -1,0 +1,118 @@
+{
+  "caseId": "history-network-mtu-blackhole-catalog",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-01T11:05:00.000Z",
+  "window": {
+    "start": "2026-10-01T10:53:00.000Z",
+    "end": "2026-10-01T11:25:00.000Z"
+  },
+  "fault": {
+    "type": "network-mtu-blackhole",
+    "category": "network",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "catalog-service",
+      "pod": "catalog-service-0",
+      "pathMtu": {
+        "value": 1400,
+        "unit": "By"
+      },
+      "interfaceMtu": {
+        "value": 1500,
+        "unit": "By"
+      },
+      "remediatedMtu": {
+        "value": 1380,
+        "unit": "By"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "pod:synthetic-storefront/catalog-service-0",
+    "rootCauseComponent": "catalog-service",
+    "rootCauseReason": "The overlay was rebuilt onto a path whose MTU is 1,400 bytes while the pod's interface still advertises 1,500. A large response leaves in full-size segments, the router on the new path drops the fragments it cannot forward, and the connection sits waiting for bytes that will never arrive -- so the request hangs rather than failing. Responses that fit in one segment are unaffected, which is why the health check stayed green while real traffic stalled.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "large_request_hang_ratio",
+        "description": "every request whose response exceeds one segment hangs, which is a size threshold rather than a rate"
+      },
+      {
+        "type": "metric",
+        "ref": "health_check_success_ratio",
+        "description": "the health check stays green throughout, because its response is small enough to fit"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "pod:synthetic-storefront/catalog-service-0",
+        "toEntityId": "service:synthetic-storefront/catalog-service",
+        "mechanism": "the pod sends full-size segments onto a path that drops them, so every response larger than one segment arrives as a first segment and nothing else, and the request hangs until it times out",
+        "evidenceRefs": [
+          "cp-large-hang",
+          "cp-path-mtu",
+          "cp-small-unaffected"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-large-hang",
+        "entityRef": "service:synthetic-storefront/catalog-service",
+        "signalRef": "large_request_hang_ratio",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "every large request hangs -- a share of one, because the threshold is a size and not a rate"
+      },
+      {
+        "checkpointId": "cp-small-unaffected",
+        "entityRef": "service:synthetic-storefront/catalog-service",
+        "signalRef": "small_request_failure_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "small payloads are unaffected, which is the control that turns a stall into a size threshold rather than a broken network"
+      },
+      {
+        "checkpointId": "cp-health-green",
+        "entityRef": "service:synthetic-storefront/catalog-service",
+        "signalRef": "health_check_success_ratio",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "the health check never failed, because its own response fits in one segment -- which is why an orchestrator saw nothing wrong"
+      },
+      {
+        "checkpointId": "cp-path-mtu",
+        "entityRef": "pod:synthetic-storefront/catalog-service-0",
+        "signalRef": "pathMtu",
+        "comparator": "==",
+        "value": 1400,
+        "unit": "By",
+        "description": "the path's MTU after the overlay was rebuilt, cited from the case's own parameters; the pod's interface is 100 bytes larger, which is the whole fault",
+        "signalKind": "configuration"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "lower the pod interface's MTU to 1,380 so its segments fit inside the path's 1,400-byte MTU with room for the tunnel header",
+        "target": "pod:synthetic-storefront/catalog-service-0"
+      },
+      {
+        "step": 2,
+        "action": "probe with a payload larger than one segment rather than only with a health check, so a black hole cannot pass as healthy",
+        "target": "service:synthetic-storefront/catalog-service"
+      }
+    ]
+  },
+  "query": "Catalog service requests larger than about 1,400 bytes hang while its health checks stay green. What is the root cause, and why did the health check not see it?",
+  "answerKeyIsolated": true
+}

@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 12,
+  "min": 13,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -360,6 +360,36 @@
           "layer": "evidence",
           "quote": "Postgres reports no long-running query on the primary",
           "why": "the control: the server has nothing running, which is what rules it out"
+        }
+      ]
+    },
+    {
+      "caseId": "history-network-mtu-blackhole-catalog",
+      "sampleId": "network-mtu-catalog-service",
+      "case": "history-network-mtu-blackhole-catalog.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-network-mtu-blackhole-catalog.signals.json",
+      "why": "annotated from the incident text of `network-mtu-catalog-service`, and the corpus's first fault whose scope is a *size* rather than a rate or a level: responses larger than one segment hang, and everything smaller is untouched. That is why two of the four checkpoints are zeros or ones that never moved -- the small-payload share and the health check -- because without them the case reads as 'the network broke' rather than as 'the path's MTU is smaller than the interface's'. The four layers follow the size: the entity layer is the requests that hang, the fault layer is the rebuilt overlay and its 1,400-byte path, the process layer is the capture (handshake, first segment, nothing after), and the evidence layer is the hanging share, the two controls, and the path's MTU cited from the case's own parameters. The router that drops the fragments is named in the reason and is not an entity: the corpus's graph has no kind for a device on the path, and putting one in the chain would have meant an edge whose relation is a lie.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "catalog service requests larger than about 1,400 bytes started hanging",
+          "why": "the workload and the size threshold that scopes the fault"
+        },
+        {
+          "layer": "fault",
+          "quote": "After the overlay was rebuilt",
+          "why": "the change that introduced the smaller path, stated as a time rather than as a plan"
+        },
+        {
+          "layer": "process",
+          "quote": "Captures show the handshake and the first data segment arriving and nothing after it",
+          "why": "the mechanism as a packet capture: the connection is fine and the bytes after the first segment never arrive"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Lowering the interface MTU to 1,380 made every call complete",
+          "why": "the controlled experiment -- the interface, not the path, was what had to change, and 1,380 is below the path's 1,400"
         }
       ]
     }

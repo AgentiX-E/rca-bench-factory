@@ -1665,3 +1665,51 @@ survived**; core **186 / 4613**, cli 4 / 187, repo **190 / 4800**; coverage 99.9
   cannot disagree; nothing makes the parameter agree with the sentence it was transcribed from]`
 
 Unchanged: compound units are compared structurally; a chain's first step need not be the root cause.
+
+## v2.86 — a fault whose scope is a size
+
+**What this round is.** The thirteenth case, `network-mtu-catalog-service`: after the overlay was
+rebuilt onto a path whose MTU is 1,400 bytes, catalog responses larger than one segment hang; the
+interface still advertises 1,500 and the health checks stay green.
+
+**Two of its four checkpoints assert that nothing happened**, which is what makes it the corpus's first
+case of its kind:
+
+| checkpoint | reading | role |
+| --- | --- | --- |
+| large requests hang `== 1` | a share of one | the symptom |
+| small payloads unaffected `== 0` | a counted zero | the control that makes this a size threshold |
+| health check green `== 1` | never moved | the control that explains the alerting gap |
+| path MTU `== 1400 By` | from the parameters | the fact the interface has to fit inside |
+
+Without the zero the case reads as "the network broke"; with it, the case is a threshold a solver has
+to reason about.
+
+**A device the graph has no word for.** The text's router reports dropping fragments, and the graph has
+no kind-plus-relation for a device on the path — `node` exists, but an edge from a service to a router
+would have to be `calls`, which is a lie about the direction. The router stays in
+`rootCauseReason` and out of the graph, the chain is `pod -> service`, and the annotation says so.
+
+**The first readings in bytes.** `By` has been in the conversion table since it was written and no case
+had used it; this one has two, both exact.
+
+**Acceptance.** `check-fault-cases` prints **13 of 30**, `41 of 41` references resolved by kind (31
+series, 2 computed from 4 readings, 6 configuration), `0 of 37` comparable assertions failing; RE1 13 /
+0 empty, RE2 13 / 19, RE3 2 / 3 empty / 11 skipped; 30 entities / 18 edges; both baselines place
+`catalog-service` in top-K. Pinned counts moved by hand (`13 of 30`, `filled 30`, `RE2 … 19`,
+`RE3 … 11 skipped`, `41 of 41`, `0 of 37`, `6 citing a declared configuration fact`); typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46
+gates, 46 caught, 0 survived**; core **186 / 4613**, cli 4 / 187, repo **190 / 4800**; coverage
+99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–259.
+
+### Left open
+
+- **17 samples still carry no case.** `[open: 13 of 30 carry one; the corpus is the long pole]`
+- **A device on the network path has no entity.** `[open: the graph's relations are `contains`, `hosts`,
+  `calls` and `same_as`, and none of them describes "traffic passes through"; a router, a switch or a
+  load balancer therefore cannot be an entity without an edge that lies]`
+- **An absence of logs cannot be a checkpoint.** `[open: unchanged; every log checkpoint asserts that a
+  line exists, and this case declares none]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause.
