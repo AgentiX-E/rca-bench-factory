@@ -181,7 +181,7 @@ print(json.dumps([l for l in buffer.getvalue().splitlines() if 'expected survivo
   const batteries: [string, string, number][] = [
     ['scripts/injection/gate-tests-battery.py', 'gate-tests-battery', 28],
     ['scripts/injection/fault-extraction-scoring.py', 'fault-extraction-scoring', 12],
-    ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 5],
+    ['scripts/injection/fetch-official-retry.py', 'fetch-official-retry', 6],
     ['scripts/injection/fault-extraction-workflow.py', 'fault-extraction-workflow', 9],
     // These two were missing from this list while they were missing the mode as
     // well: `--verify-expectations` was ignored and their whole mutation loop ran
