@@ -1519,3 +1519,57 @@ gates, 46 caught, 0 survived**; core **186 / 4604**, cli 4 / 187, repo **190 / 4
 
 Unchanged: the chain's first step is not required to be the root cause; a parameter is tied to the text
 only through the fault layer's quote; compound units are compared structurally.
+
+## v2.83 — the eleventh case, and the answer on the other side of a call edge
+
+**What this round is.** The case finding 255 refused. `middleware-redis-latency-cache`: cache GETs go
+from 0.4ms to 55ms at 21:30 and stay there, because the instance's single command thread is held by a
+`KEYS` command an unrelated debugging script issues every thirty seconds.
+
+**The question was already answered, twice.** Finding 255 refused to pick a reading between "the key
+says `session-cache`" and "the cause is the Redis instance". The corpus had been splitting the two all
+along:
+
+| case | component | entity |
+| --- | --- | --- |
+| crash-loop | `media-transcoder` | `container:.../media-transcoder-app` |
+| pod-kill | `user-profile` | `pod:.../user-profile-0` |
+| this one | `session-cache` | `db:.../session-redis` |
+
+**The component is the service an operator names; the entity is the thing that failed.** A container
+and a pod are parts of a service; a datastore is not, and that is the only thing new — the first case
+where the two sit on different sides of a `calls` edge. So the annotation follows the existing pattern
+rather than inventing one.
+
+**Three firsts.** The graph's first `db` entity, and the first chain that starts at one while the
+answer is the service calling it. The first configuration checkpoint whose parameter is a *cadence*
+(`keysIntervalSeconds: 30 s`) rather than a limit. And a control that says `normal` rather than `zero`:
+"the pool utilisation is normal" invites `== 0`, and `== 0` would be false — the pool was in use, just
+not near its ceiling, so the checkpoint asserts `< 100 %`.
+
+**The chain also settles a question in prose.** Its first entity is not `rootCauseComponent`, and
+nothing requires it: two cases start above their root cause and this one starts below it, at a
+dependency, because that is where the propagation began.
+
+**Acceptance.** `check-fault-cases` prints **11 of 30**, `33 of 33` references resolved by kind (26
+series, 2 computed from 4 readings, 4 configuration), `0 of 30` comparable assertions failing; RE1 11 /
+0 empty, RE2 11 / 16, RE3 2 / 3 empty / 9 skipped; 26 entities / 16 edges; both baselines place
+`session-cache` in top-K. Pinned counts moved by hand (`11 of 30`, `filled 26`, `RE2 … 16`,
+`RE3 … 9 skipped`, `33 of 33`, `0 of 30`, `4 citing a declared configuration fact`); typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46
+gates, 46 caught, 0 survived**; core **186 / 4604**, cli 4 / 187, repo **190 / 4791**; coverage
+99.97 / 99.76 / 100 / 99.97; audit 6 volumes, findings 1–256.
+
+### Left open
+
+- **19 samples still carry no case.** `[open: 11 of 30 carry one; the corpus is the long pole, and each
+  case needs its own reading of the text rather than a template]`
+- **An absence of logs cannot be a checkpoint.** `[open: the pod-kill text's "nothing was logged" is
+  still unexpressible, because a `log` reference names a line that exists and there is no way to name
+  the line that does not]`
+- **`normal` needed a bound the text does not give.** `[open: the pool checkpoint asserts below the
+  ceiling because "normal" is not "zero"; the level beside it (40 percent) is the annotation's, and a
+  reviewer cannot tell from the corpus which half came from the sentence]`
+
+Unchanged: a parameter is tied to the text only through the fault layer's quote; compound units are
+compared structurally; a chain's first step is not required to be the root cause.

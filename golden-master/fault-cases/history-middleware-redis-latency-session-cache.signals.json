@@ -1,0 +1,36 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-middleware-redis-latency-session-cache",
+  "why": "Telemetry for the cache case, and the corpus's first with a datastore entity: the instance is a `db`, the workload that uses it is a `service`, and the answer the key asks for is the service while the thing that broke is the datastore. That split is not new -- the crash-loop case answers with a service and points at a container, and the pod-kill case answers with a service and points at a pod -- but it is the first time the two are on different sides of a call edge. The GET latency is a measured percentile and stays sampled; the thread utilisation is a gauge the server reports about itself; the client pool is a counted ratio and declares no noise, because what the text asserts about it is that it never approached its ceiling and the reading is there to be a control rather than a symptom.",
+  "series": [
+    {
+      "service": "session-cache",
+      "metric": "redis_get_duration_ms",
+      "unit": "ms",
+      "baseline": 0.4,
+      "post": 55,
+      "quote": "Cache GETs against the session Redis went from 0.4ms to 55ms at 21:30 and stayed there",
+      "why": "the checkpoint `cp-get-latency` holds the step: the latency did not drift upward, it moved once and stayed, which is a queue behind a thread rather than a degrading server"
+    },
+    {
+      "service": "session-redis",
+      "metric": "redis_command_thread_utilisation_percent",
+      "unit": "%",
+      "baseline": 12,
+      "post": 100,
+      "quote": "The Redis instance itself reports a single command thread saturated at 100%",
+      "why": "the checkpoint `cp-thread-saturated` holds the hundred: the server's own account of why every command waits, and the reading that separates this from slow storage"
+    },
+    {
+      "service": "session-cache",
+      "metric": "client_pool_utilisation_percent",
+      "unit": "%",
+      "baseline": 40,
+      "post": 40,
+      "noise": "none",
+      "quote": "Application-side connection pool utilisation is normal, so clients are not the bottleneck",
+      "why": "the control `cp-client-pool`: the text says the pool was normal, not that it was empty, so the level is the annotation's and the assertion is the text's -- below its ceiling, unchanged. A counted utilisation is exact, so it carries no sampling noise"
+    }
+  ]
+}

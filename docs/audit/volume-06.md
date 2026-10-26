@@ -72,3 +72,59 @@ that the data it was built from does not ask for.
 | the sample that waits | `middleware-redis-latency-cache` cannot be annotated honestly until the question above is answered |
 | `core` / repo | **186 / 4604** · **190 / 4791**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the meta-gate | **46 gates, 46 caught, 0 survived** |
+
+## Finding 256 — the answer and the broken thing are on two sides of a call edge
+
+Finding 255 refused this case and left a question: the key says the component is `session-cache`,
+while the thing that failed is the Redis instance, and I would not pick a reading inside a corpus
+round. The answer was already in the corpus, twice:
+
+| case | `rootCauseComponent` | `rootCauseEntityId` |
+| --- | --- | --- |
+| `history-runtime-container-crash-loop-media` | `media-transcoder` | `container:.../media-transcoder-app` |
+| `history-runtime-pod-kill-user-profile` | `user-profile` | `pod:.../user-profile-0` |
+| `history-middleware-redis-latency-session-cache` | `session-cache` | `db:.../session-redis` |
+
+**The component is the service an operator names; the entity is the thing that failed.** A container
+and a pod are parts of a service; a datastore it calls is not part of it, and that is the only thing
+new here — the first case where the two sit on different sides of a `calls` edge. So the annotation is
+not a compromise between the key and the text: it is the same split the corpus has been making since
+the crash-loop case, applied where it is finally visible.
+
+### What the case is, and the three things it adds
+
+`history-middleware-redis-latency-session-cache`: cache GETs at 0.4ms become 55ms at 21:30 and stay
+there, because the instance's single command thread is held by a `KEYS` command an unrelated
+debugging script issues every thirty seconds.
+
+- the first `db` entity in the graph, and the first causal chain that starts at one while the answer
+  is the service that calls it;
+- the first **configuration** checkpoint whose parameter is a *cadence* (`keysIntervalSeconds: 30 s`)
+  rather than a limit, cited by the case's own parameters and compared exactly;
+- a control that says `normal` rather than `zero`.
+
+That last one is the small discipline worth recording. "Application-side connection pool utilisation
+is normal, so clients are not the bottleneck" invites `== 0`, and `== 0` would be false: the pool was
+being used, it was simply not near its ceiling. The checkpoint asserts `< 100 %`, the level is the
+annotation's and the assertion is the text's — which is the same division the corpus uses everywhere
+else, applied to a sentence that reads like a zero.
+
+### The chain, and what it now demonstrates
+
+One hop, `db:session-redis -> service:session-cache`, with the thread figure, the interval and the
+latency behind it. It also settles a question finding 255 left open in prose: a chain's first entity
+need not be named by `rootCauseComponent`, and nothing should require it. Two cases already started
+above their root cause (`public-ingress`, `worker-3`); this one starts *below* it, at a dependency,
+because that is where the propagation began.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **11 of 30** samples carry a four-layer case; floor 11 |
+| the references | **33 of 33** resolve by kind -- 26 series, 2 computed from 4 readings, **4** configuration facts; **0 of 30** comparable assertions fail |
+| the graph | 26 entities / 16 edges; the first `db` |
+| the exports | RE1 11 / 0 empty, RE2 11 / 16, RE3 2 / 3 empty / 9 skipped |
+| the baselines | both place `session-cache` in top-K |
+| `core` / repo | **186 / 4604** · **190 / 4791**; coverage 99.97 / 99.76 / 100 / 99.97 |
+| the meta-gate | **46 gates, 46 caught, 0 survived** |

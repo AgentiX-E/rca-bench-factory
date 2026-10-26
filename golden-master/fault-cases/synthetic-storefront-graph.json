@@ -153,6 +153,18 @@
       "kind": "service",
       "name": "booking-scheduler",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/session-cache",
+      "kind": "service",
+      "name": "session-cache",
+      "aliases": []
+    },
+    {
+      "entityId": "db:synthetic-storefront/session-redis",
+      "kind": "db",
+      "name": "session-redis",
+      "aliases": []
     }
   ],
   "edges": [
@@ -229,6 +241,11 @@
     {
       "from": "service:synthetic-storefront/booking-api",
       "to": "service:synthetic-storefront/booking-scheduler",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/session-cache",
+      "to": "db:synthetic-storefront/session-redis",
       "relation": "calls"
     }
   ]

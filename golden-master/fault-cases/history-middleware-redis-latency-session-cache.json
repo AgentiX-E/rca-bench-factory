@@ -1,0 +1,107 @@
+{
+  "caseId": "history-middleware-redis-latency-session-cache",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-09",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-09-29T21:30:00.000Z",
+  "window": {
+    "start": "2026-09-29T21:18:00.000Z",
+    "end": "2026-09-29T21:50:00.000Z"
+  },
+  "fault": {
+    "type": "redis-latency",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "session-cache",
+      "datastore": "session-redis",
+      "keysIntervalSeconds": {
+        "value": 30,
+        "unit": "s"
+      },
+      "command": "KEYS",
+      "issuedBy": "an-unrelated-debugging-script"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "db:synthetic-storefront/session-redis",
+    "rootCauseComponent": "session-cache",
+    "rootCauseReason": "The session Redis instance runs its commands on a single thread, and an unrelated debugging script issues a KEYS command against it every thirty seconds. KEYS walks the whole keyspace, so each invocation holds that thread for long enough to delay every GET that arrives behind it: the cache's GET latency goes from 0.4ms to 55ms and stays there. The clients are not the bottleneck -- the application-side connection pool utilisation never moves -- and the only thing that changed is a command pattern the instance is not built for.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "redis_command_thread_utilisation_percent",
+        "description": "the instance's single command thread is saturated, which is what a keyspace-wide command does to a single-threaded server"
+      },
+      {
+        "type": "metric",
+        "ref": "redis_get_duration_ms",
+        "description": "every GET waits behind the command thread, so the latency is a step and not a tail"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "db:synthetic-storefront/session-redis",
+        "toEntityId": "service:synthetic-storefront/session-cache",
+        "mechanism": "a KEYS command issued every thirty seconds holds the single command thread, so every cache GET that arrives behind it waits -- 0.4ms becomes 55ms and stays there",
+        "evidenceRefs": [
+          "cp-thread-saturated",
+          "cp-keys-interval",
+          "cp-get-latency"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-get-latency",
+        "entityRef": "service:synthetic-storefront/session-cache",
+        "signalRef": "redis_get_duration_ms",
+        "comparator": ">=",
+        "value": 55,
+        "unit": "ms",
+        "description": "the GET latency after 21:30, a hundred times the baseline and flat rather than spiky -- which is what a queue behind one thread looks like"
+      },
+      {
+        "checkpointId": "cp-thread-saturated",
+        "entityRef": "db:synthetic-storefront/session-redis",
+        "signalRef": "redis_command_thread_utilisation_percent",
+        "comparator": "==",
+        "value": 100,
+        "unit": "%",
+        "description": "the instance reports its single command thread at 100 %, which is the server's own account of the delay"
+      },
+      {
+        "checkpointId": "cp-keys-interval",
+        "entityRef": "db:synthetic-storefront/session-redis",
+        "signalRef": "keysIntervalSeconds",
+        "comparator": "==",
+        "value": 30,
+        "unit": "s",
+        "description": "the interval the debugging script issues KEYS at, cited from the case's own parameters -- the command pattern that saturates the thread, and the one fact that changed",
+        "signalKind": "configuration"
+      },
+      {
+        "checkpointId": "cp-client-pool",
+        "entityRef": "service:synthetic-storefront/session-cache",
+        "signalRef": "client_pool_utilisation_percent",
+        "comparator": "<",
+        "value": 100,
+        "unit": "%",
+        "description": "the application-side pool never approached its ceiling, which is the sentence that rules the clients out as the bottleneck"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "stop issuing KEYS against the production instance -- SCAN with a cursor is the command for a keyspace walk -- and run the debugging script against a replica if it needs the keyspace at all",
+        "target": "db:synthetic-storefront/session-redis"
+      }
+    ]
+  },
+  "query": "Session cache GETs went from 0.4ms to 55ms at 21:30 and stayed there. Which component is the root cause, and why are the clients not it?",
+  "answerKeyIsolated": true
+}

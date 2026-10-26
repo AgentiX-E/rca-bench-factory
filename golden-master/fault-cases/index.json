@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 10,
+  "min": 11,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -300,6 +300,36 @@
           "layer": "evidence",
           "quote": "which is why the first report blamed the scheduler",
           "why": "the wrong answer the case has to be able to exclude, held here as the sentence the control checkpoint rests on"
+        }
+      ]
+    },
+    {
+      "caseId": "history-middleware-redis-latency-session-cache",
+      "sampleId": "middleware-redis-latency-cache",
+      "case": "history-middleware-redis-latency-session-cache.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-middleware-redis-latency-session-cache.signals.json",
+      "why": "annotated from the incident text of `middleware-redis-latency-cache`, and the first case where the answer and the broken thing are on two sides of a call edge: the key asks for `session-cache`, which is the service an operator names, and the entity that failed is the datastore it calls. That split is what the corpus already does twice -- the crash-loop case answers with a service and points at a container, the pod-kill case answers with a service and points at a pod -- so this case follows the pattern rather than inventing a reading. The four layers separate the command pattern from its victims: the entity layer is the cache whose GETs slowed, the fault layer is the server's own report of a saturated command thread, the process layer is the SLOWLOG line naming the command and its interval, and the evidence layer is the latency step, the thread figure, the interval cited from the case's parameters, and the client pool that never moved. The last one is a control, which is why it is a checkpoint: `normal` is not `zero`, so the assertion is that the pool stayed below its ceiling rather than that it was empty.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Cache GETs against the session Redis went from 0.4ms to 55ms at 21:30 and stayed there",
+          "why": "the workload whose reads slowed, with both readings and the moment they changed"
+        },
+        {
+          "layer": "fault",
+          "quote": "The Redis instance itself reports a single command thread saturated at 100%",
+          "why": "the fault in the server's own words: one thread, fully occupied, which is a statement about the command pattern rather than about load"
+        },
+        {
+          "layer": "process",
+          "quote": "the SLOWLOG shows a KEYS command issued every 30 seconds by an unrelated debugging script",
+          "why": "the propagation and its interval -- the command, its cadence, and the fact that it belongs to something with no business on this instance"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Application-side connection pool utilisation is normal, so clients are not the bottleneck",
+          "why": "the control that rules the clients out, and the sentence the pool checkpoint rests on"
         }
       ]
     }
