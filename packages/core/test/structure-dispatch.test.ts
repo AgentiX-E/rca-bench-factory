@@ -101,9 +101,12 @@ describe('a structural check refuses a shape it does not describe', () => {
   // file names are identical, and the check for one suite refuses the other's log
   // table, by name.
   it('RE2 and RE3 emit the same file set, and disagree about the log table in it', () => {
+    // The file *names*, because the two bundles are different cases: their
+    // `{service}_{fault}` directories differ, and comparing full paths would fail
+    // for a reason that has nothing to do with the file set.
     const suffixes = (files: Record<string, string>): string[] =>
       Object.keys(files)
-        .map((path) => path.slice(path.indexOf('/') + 1))
+        .map((path) => path.split('/').pop() as string)
         .sort();
     const re2 = exportForScoreTarget(validBundle(), 'rcaeval-re2').files;
     const re3 = exportForScoreTarget(codeBundle(), 'rcaeval-re3').files;

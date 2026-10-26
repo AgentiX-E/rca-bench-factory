@@ -276,24 +276,25 @@ const rcaeval = {
     'Three suites with an identical layout and different modality sets: RE1 is metrics-only (375 cases ' +
     'upstream), RE2 adds logs and traces (270), RE3 targets code-level faults (90).',
   timezone: 'Canonical UTC ISO-8601 in the CSVs; `inject_time.txt` is Unix seconds.',
-  scoringNote: '`checkRcaEvalStructure` validates metrics.json shape, inject_time.txt presence and the suite modality set.',
+  scoringNote: '`checkRcaEvalStructure` validates the data.csv table (a `time` column on the injection time\'s clock), inject_time.txt presence and the suite modality set.',
   boundaries: [
-    'Directory naming follows `{suite}-{service}-{fault}_{instance}` with non-alphanumerics stripped from service and fault tokens.',
+    'The path is three levels - `{suite}-{system}/{service}_{fault}/{instance}` - because upstream recovers the answer key from it (`basename(dirname(dirname(data_path))).split("_")`) and finds a case by globbing for data.csv.',
     'RE3 skips non-code faults - a case whose `fault.category` is not `code` is reported as skipped.',
-    'metrics.json is a mapping name -> ordered value array; timestamps are not carried, only ordering.',
+    'data.csv is wide: a `time` column in Unix seconds, then one column per series named `<service>_<metric>`.',
   ],
   files: [
     {
-      path: '{suite}-{service}-{fault}_{n}/metrics.json',
-      format: 'json',
-      purpose: 'One key per metric name, values ordered by time.',
-      emitter: 'buildMetricsJson',
+      path: '{suite}-{system}/{service}_{fault}/{n}/data.csv',
+      format: 'csv',
+      purpose: 'The metric table: `time` in Unix seconds, then one column per series.',
+      emitter: 'buildDataCsv',
       fields: [
-        { name: '<metric_name>', type: 'number[]', required: true, source: 'MetricPayload.name -> [MetricPayload.value]', notes: 'Points sorted ascending by parsed timestamp; the array is the time series.' },
+        { name: 'time', type: T.num, required: true, source: 'floor(Date.parse(TelemetrySignal.timestamp) / 1000)', notes: 'Rows are the union of the series\' instants, ascending. Compared directly against inject_time.txt upstream.' },
+        { name: '<service>_<metric>', type: T.num, required: true, source: 'resource[\'service.name\'] + MetricPayload.name -> MetricPayload.value', notes: 'Empty where the series has no sample at that instant: a gap the loader fills forward, not a zero this exporter invented.' },
       ],
     },
     {
-      path: '{suite}-{service}-{fault}_{n}/inject_time.txt',
+      path: '{suite}-{system}/{service}_{fault}/{n}/inject_time.txt',
       format: 'text',
       purpose: 'Fault injection timestamp used by the baselines to split normal / anomalous windows.',
       emitter: 'exportRcaEval',
@@ -302,7 +303,7 @@ const rcaeval = {
       ],
     },
     {
-      path: '{suite}-{service}-{fault}_{n}/logs.csv',
+      path: '{suite}-{system}/{service}_{fault}/{n}/logs.csv',
       format: 'csv',
       purpose: 'Log table (RE2 / RE3 only). Nine columns in RE2, six in RE3 — the corpora disagree, so there is one row per suite.',
       emitter: 'buildLogsCsv',
@@ -321,7 +322,7 @@ const rcaeval = {
       ],
     },
     {
-      path: '{suite}-{service}-{fault}_{n}/traces.csv',
+      path: '{suite}-{system}/{service}_{fault}/{n}/traces.csv',
       format: 'csv',
       purpose: 'Span table (RE2 / RE3 only). Eleven columns, identical in both corpora.',
       emitter: 'buildTracesCsv',

@@ -708,7 +708,7 @@ export function parseRcaEvalPath(path: string): {
   if (parts.length !== 3) return undefined;
   const [head, labelled, instance] = parts as [string, string, string];
 
-  const headMatch = /^(RE[123])-([A-Za-z0-9]+)$/.exec(head);
+  const headMatch = /^(RE[123])-([A-Za-z0-9-]+)$/.exec(head);
   if (headMatch === null) return undefined;
   const underscore = labelled.lastIndexOf('_');
   if (underscore <= 0 || underscore === labelled.length - 1) return undefined;

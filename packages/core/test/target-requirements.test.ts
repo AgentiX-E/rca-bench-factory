@@ -121,17 +121,44 @@ describe('a requirement describes the dataset, not the exporter output', () => {
     });
   };
 
-  it.each(SCORE_TARGET_IDS)('scores %s identically with any modality removed', (target) => {
+  it.each(SCORE_TARGET_IDS)('scores %s identically with any modality but the metric table removed', (target) => {
     // Recorded as a known fact, not as a desired property: this is *why* the
     // coverage report exists as a separate measurement, and asserting it keeps
     // a future reader from trying to derive the requirement from the score.
+    //
+    // `metric` is excluded, and the next test is why: the metric table is the one
+    // file every suite's contract requires a `time` column in, so a bundle with no
+    // readings cannot satisfy it. The other four leave a file behind -- an empty
+    // `logs.csv` is still a `logs.csv` with the right header -- which is exactly
+    // how a structural check stays blind to whether a modality is *populated*.
     const bundle = validBundle();
     const base = scoreExport(target, exportedFiles(target, bundle));
-    for (const kind of ['metric', 'log', 'trace', 'event', 'alert']) {
+    for (const kind of ['log', 'trace', 'event', 'alert']) {
       const stripped = scoreExport(target, exportedFiles(target, withoutKind(kind)));
       expect(stripped.score).toBe(base.score);
     }
   });
+
+  // Scoped to the two RCAEval targets this fixture can produce an export for.
+  // `data.csv` is their metric table; the other six formats carry the readings in
+  // files of their own shapes, and asserting this over all nine would be asserting
+  // a property of one format about all of them. RE3 is absent because the fixture
+  // is a resource fault, which RE3 refuses outright -- its base export is empty,
+  // so there is no score for stripping a modality to lower.
+  it.each(['rcaeval-re1', 'rcaeval-re2'] as const)(
+    'is not blind to the one table every RCAEval contract requires (%s)',
+    (target) => {
+    // The exception, stated rather than left implicit. It is not that the score
+    // learned to read metrics; it is that `data.csv` with a header and no rows is
+    // a case with no readings, and a case with no readings is not a case.
+      const bundle = validBundle();
+      const base = scoreExport(target, exportedFiles(target, bundle));
+      const stripped = scoreExport(target, exportedFiles(target, withoutKind('metric')));
+      expect(stripped.score).toBeLessThan(base.score);
+      const failed = stripped.structure.checks.filter((c) => !c.passed).map((c) => c.id);
+      expect(failed).toContain('data-csv-time');
+    },
+  );
 
   it('still separates targets that need different modalities', () => {
     // The score being modality-blind must not make the report modality-blind:

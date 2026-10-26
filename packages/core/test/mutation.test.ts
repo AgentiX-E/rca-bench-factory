@@ -325,11 +325,15 @@ const EXPORT_MUTATIONS: ExportMutation[] = [
   },
   {
     id: 'MT-17',
-    description: 'drop the instance index from the RCAEval case directory name',
+    description: 'drop the instance level from the RCAEval case path',
     target: 'rcaeval-re2',
+    // The path is three levels since finding 267, and the instance is the third.
+    // Collapsing it leaves `RE2-order-prod/order_cpu/data.csv`, which the reader
+    // cannot parse into a case -- the answer key lives in the path, so the mutation
+    // has to remove a part of it to be a mutation at all.
     apply: (files) =>
       Object.fromEntries(
-        Object.entries(files).map(([path, content]) => [path.replace(/(RE2-[^-]+-[A-Za-z0-9]+)_\d+\//, '$1/'), content]),
+        Object.entries(files).map(([path, content]) => [path.replace(/\/\d+\//, '/'), content]),
       ),
   },
   {

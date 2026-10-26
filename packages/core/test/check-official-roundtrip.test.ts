@@ -641,7 +641,12 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     // The payload the corpus actually carries, under the name upstream uses.
     // `main.py` finds its cases by globbing a data.csv pattern, so a reader that
     // only knew `metrics.json` would report a good corpus as unreadable.
-    writeFileSync(join(dir, 'data.csv'), 'time,cpu_usage\n0,0.2\n1,0.95\n');
+    // Instants on the injection time's clock, because they are compared to it:
+    // `main.py` does `data["time"] < inject_time`, and a table counting from zero
+    // would put every sample on one side of that boundary. The values used to be
+    // `0` and `1`, which the structure check now refuses -- correctly, and this
+    // fixture is where that refusal was first seen.
+    writeFileSync(join(dir, 'data.csv'), 'time,cpu_usage\n1699999999,0.2\n1700000001,0.95\n');
   }
 
   /**

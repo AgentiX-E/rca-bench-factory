@@ -9,14 +9,14 @@ import {
 import { exportOpenRca2 } from '../src/export/openrca2.js';
 import {
   RCAEVAL_UNFILLED_COLUMNS,
+  buildDataCsv,
   buildLogsCsv,
-  buildMetricsJson,
   buildTracesCsv,
-  caseDirName,
+  casePath,
   exportRcaEval,
 } from '../src/export/rcaeval.js';
 import { checkRcaEvalStructure } from '../src/score/score.js';
-import { parseRcaEvalDirectory } from '../src/score/official.js';
+import { parseRcaEvalPath } from '../src/score/official.js';
 import { exportRca100 } from '../src/export/rca100.js';
 import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
@@ -163,10 +163,10 @@ describe('OpenRCA exporter', () => {
 });
 
 describe('RCAEval exporter', () => {
-  it('emits metrics.json and inject_time.txt for every case', () => {
+  it('emits data.csv and inject_time.txt for every case', () => {
     const { files } = exportRcaEval(validBundle(), 'RE2');
     const paths = Object.keys(files);
-    expect(paths.some((p) => p.endsWith('/metrics.json'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/data.csv'))).toBe(true);
     expect(paths.some((p) => p.endsWith('/inject_time.txt'))).toBe(true);
   });
 
@@ -186,77 +186,102 @@ describe('RCAEval exporter', () => {
     expect(Number(txt)).toBe(Math.floor(Date.parse('2026-09-06T00:10:00.000Z') / 1000));
   });
 
-  it('groups metrics by name and orders them by time', () => {
-    const parsed = JSON.parse(buildMetricsJson(validBundle().signals['case-001'] ?? [])) as Record<
-      string,
-      number[]
-    >;
-    expect(Object.keys(parsed)).toContain('cpu_usage');
-    expect(parsed['cpu_usage']).toHaveLength(15);
-    expect(parsed['cpu_usage']?.[0]).toBe(20);
-    expect(parsed['cpu_usage']?.[14]).toBe(99);
+  // The table upstream reads: `time` first, then one column per series named
+  // `<service>_<metric>`. `main.py` takes the candidate services from those names
+  // and compares the `time` column against `inject_time.txt`; a
+  // `{metricName: [values]}` mapping carries the same numbers and neither of those
+  // two properties (finding 267).
+  it('writes the metric table with a time column and one column per series', () => {
+    const rows = parseCsv(buildDataCsv(validBundle().signals['case-001'] ?? []));
+    expect(rows[0]).toEqual(['time', 'order_cpu_usage']);
+    expect(rows).toHaveLength(16);
+    // Ordered by time, and the values are the readings rather than a re-sort.
+    const instants = rows.slice(1).map((row) => Number(row[0]));
+    expect(instants).toEqual([...instants].sort((a, b) => a - b));
+    expect(rows[1]?.[1]).toBe('20');
+    expect(rows[15]?.[1]).toBe('99');
+    for (const instant of instants) expect(instant).toBe(Math.floor(instant));
   });
 
-  it('builds a directory name from benchmark, service and fault', () => {
-    expect(caseDirName('RE2', validCase(), 1)).toBe('RE2-order-cpu_1');
+  // A series that was not sampled leaves the cell empty. `main.py` reads the table
+  // with pandas and fills forward, so a gap is something it handles; a zero would be
+  // a reading this module invented.
+  it('leaves a cell empty where a series has no sample, rather than writing zero', () => {
+    const signals = validBundle().signals['case-001'] ?? [];
+    const late: TelemetrySignal = {
+      ...(signals[0] as TelemetrySignal),
+      timestamp: '2026-09-06T00:20:00.000Z',
+      payload: { kind: 'metric', name: 'late_metric', value: 7 },
+    };
+    const rows = parseCsv(buildDataCsv([...(signals as TelemetrySignal[]), late]));
+    const header = rows[0] as string[];
+    const column = header.indexOf('order_late_metric');
+    expect(column).toBeGreaterThan(0);
+    expect(rows[1]?.[column]).toBe('');
+    expect(rows[rows.length - 1]?.[column]).toBe('7');
+  });
+
+  it('builds a three-level path from suite, system, service, fault and instance', () => {
+    expect(casePath('RE2', validCase(), 1)).toBe('RE2-order-prod/order_cpu/1');
   });
 
   // The reader and the writer disagree about what a service name may contain.
-  // `parseRcaEvalDirectory` is documented to keep hyphens ("Train Ticket ships
-  // `ts-order-service`"), but `caseDirName` stripped every non-alphanumeric
-  // character, so `ts-order-service` was written out as `tsorderservice`. The
-  // in-repo regression could not see it: `oraclePrediction` copies the
-  // component straight out of the directory name we just wrote, so the two
-  // sides were wrong together. Against the real harness the exported layout
-  // names a service that does not exist.
-  it('keeps hyphens in the service name, as the reader promises to', () => {
+  // `parseRcaEvalPath` is documented to keep hyphens ("Train Ticket ships
+  // `ts-order-service`"), but the writer used to strip every non-alphanumeric
+  // character, so `ts-order-service` came out as `tsorderservice`. The in-repo
+  // regression could not see it: the oracle copies the component straight out of
+  // the path we just wrote, so the two sides were wrong together.
+  it('keeps hyphens in the service and system names, as the reader promises to', () => {
     const fc = validCase({
       groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'ts-order-service' },
     });
-    expect(caseDirName('RE2', fc, 1)).toBe('RE2-ts-order-service-cpu_1');
+    expect(casePath('RE2', fc, 1)).toBe('RE2-order-prod/ts-order-service_cpu/1');
   });
 
   // The fix must widen the allow-list, not remove it: a character the layout
-  // genuinely cannot carry still has to go, or the directory name stops being
-  // the flat token the upstream harness expects.
+  // genuinely cannot carry still has to go, or the path stops being the three
+  // tokens upstream splits on.
   it('still strips a character the layout cannot carry', () => {
     const fc = validCase({
       groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'order:svc' },
       fault: { ...validCase().fault, type: 'cpu/sat' },
     });
-    expect(caseDirName('RE2', fc, 1)).toBe('RE2-ordersvc-cpusat_1');
+    expect(casePath('RE2', fc, 1)).toBe('RE2-order-prod/ordersvc_cpusat/1');
   });
 
   // Both halves of the round trip now agree, which is the only version of this
-  // assertion that means anything: the name the exporter writes is read back as
-  // the component the IR declared.
+  // assertion that means anything: the path the exporter writes is read back as the
+  // component and the system the IR declared.
   it('round-trips a hyphenated service name through the official reader', () => {
     const fc = validCase({
       groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'ts-order-service' },
     });
-    const parsed = parseRcaEvalDirectory(caseDirName('RE2', fc, 1));
+    const parsed = parseRcaEvalPath(casePath('RE2', fc, 1));
     expect(parsed?.service).toBe('ts-order-service');
+    expect(parsed?.fault).toBe('cpu');
+    expect(parsed?.system).toBe('order-prod');
+    expect(parsed?.instance).toBe('1');
   });
 
   // A token that sanitises away entirely would collapse the layout to
-  // `RE2--cpu_1`: an empty field no reader can tell from a missing one. The
-  // placeholder keeps every directory name parseable.
+  // `order_/1`: an empty field no reader can tell from a missing one. The
+  // placeholder keeps every path parseable.
   it('never emits an empty segment when a name sanitises away entirely', () => {
     const fc = validCase({
       groundTruth: { ...validCase().groundTruth, rootCauseComponent: '服务/一' },
     });
-    expect(caseDirName('RE2', fc, 1)).toBe('RE2-unnamed-cpu_1');
-    expect(parseRcaEvalDirectory('RE2-unnamed-cpu_1')?.service).toBe('unnamed');
+    expect(casePath('RE2', fc, 1)).toBe('RE2-order-prod/unnamed_cpu/1');
+    expect(parseRcaEvalPath('RE2-order-prod/unnamed_cpu/1')?.service).toBe('unnamed');
   });
 
   // Leading and trailing separators are the layout's, not the name's. Keeping
-  // them shifts the fields: `RE2--order-cpu_1` parses as a service of `-order`.
+  // them shifts the fields: `--order_cpu` parses as a service of `--order`.
   it('trims separator characters the name does not own', () => {
     const fc = validCase({
       groundTruth: { ...validCase().groundTruth, rootCauseComponent: '--order--' },
     });
-    expect(caseDirName('RE2', fc, 1)).toBe('RE2-order-cpu_1');
-    expect(parseRcaEvalDirectory('RE2-order-cpu_1')?.service).toBe('order');
+    expect(casePath('RE2', fc, 1)).toBe('RE2-order-prod/order_cpu/1');
+    expect(parseRcaEvalPath('RE2-order-prod/order_cpu/1')?.service).toBe('order');
   });
 
   it('skips cases without telemetry', () => {
@@ -620,8 +645,25 @@ describe('RCAEval exporter · the columns are the corpora’s, measured', () => 
     expect(headerOf(buildLogsCsv([fullLog], 'RE2'))).not.toContain('pod_name');
   });
 
+  /**
+   * A metric series, because `data.csv` is the file every suite must carry.
+   *
+   * Without one the export is a case with a log table and a span table and no
+   * readings, which is not a case this project can produce from a real one -- and
+   * the structure check says so, correctly, on the `data-csv-time` rule.
+   */
+  const metric: TelemetrySignal = {
+    irVersion: '2.0',
+    resource: { 'service.name': 'checkoutservice' },
+    // On the case's own clock: `inject_time.txt` is 2026-09-06T00:10:00Z here, and
+    // the structure check refuses a table whose instants are on a different one.
+    timestamp: '2026-09-06T00:09:00.000Z',
+    signal: 'metric',
+    payload: { kind: 'metric', name: 'cpu', value: 0.68 },
+  };
+
   it('passes the structure check because the check reads the same table', () => {
-    const exported = exportRcaEval(validBundle({ signals: { 'case-001': [fullLog, fullSpan] } }), 'RE2');
+    const exported = exportRcaEval(validBundle({ signals: { 'case-001': [metric, fullLog, fullSpan] } }), 'RE2');
     const report = checkRcaEvalStructure(exported.files, 'RE2');
     const failed = report.checks.filter((check) => !check.passed).map((check) => `${check.id}: ${check.detail}`);
     expect(failed).toEqual([]);
@@ -631,12 +673,75 @@ describe('RCAEval exporter · the columns are the corpora’s, measured', () => 
     // The negative control, and it is the shipped defect: eight columns spelled
     // `timestamp,trace_id,...`. Without this, "the structure check passes" could be
     // true of a check that passes everything.
-    const exported = exportRcaEval(validBundle({ signals: { 'case-001': [fullLog, fullSpan] } }), 'RE2');
+    const exported = exportRcaEval(validBundle({ signals: { 'case-001': [metric, fullLog, fullSpan] } }), 'RE2');
     const dir = Object.keys(exported.files).find((path) => path.endsWith('/traces.csv')) as string;
     const legacy = 'timestamp,trace_id,span_id,parent_span_id,service,span_name,duration_ms,status\nt1,s1,,order,GET,120,OK\n';
     const report = checkRcaEvalStructure({ ...exported.files, [dir]: legacy }, 'RE2');
     const traceCheck = report.checks.find((check) => check.id === 'traces-header');
     expect(traceCheck?.passed).toBe(false);
     expect(traceCheck?.detail).toContain('time,traceID');
+  });
+});
+
+/**
+ * The three ways the metric table's contract can fail, each named.
+ *
+ * The structure check adds `data-csv`, `data-csv-header` and `data-csv-time`; a
+ * passing run exercises only the happy path of all three, so each refusal is
+ * asserted here rather than inferred from the absence of a failure. Without them,
+ * "the check refuses a missing table" would be true of a check that never looked.
+ */
+describe('RCAEval exporter · the metric table’s three refusals', () => {
+  const caseDir = 'RE1-order-prod/order_cpu/1';
+  const table = 'time,order_cpu_usage\n1788653400,20\n1788653430,21\n';
+
+  it('refuses a directory with no data.csv at all', () => {
+    const report = checkRcaEvalStructure({ [`${caseDir}/inject_time.txt`]: '1788653400' }, 'RE1');
+    expect(report.checks.find((c) => c.id === 'data-csv')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'data-csv-header')?.detail).toContain('(no file)');
+  });
+
+  it('refuses a table whose first column is not time', () => {
+    const report = checkRcaEvalStructure(
+      { [`${caseDir}/data.csv`]: 'timestamp,order_cpu_usage\n1788653400,20\n', [`${caseDir}/inject_time.txt`]: '1788653400' },
+      'RE1',
+    );
+    expect(report.checks.find((c) => c.id === 'data-csv-header')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'data-csv-header')?.detail).toContain("'timestamp'");
+  });
+
+  it('refuses a table whose instants are on a different clock from the injection time', () => {
+    // Counted from zero, which is what a table exported from an IR whose timestamps
+    // were relative does: `main.py` would put every sample before the injection and
+    // the anomalous window would be empty rather than wrong.
+    const report = checkRcaEvalStructure(
+      { [`${caseDir}/data.csv`]: 'time,order_cpu_usage\n0,20\n1,21\n', [`${caseDir}/inject_time.txt`]: '1788653400' },
+      'RE1',
+    );
+    expect(report.checks.find((c) => c.id === 'data-csv-time')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'data-csv-time')?.detail).toContain('same clock');
+  });
+
+  it('refuses a table with a header and no rows', () => {
+    // The case the `?? ''` in the check exists for: `split('\n')[1]` is undefined
+    // when the file is one line, and an absent instant is not an instant on the
+    // right clock. A corpus with a header-only table is a case with no readings.
+    // No newline at all, so `split('\n')[1]` is undefined rather than an empty
+    // string: both spellings of "no rows" exist in the wild, and this one is the
+    // branch the check's `?? ''` is for.
+    const report = checkRcaEvalStructure(
+      { [`${caseDir}/data.csv`]: 'time,order_cpu_usage', [`${caseDir}/inject_time.txt`]: '1788653400' },
+      'RE1',
+    );
+    expect(report.checks.find((c) => c.id === 'data-csv-time')?.passed).toBe(false);
+    expect(report.checks.find((c) => c.id === 'data-csv-time')?.detail).toContain("first instant is ''");
+  });
+
+  it('accepts a table on the injection time’s clock', () => {
+    const report = checkRcaEvalStructure(
+      { [`${caseDir}/data.csv`]: table, [`${caseDir}/inject_time.txt`]: '1788653400' },
+      'RE1',
+    );
+    expect(report.checks.filter((c) => !c.passed).map((c) => c.id)).toEqual([]);
   });
 });

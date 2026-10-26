@@ -26,9 +26,18 @@ import { validBundle, validCase } from './fixtures.js';
  */
 
 /** The file names an export emitted, with the case-directory prefix stripped. */
+/**
+ * The file names inside each case directory, without the directory.
+ *
+ * The path is three levels since finding 267 (`RE2-order-prod/order_cpu/1/data.csv`),
+ * so the case-relative name is the fourth segment. Stripping only the first would
+ * have left the `{service}_{fault}` and `{instance}` directories in the string,
+ * and these assertions would have compared directory names while reading as file
+ * names.
+ */
 function fileNames(files: Record<string, string>): string[] {
   return Object.keys(files)
-    .map((p) => p.slice(p.indexOf('/') + 1))
+    .map((p) => p.split('/').slice(3).join('/'))
     .sort();
 }
 
@@ -79,12 +88,12 @@ describe('scoreTargetInvocation · which exporter and which suite a target means
 describe('the RE1 and RE2 exports are not interchangeable', () => {
   it('RE1 emits only metrics and inject_time, so a suite swap is detectable', () => {
     const re1 = exportRcaEval(validBundle(), 'RE1');
-    expect(fileNames(re1.files)).toEqual(['inject_time.txt', 'metrics.json']);
+    expect(fileNames(re1.files)).toEqual(['data.csv', 'inject_time.txt']);
   });
 
   it('RE2 adds the logs and traces RE1 omits', () => {
     const re2 = exportRcaEval(validBundle(), 'RE2');
-    expect(fileNames(re2.files)).toEqual(['inject_time.txt', 'logs.csv', 'metrics.json', 'traces.csv']);
+    expect(fileNames(re2.files)).toEqual(['data.csv', 'inject_time.txt', 'logs.csv', 'traces.csv']);
   });
 
   it('dispatch honours the suite, rather than collapsing the three onto one', () => {
@@ -129,7 +138,7 @@ describe('the RE2 and RE3 exports differ only in which cases they admit', () => 
     // both admit the case, which is what the code-fault test below covers.
     const re2 = exportForScoreTarget(resourceBundle, 'rcaeval-re2');
     const re3 = exportForScoreTarget(resourceBundle, 'rcaeval-re3');
-    expect(fileNames(re2.files)).toEqual(['inject_time.txt', 'logs.csv', 'metrics.json', 'traces.csv']);
+    expect(fileNames(re2.files)).toEqual(['data.csv', 'inject_time.txt', 'logs.csv', 'traces.csv']);
     expect(fileNames(re3.files)).toEqual([]);
   });
 
@@ -151,13 +160,13 @@ describe('the RE2 and RE3 exports differ only in which cases they admit', () => 
   // declared RE3 directory name to RE1's two-file and RE2's four-file payloads.
   it('RE3 gives a code fault the full RE2-shaped payload, under its own directory', () => {
     const re3 = exportForScoreTarget(codeBundle, 'rcaeval-re3');
-    expect(fileNames(re3.files)).toEqual(['inject_time.txt', 'logs.csv', 'metrics.json', 'traces.csv']);
+    expect(fileNames(re3.files)).toEqual(['data.csv', 'inject_time.txt', 'logs.csv', 'traces.csv']);
     expect(Object.keys(re3.files).every((p) => p.startsWith('RE3-'))).toBe(true);
   });
 
   it('RE1 gives the same code fault only its two files', () => {
     const re1 = exportForScoreTarget(codeBundle, 'rcaeval-re1');
-    expect(fileNames(re1.files)).toEqual(['inject_time.txt', 'metrics.json']);
+    expect(fileNames(re1.files)).toEqual(['data.csv', 'inject_time.txt']);
   });
 
   it('a RE3 skip is still visible after dispatch, not discarded', () => {

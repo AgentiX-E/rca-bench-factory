@@ -897,7 +897,12 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
     // refused, because refusing would change a shared contract the official round trip depends on
     // (the round trip's own RE2 case carries metrics only) -- so the count is the report.
     const emptyFiles = Object.entries(outcome.files).filter(([path, body]) => isEmptyDataFile(path, body));
-    const dirs = new Set(Object.keys(outcome.files).map((path) => path.slice(0, path.indexOf('/'))));
+    // The leaf case directory, `{suite}-{system}/{service}_{fault}/{instance}`, not
+    // the suite-system directory above it: every case of one system shares that
+    // top level, so counting it reported 13 annotated cases as one (finding 267).
+    const dirs = new Set(
+      Object.keys(outcome.files).map((path) => path.slice(0, path.lastIndexOf('/'))),
+    );
     exportLines.push(
       `${suite} ${String(dirs.size)} case(s) written, ${String(emptyFiles.length)} file(s) with no rows` +
         (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),

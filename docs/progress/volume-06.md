@@ -2080,3 +2080,69 @@ The round's first coverage run showed branch 99.74 and named the file; that is w
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint; no relation is checked for direction.
+
+## v2.94 — the layout we wrote is not the layout the loader reads
+
+**What was open.** v2.93's first item, recorded with the code that says it: `main.py` globs for
+`data.csv` and takes the answer key from the path. This round reads the rest of that file, and the
+glob was the smaller half.
+
+**What the loader requires**, measured: a recursive glob for `data.csv` (fallback
+`simple_metrics.csv`); `service, metric = basename(dirname(dirname(data_path))).split("_")`, which
+needs three levels with `{service}_{fault}` in the middle; a `data["time"]` column compared against
+`inject_time.txt`; and candidate services from the column names (`c.split("_")[0]`). We wrote
+`metrics.json` in one flat `RE2-order-cpu_1/` — the glob never matched it, and for a flat directory
+`dirname(dirname(...))` is the dataset root, whose `split("_")` has one element and cannot unpack.
+
+**What changed.** `casePath` produces `{suite}-{system}/{service}_{fault}/{instance}`;
+`buildDataCsv` produces the wide table (`time` in Unix seconds, then `<service>_<metric>` per series,
+empty where a series has no sample); `metrics.json` and `buildMetricsJson` are gone, because they
+carried the same numbers in a shape nothing reads. `parseRcaEvalPath`'s head pattern widened from
+`[A-Za-z0-9]+` to `[A-Za-z0-9-]+`: "free-form system token" and "no hyphens" cannot both be true.
+
+The structure check's `metrics-json` became three rules — `data-csv`, `data-csv-header`,
+`data-csv-time` — and the third asserts that the table's first instant is on the **injection time's
+clock** (within a year) rather than that it has ten digits. `main.py` compares the two numbers; a table
+counting from zero puts every sample on one side of the boundary and the window comes out empty rather
+than wrong.
+
+**Why nothing caught it.** The metric never opens the metric file — it reads the case's directory name
+and scores the submission — so an export shaped unlike the loader's can score 1.00, and did for four
+rounds. And our own scorer had a second parser for our own shape, so both halves of *our* loop agreed.
+Two parsers, one author.
+
+**What the change broke, and what that says.** Twenty-four tests: three mechanical (a path gained a
+segment), one a fixture whose `data.csv` counted from zero beside a 2023 injection time (refused
+correctly, and it had been fine only because nothing compared the two), one a counter
+(`check-fault-cases.mjs` reported 13 cases as 1 because it counted the export root's directories, which
+they now share), and one a claim the score was modality-blind — true while the metric file was `{}`,
+false now that it must have a `time` column and a row. The last kept its point and lost its overreach.
+
+**Acceptance.** 5 new refusal tests, **all 5 red against a mutation that disables the three rules**
+(measured, then reverted); 24 updated; the golden anchor re-anchored to four files under
+`RE2-order-prod/order_cpu/1/`; `pnpm test` green at core **187 / 4664**, cli 4 / 187, repo
+**191 / 4851**; coverage 99.97 / 99.76 / 100 / 99.97; `docs:check` green with `docs/targets/rcaeval.md`
+regenerated from the spec; audit **7 volumes**, findings 1–267 (volume-06 is at 279,893 of 280,000
+bytes, so this finding opens volume-07).
+
+### Left open
+
+- **Upstream's baselines still refuse our data, and the blocker is an SLI lookup.** `[open:
+  `process()` picks the SLI by matching the path against `"RE2-OB"`, `"RE3-TT"`, `"online-boutique"`
+  and six other names, and raises `ValueError: SLI not implemented` for anything else -- so a case
+  exported as `RE2-order-prod/...` is loadable but not rankable without either the corpus's own system
+  tokens or a mapping plus a `_latency` series]`
+- **RE1's `data.csv` is unmeasured here.** `[open: the shape emitted is the one finding 120 measured
+  out of RE1-TT; this round compared column conventions, not a file]`
+- **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv` and `tracets_lat.csv` are read by the
+  multi-source methods and by `torai`; nothing here produces them]`
+- **The corpora's log and trace tables are still not read.** `[open: the exporter writes the corpus's
+  columns; nothing reads `logs.csv`/`traces.csv` out of a corpus into the IR]`
+- **`rcaeval-re3` is still pending.** `[open: five fetchable assets, none pinned; the three archives
+  are 533 MB, so a dispatch is cheap]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and seven rounds have gone to the
+  anchor]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint; no relation is checked for direction.

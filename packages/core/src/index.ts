@@ -211,9 +211,9 @@ export {
   RCAEVAL_TRACES_COLUMNS,
   RCAEVAL_UNFILLED_COLUMNS,
   buildLogsCsv,
-  buildMetricsJson,
+  buildDataCsv,
   buildTracesCsv,
-  caseDirName,
+  casePath,
   exportRcaEval,
 } from './export/rcaeval.js';
 export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';

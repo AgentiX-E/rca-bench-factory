@@ -882,30 +882,37 @@ window.RBF_DATA = {
       "tagline": "Per-case directory with metric vectors, injection timestamp and optional log/trace tables.",
       "summary": "Three suites with an identical layout and different modality sets: RE1 is metrics-only (375 cases upstream), RE2 adds logs and traces (270), RE3 targets code-level faults (90).",
       "timezone": "Canonical UTC ISO-8601 in the CSVs; `inject_time.txt` is Unix seconds.",
-      "scoringNote": "`checkRcaEvalStructure` validates metrics.json shape, inject_time.txt presence and the suite modality set.",
+      "scoringNote": "`checkRcaEvalStructure` validates the data.csv table (a `time` column on the injection time's clock), inject_time.txt presence and the suite modality set.",
       "boundaries": [
-        "Directory naming follows `{suite}-{service}-{fault}_{instance}` with non-alphanumerics stripped from service and fault tokens.",
+        "The path is three levels - `{suite}-{system}/{service}_{fault}/{instance}` - because upstream recovers the answer key from it (`basename(dirname(dirname(data_path))).split(\"_\")`) and finds a case by globbing for data.csv.",
         "RE3 skips non-code faults - a case whose `fault.category` is not `code` is reported as skipped.",
-        "metrics.json is a mapping name -> ordered value array; timestamps are not carried, only ordering."
+        "data.csv is wide: a `time` column in Unix seconds, then one column per series named `<service>_<metric>`."
       ],
       "files": [
         {
-          "path": "{suite}-{service}-{fault}_{n}/metrics.json",
-          "format": "json",
-          "purpose": "One key per metric name, values ordered by time.",
-          "emitter": "buildMetricsJson",
+          "path": "{suite}-{system}/{service}_{fault}/{n}/data.csv",
+          "format": "csv",
+          "purpose": "The metric table: `time` in Unix seconds, then one column per series.",
+          "emitter": "buildDataCsv",
           "fields": [
             {
-              "name": "<metric_name>",
-              "type": "number[]",
+              "name": "time",
+              "type": "number",
               "required": true,
-              "source": "MetricPayload.name -> [MetricPayload.value]",
-              "notes": "Points sorted ascending by parsed timestamp; the array is the time series."
+              "source": "floor(Date.parse(TelemetrySignal.timestamp) / 1000)",
+              "notes": "Rows are the union of the series' instants, ascending. Compared directly against inject_time.txt upstream."
+            },
+            {
+              "name": "<service>_<metric>",
+              "type": "number",
+              "required": true,
+              "source": "resource['service.name'] + MetricPayload.name -> MetricPayload.value",
+              "notes": "Empty where the series has no sample at that instant: a gap the loader fills forward, not a zero this exporter invented."
             }
           ]
         },
         {
-          "path": "{suite}-{service}-{fault}_{n}/inject_time.txt",
+          "path": "{suite}-{system}/{service}_{fault}/{n}/inject_time.txt",
           "format": "text",
           "purpose": "Fault injection timestamp used by the baselines to split normal / anomalous windows.",
           "emitter": "exportRcaEval",
@@ -920,7 +927,7 @@ window.RBF_DATA = {
           ]
         },
         {
-          "path": "{suite}-{service}-{fault}_{n}/logs.csv",
+          "path": "{suite}-{system}/{service}_{fault}/{n}/logs.csv",
           "format": "csv",
           "purpose": "Log table (RE2 / RE3 only). Nine columns in RE2, six in RE3 — the corpora disagree, so there is one row per suite.",
           "emitter": "buildLogsCsv",
@@ -1005,7 +1012,7 @@ window.RBF_DATA = {
           ]
         },
         {
-          "path": "{suite}-{service}-{fault}_{n}/traces.csv",
+          "path": "{suite}-{system}/{service}_{fault}/{n}/traces.csv",
           "format": "csv",
           "purpose": "Span table (RE2 / RE3 only). Eleven columns, identical in both corpora.",
           "emitter": "buildTracesCsv",
@@ -2216,8 +2223,8 @@ window.RBF_DATA = {
     "rcaeval-re1": {
       "id": "rcaeval-re1",
       "files": {
-        "RE1-order-cpu_1/metrics.json": "{\"cpu_usage\":[20,21,19,20,22,18,20,21,19,20,95,96,97,98,99]}",
-        "RE1-order-cpu_1/inject_time.txt": "1788653400"
+        "RE1-order-prod/order_cpu/1/data.csv": "time,order_cpu_usage\n1788652800,20\n1788652830,21\n1788652860,19\n1788652890,20\n1788652920,22\n1788652950,18\n1788652980,20\n1788653010,21\n1788653040,19\n1788653070,20\n1788653400,95\n1788653430,96\n1788653460,97\n1788653490,98\n1788653520,99\n",
+        "RE1-order-prod/order_cpu/1/inject_time.txt": "1788653400"
       },
       "skipped": [],
       "report": {
@@ -2229,9 +2236,19 @@ window.RBF_DATA = {
           "passed": true,
           "checks": [
             {
-              "id": "metrics-json",
+              "id": "data-csv",
               "passed": true,
-              "detail": "found 1 metrics.json"
+              "detail": "found 1 data.csv"
+            },
+            {
+              "id": "data-csv-header",
+              "passed": true,
+              "detail": "expected the first column to be 'time', found 'time'"
+            },
+            {
+              "id": "data-csv-time",
+              "passed": true,
+              "detail": "the table's first instant is '1788652800' and the injection time is '1788653400', which have to be on the same clock"
             },
             {
               "id": "inject-time-exists",
@@ -2265,10 +2282,10 @@ window.RBF_DATA = {
     "rcaeval-re2": {
       "id": "rcaeval-re2",
       "files": {
-        "RE2-order-cpu_1/metrics.json": "{\"cpu_usage\":[20,21,19,20,22,18,20,21,19,20,95,96,97,98,99]}",
-        "RE2-order-cpu_1/inject_time.txt": "1788653400",
-        "RE2-order-cpu_1/logs.csv": "time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template\n00:10,1788653410000000,order,Connection pool exhausted,ERROR,,,,\n",
-        "RE2-order-cpu_1/traces.csv": "time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID\n00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,\n00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,1,sp-1\n"
+        "RE2-order-prod/order_cpu/1/data.csv": "time,order_cpu_usage\n1788652800,20\n1788652830,21\n1788652860,19\n1788652890,20\n1788652920,22\n1788652950,18\n1788652980,20\n1788653010,21\n1788653040,19\n1788653070,20\n1788653400,95\n1788653430,96\n1788653460,97\n1788653490,98\n1788653520,99\n",
+        "RE2-order-prod/order_cpu/1/inject_time.txt": "1788653400",
+        "RE2-order-prod/order_cpu/1/logs.csv": "time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template\n00:10,1788653410000000,order,Connection pool exhausted,ERROR,,,,\n",
+        "RE2-order-prod/order_cpu/1/traces.csv": "time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID\n00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,\n00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,1,sp-1\n"
       },
       "skipped": [],
       "report": {
@@ -2280,9 +2297,19 @@ window.RBF_DATA = {
           "passed": true,
           "checks": [
             {
-              "id": "metrics-json",
+              "id": "data-csv",
               "passed": true,
-              "detail": "found 1 metrics.json"
+              "detail": "found 1 data.csv"
+            },
+            {
+              "id": "data-csv-header",
+              "passed": true,
+              "detail": "expected the first column to be 'time', found 'time'"
+            },
+            {
+              "id": "data-csv-time",
+              "passed": true,
+              "detail": "the table's first instant is '1788652800' and the injection time is '1788653400', which have to be on the same clock"
             },
             {
               "id": "inject-time-exists",
@@ -2331,9 +2358,19 @@ window.RBF_DATA = {
           "passed": false,
           "checks": [
             {
-              "id": "metrics-json",
+              "id": "data-csv",
               "passed": false,
-              "detail": "found 0 metrics.json"
+              "detail": "found 0 data.csv"
+            },
+            {
+              "id": "data-csv-header",
+              "passed": false,
+              "detail": "expected the first column to be 'time', found '(no file)'"
+            },
+            {
+              "id": "data-csv-time",
+              "passed": false,
+              "detail": "the table's first instant is '' and the injection time is '0', which have to be on the same clock"
             },
             {
               "id": "inject-time-exists",

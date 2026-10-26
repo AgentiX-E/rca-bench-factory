@@ -29,19 +29,19 @@
     }
   },
   "rcaevalRe2Files": {
-    "RE2-order-cpu_1/metrics.json": {
-      "sha256": "433df4176887b3bcf44daec8b6ac11541b816fa2843300ffaabd620653c76fc7",
-      "bytes": 60
+    "RE2-order-prod/order_cpu/1/data.csv": {
+      "sha256": "d895bff0fa68d27ed6f49851db0fbf629d98d812e8cb7eed615698bc4c64e1b2",
+      "bytes": 231
     },
-    "RE2-order-cpu_1/inject_time.txt": {
+    "RE2-order-prod/order_cpu/1/inject_time.txt": {
       "sha256": "6e31e0f5b09d8e4e9f92a64d948d883c79a8fc334cca586ec7c16bc3f2429bcc",
       "bytes": 10
     },
-    "RE2-order-cpu_1/logs.csv": {
+    "RE2-order-prod/order_cpu/1/logs.csv": {
       "sha256": "be7057e0b07431582bfd44666d3c29eecbe01f0ca852649b31830ac73e397515",
       "bytes": 148
     },
-    "RE2-order-cpu_1/traces.csv": {
+    "RE2-order-prod/order_cpu/1/traces.csv": {
       "sha256": "cec8cdf896b9b4ddb15d60f82de50083b41c0bb3ba9857eaac760f779e81ae92",
       "bytes": 276
     }

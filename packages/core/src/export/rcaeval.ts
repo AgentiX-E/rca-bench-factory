@@ -15,13 +15,17 @@ import { renderCsv } from '../util/csv.js';
  * RCAEval exporter (RMIT, ASE'24 / WWW'25).
  *
  * Layout expected by the official harness:
- *   {benchmark}{service}{fault}_{instance}/
- *     metrics.json      time-series metrics
+ *   {suite}-{system}/{service}_{fault}/{instance}/
+ *     data.csv          metrics, `time` plus one column per series
  *     inject_time.txt   fault injection timestamp, Unix seconds
  *     logs.csv          RE2 and RE3 only
  *     traces.csv        RE2 and RE3 only
  *
  * RE1 is metrics-only, so log and trace files are simply not emitted for it.
+ *
+ * The three-level path is not a preference: `main.py` recovers the answer key from
+ * it (`service, metric = basename(dirname(dirname(data_path))).split("_")`) and
+ * finds a case by globbing for `data.csv`. See `casePath`.
  *
  * ## The two files at the bottom shared a name with the corpus and nothing else
  *
@@ -65,27 +69,30 @@ export type RcaEvalSuite = (typeof RCAEVAL_SUITES)[number];
 
 
 /**
- * Directory name convention: `{benchmark}{service}{fault}_{instance}`.
+ * The case's directory, in the layout upstream actually reads.
  *
- * The separator is `-`, so a hyphen *inside* a name is indistinguishable from
- * one the layout added — and the upstream harness relies on exactly that: its
- * own case directories are `RE2-ts-order-service-cpu_1`, and
- * `parseRcaEvalDirectory` is documented to recover `ts-order-service` from them.
+ * `{suite}-{system}/{service}_{fault}/{instance}` — three levels, not one.
+ * Measured from `main.py`, which is the only implementation that matters here:
  *
- * Stripping every non-alphanumeric character therefore wrote `tsorderservice`
- * and named a service that does not exist. The in-repo regression could not
- * detect it, because `oraclePrediction` reads the component back out of the
- * directory name we just produced, so both sides were wrong together; the
- * disagreement only surfaces against real upstream telemetry.
+ *     service, metric = basename(dirname(dirname(data_path))).split("_")
+ *     case = basename(dirname(data_path))
  *
- * The allow-list is widened to keep `-`, not removed: a character the flat
- * layout genuinely cannot carry (`:`, `/`, whitespace, a non-ASCII name) is
- * still dropped, and those are handled separately below.
+ * (it reaches a case by globbing recursively under the dataset directory for a file
+ * named `data.csv`, which is why a directory holding only `metrics.json` is a
+ * directory it never sees at all).
+ *
+ * The answer key is recovered from the **path**, so the layout is not cosmetic. A
+ * flat `RE2-order-cpu_1/` directory gives `basename(dirname(dirname(...)))` the
+ * dataset root, whose `split("_")` has one element and raises (finding 267).
+ *
+ * `{system}` is free-form to upstream -- it only walks through it -- so it carries
+ * the case's own system, and the reader here reads it back.
  */
-export function caseDirName(suite: RcaEvalSuite, fc: FaultCase, instance: number): string {
+export function casePath(suite: RcaEvalSuite, fc: FaultCase, instance: number): string {
+  const system = sanitiseCaseToken(fc.system);
   const service = sanitiseCaseToken(fc.groundTruth.rootCauseComponent);
   const fault = sanitiseCaseToken(fc.fault.type);
-  return `${suite}-${service}-${fault}_${instance}`;
+  return `${suite}-${system}/${service}_${fault}/${instance}`;
 }
 
 /**
@@ -103,23 +110,51 @@ function sanitiseCaseToken(raw: string): string {
 }
 
 /**
- * Metrics are emitted as a mapping `metricName -> number[]` ordered by time,
- * which is the shape the RCAEval baselines read.
+ * The metric table, in the shape upstream's loader reads.
+ *
+ * `time` in Unix seconds, then one column per series named `<service>_<metric>`.
+ * Both halves are load-bearing to `main.py`:
+ *
+ *     service, metric = basename(dirname(dirname(data_path))).split("_")
+ *     normal_df = data[data["time"] < inject_time].tail(...)
+ *     "service": len({c.split("_")[0].replace("-db", "") for c in _pre_cols if c != "time"})
+ *
+ * The first takes the *answer key* from the path, the second compares the `time`
+ * column against `inject_time.txt`, and the third reads the candidate services out
+ * of the column names. A `{metricName: [values]}` mapping — what this module wrote
+ * as `metrics.json` — carries the same numbers and none of that: no `time` column
+ * to compare, no service in a name, and a file name the loader never globs for.
+ *
+ * ## Rows and gaps
+ *
+ * Rows are aligned on the union of the series' instants, and a series that has no
+ * sample at an instant leaves the cell **empty**. `main.py` reads the table with
+ * pandas and calls `ffill()` then `fillna(0)`, so a gap is something it already
+ * handles; a zero written here would be a reading this module invented, and a
+ * sensor that was not sampled is not a sensor reading zero.
  */
-export function buildMetricsJson(signals: TelemetrySignal[]): string {
-  const byName = new Map<string, Array<{ t: number; v: number }>>();
+export function buildDataCsv(signals: TelemetrySignal[]): string {
+  const series = new Map<string, Map<number, number>>();
+  const instants = new Set<number>();
   for (const s of signals) {
     if (!isMetricSignal(s)) continue;
-    const arr = byName.get(s.payload.name) ?? [];
-    arr.push({ t: Date.parse(s.timestamp), v: s.payload.value });
-    byName.set(s.payload.name, arr);
+    const at = Math.floor(Date.parse(s.timestamp) / 1000);
+    const column = `${s.resource['service.name']}_${s.payload.name}`;
+    const points = series.get(column) ?? new Map<number, number>();
+    points.set(at, s.payload.value);
+    series.set(column, points);
+    instants.add(at);
   }
-  const out: Record<string, number[]> = {};
-  for (const [name, points] of byName) {
-    points.sort((a, b) => a.t - b.t);
-    out[name] = points.map((p) => p.v);
-  }
-  return JSON.stringify(out);
+  const times = [...instants].sort((a, b) => a - b);
+  const columns = [...series.keys()].sort();
+  const rows = times.map((at) => [
+    String(at),
+    ...columns.map((column) => {
+      const value = series.get(column)?.get(at);
+      return value === undefined ? '' : String(value);
+    }),
+  ]);
+  return renderCsv(['time', ...columns], rows);
 }
 
 /**
@@ -319,8 +354,8 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Ex
       return;
     }
 
-    const dir = caseDirName(suite, fc, index + 1);
-    files[`${dir}/metrics.json`] = buildMetricsJson(signals);
+    const dir = casePath(suite, fc, index + 1);
+    files[`${dir}/data.csv`] = buildDataCsv(signals);
     files[`${dir}/inject_time.txt`] = `${Math.floor(Date.parse(fc.injectTime) / 1000)}`;
 
     if (suite === 'RE2' || suite === 'RE3') {

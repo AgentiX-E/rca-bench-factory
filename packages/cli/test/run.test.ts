@@ -421,8 +421,10 @@ describe('run - export', () => {
     const code = await run(['export', '--target', 'rcaeval', '--input', 'bundle.json', '--out-dir', 'out'], { cwd: dir });
     expect(code).toBe(0);
     const files = await readdirRecursive(join(dir, 'out'));
-    expect(files.some((p) => p.endsWith('metrics.json'))).toBe(true);
-    expect(files.some((p) => p.endsWith('logs.csv'))).toBe(true);
+    // `data.csv` in a three-level path, which is what upstream's loader globs for
+    // and splits the answer key out of (finding 267).
+    expect(files.some((p) => /RE2-[^/]+\/[^/]+_\w+\/\d+\/data\.csv$/.test(p))).toBe(true);
+    expect(files.some((p) => p.endsWith('/logs.csv'))).toBe(true);
   });
 
   it('exports a bundle to RCA100', async () => {

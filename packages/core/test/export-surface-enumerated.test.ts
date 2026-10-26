@@ -617,8 +617,8 @@ const TESTED = [
   'RCAEVAL_LOGS_COLUMNS',
   'RCAEVAL_TRACES_COLUMNS',
   'RCAEVAL_UNFILLED_COLUMNS',
-  'caseDirName',
-  'buildMetricsJson',
+  'casePath',
+  'buildDataCsv',
   'buildLogsCsv',
   'buildTracesCsv',
   // export/*.ts -- one entry point each, named in score/dispatch.ts.

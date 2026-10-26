@@ -29,30 +29,31 @@ that is missing `traces.csv`.
 ### What we emit
 
 ```text
-{suite}-{service}-{fault}_{instance}/
-├── metrics.json        # { metricName: number[] }  (all suites)
-├── inject_time.txt     # Unix seconds              (all suites)
+{suite}-{system}/{service}_{fault}/{instance}/
+├── data.csv            # time in Unix seconds, then one column per series  (all suites)
+├── inject_time.txt     # Unix seconds                                       (all suites)
 ├── logs.csv            # RE2 / RE3 only
 └── traces.csv          # RE2 / RE3 only
 ```
 
-The directory name is produced by `caseDirName`: hyphens are **kept**, and every other
-non-alphanumeric character is stripped from the root-cause component and the fault type. Leading and
-trailing hyphens are trimmed, and a field that sanitises away entirely becomes `unnamed`, so no
-directory name ever carries an empty segment. `{instance}` is the 1-based index of the case in the
-bundle.
+The path is produced by `casePath`, and its **three levels are load-bearing**: `main.py` recovers the
+answer key from the path (`service, metric = basename(dirname(dirname(data_path))).split("_")`) and
+finds a case by globbing for `data.csv`. A flat `RE2-order-cpu_1/` directory satisfies neither — the
+unpack has one element and raises, and the glob never matches a `metrics.json`.
 
-Keeping hyphens is not a preference — it is what makes the name readable at all.
-`parseRcaEvalDirectory` recovers the root-cause service from this name. Stripping hyphens would emit
-`RE2-tsorderservice-cpu_1` and name a service that does not exist.
+Hyphens are **kept** inside each token, and every other non-alphanumeric character is stripped from the
+system, the root-cause component and the fault type. Leading and trailing hyphens are trimmed, and a
+field that sanitises away entirely becomes `unnamed`, so no path ever carries an empty segment.
+`{instance}` is the 1-based index of the case in the bundle.
 
-### What the corpus ships — and why it is a different shape
+Keeping hyphens is not a preference — it is what makes the path readable at all. `parseRcaEvalPath`
+recovers the system, the service and the fault from it; stripping hyphens would emit
+`RE2-order-prod/tsorderservice_cpu/1` and name a service that does not exist.
 
-> **This is not the layout above, and the difference is a real mismatch that the round trip
-> found.** Until the first successful download, this document described only our own output and
-> implied the corpus matched it. It does not.
+### What the corpus ships
 
-The upstream corpus is **nested**, and the suite is fused to the *system* rather than to a case:
+The upstream corpus happens to use the same three levels, and the suite is fused to the *system*
+rather than to a case — which is the same shape, with the system token carrying the benchmark:
 
 ```text
 {suite}-{system}/{service}_{fault}/{run}/
@@ -121,39 +122,62 @@ the flat assumption above.
 
 ## Files
 
-### `{suite}-{service}-{fault}_{n}/metrics.json`
+### `{suite}-{system}/{service}_{fault}/{n}/data.csv`
 
-A mapping from metric name to an array of values **ordered by time**. Timestamps are not
-carried — only ordering — which is exactly what the upstream baselines consume.
+The metric table, wide: a `time` column in Unix seconds and one column per series named
+`<service>_<metric>`. Both halves are read by `main.py` — the `time` column is compared against
+`inject_time.txt` to split the normal window from the anomalous one, and the column names supply the
+candidate services (`{c.split("_")[0] for c in columns if c != "time"}`).
 
-<!-- fields: rcaeval/{suite}-{service}-{fault}_{n}/metrics.json -->
+Rows are the union of the series' instants, ascending. A series with no sample at an instant leaves
+that cell **empty**; the loader fills forward, and a zero here would be a reading this exporter
+invented.
+
+<!-- fields: rcaeval/{suite}-{system}/{service}_{fault}/{n}/data.csv -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
-| `&lt;metric_name&gt;` | number[] | yes | `MetricPayload.name -&gt; [MetricPayload.value]` | Points sorted ascending by parsed timestamp; the array is the time series. |
+| `time` | number | yes | `floor(Date.parse(TelemetrySignal.timestamp) / 1000)` | Rows are the union of the series' instants, ascending. Compared directly against inject_time.txt upstream. |
+| `&lt;service&gt;_&lt;metric&gt;` | number | yes | `resource['service.name'] + MetricPayload.name -&gt; MetricPayload.value` | Empty where the series has no sample at that instant: a gap the loader fills forward, not a zero this exporter invented. |
 <!-- /fields -->
 
-<!-- example: rcaeval-re2/RE2-order-cpu_1/metrics.json -->
-```json
-{"cpu_usage":[20,21,19,20,22,18,20,21,19,20,95,96,97,98,99]}```
+<!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/data.csv -->
+```csv
+time,order_cpu_usage
+1788652800,20
+1788652830,21
+1788652860,19
+1788652890,20
+1788652920,22
+1788652950,18
+1788652980,20
+1788653010,21
+1788653040,19
+1788653070,20
+1788653400,95
+1788653430,96
+1788653460,97
+1788653490,98
+1788653520,99
+```
 
-### `{suite}-{service}-{fault}_{n}/inject_time.txt`
+### `{suite}-{system}/{service}_{fault}/{n}/inject_time.txt`
 
 The fault-injection instant, used by the baselines to split the normal window from the
 anomalous window. Unix seconds, no trailing newline.
 
-<!-- fields: rcaeval/{suite}-{service}-{fault}_{n}/inject_time.txt -->
+<!-- fields: rcaeval/{suite}-{system}/{service}_{fault}/{n}/inject_time.txt -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
 | `(body)` | number | yes | `floor(Date.parse(FaultCase.injectTime) / 1000)` | Unix seconds, no trailing newline. |
 <!-- /fields -->
 
-<!-- example: rcaeval-re2/RE2-order-cpu_1/inject_time.txt -->
+<!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/inject_time.txt -->
 ```text
 1788653400```
 
-### `{suite}-{service}-{fault}_{n}/logs.csv` (RE2 / RE3)
+### `{suite}-{system}/{service}_{fault}/{n}/logs.csv` (RE2 / RE3)
 
-<!-- fields: rcaeval/{suite}-{service}-{fault}_{n}/logs.csv -->
+<!-- fields: rcaeval/{suite}-{system}/{service}_{fault}/{n}/logs.csv -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
 | `time` | string | yes | `HH:MM of TelemetrySignal.timestamp, UTC` | Both suites. |
@@ -169,15 +193,15 @@ anomalous window. Unix seconds, no trailing newline.
 | `node_name` | string | no | `resource['k8s.node.name'] ?? ''` | RE3 only. |
 <!-- /fields -->
 
-<!-- example: rcaeval-re2/RE2-order-cpu_1/logs.csv -->
+<!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/logs.csv -->
 ```csv
 time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template
 00:10,1788653410000000,order,Connection pool exhausted,ERROR,,,,
 ```
 
-### `{suite}-{service}-{fault}_{n}/traces.csv` (RE2 / RE3)
+### `{suite}-{system}/{service}_{fault}/{n}/traces.csv` (RE2 / RE3)
 
-<!-- fields: rcaeval/{suite}-{service}-{fault}_{n}/traces.csv -->
+<!-- fields: rcaeval/{suite}-{system}/{service}_{fault}/{n}/traces.csv -->
 | Field | Type | Required | Source (IR) | Notes |
 | --- | --- | --- | --- | --- |
 | `time` | string | yes | `HH:MM of TelemetrySignal.timestamp, UTC` |  |
@@ -193,7 +217,7 @@ time,timestamp,container_name,message,level,req_path,error,cluster_id,log_templa
 | `parentSpanID` | string | no | `TracePayload.parentSpanId ?? ""` |  |
 <!-- /fields -->
 
-<!-- example: rcaeval-re2/RE2-order-cpu_1/traces.csv -->
+<!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/traces.csv -->
 ```csv
 time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID
 00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,

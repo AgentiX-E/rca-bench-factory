@@ -315,12 +315,56 @@ export function checkOpenRcaStructure(files: Record<string, string>): StructureR
  */
 export function checkRcaEvalStructure(files: Record<string, string>, suite: RcaEvalSuite): StructureReport {
   const checks: ScoreCheck[] = [];
-  const metricsFiles = pathsEndingWith(files, '/metrics.json');
+  const dataFiles = pathsEndingWith(files, '/data.csv');
   const injectFiles = pathsEndingWith(files, '/inject_time.txt');
   const logFiles = pathsEndingWith(files, '/logs.csv');
   const traceFiles = pathsEndingWith(files, '/traces.csv');
 
-  checks.push(check('metrics-json', metricsFiles.length > 0, `found ${metricsFiles.length} metrics.json`));
+  /**
+   * The metric table, and the two properties its *reader* depends on.
+   *
+   * `main.py` finds a case by globbing for `data.csv`, compares `data["time"]`
+   * against `inject_time.txt`, and takes the candidate services from the column
+   * names. So the file's presence, its `time` first column, and that column's
+   * unit are the contract -- a `{metricName: [values]}` mapping satisfies none of
+   * them, and satisfied this check for as long as the check asked for one
+   * (finding 267).
+   */
+  checks.push(check('data-csv', dataFiles.length > 0, `found ${dataFiles.length} data.csv`));
+  const table = first(files, dataFiles);
+  const tableHeader = table === undefined ? [] : csvHeader(table);
+  checks.push(
+    check(
+      'data-csv-header',
+      tableHeader[0] === 'time',
+      `expected the first column to be 'time', found '${tableHeader[0] ?? '(no file)'}'`,
+    ),
+  );
+  /**
+   * The table's clock is the injection time's clock.
+   *
+   * `main.py` compares the two directly (`data["time"] < inject_time`), so a table
+   * whose instants are on a different scale does not fail loudly downstream -- it
+   * puts every sample on one side of the boundary and the window becomes empty.
+   * Asserting "ten digits" would have been a guess about the era; asserting that
+   * the two are within a year of each other is the property the comparison needs,
+   * and it is what a corpus whose `time` column counts from zero fails.
+   */
+  const firstInstant = table === undefined ? '' : (table.split('\n')[1]?.split(',')[0] ?? '');
+  const injectSeconds = Number(first(files, injectFiles)?.trim() ?? '');
+  const sameClock =
+    /^\d+$/.test(firstInstant) &&
+    Number.isFinite(injectSeconds) &&
+    Math.abs(Number(firstInstant) - injectSeconds) <= 366 * 24 * 3600;
+  checks.push(
+    check(
+      'data-csv-time',
+      sameClock,
+      `the table's first instant is '${firstInstant}' and the injection time is '${injectSeconds}', ` +
+        'which have to be on the same clock',
+    ),
+  );
+
   checks.push(check('inject-time-exists', injectFiles.length > 0, `found ${injectFiles.length} inject_time.txt`));
 
   const injectTime = first(files, injectFiles)?.trim();
