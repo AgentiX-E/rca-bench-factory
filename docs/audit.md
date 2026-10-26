@@ -53,7 +53,7 @@ Seven passes so far:
 
 ## Volumes
 
-The findings live in 5 files, because one 1.1 MB document is a pile rather
+The findings live in 6 files, because one 1.1 MB document is a pile rather
 than a document: a reader cannot find an entry without `grep`, and the push that
 carries one new finding carries all of them. The split is by size, not by subject --
 a finding that belonged to a theme keeps its number, and numbers are what the rest
@@ -66,6 +66,7 @@ of the repository cites.
 | [volume-03.md](audit/volume-03.md) | 113–159 | 44 | the anchor workflow cited a helper that does not exist, and t... |
 | [volume-04.md](audit/volume-04.md) | 160–195 | 36 | the second backend was declared unimplementable, and the decl... |
 | [volume-05.md](audit/volume-05.md) | 196–254 | 59 | the gate that could not be proved, and the reference with four meanings |
+| [volume-06.md](audit/volume-06.md) | 255–255 | 1 | the corpus is two documents joined by one string, and nothing read both |
 
 **Where a new finding goes.** Append to the last volume. When it would grow past
 280,000 bytes, start the next volume -- one number higher than the last, holding the

@@ -251,6 +251,30 @@ for (const entry of index.cases) {
     continue;
   }
 
+  // The two halves of the corpus, compared. `sampleId` joined an extraction key to a four-layer
+  // annotation and nothing looked at both sides of the join: the key states the fault's type, its
+  // category and the component a solver has to name, and the annotation states them again from the
+  // text. Ten cases agreed on all three by habit rather than by rule, and a disagreement would leave
+  // the benchmark scoring an answer the key does not ask for (finding 255).
+  //
+  // The component is the one that matters most -- it is the answer -- but the three are checked
+  // together because they are one claim about one incident, and a rule that covered only the answer
+  // would let the case be filed under a category its own key does not use.
+  const expected = sampleById.get(sampleId)?.expected ?? {};
+  const agrees = [
+    ['fault type', parsedCase.fault.type, expected.type],
+    ['category', parsedCase.fault.category, expected.category],
+    ['root cause component', parsedCase.groundTruth.rootCauseComponent, expected.component],
+  ];
+  for (const [what, declared, fromKey] of agrees) {
+    if (typeof fromKey !== 'string' || fromKey === '') continue;
+    if (declared === fromKey) continue;
+    problems.push(
+      `'${caseId}' declares ${what} '${String(declared)}', and the sample it is annotated from ` +
+        `expects '${fromKey}'`,
+    );
+  }
+
   // The case's own L2 contract, which nothing had ever run against this corpus. `assessFourLayer`
   // answers "are the four layers filled"; it does not answer "is this a well-formed case", and a
   // case can be four-layer complete with a timestamp that is not canonical UTC or a window that

@@ -1469,3 +1469,53 @@ audit 5 volumes, findings 1–254.
 
 Unchanged: the chain's first step is not required to be the root cause; a parameter is tied to the text
 only through the fault layer's quote; compound units are compared structurally.
+
+## v2.82 — the corpus is two documents joined by one string, and nothing read both
+
+**What this round is.** Not a case. A check that was missing between the corpus's two halves, found by
+trying to write the eleventh case.
+
+**The shape.** `index.json` names the extraction sample each case was annotated from, and `sampleId` is
+verified: it must exist, it must be unique, and every quote is checked against that sample's
+`incidentText`. What nothing checked is what the two sides *say*. The key states a fault's type, its
+category and the component a solver has to name; the annotation states all three again, from the text.
+Ten cases agreed on all three **by habit, not by rule**.
+
+| field | the key | the annotation |
+| --- | --- | --- |
+| the fault's type | `expected.type` | `fault.type` |
+| its category | `expected.category` | `fault.category` |
+| the answer | `expected.component` | `groundTruth.rootCauseComponent` |
+
+`rootCauseComponent` is what a solver is scored on and `category` decides which export a case lands
+in, so a silent disagreement would have meant scoring an answer the key that produced the case does
+not ask for.
+
+**What the rule did immediately.** Its first act was to refuse the case I was about to write.
+`middleware-redis-latency-cache` has a clear cause — the Redis instance's single command thread,
+saturated by a `KEYS` command an unrelated debugging script issues every thirty seconds — and the key
+says the component is `session-cache`, which is the victim. The honest annotation is refused, and the
+three possible readings (the key is wrong; the key means the service that owns the datastore; the
+corpus names the workload an operator pages) are a decision about the extraction layer, not something
+to settle by editing a case. It waits as an open item.
+
+**Acceptance.** Four new tests (three refusals, one negative control on the corpus); the guard's
+message names both sides; a scratch corpus with a changed component, type or category is refused, and
+the probe against the redis sample produces exactly the message the finding quotes; typecheck, lint,
+`docs:check` green; `derive-gate-sites --check` green (86 sites, 46 scripts); the meta-gate at **46
+gates, 46 caught, 0 survived**; core **186 / 4604**, cli 4 / 187, repo **190 / 4791**; coverage
+99.97 / 99.76 / 100 / 99.97; audit **6 volumes**, findings 1–255, and `volume-06` starts here because
+`volume-05` reached 272,641 of its 280,000 bytes.
+
+### Left open
+
+- **`middleware-redis-latency-cache` cannot be annotated honestly yet.** `[open: the key says
+  `session-cache` and the cause is the Redis instance; the reading has to be decided in the extraction
+  layer before the case can be written]`
+- **19 samples still carry no case.** `[open: 10 of 30; one of the 19 is blocked by the item above,
+  which makes it the most valuable of them to settle]`
+- **An absence of logs cannot be a checkpoint.** `[open: unchanged -- a `log` reference asserts that a
+  line exists]`
+
+Unchanged: the chain's first step is not required to be the root cause; a parameter is tied to the text
+only through the fault layer's quote; compound units are compared structurally.

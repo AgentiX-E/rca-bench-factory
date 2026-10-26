@@ -189,6 +189,63 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     expect(result.out).toContain("names sample 'no-such-sample', which the extraction key does not carry");
   });
 
+  it('refuses a fault type that disagrees with the sample the case is annotated from', () => {
+    // Finding 255. The corpus is two documents -- an extraction key of thirty samples and a set of
+    // four-layer annotations -- joined by one string, and nothing compared them: the key says what the
+    // fault is and the annotation says what the case ran, and a disagreement between the two would
+    // have left the benchmark scoring an answer the key does not ask for.
+    const result = run([
+      '--cases',
+      corpus({
+        mutate: (faultCase) => {
+          (faultCase.fault as Record<string, unknown>).type = 'memory-saturation';
+        },
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares fault type 'memory-saturation', and the sample it is annotated from expects 'cpu-saturation'",
+    );
+  });
+
+  it('refuses a category that disagrees with the sample', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        mutate: (faultCase) => {
+          (faultCase.fault as Record<string, unknown>).category = 'code';
+        },
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares category 'code', and the sample it is annotated from expects 'resource'",
+    );
+  });
+
+  it('refuses a root cause component that disagrees with the sample', () => {
+    // The one that matters most: the component is the answer a solver has to name, so a case whose
+    // truth is a different component from the key's is a case with two answers.
+    const result = run([
+      '--cases',
+      corpus({
+        mutate: (faultCase) => {
+          (faultCase.groundTruth as Record<string, unknown>).rootCauseComponent = 'payment-service';
+        },
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares root cause component 'payment-service', and the sample it is annotated from " +
+        "expects 'checkout-api'",
+    );
+  });
+
+  it('accepts the corpus, where every case agrees with its sample', () => {
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+  });
+
   it('refuses an entry that does not say where its annotation came from', () => {
     const dir = corpus({ entry: { why: 'because' } });
     const result = run(['--cases', dir]);
