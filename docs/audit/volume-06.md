@@ -717,3 +717,89 @@ It does not establish that RE2 will score. A case that cannot be read is not a w
 | the round trip | 270 declared, 270 failed, **one** reason, named per case |
 | the layout | measured from the archive's central directory, quoted above |
 | the tree | unchanged this round: core **187 / 4638**, repo **191 / 4825**, coverage unchanged |
+
+## Finding 264 — the corpus that names its entities in the columns
+
+Finding 263 left one sentence to act on: 270 RE2 cases failed with
+`no metric payload under any known name (metrics.json, data.csv)`. The corpus was complete; the
+reader knew two names and the corpus has four.
+
+### What the second shape is
+
+`RE2-OB/checkoutservice_cpu/1/` holds two wide tables over the same instants. `simple_metrics.csv`
+has **72** data columns and `metrics.csv` has **417**; both start with `time` in unix seconds, and
+both name every column `<entity>_<metric>`:
+
+| table | entities | examples |
+| --- | --- | --- |
+| `simple_metrics.csv` | 12 | `checkoutservice_cpu`, `adservice_mem`, `frontend-external_workload`, `adservice_latency-90` |
+| `metrics.csv` | 18 | `checkoutservice_container-cpu-system-seconds-total`, `gke-gke-cluster-default-pool-…_container-…` |
+
+Read the way every earlier case was read, each column became a metric **of the case's component** — so
+in a `checkoutservice` case, `adservice_cpu` would be filed as "checkoutservice's `adservice_cpu`", and
+the export would carry that sentence. The corpus is a snapshot of the cluster because the fault is a
+cluster-level event; the case is still about one service, and the descriptor already says which.
+
+### The rule, and the version of it that was wrong
+
+A table is entity-prefixed when **every** non-time column carries a prefix **and** there is more than
+one distinct prefix. Each half rules out a shape the other misreads: `disk_io, cpu` has one prefixed
+column and one bare one, so it is not a convention; `adservice_cpu, adservice_mem` has one prefix, so
+it is a list of that service's metrics and not a snapshot.
+
+The first version also required the component to be among the prefixes, "to be safe", and that single
+clause made the refusal unreachable: a table naming `adservice, frontend` for a **cart** case failed
+the clause, took the old path, and filed both services' series under cartservice — the mis-attribution
+the rule exists to prevent, in its worst form, silently. A probe found it before the tests did:
+`signals=20` on a case whose table did not contain its component. The clause is gone, and the
+component's absence is now a refusal that names the entities it did find:
+
+```
+ROUNDTRIP FAIL 2/2 RE2-OB/cartservice_cpu/1 reason=simple_metrics.csv names 2 entities in its
+  columns (adservice, frontend) and none of them is 'cartservice'
+```
+
+### What is kept, and what is counted
+
+The component's columns are read; the other entities' columns are **not attributed to it** and are
+counted once for the run:
+
+```
+ROUNDTRIP context 3 case(s) carried other entities in their table; 210 column(s) across
+  30 entity reference(s) were not the case's component and were not attributed to it
+```
+
+One line rather than one per case: a number an operator can compare between runs is the difference
+between "the corpus grew" and "the reader changed".
+
+### The cost, measured before the dispatch
+
+A synthetic case with the real shape — 1 443 rows, 77 columns, 7 of them the component's — costs
+**0.19 s** to adapt and round-trip (`3 cases in 0.56 s wall`), so 270 cases is about 50 seconds. The
+one-second cadence is not a throughput problem, and that was worth knowing before spending a
+90-minute job to find out.
+
+### What this does not do
+
+It does not read traces or logs. `tracets_lat.csv` and `logts.csv` are in every case directory and
+nothing here opens them, so the RE2 cases reach the export with metric series and no trace layer and
+no log layer — the four-layer IR carries one of its four. The official rule scores `ranks` only, so
+this does not move the oracle, and it is a limitation of the export rather than of the score.
+
+It does not settle the counter question. `…-system-seconds-total` is a counter, and the metric that
+reaches the IR is read as a value. Nothing in the round trip would notice the difference, which is
+exactly why it is written down instead of inferred from a passing run.
+
+It does not make the anchor score. That is the dispatch's job, and this round only makes the 270 cases
+readable.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the payload names | four, ordered by how much each says about its own schema; `simple_metrics.csv` before `metrics.csv` |
+| the attribution | the component's columns only; the rest counted and reported once |
+| the refusal | a snapshot without the component fails by name, listing the entities it found |
+| the tests | 5, **4 red against the pre-fix reader**; the fifth is the RE1 regression guard and passes both ways by design |
+| the cost | 0.19 s per case at the real shape; 270 cases ≈ 50 s |
+| `core` / repo | **187 / 4643** · **191 / 4830**; coverage unchanged |

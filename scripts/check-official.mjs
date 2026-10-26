@@ -169,6 +169,66 @@ function adaptDelimitedMetrics(raw, entry, payloadName) {
 
   const injectSeconds = Date.parse(entry.injectTime) / 1000;
   const out = [ADAPTED_COLUMNS.join(',')];
+
+  /**
+   * Which columns belong to the case's own component.
+   *
+   * ## Why a column name sometimes names an entity
+   *
+   * RE1's `data.csv` carries the case's own metrics: `time,adservice_cpu,...` for
+   * a case about adservice, where the prefix repeats the component and the rest is
+   * the metric. RE2's `simple_metrics.csv` carries *every* service in the same
+   * table -- 72 columns, 12 entities -- because the corpus records one cluster
+   * snapshot per case, not one service.
+   *
+   * Attributed naively, the second shape files adservice's CPU under
+   * checkoutservice, which is not a shape a reader may repair by guessing: the row
+   * would say "checkoutservice, adservice_cpu, 0.68" and the export would carry it
+   * that way.
+   *
+   * ## The rule, and why it needs no configuration
+   *
+   * A table is `entity_metric` when **every** non-time column carries a prefix and
+   * there is more than one distinct one. Both halves are observations about the
+   * file in hand, and each rules out a shape the other would misread:
+   *
+   *  - *every column prefixed* is what distinguishes a naming convention from a
+   *    metric that happens to contain an underscore. A table of `disk_io, cpu` has
+   *    one prefixed column and one bare one, so it is not a convention.
+   *  - *more than one prefix* is what distinguishes a cluster snapshot from a
+   *    single-service dump. `adservice_cpu, adservice_mem` has one prefix, so it is
+   *    a list of that service's metrics and reads exactly as it always did.
+   *
+   * The first version of this rule also required the component to be among the
+   * prefixes, and that made the refusal below unreachable: a table naming
+   * `adservice, frontend` for a *cart* case failed the clause, took the old path,
+   * and filed both services' series under cartservice -- the mis-attribution this
+   * rule exists to prevent, in its worst form, silently. The clause is gone; the
+   * component's absence is now a refusal rather than a fallback.
+   */
+  const columns = header
+    .map((name, index) => ({ name: name.trim(), index }))
+    .filter((column) => column.index !== timeIndex && column.name !== '');
+  const prefixOf = (name) => {
+    const at = name.indexOf('_');
+    return at <= 0 || at === name.length - 1 ? undefined : name.slice(0, at);
+  };
+  const prefixes = new Set(columns.map((column) => prefixOf(column.name)).filter((p) => p !== undefined));
+  const everyColumnPrefixed = columns.length > 0 && columns.every((column) => prefixOf(column.name) !== undefined);
+  const entityPrefixed = everyColumnPrefixed && prefixes.size > 1;
+  const kept = entityPrefixed
+    ? columns.filter((column) => prefixOf(column.name) === entry.component)
+    : columns;
+  if (entityPrefixed && kept.length === 0) {
+    return {
+      ok: false,
+      reason:
+        `${payloadName} names ${prefixes.size} entities in its columns (${[...prefixes].sort().join(', ')}) ` +
+        `and none of them is '${entry.component}'`,
+    };
+  }
+  const droppedColumns = columns.length - kept.length;
+
   for (let r = 1; r < rows.length; r += 1) {
     const row = rows[r];
     const cell = row[timeIndex];
@@ -189,11 +249,13 @@ function adaptDelimitedMetrics(raw, entry, payloadName) {
       return { ok: false, reason: `case '${entry.caseId}' has an unparseable injectTime` };
     }
     const ts = new Date(seconds * 1000).toISOString();
-    for (let c = 0; c < header.length; c += 1) {
-      if (c === timeIndex) continue;
-      const name = header[c];
-      const value = row[c];
-      if (name === undefined || value === undefined || value.trim() === '') continue;
+    for (const column of kept) {
+      const value = row[column.index];
+      if (value === undefined || value.trim() === '') continue;
+      // The prefix is the entity, so it is not also part of the metric's name.
+      // Keeping it would write `adservice_cpu` as a metric of adservice, which
+      // reads as a metric named after a service that is already the row's subject.
+      const name = entityPrefixed ? column.name.slice(prefixOf(column.name).length + 1) : column.name;
       // A declared missing value is skipped, exactly as a blank cell is, and for
       // the same reason: the corpus is stating that this series has no reading
       // here, which is a fact about the data rather than a failure to read it.
@@ -219,7 +281,13 @@ function adaptDelimitedMetrics(raw, entry, payloadName) {
     }
   }
   if (out.length === 1) return { ok: false, reason: `${payloadName} holds no samples` };
-  return { ok: true, csv: out.join('\n') + '\n' };
+  return {
+    ok: true,
+    csv: out.join('\n') + '\n',
+    // Reported rather than silently discarded: how much of the table described
+    // something other than the case.
+    context: entityPrefixed ? { entities: prefixes.size - 1, columns: droppedColumns } : undefined,
+  };
 }
 
 /**
@@ -396,8 +464,30 @@ function walkTree(root) {
  * `metrics.json` is first because it is what our own exporter writes, so the
  * example bundle and the corpus take the same path when both are well-formed.
  */
-const CASE_PAYLOAD_NAMES = ['metrics.json', 'data.csv'];
+const CASE_PAYLOAD_NAMES = ['metrics.json', 'data.csv', 'simple_metrics.csv', 'metrics.csv'];
 const CASE_LABEL = 'inject_time.txt';
+
+/**
+ * The payload names are ordered by how much they say about their own schema.
+ *
+ * `metrics.json` and `data.csv` come first because they are the shapes this
+ * repository writes and the shape RE1 ships, and every existing corpus and
+ * fixture takes those paths -- putting a newer name in front would change what an
+ * existing case reads without changing anything about that case.
+ *
+ * `simple_metrics.csv` then `metrics.csv` are RE2's, and the order between them is
+ * a measurement rather than a preference: the two files describe the *same*
+ * instants over 72 and 417 columns, the first per service and the second per pod,
+ * and the official rule is defined on the per-service reduction. Reading the
+ * larger table when the smaller one is right there would carry 345 columns per
+ * sample that no target scores -- and, for `metrics.csv`, entities that are nodes
+ * and a load generator rather than the services the answer key names.
+ *
+ * Both names were added after a dispatch of 2026-10-26 failed all 270 RE2 cases
+ * with `no metric payload under any known name (metrics.json, data.csv)`. The
+ * corpus was complete; the reader had two names and the corpus has four
+ * (finding 263).
+ */
 
 /**
  * Adapt one corpus subtree to what the ingest reads, or say why it cannot.
@@ -472,6 +562,7 @@ function adaptCase(root, entry) {
     files: {
       [`${entry.caseId}/metrics.csv`]: metrics.csv,
     },
+    context: metrics.context,
   };
 }
 
@@ -673,6 +764,15 @@ if (declared.length > 0) {
 }
 
 let roundTripped = 0;
+/**
+ * How much of the corpus described something other than the case's component.
+ *
+ * A case's table may hold every service in the cluster; only the component's
+ * columns are the case. The count is summed here rather than printed per case
+ * because 270 lines of "dropped 64 columns" is noise, while one line at the end is
+ * a measurement a reader can compare between runs (finding 263).
+ */
+const droppedContext = { cases: 0, entities: 0, columns: 0 };
 for (const [index, entry] of (descriptors.cases ?? []).entries()) {
   const label = `${String(index + 1).padStart(3)}/${declared.length} ${entry.caseId.padEnd(30)}`;
   if (!files.has(`${entry.caseId}/inject_time.txt`)) continue;
@@ -689,6 +789,12 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     roundTripFailures.push(`${entry.caseId}: ${adapted.reason}`);
     scoreRecords.push({ caseId: entry.caseId, status: 'failed', reason: adapted.reason });
     continue;
+  }
+
+  if (adapted.context !== undefined) {
+    droppedContext.cases += 1;
+    droppedContext.entities += adapted.context.entities;
+    droppedContext.columns += adapted.context.columns;
   }
 
   const ingested = ingestPrimeDataset(adapted.files, {
@@ -834,6 +940,14 @@ function emitScoreReport() {
   console.log(
     `ROUNDTRIP report ${scoreReportPath}: ${report.summary.scored} scored, ` +
       `${report.summary.skipped} skipped, ${report.summary.failed} failed`,
+  );
+}
+
+if (droppedContext.cases > 0) {
+  console.log(
+    `ROUNDTRIP context ${droppedContext.cases} case(s) carried other entities in their table; ` +
+      `${droppedContext.columns} column(s) across ${droppedContext.entities} entity reference(s) were ` +
+      `not the case's component and were not attributed to it`,
   );
 }
 

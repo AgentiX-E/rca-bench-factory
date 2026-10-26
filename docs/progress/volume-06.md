@@ -1914,3 +1914,51 @@ count is part of the battery's published shape, which is exactly why the suite h
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint; no relation is checked for direction.
+
+## v2.91 — the corpus that names its entities in the columns
+
+**What was open.** v2.90's first item: "the reader knows one corpus shape; RE2's layout is measured
+and quoted, nothing reads it yet". This round reads it.
+
+**What changed.** `check-official.mjs` learns the second shape, in three parts.
+
+*The names.* `CASE_PAYLOAD_NAMES` goes from two to four — `metrics.json`, `data.csv`,
+`simple_metrics.csv`, `metrics.csv` — ordered by how much each says about its own schema, and the two
+RE2 names after the two older ones so no existing corpus or fixture changes path. `simple_metrics.csv`
+comes before `metrics.csv` because the two describe the same instants over 72 and 417 columns, per
+service and per pod, and the official rule is defined on the reduction.
+
+*The attribution.* A table is entity-prefixed when **every** non-time column carries a prefix and there
+is more than one distinct one. The component's columns are read (prefix stripped, because it is the
+entity, not part of the metric's name); the other entities' columns are not attributed to it and are
+counted once for the run — `ROUNDTRIP context … 210 column(s) across 30 entity reference(s)`.
+
+*The refusal.* A snapshot that names entities but not the component fails by name and lists the
+entities it found. **The first version of the rule made this branch unreachable**, because it also
+required the component to be among the prefixes: a table naming `adservice, frontend` for a cart case
+then took the old path and filed both under cartservice. A probe caught it — `signals=20` on a table
+that did not contain the case's component — before any test was written.
+
+**Cost, measured before the dispatch.** A synthetic case at the real shape (1 443 rows, 77 columns, 7
+the component's) costs 0.19 s; three cases in 0.56 s wall. 270 cases ≈ 50 s. The one-second cadence is
+not a throughput problem.
+
+**Acceptance.** 5 new tests, **4 red against the pre-fix reader**; the fifth is the RE1 regression
+guard and passes both before and after by design. `pnpm test` green at core **187 / 4643**, cli 4 / 187,
+repo **191 / 4830**; `docs:check` green; `derive-gate-sites --check` green (88 sites, 46 scripts);
+audit 6 volumes, findings 1–264; the corpus is unchanged at **13 of 30**.
+
+### Left open
+
+- **The anchor is readable but unscored.** `[open: 270 cases can now be loaded; the dispatch is what
+  says whether they score 1.0, and the round only made them readable]`
+- **RE2's traces and logs are not read.** `[open: `tracets_lat.csv` and `logts.csv` are in every case
+  directory and nothing opens them, so those cases carry one of the IR's four layers]`
+- **A counter is read as a value.** `[open: `…-system-seconds-total` is cumulative; nothing in the
+  round trip would notice]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and four rounds have gone to the
+  anchor]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint; no relation is checked for direction.

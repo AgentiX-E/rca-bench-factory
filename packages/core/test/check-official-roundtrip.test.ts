@@ -1317,3 +1317,197 @@ describe('scripts/check-official.mjs · the score report', () => {
     expect(existsSync(`${out}.partial`)).toBe(false);
   });
 });
+
+/**
+ * The corpus whose case directory is a cluster snapshot, not a service dump.
+ *
+ * ## What RE2 actually ships, measured
+ *
+ * `RE2-OB/checkoutservice_cpu/1/` holds `metrics.csv` (417 columns) and
+ * `simple_metrics.csv` (72 columns), both wide, both with a `time` column in unix
+ * seconds, and both naming `<entity>_<metric>`: `checkoutservice_cpu`,
+ * `adservice_mem`, `frontend-external_workload`, `gke-gke-cluster-…_container-…`.
+ * Twelve entities in the smaller table, eighteen in the larger.
+ *
+ * Read as the reader read everything before this round, every column became a
+ * metric *of the case's component* — so adservice's CPU would be filed under
+ * checkoutservice, and the export would carry that. The corpus is a snapshot of
+ * the cluster because the fault is a cluster-level event; the case is still about
+ * one service, and the descriptor already says which.
+ *
+ * ## What is asserted, and how each assertion can fail
+ *
+ *  - the component's columns are read and the others are not, observed through
+ *    `signals=` (one reading per cell) rather than through a message: 10 rows × 2
+ *    component columns is 20, and the naive reading of the same table is 40;
+ *  - the dropped context is reported once for the run, because a number a reader
+ *    can compare between runs is the difference between "the corpus grew" and "the
+ *    reader changed";
+ *  - a table naming entities but not the component is refused *by name*, since
+ *    `component: cartservice` with columns for adservice and frontend is a
+ *    descriptor that does not match its corpus — not a case to read anyway;
+ *  - the two older shapes (a single-service table, and `metrics.json`) take
+ *    exactly the path they took before, because RE1 round-trips 375 of 375 through
+ *    it and no fix may move that number without evidence.
+ */
+describe('scripts/check-official.mjs · the corpus that names its entities in the columns', () => {
+  /** A wide table whose header is `time` plus `entity_metric` columns. */
+  function table(columns: string[], rows = 10): string {
+    const lines = [`time,${columns.join(',')}`];
+    for (let i = 0; i < rows; i += 1) {
+      const values = columns.map(() => String(i < rows / 2 ? 0.2 : 0.95));
+      lines.push(`${1_700_000_000 + i * 60},${values.join(',')}`);
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
+  /** One case directory, with the payload the test names. */
+  function writeSnapshotCase(root: string, caseId: string, payload: string, body: string): string {
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    writeFileSync(join(dir, payload), body);
+    return caseId;
+  }
+
+  /**
+   * A descriptor naming the cases, with the component each one is about.
+   *
+   * The shared `writeCases` helper derives the component from the case id by
+   * splitting on `-`, which is right for `RE1-ob-cpu_1` and wrong for
+   * `RE2-OB/checkoutservice_cpu/1` -- this corpus names the component inside the
+   * path, and the descriptor is where that reading is written down.
+   */
+  function writeSnapshotCases(path: string, entries: { caseId: string; component: string }[]): void {
+    const cases = entries.map((entry) => ({
+      caseId: entry.caseId,
+      component: entry.component,
+      faultType: 'cpu',
+      injectTime: new Date(1_700_000_000_000).toISOString(),
+      pathPrefix: `${entry.caseId}/`,
+      suite: 'RE2',
+    }));
+    writeFileSync(
+      path,
+      JSON.stringify({ schema: 'rca-bench-rcaeval-cases/1', counts: { RE1: 0, RE2: cases.length, RE3: 0 }, cases }, null, 2),
+    );
+  }
+
+  it('reads the component out of an entity-prefixed table and says what it left', () => {
+    const root = freshRoot();
+    // Two services, two metrics each: the component's two columns are the case,
+    // the other two are the cluster around it.
+    const caseId = writeSnapshotCase(
+      root,
+      'RE2-OB/checkoutservice_cpu/1',
+      'simple_metrics.csv',
+      table(['checkoutservice_cpu', 'checkoutservice_mem', 'adservice_cpu', 'adservice_mem']),
+    );
+    const cases = join(scratch, 'snapshot.json');
+    writeSnapshotCases(cases, [{ caseId, component: 'checkoutservice' }]);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('ROUNDTRIP PASS');
+    // 10 rows x 2 columns of the component. The naive reading of the same table is
+    // 40, and 20 is the observation that the other two columns were not attributed
+    // to it -- stated as a count rather than as a promise.
+    expect(result.stdout).toContain('signals=20');
+    expect(result.stdout).toContain('ROUNDTRIP context 1 case(s)');
+    expect(result.stdout).toContain('2 column(s)');
+  });
+
+  it('prefers the per-service table when the corpus ships both', () => {
+    const root = freshRoot();
+    const caseId = writeSnapshotCase(
+      root,
+      'RE2-OB/checkoutservice_cpu/1',
+      'simple_metrics.csv',
+      table(['checkoutservice_cpu', 'adservice_cpu']),
+    );
+    // The larger table is present and unusable. If the reader took it first the
+    // case would fail by name, so a pass is the observation that the smaller,
+    // per-service table was chosen.
+    writeFileSync(join(root, caseId, 'metrics.csv'), 'time,not,a,finite,table\n');
+
+    const cases = join(scratch, 'prefer.json');
+    writeSnapshotCases(cases, [{ caseId, component: 'checkoutservice' }]);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('ROUNDTRIP PASS');
+  });
+
+  it('reads the per-pod table when it is the only payload present', () => {
+    const root = freshRoot();
+    const caseId = writeSnapshotCase(
+      root,
+      'RE2-OB/checkoutservice_cpu/1',
+      'metrics.csv',
+      table(['checkoutservice_container-cpu', 'adservice_container-cpu']),
+    );
+    const cases = join(scratch, 'perpod.json');
+    writeSnapshotCases(cases, [{ caseId, component: 'checkoutservice' }]);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('signals=10');
+    expect(result.stdout).toContain('ROUNDTRIP context 1 case(s)');
+  });
+
+  it('refuses a snapshot that does not contain the case component', () => {
+    const root = freshRoot();
+    const caseId = writeSnapshotCase(
+      root,
+      'RE2-OB/cartservice_cpu/1',
+      'simple_metrics.csv',
+      table(['adservice_cpu', 'frontend_cpu']),
+    );
+    const cases = join(scratch, 'absent.json');
+    writeSnapshotCases(cases, [{ caseId, component: 'cartservice' }]);
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('names 2 entities in its columns (adservice, frontend)');
+    expect(result.stderr).toContain("none of them is 'cartservice'");
+    // Named, not silently attributed: the failure says which entities it found, so
+    // an operator reads a descriptor mismatch rather than a data problem.
+    expect(result.stdout).not.toContain('ROUNDTRIP PASS');
+  });
+
+  it('leaves a single-service table on the path RE1 already round-trips', () => {
+    const root = freshRoot();
+    // One prefix: a list of that service's metrics, which is what the older corpus
+    // ships and what 375 of 375 RE1 cases were read through.
+    const caseId = writeSnapshotCase(root, 'RE1-OB/adservice_cpu/1', 'data.csv', table(['adservice_cpu', 'adservice_mem']));
+    const cases = join(scratch, 'single.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 1, RE2: 0, RE3: 0 },
+        cases: [
+          {
+            caseId,
+            component: 'adservice',
+            faultType: 'cpu',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${caseId}/`,
+            suite: 'RE1',
+          },
+        ],
+      }, null, 2),
+    );
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('signals=20');
+    // No context line: nothing was dropped, because nothing else was in the table.
+    expect(result.stdout).not.toContain('ROUNDTRIP context');
+  });
+});
