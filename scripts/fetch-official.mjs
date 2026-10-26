@@ -523,6 +523,9 @@ function classifyFailure(message, elapsedMs) {
  */
 async function download(url, destination) {
   const startedAt = Date.now();
+  // Where this attempt starts. Zero when there is nothing on disk, which is the
+  // first attempt and any attempt that follows a discarded partial.
+  const resumeAt = existsSync(destination) ? statSync(destination).size : 0;
   const result = await run('curl', [
     '--fail',
     '--location',
@@ -530,11 +533,17 @@ async function download(url, destination) {
     '--show-error',
     '--max-time',
     '900',
+    // Resume, because a retry that starts from zero is not a retry for a transfer
+    // the ceiling cut at 97.6% -- see the header of `fetchAsset`. `-` means
+    // "whatever is already in the output file", which is zero for a file that is
+    // not there, so this is a no-op on the first attempt.
+    '--continue-at',
+    '-',
     '-o',
     destination,
     url,
   ]);
-  return { ...result, elapsedMs: Date.now() - startedAt };
+  return { ...result, elapsedMs: Date.now() - startedAt, resumeAt };
 }
 
 /**
@@ -654,12 +663,39 @@ async function fetchAsset(asset, outDir) {
   let lastElapsedMs = 0;
   let pinProblem = false;
 
+  // A partial file longer than the pin cannot be a prefix of the expected file, so
+  // resuming from its end would ask the server for a range beyond the last byte.
+  // It is discarded here, once, rather than inside the loop: the loop's job is to
+  // spend attempts on transfers, not on files that cannot become the right one.
+  if (asset.bytes !== null && existsSync(destination) && statSync(destination).size > asset.bytes) {
+    console.log(
+      `DISCARDED ${asset.id}: a partial file of ${bytesWithUnits(statSync(destination).size)} is longer ` +
+        `than the pinned ${bytesWithUnits(asset.bytes)}, so it cannot be resumed`,
+    );
+    rmSync(destination, { force: true });
+  }
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    const { code, stderr, elapsedMs } = await download(asset.url, destination);
+    const { code, stderr, elapsedMs, resumeAt } = await download(asset.url, destination);
     lastElapsedMs = elapsedMs;
 
     if (code !== 0) {
       const detail = stderr.split('\n').find((line) => line.trim() !== '') ?? `curl exited ${code}`;
+      // Exit 33 is curl refusing to resume: the server answered a ranged request
+      // with the whole body. The partial is not the server's fault and cannot be
+      // extended, so it is dropped and the next attempt starts clean -- which is
+      // also the only attempt shape a server that ignores `Range` can satisfy.
+      if (code === 33 && resumeAt > 0) {
+        rmSync(destination, { force: true });
+        lastError = `attempt ${attempt}/${MAX_ATTEMPTS} after ${formatDuration(elapsedMs)}: the server ` +
+          `ignored the range request, so the ${bytesWithUnits(resumeAt)} already on disk was discarded ` +
+          `and the next attempt starts from zero`;
+        if (attempt < MAX_ATTEMPTS) {
+          console.log(`DISCARDED ${asset.id}: ${lastError}`);
+          await sleep(2 ** attempt * 1000 * BACKOFF);
+        }
+        continue;
+      }
       // The attempt number and its duration, on every attempt rather than only
       // the last. An operator reading a three-attempt failure needs to see that
       // all three burned the same twelve minutes -- that is what says the transfer
@@ -667,7 +703,18 @@ async function fetchAsset(asset, outDir) {
       // printed once at the end cannot express it.
       lastError = `attempt ${attempt}/${MAX_ATTEMPTS} after ${formatDuration(elapsedMs)}: ${detail}`;
       if (attempt < MAX_ATTEMPTS) {
-        console.log(`RETRYING  ${asset.id}: ${lastError}`);
+        // What the next attempt will resume from -- measured on disk *now*, not the
+        // offset this attempt started at. Those differ exactly when the attempt
+        // made progress, which is the fact that decides whether retrying is worth
+        // anything: a second attempt that will start at 2 733 226 372 of
+        // 2 801 345 134 is a different situation from one that starts at zero, and
+        // before this line existed the production log could not tell them apart
+        // (finding 262).
+        const kept = existsSync(destination) ? statSync(destination).size : 0;
+        console.log(
+          `RETRYING  ${asset.id}: ${lastError}` +
+            (kept > 0 ? ` [${bytesWithUnits(kept)} kept for the next attempt]` : ''),
+        );
         // 2s, 4s by default. Long enough to clear a rate-limit window, short
         // enough that a genuinely dead host does not stall the job.
         //

@@ -163,6 +163,25 @@ let truncatedHits = 0;
 /** How many times `/same-length-wrong-content` has been asked. Must stay at 1. */
 let corruptedHits = 0;
 /**
+ * The `Range` header of every request to each resume fixture, in order.
+ *
+ * `undefined` is the observation that matters as much as a value: it is how a
+ * test says "this attempt did not ask to resume", which is what a discarded
+ * partial file has to produce. A counter alone could not express it.
+ */
+let cutRanges: (string | undefined)[] = [];
+let ignoringRanges: (string | undefined)[] = [];
+
+/**
+ * How much of the body the cut fixtures deliver before dropping the connection.
+ *
+ * Half the payload, rounded up: large enough that the resumed remainder is a real
+ * range request and small enough that a resume that ignored the offset would
+ * still produce a wrong file -- which is the defect these fixtures exist to
+ * distinguish from a correct one.
+ */
+const CUT_AFTER = Math.ceil(PAYLOAD.length / 2);
+/**
  * A port on loopback with nothing listening.
  *
  * Needed because curl's exit code 7 — "Failed to connect", the code
@@ -419,8 +438,71 @@ beforeAll(async () => {
     //
     // The second request answers in full, because that is what makes the
     // difference between "retried and recovered" and "never retried" visible.
+    // A transfer cut mid-body, then a server that honours `Range`.
+    //
+    // The first request declares the full length and then destroys the socket, so
+    // curl exits 18 with the bytes it received still on disk. Every later request
+    // must carry `Range: bytes=<n>-`, and the response is the remainder -- which is
+    // what makes the final file the file the pin describes rather than a
+    // concatenation that happens to be the right length.
+    if (req.url === '/cut-once') {
+      cutRanges.push(req.headers.range);
+      const full = Buffer.from(PAYLOAD, 'utf8');
+      if (cutRanges.length === 1) {
+        res.writeHead(200, { 'content-type': 'text/csv', 'content-length': String(full.length) });
+        res.write(full.subarray(0, CUT_AFTER));
+        // Destroy rather than end: `end` would make this a short *complete* body,
+        // which curl accepts as a success and verification rejects as a pin
+        // problem. The fixture has to be an interruption.
+        setTimeout(() => res.destroy(), 5);
+        return;
+      }
+      const header = req.headers.range;
+      const start = header === undefined ? 0 : Number(/bytes=(\d+)-/.exec(header)?.[1] ?? '0');
+      res.writeHead(header === undefined ? 200 : 206, {
+        'content-type': 'text/csv',
+        'content-length': String(full.length - start),
+        ...(header === undefined ? {} : { 'content-range': `bytes ${start}-${full.length - 1}/${full.length}` }),
+      });
+      res.end(full.subarray(start));
+      return;
+    }
+    // A transfer cut mid-body, then a server that ignores `Range` and answers the
+    // whole body with 200. curl refuses to resume (exit 33), and the only attempt
+    // shape this server can satisfy is one that starts from zero.
+    if (req.url === '/ignores-range') {
+      ignoringRanges.push(req.headers.range);
+      const full = Buffer.from(PAYLOAD, 'utf8');
+      if (ignoringRanges.length === 1) {
+        res.writeHead(200, { 'content-type': 'text/csv', 'content-length': String(full.length) });
+        res.write(full.subarray(0, CUT_AFTER));
+        setTimeout(() => res.destroy(), 5);
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/csv', 'content-length': String(full.length) });
+      res.end(full);
+      return;
+    }
     if (req.url === '/truncated-then-complete') {
       truncatedHits += 1;
+      // A range request is answered as a range, because that is what a server
+      // does and because the retry now resumes: the short body leaves a partial
+      // file, and the second attempt asks for the remainder rather than for the
+      // whole file again. A fixture that ignored `Range` would make this test
+      // assert against a server no real corpus is served by -- and it would
+      // report the resume as a failure rather than as the fix (finding 262).
+      const full = Buffer.from(PAYLOAD, 'utf8');
+      const header = req.headers.range;
+      if (header !== undefined) {
+        const start = Number(/bytes=(\d+)-/.exec(header)?.[1] ?? '0');
+        res.writeHead(206, {
+          'content-type': 'application/octet-stream',
+          'content-length': String(full.length - start),
+          'content-range': `bytes ${start}-${full.length - 1}/${full.length}`,
+        });
+        res.end(full.subarray(start));
+        return;
+      }
       res.writeHead(200, { 'content-type': 'application/octet-stream' });
       // Short by five bytes on the first request only. The count is reset by the
       // test that uses this route, so the second request within one run sees the
@@ -1424,4 +1506,113 @@ describe('scripts/fetch-official.mjs · the retry layer', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/could not be reached/);
   }, 60_000);
+});
+
+/**
+ * The resume layer: a retry that starts from zero is not a retry.
+ *
+ * ## The run this is about
+ *
+ * 2026-10-26, third dispatch of `official-data.yml`: `RE2-OB` and `RE2-SS` verified
+ * and unpacked, then `RE2-TT` -- 2 801 345 134 bytes -- spent two attempts:
+ *
+ *     RETRYING  rcaeval-re2-tt: attempt 1/3 after 15m 0s: curl: (28) Operation timed
+ *               out after 900000 milliseconds with 2733226372 out of 2801345134 bytes
+ *     RETRYING  rcaeval-re2-tt: attempt 2/3 after 15m 0s: curl: (28) Operation timed
+ *               out after 900000 milliseconds with 2605066672 out of 2801345134 bytes
+ *
+ * 97.6% then 93.0%, and the third attempt was killed by the workflow's wrapper two
+ * minutes in. At the ~3 MB/s Zenodo delivered, the whole file needs 15.6 minutes
+ * and one attempt allows 15 -- **the ceiling is below the work, so no number of
+ * restarts-from-zero can ever finish it.** The retry was real, spent 30 minutes,
+ * and made no progress because each attempt truncated the previous 2.7 GB.
+ *
+ * ## What is asserted, and why the fixtures are interruptions rather than shorts
+ *
+ * A short *complete* body is a different thing: curl accepts it, and verification
+ * rejects it as a pin problem. These fixtures declare the full length and then
+ * destroy the socket, which is what a cut transfer is, and they record the `Range`
+ * header of every request so the test can say **which byte each attempt started
+ * at** -- the fact the production log could not express.
+ */
+describe('scripts/fetch-official.mjs · the resume layer', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-resume-'));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  const outputs: string[] = [];
+  const makeOut = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'rca-bench-resume-out-'));
+    outputs.push(dir);
+    return dir;
+  };
+  afterAll(() => {
+    for (const dir of outputs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('continues a cut transfer instead of starting it again', async () => {
+    cutRanges = [];
+    const out = makeOut();
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/cut-once`,
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    expect(result.status).toBe(0);
+    // The second request asked for the remainder, which is the whole fix: without
+    // `--continue-at -` it would carry no Range header and refetch from byte 0.
+    expect(cutRanges.length).toBe(2);
+    expect(cutRanges[0]).toBeUndefined();
+    expect(cutRanges[1]).toBe(`bytes=${CUT_AFTER}-`);
+    // And the file is the pinned file, not a 33-byte concatenation that happens to
+    // be the right length.
+    expect(readFileSync(join(out, 'fixture-asset'), 'utf8')).toBe(PAYLOAD);
+    expect(result.stdout).toContain('kept for the next attempt');
+    expect(result.stdout).toContain('VERIFIED');
+  });
+
+  it('discards the partial when the server ignores the range, and starts clean', async () => {
+    ignoringRanges = [];
+    const out = makeOut();
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/ignores-range`,
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    expect(result.status).toBe(0);
+    // Three requests: cut, ranged-and-refused, then clean. The third has no Range
+    // header because the partial was deleted -- a server that ignores ranges can
+    // only ever be satisfied by an attempt that does not ask to resume.
+    expect(ignoringRanges.length).toBe(3);
+    expect(ignoringRanges[1]).toBe(`bytes=${CUT_AFTER}-`);
+    expect(ignoringRanges[2]).toBeUndefined();
+    expect(result.stdout).toContain('DISCARDED');
+    expect(result.stdout).toContain('ignored the range request');
+    expect(readFileSync(join(out, 'fixture-asset'), 'utf8')).toBe(PAYLOAD);
+  });
+
+  it('discards a partial that is longer than the pin, because it cannot be a prefix', async () => {
+    const out = makeOut();
+    // Longer than the file the registry describes: no prefix of the right file can
+    // be this long, so resuming from its end would ask for a range past the last
+    // byte. The check exists to delete it rather than spend an attempt on it.
+    writeFileSync(join(out, 'fixture-asset'), 'x'.repeat(PAYLOAD.length + 10));
+    const registry = writeFixtureRegistry(scratch, {
+      url: `${origin}/data`,
+      sha256: PAYLOAD_SHA,
+      bytes: PAYLOAD.length,
+    });
+
+    const result = await runScriptAsync(['--anchor', 'rcaeval-re2', '--out', out, '--registry', registry]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('DISCARDED');
+    expect(result.stdout).toContain('longer than the pinned');
+    expect(readFileSync(join(out, 'fixture-asset'), 'utf8')).toBe(PAYLOAD);
+  });
 });

@@ -1817,3 +1817,49 @@ unchanged at **13 of 30** with 31 entities / 19 edges.
 
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause.
+
+## v2.89 — a retry that starts from zero is not a retry
+
+**What was open.** v2.88's first item: "the anchor is not yet green — the next scheduled run is the
+proof". The dispatch answered it in two halves. The space check works: `RE2-OB` (1 191 025 569 bytes)
+and `RE2-SS` (245 629 018) both verified **and unpacked**, which no run had ever done. The third
+asset then failed differently.
+
+**What changed.** `RE2-TT` is 2 801 345 134 bytes. Attempt one moved 2 733 226 372 of them (97.56%) in
+its 900-second bound; attempt two moved 2 605 066 672; the workflow's 50-minute wrapper killed attempt
+three at two minutes. At the 3.04 MB/s Zenodo delivered, the whole file needs 15.4 minutes and one
+attempt allows 15 — **the bound is below the work**, and a restart from zero can never close a gap
+that size. Attempt two proved it by moving less than attempt one.
+
+The retry now resumes: `--continue-at -`, so an attempt starts at whatever is on disk. Three
+consequences, each with a test: a partial longer than the pin is discarded before the first attempt
+(it cannot be a prefix); a server that answers a ranged request with the whole body makes curl exit
+33, and the partial is discarded so the next attempt starts clean; and the `RETRYING` line now names
+the bytes the next attempt will resume from, measured *after* the attempt rather than at its start.
+
+The wrapper became `timeout 4200`, with the arithmetic in the comment: 15.6 minutes per transfer at
+the measured rate, a second attempt is therefore normal, and 70 minutes leaves the build and the
+round trip inside the job's 90.
+
+**Acceptance.** 3 new tests in the fetch suite, **all three red against the pre-fix script**; the
+existing short-transfer test gained a `Range` response (a fixture that ignored it would have reported
+the fix as a failure); typecheck, lint, `docs:check` green; `derive-gate-sites --check` green
+(88 sites, 46 scripts, annotations carried); core **187 / 4638**, cli 4 / 187, repo **191 / 4825**;
+coverage 99.97 / 99.76 / 100 / 99.97; the fetch battery at **6 injections, 6 caught, 0 survived**
+(the new row removes `--continue-at` and takes 26 tests red with it); audit 6 volumes, findings 1–262;
+the corpus is unchanged at **13 of 30** with 31 entities / 19 edges.
+
+### Left open
+
+- **The anchor is still not green.** `[open: two of three assets now reach the disk; the third needs
+  a resumed attempt, and whether it gets one is the next dispatch's answer]`
+- **Nothing bounds the total transfer per asset.** `[open: three attempts of 900s is 45 minutes each,
+  which for three assets exceeds the wrapper -- the wrapper is the global bound and reports only that
+  it fired]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and two rounds have now gone to the
+  anchor rather than to the corpus]`
+- **No relation is checked for direction.** `[open: nothing refuses a `routes` edge written backwards]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint.

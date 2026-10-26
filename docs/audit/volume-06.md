@@ -547,3 +547,86 @@ filesystem today; the check is what will say so if that changes, in six seconds 
 | `core` / repo | **187 / 4635** · **191 / 4822**; coverage 99.97 / 99.76 / 100 / 99.97 |
 | the site inventory | **88 failure sites across 46 scripts**; the two new sites annotated `proved` |
 | the documents | typecheck, lint, `docs:check` green; audit 6 volumes, findings 1–261 |
+
+## Finding 262 — a retry that starts from zero is not a retry
+
+The dispatch that followed finding 261 got further than any run before it. `RE2-OB` and `RE2-SS`
+verified **and unpacked** — the extraction that killed every previous attempt now works — and the
+fetch moved on to the third asset:
+
+```
+15:51:10  VERIFIED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36c…
+15:51:45  EXTRACTED rcaeval-re2-ob
+15:53:26  VERIFIED  rcaeval-re2-ss: bytes=245629018 sha256=7aff9a3a…
+15:53:33  EXTRACTED rcaeval-re2-ss
+16:08:33  RETRYING  rcaeval-re2-tt: attempt 1/3 after 15m 0s: curl: (28) Operation timed out after
+          900000 milliseconds with 2733226372 out of 2801345134 bytes
+16:23:36  RETRYING  rcaeval-re2-tt: attempt 2/3 after 15m 0s: curl: (28) Operation timed out after
+          900000 milliseconds with 2605066672 out of 2801345134 bytes
+16:34:06  ##[error]Process completed with exit code 124
+```
+
+The third asset is 2 801 345 134 bytes. Attempt one moved 2 733 226 372 of them — **97.56%** — in
+900 seconds, which is 3.04 MB/s. The whole file therefore needs 15.4 minutes and the attempt allows
+15. **The ceiling is below the work**, so no number of attempts can finish it while each attempt
+starts from zero. Attempt two proved the point by moving *less* (2 605 066 672, 2.89 MB/s), and the
+workflow's 50-minute wrapper killed attempt three two minutes in.
+
+What the run cost: 50 minutes, 6.3 GB of transfer, two verified assets on a disk that was thrown
+away, and a summary that said "timed out … no measurement".
+
+### The defect is the restart, not the ceiling
+
+Raising the ceiling would have worked for this file at this rate, and would fail again the moment
+either changed — the rate is the host's, and 3 MB/s is not a bound anybody chose. The defect is that
+**an attempt's failure discards the bytes it did transfer**: `curl -o` truncates, so attempt two did
+not continue attempt one, it overwrote it. A retry whose second attempt re-does the first is not a
+retry; it is the same attempt, run again, with the same outcome.
+
+So the retry now resumes. `--continue-at -` makes each attempt start at whatever is on disk, which
+is zero for a first attempt and 2 733 226 372 for the attempt that follows this one. The per-attempt
+bound stays at 900 seconds: it is a bound on *stalling*, and with a resume it bounds the right thing.
+
+Three consequences had to be handled, and each has a test:
+
+| case | what happens | why it matters |
+| --- | --- | --- |
+| the partial is longer than the pin | it is discarded before the first attempt | no prefix of the right file can be that long; resuming past the end asks for a range that does not exist |
+| the server ignores `Range` | curl exits 33, the partial is discarded, the next attempt starts clean | an attempt that asks to resume is the only shape such a server *cannot* satisfy |
+| the attempt was cut at 97% | the retry prints what it will resume from | the production log could not say whether attempt two started at 0 or at 2.7 GB, and that is the fact that decides whether retrying is worth anything |
+
+The last one is the reporting half of the same defect. `RETRYING … [2733226372 bytes (2.5 GiB) kept
+for the next attempt]` is now printed, measured on disk *after* the attempt rather than at its start,
+because those two numbers differ exactly when the attempt made progress.
+
+### What the wrapper is allowed to be
+
+`timeout 3000` became `timeout 4200`. The old number was justified by an arithmetic that assumed
+every asset finishes inside one attempt — 50 minutes for three assets — and the largest asset cannot.
+The new one is stated with its reasoning in the workflow: the transfer takes 15.6 minutes at the rate
+the host delivers, a second attempt is therefore normal, and 70 minutes leaves the build and the
+round trip inside the job's 90.
+
+### What this does not do
+
+It does not make the anchor pass. Two of three assets now reach the disk and are unpacked; the third
+needs a resumed attempt, and whether it gets one is the next dispatch's answer.
+
+It does not bound the *total* transfer per asset: three attempts of 900 seconds each is 45 minutes
+per asset, which for three assets exceeds the wrapper. The wrapper is the global bound and the
+script's is the local one, and a run that hits the global bound still reports only that it hit it.
+
+It does not resume across runs. A runner is discarded, so a partial file never survives one; the
+resume is within a run, which is the only place it could matter here.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the resume | `--continue-at -`; 3 tests, all three red against the pre-fix script |
+| the discarded partials | too-long and range-refusing, each with its own route and its own assertion |
+| the report | the retry line names the bytes kept, measured after the attempt |
+| the wrapper | 4200 s, with the arithmetic and the measured rate in the comment |
+| `core` / repo | **187 / 4638** · **191 / 4825**; coverage unchanged |
+| the site inventory | 88 sites across 46 scripts; annotations carried by fingerprint |
+| the battery | **6 injections, 6 caught, 0 survived**; the new row removes `--continue-at` and 26 tests go red |

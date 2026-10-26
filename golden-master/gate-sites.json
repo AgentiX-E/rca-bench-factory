@@ -348,7 +348,7 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 955,
+      "line": 1002,
       "condition": "noRoom.length > 0",
       "diagnostic": "\\nno room for '${asset.id}' at '${directory}': ${claim} ${bytesWithUnits(needBytes)}",
       "status": "proved",
@@ -356,7 +356,7 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 965,
+      "line": 1012,
       "condition": "pinMismatches.length > 0",
       "diagnostic": "\\n${pinMismatches.length} of ${results.length} asset(s) downloaded a file that does not",
       "status": "proved",
@@ -364,7 +364,7 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 975,
+      "line": 1022,
       "condition": "unpackFailures.length > 0",
       "diagnostic": "\\n${unpackFailures.length} of ${results.length} asset(s) matched their pin and could not be",
       "status": "proved",
@@ -372,7 +372,7 @@
     },
     {
       "script": "scripts/fetch-official.mjs",
-      "line": 984,
+      "line": 1031,
       "condition": "unreachable.length > 0",
       "diagnostic": "\\n${unreachable.length} of ${results.length} asset(s) could not be reached.",
       "status": "proved",

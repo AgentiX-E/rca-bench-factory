@@ -58,6 +58,19 @@ INJECTIONS = [
         """  if (asset.bytes !== null && actual.bytes !== asset.bytes) {""",
         """  if (false) {""",
     ),
+    # The resume. This one is not about a comparison: it removes `--continue-at`,
+    # which restores the shape of the 2026-10-26 failure -- every attempt starts at
+    # zero, so an attempt that moved 97.56% of the file leaves nothing behind for
+    # the next one (finding 262). `--location` is a real flag curl accepts, so the
+    # command stays valid and only the resume is gone; a mutation that made curl
+    # reject its own arguments would be caught by every test for the wrong reason.
+    (
+        "the resume flag removed",
+        """    '--continue-at',
+    '-',""",
+        """    '--location',
+    '-',""",
+    ),
 ]
 
 
@@ -189,6 +202,9 @@ EXPECTATIONS: dict[str, tuple[str, ...]] = {
     ),
     'the byte-count comparison always agrees': (
         'retries a short transfer and then reports it as unreachable, not as a pin problem',
+    ),
+    'the resume flag removed': (
+        'continues a cut transfer instead of starting it again',
     ),
 }
 

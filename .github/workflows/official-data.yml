@@ -239,20 +239,30 @@ jobs:
         run: |
           set -eu
           echo "anchor=${ANCHOR}" >> "$GITHUB_OUTPUT"
-          # A per-asset timeout, because the script's own bound is per attempt
-          # and an anchor has several assets: three assets x three attempts x
-          # 900s is 2h15m of curl, which fits inside the job's 90 minutes only
-          # because the job kills it -- and a job killed by its own timeout
-          # reports no measurement and no reason.
+          # A wrapper timeout, because the script's own bound is per attempt and an
+          # anchor has several assets: three assets x three attempts x 900s is 2h15m
+          # of curl, which fits inside the job's 90 minutes only because the job
+          # kills it -- and a job killed by its own timeout reports no measurement
+          # and no reason.
+          #
+          # 4200 and not 3000: the measured transfer of `RE2-TT` is 2 801 345 134
+          # bytes at the ~3 MB/s Zenodo actually delivers, which is 15.6 minutes --
+          # longer than one 900s attempt, so a second attempt is normal rather than
+          # exceptional. The 2026-10-26 dispatch spent 50 of its 50 minutes on three
+          # assets and was killed two minutes into the third attempt, having already
+          # verified and unpacked two of them (finding 262). 70 minutes leaves the
+          # build (~3) and the round trip (~10) inside the job's 90.
           status=0
-          timeout 3000 node scripts/fetch-official.mjs \
+          timeout 4200 node scripts/fetch-official.mjs \
             --anchor "$ANCHOR" --out "$OFFICIAL_DIR" --report-pins "$PINS" || status=$?
           {
             echo "### Fetch outcome"
             echo
             case "$status" in
               124)
-                echo "**Timed out** after 50 minutes (the workflow's own per-asset bound). No measurements."
+                echo "**Timed out** after 70 minutes (the workflow's wrapper bound, not the script's per-attempt one)."
+                echo "The log above shows how far each asset got; a killed process writes no pin report,"
+                echo "so there is nothing to merge from this run."
                 ;;
               0)
                 echo "All assets for \`${ANCHOR}\` fetched."
