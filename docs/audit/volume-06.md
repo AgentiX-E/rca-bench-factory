@@ -630,3 +630,90 @@ resume is within a run, which is the only place it could matter here.
 | `core` / repo | **187 / 4638** · **191 / 4825**; coverage unchanged |
 | the site inventory | 88 sites across 46 scripts; annotations carried by fingerprint |
 | the battery | **6 injections, 6 caught, 0 survived**; the new row removes `--continue-at` and 26 tests go red |
+
+## Finding 263 — 270 cases, one reason, and a corpus with a second shape
+
+The dispatch that followed finding 262 is the first run in this repository's history to fetch an
+entire anchor:
+
+```
+18:34:19  VERIFIED  rcaeval-re2-ob: bytes=1191025569 sha256=0605a36c…
+18:34:54  EXTRACTED rcaeval-re2-ob
+18:36:28  VERIFIED  rcaeval-re2-ss: bytes=245629018 sha256=7aff9a3a…
+18:36:37  EXTRACTED rcaeval-re2-ss
+18:49:47  VERIFIED  rcaeval-re2-tt: bytes=2801345134 sha256=6706311d…
+18:51:33  EXTRACTED rcaeval-re2-tt
+18:51:33  REPORT    …/pins.json: 3 pin(s) measured
+18:51:34  registry pins agree with this download
+```
+
+Three assets, 4.2 GB, both large ones resumed after their first attempt was cut — **the resume works,
+and so does the space check, and the registry's pins are correct against a fresh measurement**. The
+corpus then reached the round trip, which declared 270 cases and failed all 270:
+
+```
+ROUNDTRIP declared 270 case(s), found 2978 file(s), 364 directory(ies)
+ROUNDTRIP FAIL   1/270 RE2-OB/checkoutservice_cpu/1   reason=no metric payload under any known name
+                 (metrics.json, data.csv); the case directory holds cluster_info.json, …
+ROUNDTRIP FAIL 270/270 RE2-TT/ts-travel-service_socket/3  reason=… (the same)
+```
+
+**One reason, 270 times.** That is not 270 defects; it is one statement about the corpus that the
+reader does not know, and it is the first thing this anchor has ever been in a position to say.
+
+### What the corpus actually holds
+
+Measured without downloading 4.2 GB again, by range-reading the archive's own index: the
+end-of-central-directory record is in the last few kilobytes, the central directory is 139 156 bytes
+at offset 1 190 886 391, and one entry's local slice inflates to the file. `RE2-OB/checkoutservice_cpu/1/`
+contains:
+
+| file | bytes | what it is |
+| --- | --- | --- |
+| `metrics.csv` | 6 782 127 | per-pod resource metrics, wide: `time`, then `<pod>_<metric>` |
+| `simple_metrics.csv` | 1 188 347 | the reduced set the official rule scores: `time`, then `<service>_cpu`, `<service>_mem` |
+| `tracets_lat.csv` | 4 876 | per-endpoint request counts, one row a minute |
+| `logts.csv` | 9 951 | log counts per pod |
+| `cluster_info.json` | 4 536 | log templates per node |
+| `inject_time.txt` | 10 | a unix timestamp: `1705354566` |
+| `pod-node-1.csv`, `pod-node-2.csv` | — | placement |
+| `metrics_postprocess.log` | — | a processing log |
+
+RE1 — the only corpus that has ever round-tripped here, 375 of 375 at `oracle=1` — holds
+`metrics.json` and `data.csv`. **The two corpora have the same authors and different encodings**, and
+the reader knows exactly one of them. The round trip's error message names the two files it looked
+for, which is why the failure took one line to understand and 270 lines to confirm.
+
+### What the sample says about the numbers
+
+`simple_metrics.csv` has 1 443 rows for a case whose series start at 1 705 353 846 and whose
+injection is at 1 705 354 566: **720 seconds of baseline, 722 seconds after**, at one row a second.
+`metrics.csv` has the same 1 443 rows over per-pod columns such as
+`checkoutservice_container-cpu-system-seconds-total`.
+
+That last name is a trap worth writing down before the reader is written: `…-total` is a **counter**,
+not a gauge, and the difference between "the value is high" and "the value is *still rising*" is the
+difference between two different diagnoses. `SERIES_DERIVATIONS` already has a `counter`
+derivation — for series the corpus *generates*. Reading a real counter is the mirror case.
+
+### What this round does not do
+
+It does not teach the reader the second layout. That is the next round, and it is now a specification
+rather than an investigation: four files to read (`simple_metrics.csv` for the official rule,
+`inject_time.txt` for the instant, `tracets_lat.csv` and `logts.csv` for the other two kinds),
+two column conventions (per-pod in `metrics.csv`, per-service in `simple_metrics.csv`), one unit
+question (counter versus gauge), and one skip that the deriver already handles
+(`RE2-OB/checkoutservice_multi-source-data` carries no case layout).
+
+It does not establish that RE2 will score. A case that cannot be read is not a wrong answer, and
+`oracle=0` on 270 cases would have been a worse outcome than this: a failure that names one cause.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the fetch | 3 of 3 assets verified, extracted, 3 pins measured, registry agrees |
+| the resume | `RE2-TT` completed across attempts; 13 minutes for 2.8 GB |
+| the round trip | 270 declared, 270 failed, **one** reason, named per case |
+| the layout | measured from the archive's central directory, quoted above |
+| the tree | unchanged this round: core **187 / 4638**, repo **191 / 4825**, coverage unchanged |

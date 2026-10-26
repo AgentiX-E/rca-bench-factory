@@ -1863,3 +1863,47 @@ the corpus is unchanged at **13 of 30** with 31 entities / 19 edges.
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint.
+
+## v2.90 — 270 cases, one reason
+
+**What was open.** v2.89's first item: whether `RE2-TT` gets a resumed attempt. It did. The dispatch
+after that change is the first run in this repository's history to fetch a whole anchor — three
+assets, 4.2 GB, both large ones resumed, three pins measured, and `registry pins agree with this
+download`. Then the corpus reached the round trip and failed all 270 cases for **one** reason.
+
+**What changed.** Nothing in the tree; this round is a measurement, and it is the kind the anchor
+exists for. `ROUNDTRIP declared 270 case(s), found 2978 file(s), 364 directory(ies)`, then
+`270/270` failures with `no metric payload under any known name (metrics.json, data.csv); the case
+directory holds cluster_info.json, …`.
+
+The reason is a second corpus shape. Measured from the archive's own central directory — range reads
+against Zenodo, EOCD → directory → local slice → inflate, so 740 KB rather than 4.2 GB —
+`RE2-OB/checkoutservice_cpu/1/` holds `metrics.csv` (per-pod, wide), `simple_metrics.csv`
+(per-service, wide), `tracets_lat.csv` (per-endpoint counts, one row a minute), `logts.csv`,
+`cluster_info.json`, `inject_time.txt` (a unix timestamp), `pod-node-{1,2}.csv` and a
+`metrics_postprocess.log`. RE1, the only corpus that has ever round-tripped here, holds
+`metrics.json` and `data.csv`. Same authors, different encoding, and the reader knows one of them.
+
+**The sample.** 1 443 rows at one row a second; series start 1 705 353 846, injection 1 705 354 566 —
+720 seconds of baseline and 722 after. And a naming trap recorded before the reader is written:
+`checkoutservice_container-cpu-system-seconds-total` is a **counter**, not a gauge.
+
+**Acceptance.** No code change: `pnpm test` green at core **187 / 4638**, cli 4 / 187, repo
+**191 / 4825**; `docs:check` green; audit 6 volumes, findings 1–263. The round's product is the
+measurement and the specification the next round implements.
+
+### Left open
+
+- **The reader knows one corpus shape.** `[open: RE2's per-case layout is measured and quoted in
+  finding 263; nothing reads it yet, so 270 cases fail to load before they can be scored]`
+- **A real counter has no reader.** `[open: `SERIES_DERIVATIONS` has a `counter` derivation for
+  series the corpus generates; reading `…-system-seconds-total` out of a real corpus is the mirror
+  case and is unimplemented]`
+- **The anchor is fetched but not scored.** `[open: every stage before the round trip now works end
+  to end; the round trip is the last one, and it is blocked on the two items above]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and three rounds have now gone to
+  the anchor]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint; no relation is checked for direction.
