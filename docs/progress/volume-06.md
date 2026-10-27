@@ -2334,14 +2334,106 @@ numbers in `check-fault-cases.mjs`.
   never opened]`
 - **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv`, `tracets_lat.csv` are not
   produced]`
-- **A whole-suite run is not isolated from its own mutation batteries.** `[open: the batteries in
-  `scripts/injection/` rewrite a tracked script in place, run the suite, and restore it; a test that
-  reads `scripts/` during that window sees the mutation as the source. This round hit it once
-  (`verify-gates-are-testable.mjs` read a listed script as exit-free) and a serial re-run was green,
-  and a previous round hit it as four unrelated `check-doc-counts` failures. The test that caught it
-  already records the shape and does a second read, which narrows the window rather than closing it.
-  Not introduced here. The repair is to run a battery against a copy rather than in the tree, and it
-  is the next round's first item rather than this one's]`
+- ~~**A whole-suite run is not isolated from its own mutation batteries.**~~ Retracted by finding 272
+  (v2.98): the diagnosis this item named was wrong. The batteries mutate the temporary roots their
+  tests hand them and never the repository -- measured by tracing every `_restore` write (60 of them,
+  all under `/tmp`), by making a subject read-only and running the suite (green, no `EACCES`), and by
+  running two suites at once (green). The single red run that produced this item has not recurred in
+  eight further runs, and it is recorded as unreproduced rather than as fixed.
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.
+
+## v2.98 — the fourteenth case, and a diagnosis that was withdrawn
+
+**What was open.** Two things: seventeen samples with no case, and — from v2.97's last line — a claim
+that the mutation batteries rewrite tracked scripts while the suite reads them. The second turned out
+to be false, which is the first half of this round.
+
+**The fourteenth case.** `resource-ephemeral-capacity-image-builder`, annotated from its own incident
+text. It is the corpus's first whose answer is a *filesystem boundary*: the pod's writable overlay is
+at its 10Gi ephemeral limit and `df` reports the node's root filesystem at 40 percent, and **both
+readings are true** — they measure different filesystems. A corpus with only the full series would be
+satisfied by *the node is out of disk*, which is false; one with only the healthy series would report
+nothing wrong. Three entities and two edges were added (`image-builder`, its pod, the node), taking
+the corpus to **14 of 30**, 34 entities, 21 edges, floor 14. Four checkpoints, one of them a declared
+configuration fact (`ephemeralLimitBytes == 10737418240 By`), so the 100 percent is relative to a
+number the case states rather than to an unstated one.
+
+**Two quantities were deleted before anyone could check them.** The first draft declared
+`janitorInterval: 24 h` and `queueDepthAtFailure: 31`. The text states neither. They were removed, and
+what remains is what a sentence supports. A parameter no checkpoint reads is a parameter no test
+compares, so nothing would have caught the invention.
+
+**Seven assertions went red, and they were one mistake.** `13 of 30`, `RE2 13 case(s)`,
+`RE3 2 case(s)`, `41 of 41 ... 6 citing`, `['entity', true, 31]`, `filled 31 item(s)`, `0 of 37` — the
+guard's own tests had written down what the corpus held instead of reading it. Each now derives:
+`CORPUS_SIZE` from the index, `SAMPLE_COUNT` from the extraction key, `CODE_LEVEL_CASES` from the
+cases' own `fault.category`, `graph.entities.length` from the graph; the reference summary became an
+equality (`resolved === total`, `failed === 0`, both totals asserted non-zero so neither can be
+vacuous). **A guard whose assertions restate the data reports a change in the data as a defect in the
+guard** — the third form of this volume's recurring shape, after finding 269's borrowed fixture and
+finding 255's unread join.
+
+**One of those repairs was wrong and is recorded.** Having captured the per-kind breakdown
+(`34 over a series, 2 of them computed from 4 reading(s), 7 citing a configuration fact`) I asserted
+that the kinds partition the total. They do not: 34 + 7 is 41, the total is 45, and the difference is
+a kind the regex does not capture. The assertion was arithmetic I had invented about a line I had not
+read; it was deleted rather than tuned, and what is asserted is only what holds.
+
+**The withdrawal.** v2.97 ended by naming a cause for one red run: the batteries rewrite `scripts/` in
+place and a reader sees the mutation. Three tests of that claim, and none survived:
+
+| hypothesis | how it was tested | result |
+| --- | --- | --- |
+| something writes `scripts/` | every `_restore` write logged with target and stack | **60 writes, all under `/tmp`** |
+| a writer would at least leave a window | `chmod 444 scripts/check-doc-counts.mjs`, full suite | green, zero `EACCES` |
+| two runs at once | two concurrent `vitest run`, then three `test:coverage` | all green |
+
+The mtime the first monitor caught was `same_bytes: true` — a copy-up caused by the monitor's own
+read, not a write. **The instrument was reporting itself.** The item is retracted in v2.97, and the
+one red run is recorded as unreproduced in eight attempts rather than as fixed.
+
+**What was real.** In the same file that had been complaining:
+`[typecheck-entrypoint] worktree teardown leaked 8 registration(s)`. `cold` is the one worktree that
+file creates, the teardown removed it (verified by hand, repeatedly), and the report subtracted only
+`ROOT` — so eight registrations left by earlier runs produced eight complaints after a teardown that
+had succeeded, on every run, until they were cleaned. Now `own` is separated from `others`, `others`
+are named as predating the run, and **`own` is asserted** rather than printed. Measured limit of that
+assertion: a failure in `afterAll` sets the exit code to 1 and does **not** turn `Tests 4 passed (4)`
+red, so a reader who checks only the count will believe the teardown works.
+
+**Mutation battery.** The report claiming one more case than the index holds → 2 failed / 97. The
+teardown attempting nothing → `survived teardown: expected { present: true, registered: true }`,
+`EXIT=1`.
+
+**Acceptance.** `pnpm test` green at core **188 / 4690**, cli 4 / 187, repo **192 / 4877**;
+`check-fault-cases` OK (14 of 30, 34 entities, 21 edges, 45 references all resolved, 0 of 41
+comparable assertions failing); `docs:check` green; audit 7 volumes, findings 1–272.
+
+### Left open
+
+- **16 samples still carry no case.** `[open: 14 of 30 carry one; the remaining sixteen are listed in
+  the extraction key and annotation is one case per round, which is the pace this corpus's quote rule
+  imposes -- every layer has to quote a sentence, so a case cannot be written from memory]`
+- **A reversal between two entities of one kind is not detectable statically.** `[open: the kind table
+  refuses `db --calls--> service` and cannot refuse `service B --calls--> service A`. Closing it needs
+  a witness that states who invoked whom, which means traces, and the corpus has one case carrying
+  them -- so the second half of this item is a corpus item before it is a code item]`
+- **One red run is unreproduced.** `[open: `gates-are-testable-is-enumerated.test.ts` read a listed
+  gate as exit-free once; three hypotheses about the mechanism were refuted in v2.98 and eight further
+  runs were green, so the failure is recorded rather than explained]`
+- **Upstream's baselines still refuse our data.** `[open: this is a product decision rather than a
+  defect to patch: the loader selects a service-level indicator by path, so a system it does not know
+  is refused. Declaring ourselves to be `online-boutique` would make the number comparable and
+  meaningless, and the alternative -- an upstream change -- is not ours to make]`
+- **RE3's traces and logs are not read.** `[open: the adapter opens neither file, so an RE3 case
+  reaches the export with metric signals only -- one of the IR's four layers. The cost is 40 MB per
+  case, which is why it has been deferred three rounds running rather than decided against]`
+- **No aggregate tables.** `[open: the multi-source methods and `torai` read `logts.csv`,
+  `tracets_err.csv` and `tracets_lat.csv`; this exporter writes none of the three, so those readers
+  see an empty modality rather than a missing file]`
 
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence

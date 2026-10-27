@@ -359,12 +359,35 @@ afterAll(() => {
   } catch {
     registered = [];
   }
-  const leaked = registered.filter((path) => path !== ROOT);
-  if (leaked.length > 0) {
+  // Two questions, and the old code asked them as one. `own` is this file's
+  // worktree: if it is still registered, or still on disk, the teardown failed and
+  // that is a defect of this file. `others` is every other registration, which
+  // belongs to a run that came before and which this teardown cannot have caused.
+  //
+  // Reporting the union was not a smaller version of the same message, it was a
+  // wrong one. With eight registrations left by earlier runs, this printed
+  // `leaked 8 registration(s)` after a teardown that removed its own worktree
+  // successfully -- a claim about this run that the evidence did not support, and
+  // one that says nothing about whether the eight were still there. A reader who
+  // sees the same line every run learns to skip it, which is the state the line
+  // exists to prevent (finding 271).
+  const ownRegistered = registered.includes(cold);
+  const others = registered.filter((path) => path !== ROOT && path !== cold);
+  if (others.length > 0) {
+    // Named, and stated as somebody else's: a reader should be able to tell a
+    // leftover from a failure without reading this file.
     process.stderr.write(
-      `[typecheck-entrypoint] worktree teardown leaked ${leaked.length} registration(s): ${leaked.join(', ')}\n`,
+      `[typecheck-entrypoint] ${String(others.length)} worktree registration(s) predate this run and ` +
+        `are not its teardown's to remove: ${others.join(', ')}\n`,
     );
   }
+  // The assertion the old message could not make. A worktree this file created and
+  // did not remove is a file-system leak that grows with every run, and printing it
+  // is not the same as failing on it.
+  expect(
+    { present: existsSync(cold), registered: ownRegistered },
+    `${cold} survived teardown: the worktree this file created is still there`,
+  ).toEqual({ present: false, registered: false });
 });
 
 /**

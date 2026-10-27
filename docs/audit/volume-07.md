@@ -495,3 +495,170 @@ Each restored afterwards, and the restored tree is what the acceptance table bel
 | the report | one graph defect is one line, not twenty-six |
 | the export boundary | both codes are structural, so `assertExportableBundle` refuses the bundle |
 | `core` / repo | **188 / 4690** · **192 / 4877** |
+
+## Finding 271 — the corpus grew to fourteen, and its guards were measuring the corpus by heart
+
+The fourteenth case is `resource-ephemeral-capacity-image-builder`, annotated from
+`resource-ephemeral-capacity-image-builder`. It is the corpus's first whose answer is a *filesystem
+boundary* rather than a component:
+
+```
+The image builder began failing every build with 'no space left on device' while df
+reported 40 percent used. The writable overlay had hit its 10Gi ephemeral limit ...
+```
+
+Both readings are true. `df` reports the node's root filesystem; the failure is in the pod's writable
+overlay, one layer in. A corpus carrying only the full series would be satisfied by *the node is out
+of disk*, which is false; one carrying only the healthy series would report nothing wrong. So the
+case's evidence is the pair, and its control is the reading that sent the first responder to the
+wrong filesystem.
+
+Three entities and two edges were added to the graph for it — `image-builder`, its pod, the node the
+pod runs on — taking the corpus to **14 of 30**, 34 entities and 21 directed edges.
+
+### What broke when it landed
+
+Seven assertions, in two files, and every one of them was the same defect in a different place: the
+guard's own tests had written down what the corpus contained instead of reading it.
+
+| assertion | had been | why it went red |
+| --- | --- | --- |
+| `13 of 30 sample(s) carry a four-layer case` | literal | the corpus holds fourteen |
+| `RE2 13 case(s) written, 19 file(s) with no rows` | literal | fourteen cases write fourteen |
+| `RE3 2 case(s) written, 3 file(s) with no rows, 11 skipped` | literal | the count is the number of `code` cases |
+| `checkpoints 41 of 41 ... 6 citing a declared configuration fact` | literal | 45 references now |
+| `['entity', true, 31]` | literal | the graph holds 34 entities |
+| `'  entity    filled 31 item(s)'` | literal | same fact, printed form |
+| `0 of 37 comparable assertion(s) fail` | literal | 41 now |
+
+Seven is not seven independent mistakes. It is one mistake the corpus had been small enough to hide:
+**a guard whose assertions restate the data goes red when the data changes**, and it reports that
+change as a defect in the guard. This volume has recorded the shape twice already — finding 269's
+fixture borrowed from production, and finding 255's `sampleId` join that nothing read — and this is
+the third form: the number, rather than the file.
+
+### What each became
+
+- **The counts are read.** `CORPUS_SIZE` from `index.json`, `SAMPLE_COUNT` from the extraction key,
+  `CODE_LEVEL_CASES` from the case files' own `fault.category`, `graph.entities.length` from the
+  graph. A report that disagrees with the index is now the failure, which is the assertion that was
+  always meant.
+- **The reference summary became an equality.** `checkpoints N of N` is asserted by capturing both
+  numbers and requiring them equal, with `N > 0` so an empty corpus cannot satisfy it, and
+  `0 of M` with `M > 0` so nothing can be vacuous.
+- **The RE2 line became a pattern.** The number written is derived; the `file(s) with no rows` half
+  stays a number class, because it counts files whose modality no case supplies, which is a
+  property of the corpus's shape rather than of this assertion.
+
+One attempt at this was wrong and is recorded rather than quietly dropped. Having captured the
+per-kind breakdown (`34 over a series, 2 of them computed from 4 reading(s), 7 citing a declared
+configuration fact`), I asserted that the kinds partition the total. They do not: 34 + 7 is 41, the
+total is 45, and the gap is a kind the regex does not capture. The assertion was arithmetic I had
+invented about a line I had not read carefully, and the fix is to delete it — the claims that hold
+are `resolved === total` and `failed === 0`. Writing a partition rule I could not derive is how a
+guard starts reporting its own guess as a defect.
+
+### Two quantities were deleted before they could be checked
+
+The first draft of the case declared `janitorInterval: 24 h` and `queueDepthAtFailure: 31` because
+they would have made the story tidy. The incident text states neither: it says the janitor "runs on a
+schedule that a long build queue had outrun", and it gives no interval and no depth. The parameters
+were removed, and what is left is what a sentence supports — `10Gi` and `/var/lib/buildkit`.
+
+A corpus that invents a plausible number is the thing this project exists to replace, and nothing in
+the guard would have caught it: a parameter no checkpoint reads is a parameter no test compares.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **14 of 30**, 34 entities, 21 edges, floor raised to 14 |
+| the new case | four layers complete, 4 checkpoints (one a declared configuration fact), all resolve |
+| the derived counts | 7 assertions take their numbers from the index, the key, the case files or the graph |
+| the guard | `check-fault-cases: OK (14 of 30 ...)`; `FAILED — 1 problem(s)` on a flipped copy |
+| `core` | **188 / 4690**, coverage 99.97 / 99.74 / 100 / 99.97 |
+
+## Finding 272 — a diagnosis withdrawn, and the report that had been counting somebody else's leak
+
+Finding 270 closed with an open item that named a cause: *the batteries in `scripts/injection/`
+rewrite a tracked script in place, run the suite, and restore it; a test that reads `scripts/` during
+that window sees the mutation as the source.* This round was supposed to fix it. It does not exist,
+and the item was wrong.
+
+### What the evidence actually says
+
+The claim had one observation behind it: one whole-suite run went red in
+`gates-are-testable-is-enumerated.test.ts` with a listed gate reading as exit-free, and a serial
+re-run was green. Three explanations were tested, and the first is the one that had been written down.
+
+**1. Something is writing `scripts/`.** `_restore` is the only writer in `_witnesses.py`, so it was
+instrumented to log every write with its target and its stack. A full run produced **60 writes, and
+every one of them was under `/tmp`**: `rca-bench-battery-journal-*`, `rca-bench-battery-journal-node-*`,
+`rca-tree-repair-*`. None touched the repository. The batteries record whole subtrees but they
+*mutate* the temporary roots their tests hand them, which is what `guard(label, roots)` is for.
+
+**2. If not a writer, at least a window.** `scripts/check-doc-counts.mjs` was made read-only
+(`chmod 444`) and the whole suite re-run: **green, and not one `EACCES`**, which is what a write
+attempt would leave. A process that cannot write a file it is writing to has to fail somewhere.
+
+**3. Two runs at once.** Two concurrent `vitest run` invocations, four workers each: **both green**,
+4877 tests each. Three consecutive `test:coverage` runs on the same tree: **all green**. Including the
+runs from earlier rounds, that is eight green runs against one red, and the red has not recurred
+under any condition that has been tried.
+
+A monitoring script was what produced the original suspicion — it watched `scripts/*.mjs` mtimes and
+caught one change during a run. Re-running it with content hashes showed `same_bytes: true`: the
+mtime moved and the bytes did not. That is a filesystem artifact of the read that the watcher itself
+performed (copy-up on the overlay), not a write. **The instrument was reporting itself.**
+
+So the item is withdrawn. What remains is a failure that happened once, is recorded here with the
+three conditions it was not, and is not being called fixed.
+
+### What was real, and what changed
+
+Chasing it did surface one genuine defect, in the same file that had been shouting about it:
+
+```
+[typecheck-entrypoint] worktree teardown leaked 8 registration(s): /tmp/rca-bench-typecheck-1sf2UW, ...
+```
+
+`cold` is the one worktree `typecheck-entrypoint.test.ts` creates. The teardown removed it — verified
+by hand, repeatedly — and then reported every registration in the repository as leaked, because
+`registered.filter((path) => path !== ROOT)` subtracts the repository and nothing else. Eight
+registrations from earlier runs meant eight complaints after a teardown that had succeeded, and the
+same line appeared on every run until they were cleaned. **A message that is the same every run is a
+message nobody reads.**
+
+Three changes:
+
+- The report separates `own` from `others`. `others` are named and stated as predating the run, which
+  is what they are: leftovers this teardown cannot have caused and should not be blamed for.
+- `own` is **asserted**, not printed. `expect({ present: existsSync(cold), registered: ownRegistered })
+  .toEqual({ present: false, registered: false })`. A worktree this file created and did not remove is
+  a leak that grows with every run, and printing it was not the same as failing on it.
+- The assertion lives in `afterAll`, which does **not** make the file's test count red — it prints
+  `Tests 4 passed (4)` and sets the exit code to 1. That was measured rather than assumed: the
+  mutation below ran, the message appeared, the count said passed, and `EXIT=1`. Worth stating
+  because "the tests passed" and "the run failed" are both true here, and a reader who checks only the
+  first will believe the teardown works.
+
+### Mutation battery
+
+| mutation | expected | observed |
+| --- | --- | --- |
+| the report says one more case than the index holds | the corpus-count assertion fails | 2 failed / 97 |
+| the teardown attempts nothing (`void cold` for every removal) | the survival assertion fires | `survived teardown: expected { present: true, registered: true }`, `EXIT=1` |
+
+The second also documents the limit of the rule: a failure in `afterAll` is reported on stderr and in
+the exit code, and **not** in the `Tests N passed` line.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the withdrawal | three hypotheses tested and refuted, each with the command that refutes it |
+| the write trace | 60 `_restore` writes, all under `/tmp`, none in the repository |
+| the read-only probe | `chmod 444 scripts/check-doc-counts.mjs` → suite green, zero `EACCES` |
+| the concurrency probe | two simultaneous runs green; three `test:coverage` runs green |
+| the teardown report | `own` asserted, `others` named as predating the run |
+| `core` | **188 / 4690** |
