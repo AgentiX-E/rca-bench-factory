@@ -757,6 +757,13 @@ export type {
 // count over a corpus is the evidence for the corpus, and a reading only one test can take is a
 // reading nobody can re-take against the next thirty samples.
 export { assessFourLayer, formatFourLayerReading } from './fault/four-layer.js';
+
+// The floor under a difficulty label. `FaultCase.difficulty` had no definition anywhere -- the
+// corpus's five labels do not track structure and are not comparable with each other -- so this is
+// the one property any definition must have: a case cannot claim less structure than its own chain
+// carries. Weaker than a definition, and checkable, which the alternative was not.
+export { difficultyFloor, findDifficultyShortfalls } from './fault/difficulty.js';
+export type { DifficultyShortfall } from './fault/difficulty.js';
 export type {
   DanglingEvidenceRef,
   FourLayerReading,

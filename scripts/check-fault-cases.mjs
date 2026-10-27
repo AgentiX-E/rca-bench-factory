@@ -207,6 +207,8 @@ const checkpointRefs = {
  * count is printed so that "the rule did not apply" is visible rather than inferred from silence.
  */
 const gradedCases = [];
+/** The spread of declared levels, once the corpus has been read. Null when the rule does not apply. */
+let difficultySpread = null;
 /**
  * Every case that parsed, whether or not it carries telemetry.
  *
@@ -845,14 +847,38 @@ for (const entry of index.cases) {
 
 // The other half of G4, asked once. A distribution is a property of the set: the per-case pass
 // above cannot see it, and asking the composed gate per case is what kept this rule unreachable.
+//
+// Two different verdicts come out of this block, and the difference is the point.
+//
+// A label that claims *less* structure than its own chain carries is an annotation contradicting the
+// case it annotates -- the sort of defect a reader can fix in one line -- so it is a problem and the
+// run fails.
+//
+// A missing level, or a set with no hardest case, is a statement about the corpus rather than about
+// any annotation: the deepest chain in this corpus is two steps, so no case can be L4, and a rule
+// that requires a tenth of the set at L4 cannot be satisfied by any correction to a label. Printing
+// it and failing every run would teach everyone to ignore the line; printing it and saying nothing
+// would be the vacuous pass this volume keeps removing. So it is printed, with the target it misses,
+// and the decision it is waiting for is written down in the progress log rather than encoded here.
 if (firstGraph !== null && allCases.length > 0) {
+  for (const shortfall of core.findDifficultyShortfalls({ cases: allCases, graph: firstGraph })) {
+    problems.push(
+      `'${shortfall.caseId}' is labelled ${shortfall.declared} and its own chain supports ` +
+        `${shortfall.floor} at least -- a level may not claim less structure than the case carries`,
+    );
+  }
   const distribution = core.checkDifficultyDistribution(
     { irVersion: '1.0.0', graph: firstGraph, cases: allCases, signals: {} },
     {},
   );
-  for (const violation of distribution.violations) {
-    problems.push(`the corpus fails G4: ${violation.message}`);
+  const counts = { L1: 0, L2: 0, L3: 0, L4: 0 };
+  for (const one of allCases) {
+    if (one.difficulty !== undefined) counts[one.difficulty] += 1;
   }
+  difficultySpread = {
+    counts,
+    unmet: distribution.violations.map((violation) => violation.message),
+  };
 }
 
 // A file in the directory that the index does not name is a case nobody will run.
@@ -890,6 +916,13 @@ function logDifficultyCoverage() {
   console.log(
     `check-fault-cases: difficulty ${String(gradedCases.length)} of ${String(allCases.length)} case(s) ` +
       'state a level; the distribution rule applies at 10',
+  );
+  if (difficultySpread === null) return;
+  const { counts, unmet } = difficultySpread;
+  console.log(
+    `check-fault-cases: difficulty spread L1 ${String(counts.L1)} / L2 ${String(counts.L2)} / ` +
+      `L3 ${String(counts.L3)} / L4 ${String(counts.L4)}; ` +
+      (unmet.length === 0 ? 'within the target' : `outside the target -- ${unmet.join('; ')}`),
   );
 }
 

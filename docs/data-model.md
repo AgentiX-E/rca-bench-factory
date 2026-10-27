@@ -123,6 +123,36 @@ interface FaultCase {
 }
 ```
 
+#### What `difficulty` claims, and what it does not
+
+The field had no definition for as long as it existed: the type was declared here, the projection
+onto `easy` / `medium` / `hard` was published in `docs/targets/cloud-opsbench.md`, and nothing said
+what separates L2 from L3. The corpus shows what a field like that collects — five labels, two of
+them on structurally identical cases with different values.
+
+What exists now is a **floor**, not a rating. `difficultyFloor` (`fault/difficulty.ts`) derives the
+lowest level a case's own structure supports:
+
+| causal steps | entity kinds the chain touches | floor |
+|---|---|---|
+| ≥ 3 | any | `L4` |
+| 2 | any | `L3` |
+| 1 | ≥ 2 | `L2` |
+| 1 | 1 | `L1` |
+
+A declared level **at or above** the floor is accepted; a level **below** it is refused by the corpus
+guard, because it is an annotation contradicting the case it annotates. That is monotonicity, which
+every definition of difficulty must satisfy and which is the only part derivable from the data.
+
+It is **not** a rating of how hard a case is for a model. That needs per-case accuracy over enough
+solvers to separate the levels, and this repository has two local baselines and one configured
+provider. Until that exists, a level means "at least this much structure" and nothing more; a case at
+its floor may be trivial and a case above it may be easy.
+
+The distribution of levels across a corpus is checked once per corpus (`checkDifficultyDistribution`,
+ten graded cases before it says anything). A corpus with no `L4` case reports that fact on every run
+rather than failing: no correction to a label can produce a level the corpus's chains cannot reach.
+
 `GroundTruth` carries the answer key: `rootCauseEntityId`, `rootCauseComponent`,
 `rootCauseReason`, optional `rootCauseIndicators`, a step-wise `causalChain`
 (`CausalStep[]`), `evidenceCheckpoints` (`EvidenceCheckpoint[]`) and `remediation`.

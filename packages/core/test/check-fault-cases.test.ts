@@ -1621,29 +1621,41 @@ describe('check-fault-cases · the difficulty distribution is a property of the 
   // or 1 against a minimum of ten and the branches could not be taken. A rule no caller can reach
   // is not a gate, and the only way to know it is reachable is to make the corpus reach it.
 
-  it('refuses a set that is entirely the easiest level', () => {
+  it('reports a set that is entirely the easiest level, and fails it for the labels', () => {
+    // Two verdicts, and they are different. Every case here is labelled L1 while its chain supports
+    // L3, so the run fails on the shortfalls -- an annotation contradicting its own case is a
+    // one-line repair. The distribution is printed and also misses its target, but that is a
+    // statement about the set: no correction to a label in it could produce an L4 case.
     const result = run(['--cases', corpusOf(10, 'L1')]);
     expect(result.status, result.out).toBe(2);
-    expect(result.out).toContain('the corpus fails G4: L1 share 1.000 exceeds the 0.2 ceiling');
+    expect(result.out).toContain('a level may not claim less structure than the case carries');
+    expect(result.out).toContain('L1 share 1.000 exceeds the 0.2 ceiling');
   });
 
-  it('refuses a set with no hardest case', () => {
-    const result = run(['--cases', corpusOf(10, 'L2')]);
-    expect(result.status, result.out).toBe(2);
-    expect(result.out).toContain('the corpus fails G4: L4 share 0.000 is below the 0.1 floor');
+  it('reports a set with no hardest case without failing the run', () => {
+    // `L3` is exactly the floor of this two-step, three-kind annotation, so there is no shortfall.
+    // What is missing is an L4 case, and no label can invent one: the chain is two steps deep.
+    // Printing it and passing is the deliberate choice -- a rule that fails every run on a property
+    // only a new case can change is a rule everyone learns to skip.
+    const result = run(['--cases', corpusOf(10, 'L3')]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('L4 share 0.000 is below the 0.1 floor');
+    expect(result.out, 'the spread is named, not just the violation').toContain('difficulty spread L1 0 / L2 0 / L3 10');
   });
 
   it('accepts a spread set, so the rule can pass as well as fail', () => {
-    const dir = corpusOf(10, 'L2');
-    // Eight medium, one hard, one hardest: no L1 at all and a tenth at L4.
-    const failures = JSON.parse(readFileSync(join(dir, 'case-8.json'), 'utf8')) as Record<string, unknown>;
-    failures.difficulty = 'L3';
-    writeFileSync(join(dir, 'case-8.json'), `${JSON.stringify(failures, null, 2)}\n`);
+    // Nine at the floor and one above it: no L1, a tenth at L4, and nothing claiming less structure
+    // than it carries. Asserted on the verdict rather than on the absence of a phrase, which is what
+    // the earlier version did -- and that version passed while the run was red, because the message
+    // it looked for had been reworded.
+    const dir = corpusOf(10, 'L3');
     const hardest = JSON.parse(readFileSync(join(dir, 'case-9.json'), 'utf8')) as Record<string, unknown>;
     hardest.difficulty = 'L4';
     writeFileSync(join(dir, 'case-9.json'), `${JSON.stringify(hardest, null, 2)}\n`);
     const result = run(['--cases', dir]);
-    expect(result.out).not.toContain('the corpus fails G4');
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('within the target');
+    expect(result.out).toContain('difficulty spread L1 0 / L2 0 / L3 9 / L4 1');
   });
 
   it('says how many cases state a level, because an unset level exports as medium', () => {

@@ -135,6 +135,7 @@ const ENUMERATED_MODULES = [
   'fault/miss-detail.ts',
   'fault/reading-record.ts',
   'fault/four-layer.ts',
+  'fault/difficulty.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
@@ -827,6 +828,7 @@ const TESTED = [
   'csvCell',
   'csvColumn',
   'detectFileLayout',
+  'difficultyFloor',
   'dimensionOf',
   'entityId',
   'epochMsToIsoUtc',
@@ -920,11 +922,15 @@ const TESTED = [
   'entityId',
   'findAmbiguousAliases',
   'findDanglingEdgeRefs',
+  'findDifficultyShortfalls',
   'findImplausibleEdgeDirections',
   'findInvalidRelations',
   'indexGraph',
   'normalizeAliases',
   'resolveEntityRef',
+  // fault/difficulty.ts
+  'difficultyFloor',
+  'findDifficultyShortfalls',
   // evolution/hitl.ts
   'hitlGateFor',
   // evolution/proposal.ts

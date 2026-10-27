@@ -759,3 +759,125 @@ The second is the one worth keeping: it is the defect the first draft actually h
 | reachability | a ten-case `L1` corpus is refused (`L1 share 1.000 exceeds the 0.2 ceiling`), a spread one passes |
 | the report | `difficulty 5 of 15 case(s) state a level; the distribution rule applies at 10` |
 | `core` | **188 / 4695** |
+
+## Finding 274 — difficulty had no definition, and a gate was reading it
+
+The round was supposed to annotate ten more cases so that the distribution rule — reachable since
+finding 273 — would finally have a population. Before writing any label, the obvious question was
+what the labels mean. The answer, after a sweep of the repository, is that nothing says.
+
+`docs/data-model.md` declares the field as `difficulty?: 'L1'|'L2'|'L3'|'L4'`.
+`docs/targets/cloud-opsbench.md` publishes the projection onto `easy`/`medium`/`hard`. Nothing
+anywhere states what makes a case L3 rather than L2 — not the schema, not the audit, not the corpus's
+own `why` texts.
+
+### What fills a gap like that, measured
+
+The corpus has five annotated cases. Their structure:
+
+| case | declared | steps | kinds the chain touches |
+| --- | --- | --- | --- |
+| `history-cart-network-delay` | L2 | 1 | service |
+| `history-kafka-consumer-lag` | L2 | 1 | service, mq |
+| `history-queue-watermark-ledger-writer` | L3 | 1 | service, mq |
+| `history-unhandled-exception-export` | L3 | 1 | service, mq |
+| `history-checkout-cpu-saturation` | L2 | 2 | container, pod, service |
+
+Two cases with **identical** structure are labelled L2 and L3, and the case with the **most**
+structure is labelled L2. Each label was a judgement made once, in isolation, and no two of them are
+comparable. That is what an undefined field collects.
+
+The structural facts are also thin: depth is 1 for twelve cases and 2 for three; breadth is 1, 2 or 3.
+Four combinations in total, so a difficulty that were a function of structure would have four values
+and no ability to spread.
+
+### What this round did not do
+
+It did not invent the definition. A definition would have to say what difficulty is *for* — model
+accuracy on the case, distance from the easiest hypothesis, number of plausible wrong answers — and
+every one of those needs evidence this repository does not have: one LLM provider, two local
+baselines, no accuracy measurement per case. Writing it from a chair would have produced the same
+thing the corpus already had, one level up.
+
+It also did not annotate ten more cases by feel. That would have made the distribution rule run on
+numbers with no more standing than the five that contradict each other.
+
+### What it did
+
+It stated the one property any definition must have, and made it checkable.
+
+**Monotonicity**: a case cannot claim less structure than its own chain carries. If following a fault
+through an intermediate entity is what costs a reader, then a two-step chain cannot be L1, whatever
+else L1 might mean. This is weaker than a definition; it is also the only part of one that can be
+derived from the data rather than decided in a meeting.
+
+`difficultyFloor({ case, graph })` derives it from two facts the case carries: `depth` (causal steps)
+and `breadth` (distinct entity kinds the chain and the root cause touch).
+
+| steps | kinds | floor |
+| --- | --- | --- |
+| ≥ 3 | any | L4 |
+| 2 | any | L3 |
+| 1 | ≥ 2 | L2 |
+| 1 | 1 | L1 |
+
+`findDifficultyShortfalls` reports every case whose declared level sits below its floor. That is a
+**problem** in the corpus guard and the run fails, because an annotation contradicting its own case is
+a one-line repair.
+
+### A dead branch, written and removed in the same round
+
+The first draft had a fifth row: `breadth >= 3` at one step → L3. It cannot happen. A one-step chain
+runs from the root cause to its consequence, so its two ends contribute at most two kinds unless the
+root cause sits off its own chain — which the four-layer assessment already refuses. The test written
+for that row failed against the implementation, and the row was deleted rather than the test, because
+the test was right: `container → service` with the container as root cause is breadth 2, and it is
+L2. This is the same defect the volume keeps removing, arising and being removed inside one round.
+
+### The labels, and what they now claim
+
+Eleven cases changed: one was **raised** (`history-checkout-cpu-saturation`, L2 → L3, the shortfall
+the guard found), and ten unlabelled cases took their floor. The four labels that were already above
+their floor were left alone — `history-queue-watermark-ledger-writer` at L3 over a floor of L2 is a
+judgement that does not contradict anything.
+
+So every level in the corpus now claims **at least** the structure it carries, and nothing more. That
+is a weaker claim than a difficulty rating, and it is stated as such in the module and here.
+
+### The distribution, which now runs on real labels
+
+```
+check-fault-cases: difficulty 15 of 15 case(s) state a level; the distribution rule applies at 10
+check-fault-cases: difficulty spread L1 2 / L2 8 / L3 5 / L4 0; outside the target -- L4 share
+                   0.000 is below the 0.1 floor
+```
+
+Two verdicts come out of that block and they are deliberately different:
+
+- a **label below its floor** fails the run, because it is an annotation defect;
+- a **missing hardest case** is printed and does not fail, because no correction to any label can
+  produce an L4: the deepest chain in this corpus is two steps. Failing every run on a property only a
+  new case can change is how a line becomes invisible, and printing it silently is the vacuous pass
+  this volume keeps removing.
+
+The decision it is waiting for is written in the progress log: either a case with a three-step chain
+enters the corpus, or `minL4Share` is lowered as a product decision. Both are honest; neither is
+"tune until green".
+
+### Mutation battery
+
+| mutation | expected | observed |
+| --- | --- | --- |
+| a case is labelled below its floor | the shortfall assertion and the run fail | `FAILED — 1 problem(s)`, naming the case |
+
+The floor is also covered at the unit level by twelve cases — one per row of the table, plus the
+root-cause-off-the-chain row, the unresolvable-reference row, and the empty-chain row.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the floor | `difficultyFloor` / `findDifficultyShortfalls`, exported, enumerated, 12 unit tests |
+| the corpus | 15 of 15 state a level; 0 shortfalls; spread L1 2 / L2 8 / L3 5 / L4 0 |
+| the two verdicts | a label below its floor fails; a missing L4 is printed |
+| `core` | **189 / 4710** |

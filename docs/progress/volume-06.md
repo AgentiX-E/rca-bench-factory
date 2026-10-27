@@ -2518,3 +2518,92 @@ assertions failing, `difficulty 5 of 15`); `docs:check` green; audit 7 volumes, 
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence
 of logs cannot be a checkpoint.
+
+## v3.00 — difficulty had no definition, so the floor was defined instead
+
+**What was open.** Ten of fifteen cases carried no difficulty level, and the distribution rule — made
+reachable in v2.99 — needed ten before it could say anything. The round was going to annotate them.
+
+**The question that stopped it.** What does a level mean? A sweep of the repository found the field
+declared (`'L1'|'L2'|'L3'|'L4'`), its projection published (`L1->easy`, `L2->medium`, `L3/L4->hard`),
+and nothing at all about what makes a case L3 rather than L2.
+
+**What an undefined field collects, measured.** Five labels, and they do not agree with each other:
+
+- `history-kafka-consumer-lag` and `history-queue-watermark-ledger-writer` have **identical**
+  structure — one step, two entity kinds — and are labelled L2 and L3;
+- `history-checkout-cpu-saturation` has the **most** structure in the corpus — two steps, three kinds
+  — and is labelled L2.
+
+Three judgements, made once each, none comparable.
+
+**What this round refused to do.** It refused to invent the definition: any real one has to say what
+difficulty is *for*, and every candidate — model accuracy, distance from the easiest hypothesis,
+number of plausible wrong answers — needs evidence this repository does not have. It also refused to
+annotate ten cases by feel, which would have given the distribution rule a population with no more
+standing than the five that contradict each other.
+
+**What it did.** It stated the one property any definition must have and made it checkable.
+**Monotonicity**: a case cannot claim less structure than its own chain carries. `difficultyFloor`
+derives it from `depth` (causal steps) and `breadth` (distinct entity kinds), and
+`findDifficultyShortfalls` reports any label below its floor.
+
+| steps | kinds | floor |
+| --- | --- | --- |
+| ≥ 3 | any | L4 |
+| 2 | any | L3 |
+| 1 | ≥ 2 | L2 |
+| 1 | 1 | L1 |
+
+**A dead branch, written and removed in the same round.** The first draft added `breadth >= 3` at one
+step → L3. It cannot happen: a one-step chain's two ends are at most two kinds unless the root cause
+sits off its own chain, which the four-layer assessment refuses. The test for that row failed against
+the implementation, and the row was deleted rather than the test.
+
+**Eleven labels changed.** One was raised (`history-checkout-cpu-saturation`, L2 → L3 — the shortfall
+the guard found on its first run), and ten unlabelled cases took their floor. The four labels already
+above their floor were left alone. Every level in the corpus now claims *at least* the structure it
+carries, which is a weaker claim than a rating and is stated as such.
+
+**The distribution now runs, on real labels.**
+
+```
+difficulty 15 of 15 case(s) state a level; the distribution rule applies at 10
+difficulty spread L1 2 / L2 8 / L3 5 / L4 0; outside the target -- L4 share 0.000 is below the 0.1 floor
+```
+
+Two verdicts, deliberately different. A **label below its floor** fails the run: it is an annotation
+defect and a one-line repair. A **missing hardest case** is printed and passes: no correction to any
+label can produce an L4, because the deepest chain in the corpus is two steps. Failing every run on a
+property only a new case can change is how a line becomes invisible.
+
+**Acceptance.** `pnpm test:coverage` green at core **189 / 4710**, cli 4 / 187, repo **193** files /
+**4897** tests; `check-fault-cases` OK (15 of 30, 48 references resolved, 0 shortfalls, spread
+2/8/5/0); `docs:check` green; audit 7 volumes, findings 1–274.
+
+### Left open
+
+- **The difficulty definition is still missing, and the floor is not it.** `[open: monotonicity is
+  necessary and not sufficient; a real level needs per-case accuracy, which needs more than the two
+  local baselines the corpus is checked against, and the ONE provider this repository has configured
+  is not a measurement of difficulty either]`
+- **No case in the corpus is L4.** `[open: every chain is one or two steps, so `minL4Share` of 0.1
+  cannot be met by any labelling; either a three-step case enters or the floor becomes a product
+  decision -- and the report names the gap on every run until then]`
+- **Fifteen samples carry no case.** `[open: the remaining samples in the extraction key are one
+  annotation per round, and the round just spent itself on the definition the annotation needs]`
+- **A reversal between two entities of one kind is not detectable statically.** `[open: a direction
+  between two services is a fact about a deployment; the witness would be trace parent/child spans
+  and one case in the corpus has traces]`
+- **One red run is unreproduced.** `[open: a listed gate was read as exit-free once; three hypotheses
+  were refuted in v2.98 and a dozen runs since have been green]`
+- **Upstream's baselines still refuse our data.** `[open: the loader picks a service-level indicator
+  by path; claiming to be `online-boutique` would produce a comparable and meaningless number]`
+- **RE3's traces and logs are not read.** `[open: 29 MB and 11 MB per case, never opened, so an RE3
+  case reaches the export with one of the IR's four layers]`
+- **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv` and `tracets_lat.csv` are read by
+  the multi-source methods and this exporter writes none of them]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.
