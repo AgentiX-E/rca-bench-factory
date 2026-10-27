@@ -107,5 +107,6 @@
     ]
   },
   "query": "The billing service began throwing 'connection pool exhausted' after the replica promotion. What is the root cause, and why is the database not it?",
+  "difficulty": "L1",
   "answerKeyIsolated": true
 }

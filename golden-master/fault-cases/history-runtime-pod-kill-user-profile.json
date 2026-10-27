@@ -105,5 +105,6 @@
     ]
   },
   "query": "The user-profile pod was terminated at 14:07 and every request 503'd until a replacement was ready forty seconds later. What is the root cause, and why is the node not it?",
+  "difficulty": "L3",
   "answerKeyIsolated": true
 }

@@ -99,6 +99,6 @@
     ]
   },
   "query": "checkout-api p99 latency rose from 180ms to 4.3s over eleven minutes with no change in load; CPU throttling counters climbed the whole time. What failed, and why?",
-  "difficulty": "L2",
+  "difficulty": "L3",
   "answerKeyIsolated": true
 }

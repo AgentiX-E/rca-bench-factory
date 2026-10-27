@@ -112,5 +112,6 @@
     ]
   },
   "query": "Every image build started failing with 'no space left on device' while the host reported its disk 40 percent used. Which component consumed the space, and why did the host's own reading not show it?",
+  "difficulty": "L2",
   "answerKeyIsolated": true
 }

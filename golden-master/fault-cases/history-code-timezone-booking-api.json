@@ -92,5 +92,6 @@
     ]
   },
   "query": "Booking reminders went out an hour early for every appointment created after the daylight saving change. Which component is the root cause, and why is the scheduler not it?",
+  "difficulty": "L1",
   "answerKeyIsolated": true
 }

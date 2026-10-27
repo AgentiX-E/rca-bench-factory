@@ -114,5 +114,6 @@
     ]
   },
   "query": "Catalog service requests larger than about 1,400 bytes hang while its health checks stay green. What is the root cause, and why did the health check not see it?",
+  "difficulty": "L2",
   "answerKeyIsolated": true
 }

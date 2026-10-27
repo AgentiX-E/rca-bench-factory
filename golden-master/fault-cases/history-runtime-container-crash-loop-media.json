@@ -100,5 +100,6 @@
     ]
   },
   "query": "The media-transcoder container has restarted 178 times in twelve hours. What is the root cause, and why are the liveness probes not it?",
+  "difficulty": "L3",
   "answerKeyIsolated": true
 }

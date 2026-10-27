@@ -105,5 +105,6 @@
     ]
   },
   "query": "The pricing service returned 502 on 60% of requests for eighteen minutes. Which component is the root cause, and what distinguishes it from the pricing service itself?",
+  "difficulty": "L2",
   "answerKeyIsolated": true
 }
