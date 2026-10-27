@@ -1,0 +1,105 @@
+{
+  "caseId": "history-config-datasource-url-orders",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-16T10:20:00.000Z",
+  "window": {
+    "start": "2026-10-16T10:05:00.000Z",
+    "end": "2026-10-16T10:50:00.000Z"
+  },
+  "fault": {
+    "type": "config-mismatch",
+    "category": "config",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "order-service",
+      "configMap": "order-service-config",
+      "declaredKey": "primary-jdbc-url",
+      "staleKey": "jdbc-url",
+      "declaredValuePointsAt": "orders-db",
+      "staleValuePointsAt": "orders-db-staging"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/order-service",
+    "rootCauseComponent": "order-service",
+    "rootCauseReason": "The rollout renamed the ConfigMap key that carries the primary JDBC URL. The old key was left in place and still holds the staging URL, and the application reads the old key first, so every instance opened its pool against staging. Nothing failed because nothing was asked to fail: the staging database accepts the same schema and the same statements, so every write returned success. The defect is in which endpoint the configuration resolved to, and the only trace of it is the destination of the writes.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "order_write_rows_ratio_to_staging",
+        "description": "every order write lands in the staging database, from the first instance after the rollout"
+      },
+      {
+        "type": "metric",
+        "ref": "order_write_rows_ratio_to_production",
+        "description": "the production database receives nothing, which is the reading the business noticed first and the application never reported"
+      },
+      {
+        "type": "metric",
+        "ref": "order_write_error_ratio",
+        "description": "the write error ratio stays at zero throughout, which is what makes this a configuration fault rather than an availability one"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/order-service",
+        "toEntityId": "db:synthetic-storefront/orders-db-staging",
+        "mechanism": "the application resolves its primary JDBC URL by reading the old ConfigMap key first, that key survived the rename holding the staging value, and every instance came up with its pool pointed at staging -- which accepts the same schema, so every write succeeded",
+        "evidenceRefs": [
+          "cp-staging-writes",
+          "cp-production-silent",
+          "cp-no-errors"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-staging-writes",
+        "entityRef": "service:synthetic-storefront/order-service",
+        "signalRef": "order_write_rows_ratio_to_staging",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "all of the traffic, not most of it: a share of one is what a single resolved endpoint produces, and what a partial rollout or a retry storm cannot"
+      },
+      {
+        "checkpointId": "cp-production-silent",
+        "entityRef": "service:synthetic-storefront/order-service",
+        "signalRef": "order_write_rows_ratio_to_production",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "the production database receives nothing after the rollout, which is the direct evidence for a destination rather than a rate"
+      },
+      {
+        "checkpointId": "cp-no-errors",
+        "entityRef": "service:synthetic-storefront/order-service",
+        "signalRef": "order_write_error_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "no write failed, which rules out the pool, the credentials and the network -- every explanation that would have produced an error"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "delete the stale key rather than leaving it beside the renamed one, so a reader cannot resolve a value the rollout meant to replace",
+        "target": "service:synthetic-storefront/order-service"
+      },
+      {
+        "step": 2,
+        "action": "refuse to start when the resolved primary URL does not name the production endpoint, so a silent misdirection becomes a failed deploy",
+        "target": "service:synthetic-storefront/order-service"
+      }
+    ]
+  },
+  "query": "Orders stopped arriving in the production database, yet every write reported success and no alert fired. Which component is the root cause, and why did nothing fail?",
+  "answerKeyIsolated": true
+}

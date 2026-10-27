@@ -215,6 +215,30 @@
       "kind": "node",
       "name": "build-node-1",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/order-service",
+      "kind": "service",
+      "name": "order-service",
+      "aliases": [
+        "every order-service instance"
+      ]
+    },
+    {
+      "entityId": "db:synthetic-storefront/orders-db",
+      "kind": "db",
+      "name": "orders-db",
+      "aliases": [
+        "the primary database"
+      ]
+    },
+    {
+      "entityId": "db:synthetic-storefront/orders-db-staging",
+      "kind": "db",
+      "name": "orders-db-staging",
+      "aliases": [
+        "the staging database"
+      ]
     }
   ],
   "edges": [
@@ -322,6 +346,16 @@
       "from": "node:synthetic-storefront/build-node-1",
       "to": "pod:synthetic-storefront/image-builder-0",
       "relation": "hosts"
+    },
+    {
+      "from": "service:synthetic-storefront/order-service",
+      "to": "db:synthetic-storefront/orders-db",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/order-service",
+      "to": "db:synthetic-storefront/orders-db-staging",
+      "relation": "calls"
     }
   ]
 }

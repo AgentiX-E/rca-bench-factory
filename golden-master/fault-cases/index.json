@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 14,
+  "min": 15,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -420,6 +420,36 @@
           "layer": "evidence",
           "quote": "while df reported 40 percent used",
           "why": "the counter-reading the case turns on: a true measurement of a different filesystem, which is why the checkpoint is a control rather than a contradiction"
+        }
+      ]
+    },
+    {
+      "caseId": "history-config-datasource-url-orders",
+      "sampleId": "config-datasource-url-orders",
+      "case": "history-config-datasource-url-orders.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-config-datasource-url-orders.signals.json",
+      "why": "annotated from the incident text of `config-datasource-url-orders`, and the corpus's first case whose evidence is a *destination*. Every other case here moves a number up or down; this one moves rows from one database to another and leaves every rate untouched. The text says both halves: the writes succeeded and the place was wrong. That pair is what makes the case decidable and what makes it hard -- a corpus carrying only the missing rows in production would be satisfied by `the write path is broken`, which is false, and the zero error ratio is the checkpoint that excludes it. The chain is one step because the misdirection is one step: the old key, then the endpoint it resolves to.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "every order-service instance",
+          "why": "the component whose configuration resolved to the wrong endpoint -- every instance, which is why this is a configuration fault rather than a partial rollout"
+        },
+        {
+          "layer": "fault",
+          "quote": "The ConfigMap key that should hold the primary JDBC URL holds the staging one",
+          "why": "the mechanism in one sentence: the value the application reads is a real URL, and it names the wrong database"
+        },
+        {
+          "layer": "process",
+          "quote": "a rename during the rollout left the old key in place and the application reads the old key first",
+          "why": "the sentence that orders the steps -- rename, stale key survives, precedence -- rather than leaving a rollout and a wrong endpoint side by side"
+        },
+        {
+          "layer": "evidence",
+          "quote": "writes succeeded, into the wrong place",
+          "why": "both halves of the evidence at once: success rules out the pool and the credentials, and the place is what the two shares measure"
         }
       ]
     }

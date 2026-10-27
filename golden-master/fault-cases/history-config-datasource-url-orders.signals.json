@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-config-datasource-url-orders",
+  "why": "Telemetry for the datasource case, and the corpus's first whose evidence is a *destination* rather than a magnitude. Nothing is slow and nothing fails: the write error ratio is flat at zero, and the only moving pair is where the rows landed. The two shares are one fact stated twice on purpose -- a share of one at staging is what a single resolved endpoint produces, and it is also what makes the production share zero, so a corpus carrying only one of them would let a reader mistake a partial misdirection for a complete one. `order_write_error_ratio` at zero is the control that rules out every explanation that would have produced an error: the pool, the credentials, the network, and the schema.",
+  "series": [
+    {
+      "service": "order-service",
+      "metric": "order_write_rows_ratio_to_staging",
+      "unit": "1",
+      "baseline": 0,
+      "post": 1,
+      "quote": "connected to the staging database instead of production",
+      "why": "the checkpoint `cp-staging-writes` holds the one: the share is all of it, which is a resolved endpoint rather than a percentage of traffic that drifted"
+    },
+    {
+      "service": "order-service",
+      "metric": "order_write_rows_ratio_to_production",
+      "unit": "1",
+      "baseline": 1,
+      "post": 0,
+      "quote": "instead of production",
+      "why": "the checkpoint `cp-production-silent` holds the zero: the production database receives nothing, and that is the reading the business saw before any dashboard did"
+    },
+    {
+      "service": "order-service",
+      "metric": "order_write_error_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "quote": "writes succeeded, into the wrong place",
+      "why": "the checkpoint `cp-no-errors` holds the zero: nothing failed, which is why the fault was silent and why every explanation involving a failure is excluded"
+    }
+  ]
+}
