@@ -352,3 +352,146 @@ that could not load; a search for other live-data premises is worth doing and is
 | the two rules | still two-sided: pending-called-pinned and pending-claiming-a-reading, both red |
 | the naming rule | kept, with the emptiness asserted rather than required |
 | `core` / repo | **187 / 4671** · **191 / 4858**; 4671 locally after the pin, which is the run that was missing |
+
+## Finding 270 — a relation names a direction, and the graph accepted either one
+
+Finding 269 ended with a list, and the last item on it was one sentence: *no relation is checked for
+direction*. This round is that sentence.
+
+### The check the two existing checks are not
+
+`ir/types.ts` describes four of its five relations as a movement from one thing to another:
+
+```
+contains  a service has a pod, a pod has a container -- part-of, inside
+hosts     a node runs a pod -- where it lives
+calls     one service invokes another, or a service uses a datastore or a broker
+routes    traffic for the target passes through the source -- a router, a switch, a load balancer
+```
+
+The graph validated three things about an edge and never that one. `findDanglingEdgeRefs` asks
+whether both ends exist. `findInvalidRelations` asks whether the word is in the published tuple.
+`assessFourLayer` asks whether the ground truth's references resolve. None of the three reads
+`from` and `to` as an order rather than as two names.
+
+So the sentence is exact, and its cost is not cosmetic. A `calls` edge written backwards moves the
+root cause from the caller to the callee — which is the answer an evaluator compares against, and the
+one a reader of the exported topology uses to decide what is upstream.
+
+### Measured before it was believed
+
+The claim was tested on a copy of the corpus rather than argued from the code:
+
+```
+cp -r golden-master/fault-cases /tmp/fcc
+# flip service:checkout-api --contains--> pod:checkout-api-0
+node scripts/check-fault-cases.mjs --cases /tmp/fcc
+```
+
+Green. Four-layer annotation, reference resolution, G1, G2, G5, the RCAEval export for all three
+suites, and the checkpoint assertions — every one passed, on a topology whose containment pointed the
+wrong way. Flipping `service:checkout-api --calls--> payment-service` instead was green too, and that
+one is the defect that changes an answer.
+
+### Two of them were already in the tree
+
+This is not a hole nobody had stepped in. With the rule written, the suite went red on two fixtures
+the repository had carried for as long as each had existed:
+
+- `entity.test.ts` — `pod:default/order-7d9f --contains--> service:default/order`, the pod containing
+  the service whose replica it is.
+- `rca100.test.ts` — `pod:default/order-pod-1 --hosts--> service:default/order`, a pod hosting the
+  service.
+
+Both were written by the author of the guard that now refuses them, and both had a passing test
+attached. That is the shape this volume keeps recording: a fixture that is wrong in a way its test
+cannot see, because the test asks a different question than the one the fixture's own words claim.
+
+### The rule, and why the table is hand-written
+
+`RELATION_SIDES` in `entity/graph.ts` states, per relation, which entity kinds it admits on each
+side. `contains` takes a `cluster` / `node` / `host` / `service` / `pod` and produces a `pod` /
+`container`; `hosts` takes a `cluster` / `node` / `host`; `calls` takes a caller and produces a
+`service` / `external` / `db` / `mq`; `routes` takes the device traffic passes through; `same_as` is
+`null`, because identity is symmetric in `normalizeAliases` and inventing a side would refuse half the
+edges that are correct.
+
+The rows are written by hand for the reason `export-surface-enumerated.test.ts` gives about its own
+list: a table derived from the corpus agrees with the corpus by construction, including where the
+corpus is wrong. The price is a refusal that says which kinds were admitted, so a new directed shape
+is one line away rather than a silent pass.
+
+`findImplausibleEdgeDirections` also refuses an edge from an entity to itself. A kind-pair table
+cannot: `pod --contains--> pod` has a legal source kind and a legal target kind and means nothing, and
+the same is true of `service --calls--> service`.
+
+### What the rule cannot do, stated where the rule lives
+
+**A kind pair cannot catch a reversal between two entities of one kind.** `service A --calls-->
+service B` and `service B --calls--> service A` are both admitted. The direction of a call is a fact
+about a deployment, not about kinds, and this is measured rather than assumed: the flipped-`calls`
+experiment above is still green after the rule landed, and it is recorded as green.
+
+Closing it needs an independent witness — a trace whose parent-child spans say which service called
+which — and the corpus has exactly one case that carries traces at all. That is a corpus problem
+before it is a code problem, and it goes on the open list rather than into this table.
+
+### The half that is not a rule: G2 was two questions in one function
+
+Turning the rule on produced **26 problem lines for one reversed edge**. `checkG2Semantic` was one
+function over a bundle, and `check-fault-cases.mjs` asks it of a one-case bundle twice — once before
+the telemetry is expanded, once after. Thirteen cases times two passes, each reporting the same graph
+defect.
+
+Two things were wrong and they are separate:
+
+1. **The graph's obligations are the graph's.** They do not depend on which case is being read, so a
+   caller with thirteen cases over one topology should ask once. `checkGraphContract(graph)` is now
+   that question, `checkCaseSemantics(bundle)` is the other, and `checkG2Semantic` composes them in
+   that order — graph defects first, because one is repaired for every case that ships the graph.
+2. **The second pass could not have differed.** G2 reads the graph and the ground truth; it never
+   reads telemetry. Asking it of `withSignals` was a second run of a pure function over the same
+   inputs, and it was kept because the surrounding block was about signals. It is gone, with the
+   reason in its place.
+
+`check-fault-cases.mjs` now keys the graph contract on the graph *file name* rather than on
+`firstGraph`, so a corpus that grows a second topology checks both.
+
+### The guard's own guard had the same shape
+
+`guard.test.ts` extracts G2's `code:` literals from `gates.ts` by slicing the body of a function it
+finds by name. After the split, `checkG2Semantic`'s body contains two calls and no codes, and the
+extractor returned an empty set — `finds codes to classify at all`, the positive control written for
+exactly this failure, went red.
+
+The fix keeps the control honest: `G2_PARTS` names the functions G2 is made of, and a second
+assertion reads the composer's body and requires it to call each of them. A third half added later
+without being listed fails there rather than quietly emitting codes no classification covers.
+
+`STRUCTURAL_CODES` in `export/guard.ts` gained the two new codes by hand and deliberately. Deriving
+that set from `checkGraphContract` would be tighter and would delete the decision the set exists to
+force: whether a defect is one the whole bundle must be refused for, or one a case can be skipped
+for. The two new ones are structural for the same reason `DANGLING_EDGE_REF` is — the graph is
+shared by every case in the bundle, so no per-case skip repairs it.
+
+### Mutation battery
+
+| mutation | expected | observed |
+|---|---|---|
+| `contains.to` admits `service` | the reversed-containment test fails | 1 failed / 12 |
+| the self-edge branch is deleted | both self-edge tests fail | 2 failed / 37 |
+| `checkG2Semantic` stops composing the graph half | the composition tests fail | 2 failed / 24 |
+
+Each restored afterwards, and the restored tree is what the acceptance table below was measured on.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the rule | `RELATION_SIDES` covers all five relations, and only published kinds appear in it (two tests) |
+| the corpus | 19 directed edges, 0 refusals; the 13 cases still pass G1, G2 and G5 |
+| the negative control | flipping one `contains` edge → `FAILED — 1 problem(s) across 13 case(s)` |
+| the known gap | flipping one `calls` edge → still `OK`, stated in the finding and on the open list |
+| the report | one graph defect is one line, not twenty-six |
+| the export boundary | both codes are structural, so `assertExportableBundle` refuses the bundle |
+| `core` / repo | **188 / 4690** · **192 / 4877** |

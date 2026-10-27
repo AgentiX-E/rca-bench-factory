@@ -144,22 +144,26 @@ export type {
 } from './transform/engine.js';
 
 export {
+  RELATION_SIDES,
   entityId,
   findAmbiguousAliases,
   findDanglingEdgeRefs,
+  findImplausibleEdgeDirections,
   findInvalidRelations,
   indexGraph,
   normalizeAliases,
   resolveEntityRef,
 } from './entity/graph.js';
-export type { GraphIndex, ReferenceIssue } from './entity/graph.js';
+export type { DirectionIssue, GraphIndex, ReferenceIssue } from './entity/graph.js';
 
 export {
   DEFAULT_SENSITIVE_PATTERNS,
   caseFingerprint,
+  checkCaseSemantics,
   checkG1Structural,
   checkG2Semantic,
   checkG3Validity,
+  checkGraphContract,
   checkG4Solvability,
   checkG5AntiPollution,
   mean,

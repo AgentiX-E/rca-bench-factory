@@ -19,20 +19,33 @@ import { validBundle } from './fixtures.js';
  * measured against.
  */
 
-/** Every `code:` literal that appears inside `checkG2Semantic`'s body. */
-function codesEmittedByG2(): Set<string> {
-  const source = readFileSync(new URL('../src/gates/gates.ts', import.meta.url), 'utf8');
-  const start = source.indexOf('export function checkG2Semantic(');
-  expect(start, 'G2 must be findable by name; this guard is measuring the wrong thing').toBeGreaterThan(-1);
+/**
+ * The functions G2 is made of.
+ *
+ * `checkG2Semantic` composes the graph's obligations and the cases' obligations, and neither half
+ * is G2 on its own: the graph half is asked once per bundle, the case half once per case, and G2
+ * is what a caller that wants both asks for. Reading only the composer's body therefore finds no
+ * codes at all -- which is how this guard first failed after the split, with `finds codes to
+ * classify at all` red rather than the classification wrong.
+ */
+const G2_PARTS = ['checkGraphContract', 'checkCaseSemantics'] as const;
 
-  // Slice from the signature to the closing brace at column 0, which is how the
-  // module's top-level functions are delimited.
+/** The body of a top-level `export function <name>(`, ending at the brace in column 0. */
+function functionBody(source: string, name: string): string {
+  const start = source.indexOf(`export function ${name}(`);
+  expect(start, `${name} must be findable by name; this guard is measuring the wrong thing`).toBeGreaterThan(-1);
   const rest = source.slice(start);
   const end = rest.indexOf('\n}\n');
-  const body = end === -1 ? rest : rest.slice(0, end);
+  return end === -1 ? rest : rest.slice(0, end);
+}
 
+/** Every `code:` literal that appears inside the functions G2 is made of. */
+function codesEmittedByG2(): Set<string> {
+  const source = readFileSync(new URL('../src/gates/gates.ts', import.meta.url), 'utf8');
   const codes = new Set<string>();
-  for (const m of body.matchAll(/code: '([A-Z_]+)'/g)) codes.add(m[1] as string);
+  for (const part of G2_PARTS) {
+    for (const m of functionBody(source, part).matchAll(/code: '([A-Z_]+)'/g)) codes.add(m[1] as string);
+  }
   return codes;
 }
 
@@ -62,6 +75,17 @@ describe('export guard · G2 code classification is total', () => {
     // remembered-but-wrong name sits in the set forever, matching nothing.
     const phantom = [...STRUCTURAL_CODES, ...CASE_LEVEL_CODES].filter((c) => !emitted.has(c));
     expect(phantom).toEqual([]);
+  });
+
+  it('composes exactly the halves this file reads', () => {
+    // The other drift direction, and the one the split made possible: a third half added to
+    // `checkG2Semantic` and not listed in `G2_PARTS` would emit codes this file never sees, and
+    // the classification would still pass over the two halves it happened to know about.
+    const source = readFileSync(new URL('../src/gates/gates.ts', import.meta.url), 'utf8');
+    const composer = functionBody(source, 'checkG2Semantic');
+    for (const part of G2_PARTS) {
+      expect(composer, `checkG2Semantic must call ${part}, or G2 means something else`).toContain(`${part}(`);
+    }
   });
 
   it('treats no code as both structural and case-level', () => {

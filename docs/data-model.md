@@ -72,6 +72,37 @@ not be an entity at all -- an edge would have had to say `calls`, which is a lie
 filtering it, so dropping a kind from the IR narrows the subset too rather than
 leaving a stale list behind.
 
+#### Which side of an edge each relation admits
+
+Four of the five relations name a direction, and the graph accepted them in either
+one until `RELATION_SIDES` (`entity/graph.ts`) said otherwise. `findDanglingEdgeRefs`
+asks whether an edge's ends exist, `findInvalidRelations` asks whether the word is
+published, and neither asks whether the word can mean what the edge says.
+
+| Relation | Source kinds | Target kinds |
+|---|---|---|
+| `contains` | `cluster`, `node`, `host`, `service`, `pod` | `pod`, `container` |
+| `hosts` | `cluster`, `node`, `host` | `service`, `pod`, `container`, `db`, `mq`, `external` |
+| `calls` | `service`, `external`, `container`, `host` | `service`, `external`, `db`, `mq` |
+| `routes` | `cluster`, `node`, `host`, `external`, `service` | `service`, `pod`, `container`, `external` |
+| `same_as` | — | — (identity is symmetric) |
+
+Two limits are worth stating where a consumer reads them, because a dataset's
+topology is what an evaluator ranks a root cause against:
+
+- **A kind pair cannot catch a reversal between two entities of one kind.** `service A
+  --calls--> service B` and `service B --calls--> service A` are both admitted, and the
+  direction of a call is a fact about a deployment rather than about kinds. The table
+  refuses the reversals that are structurally impossible and says nothing about the
+  rest.
+- **An edge from an entity to itself is refused by the same check**, because
+  `pod --contains--> pod` and `service --calls--> service` pass a kind-pair table
+  unharmed and mean nothing.
+
+A refusal is `IMPLAUSIBLE_EDGE_DIRECTION` or `SELF_EDGE` in G2, and both are
+*structural* in `export/guard.ts`: the graph is one system's topology and every case in
+the bundle reads it, so no per-case skip repairs it.
+
 ## Layer 3 — `FaultCase`
 
 One failure plus everything a benchmark needs to evaluate it.

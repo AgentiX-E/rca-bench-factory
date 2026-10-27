@@ -7,7 +7,13 @@ import type {
   SignalKind,
   TelemetrySignal,
 } from '../ir/types.js';
-import { findDanglingEdgeRefs, findInvalidRelations, indexGraph, resolveEntityRef } from '../entity/graph.js';
+import {
+  findDanglingEdgeRefs,
+  findImplausibleEdgeDirections,
+  findInvalidRelations,
+  indexGraph,
+  resolveEntityRef,
+} from '../entity/graph.js';
 import { isoUtcToEpochMs, isWithinWindow } from '../util/time.js';
 import { dimensionOf } from '../util/unit.js';
 import { verifyFaultValidity, type ValidityOptions } from './validity.js';
@@ -149,17 +155,56 @@ function isConnected(adj: Map<string, Set<string>>, from: string, to: string): b
 
 // ─── G2 · semantic consistency ─────────────────────────────────────────────
 
-export function checkG2Semantic(bundle: IrBundle): GateResult {
+/**
+ * The graph's own obligations, which are the same for every case that ships that graph.
+ *
+ * Split out of `checkG2Semantic` for a reason the corpus made visible: thirteen cases over one
+ * graph ran these three loops twenty-six times and reported one defective edge twenty-six times,
+ * because `check-fault-cases.mjs` asks G2 of a one-case bundle twice -- once before the telemetry
+ * is expanded and once after -- and neither pass reads telemetry. A gate that answers two
+ * independent questions cannot be asked for only one of them, so the questions are separate
+ * functions and G2 composes them.
+ */
+export function checkGraphContract(graph: EntityGraph): GateResult {
+  const v: GateViolation[] = [];
+
+  for (const issue of findDanglingEdgeRefs(graph)) {
+    v.push({ code: 'DANGLING_EDGE_REF', message: `${issue.where} references '${issue.ref}' which is not an entity` });
+  }
+  for (const issue of findInvalidRelations(graph)) {
+    v.push({ code: 'INVALID_RELATION', message: `unknown relation '${issue.ref}'` });
+  }
+  // Direction, which the two checks above do not reach: both ends resolve and the word is
+  // published, so a `calls` edge written backwards passed every gate this package had.
+  for (const issue of findImplausibleEdgeDirections(graph)) {
+    if (issue.reason === 'self-edge') {
+      v.push({
+        code: 'SELF_EDGE',
+        message: `'${issue.from}' ${issue.relation} itself, which no relation means`,
+        fieldPath: `graph.edges[${issue.from} -> ${issue.to}]`,
+      });
+      continue;
+    }
+    v.push({
+      code: 'IMPLAUSIBLE_EDGE_DIRECTION',
+      message:
+        `edge ${issue.from} ${issue.relation} ${issue.to} has a '${issue.kind}' on its ` +
+        `'${issue.side}' side, and ${issue.relation} admits ${issue.admits.join(' / ')} there`,
+      fieldPath: `graph.edges[${issue.from} -> ${issue.to}]`,
+    });
+  }
+
+  return gate('G2', v);
+}
+
+/**
+ * The case-level half of G2: every reference a case makes has to resolve in the graph it ships
+ * with, its chain has to be a path through that graph, and its units have to exist.
+ */
+export function checkCaseSemantics(bundle: IrBundle): GateResult {
   const v: GateViolation[] = [];
   const index = indexGraph(bundle.graph);
   const adjacency = buildAdjacency(bundle.graph);
-
-  for (const issue of findDanglingEdgeRefs(bundle.graph)) {
-    v.push({ code: 'DANGLING_EDGE_REF', message: `${issue.where} references '${issue.ref}' which is not an entity` });
-  }
-  for (const issue of findInvalidRelations(bundle.graph)) {
-    v.push({ code: 'INVALID_RELATION', message: `unknown relation '${issue.ref}'` });
-  }
 
   for (const c of bundle.cases) {
     const rootRef = c.groundTruth.rootCauseEntityId;
@@ -332,6 +377,21 @@ export function checkG2Semantic(bundle: IrBundle): GateResult {
     }
   }
 
+  return gate('G2', v);
+}
+
+/**
+ * G2 as one gate: the graph's obligations and the cases' obligations, in that order.
+ *
+ * The order is the report's, and it is the order a reader repairs in: a topological defect is
+ * repaired once for every case that ships the graph, so it comes before the case-level findings it
+ * may be the cause of.
+ */
+export function checkG2Semantic(bundle: IrBundle): GateResult {
+  const v: GateViolation[] = [
+    ...checkGraphContract(bundle.graph).violations,
+    ...checkCaseSemantics(bundle).violations,
+  ];
   return gate('G2', v);
 }
 

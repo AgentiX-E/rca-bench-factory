@@ -631,8 +631,10 @@ const TESTED = [
   'exportItBench',
   // gates/gates.ts
   'checkG1Structural',
+  'checkCaseSemantics',
   'checkG2Semantic',
   'checkG3Validity',
+  'checkGraphContract',
   'checkG4Solvability',
   'checkG5AntiPollution',
   'runAllGates',
@@ -911,10 +913,12 @@ const TESTED = [
   'formatVersion',
   'parseCliArgs',
   // entity/graph.ts
+  'RELATION_SIDES',
   'VALID_RELATIONS',
   'entityId',
   'findAmbiguousAliases',
   'findDanglingEdgeRefs',
+  'findImplausibleEdgeDirections',
   'findInvalidRelations',
   'indexGraph',
   'normalizeAliases',

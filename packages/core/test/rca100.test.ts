@@ -45,10 +45,14 @@ function fullGraph(): EntityGraph {
     entity('cluster', 'prod', 'default'),
     entity('external', 'payment-gateway', 'default'),
   ];
+  // The two containment edges are written in the direction their relations mean: a service has the
+  // pods that are its replicas, and a node runs the pod. The first of them used to read
+  // `pod hosts service`, which no relation means and which nothing refused until G2 learned to ask
+  // whether an edge's direction is one its relation admits.
   const edges = [
     { from: 'service:default/order', to: 'service:default/cart', relation: 'calls' as const },
-    { from: 'pod:default/order-pod-1', to: 'service:default/order', relation: 'hosts' as const },
-    { from: 'node:default/node-a', to: 'pod:default/order-pod-1', relation: 'contains' as const },
+    { from: 'service:default/order', to: 'pod:default/order-pod-1', relation: 'contains' as const },
+    { from: 'node:default/node-a', to: 'pod:default/order-pod-1', relation: 'hosts' as const },
     { from: 'service:default/order', to: 'db:default/mysql', relation: 'calls' as const },
   ];
   return { entities, edges };
@@ -160,8 +164,12 @@ describe('buildTopologyJson', () => {
     expect(order.type).toBe('apm.service');
     expect(order.props.namespace).toBe('default');
     expect(order.props.aliases).toEqual(['svc-order-prod-01']);
-    const edge = parsed.edges.find((e: { src: string }) => e.src === 'pod:default/order-pod-1');
-    expect(edge).toMatchObject({ dst: 'service:default/order', src_type: 'k8s.pod', dst_type: 'apm.service', relation: 'hosts' });
+    const contains = parsed.edges.find(
+      (e: { src: string; dst: string }) => e.src === 'service:default/order' && e.dst === 'pod:default/order-pod-1',
+    );
+    expect(contains).toMatchObject({ src_type: 'apm.service', dst_type: 'k8s.pod', relation: 'contains' });
+    const hosts = parsed.edges.find((e: { src: string }) => e.src === 'node:default/node-a');
+    expect(hosts).toMatchObject({ dst: 'pod:default/order-pod-1', src_type: 'k8s.node', dst_type: 'k8s.pod', relation: 'hosts' });
   });
 
   it('maps every IR entity kind to a UModel type', () => {

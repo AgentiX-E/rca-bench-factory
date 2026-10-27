@@ -29,7 +29,11 @@ const graph: EntityGraph = {
     { entityId: 'pod:default/order-7d9f', kind: 'pod', name: 'order-7d9f', namespace: 'default', aliases: [] },
   ],
   edges: [
-    { from: 'pod:default/order-7d9f', to: 'service:default/order', relation: 'contains' },
+    // A service contains the pods that are its replicas. This edge was written the other way
+    // round for as long as the file existed, and nothing refused it: `findDanglingEdgeRefs` asks
+    // whether the ends exist, and the direction went unanswered until
+    // `findImplausibleEdgeDirections` (edge-directions.test.ts).
+    { from: 'service:default/order', to: 'pod:default/order-7d9f', relation: 'contains' },
     { from: 'service:default/order', to: 'service:default/cart', relation: 'calls' },
   ],
 };

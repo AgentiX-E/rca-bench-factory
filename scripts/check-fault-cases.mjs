@@ -202,6 +202,15 @@ const checkpointRefs = {
 const telemetryCases = [];
 const telemetrySignals = {};
 let firstGraph = null;
+/**
+ * The graph contract, per graph file.
+ *
+ * The graph's obligations belong to the graph, not to the case that happens to be read when the
+ * loop reaches it: thirteen cases ship one topology, and reporting a defect of that topology once
+ * per case says "thirteen defects" to a reader who has one edge to repair. Keyed on the file name
+ * rather than on `firstGraph`, so a corpus that grows a second topology still checks both.
+ */
+const graphContracts = new Map();
 
 for (const entry of index.cases) {
   const caseId = typeof entry?.caseId === 'string' ? entry.caseId : '';
@@ -291,7 +300,18 @@ for (const entry of index.cases) {
   // conversion table. The last one is what found this: `m`, `messages` and `x` are the units a
   // person writes and none of them is in the table, so three checkpoints across two cases had
   // been carrying values no conversion could ever be asked to perform.
-  const semantic = core.checkG2Semantic(bundle);
+  // The graph half, once per file. `checkCaseSemantics` below is the case half: G2 composes the
+  // two, and asking it here per case would run the graph's three loops once per case.
+  const graphKey = String(entry.graph);
+  if (!graphContracts.has(graphKey)) {
+    const contract = core.checkGraphContract(parsedGraph);
+    graphContracts.set(graphKey, contract);
+    for (const violation of contract.violations) {
+      problems.push(`graph '${graphKey}' fails the L2 reference contract: ${violation.message}`);
+    }
+  }
+
+  const semantic = core.checkCaseSemantics(bundle);
   for (const violation of semantic.violations) {
     problems.push(`'${caseId}' fails the L2 reference contract: ${violation.message}`);
   }
@@ -752,10 +772,10 @@ for (const entry of index.cases) {
     for (const violation of signalStructure.violations) {
       problems.push(`'${caseId}' signals fail the L2 structural contract: ${violation.message}`);
     }
-    const signalSemantics = core.checkG2Semantic(withSignals);
-    for (const violation of signalSemantics.violations) {
-      problems.push(`'${caseId}' signals fail the L2 reference contract: ${violation.message}`);
-    }
+    // No second G2 here. This block used to ask `checkG2Semantic` of `withSignals` as well, and the
+    // answer was the same in every field: G2 reads the graph and the ground truth, never the
+    // telemetry, so the second pass could only repeat the first. What reads telemetry is G1 above
+    // and G3 below, and both are asked.
     const validity = core.checkG3Validity(withSignals, {});
     for (const violation of validity.violations) {
       problems.push(`'${caseId}' signals fail G3: ${violation.message}`);

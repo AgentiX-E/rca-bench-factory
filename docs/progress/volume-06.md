@@ -2259,3 +2259,90 @@ volumes, findings 1–269.
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint; no relation is checked for direction.
+
+## v2.97 — the relation that names a direction, and the graph that took either
+
+**What was open.** The last line of v2.96's open list: *no relation is checked for direction*. This
+round is that line, and it is the one item on that list that is a code defect rather than a corpus
+gap.
+
+**What it said.** `ir/types.ts` describes four of the five relations as a movement — a service has a
+pod, a node runs a pod, one service invokes another, traffic for a target passes through a router —
+and three checks looked at every edge without ever reading `from` and `to` as an order.
+`findDanglingEdgeRefs` asks whether the ends exist, `findInvalidRelations` asks whether the word is
+published, `assessFourLayer` asks whether the ground truth's references resolve. A `calls` edge
+written backwards passed all three, and it moves the root cause from the caller to the callee, which
+is the answer an evaluator compares against.
+
+**Measured first.** A copy of the corpus, one flipped `contains` edge, the guard re-run: green —
+four-layer annotation, references, G1, G2, G5, the RCAEval export for three suites, the checkpoint
+assertions. A flipped `calls` edge: green too.
+
+**Two were already in the tree.** With the rule written, the suite went red on `entity.test.ts`
+(`pod --contains--> service`) and `rca100.test.ts` (`pod --hosts--> service`). Both had been there as
+long as their files, both had a passing test attached, and both were wrong in a way that test could
+not see. This is the shape the volume keeps recording: the fixture and the assertion ask different
+questions.
+
+**What changed.** `RELATION_SIDES` in `entity/graph.ts` states the kinds each relation admits per
+side, hand-written, for the reason `export-surface-enumerated.test.ts` gives about its own list.
+`findImplausibleEdgeDirections` reads it, and also refuses an edge from an entity to itself — a
+kind-pair table cannot catch `pod --contains--> pod`, because both ends are admissible and the
+statement is empty. G2 gains `IMPLAUSIBLE_EDGE_DIRECTION` and `SELF_EDGE`, both *structural* in
+`export/guard.ts`, so `assertExportableBundle` refuses the bundle rather than letting one case be
+skipped out of a contradiction that is the whole graph's.
+
+**What it cannot do, said where the rule lives.** A kind pair cannot catch a reversal between two
+entities of one kind — `service A --calls--> service B` and its reverse are both admitted. That needs
+an independent witness (a trace's parent/child spans), and the corpus has one case carrying traces.
+The flipped-`calls` experiment is still green after the rule and is recorded as green rather than
+described as fixed.
+
+**The half that is not a rule.** Turning the rule on produced 26 problem lines for one reversed edge:
+`checkG2Semantic` was one function over a bundle and the script asks it of a one-case bundle twice,
+thirteen cases either way. Two separate errors. The graph's obligations do not depend on which case
+is being read, so they are now `checkGraphContract(graph)`; the case's are `checkCaseSemantics(bundle)`;
+G2 composes them. And the second pass could not have differed — G2 never reads telemetry — so it is
+gone. One defect is one line now.
+
+**The guard's own guard.** `guard.test.ts` reads G2's `code:` literals by slicing a function body it
+finds by name; after the split that body has no codes and the positive control (`finds codes to
+classify at all`) went red. `G2_PARTS` now names the halves, and a second assertion requires the
+composer to call each — a third half added later fails there instead of emitting codes nothing
+classifies.
+
+**Mutation battery.** `contains.to` admitting `service` → 1 red; the self-edge branch deleted → 2
+red; the composer dropping the graph half → 2 red. All restored before the acceptance run.
+
+**Acceptance.** `pnpm test:coverage` green at core **188 / 4690**, cli **4 / 187**, repo **192 /
+4877**, every coverage dimension 100 % on the files the run loaded; `check-fault-cases` OK (13 of 30,
+19 directed edges, 0 refusals) and `FAILED — 1 problem(s)` on the flipped copy; `docs:check` green
+(`check-doc-counts` 179 published counts, `check-audit-volumes` 267 findings 1–270, `check-progress-
+volumes` 6 volumes); `derive-gate-sites --check` green after a re-derivation that moved four line
+numbers in `check-fault-cases.mjs`.
+
+### Left open
+
+- **A reversal between two entities of one kind is not detectable statically.** `[open: `calls` and
+  `routes` are checked for the kind pair, not for the direction of the actual invocation; the witness
+  would be trace parent/child spans, and one case in the corpus carries traces]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one; nine rounds went to the anchor, this
+  one to the relation, and the corpus is the product]`
+- **Upstream's baselines still refuse our data.** `[open: `process()` matches `RE2-OB` / `RE3-TT` /
+  `online-boutique` and raises `SLI not implemented` otherwise]`
+- **RE3's traces and logs are not read.** `[open: 29 MB `traces.csv` and 11 MB `logs.csv` per case,
+  never opened]`
+- **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv`, `tracets_lat.csv` are not
+  produced]`
+- **A whole-suite run is not isolated from its own mutation batteries.** `[open: the batteries in
+  `scripts/injection/` rewrite a tracked script in place, run the suite, and restore it; a test that
+  reads `scripts/` during that window sees the mutation as the source. This round hit it once
+  (`verify-gates-are-testable.mjs` read a listed script as exit-free) and a serial re-run was green,
+  and a previous round hit it as four unrelated `check-doc-counts` failures. The test that caught it
+  already records the shape and does a second read, which narrows the window rather than closing it.
+  Not introduced here. The repair is to run a battery against a copy rather than in the tree, and it
+  is the next round's first item rather than this one's]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.

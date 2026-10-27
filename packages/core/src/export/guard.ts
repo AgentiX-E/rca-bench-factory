@@ -79,6 +79,15 @@ export const STRUCTURAL_CODES: ReadonlySet<string> = new Set([
   // A relation outside the closed set means the graph says something the
   // contract cannot express.
   'INVALID_RELATION',
+  // An edge whose direction the relation's own description forbids. Structural for the same reason
+  // the two above are: the graph is one system's topology and every case in the bundle reads it, so
+  // an exporter that skipped the case could not repair the topology the other cases still use. A
+  // `calls` edge pointing the wrong way sends every consumer of that topology -- and every
+  // evaluator that ranks a root cause against it -- to the other end.
+  'IMPLAUSIBLE_EDGE_DIRECTION',
+  // An edge from an entity to itself. No relation means this, no per-case skip makes it true, and
+  // the two kinds need not differ: `pod contains pod` passes a kind-pair table unharmed.
+  'SELF_EDGE',
 ]);
 
 /**

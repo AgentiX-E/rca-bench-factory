@@ -19,6 +19,113 @@ import { EDGE_RELATIONS } from '../ir/types.js';
  */
 export const VALID_RELATIONS: readonly EntityRelation[] = EDGE_RELATIONS;
 
+/**
+ * Which entity kinds each relation admits on each side. `null` means the relation has no direction
+ * to check.
+ *
+ * The vocabulary in `ir/types.ts` describes four relations as a movement from one thing to another
+ * -- a service has a pod, a node runs a pod, one service invokes another, traffic for a target
+ * passes through a router -- and the graph accepted all four in either direction. Nothing failed:
+ * `findDanglingEdgeRefs` asks whether the ends exist, `findInvalidRelations` asks whether the word
+ * is published, and the four-layer assessment asks whether the ground truth's references resolve.
+ * A `calls` edge written backwards resolves perfectly and moves the root cause from the caller to
+ * the callee, which is the answer an evaluator compares against.
+ *
+ * Two consequences follow, and they are the reason this is a table rather than a length check.
+ *
+ * 1. **The rows are hand-written.** Deriving them from the corpus would make the rule agree with
+ *    the corpus by construction, including where the corpus is wrong -- the same defect
+ *    `export-surface-enumerated.test.ts` names about generating its own list. The price is that a
+ *    new directed shape has to be added here, and the refusal says so.
+ * 2. **A kind pair cannot catch a reversal between two entities of the same kind.** `service A
+ *    calls service B` and `service B calls service A` are both admitted, and no static rule can
+ *    tell them apart: the direction of a call is a fact about a deployment, not about kinds. This
+ *    table catches the reversals that are structurally impossible and says nothing about the rest,
+ *    which is what its name claims. Trace-level agreement would close the gap and does not exist
+ *    yet -- one case in the corpus carries traces at all.
+ */
+export const RELATION_SIDES: Record<
+  EntityRelation,
+  { from: readonly EntityKind[]; to: readonly EntityKind[] } | null
+> = {
+  // Part-of: the whole names the part. A pod is not the container of the service whose replica it
+  // is, which is the direction `entity.test.ts` had backwards for as long as it existed.
+  contains: { from: ['cluster', 'node', 'host', 'service', 'pod'], to: ['pod', 'container'] },
+  // Where it lives: the host names what runs on it. `node -> mq` is here because a broker is a
+  // workload on a node in this model, and the corpus's kafka case cites the broker's own disk.
+  hosts: { from: ['cluster', 'node', 'host'], to: ['service', 'pod', 'container', 'db', 'mq', 'external'] },
+  // Who invokes whom: a caller, then what it uses. A datastore does not call the service that
+  // queries it; a pod is a replica rather than an endpoint, so it is not a call target.
+  calls: { from: ['service', 'external', 'container', 'host'], to: ['service', 'external', 'db', 'mq'] },
+  // Traffic for the target passes through the source: a router, a switch, a load balancer.
+  routes: {
+    from: ['cluster', 'node', 'host', 'external', 'service'],
+    to: ['service', 'pod', 'container', 'external'],
+  },
+  // Two names for one entity. Identity is symmetric in `normalizeAliases`, so there is no side to
+  // compare and inventing one would refuse half the edges that are correct.
+  same_as: null,
+};
+
+/**
+ * An edge whose direction the relation does not admit.
+ *
+ * A discriminated union rather than a bag of optionals, because the two cases carry different
+ * facts: a wrong kind pair has a side, a kind and the set it was measured against, and a self-edge
+ * has none of the three -- both ends are the same entity. The first draft made all three optional
+ * and every reader then had to write `issue.admits ?? []`, a fallback for a state the producer
+ * cannot create. The union moves that impossibility into the type, where the compiler enforces it
+ * instead of a coverage report noticing it.
+ */
+export type DirectionIssue =
+  | { reason: 'self-edge'; relation: EntityRelation; from: string; to: string }
+  | {
+      reason: 'implausible-side';
+      relation: EntityRelation;
+      from: string;
+      to: string;
+      /** Which end carries the inadmissible kind. */
+      side: 'from' | 'to';
+      /** The kind found on that side. */
+      kind: EntityKind;
+      /** The kinds the relation admits there, so the refusal states what would have been accepted. */
+      admits: readonly EntityKind[];
+    };
+
+/**
+ * Edges whose direction the relation's own description does not allow.
+ *
+ * Silent about anything another check owns: an unknown relation has no sides to compare (that is
+ * `findInvalidRelations`), and an edge with an unknown end has no kind to compare (that is
+ * `findDanglingEdgeRefs`). One defect, one message.
+ */
+export function findImplausibleEdgeDirections(graph: EntityGraph): DirectionIssue[] {
+  const index = indexGraph(graph);
+  const issues: DirectionIssue[] = [];
+  for (const edge of graph.edges) {
+    const sides = RELATION_SIDES[edge.relation];
+    if (sides === undefined || sides === null) continue;
+    const from = index.byId.get(edge.from);
+    const to = index.byId.get(edge.to);
+    if (from === undefined || to === undefined) continue;
+    const base = { relation: edge.relation, from: edge.from, to: edge.to };
+    if (edge.from === edge.to) {
+      // Both ends can be admissible -- `pod contains pod` and `service calls service` pass the
+      // table -- and neither statement means anything.
+      issues.push({ ...base, reason: 'self-edge' });
+      continue;
+    }
+    if (!sides.from.includes(from.kind)) {
+      issues.push({ ...base, reason: 'implausible-side', side: 'from', kind: from.kind, admits: sides.from });
+      continue;
+    }
+    if (!sides.to.includes(to.kind)) {
+      issues.push({ ...base, reason: 'implausible-side', side: 'to', kind: to.kind, admits: sides.to });
+    }
+  }
+  return issues;
+}
+
 export function entityId(kind: EntityKind, namespace: string | undefined, name: string): string {
   return namespace ? `${kind}:${namespace}/${name}` : `${kind}:${name}`;
 }

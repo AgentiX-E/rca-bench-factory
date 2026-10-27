@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { findDanglingEdgeRefs } from '../src/entity/graph.js';
-import { checkG2Semantic, checkG3Validity, checkG5AntiPollution } from '../src/gates/gates.js';
+import {
+  checkCaseSemantics,
+  checkG2Semantic,
+  checkG3Validity,
+  checkG5AntiPollution,
+  checkGraphContract,
+} from '../src/gates/gates.js';
 import { applyRule, evalExpr } from '../src/transform/strategies.js';
 import { parseTimestamp, TimeParseError, type TimeLayout } from '../src/util/time.js';
 import { checkG5AntiPollution as _unused } from '../src/gates/gates.js';
@@ -253,5 +259,72 @@ describe('additional branch coverage', () => {
   it('scans a case without a query for sensitive data', () => {
     const b = validBundle({ cases: [validCase({ query: undefined, queryless: true } as never)] });
     expect(checkG5AntiPollution(b).status).toBe('passed');
+  });
+});
+
+describe('the graph contract, split from the case contract', () => {
+  /**
+   * G2 used to be one function, and a corpus with thirteen cases over one graph asked it
+   * twenty-six times: once per case, twice per case. One reversed edge became twenty-six problem
+   * lines, which reads as twenty-six defects and is one.
+   *
+   * The split is not only a report's convenience. `checkGraphContract` answers a question that has
+   * nothing to do with a case, and `checkCaseSemantics` answers questions that have nothing to do
+   * with the other cases; G2 is the composition, which is what its callers already had.
+   */
+  const flipped = (): EntityGraph => ({
+    entities: [
+      { entityId: 'service:default/order', kind: 'service', name: 'order', aliases: [] },
+      { entityId: 'pod:default/order-0', kind: 'pod', name: 'order-0', aliases: [] },
+    ],
+    // A pod does not contain the service whose replica it is.
+    edges: [{ from: 'pod:default/order-0', to: 'service:default/order', relation: 'contains' }],
+  });
+
+  it('reports a relation whose direction its own description forbids', () => {
+    const b = validBundle({ graph: flipped(), cases: [validCase()] });
+    const contract = checkGraphContract(b.graph);
+    expect(contract.violations).toContainEqual(
+      expect.objectContaining({ code: 'IMPLAUSIBLE_EDGE_DIRECTION' }),
+    );
+    expect(contract.status).toBe('failed');
+  });
+
+  it('reports an edge from an entity to itself', () => {
+    const graph: EntityGraph = {
+      entities: [{ entityId: 'service:default/order', kind: 'service', name: 'order', aliases: [] }],
+      edges: [{ from: 'service:default/order', to: 'service:default/order', relation: 'calls' }],
+    };
+    expect(checkGraphContract(graph).violations).toContainEqual(
+      expect.objectContaining({ code: 'SELF_EDGE' }),
+    );
+  });
+
+  it('reports a graph defect once, however many cases ship the graph', () => {
+    const b = validBundle({
+      graph: flipped(),
+      cases: [validCase({ caseId: 'case-001' }), validCase({ caseId: 'case-002' }), validCase({ caseId: 'case-003' })],
+    });
+    // G2 composes the halves, so its count is what a caller that does not split them still gets:
+    // one per call. The split is what lets the script call the graph half once.
+    expect(checkG2Semantic(b).violations.filter((v) => v.code === 'IMPLAUSIBLE_EDGE_DIRECTION')).toHaveLength(1);
+    expect(checkCaseSemantics(b).violations.filter((v) => v.code === 'IMPLAUSIBLE_EDGE_DIRECTION')).toHaveLength(0);
+  });
+
+  it('keeps the case-level findings out of the graph half', () => {
+    const fc = validCase();
+    fc.groundTruth.rootCauseEntityId = 'service:default/ghost';
+    const b = validBundle({ graph: flipped(), cases: [fc] });
+    expect(checkGraphContract(b.graph).violations.map((v) => v.code)).not.toContain('UNRESOLVED_ROOT_CAUSE');
+    expect(checkCaseSemantics(b).violations.map((v) => v.code)).toContain('UNRESOLVED_ROOT_CAUSE');
+    // And the composition carries both, which is what G2 always meant.
+    const codes = checkG2Semantic(b).violations.map((v) => v.code);
+    expect(codes).toContain('UNRESOLVED_ROOT_CAUSE');
+    expect(codes).toContain('IMPLAUSIBLE_EDGE_DIRECTION');
+  });
+
+  it('passes a graph whose edges the relations admit', () => {
+    expect(checkGraphContract(validBundle().graph).status).toBe('passed');
+    expect(checkCaseSemantics(validBundle()).status).toBe('passed');
   });
 });
