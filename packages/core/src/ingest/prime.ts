@@ -12,7 +12,15 @@ import { irBundleSchema } from '../ir/schema.js';
 import { parseFaultSpec, type FaultSpec } from '../fault/collector.js';
 import { IR_VERSION } from '../ir/types.js';
 import type { TimeLayout } from '../util/time.js';
-import type { Entity, EntityEdge, EntityGraph, FaultCase, IrBundle, TelemetrySignal } from '../ir/types.js';
+import type {
+  Entity,
+  EntityEdge,
+  EntityGraph,
+  FaultCase,
+  FaultCategory,
+  IrBundle,
+  TelemetrySignal,
+} from '../ir/types.js';
 
 /**
  * Prime-dataset ingest: turn an official benchmark dataset slice into an IR bundle.
@@ -94,6 +102,22 @@ export interface PrimeCaseSource {
   component: string;
   /** Fault type as the dataset spells it; normalised by `parseFaultSpec`. */
   faultType: string;
+  /**
+   * The fault's category, when the label does not carry one.
+   *
+   * A corpus may label a fault by an **index** rather than by its kind: RCAEval's
+   * RE3 directories are `{service}_f1` … `{service}_f5`, where `f1` is one of five
+   * code-level fault types and says nothing about which category it belongs to.
+   * `inferFaultCategory('f1')` returns `unknown`, correctly -- the token carries no
+   * keyword -- and a target that admits only code-level faults then refuses every
+   * case in the slice that exists to exercise it (finding 268).
+   *
+   * So the descriptor states it. This is the one place a caller can, and a caller
+   * that has no reason to should leave it out: `parseFaultSpec` refuses a category
+   * that is not in `FAULT_CATEGORIES`, so a typo is a named error rather than a
+   * silent reclassification.
+   */
+  faultCategory?: FaultCategory;
   /** Canonical UTC ISO-8601 injection time. */
   injectTime: string;
   /** Observation window; derived from `leadMs` / `lagMs` when absent. */
@@ -478,8 +502,15 @@ function validateDescriptor(
     // The parse *is* the fault-type validation: a blank or non-string type is
     // the one thing it refuses, and its message names the problem better than a
     // separate emptiness check would.
-    const fault = parseFaultSpec({ type: c.faultType }, 'historical');
-    if (!fault.ok) return { ok: false, error: `case '${c.caseId}' is missing the fault type` };
+    const fault = parseFaultSpec(
+      c.faultCategory === undefined ? { type: c.faultType } : { type: c.faultType, category: c.faultCategory },
+      'historical',
+    );
+    // `parseFaultSpec`'s own message, because it now refuses two different things:
+    // a blank or non-string type, and a category outside `FAULT_CATEGORIES`. The
+    // previous constant said "missing the fault type" for both, which would have
+    // described a misspelled category as an absent type.
+    if (!fault.ok) return { ok: false, error: `case '${c.caseId}': ${fault.error}` };
     faults.push(fault.spec);
   }
   return { ok: true, faults };

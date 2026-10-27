@@ -455,6 +455,42 @@ describe('ingestPrimeDataset · descriptor validation', () => {
     expect(result.error).toMatch(/fault/i);
   });
 
+  /**
+   * The category a corpus cannot express in a label.
+   *
+   * RCAEval's RE3 directories name the fault by an index (`emailservice_f1`), and
+   * `inferFaultCategory('f1')` is `unknown` — correctly, the token carries no
+   * keyword. A target that admits only code-level faults then refuses the whole
+   * slice, so the descriptor states the category instead of the pipeline guessing
+   * it (finding 268).
+   */
+  it('takes the fault category from the descriptor when the label carries none', () => {
+    const indexed = { ...BASE_CASE, faultType: 'f1', faultCategory: 'code' as const };
+    const result = ingestPrimeDataset(METRIC_FILE, options({ cases: [indexed] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.bundle.cases[0]?.fault).toMatchObject({ type: 'f1', category: 'code' });
+  });
+
+  it('still infers the category when the descriptor does not state one', () => {
+    // The default is unchanged, which is what keeps every existing descriptor
+    // behaving exactly as it did.
+    const result = ingestPrimeDataset(METRIC_FILE, options({ cases: [{ ...BASE_CASE, faultType: 'cpu-saturation' }] }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.bundle.cases[0]?.fault.category).toBe('resource');
+  });
+
+  it('rejects a category outside the vocabulary, and says which', () => {
+    // `parseFaultSpec`'s own message, not "missing the fault type": the previous
+    // constant would have described a misspelled category as an absent type.
+    const wrong = { ...BASE_CASE, faultType: 'f1', faultCategory: 'codes' as never };
+    const result = ingestPrimeDataset(METRIC_FILE, options({ cases: [wrong] }));
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error).toContain("invalid fault category 'codes'");
+  });
+
   it('rejects a non-UTC injection time', () => {
     const result = ingestPrimeDataset(
       METRIC_FILE,

@@ -806,6 +806,12 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
         caseId: entry.caseId,
         component: entry.component,
         faultType: entry.faultType,
+        // RE3 is the code-level slice, and its directories label the fault by an
+        // index (`f1`…`f5`) that carries no category -- `inferFaultCategory('f1')`
+        // is `unknown`, correctly -- so the suite is the only statement of the
+        // category the corpus makes. Without this the RE3 export refuses every case
+        // in the slice that exists to exercise it (finding 268).
+        ...(entry.suite === 'RE3' ? { faultCategory: 'code' } : {}),
         injectTime: entry.injectTime,
         pathPrefixes: [entry.pathPrefix],
       },

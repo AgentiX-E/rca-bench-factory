@@ -1516,3 +1516,60 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     expect(result.stdout).not.toContain('ROUNDTRIP context');
   });
 });
+
+/**
+ * The slice whose label is an index, and the target that gates on category.
+ *
+ * `RE3-OB/emailservice_f1/1` names its fault `f1`. `inferFaultCategory('f1')` is
+ * `unknown` — correctly, the token carries no keyword — and `exportRcaEval` admits
+ * an RE3 case only when `fault.category === 'code'`. So before this round the whole
+ * RE3 corpus round-tripped as **skips**: 90 cases reported as `SKIP`, which reads
+ * as a target declining a fault class rather than as a reader that never told it
+ * what the class was.
+ *
+ * The runner states it, because the suite is the only place the corpus says so.
+ * This test is the observation that it arrives: the same corpus, with one line of
+ * descriptor, goes from skipped to scored.
+ */
+describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an index', () => {
+  /** The corpus's own RE3 shape: `RE3-{system}/{service}_f{n}/{run}/`. */
+  function writeRe3Case(root: string, caseId: string): void {
+    const dir = join(root, caseId);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
+    writeFileSync(join(dir, 'data.csv'), 'time,emailservice_cpu\n1699999999,0.2\n1700000001,0.95\n');
+  }
+
+  it('scores an RE3 case instead of skipping it, because the suite states the category', () => {
+    const root = freshRoot();
+    const caseId = 'RE3-OB/emailservice_f1/1';
+    writeRe3Case(root, caseId);
+    const cases = join(scratch, 're3-index.json');
+    writeFileSync(
+      cases,
+      JSON.stringify({
+        schema: 'rca-bench-rcaeval-cases/1',
+        counts: { RE1: 0, RE2: 0, RE3: 1 },
+        cases: [
+          {
+            caseId,
+            component: 'emailservice',
+            faultType: 'f1',
+            injectTime: new Date(1_700_000_000_000).toISOString(),
+            pathPrefix: `${caseId}/`,
+            suite: 'RE3',
+          },
+        ],
+      }),
+    );
+
+    const result = run(['--official-dir', root, '--cases', cases]);
+
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(result.stdout).toMatch(/ROUNDTRIP PASS .*target=rcaeval-re3/);
+    expect(result.stdout).toContain('oracle=1.00');
+    // The negative control is the previous behaviour, and it is one word away: a
+    // skip is what the same corpus produced while the category was unknown.
+    expect(result.stdout).not.toMatch(/ROUNDTRIP SKIP/);
+  });
+});

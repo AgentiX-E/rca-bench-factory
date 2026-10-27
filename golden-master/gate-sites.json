@@ -241,7 +241,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 993,
+      "line": 999,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -249,7 +249,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1011,
+      "line": 1017,
       "condition": "declared.length > 0 && roundTripped !== declared.length",
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${declared.length} case(s) declared but ${roundTripped} round-tripped,",
       "status": "proved",
