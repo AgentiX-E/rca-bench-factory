@@ -322,26 +322,47 @@ describe('parseRcaEvalPath', () => {
   });
 
   it('keeps a service whose name contains hyphens', () => {
-    // Train Ticket ships `ts-order-service`, so the service is everything before
-    // the *last* underscore: splitting on the first yields `ts`, which is not a
-    // service and names nothing the telemetry mentions.
+    // Train Ticket ships `ts-order-service`, so hyphens have to survive: the
+    // service is everything before the underscore, and the underscore is the only
+    // separator.
     expect(parseRcaEvalPath('RE2-TT/ts-order-service_cpu/2')?.service).toBe('ts-order-service');
   });
 
-  it('represents the fault as the token after the last underscore', () => {
-    // The service/fault split is at the *last* underscore, and this pins which
-    // side the ambiguity lands on. It matters because the service is the side
-    // that is allowed to be ambiguous: RE2's fault vocabulary is six single
-    // tokens (`cpu`, `mem`, `disk`, `delay`, `loss`, `socket`), while service
-    // names routinely contain underscores of their own. Splitting at the first
-    // underscore instead reads `ts-order-service_cpu` as the service `ts-order`,
-    // which is not a service that exists.
-    //
-    // So an underscore inside the *fault* is read as part of the service, and
-    // that is stated here rather than left implicit: it is the one input the
-    // rule cannot resolve, and the corpus never produces it.
+  /**
+   * The split is at the **first** underscore, and the corpus is why.
+   *
+   * This test used to assert the opposite, with a comment reasoning that "service
+   * names routinely contain underscores of their own" while "RE2's fault
+   * vocabulary is six single tokens". Neither half survived contact with RE3: of its
+   * 90 case directories, every service token is hyphenated and none contains an
+   * underscore, and exactly one fault label does — `RE3-TT/ts-route-service_f3_1/1`.
+   *
+   * Splitting at the last underscore read that case as the service
+   * `ts-route-service_f3`, which exists nowhere, and the round trip failed it three
+   * times with a message about the metrics table not naming the component. The
+   * table was right; the parse was wrong (finding 268).
+   */
+  it('splits at the first underscore, which is the separator the corpus uses', () => {
     expect(parseRcaEvalPath('RE2-TT/ts-order-service_cpu/2')?.fault).toBe('cpu');
-    expect(parseRcaEvalPath('RE2-OB/frontend_net_cpu/3')?.fault).toBe('cpu');
+    expect(parseRcaEvalPath('RE2-OB/frontend_net_cpu/3')).toMatchObject({
+      service: 'frontend',
+      fault: 'net_cpu',
+    });
+  });
+
+  it('keeps a fault label that carries an underscore of its own', () => {
+    // The one directory in the corpus with two underscores, read as the corpus
+    // spells it. Upstream cannot read this case at all -- its
+    // `service, metric = basename(...).split("_")` unpacks into two names and
+    // raises on three -- so this parser is deliberately one case more capable than
+    // the loader it reproduces.
+    expect(parseRcaEvalPath('RE3-TT/ts-route-service_f3_1/1')).toMatchObject({
+      suite: 'RE3',
+      system: 'TT',
+      service: 'ts-route-service',
+      fault: 'f3_1',
+      instance: '1',
+    });
   });
 
   it('accepts a case directory reached through extra nesting', () => {

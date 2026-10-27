@@ -710,7 +710,21 @@ export function parseRcaEvalPath(path: string): {
 
   const headMatch = /^(RE[123])-([A-Za-z0-9-]+)$/.exec(head);
   if (headMatch === null) return undefined;
-  const underscore = labelled.lastIndexOf('_');
+  // The **first** underscore, and it was the last one until RE3 said otherwise.
+  //
+  // The corpus contains `RE3-TT/ts-route-service_f3_1/1`: one directory, out of 90,
+  // whose fault label carries an underscore of its own. Splitting at the last one
+  // read the service as `ts-route-service_f3` and the fault as `1` -- a service that
+  // exists nowhere, which then failed the "the table names the case's component"
+  // rule three times for a reason that looked like a data problem (finding 268).
+  //
+  // First-underscore is the reading the corpus supports, measured: of its 90 case
+  // directories exactly one has two underscores, and every service token has none
+  // (`adservice`, `frontend-external`, `ts-route-service`). Upstream cannot read
+  // that one at all -- `service, metric = basename(...).split("_")` unpacks into two
+  // names and raises on three -- so this parser is deliberately more capable than
+  // the loader it reproduces, and the difference is one case.
+  const underscore = labelled.indexOf('_');
   if (underscore <= 0 || underscore === labelled.length - 1) return undefined;
   if (!/^\d+$/.test(instance)) return undefined;
 
@@ -726,8 +740,10 @@ export function parseRcaEvalPath(path: string): {
 /**
  * Split an RCAEval case directory name into its labelled parts.
  *
- * The layout here is `{suite}-{service}-{fault}_{instance}` -- a *flat* name,
- * and this is the one our exporter writes, not the one the corpus contains. See
+ * The layout here is `{suite}-{service}-{fault}_{instance}` -- a *flat* name. It is
+ * **not** what this repository writes any more (finding 267 moved the exporter to
+ * the corpus's three-level path); it is the shape some third-party RCAEval exports
+ * use, kept as a reader so a flat bundle can still be scored. See
  * `parseRcaEvalPath` above for the corpus's nested layout and for why the two
  * have to be separate functions rather than one that guesses.
  *

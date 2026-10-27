@@ -745,3 +745,30 @@ describe('RCAEval exporter · the metric table’s three refusals', () => {
     expect(report.checks.filter((c) => !c.passed).map((c) => c.id)).toEqual([]);
   });
 });
+
+/**
+ * The label the corpus spells with an underscore, carried rather than flattened.
+ *
+ * `RE3-TT/ts-route-service_f3_1/1` is one case out of ninety, and it is the only
+ * place the corpus distinguishes `f3` from `f3_1`. Stripping the underscore in the
+ * token sanitiser wrote `f31` — a third label, silently, and the label is the answer
+ * key. The reader splits at the first underscore, so keeping it round-trips.
+ */
+describe('RCAEval exporter · a fault label that carries the separator', () => {
+  it('writes the fault token as the corpus spells it, and reads it back', () => {
+    const fc = validCase({
+      groundTruth: { ...validCase().groundTruth, rootCauseComponent: 'ts-route-service' },
+      fault: { ...validCase().fault, type: 'f3_1' },
+    });
+    const path = casePath('RE3', fc, 1);
+    expect(path).toBe('RE3-order-prod/ts-route-service_f3_1/1');
+    expect(parseRcaEvalPath(path)).toMatchObject({ service: 'ts-route-service', fault: 'f3_1' });
+  });
+
+  it('still refuses the characters the layout cannot carry at all', () => {
+    // `/`, space and a non-ASCII name would each split the path somewhere it has no
+    // field for; the allow-list is widened by one character, not removed.
+    const fc = validCase({ fault: { ...validCase().fault, type: 'f3/1 2' } });
+    expect(casePath('RE3', fc, 1)).toBe('RE3-order-prod/order_f312/1');
+  });
+});

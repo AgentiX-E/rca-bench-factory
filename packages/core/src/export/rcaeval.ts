@@ -91,7 +91,12 @@ export type RcaEvalSuite = (typeof RCAEVAL_SUITES)[number];
 export function casePath(suite: RcaEvalSuite, fc: FaultCase, instance: number): string {
   const system = sanitiseCaseToken(fc.system);
   const service = sanitiseCaseToken(fc.groundTruth.rootCauseComponent);
-  const fault = sanitiseCaseToken(fc.fault.type);
+  // The fault token keeps its underscores, and the service does not. That is the
+  // corpus's own convention: `RE3-TT/ts-route-service_f3_1/1` names the fault
+  // `f3_1`, and no service token anywhere in the corpora carries an underscore.
+  // Stripping it wrote `f31`, which is a different label silently -- and the label
+  // is the answer key (finding 268).
+  const fault = sanitiseFaultToken(fc.fault.type);
   return `${suite}-${system}/${service}_${fault}/${instance}`;
 }
 
@@ -106,6 +111,21 @@ export function casePath(suite: RcaEvalSuite, fc: FaultCase, instance: number): 
  */
 function sanitiseCaseToken(raw: string): string {
   const kept = raw.replace(/[^A-Za-z0-9-]/g, '').replace(/^-+|-+$/g, '');
+  return kept === '' ? 'unnamed' : kept;
+}
+
+/**
+ * The fault half of `{service}_{fault}`, which may carry underscores of its own.
+ *
+ * `parseRcaEvalPath` splits at the **first** underscore, so everything after it is
+ * the fault and any underscore in it is part of the label. Keeping the character
+ * here is what makes that reading round-trip: `ts-route-service_f3_1` goes out and
+ * comes back as the service `ts-route-service` and the fault `f3_1`, where stripping
+ * would have written `f31` and lost the distinction the corpus draws between `f3`
+ * and `f3_1`.
+ */
+function sanitiseFaultToken(raw: string): string {
+  const kept = raw.replace(/[^A-Za-z0-9_-]/g, '').replace(/^[-_]+|[-_]+$/g, '');
   return kept === '' ? 'unnamed' : kept;
 }
 
