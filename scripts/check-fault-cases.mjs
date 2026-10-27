@@ -198,6 +198,24 @@ const checkpointRefs = {
   inequalities: 0,
   false: 0,
 };
+/**
+ * Cases that state a difficulty level.
+ *
+ * Counted because the corpus exports every case without one as `medium` -- the exporter's
+ * documented `unset -> medium` arm -- so "unannotated" and "measured as medium" look identical in
+ * the output. The distribution rule below needs ten graded cases before it says anything, and the
+ * count is printed so that "the rule did not apply" is visible rather than inferred from silence.
+ */
+const gradedCases = [];
+/**
+ * Every case that parsed, whether or not it carries telemetry.
+ *
+ * The distribution of levels is a property of the annotations, and a case with no derived signals
+ * is still annotated -- so this is the population the rule is about. An earlier draft filled the
+ * list only for cases that reached `withTelemetry`, which made the rule depend on a second,
+ * unrelated measurement.
+ */
+const allCases = [];
 /** The same telemetry, in the shape an exporter reads: cases and the signals attached to them. */
 const telemetryCases = [];
 const telemetrySignals = {};
@@ -269,6 +287,13 @@ for (const entry of index.cases) {
   // The component is the one that matters most -- it is the answer -- but the three are checked
   // together because they are one claim about one incident, and a rule that covered only the answer
   // would let the case be filed under a category its own key does not use.
+  allCases.push(parsedCase);
+  if (parsedCase.difficulty !== undefined) gradedCases.push(parsedCase.caseId);
+  // The graph bounds every case that ships it, so the first parsed case is enough to answer the
+  // set-level questions below. It used to be recorded inside the telemetry block, which made "the
+  // corpus has a graph" depend on "some case derived signals".
+  if (firstGraph === null) firstGraph = parsedGraph;
+
   const expected = sampleById.get(sampleId)?.expected ?? {};
   const agrees = [
     ['fault type', parsedCase.fault.type, expected.type],
@@ -791,7 +816,11 @@ for (const entry of index.cases) {
       core.locateWithPeakZScore(parsedCase, signals),
       core.locateWithMedianShift(parsedCase, signals),
     ];
-    const solvability = core.checkG4Solvability(withSignals, outcomes, { minSolvers: 2 });
+    // Solvability only. The other half of G4 -- whether the graded cases are spread across the
+    // levels -- is a property of the corpus and is asked once below; asked here it would see a
+    // one-case bundle every time and fall below its own minimum of ten, which is how it stayed
+    // unreachable for as long as this script has existed.
+    const solvability = core.checkSolvability(withSignals, outcomes, { minSolvers: 2 });
     for (const violation of solvability.violations) {
       const ranks = outcomes.map((one) => `${one.method}=${one.rankOfTruth === null ? 'absent' : String(one.rankOfTruth)}`);
       problems.push(`'${caseId}' is not solvable by both baselines (${ranks.join(', ')}): ${violation.message}`);
@@ -811,6 +840,18 @@ for (const entry of index.cases) {
     const refs = reading.unresolved.map((ref) => `${ref.where} -> ${ref.ref}`);
     const dangling = reading.danglingEvidence.map((ref) => `step ${String(ref.step)} -> ${ref.ref}`);
     problems.push(`'${caseId}' is not complete: ${[...empty, ...refs, ...dangling].join('; ')}`);
+  }
+}
+
+// The other half of G4, asked once. A distribution is a property of the set: the per-case pass
+// above cannot see it, and asking the composed gate per case is what kept this rule unreachable.
+if (firstGraph !== null && allCases.length > 0) {
+  const distribution = core.checkDifficultyDistribution(
+    { irVersion: '1.0.0', graph: firstGraph, cases: allCases, signals: {} },
+    {},
+  );
+  for (const violation of distribution.violations) {
+    problems.push(`the corpus fails G4: ${violation.message}`);
   }
 }
 
@@ -835,6 +876,23 @@ if (invalid.length > 0) {
  * were missing exactly when something was wrong with it. A run with one failing assertion of ten now
  * says `1 of 10` and then says which one.
  */
+/**
+ * How many cases state a difficulty level.
+ *
+ * Printed because the exporter projects an absent level to `medium`, so an unannotated case and a
+ * case measured as medium are the same word in every output this repository produces. The
+ * distribution rule needs ten graded cases; below that it returns passed and says nothing, which is
+ * correct and is also indistinguishable from a corpus that passed it. Naming both numbers is what
+ * separates "not measured" from "measured and fine".
+ */
+function logDifficultyCoverage() {
+  if (allCases.length === 0) return;
+  console.log(
+    `check-fault-cases: difficulty ${String(gradedCases.length)} of ${String(allCases.length)} case(s) ` +
+      'state a level; the distribution rule applies at 10',
+  );
+}
+
 function logCheckpointCounts() {
   if (checkpointRefs.total === 0) return;
   console.log(
@@ -849,6 +907,7 @@ function logCheckpointCounts() {
 
 if (problems.length > 0) {
   for (const problem of problems) console.error(`check-fault-cases: ${problem}`);
+  logDifficultyCoverage();
   logCheckpointCounts();
   console.error(
     `check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)`,
@@ -931,6 +990,10 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
   logCheckpointCounts();
 }
+
+// Outside the export block on purpose: a corpus with no derived telemetry still states levels, and
+// the coverage line vanished from exactly those runs while it lived inside it.
+logDifficultyCoverage();
 
 console.log(
   `check-fault-cases: OK (${String(index.cases.length)} of ${String(known.size)} sample(s) carry a four-layer ` +

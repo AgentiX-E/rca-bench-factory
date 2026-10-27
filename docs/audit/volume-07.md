@@ -662,3 +662,100 @@ the exit code, and **not** in the `Tests N passed` line.
 | the concurrency probe | two simultaneous runs green; three `test:coverage` runs green |
 | the teardown report | `own` asserted, `others` named as predating the run |
 | `core` | **188 / 4690** |
+
+## Finding 273 — the half of G4 that no caller could reach
+
+The corpus grew to fifteen this round, and adding it changed nothing in the suite — the counts the
+guards compare are now derived, so a new case is a new case rather than seven edited numbers. That
+result was the point of finding 271, and it also meant the round had to look somewhere else for a
+defect. It found one in the gate that was supposed to be checking the corpus's difficulty spread.
+
+### What the gate says, and what it was asked
+
+`checkG4Solvability` answers two questions:
+
+```ts
+for (const c of bundle.cases) { ... }               // can a baseline locate this case's root cause?
+const graded = bundle.cases.filter((c) => c.difficulty !== undefined);
+if (graded.length >= distributionMinCases) { ... }  // are the levels spread across L1..L4?
+```
+
+`check-fault-cases.mjs` asked it **once per case**, with a bundle holding that one case:
+
+```js
+const withSignals = { ...bundle, signals: { [caseId]: signals } };   // bundle.cases === [parsedCase]
+const solvability = core.checkG4Solvability(withSignals, outcomes, { minSolvers: 2 });
+```
+
+So `graded.length` was 0 or 1 on every call against a `distributionMinCases` of 10. The branches
+below it — `DIFFICULTY_SKEWED_EASY`, `DIFFICULTY_SKEWED_HARD` — **could not be taken**, by any input,
+from the only caller that owns the corpus. The corpus holds fifteen cases and five of them state a
+level, so the first branch was one annotation away from being reachable and still unreachable by
+construction.
+
+That is the shape this volume keeps recording, in its least visible form: not a check that passes
+vacuously on this data, but a check that **no caller can reach on any data**. `guard.test.ts` proves
+the branches work — it builds ten `L1` cases and watches the gate refuse them — so the gate is not
+broken. The wiring is. A unit test of a function cannot see that its only caller passes one case.
+
+### The split, and why it is the same one G2 got
+
+`checkG4Solvability` is now a composition:
+
+| function | subject | asked |
+| --- | --- | --- |
+| `checkSolvability(bundle, outcomes, options)` | one case | per case, with that case's telemetry |
+| `checkDifficultyDistribution(bundle, options)` | the set | once, over every annotated case |
+| `checkG4Solvability(...)` | both | where a caller has both |
+
+This is the arrangement finding 270 gave G2, and for the same reason: two questions with different
+subjects cannot be asked of one bundle whose size is decided by the caller. The difference is that G2
+was unreachable *cheaply* — twenty-six notifications of one defect — while this one was unreachable
+*silently*: a rule that never runs reports nothing at all.
+
+### Three wiring defects the split exposed
+
+1. **The population was wrong.** The first draft collected graded cases where telemetry was
+   collected, so a case without derived signals did not count as annotated. A level is a property of
+   the annotation; a signal is a property of the derivation. `allCases` now records every case as it
+   parses, and `gradedCases` is filled there too.
+2. **The graph was recorded inside the telemetry block.** `firstGraph` was set where signals were
+   expanded, so "the corpus has a graph" was false for a corpus with no telemetry — and the
+   distribution check, which needs a graph to build a bundle, then skipped. It is recorded with the
+   case.
+3. **The coverage line lived inside the export block.** A corpus whose cases carry no telemetry
+   exports nothing, so the line `difficulty N of M` vanished from exactly the runs that needed it.
+   It is printed at the top level now.
+
+Each of these was found by a test that had to fail, and each was first written the wrong way in this
+round — the third one was caught only after the first two were fixed and the tests still passed
+without the line.
+
+### Why the count is printed at all
+
+`FaultCase.difficulty` is optional and `difficultyFor(undefined)` returns `medium` — documented, and
+correct: an exporter has to emit a word from a closed set. The consequence is that **an unannotated
+case and a case measured as medium are the same word in every output this repository produces.**
+Ten of fifteen cases are in that state today. Printing `difficulty 5 of 15 case(s) state a level; the
+distribution rule applies at 10` is the smallest thing that separates "not measured" from "measured
+and fine", and it is the reason the rule's absence could be noticed at all.
+
+### Mutation battery
+
+| mutation | expected | observed |
+| --- | --- | --- |
+| the whole-corpus distribution check is deleted | both `DIFFICULTY_SKEWED_*` tests fail | 2 failed / 102 |
+| the check is asked over `telemetryCases` instead of `allCases` | same two, because the fixture corpus carries no telemetry | 2 failed / 102 |
+
+The second is the one worth keeping: it is the defect the first draft actually had.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **15 of 30**, 37 entities, 23 edges, floor 15 |
+| the new case | `config-datasource-url-orders`, four layers, 3 checkpoints, all resolve |
+| the split | `checkSolvability` / `checkDifficultyDistribution` / `checkG4Solvability`, exported and enumerated |
+| reachability | a ten-case `L1` corpus is refused (`L1 share 1.000 exceeds the 0.2 ceiling`), a spread one passes |
+| the report | `difficulty 5 of 15 case(s) state a level; the distribution rule applies at 10` |
+| `core` | **188 / 4695** |

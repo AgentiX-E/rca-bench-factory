@@ -2438,3 +2438,83 @@ comparable assertions failing); `docs:check` green; audit 7 volumes, findings 1�
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence
 of logs cannot be a checkpoint.
+
+## v2.99 — the fifteenth case, and the gate half that no caller could reach
+
+**What was open.** Sixteen samples with no case. This round annotated one of them, and the round's
+finding came from noticing that annotating it changed nothing.
+
+**The fifteenth case.** `config-datasource-url-orders`, annotated from its own incident text. It is
+the corpus's first whose evidence is a **destination** rather than a magnitude: every order write
+succeeds and every write lands in the staging database. Three series, and the pair that decides it is
+`order_write_rows_ratio_to_staging == 1` beside `order_write_rows_ratio_to_production == 0`, with
+`order_write_error_ratio == 0` as the control that excludes the pool, the credentials and the network
+— every explanation that would have produced an error. Three entities and two edges were added
+(`order-service`, `orders-db`, `orders-db-staging`), taking the corpus to **15 of 30**, 37 entities,
+23 edges, floor 15.
+
+**The result worth recording is that nothing went red.** Last round's repair — seven assertions that
+restated the corpus turned into derivations — was for exactly this moment, and this is the first
+round it was tested. A new case is now a new case.
+
+**Where the defect was instead.** The gate that checks whether the corpus's levels are spread,
+`checkG4Solvability`, answers two questions: can a baseline locate each case's root cause, and are
+the graded cases spread across L1..L4. `check-fault-cases.mjs` asked it **once per case**, with a
+one-case bundle, so `graded.length` was 0 or 1 against a `distributionMinCases` of 10 and the two
+`DIFFICULTY_SKEWED_*` branches **could not be taken by any input from the only caller that owns the
+corpus**. Fifteen cases, five of them graded, and the rule that exists to notice a corpus of easy
+cases had never once looked.
+
+`guard.test.ts` had been passing throughout: it builds ten `L1` cases and watches the gate refuse
+them. The gate is fine. The wiring is not, and a unit test of a function cannot see what its only
+caller passes it. This is the least visible form of the shape this volume keeps recording — not a
+check that passes vacuously on this data, but one that no caller can reach on any data.
+
+**The split.** `checkSolvability` (one case) and `checkDifficultyDistribution` (the set) are now
+separate, and `checkG4Solvability` composes them — the arrangement finding 270 gave G2, for the same
+reason. The difference is the cost of not having it: G2's version said one defect twenty-six times,
+this one said nothing at all.
+
+**Three wiring defects the split exposed, all three written wrong by me first.** Graded cases were
+collected where telemetry was collected, so a case with no derived signals did not count as
+annotated. `firstGraph` was recorded inside the telemetry block, so "the corpus has a graph" was
+false for a corpus with no telemetry and the distribution check skipped. The `difficulty N of M` line
+lived inside the export block, so it vanished from exactly the runs that have no telemetry — the
+third was caught only after the first two were fixed and the tests still passed without it.
+
+**Why the line exists.** `difficulty` is optional and `difficultyFor(undefined)` returns `medium`, by
+design. So an unannotated case and a case measured as medium are **the same word in every output**,
+and ten of fifteen cases are in that state. `difficulty 5 of 15 case(s) state a level; the
+distribution rule applies at 10` is the smallest thing that separates *not measured* from *measured
+and fine*.
+
+**Mutation battery.** The whole-corpus check deleted → 2 failed / 102. The check asked over cases
+with telemetry instead of all cases → 2 failed / 102. The second is the defect the first draft
+actually had.
+
+**Acceptance.** `pnpm test:coverage` green at core **188 / 4695**, cli 4 / 187, repo **192 / 4882**;
+`check-fault-cases` OK (15 of 30, 37 entities, 23 edges, 48 references resolved, 0 of 44 comparable
+assertions failing, `difficulty 5 of 15`); `docs:check` green; audit 7 volumes, findings 1–273.
+
+### Left open
+
+- **Sixteen samples carry no case, and ten of the fifteen carry no level.** `[open: the corpus is the
+  product and the annotation rate is one per round; the level is a second annotation on every case
+  already written, and the distribution rule cannot say anything until ten cases state one]`
+- **A reversal between two entities of one kind is not detectable statically.** `[open: caught by no
+  rule, because directions between two services are a fact about a deployment; the witness would be
+  trace parent/child spans and the corpus has one case with traces]`
+- **One red run is unreproduced.** `[open: a listed gate was read as exit-free once; three hypotheses
+  were refuted in v2.98 and eleven further runs have been green, so it stays recorded rather than
+  explained]`
+- **Upstream's baselines still refuse our data.** `[open: the loader picks a service-level indicator
+  by path and raises `SLI not implemented` for a system it does not know; claiming to be
+  `online-boutique` would produce a comparable and meaningless number]`
+- **RE3's traces and logs are not read.** `[open: 29 MB of `traces.csv` and 11 MB of `logs.csv` per
+  case are never opened, so an RE3 case reaches the export with one of the IR's four layers]`
+- **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv` and `tracets_lat.csv` are read by
+  the multi-source methods; this exporter writes none of them]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.

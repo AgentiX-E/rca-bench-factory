@@ -128,6 +128,43 @@ function corpus(options: {
   return dir;
 }
 
+/**
+ * A corpus directory holding `count` copies of the real annotation, each with the same level.
+ *
+ * The copies share a `sampleId` because the sample is not what these tests are about; the case id
+ * differs so the per-case checks treat them as separate entries. Written rather than derived from
+ * `corpus()` because that helper writes one case, and the rule under test needs ten before it says
+ * anything -- which is the whole reason it went unreached until the gate was split.
+ */
+function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string {
+  const dir = workspace();
+  writeFileSync(join(dir, 'graph.json'), `${JSON.stringify(REAL_GRAPH, null, 2)}\n`);
+  const cases = [];
+  for (let index = 0; index < count; index += 1) {
+    const faultCase = JSON.parse(JSON.stringify(REAL_CASE)) as Record<string, unknown>;
+    faultCase.caseId = `history-copy-${String(index)}`;
+    // Overwrite rather than keep: the real annotation states a level, so a copy that inherits it
+    // would make every ungraded corpus look graded.
+    if (difficulty === undefined) delete faultCase.difficulty;
+    else faultCase.difficulty = difficulty;
+    const file = `case-${String(index)}.json`;
+    writeFileSync(join(dir, file), `${JSON.stringify(faultCase, null, 2)}\n`);
+    cases.push({
+      caseId: faultCase.caseId,
+      sampleId: 'resource-cpu-saturation-checkout',
+      case: file,
+      graph: 'graph.json',
+      why: WHY,
+      sources: REAL_SOURCES,
+    });
+  }
+  writeFileSync(
+    join(dir, 'index.json'),
+    `${JSON.stringify({ schema: 'rca-bench-fault-cases/2', min: count, cases }, null, 2)}\n`,
+  );
+  return dir;
+}
+
 function run(args: string[]): { status: number | null; out: string } {
   const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', cwd: ROOT });
   return { status: result.status, out: `${result.stdout}${result.stderr}` };
@@ -1576,5 +1613,52 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
       "declares post '\"five\"' for 'scratch_reading', which is neither a number nor a { parameter } " +
         'reference',
     );
+  });
+});
+
+describe('check-fault-cases · the difficulty distribution is a property of the corpus', () => {
+  // The rule lived inside a gate this script asked of a one-case bundle, so `graded.length` was 0
+  // or 1 against a minimum of ten and the branches could not be taken. A rule no caller can reach
+  // is not a gate, and the only way to know it is reachable is to make the corpus reach it.
+
+  it('refuses a set that is entirely the easiest level', () => {
+    const result = run(['--cases', corpusOf(10, 'L1')]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('the corpus fails G4: L1 share 1.000 exceeds the 0.2 ceiling');
+  });
+
+  it('refuses a set with no hardest case', () => {
+    const result = run(['--cases', corpusOf(10, 'L2')]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('the corpus fails G4: L4 share 0.000 is below the 0.1 floor');
+  });
+
+  it('accepts a spread set, so the rule can pass as well as fail', () => {
+    const dir = corpusOf(10, 'L2');
+    // Eight medium, one hard, one hardest: no L1 at all and a tenth at L4.
+    const failures = JSON.parse(readFileSync(join(dir, 'case-8.json'), 'utf8')) as Record<string, unknown>;
+    failures.difficulty = 'L3';
+    writeFileSync(join(dir, 'case-8.json'), `${JSON.stringify(failures, null, 2)}\n`);
+    const hardest = JSON.parse(readFileSync(join(dir, 'case-9.json'), 'utf8')) as Record<string, unknown>;
+    hardest.difficulty = 'L4';
+    writeFileSync(join(dir, 'case-9.json'), `${JSON.stringify(hardest, null, 2)}\n`);
+    const result = run(['--cases', dir]);
+    expect(result.out).not.toContain('the corpus fails G4');
+  });
+
+  it('says how many cases state a level, because an unset level exports as medium', () => {
+    const ungraded = run(['--cases', corpusOf(10)]);
+    expect(ungraded.out).toContain('difficulty 0 of 10 case(s) state a level');
+
+    const graded = run(['--cases', corpusOf(10, 'L2')]);
+    expect(graded.out).toContain('difficulty 10 of 10 case(s) state a level');
+  });
+
+  it('does not apply the distribution rule below its own sample size', () => {
+    // Nine is the largest set that cannot answer the question, and it must not answer it anyway:
+    // a share computed from nine cases is a share of nine cases.
+    const result = run(['--cases', corpusOf(9, 'L1')]);
+    expect(result.out).not.toContain('the corpus fails G4');
+    expect(result.out).toContain('difficulty 9 of 9 case(s) state a level');
   });
 });

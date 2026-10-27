@@ -67,7 +67,7 @@ of the repository cites.
 | [volume-04.md](audit/volume-04.md) | 160–195 | 36 | the second backend was declared unimplementable, and the decl... |
 | [volume-05.md](audit/volume-05.md) | 196–254 | 59 | the gate that could not be proved, and the reference with four meanings |
 | [volume-06.md](audit/volume-06.md) | 255–266 | 12 | the corpus is two documents joined by one string, and nothing read both |
-| [volume-07.md](audit/volume-07.md) | 267–272 | 6 | the layout we wrote is not the layout the loader reads |
+| [volume-07.md](audit/volume-07.md) | 267–273 | 7 | the layout we wrote is not the layout the loader reads |
 
 **Where a new finding goes.** Append to the last volume. When it would grow past
 280,000 bytes, start the next volume -- one number higher than the last, holding the

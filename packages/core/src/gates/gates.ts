@@ -591,16 +591,24 @@ export interface G4Options {
   distributionMinCases?: number;
 }
 
-export function checkG4Solvability(
+/**
+ * Whether the baselines can locate each case's root cause. A property of one case.
+ *
+ * Split out of `checkG4Solvability` because the two halves of G4 have different subjects and
+ * different callers: this one is asked per case, with that case's own telemetry, and the
+ * distribution below is a property of the set. `check-fault-cases.mjs` asked the composed gate of a
+ * one-case bundle, so the distribution rule saw `graded.length === 1` every time, fell below its
+ * own `distributionMinCases` of ten, and **never ran** -- on a corpus of fifteen cases with five
+ * graded. A rule that cannot be reached by the only caller that owns the corpus is not a rule; it
+ * is a comment with a `maxL1Share` in it.
+ */
+export function checkSolvability(
   bundle: IrBundle,
   outcomes: BaselineOutcome[],
   options: G4Options = {},
 ): GateResult {
   const v: GateViolation[] = [];
   const minSolvers = options.minSolvers ?? 1;
-  const maxL1Share = options.maxL1Share ?? 0.2;
-  const minL4Share = options.minL4Share ?? 0.1;
-  const distributionMinCases = options.distributionMinCases ?? 10;
 
   const byCase = new Map<string, BaselineOutcome[]>();
   for (const o of outcomes) {
@@ -622,6 +630,25 @@ export function checkG4Solvability(
     }
   }
 
+  return gate('G4', v);
+}
+
+/**
+ * Whether the graded cases are spread across the levels. A property of the set, asked once.
+ *
+ * `graded` counts the cases that state a level. A case that does not is not an easy case: the
+ * exporter projects an absent level to `medium` (`export/difficulty.ts` documents that arm), so an
+ * unannotated corpus exports as uniformly medium and the distribution rule has nothing to say about
+ * it. Below `distributionMinCases` this returns passed rather than a verdict, because a share
+ * computed from three cases is not a measurement of a share -- and the caller that owns the corpus
+ * prints the count, so "the rule did not apply" is visible rather than silent.
+ */
+export function checkDifficultyDistribution(bundle: IrBundle, options: G4Options = {}): GateResult {
+  const v: GateViolation[] = [];
+  const maxL1Share = options.maxL1Share ?? 0.2;
+  const minL4Share = options.minL4Share ?? 0.1;
+  const distributionMinCases = options.distributionMinCases ?? 10;
+
   const graded = bundle.cases.filter((c) => c.difficulty !== undefined);
   if (graded.length >= distributionMinCases) {
     const l1 = graded.filter((c) => c.difficulty === 'L1').length / graded.length;
@@ -640,6 +667,24 @@ export function checkG4Solvability(
     }
   }
 
+  return gate('G4', v);
+}
+
+/**
+ * G4 as one gate: can the baselines locate each case, and are the graded cases spread out?
+ *
+ * Solvability first, because a set whose cases no baseline can locate has a problem the
+ * distribution of their labels cannot describe.
+ */
+export function checkG4Solvability(
+  bundle: IrBundle,
+  outcomes: BaselineOutcome[],
+  options: G4Options = {},
+): GateResult {
+  const v: GateViolation[] = [
+    ...checkSolvability(bundle, outcomes, options).violations,
+    ...checkDifficultyDistribution(bundle, options).violations,
+  ];
   return gate('G4', v);
 }
 

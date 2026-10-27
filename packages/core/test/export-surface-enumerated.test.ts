@@ -632,9 +632,11 @@ const TESTED = [
   // gates/gates.ts
   'checkG1Structural',
   'checkCaseSemantics',
+  'checkDifficultyDistribution',
   'checkG2Semantic',
   'checkG3Validity',
   'checkGraphContract',
+  'checkSolvability',
   'checkG4Solvability',
   'checkG5AntiPollution',
   'runAllGates',
