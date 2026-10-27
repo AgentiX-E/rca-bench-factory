@@ -92,6 +92,62 @@
           "sha256": "6706311d2c00d9f5a335f73f6a11f4ad4417522abed7e7ee8c88b8e898088805"
         }
       ]
+    },
+    {
+      "anchor": "rcaeval-re3",
+      "run": {
+        "id": 40430588523,
+        "headSha": "ecec7f581",
+        "event": "workflow_dispatch",
+        "finishedAt": "2026-10-27T01:11:12Z",
+        "artifact": "rcaeval-rcaeval-re3-round-trip"
+      },
+      "corpus": {
+        "declaredCases": 90,
+        "roundTripped": 90,
+        "oracle": 1
+      },
+      "scores": {
+        "scored": 90,
+        "skipped": 0,
+        "failed": 0,
+        "oracle": {
+          "min": 1,
+          "max": 1,
+          "mean": 1,
+          "distribution": {
+            "1": 90
+          }
+        },
+        "source": "the run's own score report (`--report`, uploaded as `rcaeval-scores.json` in the run's artifact), which prints `90 scored, 0 skipped, 0 failed`; every per-case `ROUNDTRIP` line printed `oracle=1.00`"
+      },
+      "pins": [
+        {
+          "id": "rcaeval-re3-ob",
+          "bytes": 190838064,
+          "sha256": "4885c87665ee4f1c80734b0e8f0411f91f6dae5751b7506ee90a29f12d952ee7"
+        },
+        {
+          "id": "rcaeval-re3-ss",
+          "bytes": 101485651,
+          "sha256": "6c760fe241e7c4ec11c280a55388b2361ddb31e074c1b97893b11c8c334def08"
+        },
+        {
+          "id": "rcaeval-re3-tt",
+          "bytes": 241715689,
+          "sha256": "10b4f14de766af5b7dafedb851439605bbc6c62f7ca1d8a7bcd53f6d974263fe"
+        },
+        {
+          "id": "rcaeval-baro-simple",
+          "bytes": 570409,
+          "sha256": "3eb6169a63f86c5878c277434936e1f4bbbd7f30dcf7f87dc3496bea8cae7f1a"
+        },
+        {
+          "id": "rcaeval-multi-source",
+          "bytes": 12750784,
+          "sha256": "81d87640eb9e976325d9ef56d423455454d3cb49ca52041651f628a4d010c66a"
+        }
+      ]
     }
   ]
 }

@@ -160,3 +160,116 @@ they could.
 | the golden anchor | `rcaevalRe2Files` re-anchored: four files under `RE2-order-prod/order_cpu/1/` |
 | the inventory | 88 failure sites across 46 scripts, annotations carried |
 | the documents | `docs/targets/rcaeval.md` regenerated from the spec, plus the prose that described `metrics.json` |
+
+## Finding 268 — the code-level slice was refused by the gate that selects it
+
+The fourth anchor's third corpus is 90 cases across three systems, and it took two dispatches to get
+a score out of it. The first one is the interesting failure:
+
+```
+ROUNDTRIP declared 90 case(s), found 539 file(s), 122 directory(ies)
+ROUNDTRIP PASS  84/90 …
+ROUNDTRIP FAIL  85/90 RE3-TT/ts-route-service_f3_1/1  reason=simple_metrics.csv names 68 entities
+                in its columns (ts-admin…) and none of them is 'ts-route-service_f3'
+…
+ROUNDTRIP report …: 87 scored, 0 skipped, 3 failed
+```
+
+Two defects, found two different ways.
+
+### The gate that could not be satisfied
+
+`exportRcaEval` admits an RE3 case only when `fault.category === 'code'`, which is the target's own
+rule and correct: RE3 *is* the code-level slice. The corpus states its faults as `f1` … `f5` —
+**indices into a taxonomy, not categories** — so the category has to come from somewhere, and
+`inferFaultCategory('f1')` returns `unknown`, correctly: the token carries no keyword.
+
+Nothing supplied it. So had the parse been right, the run would have reported `90 skipped`, and
+`ROUNDTRIP PASSED` would have printed over a slice in which no case was examined. **A target declining
+a fault class and a reader that never told it the class look identical from the outside**, and only one
+of them is fine.
+
+The fix is one field: `PrimeCaseSource.faultCategory`, which `parseFaultSpec` treats as authoritative
+when present. `check-official.mjs` states it for the corpus it reads, because an `RE3-*` directory *is*
+the code-level slice — the suite name is the only place the corpus says so. The default is unchanged,
+so every other descriptor behaves as it did.
+
+The refusal message changed with it. It was the constant `case '…' is missing the fault type`, which now
+would describe a misspelled category as an absent type; it carries `parseFaultSpec`'s own sentence.
+
+### The split, which was on the wrong side
+
+`ts-route-service_f3_1/1` is one directory out of ninety, and it is the only one in the corpus whose
+`{service}_{fault}` segment has two underscores. `parseRcaEvalPath` split at the **last** one:
+
+```
+ts-route-service_f3_1   →   service = 'ts-route-service_f3',  fault = '1'
+```
+
+`ts-route-service_f3` exists nowhere. The service is `ts-route-service` and the fault is `f3_1` — a
+label the corpus distinguishes from `f3`, which it also ships. The failure surfaced three times, in the
+adapter's "the table does not name the component" message, which is a message about the *data*.
+
+Measured, before choosing the other side: of the 90 case directories, every service token is hyphenated
+(`adservice`, `frontend-external`, `ts-route-service`) and **none contains an underscore**, while exactly
+one fault label does. So the split is at the first underscore, and the direction is a measurement rather
+than a preference.
+
+The test that pinned the old rule argued from an assumption: *"service names routinely contain
+underscores of their own"*. That sentence was never measured, and the corpus denies it. Its companion
+claim — that RE2's fault vocabulary is six single tokens — was true of RE2 and false of RE3, which the
+test could not see because it only ever looked at RE2. **A rule derived from one corpus, asserted about
+the format.**
+
+Two consequences on the write side, both in the same change:
+
+- `casePath` keeps underscores in the **fault** token and strips them from the service. The sanitiser
+  wrote `f31` for `f3_1` — a third label, silently, and the label is the answer key.
+- `parseRcaEvalDirectory`'s docstring said it is "the one our exporter writes". That stopped being true
+  in finding 267; it is a reader for a shape this repository no longer writes.
+
+### One case upstream cannot read at all
+
+`main.py` splits with `service, metric = basename(dirname(dirname(data_path))).split("_")`, which
+unpacks into exactly two names and raises on three. So the published loader cannot read
+`ts-route-service_f3_1` either — this repository's parser is now deliberately **one case more capable
+than the loader it reproduces**, and that is written at the parser rather than discovered later.
+
+### The readout
+
+```
+01:06:32  dispatch 40430588523 at ecec7f581
+01:10:49  REPORT  pins.json: 5 pin(s) measured
+01:10:49  ROUNDTRIP declared 90 case(s), found 539 file(s), 122 directory(ies)
+01:11:08  ROUNDTRIP context 90 case(s) carried other entities in their table; 13460 column(s) …
+01:11:08  ROUNDTRIP report …: 90 scored, 0 skipped, 0 failed
+01:11:08  ROUNDTRIP PASSED (90 case(s) round-tripped through the official layout)
+```
+
+With 375 from RE1 and 270 from RE2 that is **735 cases across three corpora**, every one at
+`oracle=1.00`, and every asset in the registry pinned by a measurement the workflow itself took.
+
+### What this does not do
+
+It does not make upstream's baselines rank our data. That is still the SLI table (finding 267): the
+metric is loadable and scorable by this repository's reproduction of it, and `main.py` still raises
+`SLI not implemented` for a system token it does not recognise.
+
+It does not read RE3's traces or logs, which are the largest files in these archives (29 MB and 11 MB
+per case) and which the adapter never opens. The export writes the corpus's columns for them; nothing
+fills them from a corpus (finding 264's limitation, unchanged).
+
+It does not measure what the five assets contain beyond their digests. `rcaeval-multi-source` extracts
+to a directory of its own and contributes no cases — 90 declared, and 90 is the whole slice.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the category | `PrimeCaseSource.faultCategory`; 3 tests, one of them the vocabulary refusal by name |
+| the split | first underscore; 2 tests including the corpus's own `ts-route-service_f3_1/1` |
+| the write side | fault token keeps `_`, service token strips it; 2 tests |
+| the run | **90 of 90 at `oracle=1.00`**, 0 skipped, 0 failed, 5 pins measured and agreeing |
+| the anchors | RE1 375 + RE2 270 + RE3 90 = **735 cases**, all at `oracle=1.00` |
+| the tests | 8 new (3 prime, 2 parse, 2 export, 1 round-trip over a synthetic RE3 corpus) |
+| `core` / repo | **187 / 4671** · **191 / 4858**; coverage unchanged |

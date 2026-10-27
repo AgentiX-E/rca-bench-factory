@@ -54,7 +54,7 @@ described as *already replayed* while the registry lists its telemetry as unreac
 | `openrca-2.0` | unfetchable | — | PAVE annotations are not published as a bulk archive |
 | `rcaeval-re1` | pinned | `official-data.yml` | 253 of 375 at `oracle=1.00`; the other 122 were one `NaN` family, fixed and measured on five cases, one per faulted component |
 | `rcaeval-re2` | pinned | `official-data.yml` | **270 of 270 at `oracle=1.00`** (run `40400190945`), all three pins measured and agreeing |
-| `rcaeval-re3` | pending | — | five assets are fetchable and none is pinned yet |
+| `rcaeval-re3` | pinned | `official-data.yml` | **90 of 90 at `oracle=1.00`** (run `40430588523`), all five pins measured and agreeing |
 | `rca100` | unfetchable | — | no verified bulk HTTPS endpoint |
 | `aiops2025` | unfetchable | — | no verified bulk HTTPS endpoint |
 | `cloud-opsbench` | unfetchable | — | no verified bulk HTTPS endpoint |

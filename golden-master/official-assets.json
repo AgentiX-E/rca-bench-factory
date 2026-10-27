@@ -81,8 +81,8 @@
       "license": "MIT",
       "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
       "fetchable": true,
-      "sha256": null,
-      "bytes": null,
+      "sha256": "4885c87665ee4f1c80734b0e8f0411f91f6dae5751b7506ee90a29f12d952ee7",
+      "bytes": 190838064,
       "extractsTo": "RE3-OB"
     },
     {
@@ -92,8 +92,8 @@
       "license": "MIT",
       "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
       "fetchable": true,
-      "sha256": null,
-      "bytes": null,
+      "sha256": "6c760fe241e7c4ec11c280a55388b2361ddb31e074c1b97893b11c8c334def08",
+      "bytes": 101485651,
       "extractsTo": "RE3-SS"
     },
     {
@@ -103,8 +103,8 @@
       "license": "MIT",
       "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
       "fetchable": true,
-      "sha256": null,
-      "bytes": null,
+      "sha256": "10b4f14de766af5b7dafedb851439605bbc6c62f7ca1d8a7bcd53f6d974263fe",
+      "bytes": 241715689,
       "extractsTo": "RE3-TT"
     },
     {
@@ -114,8 +114,8 @@
       "license": "MIT",
       "licenseSource": "https://github.com/phamquiluan/baro/blob/main/LICENSE",
       "fetchable": true,
-      "sha256": null,
-      "bytes": null,
+      "sha256": "3eb6169a63f86c5878c277434936e1f4bbbd7f30dcf7f87dc3496bea8cae7f1a",
+      "bytes": 570409,
       "extractsTo": null
     },
     {
@@ -125,8 +125,8 @@
       "license": "MIT",
       "licenseSource": "https://github.com/phamquiluan/RCAEval/blob/main/LICENSE",
       "fetchable": true,
-      "sha256": null,
-      "bytes": null,
+      "sha256": "81d87640eb9e976325d9ef56d423455454d3cb49ca52041651f628a4d010c66a",
+      "bytes": 12750784,
       "extractsTo": "multi-source-data"
     }
   ],

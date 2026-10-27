@@ -218,6 +218,22 @@ the 270 cases loaded once the reader learned the corpus's second shape.
 | mean oracle score across the scored cases | **1.00** |
 | worst per-case oracle score | **1.00** |
 
+### rcaeval-re3
+
+Measured by `official-data.yml` run `40430588523` at `ecec7f581`. This is the run that closed the
+anchor: 90 cases, 0 skipped, 0 failed, all five assets pinned by the same download, and the first
+time the code-level slice produced a score at all — before it, every case in it was refused by the
+exporter for a fault category the corpus states only through its suite name (finding 268).
+
+| item | value |
+| --- | --- |
+| anchor | `rcaeval-re3` |
+| cases declared by the corpus | **90** |
+| cases round-tripped at `oracle=1.00` | **90** |
+| cases that did not | **0** |
+| mean oracle score across the scored cases | **1.00** |
+| worst per-case oracle score | **1.00** |
+
 ### What these tables do not claim
 
 They do **not** claim either score agrees with upstream's published numbers.
@@ -226,9 +242,6 @@ ceiling and not a solver's accuracy. Upstream's published figures are *solver* a
 corpora; ours is the metric's ceiling, so the two are not comparable as they stand. What would make
 them comparable is running upstream's own scorer, with its own answer key, over the same corpus --
 that is the remaining half of P0-2 and it is unmeasured.
-
-They do **not** cover `rcaeval-re3`, which is a separate anchor with its own fetch and is still
-`pending`.
 
 And they do **not** replace the dated per-pass records further down this file, which say what each
 pass measured at the time.
@@ -1237,7 +1250,7 @@ and this table.
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
 | [volume-04.md](progress/volume-04.md) | 21 | v2.06 | v2.25 |
 | [volume-05.md](progress/volume-05.md) | 30 | v2.26 | v2.55 |
-| [volume-06.md](progress/volume-06.md) | 39 | v2.56 | v2.94 |
+| [volume-06.md](progress/volume-06.md) | 40 | v2.56 | v2.95 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

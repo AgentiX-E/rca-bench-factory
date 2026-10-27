@@ -2146,3 +2146,65 @@ bytes, so this finding opens volume-07).
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint; no relation is checked for direction.
+
+## v2.95 — the code-level slice, and the label that carries the separator
+
+**What was open.** v2.94's fourth item: `rcaeval-re3` had five fetchable assets and none pinned. It
+took two dispatches to get a score out of them, and the first failure was the interesting one.
+
+**The gate that could not be satisfied.** `exportRcaEval` admits an RE3 case only when
+`fault.category === 'code'` — the target's own rule, and correct. The corpus labels its faults `f1` …
+`f5`, which are **indices**, so `inferFaultCategory('f1')` is `unknown`, correctly; nothing supplied
+the category. Had the parse been right, the run would have printed `90 skipped` and `ROUNDTRIP PASSED`
+over a slice in which no case was examined. **A target declining a fault class and a reader that never
+told it the class look identical from outside.** The fix is one field — `PrimeCaseSource.faultCategory`
+— and the runner states it, because an `RE3-*` directory *is* the code-level slice.
+
+**The split, on the wrong side.** The first run scored 87 of 90 and failed three times on
+`RE3-TT/ts-route-service_f3_1/{1,2,3}`, with the adapter's "the table does not name the component"
+message. The table was right: `parseRcaEvalPath` split at the **last** underscore, reading the service
+as `ts-route-service_f3`, which exists nowhere. Measured before choosing the other side: of 90 case
+directories every service token is hyphenated and **none has an underscore**, while exactly one fault
+label does. The test that pinned the old rule argued from an assumption — "service names routinely
+contain underscores of their own" — and from RE2's six single-token faults, neither of which holds for
+RE3. **A rule derived from one corpus, asserted about the format.**
+
+On the write side the same fact had two consequences: `casePath` now keeps `_` in the **fault** token
+(the sanitiser wrote `f31` for `f3_1`, a third label, silently, and the label is the answer key), and
+`parseRcaEvalDirectory`'s docstring stopped claiming to be "the one our exporter writes" — false since
+v2.94.
+
+One case upstream cannot read at all: `split("_")` into two names raises on three, so
+`ts-route-service_f3_1` is unreadable to the published loader. This parser is now deliberately one case
+more capable than the loader it reproduces, and says so at the parser.
+
+**The readout.** Run `40430588523` at `ecec7f581`: `declared 90`, `90 scored, 0 skipped, 0 failed`,
+`ROUNDTRIP PASSED`, five pins measured. With RE1's 375 and RE2's 270 that is **735 cases across three
+corpora, every one at `oracle=1.00`**, and every asset in the registry pinned by a measurement the
+workflow took itself.
+
+**Acceptance.** 8 new tests (3 in `prime.test.ts`, 2 in `official.test.ts`, 2 in `export.test.ts`, 1
+that drives `check-official.mjs` over a synthetic `RE3-OB/emailservice_f1/1` corpus and asserts PASS
+rather than SKIP — removing the one line from the runner turns it red); `pnpm test` green at core
+**187 / 4671**, cli 4 / 187, repo **191 / 4858**; `docs:check` green with
+`check-roundtrip-record` publishing all three anchors and `check-l4-status` reading 3 pinned;
+`derive-gate-sites --check` green; meta-gate 46 of 46 caught; audit 7 volumes, findings 1–268.
+
+### Left open
+
+- **Upstream's baselines still refuse our data, and the blocker is an SLI lookup.** `[open: `process()`
+  matches the path against `RE2-OB` / `RE3-TT` / `online-boutique` and raises `SLI not implemented`
+  otherwise, so our export is loadable and scorable by this repository's reproduction of the metric and
+  not rankable by the published baselines]`
+- **RE3's traces and logs are not read.** `[open: 29 MB and 11 MB per case, unopened; the export writes
+  the corpus's columns and nothing fills them from a corpus]`
+- **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv`, `tracets_lat.csv` are read by the
+  multi-source methods and by `torai`; nothing here produces them]`
+- **RE1's `data.csv` is unmeasured here.** `[open: the shape emitted is the one finding 120 measured out
+  of RE1-TT; no file was compared this round or the last]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and eight rounds have gone to the
+  anchor]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint; no relation is checked for direction.
