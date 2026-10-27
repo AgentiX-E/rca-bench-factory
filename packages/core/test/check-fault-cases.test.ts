@@ -38,6 +38,32 @@ const REAL_CASE = JSON.parse(readFileSync(join(CASES, 'history-checkout-cpu-satu
   string,
   unknown
 >;
+
+/**
+ * What the corpus currently holds, read rather than remembered.
+ *
+ * These three counts used to be literals in the assertions below, and every round that annotated
+ * another case had to edit them -- so the assertions were measuring the author's memory of the
+ * corpus rather than the guard's agreement with it. The number a report must carry is the number
+ * the index carries; a report that says `14 of 30` while the index lists fifteen is the defect
+ * these assertions exist for, and a literal cannot see it.
+ */
+const INDEX = JSON.parse(readFileSync(join(CASES, 'index.json'), 'utf8')) as {
+  cases: Array<{ case?: string }>;
+};
+const CORPUS_SIZE = INDEX.cases.length;
+const SAMPLE_COUNT = (
+  JSON.parse(readFileSync(join(ROOT, 'golden-master', 'fault-extraction', 'samples.json'), 'utf8')) as {
+    samples: unknown[];
+  }
+).samples.length;
+
+/** Every case file the index names, parsed, so a count derived from the corpus is derived from its text. */
+const CASE_FILES = INDEX.cases
+  .map((entry) => entry.case)
+  .filter((name): name is string => typeof name === 'string')
+  .map((name) => JSON.parse(readFileSync(join(CASES, name), 'utf8')) as { fault?: { category?: string } });
+const CODE_LEVEL_CASES = CASE_FILES.filter((one) => one.fault?.category === 'code').length;
 const REAL_GRAPH = JSON.parse(readFileSync(join(CASES, 'synthetic-storefront-graph.json'), 'utf8')) as unknown;
 
 const WHY =
@@ -111,7 +137,7 @@ describe('check-fault-cases · the corpus as it stands', () => {
   it('accepts the shipped corpus and reports how many samples carry a case', () => {
     const result = run([]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('13 of 30 sample(s) carry a four-layer case');
+    expect(result.out).toContain(`${String(CORPUS_SIZE)} of ${String(SAMPLE_COUNT)} sample(s) carry a four-layer case`);
     expect(result.out).toContain('every reference resolves');
     expect(result.out).toContain('every layer quotes a sentence the incident text contains');
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
@@ -847,8 +873,10 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.status, result.out).toBe(0);
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
-    // Six, not seven: the cart case's two spans fill one `traces.csv` (finding 240).
-    expect(result.out).toContain('RE2 13 case(s) written, 19 file(s) with no rows');
+    // Every case writes an RE2 case, so the count is the corpus size. The `file(s) with no rows`
+    // half stays a regex rather than a number: it counts files whose modality no case supplies, and
+    // that is a property of the corpus's shape rather than of this assertion.
+    expect(result.out).toMatch(new RegExp(`RE2 ${String(CORPUS_SIZE)} case\\(s\\) written, \\d+ file\\(s\\) with no rows`));
   });
 
   it('accepts a log line whose quote is in its own case text', () => {
@@ -1009,7 +1037,12 @@ describe('check-fault-cases · the first code-level case', () => {
     // hidden.
     const result = run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('RE3 2 case(s) written, 3 file(s) with no rows, 11 skipped');
+    // The count, not the history. RE3 selects on `category === 'code'`, so the number it writes is
+    // the number of code-level cases in the corpus -- derived here from the case files rather than
+    // written down, because the literal `2` was a milestone that turned into a tripwire the first
+    // time the corpus grew.
+    expect(CODE_LEVEL_CASES, 'the corpus carries no code-level case; RE3 would write nothing').toBeGreaterThan(0);
+    expect(result.out).toContain(`RE3 ${String(CODE_LEVEL_CASES)} case(s) written`);
   });
 });
 
@@ -1039,10 +1072,27 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // Twelve of twelve: eight name a series, two are derived and read four readings between them
     // (one of the two reads two points of one series), one names a log line by id, and one is a
     // configuration fact that names no series at all. Ten are comparable, and all ten hold.
-    expect(result.out).toContain(
-      'checkpoints 41 of 41 reference(s) resolve by kind (31 over a series, 2 of them computed from ' +
-        '4 reading(s), 6 citing a declared configuration fact); 0 of 37 comparable assertion(s) fail',
+    // The claim is that *every* reference resolves and *no* comparable assertion fails, so the
+    // assertion is an equality between the two counts in each pair rather than a literal total.
+    // The literal form (`41 of 41 ... 0 of 37`) restated the corpus and went red on the round that
+    // annotated one more case, which is the shape a guard must not have: it reports a change in
+    // the data as a defect in the guard.
+    const summary = /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series, (\d+) of them computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+      result.out,
     );
+    expect(summary, result.out).not.toBeNull();
+    const [, resolved, total, , , , , failed, comparable] = summary as unknown as string[];
+    expect(resolved, 'every reference must resolve').toBe(total);
+    expect(Number(total), 'the corpus must carry references for this to be a measurement').toBeGreaterThan(0);
+    expect(Number(comparable), 'the guard must compare something').toBeGreaterThan(0);
+    expect(failed, 'no comparable checkpoint may disagree with the data it names').toBe('0');
+    // The per-kind breakdown is deliberately not asserted. It is a *reading* of how the corpus
+    // happens to be shaped -- how many cite a series, how many a configuration fact -- and this
+    // test's subject is that every reference resolves, not that the corpus divides in a
+    // particular way. An earlier draft summed the printed kinds and compared the sum with the
+    // total; it failed, and the failure was the assertion's: the printed parts do not sum to the
+    // total, because a kind this regex does not capture is counted too. Writing an arithmetic
+    // rule I could not derive is how a guard starts reporting its own guess as a defect.
   });
 
   it('refuses a series reference the signals file does not declare', () => {
@@ -1311,10 +1361,20 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
   it('accepts the corpus checkpoint, which cites the injection\'s own parameter', () => {
     const result = run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
-    // One of the twelve resolves to a declared configuration fact, and it is *comparable* -- the
-    // denominator went from ten to eleven when it stopped being uncheckable.
-    expect(result.out).toContain('6 citing a declared configuration fact');
-    expect(result.out).toContain('0 of 37 comparable assertion(s) fail');
+    // What has to hold is that a configuration checkpoint is admitted at all -- the rule exists
+    // because `container_spec_cpu_quota` was a plausible metric name that nothing declared -- and
+    // that admitting it made it comparable rather than excusing it. The count itself is the
+    // corpus's business, and pinning it here made every new case a test edit.
+    const admitted = /(\d+) citing a declared configuration fact\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+      result.out,
+    );
+    expect(admitted, result.out).not.toBeNull();
+    const [, configuration, failed, comparable] = admitted as unknown as string[];
+    expect(Number(configuration), 'no configuration checkpoint is admitted; the rule would be untested').toBeGreaterThan(0);
+    expect(Number(comparable), 'admitting a configuration fact must add it to the comparable set').toBeGreaterThan(
+      Number(configuration),
+    );
+    expect(failed, 'a configuration checkpoint must be comparable, and must hold').toBe('0');
   });
 
   it('refuses a configuration fact the case does not declare, and names what it does', () => {

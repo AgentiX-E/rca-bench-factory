@@ -51,7 +51,10 @@ describe('the corpus carries one case whose four layers are filled', () => {
   it('reads as complete, with every layer carrying something', () => {
     const reading = assessFourLayer({ case: faultCase, graph });
     expect(reading.layers.map((layer) => [layer.layer, layer.filled, layer.items])).toEqual([
-      ['entity', true, 31],
+      // The entity layer's item count is the graph's size, so it is read from the graph. The
+      // literal 31 it replaced turned every added node into a failure of this test, which reports a
+      // change in the fixture as a defect in the reading.
+      ['entity', true, graph.entities.length],
       ['fault', true, 1],
       ['process', true, 2],
       ['evidence', true, 3],
@@ -245,7 +248,7 @@ describe('the reading is printable, because a verdict nobody can read is a badge
   it('prints one line per layer, the two reference counts, and the verdict', () => {
     const text = formatFourLayerReading(assessFourLayer({ case: faultCase, graph }));
     expect(text.split('\n')).toEqual([
-      '  entity    filled 31 item(s)',
+      `  entity    filled ${String(graph.entities.length)} item(s)`,
       '  fault     filled  1 item(s)',
       '  process   filled  2 item(s)',
       '  evidence  filled  3 item(s)',

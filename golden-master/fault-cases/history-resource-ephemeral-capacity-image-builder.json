@@ -1,0 +1,116 @@
+{
+  "caseId": "history-resource-ephemeral-capacity-image-builder",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-14T04:12:00.000Z",
+  "window": {
+    "start": "2026-10-14T03:52:00.000Z",
+    "end": "2026-10-14T04:40:00.000Z"
+  },
+  "fault": {
+    "type": "ephemeral-capacity-exceeded",
+    "category": "resource",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "image-builder",
+      "cachePath": "/var/lib/buildkit",
+      "ephemeralLimitBytes": {
+        "value": 10737418240,
+        "unit": "By"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "pod:synthetic-storefront/image-builder-0",
+    "rootCauseComponent": "image-builder",
+    "rootCauseReason": "The pod's writable overlay is where each build's layer cache lands, and the janitor that trims it runs on a fixed schedule rather than on the queue. A long build queue adds caches faster than the schedule removes them, so the overlay reaches the pod's 10Gi ephemeral limit and every build then fails at its first write with ENOSPC. The node was never short of space: `df` reads the node's root filesystem, which is a different filesystem from the pod's overlay, so it correctly reported 40 percent used while the thing that was actually exhausted sat one layer in. The failure is not the limit either -- 10Gi is a reasonable ceiling -- it is that nothing trims the cache in proportion to what the queue adds.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "pod_ephemeral_storage_used_percent",
+        "description": "the pod's writable overlay climbs from 38 to 100 percent of its 10Gi limit across the build queue, and stays there"
+      },
+      {
+        "type": "metric",
+        "ref": "build_success_ratio",
+        "description": "every build fails once the overlay is full, which is what makes this an outcome rather than a slowdown"
+      },
+      {
+        "type": "metric",
+        "ref": "node_filesystem_used_percent",
+        "description": "the node's root filesystem does not move -- 40 percent before and after -- which is the reading that sent the first responder to the wrong filesystem"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "pod:synthetic-storefront/image-builder-0",
+        "toEntityId": "service:synthetic-storefront/image-builder",
+        "mechanism": "each build leaves a layer cache under /var/lib/buildkit in the pod's writable overlay, the scheduled janitor trims it on an interval the queue outruns, and the overlay reaches the 10Gi ephemeral limit, after which the first write of every build fails with ENOSPC",
+        "evidenceRefs": [
+          "cp-overlay-full",
+          "cp-ephemeral-limit",
+          "cp-builds-fail",
+          "cp-node-disk-healthy"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-overlay-full",
+        "entityRef": "pod:synthetic-storefront/image-builder-0",
+        "signalRef": "pod_ephemeral_storage_used_percent",
+        "comparator": "==",
+        "value": 100,
+        "unit": "%",
+        "description": "the writable overlay is at its ceiling rather than near it, which is what produces ENOSPC instead of a slowdown"
+      },
+      {
+        "checkpointId": "cp-ephemeral-limit",
+        "entityRef": "pod:synthetic-storefront/image-builder-0",
+        "signalRef": "ephemeralLimitBytes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 10737418240,
+        "unit": "By",
+        "description": "the ceiling the overlay reached is the pod's declared ephemeral limit, so the 100 percent above is relative to a stated number rather than to an unknown one"
+      },
+      {
+        "checkpointId": "cp-builds-fail",
+        "entityRef": "service:synthetic-storefront/image-builder",
+        "signalRef": "build_success_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "every build failed, which is the outcome the ticket reports and the reason the queue kept growing"
+      },
+      {
+        "checkpointId": "cp-node-disk-healthy",
+        "entityRef": "node:synthetic-storefront/build-node-1",
+        "signalRef": "node_filesystem_used_percent",
+        "comparator": "==",
+        "value": 40,
+        "unit": "%",
+        "description": "the node's root filesystem did not move from 40 percent, and that is the control that rules out a full disk rather than the evidence for one"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "trim the layer cache when the overlay crosses a threshold instead of on a fixed interval, so the cache cannot outgrow the limit while the queue is long",
+        "target": "pod:synthetic-storefront/image-builder-0"
+      },
+      {
+        "step": 2,
+        "action": "alert on ephemeral storage per pod rather than on node filesystem usage, because the two are different filesystems and the healthy one cannot speak for the full one",
+        "target": "node:synthetic-storefront/build-node-1"
+      }
+    ]
+  },
+  "query": "Every image build started failing with 'no space left on device' while the host reported its disk 40 percent used. Which component consumed the space, and why did the host's own reading not show it?",
+  "answerKeyIsolated": true
+}

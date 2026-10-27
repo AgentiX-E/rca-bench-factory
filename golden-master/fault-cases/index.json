@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 13,
+  "min": 14,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -390,6 +390,36 @@
           "layer": "evidence",
           "quote": "Lowering the interface MTU to 1,380 made every call complete",
           "why": "the controlled experiment -- the interface, not the path, was what had to change, and 1,380 is below the path's 1,400"
+        }
+      ]
+    },
+    {
+      "caseId": "history-resource-ephemeral-capacity-image-builder",
+      "sampleId": "resource-ephemeral-capacity-image-builder",
+      "case": "history-resource-ephemeral-capacity-image-builder.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-resource-ephemeral-capacity-image-builder.signals.json",
+      "why": "annotated from the incident text of `resource-ephemeral-capacity-image-builder`, and the corpus's first case whose answer is a *filesystem boundary* rather than a component. The text states both readings and both are correct: the pod's writable overlay is at its 10Gi ephemeral limit, and `df` reports the node's root filesystem at 40 percent. Neither reading is wrong, and neither can speak for the other, so the case is decided by knowing which one the failure is about. The chain is one step because the propagation is one step -- the cache fills the overlay and the overlay refuses the write -- and its two ends are the pod that holds the overlay and the service whose builds it runs, which is the pair a reader has to separate: the service is the thing that failed and the pod is the thing that ran out.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "the image builder began failing every build",
+          "why": "the workload whose builds carry the cache, named by the service it exposes rather than by its pod"
+        },
+        {
+          "layer": "fault",
+          "quote": "The writable overlay had hit its 10Gi ephemeral limit",
+          "why": "the mechanism and the ceiling in one sentence: `ephemeral-capacity-exceeded` needs both the resource and the number it exceeded"
+        },
+        {
+          "layer": "process",
+          "quote": "the janitor that trims it runs on a schedule that a long build queue had outrun",
+          "why": "the sentence that orders the steps -- cache added faster than trimmed, then the limit -- rather than leaving two symptoms side by side"
+        },
+        {
+          "layer": "evidence",
+          "quote": "while df reported 40 percent used",
+          "why": "the counter-reading the case turns on: a true measurement of a different filesystem, which is why the checkpoint is a control rather than a contradiction"
         }
       ]
     }

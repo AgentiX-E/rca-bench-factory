@@ -195,6 +195,26 @@
       "kind": "node",
       "name": "edge-router-2",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/image-builder",
+      "kind": "service",
+      "name": "image-builder",
+      "aliases": [
+        "the image builder"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/image-builder-0",
+      "kind": "pod",
+      "name": "image-builder-0",
+      "aliases": []
+    },
+    {
+      "entityId": "node:synthetic-storefront/build-node-1",
+      "kind": "node",
+      "name": "build-node-1",
+      "aliases": []
     }
   ],
   "edges": [
@@ -292,6 +312,16 @@
       "from": "node:synthetic-storefront/edge-router-2",
       "to": "pod:synthetic-storefront/catalog-service-0",
       "relation": "routes"
+    },
+    {
+      "from": "service:synthetic-storefront/image-builder",
+      "to": "pod:synthetic-storefront/image-builder-0",
+      "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/build-node-1",
+      "to": "pod:synthetic-storefront/image-builder-0",
+      "relation": "hosts"
     }
   ]
 }

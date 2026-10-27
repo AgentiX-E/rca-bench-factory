@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-resource-ephemeral-capacity-image-builder",
+  "why": "Telemetry for the ephemeral-capacity case, and the corpus's first whose two disk readings disagree while both are correct. `pod_ephemeral_storage_used_percent` climbs to its ceiling and `node_filesystem_used_percent` does not move, and neither series is the other's error: they read different filesystems. That pair is what makes the case decidable rather than a matter of which dashboard was open -- a corpus carrying only the full one would be satisfied by 'the node is out of disk', which is false, and one carrying only the healthy one would report nothing wrong at all. `build_success_ratio` at zero is the outcome the ticket states, and it is what separates an exhausted capacity from a slow build.",
+  "series": [
+    {
+      "service": "image-builder-0",
+      "metric": "pod_ephemeral_storage_used_percent",
+      "unit": "%",
+      "baseline": 38,
+      "post": 100,
+      "quote": "The writable overlay had hit its 10Gi ephemeral limit",
+      "why": "the checkpoint `cp-overlay-full` holds the ceiling: the overlay is at its limit rather than approaching it, which is what turns a build into a failure at its first write"
+    },
+    {
+      "service": "build-node-1",
+      "metric": "node_filesystem_used_percent",
+      "unit": "%",
+      "baseline": 40,
+      "post": 40,
+      "quote": "while df reported 40 percent used",
+      "why": "the checkpoint `cp-node-disk-healthy` holds the flat forty: it is a true reading of a different filesystem, so it is the control that rules out the answer the first responder gave rather than a series that failed to move"
+    },
+    {
+      "service": "image-builder",
+      "metric": "build_success_ratio",
+      "unit": "1",
+      "baseline": 1,
+      "post": 0,
+      "quote": "the image builder began failing every build",
+      "why": "the checkpoint `cp-builds-fail` holds the zero: every build failed, which is the impact and the reason the queue that fed the cache kept growing"
+    }
+  ]
+}
