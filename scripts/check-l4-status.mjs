@@ -50,7 +50,17 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
-const REGISTRY = resolve(ROOT, 'golden-master', 'official-assets.json');
+/**
+ * The registry, unless `--registry` names another one.
+ *
+ * The flag exists for the same reason `--table` does: the guard's rules have to be
+ * testable without depending on what the committed data happens to contain today.
+ * The suite needs an anchor in each of the three states, and for four rounds it
+ * borrowed them from the registry; the round that pinned the last fetchable asset
+ * took the last `pending` one away and the suite could not start. A rule whose test
+ * needs the data to have a particular shape is a test that expires.
+ */
+const REGISTRY = resolve(ROOT, argValue('--registry') ?? 'golden-master/official-assets.json');
 const TARGETS_SOURCE = resolve(ROOT, 'packages', 'core', 'src', 'score', 'targets.ts');
 
 function fail(lines) {

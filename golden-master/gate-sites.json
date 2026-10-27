@@ -147,7 +147,7 @@
     },
     {
       "script": "scripts/check-l4-status.mjs",
-      "line": 59,
+      "line": 69,
       "diagnostic": "check-l4-status: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-l4-status.test.ts"

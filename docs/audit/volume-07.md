@@ -273,3 +273,82 @@ to a directory of its own and contributes no cases — 90 declared, and 90 is th
 | the anchors | RE1 375 + RE2 270 + RE3 90 = **735 cases**, all at `oracle=1.00` |
 | the tests | 8 new (3 prime, 2 parse, 2 export, 1 round-trip over a synthetic RE3 corpus) |
 | `core` / repo | **187 / 4671** · **191 / 4858**; coverage unchanged |
+
+## Finding 269 — the suite that could not start once the last asset was pinned
+
+The commit that recorded RE3's five pins went red in CI, on a file that never ran locally:
+
+```
+FAIL  test/check-l4-status.test.ts [ test/check-l4-status.test.ts ]
+Error: this file needs at least one pending target to test the guard's rules, and the registry
+       currently has none
+      Tests  1 failed | 4657 passed (4658)
+```
+
+and next to it, one assertion:
+
+```
+FAIL  test/official-assets.test.ts > … > names every pending asset, so the state is a list and not a residue
+AssertionError: expected 0 to be greater than 0
+```
+
+Both are the same fact: **every fetchable asset in the registry now has a measured digest**, and two
+pieces of the suite had been written to need one that does not.
+
+### Two shapes of the same mistake
+
+`check-l4-status.test.ts` derived its fixtures from the live registry and then **threw at module load**
+if any of the three states was empty. The reason was sound — a mutation test for "a pending row called
+pinned" needs a pending row, and a test with no subject passes vacuously — but the conclusion bound the
+suite to the data. Four rounds of pinning assets ran it down to zero, and the round that pinned the last
+one made the file unloadable.
+
+`official-assets.test.ts` asserted `pending.length > 0` for the same anti-vacuity reason. Its subject
+was really "a pending asset is *named*, and pending is disjoint from unfetchable"; the non-empty
+guard turned that into a claim about which assets exist.
+
+**A guard whose fixture is the production data expires when the production data succeeds.** That is the
+same shape as finding 265's row count and finding 150's compile-time constant: the check was right
+about the rule and wrong about where its example comes from.
+
+### What changed
+
+`check-l4-status.mjs` takes `--registry`, for the same reason it already took `--table`: the guard's
+rules have to be exercisable without depending on what the committed data happens to contain. The
+suite builds the state it needs — a copy of the registry with one anchor's digests nulled, which *is*
+the registry's own definition of `pending` ("fetchable, no measured digest yet") rather than an
+imitation of it — and runs the two pending rules against that copy.
+
+`official-assets.test.ts` states the emptiness instead of requiring fullness:
+`expect(pending).toEqual([])` with the reason in the comment, and the naming loop kept, so a future
+unpinned asset fails on the round that adds it rather than being noticed later.
+
+### How it was found, and what that says about the round
+
+CI found it. Locally the whole suite was run **before** the registry was pinned and not after; the
+pins, the record entry and the published table were then written and only `docs:check` was re-run. So
+the last command of the round was a green one that did not cover the change.
+
+That is the third time in this volume that a check existed and was not run against the thing it
+governs — finding 265's battery row, finding 266's structure check on real data, and this. The
+difference here is that the cost was one red CI run rather than a wrong measurement: `pnpm test`
+after the pin would have caught it, and the habit it argues for is that **a change to a data file the
+suite reads is a change to the suite's inputs, and the suite is what has to be re-run.**
+
+### What this does not do
+
+It does not make the registry unable to reach zero pending assets again — that is the desired state,
+and the two rewritten tests now accept it.
+
+It does not add a `pending` fixture to any other test file. `check-l4-status.test.ts` was the only one
+that could not load; a search for other live-data premises is worth doing and is not this change.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| `--registry` | one flag, defaulting to the committed path; the guard's output is unchanged |
+| the fixtures | `pendingRegistry()` nulls one anchor's digests; `rowsWithPending()` builds the table that agrees with it |
+| the two rules | still two-sided: pending-called-pinned and pending-claiming-a-reading, both red |
+| the naming rule | kept, with the emptiness asserted rather than required |
+| `core` / repo | **187 / 4671** · **191 / 4858**; 4671 locally after the pin, which is the run that was missing |

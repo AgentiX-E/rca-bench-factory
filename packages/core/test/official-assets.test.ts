@@ -164,11 +164,19 @@ describe('golden-master/official-assets.json · the registry contract', () => {
       }
     });
 
-    it('names every pending asset, so the state is a list and not a residue', () => {
+    it('names every pending asset, and there is none left to name', () => {
       // Named rather than counted. This is the assertion that would have failed
       // before v1.51: the state existed, and nothing said so.
+      //
+      // The registry is empty of pending assets as of the round that pinned
+      // rcaeval-re3's five, and `expect(pending.length).toBeGreaterThan(0)` --
+      // which was there to keep the loop from being decorative -- became the
+      // assertion that failed instead of the guard (finding 269). The loop stays,
+      // because it is the rule; the equality is what makes its emptiness a
+      // statement rather than an accident: an asset that arrives unpinned fails
+      // here, on the round that adds it, rather than being noticed later.
       const pending = registry.assets.filter((a) => a.sha256 === null).map((a) => a.id);
-      expect(pending.length).toBeGreaterThan(0);
+      expect(pending, 'every fetchable asset carries a measured digest').toEqual([]);
       for (const id of pending) {
         expect(id.length, 'a pending asset is unnamed').toBeGreaterThan(0);
       }

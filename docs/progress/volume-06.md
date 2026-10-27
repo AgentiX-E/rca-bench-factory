@@ -2208,3 +2208,54 @@ rather than SKIP — removing the one line from the runner turns it red); `pnpm 
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
 units are compared structurally; a chain's first step need not be the root cause; an absence of logs
 cannot be a checkpoint; no relation is checked for direction.
+
+## v2.96 — the suite that could not start once the last asset was pinned
+
+**What was open.** Nothing on the list. This round was a CI failure on the commit that recorded RE3's
+five pins, and the failure is the finding.
+
+**What it said.** `test/check-l4-status.test.ts` did not load — `this file needs at least one pending
+target to test the guard's rules, and the registry currently has none` — and
+`test/official-assets.test.ts` failed one assertion, `expected 0 to be greater than 0`. Both are the
+same fact: **every fetchable asset in the registry now has a measured digest**, and two pieces of the
+suite had been written to need one that does not.
+
+**Why it happened, in one sentence each.** The L4 test derived its fixtures from the live registry and
+threw at module load when any of the three states was empty — sound anti-vacuity reasoning, bound to
+the data, and four rounds of pinning ran it to zero. The assets test asserted `pending.length > 0` for
+the same reason, which turned "a pending asset is named" into a claim about which assets exist. **A
+guard whose fixture is the production data expires when the production data succeeds.**
+
+**What changed.** `check-l4-status.mjs` takes `--registry`, mirroring `--table`, and the suite builds
+the state it needs: a copy of the registry with one anchor's digests nulled, which is the registry's own
+definition of `pending`. `official-assets.test.ts` states the emptiness (`toEqual([])`) and keeps the
+naming loop, so a future unpinned asset fails on the round that adds it.
+
+**How it was found matters more than what it cost.** CI found it because the last local run of the whole
+suite happened *before* the registry was pinned, and only `docs:check` was re-run afterwards. Third time
+in this volume that a check existed and was not run against the thing it governs (265's battery row,
+266's structure check on real data, this). The habit it argues for: **a change to a data file the suite
+reads is a change to the suite's inputs, and the suite is what has to be re-run.**
+
+**Acceptance.** `pnpm test` green at core **187 / 4671**, cli 4 / 187, repo **191 / 4858** — run with
+the registry pinned this time; `docs:check` green (`check-l4-status` 3 pinned / 0 pending,
+`check-roundtrip-record` publishing all three anchors); `derive-gate-sites --check` green; audit 7
+volumes, findings 1–269.
+
+### Left open
+
+- **Upstream's baselines still refuse our data.** `[open: `process()` matches the path against
+  `RE2-OB` / `RE3-TT` / `online-boutique` and raises `SLI not implemented` otherwise]`
+- **Other test files may read live data the same way.** `[open: this round fixed the one file that
+  could not load and the one assertion that required fullness; a sweep for the shape is not done]`
+- **RE3's traces and logs are not read.** `[open: every RE3 case ships a 29 MB `traces.csv` and an
+  11 MB `logs.csv`, and the corpus adapter never opens either, so a round-tripped RE3 case reaches the
+  export with metric signals only -- one of the IR's four layers]`
+- **No aggregate tables.** `[open: `logts.csv`, `tracets_err.csv`, `tracets_lat.csv` are read by the
+  multi-source methods and by `torai`]`
+- **17 samples still carry no case.** `[open: 13 of 30 carry one, and nine rounds have gone to the
+  anchor]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote; compound
+units are compared structurally; a chain's first step need not be the root cause; an absence of logs
+cannot be a checkpoint; no relation is checked for direction.

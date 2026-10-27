@@ -100,26 +100,53 @@ const PENDING = ALL_TARGETS.filter((t) => fetchState(t) === 'pending');
 const UNFETCHABLE = ALL_TARGETS.filter((t) => fetchState(t) === 'unfetchable');
 
 /**
- * A fixture that has to be non-empty for the tests that mutate it to mean
- * anything.
+ * The premises this file's *fixtures* need, asserted so a green run is not a run
+ * that tested nothing.
  *
- * "fails when a row calls a pending anchor pinned" needs an anchor that is
- * pending *now*; if every target were pinned the test would have nothing to
- * mutate and would pass vacuously. Asserting the fixture's own premises is what
- * keeps a green run from being a run that tested nothing.
+ * `pending` is deliberately absent from that list. It used to be required, on the
+ * reasoning that "fails when a row calls a pending anchor pinned" needs an anchor
+ * that is pending today -- and that made the suite expire: the round that pinned
+ * the last fetchable asset left the registry with no pending anchor and this file
+ * could not even load (finding 269). The two tests that need one build it from a
+ * fixture registry instead, which is what `--registry` is for. A rule whose test
+ * needs the committed data to have a particular shape is a test with a shelf life.
  */
-if (PENDING.length === 0 || PINNED.length === 0 || UNFETCHABLE.length === 0) {
+if (PINNED.length === 0 || UNFETCHABLE.length === 0) {
   throw new Error(
-    `this file needs at least one ${PENDING.length === 0 ? 'pending ' : ''}` +
-      `${PINNED.length === 0 ? 'pinned ' : ''}` +
+    `this file needs at least one ${PINNED.length === 0 ? 'pinned ' : ''}` +
       `${UNFETCHABLE.length === 0 ? 'unfetchable ' : ''}target to test the guard's rules, ` +
       `and the registry currently has none`,
   );
 }
 
 const A_PINNED = PINNED[0];
-const A_PENDING = PENDING[0];
 const AN_UNFETCHABLE = UNFETCHABLE[0];
+
+/**
+ * An anchor made pending by removing its digests, in a copy of the registry.
+ *
+ * The two rules that need one are about the *pending* state, and the state has to
+ * be constructible rather than found. Nulling every digest of a pinned anchor is
+ * exactly the transition the registry defines (`pinned` is "a measured digest",
+ * `pending` is "fetchable, no measured digest yet"), so the fixture is the state
+ * itself rather than an imitation of it.
+ */
+function pendingRegistry(): { path: string; target: string } {
+  const target = A_PINNED;
+  const registry = JSON.parse(readFileSync(join(ROOT, 'golden-master', 'official-assets.json'), 'utf8')) as {
+    assets: Array<{ anchor: string; sha256: string | null; bytes: number | null }>;
+  };
+  for (const asset of registry.assets) {
+    if (asset.anchor === target) {
+      asset.sha256 = null;
+      asset.bytes = null;
+    }
+  }
+  const dir = mkdtempSync(join(scratch, 'reg-'));
+  const path = join(dir, 'official-assets.json');
+  writeFileSync(path, JSON.stringify(registry, null, 2));
+  return { path, target };
+}
 
 interface Outcome {
   status: number;
@@ -168,6 +195,23 @@ function correctRows(): string[] {
   });
 }
 
+/**
+ * A table whose rows follow a registry in which `target` is pending.
+ *
+ * The companion to `pendingRegistry`: the table and the registry have to agree
+ * about the state before the mutation is the only thing wrong with them, or a test
+ * "the guard refuses a pending row called pinned" would pass on a table the guard
+ * refused for an unrelated reason.
+ */
+function rowsWithPending(target: string, overrides: Record<string, string>): string[] {
+  return ALL_TARGETS.map((t) => {
+    if (overrides[t] !== undefined) return overrides[t] as string;
+    const state = t === target ? 'pending' : fetchState(t);
+    const reading = state === 'pinned' ? '`official-data.yml`' : '—';
+    return `| \`${t}\` | ${state} | ${reading} | note |`;
+  });
+}
+
 /** The index of a target's row inside `correctRows`. */
 function rowOf(target: string): number {
   const index = ALL_TARGETS.indexOf(target);
@@ -207,11 +251,13 @@ describe('scripts/check-l4-status.mjs · the L4 table agrees with the registry',
   });
 
   it('fails when a row calls a pending anchor pinned', () => {
-    const rows = correctRows();
-    rows[rowOf(A_PENDING)] = `| \`${A_PENDING}\` | pinned | \`official-data.yml\` | note |`;
-    const result = run(['--table', writeTable(rows)]);
+    const fixture = pendingRegistry();
+    const rows = rowsWithPending(fixture.target, {
+      [fixture.target]: `| \`${fixture.target}\` | pinned | \`official-data.yml\` | note |`,
+    });
+    const result = run(['--table', writeTable(rows), '--registry', fixture.path]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(new RegExp(A_PENDING.replace(/\./g, '\\.')));
+    expect(result.stderr).toMatch(new RegExp(fixture.target.replace(/\./g, '\\.')));
     expect(result.stderr).toMatch(/pending/);
   });
 
@@ -242,12 +288,14 @@ describe('scripts/check-l4-status.mjs · the L4 table agrees with the registry',
   });
 
   it('fails when a pending anchor claims a reading', () => {
-    const rows = correctRows();
     // Pending and unfetchable fail for the same reason -- no digest records a
     // reading -- so both directions are pinned down rather than one standing in
     // for the other.
-    rows[rowOf(A_PENDING)] = `| \`${A_PENDING}\` | pending | \`official-data.yml\` | note |`;
-    const result = run(['--table', writeTable(rows)]);
+    const fixture = pendingRegistry();
+    const rows = rowsWithPending(fixture.target, {
+      [fixture.target]: `| \`${fixture.target}\` | pending | \`official-data.yml\` | note |`,
+    });
+    const result = run(['--table', writeTable(rows), '--registry', fixture.path]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/claims a reading/);
   });
