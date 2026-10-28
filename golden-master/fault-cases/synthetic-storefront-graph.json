@@ -286,6 +286,58 @@
       "aliases": [
         "the backlog"
       ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/webhook-dispatcher",
+      "kind": "service",
+      "name": "webhook-dispatcher",
+      "aliases": [
+        "the dispatcher"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/webhook-dispatcher-0",
+      "kind": "pod",
+      "name": "webhook-dispatcher-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/webhook-dispatcher-app",
+      "kind": "container",
+      "name": "webhook-dispatcher-app",
+      "aliases": [
+        "the shutdown handler"
+      ]
+    },
+    {
+      "entityId": "external:synthetic-storefront/merchant-endpoints",
+      "kind": "external",
+      "name": "merchant-endpoints",
+      "aliases": [
+        "the receivers"
+      ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/api-gateway",
+      "kind": "service",
+      "name": "api-gateway",
+      "aliases": [
+        "the gateway"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/api-gateway-0",
+      "kind": "pod",
+      "name": "api-gateway-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/api-gateway-app",
+      "kind": "container",
+      "name": "api-gateway-app",
+      "aliases": [
+        "the request path"
+      ]
     }
   ],
   "edges": [
@@ -422,6 +474,41 @@
     {
       "from": "service:synthetic-storefront/ingest-writer",
       "to": "mq:synthetic-storefront/ingest-queue",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/webhook-dispatcher",
+      "to": "pod:synthetic-storefront/webhook-dispatcher-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/webhook-dispatcher-0",
+      "to": "container:synthetic-storefront/webhook-dispatcher-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/webhook-dispatcher",
+      "to": "external:synthetic-storefront/merchant-endpoints",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/api-gateway",
+      "to": "pod:synthetic-storefront/api-gateway-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/api-gateway-0",
+      "to": "container:synthetic-storefront/api-gateway-app",
+      "relation": "contains"
+    },
+    {
+      "from": "external:synthetic-storefront/public-ingress",
+      "to": "service:synthetic-storefront/api-gateway",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/api-gateway",
+      "to": "service:synthetic-storefront/pricing-service",
       "relation": "calls"
     }
   ]

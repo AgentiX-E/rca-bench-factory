@@ -1232,7 +1232,7 @@ settle.
 
 ## Pass log
 
-The rounds are recorded in four volumes, in the order they were run. They were one
+The rounds are recorded in the volumes below, in the order they were run. They were one
 document until it reached 519,758 bytes -- the size at which `docs/audit.md` stopped
 being a document (finding 195), and for the same reason: the push that carries one
 round carries all of them, and a reader cannot find a round without `grep`.
@@ -1253,7 +1253,7 @@ and this table.
 | [volume-04.md](progress/volume-04.md) | 21 | v2.06 | v2.25 |
 | [volume-05.md](progress/volume-05.md) | 30 | v2.26 | v2.55 |
 | [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
-| [volume-07.md](progress/volume-07.md) | 19 | v2.86 | v3.04 |
+| [volume-07.md](progress/volume-07.md) | 20 | v2.86 | v3.05 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

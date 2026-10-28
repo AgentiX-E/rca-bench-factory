@@ -273,3 +273,111 @@ regression when the corpus-level rule is satisfied elsewhere.
 | the reading | `strict 4 … strictly displaced in 2 case(s)`, both named |
 | the difficulty | `L1 2 / L2 9 / L3 6 / L4 0` |
 | `core` | **191 / 4767**, coverage unchanged at 99.97 / 99.75 / 100 / 99.97 |
+
+## Finding 279 — the hardest level was a level no case could reach
+
+`checkDifficultyDistribution` has required a tenth of a graded corpus at `L4` since it was written.
+The corpus has printed `L4 0` on every run since, and the reason was recorded and re-recorded across
+four rounds: **no chain in it was three steps deep**, so no correction to any label could satisfy the
+rule. Both halves of that were true, and together they made the level a decoration. A ladder whose
+top rung is empty is not a ladder; it is a ladder-shaped diagram, and the projection into
+`easy`/`medium`/`hard` that `docs/targets/cloud-opsbench.md` publishes could never emit `hard`.
+
+The repair is content, not code. Two cases — `history-runtime-pod-shutdown-webhook-dispatcher` and
+`history-code-slow-regex-api-gateway` — each carry a three-step chain, and the distribution moves
+`L1 2 / L2 9 / L3 6 / L4 0` → `L1 2 / L2 9 / L3 6 / L4 2`, which is `0.105` against a floor of `0.1`
+and the first `within the target` this corpus has printed.
+
+### Why the third hop was the whole difficulty
+
+Every chain in this corpus stopped at the service, and that is not an accident of the annotations: an
+incident ticket describes what the reporter saw, and a reporter sees the component that is broken
+rather than the party that is missing something. A `L4` needs the propagation to *leave* the family
+that caused it, and there are two shapes in which the samples actually support that:
+
+| case | the three steps | what the third step is |
+| --- | --- | --- |
+| `…webhook-dispatcher` | process → pod → service → merchant endpoints | a data loss: three hundred deliveries per deploy that are never retried |
+| `…api-gateway` | process → pod → service → public ingress | a uniform delay: eight seconds paid before any downstream call is made |
+
+Both are three steps of *distinct events* rather than one event at three resolutions, which is the
+distinction that decides whether a chain is worth its depth. The dispatcher's pod really is killed
+while its process really is still draining — two statements, two clocks — and the service really does
+repeat that per replica per deploy, because the grace period belongs to the release. The gateway's pod
+really does reach a CPU ceiling that the service then presents as one latency for every replica.
+
+### The dispatcher case, and what a thin signals file is for
+
+`history-runtime-pod-shutdown-webhook-dispatcher` ships **one series**, and that is the annotation's
+argument rather than an omission:
+
+| evidence | value | kind |
+| --- | --- | --- |
+| `terminationGracePeriodSeconds` | 30 s | declared configuration fact |
+| `drainSeconds` | 120 s | declared configuration fact |
+| `webhook_deliveries_dropped_total` | 0 → 300 | counter, steps once per deploy |
+
+Neither number is wrong alone. Thirty seconds is a normal grace period and two minutes is a normal
+drain; the fault exists only in their comparison, and nothing in the ticket says a latency or an error
+rate moved, so a signals file with a plausible curve in it would have been an invention. This is the
+corpus's second case whose decisive fact is an **absence** — the corpus's overcommit case counted a
+missing heap cap as `heapCapMebibytes == 0` — and the first where the absence is a *pair* that nothing
+compared.
+
+The single series is also what makes the case a negative result for magnitude methods: a counter that
+steps from zero has a zero-variance baseline, its z-score is `value / 1e-6`, and it dominates the
+ranking by five orders of magnitude. That is the corpus's standing behaviour for every counter it
+ships, and it is why this case cannot be evidence for or against a displacement claim — it is at rank
+1 for a reason a reader should not trust, and the `strict` reading is unaffected because the corpus's
+two displacement cases both measure levels with real variance.
+
+### The probe that measured itself, and the suspicion it cleared
+
+The two new cases forced a question the corpus had never asked: **is a z-score against a zero-variance
+baseline a measurement at all?** `zScore` divides by `max(sigma, 1e-6)`, so a series that is flat
+before the onset and moves after it gets a statistic that is the excursion scaled by one over an
+implementation constant. If the ranking of a case turned on that constant rather than on the data, then
+`strict` and `rankOfTruth` would be artefacts and the corpus's headline reading would be measuring its
+own floor.
+
+A probe recomputed every case's ranking twice — with the shipped `1e-6` floor and with a relative floor
+of one percent of the baseline — and **two of seventeen cases changed order**, neither of them a case
+whose `strict` classification moved:
+
+| case | rank under `1e-6` | rank under 1 % | what moved |
+| --- | --- | --- | --- |
+| `history-checkout-cpu-saturation` | 2 | 1 | the answer's pod, which is the same component and therefore not a miss |
+| `history-resource-ephemeral-capacity-image-builder` | 1 | 2 | the pod under the answer, again the same component |
+
+So the corpus's claims do not rest on the floor, and the finding is a **negative result** rather than a
+defect: the suspicion was reasonable, it was measured, and it did not hold. Two of the numbers in the
+first run of that probe were `NaN`, and they were the probe's rather than the corpus's — it expanded
+`post: { parameter: … }` without resolving the reference, which the guard does. That is worth recording
+because a probe is a second reader of the same files, and a second reader that skips a step measures
+its own bug with the same confidence it measures the corpus.
+
+### The ratchet, because the printed line is not one
+
+`logDifficultyCoverage` prints the spread and says `outside the target` without failing, and that
+choice is still right: a share is a property of the set, and a rule that fails every run on something no
+label can repair teaches people to skip the line. But it stopped being sufficient the moment the target
+was met, because *meeting* it is now a property the suite can lose silently — removing one of the two
+cases takes the share to `0.056` and changes nothing but a sentence in the log.
+
+So the claim moved into `difficulty-floor.test.ts`: the shipped corpus has no shortfall, both `L4` cases
+are named rather than counted, each carries exactly three steps, `checkDifficultyDistribution` on the
+real bundle yields no violations, and dropping one of the two produces `DIFFICULTY_SKEWED_HARD`. The
+last of those is the part that makes it a ratchet: at this size the rule needs **both** cases, which is
+the opposite of the displacement rule and the reason the two properties need different protection.
+
+### Acceptance
+
+| gate | before | after |
+| --- | --- | --- |
+| the corpus | 17 of 30, 43 entities, 27 edges | **19 of 30, 50 entities, 34 edges** |
+| checkpoints | 56 resolved, 0 of 52 failing | **63 resolved (48 series, 11 configuration, 2 derived), 0 of 59 failing** |
+| ranking width | 20–22 candidates at top-3 | **22–24 candidates at top-3** |
+| displacement | `strict 4, tie 2, same-component 2, none 26` | `strict 4, tie 2, same-component 2, none 30` |
+| difficulty | `L1 2 / L2 9 / L3 6 / L4 0`, outside the target | **`L1 2 / L2 9 / L3 6 / L4 2`, within the target** |
+| `core` | 191 / 4767 | **191 / 4772** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged — no `src/` file was touched |

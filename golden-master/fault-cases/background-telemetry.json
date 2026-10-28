@@ -1,12 +1,18 @@
 {
   "schema": "rca-bench-background-telemetry/1",
-  "why": "The system's background traffic: one request-rate series per service, flat across every case's window. It exists because a case that carries telemetry only for the two services its ticket names is not a localisation test. With two candidates a solver cannot be wrong about the top three, and G4 said so on every run until this file existed -- fifteen cases, fifteen rankings of one to three services, and a top-K claim that no input could falsify. Real telemetry is a dump of the whole system with one series moving in it, and this is that: the eighteen services of the synthetic storefront at their ordinary request rates, so that a case's own anomaly has seventeen quiet neighbours to be chosen from. The numbers are this corpus's authored system, not a claim about any incident, which is why nothing here quotes an incident text and why the guard refuses any checkpoint that cites one of these series. A series in a case's own signals file wins over the background entry for the same service and metric, so a case whose fault is a request-rate collapse can still say so.",
+  "why": "The system's background traffic: one request-rate series per service, flat across every case's window. It exists because a case that carries telemetry only for the two services its ticket names is not a localisation test. With two candidates a solver cannot be wrong about the top three, and G4 said so on every run until this file existed -- fifteen cases, fifteen rankings of one to three services, and a top-K claim that no input could falsify. Real telemetry is a dump of the whole system with one series moving in it, and this is that: every service the graph holds, at its ordinary request rate, so that a case's own anomaly has seventeen quiet neighbours to be chosen from. The numbers are this corpus's authored system, not a claim about any incident, which is why nothing here quotes an incident text and why the guard refuses any checkpoint that cites one of these series. A series in a case's own signals file wins over the background entry for the same service and metric, so a case whose fault is a request-rate collapse can still say so.",
   "series": [
     {
       "service": "analytics-dashboard",
       "metric": "request_rate",
       "unit": "rps",
       "value": 15
+    },
+    {
+      "service": "api-gateway",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 600
     },
     {
       "service": "billing-service",
@@ -121,6 +127,12 @@
       "metric": "request_rate",
       "unit": "rps",
       "value": 210
+    },
+    {
+      "service": "webhook-dispatcher",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 40
     }
   ]
 }

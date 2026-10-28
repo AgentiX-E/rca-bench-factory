@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
-  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 17,
+  "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
+  "min": 19,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -510,6 +510,66 @@
           "layer": "evidence",
           "quote": "Setting the heap to 700m removed both the kills and the double packing",
           "why": "the counterfactual that makes the cap the cause rather than a correlate: one change removed both consequences"
+        }
+      ]
+    },
+    {
+      "caseId": "history-runtime-pod-shutdown-webhook-dispatcher",
+      "sampleId": "runtime-pod-shutdown-webhook-dispatcher",
+      "case": "history-runtime-pod-shutdown-webhook-dispatcher.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-runtime-pod-shutdown-webhook-dispatcher.signals.json",
+      "why": "annotated from the incident text of `runtime-pod-shutdown-webhook-dispatcher`, and the corpus's first case whose propagation leaves the dispatcher entirely: the process, the pod it runs in, the service that rolls it, and the merchants who are missing the deliveries. The text states all three links and states no symptom anywhere else -- not one request fails -- which is what makes the case worth a level of its own. Its evidence is a pair of declared numbers rather than a curve: the drain the process needs and the deadline the platform gives it, thirty against a hundred and twenty. Neither number is wrong alone, and the fault lives only in their comparison, so the case carries one counter series and says why it carries nothing else.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Every deploy of the webhook dispatcher drops about 300 deliveries",
+          "why": "the component the ticket blames, named by what it drops rather than by the process that does the dropping"
+        },
+        {
+          "layer": "fault",
+          "quote": "the pod is killed at thirty seconds, so the drain never finishes",
+          "why": "the mechanism in one clause: a deadline that ends a drain early, with the deadline stated as a number"
+        },
+        {
+          "layer": "process",
+          "quote": "closing its listener but keeps draining an internal queue for up to two minutes",
+          "why": "the order of the two steps -- the listener closes first, the queue drains second -- which is why nothing downstream of the listener can see the loss"
+        },
+        {
+          "layer": "evidence",
+          "quote": "A preStop hook that sleeps forty seconds, plus a longer grace period than the drain, made the drops disappear",
+          "why": "the counterfactual the case turns on: a sleep longer than the drain and a deadline longer than the sleep remove the loss, which is the comparison the annotation says was never made"
+        }
+      ]
+    },
+    {
+      "caseId": "history-code-slow-regex-api-gateway",
+      "sampleId": "code-slow-regex-api-gateway",
+      "case": "history-code-slow-regex-api-gateway.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-code-slow-regex-api-gateway.signals.json",
+      "why": "annotated from the incident text of `code-slow-regex-api-gateway`. Its third link is the one the corpus did not have: the propagation ends outside the component that caused it, at the callers who wait, and the entity in the middle is a control rather than a victim -- the service behind the gateway does not move at all. The case is the reverse of the corpus's loudest-thing cases in one respect and the same in another: a method that ranks by magnitude lands on the right component for the wrong reason, since the eight seconds is what the rule costs rather than what the rule is, and a method that walks the call graph lands on the dependency, which never moved. It is filed at L4 because there are three hops -- the process matching, the pod at its limit, the service whose replicas all carry the same rule -- and because the last hop is asserted by a series rather than by prose.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "API gateway request latency spiked to 8s on every request path",
+          "why": "the component and the reading in one sentence, with the word every doing the work: a per-path slow-down would have been a routing question"
+        },
+        {
+          "layer": "fault",
+          "quote": "a WAF rule added ten minutes earlier containing a regex with nested quantifiers",
+          "why": "the cause, its age and its shape. Ten minutes rules out the deploy and the nested quantifiers are the property that makes the match quadratic"
+        },
+        {
+          "layer": "process",
+          "quote": "evaluated against every request URI",
+          "why": "why the cost is per request rather than per rule: the matcher runs on the URI of every request the gateway sees, so the work scales with traffic and with the square of the URI"
+        },
+        {
+          "layer": "evidence",
+          "quote": "including paths with no downstream call",
+          "why": "the control the case turns on: the slow paths need no service behind them, so nothing the gateway fronts can be where the time is spent"
         }
       ]
     }

@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-code-slow-regex-api-gateway",
+  "why": "Telemetry for the catastrophic-backtracking case: three series and a declared number, arranged so that the case cannot be solved by blaming the dependency. The gateway's latency is the loudest thing in the window and its own CPU is the mechanism; the service behind it answers in eleven milliseconds throughout, and the ticket's sentence about paths with no downstream call is what makes that control decisive rather than decorative. The two failures a localiser can make here are different and both are represented: a method that ranks by magnitude returns the gateway by accident, for the wrong reason, since the eight seconds is a consequence and the rule is the cause; a method that follows the call graph returns the dependency, which never moved.",
+  "series": [
+    {
+      "service": "api-gateway",
+      "metric": "http_request_duration_p99_ms",
+      "unit": "ms",
+      "baseline": 12,
+      "post": 8000,
+      "quote": "request latency spiked to 8s on every request path",
+      "why": "the checkpoint `cp-latency` holds the eight seconds the ticket reports, and the case's baseline is the twelve milliseconds the same ticket says the rollback restored, so both numbers in this declaration are the text's rather than a plausible invention"
+    },
+    {
+      "service": "api-gateway-0",
+      "metric": "container_cpu_usage_ratio",
+      "unit": "1",
+      "baseline": 0.35,
+      "post": 1,
+      "quote": "CPU on the gateway pods went to the limit",
+      "why": "the checkpoint `cp-cpu` holds the ceiling: a share of the limit, so one is the largest reading the unit has room for and the clamp in `fault/derived-telemetry.ts` is what keeps the noisy samples from claiming 102 percent of a core"
+    },
+    {
+      "service": "pricing-service",
+      "metric": "http_server_p99_ms",
+      "unit": "ms",
+      "baseline": 11,
+      "post": 11,
+      "quote": "including paths with no downstream call",
+      "why": "the checkpoint `cp-downstream-clean` holds the eleven milliseconds, and it is the case's control rather than its evidence: a service behind the gateway is unchanged while the gateway is at eight seconds, so the time cannot be its. Declared as its own series because a flat reading is a claim the annotation has to make somewhere, and a control that exists only in prose is a control no graph can see"
+    }
+  ]
+}

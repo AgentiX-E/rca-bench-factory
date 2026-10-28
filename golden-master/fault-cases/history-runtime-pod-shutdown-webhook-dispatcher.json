@@ -1,0 +1,129 @@
+{
+  "caseId": "history-runtime-pod-shutdown-webhook-dispatcher",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-21T02:14:00.000Z",
+  "window": {
+    "start": "2026-10-21T01:00:00.000Z",
+    "end": "2026-10-21T04:00:00.000Z"
+  },
+  "fault": {
+    "type": "pod-shutdown-timeout",
+    "category": "runtime",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "webhook-dispatcher",
+      "terminationGracePeriodSeconds": {
+        "value": 30,
+        "unit": "s"
+      },
+      "drainSeconds": {
+        "value": 120,
+        "unit": "s"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/webhook-dispatcher-app",
+    "rootCauseComponent": "webhook-dispatcher",
+    "rootCauseReason": "The process closes its listener when the termination signal arrives and then spends up to two minutes draining an internal queue that only that process can read. The pod's grace period is thirty seconds, so the kubelet sends SIGKILL while the drain is still running, and every delivery that was in the queue at that moment is lost. Nothing else moves, and that is the whole difficulty: the listener closed cleanly, so no request is refused, and no request fails, so every request-level signal stays exactly where it was. Three hundred deliveries against a deploy window's request volume is a share too small for an aggregate success rate to register, and the counter that does register steps once per deploy rather than with any time of day -- which is why a reader who ranks services by how far their numbers moved finds nothing here at all. Nor is the deploy the fault: a rolling deploy is supposed to kill pods. The fault is that the deadline the platform enforces is a quarter of the drain the process performs, and the pair was never compared by anyone before the drops were counted.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "webhook_deliveries_dropped_total",
+        "description": "the counter steps by about three hundred once per deploy and is flat between deploys, which is the signature of a shutdown rather than of a load change"
+      },
+      {
+        "type": "metric",
+        "ref": "drainSeconds",
+        "description": "the drain takes up to two minutes, four times the deadline the pod is given"
+      },
+      {
+        "type": "metric",
+        "ref": "terminationGracePeriodSeconds",
+        "description": "thirty seconds is everything the platform allows the process to finish in, so the two numbers together are the fault"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/webhook-dispatcher-app",
+        "toEntityId": "pod:synthetic-storefront/webhook-dispatcher-0",
+        "mechanism": "the handler closes its listener on the termination signal and then drains an internal queue for up to two minutes, while the pod is killed at thirty seconds, so the drain is cut off part-way and every delivery still queued is lost",
+        "evidenceRefs": [
+          "cp-drain",
+          "cp-grace"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/webhook-dispatcher-0",
+        "toEntityId": "service:synthetic-storefront/webhook-dispatcher",
+        "mechanism": "a rolling deploy replaces every replica under the same thirty-second grace, so the loss is taken once per replica per deploy rather than once for the service as a whole",
+        "evidenceRefs": [
+          "cp-grace",
+          "cp-dropped"
+        ]
+      },
+      {
+        "step": 3,
+        "fromEntityId": "service:synthetic-storefront/webhook-dispatcher",
+        "toEntityId": "external:synthetic-storefront/merchant-endpoints",
+        "mechanism": "the dropped deliveries are never retried, so each merchant is missing about three hundred events after a deploy and no later batch makes them up",
+        "evidenceRefs": [
+          "cp-dropped"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-grace",
+        "entityRef": "pod:synthetic-storefront/webhook-dispatcher-0",
+        "signalRef": "terminationGracePeriodSeconds",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 30,
+        "unit": "s",
+        "description": "the deadline the platform enforces on the pod, which is what ends the drain"
+      },
+      {
+        "checkpointId": "cp-drain",
+        "entityRef": "container:synthetic-storefront/webhook-dispatcher-app",
+        "signalRef": "drainSeconds",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 120,
+        "unit": "s",
+        "description": "what the process needs to finish, declared so the pair can be compared rather than remembered"
+      },
+      {
+        "checkpointId": "cp-dropped",
+        "entityRef": "service:synthetic-storefront/webhook-dispatcher",
+        "signalRef": "webhook_deliveries_dropped_total",
+        "comparator": ">=",
+        "value": 300,
+        "unit": "count",
+        "description": "the accumulated loss: a counter that steps once per deploy is the only signal in the window that moves at all"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "give the pod a grace period longer than the drain, and hold the shutdown in a preStop hook that sleeps past the queue's worst case, so the process is never killed mid-drain",
+        "target": "pod:synthetic-storefront/webhook-dispatcher-0"
+      },
+      {
+        "step": 2,
+        "action": "alert on the per-deploy drop counter rather than on a request-level error rate, because the loss is invisible in every level signal the service publishes",
+        "target": "service:synthetic-storefront/webhook-dispatcher"
+      }
+    ]
+  },
+  "query": "Every deploy of the webhook dispatcher loses about three hundred deliveries and not one request ever fails. Which component is at fault, and why do the request-level dashboards stay green throughout?",
+  "difficulty": "L4",
+  "answerKeyIsolated": true
+}

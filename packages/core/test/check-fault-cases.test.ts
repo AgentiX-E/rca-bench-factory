@@ -244,6 +244,19 @@ describe('check-fault-cases · the corpus as it stands', () => {
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
   });
 
+  it('reports the shipped corpus as within its difficulty target, which the readout never said before', () => {
+    // The line is printed rather than gated, deliberately: a share is a property of the set, and a
+    // rule that fails every run on something no label can repair teaches people to skip the line.
+    // `difficulty-floor.test.ts` holds the same claim with an assertion, so the number a reader sees
+    // in CI and the number the suite would refuse to lose are the same number.
+    const result = run([]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('within the target');
+    expect(result.out, 'the L4 share is the one this corpus spent seven rounds without').not.toContain(
+      'L4 share 0.000',
+    );
+  });
+
   it('accepts a corpus whose only case is the same one copied to a scratch directory', () => {
     // The path is a parameter, so the guard is not pinned to one directory. This is also what
     // lets the negative cases below run without touching the repository.

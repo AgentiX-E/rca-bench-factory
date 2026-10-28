@@ -152,6 +152,11 @@ its floor may be trivial and a case above it may be easy.
 The distribution of levels across a corpus is checked once per corpus (`checkDifficultyDistribution`,
 ten graded cases before it says anything). A corpus with no `L4` case reports that fact on every run
 rather than failing: no correction to a label can produce a level the corpus's chains cannot reach.
+That was true of this corpus for as long as every chain in it was one or two steps, and it stopped
+being true the round two three-step chains were annotated: the share is now met, so the suite holds it
+(`difficulty-floor.test.ts` names both cases) while the guard keeps printing the number rather than
+gating on it. A rule that fails on a property no annotation can repair teaches people to skip the
+line; a rule nothing asserts is a number that drifts back to zero.
 
 #### Background telemetry, and what "top-K" means
 
@@ -160,7 +165,7 @@ sentence of the ticket. A ticket names the two components it is about, so a corp
 signals files ranks one to three services per case — and a ranking of two scored at top-3 cannot be
 missed. `golden-master/fault-cases/background-telemetry.json` is the other half: one flat
 request-rate series per service in the graph, added to every case, so that a case's own anomaly is
-one moving series among eighteen quiet neighbours.
+one moving series among every quiet neighbour the graph holds.
 
 It is part of the corpus rather than of a case, and it has four rules (`fault/background.ts`):
 

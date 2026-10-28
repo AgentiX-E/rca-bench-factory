@@ -1294,3 +1294,78 @@ audit 8 volumes, findings 1–278; progress **7 volumes** (this one is the first
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence
 of logs cannot be a checkpoint.
+
+## v3.05 — the ladder got its top rung, and the rung had to be built out of content
+
+**What was open.** `L4`. The grade had been empty for every round since the distribution rule was
+written, and the entry that recorded it said the same thing each time: every chain in the corpus was
+one or two steps, so `minL4Share` of 0.1 could not be met by any correction to any label. That was
+true, and it was also a description of a product gap: the projection onto `easy`/`medium`/`hard` in
+`docs/targets/cloud-opsbench.md` could never emit `hard`, because nothing in the corpus was hard by
+structure.
+
+**Two chains of three steps.** Both come from samples that had carried no case, and both take the
+propagation out of the family that caused it — which is the property that separates a three-step chain
+from one event described at three resolutions:
+
+| case | steps | the third hop |
+| --- | --- | --- |
+| `history-runtime-pod-shutdown-webhook-dispatcher` | process → pod → service → merchant endpoints | three hundred deliveries per deploy that are never retried |
+| `history-code-slow-regex-api-gateway` | process → pod → service → public ingress | eight seconds paid on paths that call nothing behind the gateway |
+
+**The dispatcher case carries one series, on purpose.** Its evidence is a pair of declared numbers —
+the drain the process needs (120 s) and the deadline the platform enforces (30 s) — plus a counter that
+steps once per deploy. Nothing in the ticket says a latency or an error rate moved, so a plausible
+curve in the signals file would have been an invention dressed as telemetry. This is the corpus's
+second case whose decisive fact is an absence and the first where the absence is a *pair*: thirty is a
+normal grace period, two minutes is a normal drain, and the fault exists only in the comparison nobody
+made.
+
+**The gateway case is the corpus's first with a control that is a series rather than a sentence.** The
+service behind the gateway answers in eleven milliseconds throughout, and the ticket's clause about
+paths with no downstream call is what makes that decisive: a method that walks the call graph lands on
+the dependency, which never moved, and a method that ranks by magnitude lands on the right component
+for the wrong reason.
+
+**A suspicion, measured and cleared.** Two cases with zero-baseline counters raised the question
+whether `zScore`'s `1e-6` floor was deciding rankings — a statistic that is `value / 1e-6` is an
+implementation constant wearing a measurement's name. A probe recomputed all seventeen rankings with a
+relative floor of one percent and **two changed order**, both between a component and its own pod, and
+neither case's `strict` classification moved. The negative result is in the audit (finding 279) with
+the probe's own first-run `NaN`s, which were the probe's rather than the corpus's.
+
+**The ratchet.** The guard still prints the distribution rather than gating on it. What changed is
+that `difficulty-floor.test.ts` now holds the real corpus to the target: no shortfall, both `L4` cases
+named, three steps each, `checkDifficultyDistribution` clean on the real bundle, and
+`DIFFICULTY_SKEWED_HARD` when one of the two is removed. At this size the rule needs both cases —
+unlike the displacement rule, which needs one and is therefore protected by exactly that one.
+
+**Acceptance.** `pnpm test` green at core **191 / 4772**, cli 4 / 187, repo **195 / 4959**; coverage
+unchanged at **99.97 / 99.75 / 100 / 99.97** (no `src/` file was touched); `check-fault-cases` OK —
+19 of 30, 50 entities, 34 edges, 22–24 candidates wide, 63 references resolved, 0 of 59 comparable
+assertions failing, `difficulty spread L1 2 / L2 9 / L3 6 / L4 2; within the target`; `docs:check`
+green; audit 8 volumes, findings 1–279.
+
+### Left open
+
+- **The share is now 2 of 19, and the next two cases spend it.** `[open: 2 of 19 is 0.105 against a
+  floor of 0.1; one more non-L4 case brings it to exactly 0.100 and the one after that to 0.095, so a
+  third three-step chain is a precondition for the corpus growing twice more rather than a
+  nice-to-have]`
+- **Both L4 chains end at a consumer, and both consumers are outside the system being measured.**
+  `[open: the third hop in each new case is an external party; a three-step chain whose last hop stays
+  inside the storefront would exercise a different question, and the corpus has none]`
+- **A counter at rank 1 is not a localisation.** `[open: the dispatcher case is solved at rank 1 by
+  both baselines because a zero-variance baseline makes its z-score the excursion over 1e-6, so a
+  solver quoting this case as evidence for magnitude-based localisation would be quoting the floor]`
+- **RE3 emits no rows for the dispatcher case.** `[open: sixteen of the corpus's cases are skipped for
+  RE3 because they carry no trace, and the shutdown case is one of them -- its loss is visible only in
+  a counter, which is a fair reason and still a gap]`
+
+Unchanged, and each still a limit rather than a task: two cases displace by magnitude and both were
+written by the same hand around a healthy or downstream loud series, so a case whose loudest thing is a
+*second* fault would be harder and the corpus has none; a reversal between two entities of one kind is
+still not detectable statically, and the witness would be trace parent/child spans; eleven samples
+carry no case, because this round spent both of its cases on the ladder; the single unattributed red of
+v2.97 has not recurred; and upstream's loader still refuses a system it does not know, while our own
+two baselines now rank nineteen cases over twenty-two to twenty-four candidates.

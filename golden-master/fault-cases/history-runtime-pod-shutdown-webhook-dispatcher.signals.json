@@ -1,0 +1,18 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-runtime-pod-shutdown-webhook-dispatcher",
+  "why": "Telemetry for the shutdown-drain case, and the corpus's first case whose only moving series is a counter that steps once per deploy. The ticket names a loss of about three hundred deliveries and no request-level symptom at all, so the case carries one series and two declared numbers: the drain the process needs (120 s) and the deadline the platform gives it (30 s). That is deliberate rather than thin. A level series here would be an invention -- nothing in the text says a latency or an error rate moved, and a corpus that filled the window with plausible-looking noise would be answering a question the ticket did not ask. What a reader has to notice is the pair: neither number is wrong on its own, and the fault exists only in their comparison, which is the same shape as the corpus's overcommit case and a different mechanism.",
+  "series": [
+    {
+      "service": "webhook-dispatcher",
+      "metric": "webhook_deliveries_dropped_total",
+      "unit": "count",
+      "baseline": 0,
+      "post": 300,
+      "derivation": "counter",
+      "quote": "drops about 300 deliveries",
+      "why": "the checkpoint `cp-dropped` holds the three hundred. A counter rather than a step, because the text reports an accumulated loss across deploys rather than a rate that changed at one moment: the pre-window is flat at zero, which is what a counter that had never dropped anything reads, and the post-window accumulates to the ticket's number. Nothing else in the window moves, so this is also the case's demonstration that a counter's step is the shape a level-based reading misses"
+    }
+  ]
+}

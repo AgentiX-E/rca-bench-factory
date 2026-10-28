@@ -1,0 +1,134 @@
+{
+  "caseId": "history-code-slow-regex-api-gateway",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-19T16:20:00.000Z",
+  "window": {
+    "start": "2026-10-19T15:40:00.000Z",
+    "end": "2026-10-19T17:10:00.000Z"
+  },
+  "fault": {
+    "type": "regex-catastrophic-backtracking",
+    "category": "code",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "api-gateway",
+      "quantifierNesting": {
+        "value": 2,
+        "unit": "count"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/api-gateway-app",
+    "rootCauseComponent": "api-gateway",
+    "rootCauseReason": "The WAF rule added ten minutes before the spike matches with nested quantifiers, so the matcher backtracks over a number of paths that grows with the square of the URI rather than with its length. Every request pays that cost, including the ones that reach no service at all, and the rule therefore puts the gateway's own process at its CPU limit: a request that would have spent twelve milliseconds routing spends eight seconds deciding whether to route. The gateway is the answer and not a victim because nothing behind it moved -- the paths with no downstream call are exactly as slow as the ones with a call, which is the observation that rules out every service the gateway fronts, and rolling the rule back restores twelve milliseconds without any other change. Two details make the case worth keeping: the change that caused it was a rule rather than a release, so no deploy appears in the window, and the symptom is a uniform latency that a per-endpoint average can hide as a busy afternoon.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "http_request_duration_p99_ms",
+        "description": "eight seconds on every path, including the ones that call nothing downstream, which places the time inside the gateway rather than behind it"
+      },
+      {
+        "type": "metric",
+        "ref": "container_cpu_usage_ratio",
+        "description": "the gateway container sits at its CPU limit for the whole window, which is what a matcher doing quadratic work looks like from outside"
+      },
+      {
+        "type": "metric",
+        "ref": "http_server_p99_ms",
+        "description": "the service the gateway calls does not move, which is the control that rules out the dependency"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/api-gateway-app",
+        "toEntityId": "pod:synthetic-storefront/api-gateway-0",
+        "mechanism": "the rule is evaluated against every request URI, and its nested quantifiers make the match backtrack quadratically, so each request occupies a core for far longer than the routing it was meant to do and the pod reaches its CPU limit",
+        "evidenceRefs": [
+          "cp-nesting",
+          "cp-cpu"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/api-gateway-0",
+        "toEntityId": "service:synthetic-storefront/api-gateway",
+        "mechanism": "the rule belongs to the release rather than to one replica, so every gateway pod saturates together and the queue that forms is at the service rather than at a single instance",
+        "evidenceRefs": [
+          "cp-cpu",
+          "cp-latency"
+        ]
+      },
+      {
+        "step": 3,
+        "fromEntityId": "service:synthetic-storefront/api-gateway",
+        "toEntityId": "external:synthetic-storefront/public-ingress",
+        "mechanism": "callers wait eight seconds for a decision the gateway makes before any downstream call is made, so the delay appears on request paths that reach no service at all",
+        "evidenceRefs": [
+          "cp-latency",
+          "cp-downstream-clean"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-latency",
+        "entityRef": "service:synthetic-storefront/api-gateway",
+        "signalRef": "http_request_duration_p99_ms",
+        "comparator": ">=",
+        "value": 8000,
+        "unit": "ms",
+        "description": "the ticket's eight seconds, measured at the service rather than at any one pod"
+      },
+      {
+        "checkpointId": "cp-cpu",
+        "entityRef": "pod:synthetic-storefront/api-gateway-0",
+        "signalRef": "container_cpu_usage_ratio",
+        "comparator": ">=",
+        "value": 1,
+        "unit": "1",
+        "description": "the pod is at its CPU ceiling: a limit rather than a load, which is why adding replicas was never going to help"
+      },
+      {
+        "checkpointId": "cp-nesting",
+        "entityRef": "container:synthetic-storefront/api-gateway-app",
+        "signalRef": "quantifierNesting",
+        "signalKind": "configuration",
+        "comparator": ">=",
+        "value": 2,
+        "unit": "count",
+        "description": "the rule has two nested quantifiers, which is the property that makes the match quadratic rather than linear"
+      },
+      {
+        "checkpointId": "cp-downstream-clean",
+        "entityRef": "service:synthetic-storefront/pricing-service",
+        "signalRef": "http_server_p99_ms",
+        "comparator": "==",
+        "value": 11,
+        "unit": "ms",
+        "description": "the service behind the gateway answers in eleven milliseconds throughout, so the eight seconds is spent in front of it"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "rewrite the rule so its quantifiers are not nested, or anchor it, so the match cost is linear in the URI rather than quadratic",
+        "target": "container:synthetic-storefront/api-gateway-app"
+      },
+      {
+        "step": 2,
+        "action": "require a CPU-limit headroom check and a latency measurement on the rule itself before a WAF change is published, because a rule that is only a configuration edit reaches production with no deploy to review",
+        "target": "service:synthetic-storefront/api-gateway"
+      }
+    ]
+  },
+  "query": "Every request through the API gateway took eight seconds, including requests that call nothing behind it, and the only change that day was a WAF rule. Which component was doing the work, and what rules out the services it fronts?",
+  "difficulty": "L4",
+  "answerKeyIsolated": true
+}
