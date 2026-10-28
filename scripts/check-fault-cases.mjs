@@ -38,7 +38,7 @@
  *   2  a case is incomplete, or the count is below the floor
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -210,6 +210,15 @@ const gradedCases = [];
 /** The spread of declared levels, once the corpus has been read. Null when the rule does not apply. */
 let difficultySpread = null;
 /**
+ * Where each baseline placed the answer, and how wide the ranking it placed it in was.
+ *
+ * Reported rather than gated, and it is the number the corpus's difficulty argument turns on: a
+ * metric baseline that is right at rank 1 in every case is telling us the cases are one moving
+ * series among quiet ones, which is what they are. Before the background existed this could not be
+ * said at all, because a ranking of two scored at top-3 is right by construction.
+ */
+const localisation = [];
+/**
  * Every case that parsed, whether or not it carries telemetry.
  *
  * The distribution of levels is a property of the annotations, and a case with no derived signals
@@ -231,6 +240,64 @@ let firstGraph = null;
  * rather than on `firstGraph`, so a corpus that grows a second topology still checks both.
  */
 const graphContracts = new Map();
+
+/**
+ * The system's background traffic, one quiet series per service.
+ *
+ * A case's own signals file carries the series its incident is about, and every number there has to
+ * quote a sentence of the ticket. That rule is what keeps an annotation honest, and it is also what
+ * capped every ranking at the two or three services the story names: a ranking of two scored at
+ * top-3 cannot be missed, so fifteen cases reported fifteen top-3 hits and the claim was measured by
+ * nothing (finding 275).
+ *
+ * This file is the other half of the telemetry -- the whole storefront at its ordinary request
+ * rates, flat through every case's window. It asserts nothing about any incident, which is why none
+ * of it quotes a text and why no checkpoint may cite one of these series: the checkpoint resolver
+ * reads the case's own declarations only, so a reference to `request_rate` fails with the list of
+ * what the case actually says.
+ */
+const BACKGROUND_FILE = 'background-telemetry.json';
+const background = loadBackground(args.cases);
+let backgroundChecked = false;
+
+function loadBackground(casesDir) {
+  const path = join(casesDir, BACKGROUND_FILE);
+  if (!existsSync(path)) {
+    problems.push(
+      `the corpus at '${casesDir}' declares no ${BACKGROUND_FILE}: without it a case's ranking holds ` +
+        'only the services its own ticket names, and being within the top-K is then true of any answer',
+    );
+    return { series: [] };
+  }
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    problems.push(`'${path}' is not readable JSON: ${String(error?.message ?? error)}`);
+    return { series: [] };
+  }
+  // The rules live in `fault/background.ts` so that they are unit-tested rather than only exercised
+  // through this script: schema, the reason, one entry per (service, metric), numeric values.
+  const parsed = core.parseBackground(raw);
+  if ('problems' in parsed) {
+    for (const problem of parsed.problems) problems.push(`'${BACKGROUND_FILE}' ${problem}`);
+    return { series: [] };
+  }
+  return parsed.declaration;
+}
+
+/**
+ * The background is the whole system, or the numbers mean something else.
+ *
+ * Both directions are checked, and each failure means something different: an entry the graph does
+ * not hold is a series attributed to nothing, and a service the background omits is a candidate the
+ * ranking silently leaves out. Run once, on the first case's graph, because the corpus ships one.
+ */
+function checkBackgroundAgainst(graph) {
+  for (const problem of core.backgroundProblems(background, graph)) {
+    problems.push(`'${BACKGROUND_FILE}' ${problem}`);
+  }
+}
 
 for (const entry of index.cases) {
   const caseId = typeof entry?.caseId === 'string' ? entry.caseId : '';
@@ -781,6 +848,9 @@ for (const entry of index.cases) {
     }
 
     const when = expansionTime(parsedCase);
+    // A case's own declaration wins on the `(service, metric)` pair, and the background arrives flat
+    // with `noise: 'none'` -- both rules live in `fault/background.ts`, where they are unit-tested.
+    const backgroundDeclarations = core.backgroundSeries(series, background.series);
     const signals = [
       ...series.flatMap((one) =>
         core.expandSeries(
@@ -788,12 +858,17 @@ for (const entry of index.cases) {
           when,
         ),
       ),
+      ...backgroundDeclarations.flatMap((one) => core.expandSeries(one, when)),
       ...logs.flatMap((one) => core.expandLog(one, when)),
       ...core.expandTraces(traces, when, caseId),
     ];
     telemetryCases.push(parsedCase);
     telemetrySignals[caseId] = signals;
     if (firstGraph === null) firstGraph = parsedGraph;
+    if (!backgroundChecked) {
+      backgroundChecked = true;
+      checkBackgroundAgainst(parsedGraph);
+    }
     const withSignals = { ...bundle, signals: { [caseId]: signals } };
     const signalStructure = core.checkG1Structural(withSignals, { requiredSignals: ['metric'], requiresQuery: false });
     for (const violation of signalStructure.violations) {
@@ -827,6 +902,12 @@ for (const entry of index.cases) {
       const ranks = outcomes.map((one) => `${one.method}=${one.rankOfTruth === null ? 'absent' : String(one.rankOfTruth)}`);
       problems.push(`'${caseId}' is not solvable by both baselines (${ranks.join(', ')}): ${violation.message}`);
     }
+    localisation.push({
+      caseId,
+      candidates: Math.max(...outcomes.map((one) => one.candidateCount)),
+      topK: Math.min(...outcomes.map((one) => one.topK)),
+      ranks: outcomes.map((one) => one.rankOfTruth),
+    });
     if (
       validity.violations.length === 0 &&
       signalStructure.violations.length === 0 &&
@@ -882,8 +963,14 @@ if (firstGraph !== null && allCases.length > 0) {
 }
 
 // A file in the directory that the index does not name is a case nobody will run.
+//
+// `background-telemetry.json` is the one exception and it is not a case: it belongs to the corpus
+// rather than to any incident, and it is loaded before this loop rather than through the index. It
+// is named here instead of being pattern-matched, so a second corpus-level file has to be added
+// deliberately rather than slipping in under a naming convention.
 const named = new Set([
   'index.json',
+  BACKGROUND_FILE,
   ...index.cases.flatMap((entry) => [entry?.case, entry?.graph, entry?.signals].filter((name) => typeof name === 'string')),
 ]);
 const unnamed = readdirSync(args.cases).filter((file) => file.endsWith('.json') && !named.has(file));
@@ -926,6 +1013,30 @@ function logDifficultyCoverage() {
   );
 }
 
+/** Where the two baselines put the answer, and how wide the ranking was. */
+function logLocalisationReading() {
+  if (localisation.length === 0) return;
+  const widths = localisation.map((one) => one.candidates);
+  const narrowest = Math.min(...widths);
+  const widest = Math.max(...widths);
+  const topK = localisation[0].topK;
+  const tally = new Map();
+  for (const one of localisation) {
+    for (const rank of one.ranks) {
+      const key = rank === null ? 'absent' : `rank ${String(rank)}`;
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+  }
+  const parts = [...tally.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([key, count]) => `${key}: ${String(count)}`);
+  console.log(
+    `check-fault-cases: localisation over ${String(localisation.length)} case(s) at top-${String(topK)}, ` +
+      `rankings ${String(narrowest)}-${String(widest)} candidate(s) wide -- ${parts.join(', ')} of ` +
+      `${String(localisation.length * 2)} baseline run(s)`,
+  );
+}
+
 function logCheckpointCounts() {
   if (checkpointRefs.total === 0) return;
   console.log(
@@ -941,6 +1052,7 @@ function logCheckpointCounts() {
 if (problems.length > 0) {
   for (const problem of problems) console.error(`check-fault-cases: ${problem}`);
   logDifficultyCoverage();
+  logLocalisationReading();
   logCheckpointCounts();
   console.error(
     `check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)`,
@@ -1021,6 +1133,7 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
     );
   }
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
+  logLocalisationReading();
   logCheckpointCounts();
 }
 

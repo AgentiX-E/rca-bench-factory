@@ -2607,3 +2607,101 @@ property only a new case can change is how a line becomes invisible.
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence
 of logs cannot be a checkpoint.
+
+## v3.01 — top-K was the size of the ranking
+
+**What was open.** Fifteen samples with no case, and no L4 case in the corpus. This round did neither:
+annotating another case changed nothing last round, so the round went looking for what the guards
+actually measure. It found one that measures nothing, and it had been reporting a pass on every run.
+
+**The claim and the code.** `rankServicesByPeakZScore` and `rankServicesByMedianShift` ended with
+
+```ts
+const topK = Math.min(options.topK ?? DEFAULT_TOP_K, Math.max(ranking.length, 1));
+```
+
+so on a corpus whose rankings hold one to three services -- measured: fifteen cases, mean 1.67,
+`topK === ranking.length` in fifteen of fifteen -- `rankOfTruth <= topK` is true for **every answer
+that appears in the ranking at all**. G4's `minSolvers: 2` was therefore counting one existence check
+twice, and the guard's closing line ("both the peak-z and the median-shift baselines place in their
+top-K") was an existence claim in a precision claim's clothes.
+
+**The tests agreed with it.** `baseline-localiser.test.ts` asserted `reading.topK).toBe(2)` for a
+two-candidate ranking, `{ranking: [], topK: 1}` for no signals, and carried a test named *honours a
+topK the caller asks for, and never exceeds the ranking*. A correct expectation about a function
+whose contract was wrong: the name is how the contract got written down instead of questioned.
+
+**The fix, in two halves.** `topK` is the K the caller asked for; `candidateCount` is the ranking's
+length; both are on `BaselineOutcome`. And `checkSolvability` gains `LOCALISATION_UNCONTESTED`, which
+refuses a case whose ranking is no wider than the K it is scored at — because no method can miss a
+candidate inside its own output's length.
+
+**The corpus then failed it, 15 for 15.** Which was the point: the narrowness is not an accident of
+the guard. A case's signals file carries the series its incident is about, every number there quotes a
+sentence, and a ticket names the two components it is about. **The rule that keeps the annotation
+honest is the rule that capped the ranking.**
+
+**So the data gained its missing half.** `background-telemetry.json`: eighteen flat request-rate
+series, one per service in the graph, added to every case. Four rules, all in `fault/background.ts`,
+all unit-tested: flat (`noise: 'none'`, so a quiet statistic is exactly zero); the whole system (an
+entry the graph lacks is attributed to nothing, a service it omits is a candidate that never
+competed); the case wins on `(service, metric)`; and never evidence (no quote, and a checkpoint citing
+`request_rate` fails as undeclared even though the series is in the data).
+
+**The first honest localisation readout.**
+
+```
+localisation over 15 case(s) at top-3, rankings 18-20 candidate(s) wide
+  -- rank 1: 26, rank 2: 4 of 30 baseline run(s)
+```
+
+Not flattering, and now measurable: a peak-z baseline is right at rank 1 in thirteen of fifteen
+cases. The next round's problem is a distractor that moves more than the answer, which is the only
+thing that will move those numbers.
+
+**A second defect the widening exposed.** `rankOfTruth: null` used to mean "absent from the ranking",
+which was reachable only because the ranking held the case's own two services. With eighteen quiet
+candidates the answer is always present, so a case whose answer never moved would have been reported
+**solved at rank 2** — one other service moved, the tail was sorted alphabetically. `locatedRank`
+returns `null` when the statistic is zero: a candidate that showed nothing is a line in an output, not
+a finding. Both baselines call it.
+
+**Mutation battery.** `topK` back to `min(K, n)` → 10 failed / 101. A zero statistic counted as
+located → 3 failed / 101. The background not yielding to the case → 1 failed / 19. The background
+jittering → 1 failed / 19. The corpus without its background → 15 refusals, asserted. The background
+omitting one service → `omits the service 'cart-service'`. A checkpoint citing `request_rate` →
+`which the signals file does not declare`.
+
+**Acceptance.** `pnpm test` green at core **190 / 4746**, cli 4 / 187, repo **194 / 4933**; coverage
+99.97 / 99.75 / 100 / 99.97 with `fault/background.ts` at 100 % on all four dimensions;
+`check-fault-cases` OK (15 of 30, 18–20 candidates wide, 48 references resolved, 0 of 44 comparable
+assertions failing); `docs:check` green; audit 7 volumes, findings 1–275.
+
+### Left open
+
+- **Every case is one moving series among seventeen flat ones.** `[open: peak-z is at rank 1 in 13 of
+  15 cases, which says the corpus tests detection rather than localisation. A case whose loudest
+  service is the victim needs a distractor that moves more than the cause, and a distractor has to
+  quote a sentence, so it is a corpus decision rather than a guard one]`
+- **No case in the corpus is L4.** `[open: every chain is one or two steps, so `minL4Share` of 0.1
+  cannot be met by any labelling; the report names the gap on every run]`
+- **Fifteen samples carry no case.** `[open: the remaining samples in the extraction key are one
+  annotation per round, and this round spent itself on the measurement the annotation depends on]`
+- **A reversal between two entities of one kind is not detectable statically.** `[open: a direction
+  between two services is a fact about a deployment; the witness would be trace parent/child spans and
+  one case in the corpus has traces]`
+- **One red run is unreproduced.** `[open: a listed gate was read as exit-free once; three hypotheses
+  were refuted in v2.98 and every run since has been green]`
+- **Upstream's baselines still refuse our data.** `[open: this round made our records rankable by our
+  own baselines over eighteen candidates; it did not make them rankable by the upstream loader, which
+  selects a service-level indicator from the path and refuses a system it does not know]`
+- **RE3's traces and logs are not read.** `[open: the widening this round gave the metric modality --
+  eighteen candidates where there were two -- has no counterpart for logs or spans, and an RE3 case
+  still reaches the export with one of the IR's four layers populated]`
+- **No aggregate tables.** `[open: the localisation readout this round added is the first per-corpus
+  number the guard prints, and it is computed from the signals in memory rather than from a file a
+  downstream method could read; the three aggregate tables remain unwritten]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.

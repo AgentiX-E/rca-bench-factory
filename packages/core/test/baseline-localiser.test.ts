@@ -65,7 +65,12 @@ describe('the ranking is built from the series, not from the answer key', () => 
     const reading = rankServicesByPeakZScore(BASE, signals);
     expect(reading.ranking.map((entry) => entry.service)).toEqual(['cart-service', 'inventory-service']);
     expect(reading.ranking[0]!.peakZ).toBeGreaterThan(100);
-    expect(reading.topK).toBe(2);
+    // The K is the benchmark's, and the width is the case's. Reporting `2` here -- the smaller of
+    // the two -- made every "the answer is within the top 3" claim true by construction, because a
+    // ranking cannot be longer than itself. The two numbers are separate fields now so that a
+    // caller can see a ranking of two scored at three and decide what that means.
+    expect(reading.topK).toBe(3);
+    expect(reading.candidateCount).toBe(2);
   });
 
   it('ranks the same way when the answer key is emptied', () => {
@@ -82,16 +87,19 @@ describe('the ranking is built from the series, not from the answer key', () => 
       caseId: 'history-cart-network-delay',
       method: PEAK_Z_METHOD,
       rankOfTruth: 1,
-      topK: 2,
+      topK: 3,
+      candidateCount: 2,
     });
   });
 });
 
 describe('what the ranking refuses to invent', () => {
   it('returns an empty ranking when there is nothing to rank', () => {
-    // A case with no signals is not a case where everything ties; it is a case with no evidence,
-    // and `topK` stays at 1 so that a downstream comparison is at least well-formed.
-    expect(rankServicesByPeakZScore(BASE, [])).toEqual({ ranking: [], topK: 1 });
+    // A case with no signals is not a case where everything ties; it is a case with no evidence.
+    // `topK` stays at the declared K and `candidateCount` is the zero, because those are two
+    // different facts and the earlier version merged them into `topK: 1` -- which read as "this
+    // was scored at top-1" when it meant "there was nothing to score".
+    expect(rankServicesByPeakZScore(BASE, [])).toEqual({ ranking: [], topK: 3, candidateCount: 0 });
     expect(locateWithPeakZScore(BASE, []).rankOfTruth).toBeNull();
   });
 
@@ -120,7 +128,20 @@ describe('what the ranking refuses to invent', () => {
 
   it('keeps a service whose component is absent out of the ranking rather than last', () => {
     const signals = series('somebody-else', 'client_span_duration_ms', [12, 12.4, 11.8, 12.2], [900, 880, 910, 895]);
-    expect(locateWithPeakZScore(BASE, signals)).toMatchObject({ rankOfTruth: null, topK: 1 });
+    expect(locateWithPeakZScore(BASE, signals)).toMatchObject({ rankOfTruth: null, topK: 3, candidateCount: 1 });
+  });
+
+  it('reports the answer as absent when its own series did not move', () => {
+    // The case whose telemetry names every service in the system: the answer is in the ranking, at
+    // whatever position the tiebreak gives it, and a method has not located it. This is the arm the
+    // corpus's background telemetry needed -- without it a case whose answer never moved reads as a
+    // top-3 hit against quiet neighbours.
+    const signals = [
+      ...series('cart-service', 'latency_ms', [12, 12, 12, 12], [900, 900, 900, 900]),
+      ...series('inventory-service', 'latency_ms', [11, 11, 11, 11], [11, 11, 11, 11]),
+    ];
+    const quiet = { ...BASE, groundTruth: { ...BASE.groundTruth, rootCauseComponent: 'inventory-service' } };
+    expect(locateWithPeakZScore(quiet, signals)).toMatchObject({ rankOfTruth: null, candidateCount: 2 });
   });
 
   it('breaks a tie by service name, so two runs produce one order', () => {
@@ -137,15 +158,22 @@ describe('what the ranking refuses to invent', () => {
     ]);
   });
 
-  it('honours a topK the caller asks for', () => {
-    const signals = [
+  it('honours the K the caller asks for even when the ranking is shorter', () => {
+    // This test used to be named '... and never exceeds the ranking', and it asserted the
+    // behaviour the name described. That behaviour was the defect: a K that shrinks to fit the
+    // ranking cannot be missed, so every caller reporting "within top-K" was reporting that the
+    // answer appeared anywhere at all.
+    const wide = [
       ...series('a-service', 'latency_ms', [10, 10, 10, 10], [100, 100, 100, 100]),
       ...series('b-service', 'latency_ms', [10, 10, 10, 10], [50, 50, 50, 50]),
       ...series('c-service', 'latency_ms', [10, 10, 10, 10], [20, 20, 20, 20]),
       ...series('d-service', 'latency_ms', [10, 10, 10, 10], [5, 5, 5, 5]),
     ];
-    expect(rankServicesByPeakZScore(BASE, signals, { topK: 2 }).topK).toBe(2);
-    expect(rankServicesByPeakZScore(BASE, signals).topK).toBe(3);
+    expect(rankServicesByPeakZScore(BASE, wide, { topK: 2 })).toMatchObject({ topK: 2, candidateCount: 4 });
+    expect(rankServicesByPeakZScore(BASE, wide).topK).toBe(3);
+
+    const narrow = wide.slice(0, 8);
+    expect(rankServicesByPeakZScore(BASE, narrow)).toMatchObject({ topK: 3, candidateCount: 1 });
   });
 });
 

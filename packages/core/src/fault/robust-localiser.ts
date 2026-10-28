@@ -1,3 +1,4 @@
+import { locatedRank } from '../gates/gates.js';
 import type { BaselineOutcome } from '../gates/gates.js';
 import type { FaultCase, TelemetrySignal } from '../ir/types.js';
 
@@ -52,7 +53,10 @@ export interface ShiftRank {
 
 export interface ShiftReading {
   ranking: ShiftRank[];
+  /** The K this reading is scored at -- the benchmark's, never the ranking's own length. */
   topK: number;
+  /** How many services the ranking holds. A case with two is not a top-3 localisation test. */
+  candidateCount: number;
 }
 
 /** The method name recorded in every outcome, distinct from the peak-z one by construction. */
@@ -123,8 +127,15 @@ export function rankServicesByMedianShift(
       right.shift !== left.shift ? right.shift - left.shift : left.service.localeCompare(right.service),
     );
 
-  const topK = Math.min(options.topK ?? DEFAULT_TOP_K, Math.max(ranking.length, 1));
-  return { ranking, topK };
+  // The K the caller asked for, not the smaller of that and the ranking's length.
+  //
+  // The two numbers answer different questions and merging them answered neither. A benchmark
+  // declaring `top-3` asks "did the method put the answer in its first three guesses"; a case whose
+  // ranking is two services long cannot fail that question, and reporting `topK: 2` made the
+  // failure impossible to see rather than impossible to have. G4 adds `candidateCount` to it and
+  // refuses a case whose ranking is no wider than the K it is scored at (finding 275).
+  const topK = options.topK ?? DEFAULT_TOP_K;
+  return { ranking, topK, candidateCount: ranking.length };
 }
 
 /**
@@ -145,7 +156,8 @@ export function locateWithMedianShift(
   return {
     caseId: faultCase.caseId,
     method: ROBUST_SHIFT_METHOD,
-    rankOfTruth: at === -1 ? null : at + 1,
+    rankOfTruth: locatedRank(at === -1 ? undefined : ranking[at]!.shift, at),
     topK,
+    candidateCount: ranking.length,
   };
 }

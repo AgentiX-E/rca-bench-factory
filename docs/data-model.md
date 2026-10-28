@@ -153,6 +153,31 @@ The distribution of levels across a corpus is checked once per corpus (`checkDif
 ten graded cases before it says anything). A corpus with no `L4` case reports that fact on every run
 rather than failing: no correction to a label can produce a level the corpus's chains cannot reach.
 
+#### Background telemetry, and what "top-K" means
+
+A case's `signals` file carries the series its incident is about, and every number in it quotes a
+sentence of the ticket. A ticket names the two components it is about, so a corpus built only from
+signals files ranks one to three services per case — and a ranking of two scored at top-3 cannot be
+missed. `golden-master/fault-cases/background-telemetry.json` is the other half: one flat
+request-rate series per service in the graph, added to every case, so that a case's own anomaly is
+one moving series among eighteen quiet neighbours.
+
+It is part of the corpus rather than of a case, and it has four rules (`fault/background.ts`):
+
+| rule | why |
+|---|---|
+| flat, `noise: 'none'` | it asserts that the rest of the system was ordinary, and a jittered flat series would rank the quiet services against each other by floating-point rounding |
+| the whole system | an entry the graph lacks is a series attributed to nothing; a service the graph holds and the background omits is a candidate the ranking silently leaves out |
+| the case wins on `(service, metric)` | a case whose fault *is* a request-rate collapse has to be able to say so |
+| never evidence | a checkpoint that resolves to a background series is refused: the series is in the data and asserts nothing about the incident |
+
+Localisation is reported as two numbers, never one. `topK` is the K the benchmark declares;
+`candidateCount` is how many services the ranking held. A case whose ranking is no wider than its K
+is refused with `LOCALISATION_UNCONTESTED` rather than counted as a hit — no method can miss a
+candidate that sits inside its own output's length. A rank is only a rank if the candidate it names
+moved: `locatedRank` reports `null` for a statistic of zero, so a service that was quietly listed is
+not a service a method found.
+
 `GroundTruth` carries the answer key: `rootCauseEntityId`, `rootCauseComponent`,
 `rootCauseReason`, optional `rootCauseIndicators`, a step-wise `causalChain`
 (`CausalStep[]`), `evidenceCheckpoints` (`EvidenceCheckpoint[]`) and `remediation`.

@@ -125,7 +125,32 @@ function corpus(options: {
     writeFileSync(join(dir, 'signals.json'), `${JSON.stringify(options.signals, null, 2)}\n`);
   }
   for (const file of options.extraFiles ?? []) writeFileSync(join(dir, file), '{}\n');
+  writeFileSync(join(dir, 'background-telemetry.json'), `${JSON.stringify(background(graph), null, 2)}\n`);
   return dir;
+}
+
+/**
+ * The background traffic a corpus needs to be a corpus.
+ *
+ * Built from the graph the test wrote rather than from a fixture, because the guard requires the
+ * background to be the system: an entry the graph does not hold is a series attributed to nothing,
+ * and a service the graph holds and the background omits is a candidate that never competed. Both
+ * directions are asserted in `background-telemetry.test.ts`; here the helper has to satisfy them or
+ * every one of these tests fails for a reason it is not about.
+ */
+function background(graph: Record<string, unknown>): Record<string, unknown> {
+  const entities = Array.isArray(graph.entities) ? graph.entities : [];
+  const services = entities.filter((entity) => (entity as { kind?: string }).kind === 'service');
+  return {
+    schema: 'rca-bench-background-telemetry/1',
+    why: 'Background traffic for this fixture, flat, one series per service in the graph it was given.',
+    series: services.map((entity, index) => ({
+      service: String((entity as { name?: string }).name),
+      metric: 'request_rate',
+      unit: 'rps',
+      value: 100 + index,
+    })),
+  };
 }
 
 /**
@@ -162,6 +187,7 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
     join(dir, 'index.json'),
     `${JSON.stringify({ schema: 'rca-bench-fault-cases/2', min: count, cases }, null, 2)}\n`,
   );
+  writeFileSync(join(dir, 'background-telemetry.json'), `${JSON.stringify(background(REAL_GRAPH), null, 2)}\n`);
   return dir;
 }
 
@@ -700,8 +726,14 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
 
   it('refuses a case whose anomaly belongs to a service the annotation does not name', () => {
     // The signals stay anomalous, so G3 passes; the ranking is built from them, so the annotated
-    // component is nowhere in it and G4 refuses. This is the shape of a case that reads as valid
-    // and cannot be scored, which is exactly what the gate is for.
+    // component is outranked by every metric that moved and G4 refuses. This is the shape of a case
+    // that reads as valid and cannot be scored, which is exactly what the gate is for.
+    //
+    // The failure reads `absent` for both baselines, and after the corpus gained background telemetry
+    // that is a stronger statement than it used to be: the annotated service is *in* the ranking, at
+    // the flat request rate the background gives it, and it is absent from the answer because its
+    // statistic is exactly zero. `locatedRank` is where that distinction lives -- a candidate that
+    // showed nothing is not a candidate a method found.
     const edited = signals();
     for (const one of (edited.series as Array<Record<string, unknown>>)) {
       one.service = 'somebody-else';

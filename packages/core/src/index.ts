@@ -168,6 +168,7 @@ export {
   checkGraphContract,
   checkSolvability,
   checkG5AntiPollution,
+  locatedRank,
   mean,
   runAllGates,
   stddev,
@@ -764,6 +765,16 @@ export { assessFourLayer, formatFourLayerReading } from './fault/four-layer.js';
 // carries. Weaker than a definition, and checkable, which the alternative was not.
 export { difficultyFloor, findDifficultyShortfalls } from './fault/difficulty.js';
 export type { DifficultyShortfall } from './fault/difficulty.js';
+
+// The system's background telemetry: the series a case does not quote because they assert nothing
+// about the incident, and the rules that keep them from being read as evidence.
+export {
+  BACKGROUND_SCHEMA,
+  backgroundProblems,
+  backgroundSeries,
+  parseBackground,
+} from './fault/background.js';
+export type { BackgroundDeclaration, BackgroundSeries } from './fault/background.js';
 export type {
   DanglingEvidenceRef,
   FourLayerReading,

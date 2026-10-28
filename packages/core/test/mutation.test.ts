@@ -29,7 +29,7 @@ import { validBundle, validCase } from './fixtures.js';
  */
 
 const G1 = { requiredSignals: ['metric', 'log', 'trace', 'event', 'alert'], requiresQuery: true };
-const SOLVED: BaselineOutcome[] = [{ caseId: 'case-001', method: 'baro', rankOfTruth: 1, topK: 5 }];
+const SOLVED: BaselineOutcome[] = [{ caseId: 'case-001', method: 'baro', rankOfTruth: 1, topK: 5, candidateCount: 12 }];
 
 function allViolations(bundle: IrBundle, publicFingerprints?: Set<string>): Set<string> {
   const codes = new Set<string>();

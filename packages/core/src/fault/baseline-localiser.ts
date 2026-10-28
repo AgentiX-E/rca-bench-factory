@@ -1,3 +1,4 @@
+import { locatedRank } from '../gates/gates.js';
 import type { BaselineOutcome } from '../gates/gates.js';
 import { mean, stddev, zScore } from '../gates/gates.js';
 import type { FaultCase, TelemetrySignal } from '../ir/types.js';
@@ -42,7 +43,10 @@ export interface ServiceRank {
 
 export interface LocalisationReading {
   ranking: ServiceRank[];
+  /** The K this reading is scored at -- the benchmark's, never the ranking's own length. */
   topK: number;
+  /** How many services the ranking holds. A case with two is not a top-3 localisation test. */
+  candidateCount: number;
 }
 
 /** The method name recorded in every outcome, so a later reader knows what produced a rank. */
@@ -105,8 +109,15 @@ export function rankServicesByPeakZScore(
     // unexecuted -- the coverage table said so here, at 96.15% with this line named.
     .sort((left, right) => (right.peakZ !== left.peakZ ? right.peakZ - left.peakZ : left.service.localeCompare(right.service)));
 
-  const topK = Math.min(options.topK ?? DEFAULT_TOP_K, Math.max(ranking.length, 1));
-  return { ranking, topK };
+  // The K the caller asked for, not the smaller of that and the ranking's length.
+  //
+  // The two numbers answer different questions and merging them answered neither. A benchmark
+  // declaring `top-3` asks "did the method put the answer in its first three guesses"; a case whose
+  // ranking is two services long cannot fail that question, and reporting `topK: 2` made the
+  // failure impossible to see rather than impossible to have. G4 adds `candidateCount` to it and
+  // refuses a case whose ranking is no wider than the K it is scored at (finding 275).
+  const topK = options.topK ?? DEFAULT_TOP_K;
+  return { ranking, topK, candidateCount: ranking.length };
 }
 
 /**
@@ -127,7 +138,8 @@ export function locateWithPeakZScore(
   return {
     caseId: faultCase.caseId,
     method: PEAK_Z_METHOD,
-    rankOfTruth: at === -1 ? null : at + 1,
+    rankOfTruth: locatedRank(at === -1 ? undefined : ranking[at]!.peakZ, at),
     topK,
+    candidateCount: ranking.length,
   };
 }

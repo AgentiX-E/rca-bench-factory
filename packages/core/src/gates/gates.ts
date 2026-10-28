@@ -573,7 +573,31 @@ export interface BaselineOutcome {
   method: string;
   /** Rank of the true root cause in the method output; 1 means top-1. */
   rankOfTruth: number | null;
+  /** The K the run was scored at. */
   topK: number;
+  /**
+   * How many candidates the run's ranking held.
+   *
+   * Separate from `topK` because a rank of 2 in a ranking of 2 is not evidence of anything: the
+   * earlier shape reported the smaller of the two numbers as `topK`, so `rankOfTruth <= topK` held
+   * for every answer that appeared at all and G4's top-K claim could not be failed by any input.
+   */
+  candidateCount: number;
+}
+
+/**
+ * Whether a solver located the answer, and at what rank.
+ *
+ * `null` when the annotated component is absent from the ranking -- and also when it is present
+ * with a statistic of zero, which is the state a ranking of quiet services produces. A candidate
+ * that showed nothing is not a candidate a method found: it is a line in an output. Counting it as a
+ * location would make a case whose answer never moved "solved at rank 2" because one other service
+ * moved and the tail was sorted alphabetically, and that is the false positive the corpus's
+ * background telemetry made reachable the moment it gave every service a series.
+ */
+export function locatedRank(statistic: number | undefined, at: number): number | null {
+  if (statistic === undefined || statistic === 0) return null;
+  return at + 1;
 }
 
 export interface G4Options {
@@ -618,13 +642,33 @@ export function checkSolvability(
   }
 
   for (const c of bundle.cases) {
-    const solved = (byCase.get(c.caseId) ?? []).filter(
+    const outcomes = byCase.get(c.caseId) ?? [];
+    const solved = outcomes.filter(
       (o) => o.rankOfTruth !== null && o.rankOfTruth >= 1 && o.rankOfTruth <= o.topK,
     );
     if (solved.length < minSolvers) {
       v.push({
         code: 'UNSOLVABLE_CASE',
         message: `only ${solved.length} baseline(s) locate the root cause within top-K`,
+        fieldPath: `${c.caseId}`,
+      });
+    }
+    // The other way a case can say nothing: a ranking no wider than the K it is scored at. No
+    // method can miss a candidate that is inside its own output's length, so a case built from two
+    // services reports a top-3 hit for every solver that returns anything -- and a corpus of them
+    // reports a top-K accuracy equal to its detection rate.
+    //
+    // This is reported per case rather than per solver because it is a property of the case's
+    // telemetry, not of a method: the two baselines read the same series and therefore rank the
+    // same set. The condition is "no solver was asked a question it could fail".
+    const contested = outcomes.filter((o) => o.candidateCount > o.topK);
+    if (outcomes.length > 0 && contested.length === 0) {
+      const widest = Math.max(...outcomes.map((o) => o.candidateCount));
+      v.push({
+        code: 'LOCALISATION_UNCONTESTED',
+        message:
+          `the ranking holds ${String(widest)} candidate(s) against a top-K of ` +
+          `${String(Math.min(...outcomes.map((o) => o.topK)))}, so being within the top-K is not a constraint`,
         fieldPath: `${c.caseId}`,
       });
     }

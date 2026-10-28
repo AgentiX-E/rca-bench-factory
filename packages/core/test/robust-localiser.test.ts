@@ -95,7 +95,10 @@ describe('the shift is a property of the series, not of the answer key', () => {
     expect(reading.ranking.map((entry) => entry.service)).toEqual(['cart-service', 'inventory-service']);
     expect(reading.ranking[0]!.shift).toBeGreaterThan(100);
     expect(reading.ranking[1]!.shift).toBeLessThan(1);
-    expect(reading.topK).toBe(2);
+    // Two candidates against the benchmark's K of three: the reading states both, because a K that
+    // shrank to the ranking made "within top-K" true of every case that had any candidate at all.
+    expect(reading.topK).toBe(3);
+    expect(reading.candidateCount).toBe(2);
   });
 
   it('ranks the same way when the answer key is emptied', () => {
@@ -114,7 +117,8 @@ describe('the shift is a property of the series, not of the answer key', () => {
       caseId: 'history-cart-network-delay',
       method: ROBUST_SHIFT_METHOD,
       rankOfTruth: 1,
-      topK: 2,
+      topK: 3,
+      candidateCount: 2,
     });
     expect(ROBUST_SHIFT_METHOD).not.toBe(PEAK_Z_METHOD);
   });
@@ -200,7 +204,7 @@ describe('the two baselines disagree, which is the reason there are two', () => 
 
 describe('what the shift refuses to invent', () => {
   it('returns an empty ranking when there is nothing to rank', () => {
-    expect(rankServicesByMedianShift(BASE, [])).toEqual({ ranking: [], topK: 1 });
+    expect(rankServicesByMedianShift(BASE, [])).toEqual({ ranking: [], topK: 3, candidateCount: 0 });
     expect(locateWithMedianShift(BASE, []).rankOfTruth).toBeNull();
   });
 
@@ -245,7 +249,18 @@ describe('what the shift refuses to invent', () => {
 
   it('keeps a service whose component is absent out of the ranking rather than last', () => {
     const signals = series('somebody-else', 'client_span_duration_ms', [12, 12.4, 11.8, 12.2], [900, 880, 910, 895]);
-    expect(locateWithMedianShift(BASE, signals)).toMatchObject({ rankOfTruth: null, topK: 1 });
+    expect(locateWithMedianShift(BASE, signals)).toMatchObject({ rankOfTruth: null, topK: 3, candidateCount: 1 });
+  });
+
+  it('reports the answer as absent when its own series did not move', () => {
+    // The same arm as the peak-z module's, asserted for the second baseline: present in the ranking
+    // and located are different states, and a shift of exactly zero is the second one.
+    const signals = [
+      ...series('cart-service', 'latency_ms', [12, 12, 12, 12], [900, 900, 900, 900]),
+      ...series('inventory-service', 'latency_ms', [11, 11, 11, 11], [11, 11, 11, 11]),
+    ];
+    const quiet = { ...BASE, groundTruth: { ...BASE.groundTruth, rootCauseComponent: 'inventory-service' } };
+    expect(locateWithMedianShift(quiet, signals)).toMatchObject({ rankOfTruth: null, candidateCount: 2 });
   });
 
   it('stays finite when the baseline never moved', () => {
@@ -270,16 +285,18 @@ describe('what the shift refuses to invent', () => {
     ]);
   });
 
-  it('honours a topK the caller asks for, and never exceeds the ranking', () => {
+  it('honours the K the caller asks for even when the ranking is shorter', () => {
     const signals = [
       ...series('a-service', 'latency_ms', [10, 11, 9, 10], [100, 101, 99, 100]),
       ...series('b-service', 'latency_ms', [10, 11, 9, 10], [50, 51, 49, 50]),
       ...series('c-service', 'latency_ms', [10, 11, 9, 10], [20, 21, 19, 20]),
       ...series('d-service', 'latency_ms', [10, 11, 9, 10], [5, 5, 5, 5]),
     ];
-    expect(rankServicesByMedianShift(BASE, signals, { topK: 2 }).topK).toBe(2);
-    expect(rankServicesByMedianShift(BASE, signals).topK).toBe(3);
-    expect(rankServicesByMedianShift(BASE, signals, { topK: 99 }).topK).toBe(4);
+    expect(rankServicesByMedianShift(BASE, signals, { topK: 2 })).toMatchObject({ topK: 2, candidateCount: 4 });
+    expect(rankServicesByMedianShift(BASE, signals)).toMatchObject({ topK: 3, candidateCount: 4 });
+    // Asked for ninety-nine with four candidates. The reading carries both numbers rather than
+    // pretending the request became four, which is what "never exceeds the ranking" did.
+    expect(rankServicesByMedianShift(BASE, signals, { topK: 99 })).toMatchObject({ topK: 99, candidateCount: 4 });
   });
 
   it('takes the largest shift per service when one service reports two metrics', () => {

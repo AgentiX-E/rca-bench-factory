@@ -136,6 +136,7 @@ const ENUMERATED_MODULES = [
   'fault/reading-record.ts',
   'fault/four-layer.ts',
   'fault/difficulty.ts',
+  'fault/background.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
@@ -638,6 +639,7 @@ const TESTED = [
   'checkG3Validity',
   'checkGraphContract',
   'checkSolvability',
+  'locatedRank',
   'checkG4Solvability',
   'checkG5AntiPollution',
   'runAllGates',
@@ -928,6 +930,11 @@ const TESTED = [
   'indexGraph',
   'normalizeAliases',
   'resolveEntityRef',
+  // fault/background.ts
+  'BACKGROUND_SCHEMA',
+  'backgroundProblems',
+  'backgroundSeries',
+  'parseBackground',
   // fault/difficulty.ts
   'difficultyFloor',
   'findDifficultyShortfalls',

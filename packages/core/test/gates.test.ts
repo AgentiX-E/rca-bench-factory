@@ -6,6 +6,8 @@ import {
   checkG3Validity,
   checkG4Solvability,
   checkG5AntiPollution,
+  checkSolvability,
+  locatedRank,
   mean,
   runAllGates,
   stddev,
@@ -22,7 +24,7 @@ const G1_RCA100 = {
   requiresQuery: true,
 };
 const SOLVED: BaselineOutcome[] = [
-  { caseId: 'case-001', method: 'baro', rankOfTruth: 1, topK: 5 },
+  { caseId: 'case-001', method: 'baro', rankOfTruth: 1, topK: 5, candidateCount: 12 },
 ];
 
 describe('statistics helpers', () => {
@@ -411,22 +413,104 @@ describe('G3 signal validity', () => {
   });
 });
 
+describe('what counts as a location', () => {
+  // `locatedRank` is three lines and it decides whether fifteen cases report a measurement. A rank
+  // is only a location if the candidate it names showed something: a ranking of quiet services is a
+  // list, and being second in a list of things that did not move is not a finding.
+  it('gives the rank of a candidate that moved', () => {
+    expect(locatedRank(12.5, 0)).toBe(1);
+    expect(locatedRank(0.4, 2)).toBe(3);
+  });
+
+  it('reports absence for a candidate the ranking does not hold', () => {
+    expect(locatedRank(undefined, -1)).toBeNull();
+  });
+
+  it('reports absence for a candidate that showed nothing at all', () => {
+    // The state the corpus's background telemetry made reachable: every service in the system is a
+    // candidate, so the answer is always *somewhere* in the ranking. Without this arm a case whose
+    // answer never moved would be "solved at rank 2" because one other service moved.
+    expect(locatedRank(0, 1)).toBeNull();
+  });
+});
+
 describe('G4 solvability and difficulty', () => {
   it('passes when a baseline locates the root cause', () => {
     expect(checkG4Solvability(validBundle(), SOLVED).status).toBe('passed');
   });
 
   it('flags a case no baseline can solve', () => {
-    const unsolved: BaselineOutcome[] = [{ caseId: 'case-001', method: 'baro', rankOfTruth: null, topK: 5 }];
+    const unsolved: BaselineOutcome[] = [
+      { caseId: 'case-001', method: 'baro', rankOfTruth: null, topK: 5, candidateCount: 12 },
+    ];
     expect(checkG4Solvability(validBundle(), unsolved).violations).toContainEqual(
       expect.objectContaining({ code: 'UNSOLVABLE_CASE' }),
     );
   });
 
   it('flags a rank outside top-K', () => {
-    const out: BaselineOutcome[] = [{ caseId: 'case-001', method: 'baro', rankOfTruth: 9, topK: 5 }];
+    const out: BaselineOutcome[] = [{ caseId: 'case-001', method: 'baro', rankOfTruth: 9, topK: 5, candidateCount: 12 }];
     expect(checkG4Solvability(validBundle(), out).violations).toContainEqual(
       expect.objectContaining({ code: 'UNSOLVABLE_CASE' }),
+    );
+  });
+
+  it('flags a case whose ranking is no wider than the K it is scored at', () => {
+    // Two candidates, scored at top-3. The answer cannot fall outside the top three of a two-item
+    // ranking, so the case reports a top-3 hit for any method that returns anything -- and a corpus
+    // of these reports an accuracy equal to its detection rate. The rank is perfect here and the
+    // case is still unusable as a localisation test, which is why this is a second code rather than
+    // a stricter reading of `UNSOLVABLE_CASE`.
+    const narrow: BaselineOutcome[] = [
+      { caseId: 'case-001', method: 'peak-z', rankOfTruth: 1, topK: 3, candidateCount: 2 },
+      { caseId: 'case-001', method: 'median-shift', rankOfTruth: 2, topK: 3, candidateCount: 2 },
+    ];
+    const violations = checkSolvability(validBundle(), narrow, {}).violations;
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        code: 'LOCALISATION_UNCONTESTED',
+        message: 'the ranking holds 2 candidate(s) against a top-K of 3, so being within the top-K is not a constraint',
+      }),
+    );
+    // And the solvability half still passes: the two verdicts answer different questions.
+    expect(violations.map((v) => v.code)).not.toContain('UNSOLVABLE_CASE');
+  });
+
+  it('passes the same case once the ranking is wider than K', () => {
+    const wide: BaselineOutcome[] = [
+      { caseId: 'case-001', method: 'peak-z', rankOfTruth: 1, topK: 3, candidateCount: 19 },
+      { caseId: 'case-001', method: 'median-shift', rankOfTruth: 2, topK: 3, candidateCount: 19 },
+    ];
+    expect(checkSolvability(validBundle(), wide, {}).status).toBe('passed');
+  });
+
+  it('reports both codes when the answer is absent from a wide ranking', () => {
+    // The two conditions are independent, and this input is the proof: a wide ranking that does not
+    // contain the answer is solvable-but-wrong, not contested-but-fine. A single code covering both
+    // would have to decide which one it was reporting.
+    const absent: BaselineOutcome[] = [
+      { caseId: 'case-001', method: 'peak-z', rankOfTruth: null, topK: 3, candidateCount: 19 },
+    ];
+    const codes = checkSolvability(validBundle(), absent, { minSolvers: 1 }).violations.map((v) => v.code);
+    expect(codes).toEqual(['UNSOLVABLE_CASE']);
+    const narrowAndAbsent: BaselineOutcome[] = [
+      { caseId: 'case-001', method: 'peak-z', rankOfTruth: null, topK: 3, candidateCount: 2 },
+    ];
+    expect(checkSolvability(validBundle(), narrowAndAbsent, { minSolvers: 1 }).violations.map((v) => v.code)).toEqual([
+      'UNSOLVABLE_CASE',
+      'LOCALISATION_UNCONTESTED',
+    ]);
+  });
+
+  it('counts one solver as contesting the case, so the rule is not a second minSolvers', () => {
+    // A method whose ranking is wide and one whose ranking is narrow disagree about the case, not
+    // about the answer: the question "could this be missed" was asked, and one run answered it.
+    const mixed: BaselineOutcome[] = [
+      { caseId: 'case-001', method: 'peak-z', rankOfTruth: 1, topK: 3, candidateCount: 19 },
+      { caseId: 'case-001', method: 'median-shift', rankOfTruth: 1, topK: 3, candidateCount: 2 },
+    ];
+    expect(checkSolvability(validBundle(), mixed, {}).violations.map((v) => v.code)).not.toContain(
+      'LOCALISATION_UNCONTESTED',
     );
   });
 
@@ -440,7 +524,7 @@ describe('G4 solvability and difficulty', () => {
       validCase({ caseId: `c-${i}`, difficulty: 'L1' }),
     );
     const b = validBundle({ cases });
-    expect(checkG4Solvability(b, cases.map((c) => ({ caseId: c.caseId, method: 'baro', rankOfTruth: 1, topK: 5 }))).violations,
+    expect(checkG4Solvability(b, cases.map((c) => ({ caseId: c.caseId, method: 'baro', rankOfTruth: 1, topK: 5, candidateCount: 12 }))).violations,
     ).toContainEqual(expect.objectContaining({ code: 'DIFFICULTY_SKEWED_EASY' }));
   });
 
@@ -452,7 +536,7 @@ describe('G4 solvability and difficulty', () => {
     expect(
       checkG4Solvability(
         b,
-        cases.map((c) => ({ caseId: c.caseId, method: 'baro', rankOfTruth: 1, topK: 5 })),
+        cases.map((c) => ({ caseId: c.caseId, method: 'baro', rankOfTruth: 1, topK: 5, candidateCount: 12 })),
       ).violations,
     ).toContainEqual(expect.objectContaining({ code: 'DIFFICULTY_SKEWED_HARD' }));
   });

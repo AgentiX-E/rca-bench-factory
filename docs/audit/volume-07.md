@@ -881,3 +881,150 @@ root-cause-off-the-chain row, the unresolvable-reference row, and the empty-chai
 | the corpus | 15 of 15 state a level; 0 shortfalls; spread L1 2 / L2 8 / L3 5 / L4 0 |
 | the two verdicts | a label below its floor fails; a missing L4 is printed |
 | `core` | **189 / 4710** |
+
+## Finding 275 — top-K was the size of the ranking, so the claim could not be false
+
+The corpus grew to fifteen cases and nothing went red, which left the round to look at what the
+guards actually measure. This one measures nothing, and it has been saying so on every run.
+
+### The two numbers that were one
+
+```ts
+const topK = Math.min(options.topK ?? DEFAULT_TOP_K, Math.max(ranking.length, 1));
+return { ranking, topK };
+```
+
+`topK` was the smaller of the benchmark's K and the ranking's own length. Every case in the corpus
+ranks one to three services, so on every case `topK` collapsed to `ranking.length`, and then
+
+```ts
+o.rankOfTruth !== null && o.rankOfTruth >= 1 && o.rankOfTruth <= o.topK
+```
+
+is true for **every answer that appears in the ranking at all**. G4's solvability rule was an
+existence check wearing a precision claim: "both baselines place the root cause in their top-K"
+meant "both baselines list the root cause somewhere", and a ranking cannot be longer than itself.
+
+Measured before anything was changed:
+
+```
+history-checkout-cpu-saturation                    ranked=2 topK=2
+history-kafka-consumer-lag                         ranked=1 topK=1
+history-resource-ephemeral-capacity-image-builder  ranked=3 topK=3
+...
+mean ranking size 1.67
+```
+
+Fifteen cases, rankings of one to three, `topK === ranking.length` in fifteen of fifteen.
+
+### The tests had been written to agree with it
+
+`baseline-localiser.test.ts` carried:
+
+```ts
+expect(reading.topK).toBe(2);                                    // a two-candidate ranking
+expect(rankServicesByPeakZScore(BASE, [])).toEqual({ ranking: [], topK: 1 });
+```
+
+and a test named **`honours a topK the caller asks for, and never exceeds the ranking`**, which
+asserted exactly the behaviour the name describes. It was not a wrong expectation about a right
+function: it was a correct expectation about a function whose contract was wrong, and the name is
+how the contract got written down rather than questioned. This is the shape the volume keeps
+recording, in its most comfortable form — a test that certifies the defect because the defect is
+what the code does.
+
+### What the fix is, and what it is not
+
+`topK` is now the K the caller asked for, and `candidateCount` is the ranking's length. The two are
+reported separately because they answer different questions, and `checkSolvability` gains a second
+code:
+
+| condition | code | what it means |
+| --- | --- | --- |
+| the answer is not within K of a ranking | `UNSOLVABLE_CASE` | the case cannot be scored by this method |
+| the ranking is no wider than K | `LOCALISATION_UNCONTESTED` | no method was asked a question it could fail |
+
+Changing the K alone would not have closed anything: a one-candidate case scored at top-3 is still
+right by construction. So the second rule names that state instead of hiding it, and the corpus then
+had to satisfy it. It did not — **fifteen refusals, one per case**:
+
+```
+check-fault-cases: 'history-network-mtu-blackhole-catalog' is not solvable by both baselines
+  (peak-z-by-service=1, median-shift-by-service=1): the ranking holds 1 candidate(s) against a
+  top-K of 3, so being within the top-K is not a constraint
+check-fault-cases: FAILED — 15 problem(s) across 15 case(s)
+```
+
+### Why the corpus was narrow, and why that is a product problem
+
+A case's signals file carries the series its incident is about, and every number in it has to quote
+a sentence of the ticket. That rule is the reason the corpus can be trusted and the reason its
+rankings are one to three services wide: **a ticket names the two components it is about**. A real
+telemetry dump names every service in the system, with one series moving.
+
+So the repair is not a looser rule but the missing half of the data: `background-telemetry.json`,
+eighteen flat request-rate series, one per service in the graph, added to every case. It asserts
+nothing about any incident, which is why it quotes nothing and why a checkpoint may not cite it —
+the evidence resolver reads the case's own declarations, so `request_rate` fails as undeclared even
+though the series is in the data.
+
+Four rules, all in `fault/background.ts`, all unit-tested:
+
+- **flat.** `baseline === post` with `noise: 'none'`. A jittered flat series would rank the quiet
+  services against each other by floating-point rounding, and a quiet answer would read as "rank 3
+  of the ones that showed nothing".
+- **the whole system.** An entry the graph does not hold is a series attributed to nothing; a
+  service the background omits is a candidate the ranking silently leaves out. Both are refused.
+- **the case wins.** On the `(service, metric)` pair, so a case whose fault *is* a request-rate
+  collapse can still say so.
+- **not evidence.** No quote, and no checkpoint may resolve to one.
+
+After it landed:
+
+```
+check-fault-cases: localisation over 15 case(s) at top-3, rankings 18-20 candidate(s) wide
+  -- rank 1: 26, rank 2: 4 of 30 baseline run(s)
+```
+
+That line is the first measurement of the corpus's localisation difficulty, and it is not
+flattering: a peak-z baseline is right at rank 1 in thirteen of fifteen cases. That is a fact about
+derived telemetry (one series moves, the rest are flat) and it is now *stated* rather than
+unmeasurable. The next round's problem is a corpus with a distractor that moves more than the
+answer, which is the only way the rank distribution stops being a constant.
+
+### `locatedRank`: present in the ranking is not located
+
+Widening the ranking broke an assumption in the localisers. Before, a case whose answer emitted no
+telemetry had `rankOfTruth: null` because the answer was **absent** from the ranking. With every
+service in the ranking, absence became unreachable — and a case whose answer never moved would have
+been reported as "solved at rank 2" because one other service moved and the tail was sorted
+alphabetically.
+
+`locatedRank(statistic, at)` returns `null` when the statistic is zero. A candidate that showed
+nothing is not a candidate a method found; it is a line in an output. Both baselines call it, so the
+distinction is one function rather than two implementations that could drift.
+
+### Mutation battery
+
+| mutation | expected | observed |
+| --- | --- | --- |
+| `topK` back to `min(K, ranking.length)` | the localiser and gate tests fail | 10 failed / 101 |
+| a zero statistic counts as located | the quiet-answer tests fail | 3 failed / 101 |
+| the background does not yield to the case | the override test fails | 1 failed / 19 |
+| the background jitters | the flatness test fails | 1 failed / 19 |
+| the corpus loses its background | every case is refused | 15 refusals, asserted in `background-telemetry.test.ts` |
+| the background omits one service | the coverage rule fails | `omits the service 'cart-service'` |
+| a checkpoint cites `request_rate` | the evidence rule fails | `which the signals file does not declare` |
+
+All restored before the acceptance run.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the K | `topK` is the declared K; `candidateCount` reported separately; 3 tests on `locatedRank` |
+| the rule | `LOCALISATION_UNCONTESTED`, with the width and the K in the message; 4 gate tests |
+| the corpus | 15 cases, rankings 18–20 wide, 0 refusals |
+| the readout | `localisation over 15 case(s) at top-3, rankings 18-20 candidate(s) wide -- rank 1: 26, rank 2: 4` |
+| the background | `fault/background.ts`, 4 rules, 24 tests, 100 % on all four coverage dimensions |
+| `core` | **190 / 4746**, coverage 99.97 / 99.75 / 100 / 99.97 |
