@@ -195,3 +195,81 @@ All restored before the acceptance run.
 | the gate | `NO_DISPLACEMENT` names the tally; 3 tests |
 | the corpus | 16 of 30; `strict 2, tie 2, same-component 2, none 26` of 32 runs; strictly displaced in 1 |
 | `core` | **191 / 4766**, coverage 99.97 / 99.75 / 100 / 99.97, `displacement.ts` at 100 % on all four |
+
+## Finding 278 — the loudest thing can be fine, or it can be the symptom
+
+Finding 277 left the corpus with exactly one case that displaces its answer by magnitude, against a
+rule that needs one. A single edit — to that case's signals — would take the property away and leave
+every guard green. This round adds the second, and chooses a different reason for the displacement so
+that the corpus holds both.
+
+### Two ways for a magnitude method to be wrong
+
+| case | what outranks the answer | why that is wrong |
+| --- | --- | --- |
+| `history-middleware-replica-lag-analytics` | `orders-db`, the primary | it is **fine**: a scheduled backfill, commit latency flat, its own reads current |
+| `history-resource-memory-request-ingest-writer` | `ingest-queue`, the backlog | it is **downstream**: the writer stopped draining it, so it grew |
+
+The first is a method that cannot tell load from fault. The second is a method that returns the
+loudest consequence. They need different evidence to be decidable — the first needs a control showing
+the loud component is healthy, the second needs a counterfactual showing one change removes both
+consequences (`Setting the heap to 700m removed both the kills and the double packing`) — which is why
+the corpus wants both rather than two of either.
+
+### The case
+
+| series | baseline | post | ratio | what it is |
+| --- | --- | --- | --- | --- |
+| `ingest-queue.backlog_messages` | 200 | 50 000 | 250× | the queue the writer stopped draining |
+| `ingest-writer.container_memory_working_set_mebibytes` | 1024 MiB | 3072 MiB | 3× | **the answer's evidence** |
+| `ingest-writer.requested_memory_mebibytes` | 1024 MiB | 1024 MiB | — | **the fault, flat** |
+
+That last row is the interesting one. Almost every control in this corpus exists to rule something
+out: `node_filesystem_used_percent` at 40 rules out a full disk, `commit_latency` at 3 ms rules out
+the primary. This one rules nothing out — **it is the fault**. The request never moved, and the gap
+between a flat gibibyte requested and three used is the whole of the overcommit; the scheduler sized
+the node by that flat number, which is why two copies ended up on one node.
+
+It is also the corpus's first case whose decisive fact is an **absence**: `heapCapMebibytes == 0`,
+meaning the JVM was started with no `-Xmx` at all. The schema can carry that as a configuration fact,
+and the checkpoint's description says what the zero means, because a reader who takes it for "a heap
+of zero bytes" would have read the opposite of the case.
+
+Depth 2 — the container is reclaimed, then the restart stops the drain — so it lands at L3 and the
+corpus's distribution moves `L3 5 → 6`. It is still not L4: no chain in this corpus is three steps.
+
+### What adding a case cost this round
+
+Nothing in the guard's tests. `CORPUS_SIZE`, `SAMPLE_COUNT`, `CODE_LEVEL_CASES` and the entity count
+are all derived (finding 271), and this is the third case since that repair with no count edited by
+hand. The corpus reading moved by itself:
+
+```
+before   rank 1: 26, rank 2: 6 of 32 -- strict 2, tie 2, same-component 2, none 26; strictly displaced in 1
+after    rank 1: 26, rank 2: 8 of 34 -- strict 4, tie 2, same-component 2, none 26; strictly displaced in 2
+```
+
+### The gap the mutation battery found
+
+Two negative controls, and they disagree about what protects the property:
+
+| mutation | the corpus | the case's own test |
+| --- | --- | --- |
+| the backlog drops to 400, so the answer is loudest again | **green** — the other strict case still satisfies the rule | red (`expected 2 to be 0`) |
+| the working set is flattened | **red** — `not solvable by both baselines` | red |
+
+The first row is the finding: **a corpus-level rule that needs one case is protected by exactly that
+one case**, and with two cases it is protected by either. Removing the competitor from one of them is
+invisible to the rule. So each displacement case is now pinned by name in its own end-to-end test, and
+the test says why in a line — a case-specific test is the only thing that notices a case-level
+regression when the corpus-level rule is satisfied elsewhere.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| the corpus | **17 of 30**, 43 entities, 27 edges, floor 17 |
+| the new case | four layers, 4 checkpoints (one a declared absence), 56 references resolved corpus-wide, 0 of 52 comparable assertions failing |
+| the reading | `strict 4 … strictly displaced in 2 case(s)`, both named |
+| the difficulty | `L1 2 / L2 9 / L3 6 / L4 0` |
+| `core` | **191 / 4767**, coverage unchanged at 99.97 / 99.75 / 100 / 99.97 |

@@ -1,0 +1,35 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-resource-memory-request-ingest-writer",
+  "why": "Telemetry for the unbounded-heap case, and the corpus's second whose loudest series is a consequence rather than the answer. The backlog is what the writer stopped draining, so it moves by two hundred and fifty times; the container's working set moves by three. A method that returns the largest excursion returns the queue, which is the symptom the ticket's first sentence describes, and the answer is the component whose request never changed. `requested_memory_mebibytes` is the control that makes the case an overcommit rather than a growth: 1Gi requested, 3Gi used, and the request is flat for the whole window -- which is the number the scheduler sized the node by, and the reason two copies ended up on one node.",
+  "series": [
+    {
+      "service": "ingest-queue",
+      "metric": "backlog_messages",
+      "unit": "count",
+      "baseline": 200,
+      "post": 50000,
+      "quote": "under a backlog it grows to whatever the node will give",
+      "why": "the largest excursion in the window, and a consequence: the writer stopped draining it, so this is the symptom rather than the fault -- a method that returns it returns the queue"
+    },
+    {
+      "service": "ingest-writer",
+      "metric": "container_memory_working_set_mebibytes",
+      "unit": "MiBy",
+      "baseline": 1024,
+      "post": 3072,
+      "quote": "grows to whatever the node will give and the kernel reclaims it",
+      "why": "the checkpoint `cp-working-set` holds the three gigabytes: three times the request, which is what made the kernel reclaim the container"
+    },
+    {
+      "service": "ingest-writer",
+      "metric": "requested_memory_mebibytes",
+      "unit": "MiBy",
+      "baseline": 1024,
+      "post": 1024,
+      "quote": "It requests 1Gi but the JVM starts without a heap cap",
+      "why": "the checkpoint `cp-requested` holds the flat gibibyte: the request never moved, so the gap between request and use is the whole of the overcommit rather than a change in load"
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "caseId": "history-resource-memory-request-ingest-writer",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-18T01:20:00.000Z",
+  "window": {
+    "start": "2026-10-17T23:00:00.000Z",
+    "end": "2026-10-18T08:00:00.000Z"
+  },
+  "fault": {
+    "type": "memory-request-overcommit",
+    "category": "resource",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "ingest-writer",
+      "requestedMemory": {
+        "value": 1024,
+        "unit": "MiBy"
+      },
+      "heapCapMebibytes": {
+        "value": 0,
+        "unit": "MiBy"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/ingest-writer-jvm",
+    "rootCauseComponent": "ingest-writer",
+    "rootCauseReason": "The JVM is started without a heap cap and the pod requests 1Gi. Under a backlog the heap grows to whatever the node will give, the cgroup limit is reached, and the kernel reclaims the container; the request stays at 1Gi while the workload uses 3Gi, so the scheduler believes a node can hold three copies and packs two onto one. The fix the text states is a heap cap of 700m, which removes the kills and the packing together -- one number missing, two consequences. The loudest series in the window is the queue the writer stopped draining, and it is a symptom in both directions: it grows because the writer stopped, and it made the writer grow. A method that returns the queue has returned the pressure, not the component whose request was wrong.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "container_memory_working_set_mebibytes",
+        "description": "the working set reaches three gigabytes against a one-gibibyte request"
+      },
+      {
+        "type": "metric",
+        "ref": "requested_memory_mebibytes",
+        "description": "the request never moves from one gibibyte, which is what makes this an overcommit rather than a load change"
+      },
+      {
+        "type": "metric",
+        "ref": "backlog_messages",
+        "description": "the queue the writer stopped draining, which is the largest excursion and the consequence"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/ingest-writer-jvm",
+        "toEntityId": "pod:synthetic-storefront/ingest-writer-0",
+        "mechanism": "with no heap cap the JVM grows to the three gigabytes the node will give, the cgroup limit is reached, and the kernel reclaims the container, so the pod restarts with nothing drained",
+        "evidenceRefs": [
+          "cp-working-set",
+          "cp-heap-cap",
+          "cp-requested"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/ingest-writer-0",
+        "toEntityId": "service:synthetic-storefront/ingest-writer",
+        "mechanism": "each restart stops the writer for as long as it takes to come back, so the queue it was draining keeps growing and the next backlog is larger than the last",
+        "evidenceRefs": [
+          "cp-backlog"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-working-set",
+        "entityRef": "container:synthetic-storefront/ingest-writer-jvm",
+        "signalRef": "container_memory_working_set_mebibytes",
+        "comparator": ">=",
+        "value": 3072,
+        "unit": "MiBy",
+        "description": "the working set is three times the request, which is what the kernel reclaimed"
+      },
+      {
+        "checkpointId": "cp-requested",
+        "entityRef": "pod:synthetic-storefront/ingest-writer-0",
+        "signalRef": "requested_memory_mebibytes",
+        "comparator": "==",
+        "value": 1024,
+        "unit": "MiBy",
+        "description": "the request never moved, so the scheduler sized the node by a number the workload does not use"
+      },
+      {
+        "checkpointId": "cp-heap-cap",
+        "entityRef": "container:synthetic-storefront/ingest-writer-jvm",
+        "signalRef": "heapCapMebibytes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 0,
+        "unit": "MiBy",
+        "description": "the cap the JVM was started with is zero, which is how this case records an absence: no -Xmx was passed, and that is the fault"
+      },
+      {
+        "checkpointId": "cp-backlog",
+        "entityRef": "mq:synthetic-storefront/ingest-queue",
+        "signalRef": "backlog_messages",
+        "comparator": ">=",
+        "value": 50000,
+        "unit": "count",
+        "description": "the queue the writer stopped draining: the loudest series in the window and the symptom in both directions"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "start the JVM with a heap cap of 700m, so the process cannot grow past what the pod requests",
+        "target": "container:synthetic-storefront/ingest-writer-jvm"
+      },
+      {
+        "step": 2,
+        "action": "alert on working set against request rather than on the queue depth, because the queue is what the writer failed to drain and the ratio is what made it fail",
+        "target": "pod:synthetic-storefront/ingest-writer-0"
+      }
+    ]
+  },
+  "query": "The ingest writer was killed twice overnight while its own resource request never changed, and the queue behind it grew to fifty thousand messages. Which component was misconfigured, and why is the queue not the answer?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

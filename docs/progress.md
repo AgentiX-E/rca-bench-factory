@@ -9,17 +9,19 @@ vendored.
 
 | Layer | Claim | Status | Evidence |
 | --- | --- | --- | --- |
-| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean (4 guards); 2341 core + 173 CLI tests pass |
+| L0 | Deterministic core correctness | **met** | `pnpm typecheck` clean **from a cold check-out** (the script builds core first; see below); `pnpm lint` clean; the suite's counts are published once and checked against a run by `check-doc-counts`, so they are not restated here |
 | L1 | Transform invariants | **met** | 7-strategy matrix, idempotency and zero-silent-loss suites |
 | L2 | IR contract integrity | **met** | G1/G2/G3 gates, reference integrity, time consistency; G3 carries a signal-validity half (P1-1) |
-| L3 | Gate and export soundness | **met** | 26-mutation suite, 100% intercepted; export surface enumerated across **every module in `src/` (47 at this revision), 538 runtime symbols, 0 orphans**, exemptions keyed by symbol rather than by module |
-| L4 | Official reproduction | **3 of 4 anchors met; the fourth now round-trips two corpora** | Golden Master, mutation suite and the official-metric regression are green in CI every push; the real-corpus round trip is **375 / 375** on `rcaeval-re1` (run `38250480271`) and **270 / 270** on `rcaeval-re2` (run `40400190945`), both at `oracle=1.00` -- see `## The last measured round trip`. **The number is still not reproduced**: `oracle` is the metric's ceiling, not a solver's accuracy, so no comparison against upstream published figures exists, which is P0-2 |
+| L3 | Gate and export soundness | **met** | mutation batteries with no survivors and no inert steps; the export surface is enumerated across **every module in `src/`, every runtime symbol, 0 orphans**, with exemptions keyed by symbol rather than by module |
+| L4 | Official reproduction | **3 of 4 anchors met; the fourth round-trips all three corpora** | Golden Master, mutation suite and the official-metric regression are green in CI every push; the real-corpus round trip is **375 / 375** (`rcaeval-re1`), **270 / 270** (`rcaeval-re2`) and **90 / 90** (`rcaeval-re3`), all at `oracle=1.00` with their pins agreeing -- see `## The last measured round trip`. **What remains is not the number**: `oracle` is the metric's ceiling, not a solver's accuracy, and the upstream loader still refuses to rank a system it does not know (`SLI not implemented`), which is a product decision rather than a measurement |
 | L5 | End-to-end scenarios | **met** | CLI scenarios and HITL budget suites |
 
-**Both CI workflows are green on the revision this document describes** (`4181060ee`):
-`CI` run `36122305441` has all 18 steps `success`, and `Anchor round trip` run
-`36122305396` has all 12 `success`. That is the full local gate list executed on a
-clean machine.
+**Both CI workflows were green on the revision this paragraph was written about**
+(`4181060ee`): `CI` run `36122305441` has all 18 steps `success`, and `Anchor round trip`
+run `36122305396` has all 12 `success`. That is the full local gate list executed on a
+clean machine. The paragraph is kept as the record of one verification, and the run ids
+are not updated: the current round-trip numbers live in `## The last measured round trip`,
+which is checked, while a run id in prose is a number nothing re-reads.
 
 The evidence here is weaker than the previous revision's and the difference is worth
 stating. Last time the job log was fetched and the coverage percentile was compared
@@ -1250,7 +1252,8 @@ and this table.
 | [volume-03.md](progress/volume-03.md) | 16 | Pass 49 | Pass 64 |
 | [volume-04.md](progress/volume-04.md) | 21 | v2.06 | v2.25 |
 | [volume-05.md](progress/volume-05.md) | 30 | v2.26 | v2.55 |
-| [volume-06.md](progress/volume-06.md) | 48 | v2.56 | v3.03 |
+| [volume-06.md](progress/volume-06.md) | 30 | v2.56 | v2.85 |
+| [volume-07.md](progress/volume-07.md) | 19 | v2.86 | v3.04 |
 
 **Where a new round goes.** Append to the last volume. When it would grow past
 200,000 bytes -- a third of a megabyte is the point at which diffing one round

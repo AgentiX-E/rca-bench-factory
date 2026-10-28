@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 16,
+  "min": 17,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -480,6 +480,36 @@
           "layer": "evidence",
           "quote": "Reads on the primary are current",
           "why": "the control the case turns on: the component with the largest excursion answers correctly, so the case cannot be solved by returning the biggest spike"
+        }
+      ]
+    },
+    {
+      "caseId": "history-resource-memory-request-ingest-writer",
+      "sampleId": "resource-memory-request-ingest-writer",
+      "case": "history-resource-memory-request-ingest-writer.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-resource-memory-request-ingest-writer.signals.json",
+      "why": "annotated from the incident text of `resource-memory-request-ingest-writer`, and the corpus's second case whose loudest series is a consequence. The queue the writer stopped draining moves by two hundred and fifty times and the container's working set by three, so a method that returns the largest excursion returns the backlog -- which the text's own first sentence describes as the pressure the writer was under. The answer is the component whose request never changed: 1Gi requested, 3Gi used, and one missing number (a heap cap) that produced both the kills and the packing. That is why the case is worth having twice over: it is a strict displacement, and the thing it displaces the answer with is a symptom rather than a healthy neighbour, which is the other way a magnitude-based method goes wrong. The chain is two steps because the propagation is two: the container is reclaimed, and the restart stops the drain.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The ingest writer was OOMKilled twice overnight",
+          "why": "the workload that was reclaimed, named by what the platform did to it rather than by the queue behind it"
+        },
+        {
+          "layer": "fault",
+          "quote": "the JVM starts without a heap cap",
+          "why": "the mechanism and the missing thing in one clause: an absence is the fault, which is why the case records the cap as zero"
+        },
+        {
+          "layer": "process",
+          "quote": "Requesting 1Gi while using 3Gi also made the scheduler pack two copies onto one node",
+          "why": "the sentence that orders the steps from one number: the request is smaller than the use, so the scheduler over-packs, so the node is fuller than it should be"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Setting the heap to 700m removed both the kills and the double packing",
+          "why": "the counterfactual that makes the cap the cause rather than a correlate: one change removed both consequences"
         }
       ]
     }

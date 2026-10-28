@@ -1737,13 +1737,20 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
     );
   });
 
-  it('accepts a corpus that holds one case where the answer is displaced', () => {
-    // The replica-lag case is built for it: the primary's write rate rises eightyfold and the
-    // replica's lag fortyfold, so both baselines return the healthy primary first.
-    const result = run(['--cases', oneCaseCorpus('history-middleware-replica-lag-analytics')]);
-    expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('strictly displaced in 1 case(s) (history-middleware-replica-lag-analytics)');
-  });
+  // Each case that carries the corpus's discrimination property is pinned by name. The corpus-level
+  // rule needs only one, so removing the loud competitor from *either* would leave the corpus green
+  // and only a case-specific test red -- which is what the mutation battery found the round the
+  // second one landed.
+  for (const caseId of [
+    'history-middleware-replica-lag-analytics',
+    'history-resource-memory-request-ingest-writer',
+  ]) {
+    it(`accepts a corpus whose only case is '${caseId}', because its answer is displaced`, () => {
+      const result = run(['--cases', oneCaseCorpus(caseId)]);
+      expect(result.status, result.out).toBe(0);
+      expect(result.out).toContain(`strictly displaced in 1 case(s) (${caseId})`);
+    });
+  }
 });
 
 describe('check-fault-cases · the difficulty distribution is a property of the corpus', () => {

@@ -256,6 +256,36 @@
       "aliases": [
         "The analytics dashboard"
       ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/ingest-writer",
+      "kind": "service",
+      "name": "ingest-writer",
+      "aliases": [
+        "The ingest writer"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/ingest-writer-0",
+      "kind": "pod",
+      "name": "ingest-writer-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/ingest-writer-jvm",
+      "kind": "container",
+      "name": "ingest-writer-jvm",
+      "aliases": [
+        "the JVM"
+      ]
+    },
+    {
+      "entityId": "mq:synthetic-storefront/ingest-queue",
+      "kind": "mq",
+      "name": "ingest-queue",
+      "aliases": [
+        "the backlog"
+      ]
     }
   ],
   "edges": [
@@ -377,6 +407,21 @@
     {
       "from": "service:synthetic-storefront/analytics-dashboard",
       "to": "db:synthetic-storefront/analytics-replica",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/ingest-writer",
+      "to": "pod:synthetic-storefront/ingest-writer-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/ingest-writer-0",
+      "to": "container:synthetic-storefront/ingest-writer-jvm",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/ingest-writer",
+      "to": "mq:synthetic-storefront/ingest-queue",
       "relation": "calls"
     }
   ]
