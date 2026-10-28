@@ -465,7 +465,7 @@ defect rule 7 was written for.
 | gate | before | after |
 | --- | --- | --- |
 | gate sites | 88 across 46 scripts | **89 across 47 scripts**, 88 annotations carried, 0 unannotated |
-| `verify:gates-are-testable` | 46 gates, 46 caught | **47 gates, 47 caught** — `probe-z-floor.mjs` caught by 10 red tests in 2 of 3 naming files |
+| `verify:gates-are-testable` | 46 gates, 46 caught | **47 gates, 47 caught** — `probe-z-floor.mjs` caught by 10 red tests, 1 of the 2 files that name it going red |
 | the probe's reading | `2 of 19 differ, 2 change kind` with `NaN` count unstated | **same reading, plus `0 of them into or out of strict`, `0 unresolved reading(s)`, `0 non-finite statistic(s)`** |
 | `core` | 191 / 4772 | **192 / 4778** (six new tests, one new file) |
 | repo | 195 / 4959 | **196 / 4965** |

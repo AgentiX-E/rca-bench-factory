@@ -1403,7 +1403,7 @@ assertion belongs in a test rather than in an exit status.
 
 **Acceptance.** `pnpm test` green at core **192 / 4778**, cli 4 / 187, repo **196 / 4965**; coverage
 unchanged at **99.97 / 99.75 / 100 / 99.97** (no `src/` file was touched); `verify:gates-are-testable`
-**47 of 47 caught**, the new gate by 10 red tests in 2 of 3 naming files, all 47 files restored
+**47 of 47 caught**, the new gate by 10 red tests (1 of the 2 files that name it going red), all 47 files restored
 byte-for-byte; `check-doc-counts` OK at 179 published counts over three scopes; audit 8 volumes,
 findings 1–280; `pnpm lint` green.
 
