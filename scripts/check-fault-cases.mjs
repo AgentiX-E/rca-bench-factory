@@ -218,6 +218,8 @@ let difficultySpread = null;
  * said at all, because a ranking of two scored at top-3 is right by construction.
  */
 const localisation = [];
+/** Every baseline run, for the corpus-level question about whether any of them can be wrong. */
+const localisationRuns = [];
 /**
  * Every case that parsed, whether or not it carries telemetry.
  *
@@ -908,6 +910,9 @@ for (const entry of index.cases) {
       topK: Math.min(...outcomes.map((one) => one.topK)),
       ranks: outcomes.map((one) => one.rankOfTruth),
     });
+    // The corpus-level question: can any run of any method be wrong about the loudest component?
+    // Asked once below, over every run, because it is a property of the set.
+    for (const one of outcomes) localisationRuns.push(one);
     if (
       validity.violations.length === 0 &&
       signalStructure.violations.length === 0 &&
@@ -960,6 +965,13 @@ if (firstGraph !== null && allCases.length > 0) {
     counts,
     unmet: distribution.violations.map((violation) => violation.message),
   };
+}
+
+// Whether the corpus can fail a method that returns the loudest component. Corpus-level, so it is
+// asked once, and it fails the run: a corpus of cases whose answer is always the biggest excursion
+// reports a 100% score as a measurement of localisation.
+for (const violation of core.checkDiscrimination(localisationRuns).violations) {
+  problems.push(`the corpus fails G4: ${violation.message}`);
 }
 
 // A file in the directory that the index does not name is a case nobody will run.
@@ -1030,10 +1042,14 @@ function logLocalisationReading() {
   const parts = [...tally.entries()]
     .sort((left, right) => left[0].localeCompare(right[0]))
     .map(([key, count]) => `${key}: ${String(count)}`);
+  // How many cases displace the answer: the ones a method that returns the largest excursion gets
+  // wrong. Zero would mean the corpus tests detection, which is why the gate above refuses it.
+  const displaced = localisation.filter((one) => one.ranks.some((rank) => rank !== null && rank > 1));
   console.log(
     `check-fault-cases: localisation over ${String(localisation.length)} case(s) at top-${String(topK)}, ` +
       `rankings ${String(narrowest)}-${String(widest)} candidate(s) wide -- ${parts.join(', ')} of ` +
-      `${String(localisation.length * 2)} baseline run(s)`,
+      `${String(localisation.length * 2)} baseline run(s); the answer is displaced in ` +
+      `${String(displaced.length)} case(s) (${displaced.map((one) => one.caseId).join(', ') || 'none'})`,
   );
 }
 

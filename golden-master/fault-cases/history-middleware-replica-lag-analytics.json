@@ -1,0 +1,120 @@
+{
+  "caseId": "history-middleware-replica-lag-analytics",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-16T09:05:00.000Z",
+  "window": {
+    "start": "2026-10-16T08:45:00.000Z",
+    "end": "2026-10-16T13:30:00.000Z"
+  },
+  "fault": {
+    "type": "replica-lag",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "analytics-replica",
+      "lagSeconds": {
+        "value": 2400,
+        "unit": "s"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "db:synthetic-storefront/analytics-replica",
+    "rootCauseComponent": "analytics-replica",
+    "rootCauseReason": "The replica applies the primary's writes with one applier thread. A scheduled backfill multiplies the primary's write rate, the applier cannot keep up, and the relay log position falls forty minutes behind; every read the dashboard issues is answered from that position, so the totals it renders are four hours old. The component with the largest excursion in the window is the primary, and it is healthy: its commit latency is unchanged and its own reads are current. That is the shape of this case -- the loudest series belongs to the load, not to the fault -- and it is why a method that returns the biggest spike returns the wrong component while a method that follows the causal direction returns the right one.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "replica_relay_lag_seconds",
+        "description": "the relay log position falls from one minute to forty and stays there for the whole window"
+      },
+      {
+        "type": "metric",
+        "ref": "dashboard_total_age",
+        "description": "the totals the dashboard renders are four hours old, which is the symptom the ticket states"
+      },
+      {
+        "type": "metric",
+        "ref": "commit_latency",
+        "description": "the primary's own commits are unchanged at three milliseconds while its write rate rises eightyfold"
+      },
+      {
+        "type": "metric",
+        "ref": "primary_read_staleness_seconds",
+        "description": "reads served by the primary were current throughout, so the primary's answers were never stale"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "db:synthetic-storefront/analytics-replica",
+        "toEntityId": "service:synthetic-storefront/analytics-dashboard",
+        "mechanism": "the replica applies the backfill's writes one thread at a time, its relay log position falls forty minutes behind the primary, and every read the dashboard issues is answered from that position, so the totals it renders are four hours old",
+        "evidenceRefs": [
+          "cp-replica-lag",
+          "cp-dashboard-stale",
+          "cp-primary-writes",
+          "cp-primary-healthy"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-replica-lag",
+        "entityRef": "db:synthetic-storefront/analytics-replica",
+        "signalRef": "replica_relay_lag_seconds",
+        "comparator": ">=",
+        "value": 2400,
+        "unit": "s",
+        "description": "the relay log position is forty minutes behind, which is the state every read is answered from"
+      },
+      {
+        "checkpointId": "cp-dashboard-stale",
+        "entityRef": "service:synthetic-storefront/analytics-dashboard",
+        "signalRef": "dashboard_total_age",
+        "comparator": "==",
+        "value": 240,
+        "unit": "min",
+        "description": "the totals a reader saw were four hours old, which is the symptom and not the cause"
+      },
+      {
+        "checkpointId": "cp-primary-writes",
+        "entityRef": "db:synthetic-storefront/orders-db",
+        "signalRef": "write_rate",
+        "comparator": ">=",
+        "value": 3200,
+        "unit": "rps",
+        "description": "the write volume the single applier could not match -- it is the load the replica was asked to apply, and it is not itself a fault"
+      },
+      {
+        "checkpointId": "cp-primary-healthy",
+        "entityRef": "db:synthetic-storefront/orders-db",
+        "signalRef": "commit_latency",
+        "comparator": "==",
+        "value": 3,
+        "unit": "ms",
+        "description": "the primary's commits are unchanged while its write rate rises eightyfold, which is the control that rules out the component with the largest excursion"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "give the replica more than one applier thread, or throttle the backfill to a rate the current applier can sustain",
+        "target": "db:synthetic-storefront/analytics-replica"
+      },
+      {
+        "step": 2,
+        "action": "alert on relay log lag rather than on the primary's write volume, because the write volume is scheduled work and the lag is the thing that reaches a reader",
+        "target": "db:synthetic-storefront/analytics-replica"
+      }
+    ]
+  },
+  "query": "The analytics dashboard served four-hour-old totals for a morning while every component reported itself healthy. Which component was behind, and why is the busiest series in the window not the answer?",
+  "difficulty": "L2",
+  "answerKeyIsolated": true
+}

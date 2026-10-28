@@ -635,6 +635,7 @@ const TESTED = [
   'checkG1Structural',
   'checkCaseSemantics',
   'checkDifficultyDistribution',
+  'checkDiscrimination',
   'checkG2Semantic',
   'checkG3Validity',
   'checkGraphContract',

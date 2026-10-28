@@ -53,11 +53,13 @@ Seven passes so far:
 
 ## Volumes
 
-The findings live in 6 files, because one 1.1 MB document is a pile rather
-than a document: a reader cannot find an entry without `grep`, and the push that
+The findings live in one file per size budget, because one 1.1 MB document is a pile
+rather than a document: a reader cannot find an entry without `grep`, and the push that
 carries one new finding carries all of them. The split is by size, not by subject --
 a finding that belonged to a theme keeps its number, and numbers are what the rest
-of the repository cites.
+of the repository cites. (This sentence said "6 files" while there were seven: a count
+in prose is a number that goes stale on the next split, and the table below is the one
+that is checked.)
 
 | file | findings | entries | opens with |
 | --- | --- | --- | --- |
@@ -68,6 +70,7 @@ of the repository cites.
 | [volume-05.md](audit/volume-05.md) | 196–254 | 59 | the gate that could not be proved, and the reference with four meanings |
 | [volume-06.md](audit/volume-06.md) | 255–266 | 12 | the corpus is two documents joined by one string, and nothing read both |
 | [volume-07.md](audit/volume-07.md) | 267–275 | 9 | the layout we wrote is not the layout the loader reads |
+| [volume-08.md](audit/volume-08.md) | 276–276 | 1 | the loudest series is not the answer, and the corpus could not say so |
 
 **Where a new finding goes.** Append to the last volume. When it would grow past
 280,000 bytes, start the next volume -- one number higher than the last, holding the

@@ -2705,3 +2705,89 @@ assertions failing); `docs:check` green; audit 7 volumes, findings 1–275.
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence
 of logs cannot be a checkpoint.
+
+## v3.02 — the loudest series is not the answer
+
+**What was open.** Last round's readout: peak-z right at rank 1 in thirteen of fifteen cases, which
+it called "the corpus tests detection rather than localisation". A measurement is not a repair, so
+this round built the case that number was asking for and the rule that keeps it from sliding back.
+
+**The case.** `history-middleware-replica-lag-analytics`, from its own text. The ratios are inverted
+against the answer on purpose:
+
+| series | baseline | post | ratio | what it is |
+| --- | --- | --- | --- | --- |
+| `orders-db.write_rate` | 40 rps | 3200 rps | 80× | the load, on the healthy primary |
+| `analytics-replica.replica_relay_lag_seconds` | 60 s | 2400 s | 40× | **the answer** |
+| `analytics-dashboard.dashboard_total_age` | 10 min | 240 min | 24× | the symptom a reader saw |
+| `orders-db.commit_latency` | 3 ms | 3 ms | — | the control that rules the primary out |
+
+Both baselines return the primary first. That is the point: **a method that returns the largest
+excursion returns a component the text says is healthy**. The text says it twice — "The primary is
+healthy" and "Reads on the primary are current" — so the case carries the disproof of its own loudest
+series, which is what makes it a corpus in the sense this repository means.
+
+**The reading, before and after.**
+
+```
+before   rank 1: 26, rank 2: 4 of 30 baseline run(s); displaced in 2 case(s)
+after    rank 1: 26, rank 2: 6 of 32 baseline run(s); displaced in 3 case(s)
+```
+
+The third displacement is the one built on purpose. The other two are accidents — `checkout` because
+a pod's series outranks its service's, `upstream-5xx` because two services move by the same 60% and
+the tie breaks by name — which is why the next paragraph is a rule rather than a promise.
+
+**The rule.** `checkDiscrimination(outcomes)` refuses a corpus in which every run places the answer
+at rank 1 (`NO_DISPLACEMENT`): no case in it can penalise a threshold-based localiser, so its 100% is
+a measurement of detection. Corpus-level, because the property is — no single case is wrong for
+having a loud answer. **Its weakness is in the function's own comment**: a tie broken by name
+satisfies it, so it guarantees that *something* can go wrong, not that the something was designed to.
+
+**The fixture it refused on the first run.** `withPost` in `check-fault-cases.test.ts` builds the
+checkout signals plus a scratch series whose `post` the caller chooses, and it attributed that series
+to `checkout-api` — the case's own answer. Starting at zero and jumping to 500 mcore, the scratch
+series was the largest excursion in the window, so the fixture had become a corpus whose answer is
+the loudest thing; the rule refused it, correctly, in a test about parameter references. The repair is
+one field: the scratch series is attributed to `cart-service`. **A fixture is a corpus**, and a
+corpus-level rule applies to it.
+
+**Mutation battery.** The rule removed from the guard → 1 failed / 130. `checkDiscrimination` asking
+nothing → 1 failed / 178. The distractor dropped to 600 rps → 28 rank-1 / 4 rank-2, `displaced in 2`,
+and the case's own test fails (`expected 2 to be 0`). The third is the interesting one: the corpus
+still passes, because two accidental displacements remain, so only the case-specific test catches a
+regression in this case.
+
+**Acceptance.** `pnpm test` green at core **190 / 4751**, cli 4 / 187, repo **194 / 4938**; coverage
+99.97 / 99.75 / 100 / 99.97 with `gates.ts` and `background.ts` at 100% on all four dimensions;
+`check-fault-cases` OK (16 of 30, 39 entities, 24 edges, rankings 19–21 wide, 52 references resolved,
+0 of 48 comparable assertions failing); `docs:check` green; audit 8 volumes, findings 1–276.
+
+### Left open
+
+- **Displacement is required somewhere, not designed everywhere.** `[open: the rule is satisfied by
+  one case, and it does not distinguish a case built to displace the answer from a tie broken by
+  name; three of sixteen cases displace today and two of them do so by accident]`
+- **No case in the corpus is L4.** `[open: this round's case is one step deep like the other
+  fifteen, and the distribution report keeps printing `L4 0` -- a level no labelling can reach while
+  every chain the sample set describes is one or two hops]`
+- **Fourteen samples carry no case.** `[open: 16 of 30 annotated, one per round, and the two rounds
+  since the corpus's last easy addition have gone to the measurement the annotations depend on]`
+- **A reversal between two entities of one kind is not detectable statically.** `[open: the kind table
+  refuses `db --calls--> service` and cannot refuse `service B --calls--> service A`; the witness
+  would be trace parent/child spans and one case in the corpus has traces]`
+- **One red run is unreproduced.** `[open: this round ran the full suite five times and the only red
+  it produced named a failing test; the single unattributed red of v2.97 has not appeared again]`
+- **Upstream's baselines still refuse our data.** `[open: our own two baselines now rank a sixteen-case
+  corpus over nineteen to twenty-one candidates; the upstream loader still selects a service-level
+  indicator from the path and refuses a system it does not know]`
+- **RE3's traces and logs are not read.** `[open: the metric modality is now wide enough to rank, and
+  the log and span modalities are still one case deep at best, so an RE3 case reaches the export with
+  one of the IR's four layers]`
+- **No aggregate tables.** `[open: the localisation readout is computed from the signals in memory
+  rather than written to a file a downstream method could read; `logts.csv`, `tracets_err.csv` and
+  `tracets_lat.csv` remain unwritten]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.

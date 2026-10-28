@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Five cases now, and each layer of each case must carry a quote, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 15,
+  "min": 16,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -450,6 +450,36 @@
           "layer": "evidence",
           "quote": "writes succeeded, into the wrong place",
           "why": "both halves of the evidence at once: success rules out the pool and the credentials, and the place is what the two shares measure"
+        }
+      ]
+    },
+    {
+      "caseId": "history-middleware-replica-lag-analytics",
+      "sampleId": "middleware-mysql-replica-lag-analytics",
+      "case": "history-middleware-replica-lag-analytics.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-middleware-replica-lag-analytics.signals.json",
+      "why": "annotated from the incident text of `middleware-mysql-replica-lag-analytics`, and the corpus's first case built so that the loudest series in the window belongs to a component that is healthy. The primary's write rate rises eightyfold and the replica's lag fortyfold, so a method that returns the largest excursion returns the primary -- which the text states twice is healthy, in its commit latency and in its own reads being current. The answer is the replica the backfill outran. That is the whole point of the case: the corpus could already show a method that finds nothing, and this one shows a method that finds the loudest thing, which is a different failure and the one every threshold-based localiser has. The chain is one step because the propagation is one step -- the applier falls behind and the reads it answers are old -- and its two ends are the database that fell behind and the service that rendered what it served.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The analytics dashboard showed yesterday's totals for four hours",
+          "why": "the component that rendered the stale totals, named by what a reader saw rather than by the database behind it"
+        },
+        {
+          "layer": "fault",
+          "quote": "a replica whose relay log position fell 40 minutes behind the primary",
+          "why": "the mechanism and the quantity in one sentence: a lag needs both the position and how far behind it fell"
+        },
+        {
+          "layer": "process",
+          "quote": "a bulk backfill on the primary is generating write volume the replica's single applier thread cannot match",
+          "why": "the sentence that orders the steps -- scheduled writes, one applier, a position that falls behind -- rather than leaving a write spike and a stale dashboard side by side"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Reads on the primary are current",
+          "why": "the control the case turns on: the component with the largest excursion answers correctly, so the case cannot be solved by returning the biggest spike"
         }
       ]
     }

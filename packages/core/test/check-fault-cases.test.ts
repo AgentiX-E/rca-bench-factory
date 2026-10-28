@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1586,13 +1586,22 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
     readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
   ) as Record<string, unknown>;
 
-  /** The checkout signals plus a scratch series whose `post` the caller chooses. */
+  /**
+   * The checkout signals plus a scratch series whose `post` the caller chooses.
+   *
+   * The scratch series is attributed to `cart-service`, not to the case's own answer. It starts at
+   * zero and jumps to whatever the caller passes, so on the answer's service it would be the largest
+   * excursion in the window -- and a corpus whose answer is the largest excursion is refused by
+   * `checkDiscrimination`, correctly and for a reason none of these tests is about. Moving it to a
+   * service the case does not answer with keeps the fixture a corpus while leaving the question
+   * (does a reading and a declared parameter resolve to one number) untouched.
+   */
   function withPost(post: unknown, unit: unknown = 'count'): string {
     const signals = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & {
       series: Array<Record<string, unknown>>;
     };
     signals.series.push({
-      service: 'checkout-api',
+      service: 'cart-service',
       metric: 'scratch_reading',
       unit,
       baseline: 0,
@@ -1645,6 +1654,54 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
       "declares post '\"five\"' for 'scratch_reading', which is neither a number nor a { parameter } " +
         'reference',
     );
+  });
+});
+
+describe('check-fault-cases · the corpus has to be able to be wrong', () => {
+  /**
+   * The shipped corpus, in a scratch directory, cut down to one case.
+   *
+   * Built by copying rather than by writing: the question is about the corpus's own files, and a
+   * hand-written fixture would answer it for a corpus nobody ships.
+   */
+  function oneCaseCorpus(caseId: string): string {
+    const dir = workspace();
+    cpSync(CASES, dir, { recursive: true });
+    const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as {
+      min: number;
+      cases: Array<{ caseId: string; case: string; signals?: string; graph?: string }>;
+    };
+    const keep = index.cases.filter((entry) => entry.caseId === caseId);
+    expect(keep, `${caseId} must be in the corpus for this test to measure it`).toHaveLength(1);
+    for (const entry of index.cases) {
+      if (entry.caseId === caseId) continue;
+      rmSync(join(dir, entry.case), { force: true });
+      if (entry.signals !== undefined) rmSync(join(dir, entry.signals), { force: true });
+    }
+    writeFileSync(
+      join(dir, 'index.json'),
+      `${JSON.stringify({ ...index, min: 1, cases: keep }, null, 2)}\n`,
+    );
+    return dir;
+  }
+
+  it('refuses a corpus whose every answer is the loudest component', () => {
+    // `history-cart-network-delay` is solved at rank 1 by both baselines: its answer is the only
+    // thing that moved. A corpus of those reports a 100% score for a method that returns the
+    // largest excursion, and the report calls it localisation.
+    const result = run(['--cases', oneCaseCorpus('history-cart-network-delay')]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      'the corpus fails G4: every one of 2 baseline run(s) places the answer at rank 1, so returning the largest excursion scores 100%',
+    );
+  });
+
+  it('accepts a corpus that holds one case where the answer is displaced', () => {
+    // The replica-lag case is built for it: the primary's write rate rises eightyfold and the
+    // replica's lag fortyfold, so both baselines return the healthy primary first.
+    const result = run(['--cases', oneCaseCorpus('history-middleware-replica-lag-analytics')]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('the answer is displaced in 1 case(s) (history-middleware-replica-lag-analytics)');
   });
 });
 

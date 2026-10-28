@@ -1,0 +1,53 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-middleware-replica-lag-analytics",
+  "why": "Telemetry for the replica-lag case, and the corpus's first whose loudest series belongs to a component that is healthy. The primary's write rate rises eightyfold and the replica's lag fortyfold, so a method that returns the biggest excursion returns the primary -- which the text states is healthy and is only doing scheduled work. The answer is the replica that could not apply the writes, and it is ranked second. `dashboard_total_age` is the symptom a reader saw, and `commit_latency` and `primary_read_staleness_seconds` are the controls: the primary's own commits are unchanged and its reads are current, which is how the case rules out the component with the largest spike.",
+  "series": [
+    {
+      "service": "orders-db",
+      "metric": "write_rate",
+      "unit": "rps",
+      "baseline": 40,
+      "post": 3200,
+      "quote": "generating write volume",
+      "why": "the largest excursion in the window and the load the replica cannot match; it belongs to the healthy primary, which is what makes this case a localisation test rather than a detection test"
+    },
+    {
+      "service": "analytics-replica",
+      "metric": "replica_relay_lag_seconds",
+      "unit": "s",
+      "baseline": 60,
+      "post": 2400,
+      "quote": "fell 40 minutes behind the primary",
+      "why": "the checkpoint `cp-replica-lag` holds the forty minutes: the relay log position is the state every read is answered from, and it is the thing that is wrong"
+    },
+    {
+      "service": "analytics-dashboard",
+      "metric": "dashboard_total_age",
+      "unit": "min",
+      "baseline": 10,
+      "post": 240,
+      "quote": "showed yesterday's totals for four hours",
+      "why": "the checkpoint `cp-dashboard-stale` holds the four hours: this is the symptom a reader reported, and it is downstream of the lag rather than the cause of it"
+    },
+    {
+      "service": "orders-db",
+      "metric": "commit_latency",
+      "unit": "ms",
+      "baseline": 3,
+      "post": 3,
+      "quote": "The primary is healthy",
+      "why": "the checkpoint `cp-primary-healthy` holds the flat three milliseconds: the busiest component in the window is keeping up, which is the control that excludes it"
+    },
+    {
+      "service": "orders-db",
+      "metric": "primary_read_staleness_seconds",
+      "unit": "s",
+      "baseline": 0,
+      "post": 0,
+      "quote": "Reads on the primary are current",
+      "why": "the second control, and a stronger one than the first: reads served by the primary were current throughout, so nothing about the primary's own answers was stale"
+    }
+  ]
+}

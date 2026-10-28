@@ -239,6 +239,23 @@
       "aliases": [
         "the staging database"
       ]
+    },
+    {
+      "entityId": "db:synthetic-storefront/analytics-replica",
+      "kind": "db",
+      "name": "analytics-replica",
+      "aliases": [
+        "the analytics replica",
+        "the replica"
+      ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/analytics-dashboard",
+      "kind": "service",
+      "name": "analytics-dashboard",
+      "aliases": [
+        "The analytics dashboard"
+      ]
     }
   ],
   "edges": [
@@ -355,6 +372,11 @@
     {
       "from": "service:synthetic-storefront/order-service",
       "to": "db:synthetic-storefront/orders-db-staging",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/analytics-dashboard",
+      "to": "db:synthetic-storefront/analytics-replica",
       "relation": "calls"
     }
   ]

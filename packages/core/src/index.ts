@@ -161,6 +161,7 @@ export {
   caseFingerprint,
   checkCaseSemantics,
   checkDifficultyDistribution,
+  checkDiscrimination,
   checkG1Structural,
   checkG2Semantic,
   checkG3Validity,

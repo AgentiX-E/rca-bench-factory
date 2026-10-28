@@ -715,6 +715,34 @@ export function checkDifficultyDistribution(bundle: IrBundle, options: G4Options
 }
 
 /**
+ * Whether the corpus can fail a method that returns the loudest component.
+ *
+ * A case whose answer is the largest excursion in its window is solved by the dumbest possible
+ * localiser, and a corpus of them reports that as a measurement of localisation. The corpus shipped
+ * with thirteen of fifteen cases at rank 1 for both baselines -- a fact it could not state before
+ * background telemetry widened the rankings, and one that reads as "the corpus tests detection".
+ *
+ * The rule is corpus-level because the property is: no single case can be wrong for having a loud
+ * answer. What it asks is that at least one run somewhere be displaced, so that a threshold-based
+ * method has one case it must get wrong. It does not require the displacement to be deliberate -- a
+ * tie broken by name satisfies it -- which is a weakness stated rather than hidden: the corpus's own
+ * record says which case was built for it, and this rule only keeps the property from disappearing.
+ */
+export function checkDiscrimination(outcomes: BaselineOutcome[]): GateResult {
+  const v: GateViolation[] = [];
+  const located = outcomes.filter((o) => o.rankOfTruth !== null);
+  if (located.length > 0 && located.every((o) => o.rankOfTruth === 1)) {
+    v.push({
+      code: 'NO_DISPLACEMENT',
+      message:
+        `every one of ${String(located.length)} baseline run(s) places the answer at rank 1, so ` +
+        'returning the largest excursion scores 100%',
+    });
+  }
+  return gate('G4', v);
+}
+
+/**
  * G4 as one gate: can the baselines locate each case, and are the graded cases spread out?
  *
  * Solvability first, because a set whose cases no baseline can locate has a problem the

@@ -221,6 +221,14 @@ describe('what the background contributes to a case', () => {
  */
 const ROOT = new URL('../../../', import.meta.url).pathname;
 const CASES = join(ROOT, 'golden-master', 'fault-cases');
+/**
+ * How many cases the corpus holds, read rather than remembered.
+ *
+ * The two counts below were literals until the sixteenth case landed, and both went red for the
+ * reason finding 271 recorded: an assertion that restates the corpus reports a change in the corpus
+ * as a defect in the guard.
+ */
+const CASE_COUNT = (JSON.parse(readFileSync(join(CASES, 'index.json'), 'utf8')) as { cases: unknown[] }).cases.length;
 const made: string[] = [];
 
 function copyCorpus(): string {
@@ -246,7 +254,11 @@ describe('the corpus guard, with and without the background', () => {
   it('accepts the shipped corpus', () => {
     const result = run(copyCorpus());
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('localisation over 15 case(s) at top-3, rankings 18-20 candidate(s) wide');
+    expect(result.out).toContain(`localisation over ${String(CASE_COUNT)} case(s) at top-3, rankings`);
+    // The width has to be a real constraint: more candidates than the K the cases are scored at.
+    const width = /rankings (\d+)-(\d+) candidate\(s\) wide/.exec(result.out);
+    expect(width, result.out).not.toBeNull();
+    expect(Number((width as RegExpExecArray)[1]), 'the narrowest ranking must exceed the K').toBeGreaterThan(3);
   });
 
   it('refuses every case when the background is removed', () => {
@@ -259,7 +271,7 @@ describe('the corpus guard, with and without the background', () => {
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares no background-telemetry.json');
     const refusals = result.out.match(/so being within the top-K is not a constraint/g) ?? [];
-    expect(refusals).toHaveLength(15);
+    expect(refusals).toHaveLength(CASE_COUNT);
   });
 
   it('refuses a background that omits one service', () => {
