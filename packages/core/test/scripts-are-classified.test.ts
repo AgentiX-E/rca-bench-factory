@@ -285,6 +285,15 @@ const REGISTER: Record<string, Entry> = {
   // *existence* to the reason it was created.
   'probe-m1-ceiling.mjs': { class: 'probe' },
   'probe-type-misses.mjs': { class: 'probe' },
+  'probe-z-floor.mjs': {
+    class: 'probe',
+    why:
+      'It ranks the corpus twice -- under the shipped z-score floor and under a relative one -- and ' +
+      'exits 1 when it cannot read a case, which is the one thing it refuses rather than reports. The ' +
+      'reading it prints is a *number of cases whose order depends on the floor*, and that number must ' +
+      'not be a failure: both floors answer different questions, so a case that ranks differently ' +
+      'between them is a fact about the case rather than a defect in the corpus.',
+  },
   'probe-category-inference.mjs': {
     class: 'tool',
     why:

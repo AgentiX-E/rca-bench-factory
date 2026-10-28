@@ -83,7 +83,8 @@
     "inject:fetch-official-retry": "python3 scripts/injection/fetch-official-retry.py",
     "probe:denial-inventory": "node scripts/probe-denial-inventory.mjs",
     "probe:agreement-baseline": "node scripts/probe-agreement-baseline.mjs",
-    "probe:category-derivation": "node scripts/probe-category-derivation.mjs"
+    "probe:category-derivation": "node scripts/probe-category-derivation.mjs",
+    "probe:z-floor": "node scripts/probe-z-floor.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

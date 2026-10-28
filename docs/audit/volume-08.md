@@ -340,21 +340,36 @@ implementation constant. If the ranking of a case turned on that constant rather
 `strict` and `rankOfTruth` would be artefacts and the corpus's headline reading would be measuring its
 own floor.
 
-A probe recomputed every case's ranking twice — with the shipped `1e-6` floor and with a relative floor
-of one percent of the baseline — and **two of seventeen cases changed order**, neither of them a case
-whose `strict` classification moved:
+`pnpm probe:z-floor` recomputes every case's ranking twice — with the shipped `1e-6` floor and with a
+relative floor of one percent of the baseline — and **two of nineteen cases changed order**, neither of
+them a case whose `strict` classification moved:
 
 | case | rank under `1e-6` | rank under 1 % | what moved |
 | --- | --- | --- | --- |
 | `history-checkout-cpu-saturation` | 2 | 1 | the answer's pod, which is the same component and therefore not a miss |
 | `history-resource-ephemeral-capacity-image-builder` | 1 | 2 | the pod under the answer, again the same component |
 
-So the corpus's claims do not rest on the floor, and the finding is a **negative result** rather than a
-defect: the suspicion was reasonable, it was measured, and it did not hold. Two of the numbers in the
-first run of that probe were `NaN`, and they were the probe's rather than the corpus's — it expanded
-`post: { parameter: … }` without resolving the reference, which the guard does. That is worth recording
-because a probe is a second reader of the same files, and a second reader that skips a step measures
-its own bug with the same confidence it measures the corpus.
+The pair is a mirror image, and that is the whole shape of the result: in one case the pod sits above the
+answer and in the other below it, and the relative floor swaps which. So `same-component` — the label for
+"the runner-up is the answer's own pod" — is floor-dependent for exactly these two cases, and the probe
+says so on stderr rather than burying it. That is a change in how a **non**-displacement is described:
+`checkDiscrimination` accepts a case only when a separate component is strictly louder, so the claim the
+corpus's evidence rests on moves only if a case moves into or out of `strict`, and none does.
+
+So the finding is a **negative result** rather than a defect: the suspicion was reasonable, it was
+measured, and it did not hold. Two of the numbers in the first run of that probe were `NaN`, and they were
+the probe's rather than the corpus's — it expanded `post: { parameter: … }` without resolving the
+reference, which the guard does. That is worth recording because a probe is a second reader of the same
+files, and a second reader that skips a step measures its own bug with the same confidence it measures the
+corpus. The repair was to have the probe report `0 unresolved reading(s)` and `0 non-finite statistic(s)`
+as part of its own summary, so the failure it committed is a number it now prints.
+
+`probe-z-floor.test.ts` holds both halves: the reading is taken on every case in the corpus with no
+unresolved reference and no non-finite statistic, and `0 of them into or out of strict` is a **ratchet**.
+A probe that failed on the number it exists to report would be a gate wearing a probe's name — both
+floors answer different questions, so a case that ranks differently between them is a fact about the case
+— but "the corpus's evidence does not depend on the floor" is not that kind of fact, and it is exactly
+the kind that can stop being true silently when the next case is annotated.
 
 ### The ratchet, because the printed line is not one
 
@@ -380,4 +395,78 @@ the opposite of the displacement rule and the reason the two properties need dif
 | displacement | `strict 4, tie 2, same-component 2, none 26` | `strict 4, tie 2, same-component 2, none 30` |
 | difficulty | `L1 2 / L2 9 / L3 6 / L4 0`, outside the target | **`L1 2 / L2 9 / L3 6 / L4 2`, within the target** |
 | `core` | 191 / 4767 | **191 / 4772** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged — no `src/` file was touched |
+
+## Finding 280 — the probe that cleared the suspicion had no way to fail
+
+Finding 279 records a probe that answered a good question and published two `NaN`s as measurements. The
+`NaN` was found by reading the output, which is the weakest detector available and precisely the one this
+campaign exists to replace. So the probe was read the way every other script here is read, and what the
+readers said was worse than the bug: **it was the only script in `scripts/` whose only exit was success**,
+and it had no test at all.
+
+That is not a stylistic point. `scripts-are-classified.test.ts` files each script by class, and a class
+that prints a verdict has to own a failure site — otherwise its "verdict" is a line of text nothing can
+contradict. The file that answered *is the corpus's ranking a measurement or a constant?* could not itself
+be contradicted. The guard reported `[ "probe-z-floor.mjs" ]` in its `missing` list, which means the
+previous round was caught by the round after it, and that is the correct order for a campaign that keeps
+finding claims nothing reads.
+
+### The repair is one exit, not one per input
+
+The probe now has `fail(message)`, and an unreadable input is a refusal rather than a stack trace:
+
+```
+function fail(message) {
+  console.error(`probe-z-floor: ${message}`);
+  process.exit(1);
+}
+```
+
+Everything that reads a file goes through `readJson(path, what)`, which names the path and the OS message
+and then refuses. The point of routing them all through one function is that the inventory has **one** site
+to prove instead of one per input, and a site is only worth having if something aims at it.
+
+### What a probe is exempt from, stated as a distinction rather than a habit
+
+The inventory now carries **89 sites across 47 scripts**, 88 of them carried across the re-derivation by
+fingerprint rather than by line, and the new one is `proved` by `probe-z-floor.test.ts`. That is the honest
+status, and the three older probes are `exempt` for the opposite reason:
+
+| script | status | why that status |
+| --- | --- | --- |
+| `probe-z-floor.mjs` | `proved` | the test drives **that path**: `--cases <empty dir>` exits 1 with `could not read the case index` |
+| `probe-m1-ceiling.mjs` | `exempt` | its exit is `process.exit(main())`, where `main()` decides from the ceiling it measured; a test on the line would restate the measurement |
+| `probe-type-misses.mjs` | `exempt` | the exit aggregates several per-type counts a test already reads directly |
+| `probe-denial-inventory.mjs` | `exempt` | same shape: the exit is computed from the inventory the test asserts on |
+
+The distinction is whether the site's condition is **the thing the test proves** or a **summary of it**. An
+input guard is a fact of its own and can be aimed at; an aggregate exit cannot, because the test already
+holds every number the aggregate is computed from.
+
+### The probe's own ratchet, and what it does not claim
+
+`probe-z-floor.test.ts` holds six tests: the reading is taken on every case in the corpus, every declared
+`{ parameter }` reference resolves, no statistic is non-finite, and **`0 of them into or out of strict`**.
+The last is a ratchet rather than a snapshot, because it is the only half of the probe's answer the
+corpus's evidence depends on: `same-component` moving between floors renames a *non*-displacement, while a
+move into or out of `strict` would mean the corpus's headline reading is the constant. The probe fails on
+neither — both floors answer different questions, so a case that ranks differently between them is a fact
+about the case — which is why the assertion lives in a test rather than in the probe's exit status.
+
+`gate-sites-are-proven.test.ts` rule 7 requires the pointer to be earned by two signals that must agree: a
+`DRIVES` declaration in the test file and a `spawnSync` argument list that reaches the script. The
+declaration is in `probe-z-floor.test.ts` beside the test, and the reconciliation is what keeps a
+`provedBy` from being a string that names a file which merely mentions the name in a comment — the exact
+defect rule 7 was written for.
+
+### Acceptance
+
+| gate | before | after |
+| --- | --- | --- |
+| gate sites | 88 across 46 scripts | **89 across 47 scripts**, 88 annotations carried, 0 unannotated |
+| `verify:gates-are-testable` | 46 gates, 46 caught | **47 gates, 47 caught** — `probe-z-floor.mjs` caught by 10 red tests in 2 of 3 naming files |
+| the probe's reading | `2 of 19 differ, 2 change kind` with `NaN` count unstated | **same reading, plus `0 of them into or out of strict`, `0 unresolved reading(s)`, `0 non-finite statistic(s)`** |
+| `core` | 191 / 4772 | **192 / 4778** (six new tests, one new file) |
+| repo | 195 / 4959 | **196 / 4965** |
 | coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged — no `src/` file was touched |

@@ -1,8 +1,8 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 59,
+  "scanned": 60,
   "excluded": {
-    "zero": 12,
+    "zero": 13,
     "indirect": 3,
     "multiline": 0
   },
@@ -487,6 +487,13 @@
       "diagnostic": "\\n${counts['form-variant']} form variant(s) found -- the scorer rejected an answer it should",
       "status": "exempt",
       "reason": "The largest probe in the tree, and its exit aggregates several per-type counts. `type-miss-probe.test.ts` runs it and reads those counts directly, so a test pinning this line would be checking a summary of facts the test already holds."
+    },
+    {
+      "script": "scripts/probe-z-floor.mjs",
+      "line": 79,
+      "diagnostic": "probe-z-floor: ${message}",
+      "status": "proved",
+      "provedBy": "packages/core/test/probe-z-floor.test.ts"
     },
     {
       "script": "scripts/reconcile-readings.mjs",

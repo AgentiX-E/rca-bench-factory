@@ -1329,7 +1329,7 @@ for the wrong reason.
 
 **A suspicion, measured and cleared.** Two cases with zero-baseline counters raised the question
 whether `zScore`'s `1e-6` floor was deciding rankings — a statistic that is `value / 1e-6` is an
-implementation constant wearing a measurement's name. A probe recomputed all seventeen rankings with a
+implementation constant wearing a measurement's name. A probe recomputed all nineteen rankings with a
 relative floor of one percent and **two changed order**, both between a component and its own pod, and
 neither case's `strict` classification moved. The negative result is in the audit (finding 279) with
 the probe's own first-run `NaN`s, which were the probe's rather than the corpus's.
@@ -1369,3 +1369,58 @@ still not detectable statically, and the witness would be trace parent/child spa
 carry no case, because this round spent both of its cases on the ladder; the single unattributed red of
 v2.97 has not recurred; and upstream's loader still refuses a system it does not know, while our own
 two baselines now rank nineteen cases over twenty-two to twenty-four candidates.
+
+## v3.06 — the probe that cleared the suspicion was the one script that could not fail
+
+**What the readers said.** `probe-z-floor.mjs` shipped last round with an answer and no way to disagree
+with it: it was the only script under `scripts/` whose only exit was success, and it had no test at all.
+`scripts-are-classified.test.ts` files a script by class and refuses a verdict from a file that owns no
+failure site, so the round before was caught by the round after — `[ "probe-z-floor.mjs" ]` in its
+`missing` list. The probe's own bug from last round makes the point rather than the exception: two
+`NaN`s were published as measurements and were found by reading the output, which is the weakest
+detector available and precisely the one this campaign exists to retire.
+
+**One exit, not one per input.** `fail(message)` prints the reason and exits; `readJson(path, what)`
+names the path and the OS message and then refuses. Every file the probe reads goes through that one
+function, so the inventory has one site to prove and a test can aim at it: `--cases <empty dir>` exits
+1 with `could not read the case index`.
+
+**The inventory, and a distinction stated rather than assumed.** `derive-gate-sites.mjs` re-derived to
+**89 sites across 47 scripts** (13 zero, 3 indirect) and carried 88 annotations across by fingerprint
+rather than by line. The new site is `proved`; the three older probes stay `exempt` because their exit
+is `process.exit(main())` over a number a test already reads. The line between the two is whether the
+site's condition *is* what the test proves or a *summary* of it — an input guard is a fact of its own,
+an aggregate exit is not. Rule 7 then made the pointer earn itself twice: a `DRIVES` declaration beside
+the test and a `spawnSync` whose argument list reaches the script.
+
+**The probe got a ratchet of its own.** Six tests: a reading on every case in the corpus, every declared
+`{ parameter }` reference resolved, no non-finite statistic, and `0 of them into or out of strict`. The
+last is a ratchet because it is the only half of the probe's answer the corpus's evidence depends on —
+`same-component` moving between floors renames a *non*-displacement, while a move into or out of
+`strict` would mean the headline reading is the constant. The probe still exits 0 on either: both
+floors answer different questions, so a case whose rank depends on one is a fact about the case, and the
+assertion belongs in a test rather than in an exit status.
+
+**Acceptance.** `pnpm test` green at core **192 / 4778**, cli 4 / 187, repo **196 / 4965**; coverage
+unchanged at **99.97 / 99.75 / 100 / 99.97** (no `src/` file was touched); `verify:gates-are-testable`
+**47 of 47 caught**, the new gate by 10 red tests in 2 of 3 naming files, all 47 files restored
+byte-for-byte; `check-doc-counts` OK at 179 published counts over three scopes; audit 8 volumes,
+findings 1–280; `pnpm lint` green.
+
+### Left open
+
+- **The probe measures a build, and nothing says which one.** `[open: it imports packages/core/dist/index.js,
+  so a probe run by hand reports on whatever was last built; CI builds before it tests and a reader does
+  not, so the two can disagree about code that is not in the tree]`
+- **Two cases carry a floor-dependent `same-component` label and the test does not count them.** `[open:
+  the assertion pins 0 into or out of strict; a third case whose non-displacement label moves between
+  floors would be printed on stderr and would leave the suite green]`
+- **Rule 7 is a file-level claim, measured as such.** `[open: it establishes that a test file has a path
+  to executing the script, not that any line inside it is reached; deleting the one test that drives the
+  refusal would leave the site `proved` on the strength of the other spawns in the same file]`
+
+Unchanged from the rounds before, and each still a limit rather than a task: the L4 share is 2 of 19 and
+the next two cases would spend it; both three-step chains end outside the system being measured; a
+counter at rank 1 is the floor rather than a localisation; RE3 emits no rows for the dispatcher case;
+eleven samples carry no case; the reversal between two entities of one kind is still not detectable
+statically; and upstream's loader still refuses a system it does not know.
