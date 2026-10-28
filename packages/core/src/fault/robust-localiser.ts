@@ -159,5 +159,6 @@ export function locateWithMedianShift(
     rankOfTruth: locatedRank(at === -1 ? undefined : ranking[at]!.shift, at),
     topK,
     candidateCount: ranking.length,
+    candidates: ranking.map((one) => ({ service: one.service, statistic: one.shift })),
   };
 }

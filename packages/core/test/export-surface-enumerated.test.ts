@@ -137,6 +137,7 @@ const ENUMERATED_MODULES = [
   'fault/four-layer.ts',
   'fault/difficulty.ts',
   'fault/background.ts',
+  'fault/displacement.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
@@ -933,6 +934,7 @@ const TESTED = [
   'resolveEntityRef',
   // fault/background.ts
   'BACKGROUND_SCHEMA',
+  'classifyDisplacement',
   'backgroundProblems',
   'backgroundSeries',
   'parseBackground',

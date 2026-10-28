@@ -178,6 +178,19 @@ candidate that sits inside its own output's length. A rank is only a rank if the
 moved: `locatedRank` reports `null` for a statistic of zero, so a service that was quietly listed is
 not a service a method found.
 
+Being *displaced* is likewise four different things (`classifyDisplacement`), and only the first is
+evidence that a corpus penalises a magnitude-based method:
+
+| kind | the candidate at rank 1 | counts? |
+|---|---|---|
+| `strict` | a different component, strictly louder than the answer | **yes** |
+| `tie` | a different component with the same statistic, winning on its name | no — a rename flips it |
+| `same-component` | an ancestor or descendant of the answer under `contains` / `hosts` | no — the pod under the answer is the answer at another resolution |
+| `none` | the answer is at rank 1, or absent from the ranking | no |
+
+`checkDiscrimination` requires at least one `strict` case in the corpus, and the guard prints the tally
+of all four.
+
 `GroundTruth` carries the answer key: `rootCauseEntityId`, `rootCauseComponent`,
 `rootCauseReason`, optional `rootCauseIndicators`, a step-wise `causalChain`
 (`CausalStep[]`), `evidenceCheckpoints` (`EvidenceCheckpoint[]`) and `remediation`.

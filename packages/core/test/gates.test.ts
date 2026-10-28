@@ -418,33 +418,35 @@ describe('whether the corpus can fail a method that returns the loudest componen
   // A corpus whose every answer is the largest excursion in its window scores 100% for the dumbest
   // possible localiser, and reports that as a measurement of localisation. The rule is corpus-level
   // because "is there at least one case that displaces the answer" is not a property of any case.
-  const run = (caseId: string, rank: number | null): BaselineOutcome => ({
-    caseId,
-    method: 'peak-z',
-    rankOfTruth: rank,
-    topK: 3,
-    candidateCount: 19,
+  //
+  // It takes the *classification* rather than the ranks: a rank above 1 can be a strictly louder
+  // competitor, a tie broken by name, or a pod outranking its own service, and only the first is
+  // evidence (`classifyDisplacement`, tested in `displacement.test.ts`).
+  const kinds = (...all: Array<'strict' | 'tie' | 'same-component' | 'none'>) =>
+    all.map((kind, index) => ({ caseId: `case-${String(index)}`, kind }));
+
+  it('accepts a corpus with one case displaced by a strictly louder component', () => {
+    expect(checkDiscrimination(kinds('none', 'strict')).violations).toEqual([]);
   });
 
-  it('accepts a corpus with one case that displaces the answer', () => {
-    expect(checkDiscrimination([run('a', 1), run('b', 2)]).violations).toEqual([]);
-  });
-
-  it('refuses a corpus where every run places the answer first', () => {
-    const result = checkDiscrimination([run('a', 1), run('b', 1), run('c', 1)]);
+  it('refuses a corpus whose displacements are all ties or its own parts', () => {
+    // The state the corpus was in before the classification existed: three cases read as displaced,
+    // and only one of them penalises a magnitude-based method.
+    const result = checkDiscrimination(kinds('tie', 'same-component', 'none'));
     expect(result.violations).toEqual([
       expect.objectContaining({
         code: 'NO_DISPLACEMENT',
-        message: 'every one of 3 baseline run(s) places the answer at rank 1, so returning the largest excursion scores 100%',
+        message:
+          'no case places a strictly louder, separate component above its answer (tie 1, same-component 1, none 1), ' +
+          'so returning the largest excursion is never wrong',
       }),
     ]);
   });
 
   it('says nothing when there is nothing to say', () => {
-    // No runs at all, and runs that located nothing, are both states the solvability rule owns.
-    // Reporting them here as well would be the same defect twice under a second name.
+    // No cases at all is a state the corpus guard refuses elsewhere; reporting it here as well would
+    // be the same defect under a second name.
     expect(checkDiscrimination([]).violations).toEqual([]);
-    expect(checkDiscrimination([run('a', null), run('b', null)]).violations).toEqual([]);
   });
 });
 

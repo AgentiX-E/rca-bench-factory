@@ -141,5 +141,6 @@ export function locateWithPeakZScore(
     rankOfTruth: locatedRank(at === -1 ? undefined : ranking[at]!.peakZ, at),
     topK,
     candidateCount: ranking.length,
+    candidates: ranking.map((one) => ({ service: one.service, statistic: one.peakZ })),
   };
 }

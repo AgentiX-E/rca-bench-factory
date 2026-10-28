@@ -1,3 +1,4 @@
+import type { DisplacementReading, RankedCandidate } from '../fault/displacement.js';
 import type {
   EntityGraph,
   FaultCase,
@@ -583,6 +584,12 @@ export interface BaselineOutcome {
    * for every answer that appeared at all and G4's top-K claim could not be failed by any input.
    */
   candidateCount: number;
+  /**
+   * The ranking itself, so a caller can ask *why* the answer is not first without re-running the
+   * method. Optional because a hand-built outcome in a test has no ranking to show, and a gate that
+   * required one would make every such test construct machinery it is not about.
+   */
+  candidates?: RankedCandidate[];
 }
 
 /**
@@ -723,20 +730,29 @@ export function checkDifficultyDistribution(bundle: IrBundle, options: G4Options
  * background telemetry widened the rankings, and one that reads as "the corpus tests detection".
  *
  * The rule is corpus-level because the property is: no single case can be wrong for having a loud
- * answer. What it asks is that at least one run somewhere be displaced, so that a threshold-based
- * method has one case it must get wrong. It does not require the displacement to be deliberate -- a
- * tie broken by name satisfies it -- which is a weakness stated rather than hidden: the corpus's own
- * record says which case was built for it, and this rule only keeps the property from disappearing.
+ * answer. What it asks is that at least one case be displaced by a **strictly louder, separate
+ * component** (`classifyDisplacement`), so that a threshold-based method has one case it must get
+ * wrong and gets wrong deterministically.
+ *
+ * The earlier version of this rule counted any rank above 1, which accepted three different things
+ * as one: a strict displacement, a tie broken by name, and a candidate that is a part of the answer
+ * (a pod outranking its service). Only the first is evidence -- the second flips on a rename and the
+ * third is not a miss at all -- so the classification is now the gate's input rather than its
+ * footnote. The count that survives is smaller, and the number a reader sees is the honest one.
  */
-export function checkDiscrimination(outcomes: BaselineOutcome[]): GateResult {
+export function checkDiscrimination(readings: DisplacementReading[]): GateResult {
   const v: GateViolation[] = [];
-  const located = outcomes.filter((o) => o.rankOfTruth !== null);
-  if (located.length > 0 && located.every((o) => o.rankOfTruth === 1)) {
+  if (readings.length > 0 && !readings.some((one) => one.kind === 'strict')) {
+    const tally = new Map<string, number>();
+    for (const one of readings) tally.set(one.kind, (tally.get(one.kind) ?? 0) + 1);
+    const parts = ['strict', 'tie', 'same-component', 'none']
+      .filter((kind) => tally.has(kind))
+      .map((kind) => `${kind} ${String(tally.get(kind))}`);
     v.push({
       code: 'NO_DISPLACEMENT',
       message:
-        `every one of ${String(located.length)} baseline run(s) places the answer at rank 1, so ` +
-        'returning the largest excursion scores 100%',
+        `no case places a strictly louder, separate component above its answer (${parts.join(', ')}), ` +
+        'so returning the largest excursion is never wrong',
     });
   }
   return gate('G4', v);

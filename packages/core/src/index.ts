@@ -776,6 +776,11 @@ export {
   parseBackground,
 } from './fault/background.js';
 export type { BackgroundDeclaration, BackgroundSeries } from './fault/background.js';
+
+// Why the answer is not at rank 1, when it is not: a louder component, a tie broken by name, or a
+// candidate that is a part of the answer. Only the first is evidence a benchmark can rest on.
+export { classifyDisplacement } from './fault/displacement.js';
+export type { DisplacementKind, DisplacementReading, RankedCandidate } from './fault/displacement.js';
 export type {
   DanglingEvidenceRef,
   FourLayerReading,

@@ -83,13 +83,17 @@ describe('the ranking is built from the series, not from the answer key', () => 
 
   it('reports the true component as rank 1, with the method named', () => {
     const outcome = locateWithPeakZScore(BASE, signals);
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       caseId: 'history-cart-network-delay',
       method: PEAK_Z_METHOD,
       rankOfTruth: 1,
       topK: 3,
       candidateCount: 2,
     });
+    // The ranking travels with the outcome, so a caller can ask *why* the answer is not first
+    // (`classifyDisplacement`) without running the method a second time. Two computations of the
+    // same numbers is how two parsers end up disagreeing.
+    expect(outcome.candidates?.map((one) => one.service)).toEqual(['cart-service', 'inventory-service']);
   });
 });
 

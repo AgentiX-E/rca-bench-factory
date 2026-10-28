@@ -113,13 +113,17 @@ describe('the shift is a property of the series, not of the answer key', () => {
     // The name is what tells a later reader which run produced a rank, and the two methods must not
     // share one: an outcome attributed to the wrong baseline would make G4's count of solvers a
     // count of the same solver twice.
-    expect(locateWithMedianShift(BASE, signals)).toEqual({
+    expect(locateWithMedianShift(BASE, signals)).toMatchObject({
       caseId: 'history-cart-network-delay',
       method: ROBUST_SHIFT_METHOD,
       rankOfTruth: 1,
       topK: 3,
       candidateCount: 2,
     });
+    expect(locateWithMedianShift(BASE, signals).candidates?.map((one) => one.service)).toEqual([
+      'cart-service',
+      'inventory-service',
+    ]);
     expect(ROBUST_SHIFT_METHOD).not.toBe(PEAK_Z_METHOD);
   });
 });

@@ -2791,3 +2791,89 @@ regression in this case.
 Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
 compound units are compared structurally; a chain's first step need not be the root cause; an absence
 of logs cannot be a checkpoint.
+
+## v3.03 — three cases were displaced, one of them was evidence
+
+**What was open.** v3.02 shipped `checkDiscrimination` with a weakness it stated about itself: a tie
+broken by name satisfies it. The corpus reported three displaced cases; this round replaced "is the
+answer at rank 1" with a classification, and the number fell to one.
+
+**What the three were.**
+
+| case | rank 1 | what a method returning it has done |
+| --- | --- | --- |
+| `history-checkout-cpu-saturation` | `checkout-api-0` (pod) | named the replica that was throttled |
+| `history-dependency-upstream-5xx-pricing` | `pricing-service` | separated nothing — both move 60 %, the order is a sort |
+| `history-middleware-replica-lag-analytics` | `orders-db` | returned the healthy primary |
+
+Only the third penalises a magnitude-based method deterministically. The first is not a miss at all
+(the pod under the answer is the answer at another resolution); the second flips on a rename.
+
+**The classification.** `classifyDisplacement({graph, case, ranking})` returns `strict`, `tie`,
+`same-component` or `none`, and the gate now requires at least one `strict`. Two details carry the
+judgement: **containment is walked one way** (a pod under its service is the same component; two
+replicas are siblings and the wrong replica is a miss — the first draft walked it both ways and merged
+them), and **equality is not strictness** (a tie means the method's own number could not separate the
+two).
+
+**The honesty cost, immediately visible.**
+
+```
+before   the answer is displaced in 3 case(s)
+after    strict 2, tie 2, same-component 2, none 26 of 32 baseline run(s)
+         -- strictly displaced in 1 case(s) (history-middleware-replica-lag-analytics)
+```
+
+**What it broke, and why the breakage was correct.** Every single-case fixture corpus in
+`check-fault-cases.test.ts` became a non-corpus: the checkout fixture is `same-component`, so a corpus
+of one has no strict displacement, and the guard refused it inside tests about series declarations,
+parameter references and G3. The repair is in the fixture, not the rule: `corpus()` appends one series
+on `cart-service` (a component the case does not answer with and that does not contain it) jumping
+from zero to 500, quoting a sentence the case's text carries. Three tests turn it off, each with a
+line saying its subject is a different refusal.
+
+**A dead branch, written and deleted in the same round.** The first version ended with three arms and
+the third (`top < answer → none`) was unreachable from every caller, because the ranking is the
+method's own output and its first entry is its largest. Coverage named it (`135-136`); the contract
+moved into the docstring and the arm went:
+
+```ts
+return top.statistic === answer.statistic ? { caseId, kind: 'tie' } : { caseId, kind: 'strict' };
+```
+
+**Mutation battery.** Containment not walked → 2 failed / 115. A tie counted as strict → 1 failed /
+81. The gate accepting any kind but `none` → 1 failed / 72. The guard classifying an empty ranking →
+`FAILED — 1 problem(s)`.
+
+**Acceptance.** `pnpm test` green at core **191 / 4766**, cli 4 / 187, repo **195 / 4953**; coverage
+99.97 / 99.75 / 100 / 99.97 with `displacement.ts` at 100 % on all four dimensions; `check-fault-cases`
+OK (16 of 30, 19–21 candidates wide, 0 of 48 comparable assertions failing); `docs:check` green; audit
+8 volumes, findings 1–277.
+
+### Left open
+
+- **Exactly one case displaces the answer by magnitude.** `[open: `strict 2` is one case seen by two
+  baselines; the rule needs one and the corpus has one, so a single edit could take the property away
+  and only a case-specific test would notice]`
+- **No case in the corpus is L4.** `[open: every chain is one or two steps, so `minL4Share` of 0.1
+  cannot be met by labelling; the report prints `L4 0` on every run]`
+- **Fourteen samples carry no case.** `[open: 16 of 30 annotated, one per round, and three consecutive
+  rounds have been spent on the measurement apparatus the annotations are judged by]`
+- **A reversal between two entities of one kind is not detectable statically.** `[open: this round
+  made direction matter more -- a `calls` edge pointing the wrong way changes which end a reader
+  blames -- and the kind table still cannot see it; the corpus would need a case with parent/child
+  spans before the check could be written]`
+- **One red run is unreproduced.** `[open: v2.98 refuted three hypotheses and every run since has been
+  green; this round's only reds named their failing test]`
+- **Upstream's baselines still refuse our data.** `[open: our own two baselines rank a sixteen-case
+  corpus over nineteen to twenty-one candidates; the upstream loader still selects a service-level
+  indicator from the path]`
+- **RE3's traces and logs are not read.** `[open: the ranking this round classifies is built from
+  metrics only, so a case whose answer emits no metric is unsolvable by construction and the corpus
+  has two such rows to think about before adding a third]`
+- **No aggregate tables.** `[open: the four kinds are printed rather than written to a file a
+  downstream method could read; `logts.csv`, `tracets_err.csv` and `tracets_lat.csv` remain unwritten]`
+
+Unchanged: a parameter's truth is still tied to the text only through the fault layer's quote;
+compound units are compared structurally; a chain's first step need not be the root cause; an absence
+of logs cannot be a checkpoint.

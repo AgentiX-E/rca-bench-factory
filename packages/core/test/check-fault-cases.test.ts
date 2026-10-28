@@ -96,6 +96,12 @@ function corpus(options: {
   index?: Record<string, unknown>;
   /** A derived-signals declaration to write beside the case, when the test needs one. */
   signals?: Record<string, unknown>;
+  /**
+   * Whether to add the fixture's loud competitor. Default true; a test whose subject is a *different*
+   * refusal turns it off, because a corpus that carries the competitor no longer fails the way the
+   * test is about to check (an empty series stops being empty, and a flat corpus stops being flat).
+   */
+  competitor?: boolean;
 }): string {
   const dir = workspace();
   const faultCase = JSON.parse(JSON.stringify(REAL_CASE)) as Record<string, unknown>;
@@ -122,7 +128,8 @@ function corpus(options: {
   };
   writeFileSync(join(dir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
   if (options.signals !== undefined) {
-    writeFileSync(join(dir, 'signals.json'), `${JSON.stringify(options.signals, null, 2)}\n`);
+    const declared = options.competitor === false ? options.signals : withLoudCompetitor(options.signals);
+    writeFileSync(join(dir, 'signals.json'), `${JSON.stringify(declared, null, 2)}\n`);
   }
   for (const file of options.extraFiles ?? []) writeFileSync(join(dir, file), '{}\n');
   writeFileSync(join(dir, 'background-telemetry.json'), `${JSON.stringify(background(graph), null, 2)}\n`);
@@ -151,6 +158,37 @@ function background(graph: Record<string, unknown>): Record<string, unknown> {
       value: 100 + index,
     })),
   };
+}
+
+/**
+ * The fixture's signals, plus one component that is louder than the case's own answer.
+ *
+ * A single-case corpus has to satisfy the corpus-level rule that a strictly louder, separate
+ * component outranks the answer (`checkDiscrimination`). Without this series the fixture is a corpus
+ * whose answer is the loudest thing -- or, for the checkout case, whose loudest thing is the pod
+ * under the answer, which the rule counts as the same component and therefore as no displacement at
+ * all. Every test in this file would then fail for a reason it is not about.
+ *
+ * `cart-service` because the case does not answer with it and it is not inside the answer; the
+ * quote is one the case's own text carries, so the series is derivable like every other.
+ */
+function withLoudCompetitor(signals: Record<string, unknown>): Record<string, unknown> {
+  const copy = JSON.parse(JSON.stringify(signals)) as Record<string, unknown> & {
+    series?: Array<Record<string, unknown>>;
+  };
+  copy.series = [
+    ...(copy.series ?? []),
+    {
+      service: 'cart-service',
+      metric: 'scratch_competitor',
+      unit: 'count',
+      baseline: 0,
+      post: 500,
+      quote: 'No error rate change in the downstream payment service',
+      why: 'the fixture\'s loud competitor, so a one-case corpus still has a component that outranks its answer',
+    },
+  ];
+  return copy;
 }
 
 /**
@@ -610,7 +648,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     for (const one of seriesOf(edited)) {
       one.post = one.baseline;
     }
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = run(['--cases', corpus({ signals: edited, competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('signals fail G3: no metric sustains |Z| >= 2 for 3 samples after injection');
   });
@@ -634,7 +672,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
   it('refuses an empty series', () => {
     const edited = signals();
     edited.series = [];
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = run(['--cases', corpus({ signals: edited, competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares an empty signal series');
   });
@@ -823,7 +861,9 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     // it (`checkout-api-0`, a different `service.name`) outranks the service. The case is still
     // refused for the reason the test is about; the number moved because a claim the expansion used
     // to invent -- a rate before the fault -- was removed.
-    const result = run(['--cases', corpus({ signals: spikeCase() })]);
+    // No competitor: this test is about the two solvers disagreeing, and a corpse-wide refusal for a
+    // second reason would make its numbers unreadable.
+    const result = run(['--cases', corpus({ signals: spikeCase(), competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
     expect(result.out).toContain('peak-z-by-service=2, median-shift-by-service=4');
@@ -1692,7 +1732,8 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
     const result = run(['--cases', oneCaseCorpus('history-cart-network-delay')]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
-      'the corpus fails G4: every one of 2 baseline run(s) places the answer at rank 1, so returning the largest excursion scores 100%',
+      'the corpus fails G4: no case places a strictly louder, separate component above its answer (none 2), ' +
+        'so returning the largest excursion is never wrong',
     );
   });
 
@@ -1701,7 +1742,7 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
     // replica's lag fortyfold, so both baselines return the healthy primary first.
     const result = run(['--cases', oneCaseCorpus('history-middleware-replica-lag-analytics')]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('the answer is displaced in 1 case(s) (history-middleware-replica-lag-analytics)');
+    expect(result.out).toContain('strictly displaced in 1 case(s) (history-middleware-replica-lag-analytics)');
   });
 });
 

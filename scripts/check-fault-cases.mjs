@@ -904,15 +904,20 @@ for (const entry of index.cases) {
       const ranks = outcomes.map((one) => `${one.method}=${one.rankOfTruth === null ? 'absent' : String(one.rankOfTruth)}`);
       problems.push(`'${caseId}' is not solvable by both baselines (${ranks.join(', ')}): ${violation.message}`);
     }
+    // Why the answer is not first, per run. `classifyDisplacement` separates a strictly louder
+    // competitor from a tie broken by name and from a candidate that is a part of the answer; only
+    // the first is evidence that the corpus penalises a magnitude-based method.
+    const displacements = outcomes.map((one) =>
+      core.classifyDisplacement({ graph: parsedGraph, case: parsedCase, ranking: one.candidates ?? [] }),
+    );
     localisation.push({
       caseId,
       candidates: Math.max(...outcomes.map((one) => one.candidateCount)),
       topK: Math.min(...outcomes.map((one) => one.topK)),
       ranks: outcomes.map((one) => one.rankOfTruth),
+      displacements: displacements.map((one) => one.kind),
     });
-    // The corpus-level question: can any run of any method be wrong about the loudest component?
-    // Asked once below, over every run, because it is a property of the set.
-    for (const one of outcomes) localisationRuns.push(one);
+    for (const one of displacements) localisationRuns.push(one);
     if (
       validity.violations.length === 0 &&
       signalStructure.violations.length === 0 &&
@@ -1044,11 +1049,18 @@ function logLocalisationReading() {
     .map(([key, count]) => `${key}: ${String(count)}`);
   // How many cases displace the answer: the ones a method that returns the largest excursion gets
   // wrong. Zero would mean the corpus tests detection, which is why the gate above refuses it.
-  const displaced = localisation.filter((one) => one.ranks.some((rank) => rank !== null && rank > 1));
+  const kindTally = new Map();
+  for (const one of localisationRuns) kindTally.set(one.kind, (kindTally.get(one.kind) ?? 0) + 1);
+  const kinds = ['strict', 'tie', 'same-component', 'none']
+    .map((kind) => `${kind} ${String(kindTally.get(kind) ?? 0)}`)
+    .join(', ');
+  // The cases a method that returns the largest excursion gets wrong *deterministically*: the ones
+  // where a separate component is strictly louder than the answer.
+  const displaced = localisation.filter((one) => one.displacements.includes('strict'));
   console.log(
     `check-fault-cases: localisation over ${String(localisation.length)} case(s) at top-${String(topK)}, ` +
       `rankings ${String(narrowest)}-${String(widest)} candidate(s) wide -- ${parts.join(', ')} of ` +
-      `${String(localisation.length * 2)} baseline run(s); the answer is displaced in ` +
+      `${String(localisation.length * 2)} baseline run(s) -- ${kinds}; strictly displaced in ` +
       `${String(displaced.length)} case(s) (${displaced.map((one) => one.caseId).join(', ') || 'none'})`,
   );
 }
