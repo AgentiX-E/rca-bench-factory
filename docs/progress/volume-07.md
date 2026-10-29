@@ -2092,7 +2092,7 @@ by the budget rather than prohibited.
 
 ---
 
-## v3.14 — the twenty-fourth case, and the four defects the round produced
+## v3.14 — the twenty-fourth case, and the five defects the round produced
 
 **Starting point.** The corpus was at 23 of 30, with seven samples unannotated and P1 untouched for two
 rounds. v3.13 closed with an instrument whose installation is now checked; v3.12 closed with the
@@ -2186,6 +2186,26 @@ three tests removed the file alone reports 77.77 and the run dies:
 `ERROR: Coverage for branches (77.77%) does not meet global threshold (95%)`. The `cli` package does not
 get `perFile`: one file at 100 in every dimension is a knob that cannot fail.
 
+### Defect five: the worker cap was a number about this machine (finding 297)
+
+The first push of this round came back red with **every one of the 4854 tests passing**. The stall
+gauge named two files at 55,182 ms and 54,136 ms against a 45,000 ms budget whose whole purpose is to
+stay under the worker bridge's 60,000 ms deadline. Neither file had anything to do with this round.
+
+| reading | the previous run (green) | the run that failed | after the repair |
+| --- | --- | --- | --- |
+| total test time | 316 s | 540 s | **243 s** |
+| `check-fault-cases.test.ts` | 23.0 s | 55.2 s | **22.1 s**, no longer one block |
+| `ingest-report.test.ts` | 23.5 s | 54.2 s | **19.1 s** |
+
+Two causes. A synchronous file's duration **is** a block: `check-fault-cases.test.ts` ran the guard 116
+times through `spawnSync`, so the file's whole life was one block -- it now awaits the child and reads
+`close` rather than `exit`. And `maxWorkers: 8` was chosen against memory on a 32-CPU box; a GitHub
+runner reports 4, so eight workers was 2x oversubscription and CPU-bound files paid for it. The cap is
+now `max(2, min(8, availableParallelism() - 1))`, which resolves to 8 here (local reading unchanged)
+and to 3 there. The cap's effect alone is the row that was not touched: `ingest-report.test.ts`
+54.2 s → 19.1 s.
+
 ### Readings
 
 | what | reading |
@@ -2198,7 +2218,8 @@ get `perFile`: one file at 100 in every dimension is a knob that cannot fail.
 | checkpoints | **84 of 84 resolve** (61 series, **3 derived** computed from 6 readings, 16 configuration, 7 log); **0 of 77** comparable assertions false; **7 of 7** log assertions hold |
 | suite counts | **+9 tests in `core`** (2 from the case's telemetry, 2 the probe, 3 the attribution rule, 2 the bound); no new file, since all four new tests live in files that existed. The status table in `volume-05.md` holds the absolutes |
 | coverage | **99.97 / 99.75 / 100 / 99.97** (statements / branches / functions / lines), now enforced **per file** -- the first measurement of the round read 99.68, because the new module was at 77.77 branches (finding 296) |
-| `docs:check` | see the commit's CI reading; audit 1–296, **293 findings**, largest `volume-03.md` at 279,893 of 280,000 |
+| `docs:check` | audit 1–297, **294 findings**, largest `volume-03.md` at 279,893 of 280,000 |
+| CI | **five jobs green** on the fourth push; the first three carried the corpus, the instruments and the cap, and the third is where the stall gauge was red with every test passing |
 
 ### Left open
 
@@ -2212,6 +2233,10 @@ get `perFile`: one file at 100 in every dimension is a knob that cannot fail.
   `[open: one message covers two repairs, and the second is a graph defect the message does not name]`
 - **`cli` still has no stall gauge**, the installation check names one package by hand, and 69 test files
   still spawn synchronously. Unchanged from v3.13. `[open: the property is measured in one package of two, and a third would inherit the silence]`
+- **A synchronous test file's duration is a single block, and 68 of them still are.** The stall budget
+  is a machine's reading either way: 45,000 ms comes from the bridge's 60,000 ms, not from measuring the
+  slowest file. `ingest-report.test.ts` still blocks for its whole duration and fits only because the
+  cap leaves it a CPU. `[open: one file converted, sixty-eight to go, and the budget is a margin rather than a measurement]`
 - **A group kill that fails says nothing.** `signalGroup` swallows `ESRCH`: if `kill(-pid)` runs before
   the child's `setsid` has taken effect, the forwarder re-raises into its own death and the step's children
   survive, and nothing records that the signal went nowhere. It is the one hypothesis finding 295 could not

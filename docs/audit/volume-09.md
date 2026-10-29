@@ -617,3 +617,77 @@ reader learns to skip.
 file whose every branch is reached by an import has 100% and proves nothing. And the reading in the
 v3.14 chapter of `volume-07` said `4845 tests` for a corpus that had just grown by a case -- the same
 carried number, four lines above the coverage row, found while correcting the one above it.
+
+---
+
+## Finding 297 — the worker cap was a number about this machine, and CI is not this machine
+
+The first push of this round came back red with every test passing:
+
+```
+FAIL  test/check-fault-cases.test.ts
+Error: this test file held the event loop for 55182 ms, past the 45000 ms budget.
+FAIL  test/ingest-report.test.ts
+Error: this test file held the event loop for 54136 ms, past the 45000 ms budget.
+
+ Test Files  2 failed | 193 passed (195)
+      Tests  4854 passed (4854)
+```
+
+The gauge is finding 292's, and it was not wrong: it exists to keep a worker able to answer the
+main process inside the bridge's 60,000 ms deadline, and 55 s is inside the margin it was built to
+defend. What it caught was a configuration that depended on which machine ran it.
+
+### The same suite, two runners
+
+| reading | the previous run (green) | the run that failed | after the repair |
+| --- | --- | --- | --- |
+| total test time | 316 s | 540 s | **243 s** |
+| `check-fault-cases.test.ts` | 23.0 s | **55.2 s** | **22.1 s**, and no longer one block |
+| `ingest-report.test.ts` | 23.5 s | **54.2 s** | **19.1 s** |
+| stall verdicts | none | 2 files over budget | none |
+| `core` | 195 files / 4854 | 195 files / 4854 (all passing) | 195 files / 4854 |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | never reached | 99.97 / 99.75 / 100 / 99.97 |
+
+Both files doubled while the suite as a whole went up by 1.7x, and neither had anything to do with
+this round's code. The two causes are different and each got its own repair.
+
+### Cause one: a synchronous file's duration *is* a block
+
+`check-fault-cases.test.ts` runs the guard **116 times**, once per defect, and every invocation is
+a node process. It used `spawnSync`, which was the obvious way to write it. A file that never returns
+to the event loop never gives the gauge a gap, so the file's whole duration was one block: 23 s on a
+fast runner, 55 s on a slow one. The claim the test makes has nothing to do with blocking -- it is
+about what the guard prints -- so the fix is to await the child instead of blocking on it, and to read
+`close` rather than `exit` so the output is drained before it is compared.
+
+This is the open item "69 files still spawn synchronously", arriving with a measurement. One file
+down, 68 to go, and the reason to convert the rest is now a CI failure rather than a preference.
+
+### Cause two: `maxWorkers: 8` is 2x oversubscription on a 4-CPU runner
+
+The cap was a flat 8, chosen against a measured memory budget on a 32-CPU box. A GitHub runner
+reports **4** CPUs, so eight workers meant every file competed with seven others for a third of a
+core, and CPU-bound files paid the most -- which is exactly and only the shape of the doubling above.
+
+The cap is now `Math.max(2, Math.min(8, availableParallelism() - 1))`: the machine's capacity, capped
+at the memory-driven 8, with one CPU left for the main process. On this box that still resolves to 8,
+so the local reading is unchanged; on a 4-CPU runner it resolves to 3. The measured effect of the cap
+alone is visible in the table: `ingest-report.test.ts`, which was not touched at all, went from 54.2 s
+to 19.1 s.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `check-fault-cases.test.ts` | `spawnSync`, file-long block | `await`ed child, longest block one invocation |
+| `maxWorkers` | `8` | `max(2, min(8, availableParallelism() - 1))` |
+| CI at the first push | 2 stall verdicts, job red | **five jobs green** |
+| the suite | 4854 tests | 4854 tests, unchanged |
+
+**What this does not fix.** `ingest-report.test.ts` still holds the loop for its whole duration -- its
+cost is 130,000 rows of parsing in this process, and it now fits because there is a CPU to run on, not
+because it yields. The stall budget is still 45,000 ms, a number taken from the bridge's 60,000 ms
+rather than from a measurement of the slowest file, and the honest statement about it is that it has
+more headroom today rather than that it is calibrated. And the 68 other files that spawn synchronously
+are still one bad runner away from the same verdict.
