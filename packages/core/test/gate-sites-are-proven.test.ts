@@ -114,24 +114,49 @@ import { afterAll, describe, expect, it } from 'vitest';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /**
- * The budget for a test that spawns the deriver.
+ * The budget for this file, applied once to the suite below.
  *
- * Stated rather than inherited, because the two tests below run a real `node`
- * process and vitest's five-second default is not a measurement of anything.
- * Each spawn was measured standalone at well under a second (`derive-gate-sites`
- * is a directory walk plus one file write), so this is an order-of-magnitude
- * bound on a hang, not a near-miss tuning.
+ * Stated rather than inherited, because vitest's five-second default is not a
+ * measurement of anything. Each spawn was measured standalone at well under a
+ * second (`derive-gate-sites` is a directory walk plus one file write), so this
+ * is an order-of-magnitude bound on a hang, not a near-miss tuning.
  *
- * This constant was **missing** on the first version of the dotfile test, which
- * passed the file as `timeout: RULE_TIMEOUT_MS` without declaring it. The suite
- * reported it as `ReferenceError: RULE_TIMEOUT_MS is not defined` at *collect*
- * time, so the whole `gate-sites-are-proven.test.ts` file failed as a suite and
- * took its other 28 tests with it -- the failure names one line and hides the
- * file. It was found by `measure-doc-counts.mjs`, which spawns `pnpm test` and
- * therefore ran the suite in a state a targeted `vitest run <file>` does not
- * reproduce. `timeout-budget.test.ts` reads this file too and did not catch it:
- * the reader scans for budgets, and a budget that is *missing* is not a value it
- * can see. That is a gap in the reader, recorded rather than fixed here.
+ * ## Why it is now applied to the suite and not to the test that needed it
+ *
+ * It used to be passed by hand at the one test that spawns the deriver, which
+ * left the file's other thirty-two tests on the default. CI run `40796343743`
+ * (commit `700f1cdd4`) reported three of them as `Test timed out in 5000ms`:
+ *
+ *     rule 6 · rejects a site that is both proved and exempt
+ *     rule 6 · reports the shipped tree as clean when run through the same function
+ *     rule 7 · accepts the shipped tree, so the rule is not merely strict
+ *
+ * Those three are exactly the ones that call `pointerRoot()` and validate all 89
+ * sites against it, and measured under v8 coverage they take 4 ms, 50 ms and
+ * 44 ms -- the whole file is 476 ms of test time. The next run of the same bytes
+ * (`29b4987d9`, documentation only) was green. A test that costs 50 ms and is
+ * reported at 5000 ms was not working for five seconds; the process it ran in was
+ * not being scheduled. That distinction is the whole argument: a stall belongs to
+ * the process, so a budget claimed per test is a budget claimed for the one test
+ * where the stall was noticed, and the next test written inherits the default.
+ *
+ * `timeout-budget.test.ts` now holds this row (`SUITE_BUDGET_MS`) and fails if
+ * this file goes back to per-test budgets, so the decision is asserted rather
+ * than remembered.
+ *
+ * ## The earlier defect this constant already carried
+ *
+ * It was **missing** on the first version of the dotfile test, which passed the
+ * file as `timeout: RULE_TIMEOUT_MS` without declaring it. The suite reported it
+ * as `ReferenceError: RULE_TIMEOUT_MS is not defined` at *collect* time, so the
+ * whole file failed as a suite and took its other 28 tests with it -- the failure
+ * names one line and hides the file. It was found by `measure-doc-counts.mjs`,
+ * which spawns `pnpm test` and therefore ran the suite in a state a targeted
+ * `vitest run <file>` does not reproduce. `timeout-budget.test.ts` reads this
+ * file too and did not catch it: the reader scans for budgets, and a budget that
+ * is *missing* is not a value it can see. That half of the gap is still open --
+ * a missing declaration is invisible to a reader that looks for declarations,
+ * and only a second input (the suite run itself) can see it.
  */
 const RULE_TIMEOUT_MS = 30_000;
 const INVENTORY = resolve(ROOT, 'golden-master', 'gate-sites.json');
@@ -462,7 +487,14 @@ function pointerRoot(): string {
   return dir;
 }
 
-describe('golden-master/gate-sites.json · the inventory is read, not just written', () => {
+// The options object is spelled on its own lines rather than in the tidy
+// `describe(name, { timeout }, fn)` one-liner, because the one-liner moves the
+// closing paren and every one of this suite's 480 lines one level to the right.
+// A diff that reindents the file to add a number is a diff nobody can read, and
+// the decision being recorded here is the number, not the layout.
+describe('golden-master/gate-sites.json · the inventory is read, not just written', {
+  timeout: RULE_TIMEOUT_MS,
+}, () => {
   describe('rule 1 · the committed file matches a fresh derivation', () => {
     it('is byte-identical to what the deriver produces now', () => {
       const fresh = spawnSync(process.execPath, [resolve(ROOT, 'scripts', 'derive-gate-sites.mjs'), '--stdout'], {

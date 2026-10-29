@@ -552,3 +552,87 @@ in an old file; it is about a class of sentence — *a count, a total or an excl
 corpus, written when the corpus was smaller* — and the class recurs within hours, in the same round, by
 the same hand. The only structural defence the log has found is the one applied twice above: move the
 number to where it is derived and refuse the prose form that carries it.
+
+## Finding 283 — the budget was claimed for the test where the stall was noticed
+
+CI run `40796343743`, commit `700f1cdd4`, one job red: three tests of
+`gate-sites-are-proven.test.ts`, each with `Test timed out in 5000ms`.
+
+| test | measured, under v8 coverage |
+| --- | --- |
+| `rule 6 · rejects a site that is both proved and exempt` | 4 ms |
+| `rule 6 · reports the shipped tree as clean when run through the same function` | 50 ms |
+| `rule 7 · accepts the shipped tree, so the rule is not merely strict` | 44 ms |
+
+The file is 476 ms of test time and 667 ms standalone. The next run of the same bytes — `29b4987d9`,
+which changed documentation and nothing else — was green. A test that costs 50 ms and is reported at
+5000 ms was not working for five seconds; the process it ran in was not being scheduled. That is the
+whole finding: **the verdict was a property of the machine, not of the code**, and the three tests
+named are exactly the three that call `pointerRoot()` and validate all 89 sites against it, which is
+the most expensive thing the file does — but at 50 ms, not at 5000.
+
+Nothing in the file's own budget could have prevented it, because of *where* the budget was written
+down. The file had already decided the default was too small: it declares `RULE_TIMEOUT_MS = 30_000`.
+It applied it to **one test of thirty-three** — the one that spawns the deriver — and left the other
+thirty-two on vitest's five-second default. A stall does not respect test boundaries, so a budget
+claimed per test is a budget claimed for the test where the stall happened to be noticed.
+
+The reader that owns this question could not see it, and its own header already says why in a
+different context: `timeout-budget.test.ts` holds a table of **per-file standalone costs**, and this
+file's cost is 667 ms, so the table is right to say nothing about it. The quantity that blew the
+budget was not the file's cost. The gap is not a missing row; it is a missing *unit* — the table
+measures files, the timeout applies to tests, and no row of per-file costs can express "this file
+decided 5000 was too small and then did not tell two thirds of itself".
+
+Two candidate mechanisms were measured rather than argued:
+
+| mechanism | verdict |
+| --- | --- |
+| `describe(name, { timeout }, fn)` | **chosen**. Verified that suite options cover nested suites: a 6 s sleep passes at 6007 ms and, inside a nested `describe`, at 6003 ms, while the same sleep outside any budgeted suite fails at 5005 ms |
+| `vi.setConfig({ testTimeout })` | **rejected, and the reader refuses to read it**. It mutates config that outlives the file inside a worker, so a file using it could raise the budget of files that never asked — a leak, and one that would silence a real timeout somewhere else |
+
+The fix is one suite option, and the decision is now held by a second arm in `timeout-budget.test.ts`
+(`SUITE_BUDGET_MS`) whose rows carry the measurement that justifies them. The arm's predicate is
+falsifiable in both directions: a suite budget stated as a named constant and as a literal are both
+read; a file that budgets only individual tests — the shape that failed — reads as 0 and fails the row;
+a budget inside a comment reads as 0. Without the last three, the row would pass for any file that
+mentioned a large number anywhere.
+
+One layout decision is recorded because it is a decision. The options object is spelled on its own
+lines rather than as `describe(name, { timeout }, fn)`, because the one-liner moves the closing paren
+and all 480 lines of the suite's body one level right. A diff that reindents a file in order to add a
+number is a diff nobody reads, and the decision being recorded is the number.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `gate-sites-are-proven.test.ts` | `30_000` applied to 1 test of 33 | **applied to the suite**, covering all 33 and any test added later |
+| the reader | three spellings of a budget, all per-test | **a fourth reading — the suite option — plus a table of files that must use it** |
+| the arm's falsifiability | — | per-test-only spelling returns 0, a commented budget returns 0, an undeclared name returns 0 |
+| `timeout-budget.test.ts` | 16 tests | **20**, four of them the new arm |
+| the suite | core 192 files / 4783 tests | core 192 / **4787**, cli 4 / 187, repo 196 / **4974** |
+| the stale figure in the reader's header | "given `RULE_TIMEOUT_MS = 60_000`" — the constant has been 30 000 | **corrected, and it now says the budget is applied to the suite** |
+
+**What this does not fix.** The other half of the same gap is still open and is now stated in the
+file's own comment: a budget that is *missing* is invisible to a reader that reads declarations. The
+`ReferenceError` this constant once caused was found by `measure-doc-counts.mjs` spawning `pnpm test`,
+not by any static arm. A gate that reads source can refuse a wrong budget and cannot see an absent one;
+only a second input — a run of the suite — can.
+
+### The same class, an hour later, in a different instrument
+
+Measuring this round's document counts spawned the suite twice and both runs died with
+`[vitest-worker]: Timeout calling "onTaskUpdate"` — every test green, no `FAIL` line, exit 1. The
+measurement script refused both, in the words it has for exactly this: *"a failed run has no number to
+publish"*. It is the third appearance of one mechanism in this log — a second full suite inside one job
+overruns the runner, not the tests — and it is why the script grew `--from`, which reads the JSON
+report the coverage step already wrote. The counts above were taken that way: `--from` on the report
+from the coverage run that had just passed, not from a third spawn.
+
+Two things follow, and only one of them is about vitest. The first is that a budget attached to a test
+cannot protect a *measurement*; what protects it is having a second reader of an artefact that already
+exists. The second is that both failures in this round were reported as "the suite is red" and neither
+was a test failing, so the sentence "the suite is red" is not a diagnosis — the exit code, the `FAIL`
+line, and the report's `status` field are three different pieces of evidence, and this round needed all
+three to say what had happened.

@@ -19,7 +19,9 @@ import { describe, expect, it } from 'vitest';
  * pass is over the default budget, so the test's verdict was a function of machine
  * load rather than of the code. Same defect F-43 fixed in
  * `gate-sites-are-proven.test.ts`, whose rule-7 corpus check timed out on CI at
- * 5000 ms and was given `RULE_TIMEOUT_MS = 60_000`.
+ * 5000 ms and was given a budget of its own -- `RULE_TIMEOUT_MS`, now `30_000` and
+ * now applied to that file's whole suite, for the reason the second arm below
+ * records.
  *
  * ## The first version of this file was wrong, in both directions
  *
@@ -82,6 +84,27 @@ import { describe, expect, it } from 'vitest';
  * would not have looked at it at all. The measurement is the arbiter, and the spawn
  * detector has been demoted to a supporting assertion that explains *why* the slow
  * files are slow.
+ *
+ * ## The file also has a second arm, and it exists because the first one lied
+ *
+ * Every measurement above is a **file-level** cost, and the table that holds them
+ * was silent about the failure that actually happened: CI run `40796343743`
+ * reported three tests of `gate-sites-are-proven.test.ts` at over 5000 ms, and the
+ * file's standalone cost is 667 ms. The tests cost 4 ms, 50 ms and 44 ms
+ * individually, under coverage, measured. They were not slow; the process they ran
+ * in was not being scheduled, and the same bytes passed on the next run.
+ *
+ * A table of per-file costs cannot see that, because the quantity that blew the
+ * budget was not the file's cost. What it *could* see, and did not, is where the
+ * file wrote the number down: `gate-sites-are-proven.test.ts` had already decided
+ * the default was too small -- it declares `30_000` -- and applied it to one test
+ * of thirty-three. The other thirty-two inherited the default, and a stall does
+ * not respect test boundaries.
+ *
+ * So the second arm (`SUITE_BUDGET_MS` below) is about the unit of the budget
+ * rather than its size: a file whose tests walk the whole shipped inventory states
+ * its budget once, on the suite. That is checkable, it is where the failure was,
+ * and its rows carry measurements so a future reader can disagree with them.
  */
 
 /**
@@ -255,6 +278,85 @@ function largestBudget(source: string): number {
   return values.length === 0 ? 0 : Math.max(...values);
 }
 
+/**
+ * The budget a file's *suite* states, in milliseconds, or 0 if it states none.
+ *
+ * ## Why a fourth reader, when the three above already find three spellings
+ *
+ * The unit of a budget is not the file, and it is not the test either -- it is
+ * whatever the process was doing when the clock ran out. `statedBudgets` reads
+ * the number a file writes down; this function reads *where* the file writes it,
+ * because a number applied to one test says nothing about the other thirty-two.
+ *
+ * The spellings this reader accepts are the ones vitest actually honours for a
+ * whole suite (`describe(name, { timeout }, fn)`, verified to apply to nested
+ * suites as well by running a six-second test under a nine-second `describe` and
+ * under no `describe` at all: 6007 ms and 6003 ms passed, 5005 ms failed). The
+ * value is returned with the identifier resolved if the file used one, because
+ * the row that consumes it compares against the default.
+ *
+ * `vi.setConfig({ testTimeout })` would also work and is deliberately **not**
+ * read: it mutates config that outlives the file in a worker, so a file that
+ * used it could raise the budget of files that never asked. A reader that
+ * accepted it would be blessing a leak.
+ */
+function suiteBudget(source: string): number {
+  // String literals are stripped to `""` by the scanner above, so the suite's
+  // name arrives as the empty literal and the options object follows it.
+  const code = stripCommentsAndStrings(source);
+  for (const m of code.matchAll(
+    /\b(?:describe|suite)\s*\(\s*(?:""|[^,]+?)\s*,\s*\{\s*timeout\s*:\s*([A-Za-z_$][\w$]*|[0-9][0-9_]*)/g,
+  )) {
+    const raw = m[1]!;
+    if (/^[0-9]/.test(raw)) return Number(raw.replace(/_/g, ''));
+    const named = new RegExp(`(?:const|let)\\s+${raw}\\s*=\\s*([0-9][0-9_]*)`).exec(code);
+    if (named === null) continue;
+    return Number(named[1]!.replace(/_/g, ''));
+  }
+  return 0;
+}
+
+/**
+ * Files whose tests walk the whole shipped inventory, and which therefore must
+ * carry their budget on the suite rather than on individual tests.
+ *
+ * ## The failure this table answers
+ *
+ * CI run `40796343743` (commit `700f1cdd4`) failed three tests in
+ * `gate-sites-are-proven.test.ts`, each with `Test timed out in 5000ms`:
+ *
+ *     rule 6 · rejects a site that is both proved and exempt
+ *     rule 6 · reports the shipped tree as clean when run through the same function
+ *     rule 7 · accepts the shipped tree, so the rule is not merely strict
+ *
+ * The three are exactly the three that call `pointerRoot()` and validate all 89
+ * sites against it. Measured standalone, with coverage on, they take **4 ms**,
+ * **50 ms** and **44 ms**; the whole file takes 476 ms of test time. The next run
+ * of the same bytes -- `29b4987d9`, which changed only documentation -- was green.
+ * A test that costs 50 ms and is reported at 5000 ms was not doing five seconds
+ * of work; the process it ran in was not being scheduled.
+ *
+ * That is why no row in `STANDALONE_MS` could have caught it: the trigger is not
+ * the file's cost, and a table of costs answers a question this failure does not
+ * ask. The file had *already decided* the default was too small -- it declares
+ * `RULE_TIMEOUT_MS = 30_000` -- and applied it to one test of thirty-three. A
+ * budget that is applied where a stall happened to be noticed protects that test
+ * and leaves the next one written on the default.
+ *
+ * ## What the row asserts
+ *
+ * A number, not a boolean, so the row is falsifiable: the suite budget must exist
+ * and must exceed the default. `measured` carries the number a future reader
+ * needs in order to disagree with the decision rather than re-derive it.
+ */
+const SUITE_BUDGET_MS: Readonly<Record<string, { measured: string }>> = {
+  'gate-sites-are-proven.test.ts': {
+    measured:
+      '4 / 50 / 44 ms per test and 476 ms per file standalone under v8 coverage; ' +
+      'all three reported over 5000 ms on CI 40796343743, green on 29b4987d9',
+  },
+};
+
 describe('the suite · a file whose cost reaches the default states a larger budget', () => {
   it('the measured table is not empty and every row names a real file', () => {
     // Two directions at once. A full table of rows for files that no longer exist
@@ -360,6 +462,45 @@ describe('the suite · a file whose cost reaches the default states a larger bud
     expect(STANDALONE_MS['timeout-budget.test.ts']).toBeUndefined();
     expect(MEASURED_UNDER_DEFAULT['timeout-budget.test.ts']).toBeUndefined();
     expect(spawnsAChild(testSource('timeout-budget.test.ts'))).toBe(false);
+  });
+});
+
+describe('the suite budget · a file that walks the inventory states one for the whole file', () => {
+  it('every row names a real file, a measurement, and a budget larger than the default', () => {
+    const rows = Object.entries(SUITE_BUDGET_MS);
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    for (const [file, row] of rows) {
+      expect(testSource(file).length, `${file} is listed but is empty`).toBeGreaterThan(0);
+      // A row with no measurement is an opinion with a filename attached. The
+      // length bound is crude on purpose: it refuses a shrug, not a style.
+      expect(row.measured.length, `${file}'s row states no measurement`).toBeGreaterThan(80);
+      const budget = suiteBudget(testSource(file));
+      expect(budget, `${file} states no suite budget, only per-test ones`).toBeGreaterThan(
+        VITEST_DEFAULT_MS,
+      );
+    }
+  });
+
+  it('reads a suite budget stated as a named constant, and as a literal', () => {
+    // Both spellings the shipped file could use. The named one is what the file
+    // uses, because the name is what its comment justifies.
+    expect(suiteBudget("const T_MS = 30_000;\ndescribe('x', { timeout: T_MS }, () => {});")).toBe(
+      30_000,
+    );
+    expect(suiteBudget("describe('x', { timeout: 30_000 }, () => {});")).toBe(30_000);
+  });
+
+  it('does not read a per-test budget as a suite budget', () => {
+    // The shape that failed on CI, as a fixture: a file that applies its budget
+    // test by test and leaves the rest on the default. If this returned a number,
+    // the row above would pass for a file that has the defect it exists to catch.
+    expect(suiteBudget("const T_MS = 30_000;\nit('x', { timeout: T_MS }, () => {});")).toBe(0);
+    expect(suiteBudget('it("x", async () => {}, 300_000);')).toBe(0);
+  });
+
+  it('does not read a budget out of a comment, and does not resolve an unknown name', () => {
+    expect(suiteBudget("// describe('x', { timeout: 30_000 }, () => {});\n")).toBe(0);
+    expect(suiteBudget("describe('x', { timeout: UNDECLARED_MS }, () => {});")).toBe(0);
   });
 });
 

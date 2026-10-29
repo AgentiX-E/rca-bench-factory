@@ -1525,3 +1525,79 @@ Unchanged from the rounds before, and each still a limit rather than a task: bot
 chains end outside the system; a counter at rank 1 is the floor rather than a localisation; RE3 emits
 no rows for the cache case; the reversal between two entities of one kind is still not detectable
 statically; and upstream's loader still refuses a system it does not know.
+
+## v3.08 — the budget was claimed for the test where the stall was noticed
+
+**What was at stake.** The round before ended with three commits pushed and CI green on the first and
+third of them. The second — `700f1cdd4`, a one-sentence correction to a case's description — was
+**red**: `build / typecheck / lint / coverage / mutation` failed three tests of
+`gate-sites-are-proven.test.ts`, each reported `Test timed out in 5000ms`. The commit after it changed
+documentation only and passed. A commit cannot fix a test by editing prose, so the red and the green
+describe one state of the code and two states of the machine, and the round cannot honestly call its
+work finished until it says which.
+
+**What the three tests cost.** Measured per test under v8 coverage, on the same tree:
+
+| test | measured | reported on CI |
+| --- | --- | --- |
+| `rule 6 · rejects a site that is both proved and exempt` | 4 ms | > 5000 ms |
+| `rule 6 · reports the shipped tree as clean when run through the same function` | 50 ms | > 5000 ms |
+| `rule 7 · accepts the shipped tree, so the rule is not merely strict` | 44 ms | > 5000 ms |
+
+The file is 476 ms of test time, 667 ms standalone. A 50 ms test reported at 5 s was not working; the
+process was not being scheduled. The three named tests are exactly the three that call `pointerRoot()`
+and validate all 89 sites — the most expensive thing the file does, and still 40× under the budget it
+was judged against.
+
+**Why the file's own budget did not cover them.** `RULE_TIMEOUT_MS = 30_000` already existed, declared
+with the sentence "vitest's five-second default is not a measurement of anything", and applied to
+**one test of thirty-three**. A stall belongs to the process; the budget had been claimed per test, so
+it protected the test where the stall had once been noticed and left thirty-two on the default.
+
+**Why the reader that owns the question could not see it.** `timeout-budget.test.ts` holds standalone
+cost per *file*. This file's cost is 667 ms, so the table correctly says nothing about it. The quantity
+that exceeded 5 s was neither the file's cost nor a plausible multiple of it — the gap is a missing
+**unit**, not a missing row: files are measured, tests time out.
+
+**The mechanism, measured rather than assumed.** A probe with a six-second sleep:
+
+| spelling | 6 s sleep | result |
+| --- | --- | --- |
+| `describe(name, { timeout: 9_000 }, fn)` | top level | **passes at 6007 ms** |
+| the same, nested inside another `describe` | nested | **passes at 6003 ms** |
+| no suite budget, per-test budget absent | control | **fails at 5005 ms** |
+
+`vi.setConfig({ testTimeout })` was rejected and the reader refuses to read it: it mutates config that
+outlives the file inside a worker, so one file could raise another's budget and silence a real timeout.
+
+**What now holds the decision.** A fourth reading in `timeout-budget.test.ts` — the suite option — plus
+a table (`SUITE_BUDGET_MS`) of files that must state their budget there, each row carrying the
+measurement that justifies it. The predicate is falsifiable in three ways it is tested on: the
+per-test-only spelling reads as 0, a budget inside a comment reads as 0, an undeclared name reads as 0.
+
+| gate | before | after |
+| --- | --- | --- |
+| `gate-sites-are-proven.test.ts` | `30_000` at 1 test of 33 | **at the suite**, covering all 33 and anything added later |
+| `timeout-budget.test.ts` | 3 readings, all per-test | **4 readings**, plus a table of files that must use the fourth |
+| the reader's header | "given `RULE_TIMEOUT_MS = 60_000`" — stale by half | **corrected**, and it now records why the budget moved to the suite |
+| `core` | 192 / 4783 | **192 / 4787** |
+| repo | 196 / 4970 | **196 / 4974** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | **unchanged** — the new readings are exercised in both directions |
+| audit | 8 volumes, findings 1–282 | **1–283** |
+
+### Left open
+
+- **A missing budget is still invisible to every static arm.** `[open: the ReferenceError this
+  constant once caused was found by measure-doc-counts.mjs spawning pnpm test, not by a reader; the
+  static arm can refuse a wrong number and cannot see an absent one]`
+- **Six other files apply their budget to some of their tests and not others.** `[open:
+  check-no-unsafe-shell 1 of 47, check-official-roundtrip 1 of 57, check-user-guide 0 of 14,
+  ingest-report 0 of 16, publish-battery-report 0 of 6, typecheck-entrypoint 0 of 4 — each justified
+  in place by what its heavy test does, and none of them walked, so none is in the table]`
+- **The trigger is not measurable from the repository.** `[open: the stall is a property of the
+  runner, so the evidence for this finding is one red run and one green run of the same bytes rather
+  than a profile the tree can reproduce]`
+
+Unchanged from the round before, and each still a limit rather than a task: ten samples remain and top
+out at two hops; the third hop's reader is implied rather than quoted; the new case's answer sits at
+rank 1 on a zero baseline; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired annotation.
