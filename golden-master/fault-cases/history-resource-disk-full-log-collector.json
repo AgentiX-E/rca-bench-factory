@@ -1,0 +1,157 @@
+{
+  "caseId": "history-resource-disk-full-log-collector",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-21T09:41:00.000Z",
+  "window": {
+    "start": "2026-10-21T09:21:00.000Z",
+    "end": "2026-10-21T10:09:00.000Z"
+  },
+  "fault": {
+    "type": "disk-full",
+    "category": "resource",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "log-collector",
+      "volumePath": "/var/lib/collector",
+      "retentionGapHours": {
+        "value": 31,
+        "unit": "h"
+      },
+      "dataVolumeBytes": {
+        "value": 21474836480,
+        "unit": "By"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/log-collector-pruner",
+    "rootCauseComponent": "log-collector",
+    "rootCauseReason": "The collector writes a segment every few seconds and keeps twenty-four hours of them, and the pruner is what makes that a bound rather than a hope. It is scheduled hourly against the volume it was given, and it has not completed a run since the pod was moved: its last success is thirty-one hours old, so every segment written in that time is still on the volume, including the ones the policy says should have been deleted eleven hours ago. The volume then filled, and the write path is where a full volume becomes an incident -- each segment write returns ENOSPC, the agent drops the batch it cannot persist, and the service stops accepting writes at 09:41. The smaller node is not the fault: twenty gigabytes is a reasonable volume for a day of segments at this rate, and the same twenty gigabytes would have held if the pruner had run. Nor is the twenty-four-hour window the fault, which is why it is a checkpoint rather than a suspect: the window is the policy the pruner was written to enforce, and the pruner is what stopped enforcing it. What broke is that the schedule lives with the pod and nobody checked that it survived the move -- the reschedule is when the runs stopped, and nothing was watching the age of the last one.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "data_volume_used_percent",
+        "description": "the collector's data volume climbs from 61 to 100 percent and stays there, which is the capacity the writes need rather than a trend toward it"
+      },
+      {
+        "type": "metric",
+        "ref": "retention_runs_total",
+        "description": "the pruner's completion counter is flat at 744 for the whole window, which is the reading that says nothing is reclaiming space -- a level would only say how much is left"
+      },
+      {
+        "type": "metric",
+        "ref": "write_failure_ratio",
+        "description": "every write after the volume fills fails, which is what separates an exhausted volume from a slow one"
+      },
+      {
+        "type": "metric",
+        "ref": "dropped_batch_ratio",
+        "description": "the agent drops 37 percent of the batches it accepts, so the impact is lost log lines rather than only latency"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/log-collector-pruner",
+        "toEntityId": "pod:synthetic-storefront/log-collector-0",
+        "mechanism": "the pruner runs hourly against the pod's data volume and has not completed a run since the pod was moved, so the segments it should delete past the twenty-four-hour window stay where they are and the volume it shares with the writer keeps every byte written since",
+        "evidenceRefs": [
+          "cp-pruner-stalled",
+          "cp-retention-gap",
+          "cp-data-volume",
+          "cp-volume-full"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/log-collector-0",
+        "toEntityId": "service:synthetic-storefront/log-collector",
+        "mechanism": "the volume reaches 100 percent of its twenty gigabytes, every segment write then returns ENOSPC, and the agent drops the batches it cannot persist, so the service stops accepting writes at 09:41",
+        "evidenceRefs": [
+          "cp-volume-full",
+          "cp-enospc-log",
+          "cp-writes-fail"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-volume-full",
+        "entityRef": "pod:synthetic-storefront/log-collector-0",
+        "signalRef": "data_volume_used_percent",
+        "comparator": "==",
+        "value": 100,
+        "unit": "%",
+        "description": "the volume is at its ceiling rather than near it, which is what produces ENOSPC instead of a slowdown"
+      },
+      {
+        "checkpointId": "cp-pruner-stalled",
+        "entityRef": "pod:synthetic-storefront/log-collector-0",
+        "signalKind": "derived",
+        "expression": "retention_runs_total.post - retention_runs_total.baseline",
+        "comparator": "==",
+        "value": 0,
+        "unit": "count",
+        "description": "the pruner's completion counter moved zero times across the window while the volume climbed past it, which is what a stopped job looks like from outside -- not an error and not a spike, an absence"
+      },
+      {
+        "checkpointId": "cp-retention-gap",
+        "entityRef": "pod:synthetic-storefront/log-collector-0",
+        "signalRef": "retentionGapHours",
+        "signalKind": "configuration",
+        "comparator": ">=",
+        "value": 24,
+        "unit": "h",
+        "description": "the last completed run is thirty-one hours old against a twenty-four-hour window, so the policy is being violated by seven hours; the literal 24 is the window, stated once, and the gap is the measurement"
+      },
+      {
+        "checkpointId": "cp-data-volume",
+        "entityRef": "node:synthetic-storefront/log-node-2",
+        "signalRef": "dataVolumeBytes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 21474836480,
+        "unit": "By",
+        "description": "the volume the pod now writes to is twenty gigabytes, so a day of segments is a larger share of it than it was on the node the pod left; it is the reason the fullness arrived this week rather than next"
+      },
+      {
+        "checkpointId": "cp-enospc-log",
+        "entityRef": "pod:synthetic-storefront/log-collector-0",
+        "signalRef": "agent-enospc",
+        "signalKind": "log",
+        "comparator": "contains",
+        "value": "no space left on device",
+        "description": "the write path says which errno it failed on, which is the difference between a full volume and a read-only mount"
+      },
+      {
+        "checkpointId": "cp-writes-fail",
+        "entityRef": "service:synthetic-storefront/log-collector",
+        "signalRef": "write_failure_ratio",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "every write failed after 09:41, which is the outcome the ticket reports"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "run the pruner when the volume crosses a threshold rather than on a schedule that lives with the pod, so a move cannot silently stop the only thing reclaiming space",
+        "target": "container:synthetic-storefront/log-collector-pruner"
+      },
+      {
+        "step": 2,
+        "action": "alert on the age of the last completed pruner run rather than on volume usage, because usage only speaks once the space is gone and the age speaks while there is still room",
+        "target": "pod:synthetic-storefront/log-collector-0"
+      }
+    ]
+  },
+  "query": "The log collector stopped accepting writes at 09:41 with /var/lib/collector at 100 percent, on a node it had been moved to a few days earlier. Nothing had changed about what the collector writes or how much of it arrives. What stopped reclaiming space, and why did the move matter?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

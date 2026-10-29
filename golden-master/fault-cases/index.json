@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 23,
+  "min": 24,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -690,6 +690,36 @@
           "layer": "evidence",
           "quote": "the feed's own status page shows the change deployed at 09:00",
           "why": "the reading that dates the change to the feed rather than to the settlement: the two hours the totals disagreed are exactly the two hours the new shape was live"
+        }
+      ]
+    },
+    {
+      "caseId": "history-resource-disk-full-log-collector",
+      "sampleId": "resource-disk-full-log-collector",
+      "case": "history-resource-disk-full-log-collector.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-resource-disk-full-log-collector.signals.json",
+      "why": "Annotated from the incident text of `resource-disk-full-log-collector`. It is the corpus's first `disk-full` and its first whose decisive reading is a *counter that did not move* rather than a level compared with a ceiling: the derived checkpoint `retention_runs_total.post - retention_runs_total.baseline == 0` says the job that was supposed to reclaim the volume ran zero times across the window, which no capacity reading can say. The first draft used `retention_age_hours >= 24 h` and was rejected because that threshold *is* the policy -- proving the policy with the policy is circular, and the reclamation count is the only reading that still separates 'the job is behind' from 'the job is not running'. The entity layer is the pruner container because that is what stopped; the pod is where the volume filled and the service is what stopped accepting writes, so the chain is pruner -> pod -> service and a reader who stays on the service reports the symptom. The node is cited as a configuration checkpoint rather than as a chain step: twenty gigabytes is a reasonable volume, and it is the reason the fullness arrived this week rather than a cause. Two components are deliberately *not* implicated and the checkpoints say so -- the retention window is the policy the job enforces, and the node's size is the container the policy was supposed to fit into.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The log collector pod stopped accepting writes at 09:41.",
+          "why": "the pod, the time and the fact that it is a write path: the entity layer names the pod the chain passes through and dates the symptom"
+        },
+        {
+          "layer": "fault",
+          "quote": "/var/lib/collector is at 100% usage",
+          "why": "the observed mechanism, which is what makes this `resource` and `disk-full` rather than a slow-write fault: the path is full, not slow"
+        },
+        {
+          "layer": "process",
+          "quote": "the retention job that should trim segments older than 24h has not run since the collector was rescheduled onto a node with a smaller data volume",
+          "why": "the two facts the chain orders: a job that stopped, and the move it stopped at -- the sentence is why the chain starts at the pruner and cites the node rather than starting at the node"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Writes now fail with ENOSPC and the agent is dropping batches.",
+          "why": "the errno and the impact: the checkpoint holds `no space left on device` from the agent line, and the dropped-batch ratio is why the ticket is about lost lines rather than latency"
         }
       ]
     }

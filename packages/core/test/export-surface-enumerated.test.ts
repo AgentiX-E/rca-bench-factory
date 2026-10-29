@@ -138,6 +138,7 @@ const ENUMERATED_MODULES = [
   'fault/difficulty.ts',
   'fault/background.ts',
   'fault/displacement.ts',
+  'fault/log-attribution.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
@@ -930,14 +931,18 @@ const TESTED = [
   'findImplausibleEdgeDirections',
   'findInvalidRelations',
   'indexGraph',
+  'isContainedIn',
   'normalizeAliases',
   'resolveEntityRef',
+  'sameComponent',
   // fault/background.ts
   'BACKGROUND_SCHEMA',
   'classifyDisplacement',
   'backgroundProblems',
   'backgroundSeries',
   'parseBackground',
+  // fault/log-attribution.ts -- whose line a log checkpoint cites, joined to the entity it names.
+  'checkLogAttribution',
   // fault/difficulty.ts
   'difficultyFloor',
   'findDifficultyShortfalls',

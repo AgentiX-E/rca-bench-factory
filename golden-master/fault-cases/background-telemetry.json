@@ -93,6 +93,12 @@
       "value": 48
     },
     {
+      "service": "log-collector",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 180
+    },
+    {
       "service": "media-transcoder",
       "metric": "request_rate",
       "unit": "rps",

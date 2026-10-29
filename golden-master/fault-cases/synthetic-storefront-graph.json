@@ -430,6 +430,44 @@
       "kind": "container",
       "name": "currency-feed-app",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/log-collector",
+      "kind": "service",
+      "name": "log-collector",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/log-collector-0",
+      "kind": "pod",
+      "name": "log-collector-0",
+      "aliases": [
+        "the log collector pod"
+      ]
+    },
+    {
+      "entityId": "container:synthetic-storefront/log-collector-agent",
+      "kind": "container",
+      "name": "log-collector-agent",
+      "aliases": [
+        "the collector write agent"
+      ]
+    },
+    {
+      "entityId": "container:synthetic-storefront/log-collector-pruner",
+      "kind": "container",
+      "name": "log-collector-pruner",
+      "aliases": [
+        "the segment pruner"
+      ]
+    },
+    {
+      "entityId": "node:synthetic-storefront/log-node-2",
+      "kind": "node",
+      "name": "log-node-2",
+      "aliases": [
+        "the smaller node"
+      ]
     }
   ],
   "edges": [
@@ -662,6 +700,26 @@
       "from": "service:synthetic-storefront/settlement",
       "to": "service:synthetic-storefront/currency-feed",
       "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/log-collector",
+      "to": "pod:synthetic-storefront/log-collector-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/log-collector-0",
+      "to": "container:synthetic-storefront/log-collector-agent",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/log-collector-0",
+      "to": "container:synthetic-storefront/log-collector-pruner",
+      "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/log-node-2",
+      "to": "pod:synthetic-storefront/log-collector-0",
+      "relation": "hosts"
     }
   ]
 }

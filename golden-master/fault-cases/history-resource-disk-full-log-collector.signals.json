@@ -1,0 +1,57 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-resource-disk-full-log-collector",
+  "why": "Telemetry for the disk-full case, and the corpus's first whose decisive reading is an **absence**: `retention_runs_total` is a counter at 744 that does not move across the window, and the derived checkpoint states `post - baseline == 0` rather than any level. Every other case in the corpus argues from something that happened -- a spike, a step, a ratio going to one -- and a stopped scheduled job produces nothing to point at except the flatness, which is why the arithmetic is written down instead of a number. `data_volume_used_percent` is the capacity that turns the absence into an incident, and it is deliberately the least interesting of the four: a full volume is what every dashboard in the building already alerts on, and it is the symptom rather than the cause. The two ratios are the impact -- writes fail at 1 and the agent drops 37 percent of the batches it accepts, which is why the ticket is about lost log lines rather than about latency. The thirty-one hour gap and the twenty-gigabyte volume are case parameters rather than series: both are configuration facts that date the fullness to the move, not quantities that moved.",
+  "series": [
+    {
+      "service": "log-collector-0",
+      "metric": "data_volume_used_percent",
+      "unit": "%",
+      "baseline": 61,
+      "post": 100,
+      "quote": "/var/lib/collector is at 100% usage",
+      "why": "the checkpoint `cp-volume-full` holds the ceiling: the volume is at its limit rather than approaching it, which is what turns a write into a failure"
+    },
+    {
+      "service": "log-collector-0",
+      "metric": "retention_runs_total",
+      "unit": "count",
+      "baseline": 744,
+      "post": 744,
+      "derivation": "counter",
+      "quote": "the retention job that should trim segments older than 24h has not run",
+      "why": "the checkpoint `cp-pruner-stalled` holds the difference: an hourly pruner that has completed 744 runs in its life and none in this window is a counter that does not move, and `post - baseline` is the only reading that says so -- the counter's flatness is the evidence rather than an absence of evidence"
+    },
+    {
+      "service": "log-collector",
+      "metric": "write_failure_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 1,
+      "noise": "none",
+      "quote": "Writes now fail with ENOSPC",
+      "why": "the checkpoint `cp-writes-fail` holds the one: every write failed after 09:41, which is the outcome the ticket reports and what separates an exhausted volume from a slow one"
+    },
+    {
+      "service": "log-collector-agent",
+      "metric": "dropped_batch_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0.37,
+      "noise": "none",
+      "quote": "the agent is dropping batches",
+      "why": "no checkpoint holds this series, and it is here because it is what the impact costs: a collector that is only slow loses nothing, and one that drops batches loses log lines that nothing will replay"
+    }
+  ],
+  "logs": [
+    {
+      "id": "agent-enospc",
+      "service": "log-collector-agent",
+      "severity": "ERROR",
+      "body": "write /var/lib/collector/segments/000418.seg: no space left on device (ENOSPC); dropped batch of 512 records",
+      "quote": "Writes now fail with ENOSPC and the agent is dropping batches.",
+      "why": "the agent's own line says which errno it failed on, so the checkpoint `cp-enospc-log` holds the difference between a full volume and a read-only mount -- and it is attributed to the container that wrote it rather than to the pod the checkpoint names, which is the resolution gap `checkLogAttribution` is about"
+    }
+  ]
+}

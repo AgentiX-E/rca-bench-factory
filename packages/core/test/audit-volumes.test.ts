@@ -79,6 +79,24 @@ describe('the shape of a volume', () => {
     expect(result.summary).toContain('2 volume(s), 2 finding(s), 1–2');
   });
 
+  it('names the fullest volume rather than only its size', () => {
+    // The reading used to be `largest 279,893 of 280,000 bytes` and nothing else, and the round that
+    // appended a finding supplied the subject itself -- naming the volume it had just written in, which
+    // held 18,803 bytes. A size without a name is a fact about the set, and the reader who needs it is
+    // asking about a file (finding 294).
+    //
+    // The fixture makes the answer *not* the last volume, which is why the rule is a name rather than a
+    // position: in the real log the fullest volume is usually one of the newest, and a reading that is
+    // usually right is the one nobody checks.
+    const dir = volumesOf({
+      'volume-01.md': `## Finding 1 — one\n\n${'x'.repeat(2_000)}\n`,
+      'volume-02.md': '## Finding 2 — two\n\nbody\n',
+    });
+    const summary = check(indexFor([['volume-01.md', 1, 1, 1], ['volume-02.md', 2, 2, 1]]), dir).summary;
+    expect(summary).toContain('largest volume-01.md at');
+    expect(summary).not.toContain('largest volume-02.md');
+  });
+
   it('refuses a volume that is over the budget, and says how to make room', () => {
     // The budget is what keeps the push that carries one finding small; a volume
     // that drifts past it is how the document became 1.1 MB in the first place.

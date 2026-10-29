@@ -102,6 +102,19 @@ describe('the shape of a volume', () => {
     expect(result.summary).toContain('2 volume(s), 2 round(s)');
   });
 
+  it('names the fullest volume rather than only its size', () => {
+    // Here the fullest volume usually *is* the newest, which is what made the unnamed reading survive:
+    // the reader's guess was right often enough to be trusted. The fixture makes the answer the oldest
+    // volume, so the test fails for a rule that returns a position rather than a name (finding 294).
+    const dir = volumesOf({
+      'volume-01.md': `## Pass 1 — one\n\n${'x'.repeat(6_000)}\n`,
+      'volume-02.md': '## Pass 2 -- two\n\nbody\n',
+    });
+    const summary = check(indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1'], ['volume-02.md', 1, 'Pass 2', 'Pass 2']]), dir).summary;
+    expect(summary).toContain('largest volume-01.md at');
+    expect(summary).not.toContain('largest volume-02.md');
+  });
+
   it('refuses a volume over the budget, and says how to make room', () => {
     const dir = volumesOf({ 'volume-01.md': `## Pass 1 — one\n\n${'x'.repeat(MAX_BYTES)}\n` });
     const errors = check(indexFor([['volume-01.md', 1, 'Pass 1', 'Pass 1']]), dir).errors.join('\n');

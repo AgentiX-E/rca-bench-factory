@@ -172,6 +172,23 @@ export function absentNumbers(numbers) {
 }
 
 /**
+ * The fullest volume, named.
+ *
+ * This line used to read `largest 279,893 of 280,000 bytes` and nothing else, and a reader who had just
+ * appended a finding supplied the name themselves. The name supplied was `volume-09.md` -- the volume
+ * the reader had been writing in -- while 279,893 bytes belongs to `volume-03.md`, and `volume-09.md`
+ * was 18,803. The wrong number was then published in the progress log as this volume's headroom, and it
+ * survived a round because a size without a subject is a fact about the set rather than about any file
+ * (finding 294). A reading that a reader must attach a name to is a reading that will be attached to
+ * the wrong one.
+ */
+export function largestVolume(volumes) {
+  let largest = volumes[0];
+  for (const one of volumes) if (one.bytes > largest.bytes) largest = one;
+  return `${largest.name} at ${largest.bytes.toLocaleString('en-US')} of ${MAX_BYTES.toLocaleString('en-US')} bytes`;
+}
+
+/**
  * Whether the index mentions each volume exactly once, and with the right numbers.
  *
  * The row's range and entry count are **checked** rather than trusted: a table of
@@ -230,10 +247,7 @@ export function check(indexText, dir = VOLUMES) {
       `check-audit-volumes: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(volumes.length)} volume(s), ` +
       `${String(numbers.length)} finding(s)` +
       (numbers.length === 0 ? '' : `, ${String(numbers[0])}–${String(numbers.at(-1))}`) +
-      (volumes.length === 0
-        ? ''
-        : `; largest ${Math.max(...volumes.map((one) => one.bytes)).toLocaleString('en-US')} of ` +
-          `${MAX_BYTES.toLocaleString('en-US')} bytes`) +
+      (volumes.length === 0 ? '' : `; largest ${largestVolume(volumes)}`) +
       (absentNumbers(numbers) === '' ? '' : `; absent: ${absentNumbers(numbers)}`),
   };
 }

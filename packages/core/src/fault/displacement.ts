@@ -1,3 +1,4 @@
+import { sameComponent } from '../entity/graph.js';
 import type { EntityGraph, FaultCase } from '../ir/types.js';
 
 /**
@@ -34,14 +35,12 @@ export interface RankedCandidate {
 }
 
 /**
- * Relations that make two entities the same component at different resolutions.
+ * Where the definition went, said from here so that a reader who greps for it arrives somewhere.
  *
- * A service contains its pods, a pod contains its containers, and a node hosts the pods it runs.
- * Following these in either direction is what "the same component" means here; a `calls` edge is
- * not, and two replicas of one service are siblings rather than ancestors of each other.
+ * `isContainedIn` and `sameComponent` live in `entity/graph.ts`. The second caller is a log
+ * checkpoint whose cited line has to belong to the entity it names, and a definition that exists
+ * twice is a definition that will disagree with itself one release later.
  */
-const CONTAINMENT_RELATIONS = new Set(['contains', 'hosts']);
-
 /**
  * Name-to-entity, keeping only the names that resolve to exactly one entity.
  *
@@ -58,43 +57,6 @@ function entitiesByName(graph: EntityGraph): Map<string, string> {
   }
   for (const name of ambiguous) byName.delete(name);
   return byName;
-}
-
-/**
- * Whether `ancestor` contains (or hosts) `descendant`, at any depth.
- *
- * Directed, not undirected, and the difference is the whole of the `same-component` judgement. Two
- * replicas of one service are both reached from their service by containment, so an undirected walk
- * would call them one component -- and returning the wrong replica is a miss, not a hit at a coarser
- * resolution. What counts is that one end is inside the other: the pod under its service, the
- * container in its pod, the node hosting a pod.
- */
-function isAncestor(graph: EntityGraph, ancestor: string, descendant: string): boolean {
-  const children = new Map<string, string[]>();
-  for (const edge of graph.edges) {
-    if (!CONTAINMENT_RELATIONS.has(edge.relation)) continue;
-    const bucket = children.get(edge.from) ?? [];
-    bucket.push(edge.to);
-    children.set(edge.from, bucket);
-  }
-  const seen = new Set<string>([ancestor]);
-  const queue = [ancestor];
-  while (queue.length > 0) {
-    const at = queue.shift() as string;
-    for (const next of children.get(at) ?? []) {
-      if (next === descendant) return true;
-      if (seen.has(next)) continue;
-      seen.add(next);
-      queue.push(next);
-    }
-  }
-  return false;
-}
-
-/** Whether two entities are the same component at two resolutions, in either direction. */
-function sameComponent(graph: EntityGraph, left: string, right: string): boolean {
-  if (left === right) return true;
-  return isAncestor(graph, left, right) || isAncestor(graph, right, left);
 }
 
 /**

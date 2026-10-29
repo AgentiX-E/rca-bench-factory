@@ -282,7 +282,11 @@ export function check(indexText, dir = VOLUMES) {
   const { volumes, errors, order } = readVolumes(dir);
   for (const problem of indexCovers(indexText, volumes)) errors.push(problem);
   for (const problem of straysIn(indexText)) errors.push(problem);
-  const largest = volumes.length === 0 ? 0 : Math.max(...volumes.map((one) => one.bytes));
+  // Named, not only measured. The same defect as `audit-volumes.mjs`'s summary (finding 294): a size
+  // without a subject invites the reader to supply one, and the reader has just been writing in the
+  // newest volume rather than in the fullest. Here the answer is almost always the newest, which is
+  // what made it worth fixing anyway -- a reading that is usually right is the one nobody checks.
+  const fullest = volumes.length === 0 ? null : volumes.reduce((left, right) => (right.bytes > left.bytes ? right : left));
 
   // The index must stay smaller than the smallest volume.
   //
@@ -326,8 +330,10 @@ export function check(indexText, dir = VOLUMES) {
     summary:
       `check-progress-volumes: ${errors.length === 0 ? 'OK' : 'FAILED'} — ${String(volumes.length)} volume(s), ` +
       `${String(order.length)} round(s)` +
-      (order.length === 0 ? '' : `; largest ${largest.toLocaleString('en-US')} of ` +
-        `${MAX_BYTES.toLocaleString('en-US')} bytes`) +
+      (fullest === null
+        ? ''
+        : `; largest ${fullest.name} at ${fullest.bytes.toLocaleString('en-US')} of ` +
+          `${MAX_BYTES.toLocaleString('en-US')} bytes`) +
       (volumes.length === 0
         ? ''
         : `; sizes ${volumes.map((one) => one.bytes.toLocaleString('en-US')).join(' / ')}`) +

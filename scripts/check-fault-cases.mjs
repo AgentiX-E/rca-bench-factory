@@ -654,6 +654,18 @@ for (const entry of index.cases) {
       }
     }
 
+    // Whose line it is. The phrase check above compares a checkpoint with the body it cites, and the
+    // four-layer assessment resolves the entity it names -- and nothing compared the two, so a
+    // checkpoint could cite a line written by a component its own case never touches and pass both
+    // (finding 293). The rule is containment rather than equality: a pod's checkpoint may cite a
+    // line its container wrote, and three of the corpus's seven log checkpoints are two shapes of
+    // exactly that -- two name a container whose line names the service, one names a pod whose line
+    // names a container. The other four agree on the name, and a rule built on that agreement would
+    // be right four times and wrong the fifth.
+    for (const problem of core.checkLogAttribution({ graph: parsedGraph, case: parsedCase, logs })) {
+      problems.push(`'${caseId}' ${problem}`);
+    }
+
     const traces = Array.isArray(declaration.traces) ? declaration.traces : [];
     const spanNames = new Set(traces.map((one) => String(one?.spanName)));
     for (const one of traces) {

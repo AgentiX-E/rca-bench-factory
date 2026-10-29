@@ -164,6 +164,59 @@ export function resolveEntityRef(ref: string, index: GraphIndex): string | null 
   return only!;
 }
 
+/**
+ * Relations that make two entities the same component at different resolutions.
+ *
+ * A service contains its pods, a pod contains its containers, and a node hosts the pods it runs.
+ * Following these in either direction is what "the same component" means here; a `calls` edge is
+ * not, and two replicas of one service are siblings rather than ancestors of each other.
+ *
+ * This lived in `fault/displacement.ts` until a second caller needed it. Two copies of a definition
+ * this small is how "the same component" would come to mean two things one release apart.
+ */
+const CONTAINMENT_RELATIONS = new Set<EntityRelation>(['contains', 'hosts']);
+
+/**
+ * Whether `outer` contains (or hosts) `inner`, at any depth.
+ *
+ * Directed, not undirected, and the difference is the whole of the same-component judgement. Two
+ * replicas of one service are both reached from their service by containment, so an undirected walk
+ * would call them one component -- and returning the wrong replica is a miss, not a hit at a coarser
+ * resolution. What counts is that one end is inside the other: the pod under its service, the
+ * container in its pod, the node hosting a pod.
+ *
+ * `seen` makes the walk terminate on a graph where containment is not a tree. The corpus's graph is
+ * one, but a `same_as` merge or a hand-edited duplicate can produce a cycle, and a walk that did not
+ * remember where it had been would not return -- in a guard, that is a hang at the worst moment.
+ */
+export function isContainedIn(graph: EntityGraph, outer: string, inner: string): boolean {
+  const children = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (!CONTAINMENT_RELATIONS.has(edge.relation)) continue;
+    const bucket = children.get(edge.from) ?? [];
+    bucket.push(edge.to);
+    children.set(edge.from, bucket);
+  }
+  const seen = new Set<string>([outer]);
+  const queue = [outer];
+  while (queue.length > 0) {
+    const at = queue.shift() as string;
+    for (const next of children.get(at) ?? []) {
+      if (next === inner) return true;
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return false;
+}
+
+/** Whether two entities are the same component at two resolutions, in either direction. */
+export function sameComponent(graph: EntityGraph, left: string, right: string): boolean {
+  if (left === right) return true;
+  return isContainedIn(graph, left, right) || isContainedIn(graph, right, left);
+}
+
 export interface ReferenceIssue {
   ref: string;
   reason: 'dangling' | 'ambiguous' | 'empty';
