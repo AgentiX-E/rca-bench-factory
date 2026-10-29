@@ -85,6 +85,12 @@ describe('expandSeries · the shape each derivation means', () => {
   it('counts from zero: nothing accumulated before the onset, which is what "began" means', () => {
     // The case that found it: `ingress_504_responses_total` with a baseline of 0. A pre-window of
     // 0, 0.1, 0.2, 0.3 is a claim that failures were already happening before the change.
+    //
+    // The post-window is the same counter on the grid its unit admits (finding 284): a total that
+    // ends at one response passes through zero responses and then one, and the four samples at 0.125,
+    // 0.25, 0.375 and 0.5 of a response were four readings of a fraction of an event. The halving
+    // point rounds up, so the counter reports its first event at the fourth sample rather than the
+    // fifth -- a decision, and the only one `Math.round` makes for a monotone series.
     const declaration: SeriesDeclaration = {
       service: 'partner-portal',
       metric: 'ingress_504_responses_total',
@@ -95,7 +101,47 @@ describe('expandSeries · the shape each derivation means', () => {
     };
     const sample = values(declaration);
     expect(sample.slice(0, SERIES_POINTS)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(sample.slice(SERIES_POINTS)).toEqual([0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]);
+    expect(sample.slice(SERIES_POINTS)).toEqual([0, 0, 0, 1, 1, 1, 1, 1]);
+  });
+
+  it('puts a count of things on whole things, whichever way it arrived', () => {
+    // Finding 284. Six series in the corpus were declared the way the two below are, and the
+    // expansion produced readings no system can report: 203.2 records, and a 504 response that was
+    // 0.98 of one. `count` states no ceiling, so `clampToUnit` was silent by construction -- a share
+    // above 100 % is impossible and a fraction of a record is not, as far as a range can tell. The
+    // grid its unit admits is a second obligation, and keeping it is `quantizeToUnit`'s job.
+    const level: SeriesDeclaration = {
+      service: 'ledger-writer',
+      metric: 'producer_buffer_records',
+      unit: 'count',
+      baseline: 200,
+      post: 40_000,
+    };
+    const levelValues = values(level);
+    expect(levelValues.every((one) => Number.isInteger(one))).toBe(true);
+    // Still a jittered reading: each sample moves to the nearest whole thing rather than the series
+    // freezing at its baseline, which would hide the noise the declaration asked for.
+    expect(levelValues.slice(0, SERIES_POINTS)).toEqual([200, 204, 196, 202, 198, 203, 197, 201]);
+    expect(levelValues.slice(SERIES_POINTS)).toEqual([
+      40_000, 40_800, 39_200, 40_400, 39_600, 40_640, 39_360, 40_240,
+    ]);
+
+    // An accumulation whose step is not a whole number of things: the corpus's restart counter rises
+    // by (178 - 0) / 8 = 22.25 per sample, which is where 22.25 and 44.5 came from. Rounding each
+    // sample leaves the series monotone and its last sample equal to the declared post, which is the
+    // invariant this module states about a counter.
+    const counter: SeriesDeclaration = {
+      service: 'media-transcoder',
+      metric: 'container_restarts_total',
+      unit: 'count',
+      baseline: 0,
+      post: 178,
+      derivation: 'counter',
+    };
+    const counterValues = values(counter).slice(SERIES_POINTS);
+    expect(counterValues).toEqual([22, 45, 67, 89, 111, 134, 156, 178]);
+    expect(counterValues.at(-1)).toBe(178);
+    expect([...counterValues].sort((left, right) => left - right)).toEqual(counterValues);
   });
 
   it('spikes: one sample at the post value and then back to the baseline', () => {

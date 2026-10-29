@@ -139,6 +139,12 @@
       "metric": "request_rate",
       "unit": "rps",
       "value": 40
+    },
+    {
+      "service": "invoice-renderer",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 25
     }
   ]
 }

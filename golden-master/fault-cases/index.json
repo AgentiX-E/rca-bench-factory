@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 20,
+  "min": 21,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -600,6 +600,36 @@
           "layer": "evidence",
           "quote": "served stale and missing entries for ninety minutes",
           "why": "the window the incident occupies, and the reader-visible form of the two unowned slots -- stale for the keys answered by the previous owner, missing for the ones no owner claims"
+        }
+      ]
+    },
+    {
+      "caseId": "history-code-off-by-one-invoice-renderer",
+      "sampleId": "code-off-by-one-invoice-renderer",
+      "case": "history-code-off-by-one-invoice-renderer.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-code-off-by-one-invoice-renderer.signals.json",
+      "why": "annotated from the incident text of `code-off-by-one-invoice-renderer`. It is the corpus's first case whose correct readings outnumber its moving one: the total reconciles, not one log line was written, and the only series that moves is the number of lines a page carries, from six to five. That makes it the first case here that a threshold on latency or on errors cannot solve even in principle -- not because the anomaly is small, but because the readings it would look at are right. The chain is two hops and ends inside the system being measured (container -> pod -> service), the same shape as the corpus's other two-hop chains, and the text gives no third: the reader who received the invoice is named only as the invoice. `invoice-renderer` is the graph's only component that lays out a page, and `pageSize` and `renderedLinesPerPage` are declared as the case's own parameters, so the gap of one is arithmetic the text states rather than two numbers edited into agreement.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The invoice renderer skipped the last line of every multi-page invoice",
+          "why": "the component and the form of the loss: every multi-page invoice, always the last line, which locates the defect in the page layout rather than in the items or in the caller"
+        },
+        {
+          "layer": "fault",
+          "quote": "The loop that splits items into pages advances its index by the page size after appending",
+          "why": "the defect as arithmetic: the index advances by the capacity rather than by what was written, so the boundary item is consumed twice and one line per page is never reached"
+        },
+        {
+          "layer": "process",
+          "quote": "Nothing is logged and totals still match",
+          "why": "why the fault never becomes an error: the loop skipped an item without evaluating a condition that could fail, and the total is summed from the source list, so both the log and the aggregate are silent by construction"
+        },
+        {
+          "layer": "evidence",
+          "quote": "the item on the boundary is written to the current page and then skipped on the next one",
+          "why": "the sentence that makes the moving reading the right one: the page carries five lines of a six-line capacity, so the count of lines is the reading that can see this and it is exact rather than sampled"
         }
       ]
     }

@@ -306,6 +306,7 @@ export {
 export type { ParsedTime, TimeLayout } from './util/time.js';
 
 export {
+  admitsFraction,
   clampToUnit,
   convertUnit,
   dimensionOf,

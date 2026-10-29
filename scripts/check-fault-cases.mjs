@@ -135,6 +135,25 @@ function expansionTime(faultCase) {
 }
 
 /**
+ * A declared series with its two readings resolved, which is the only form the expansion may be given.
+ *
+ * A reading is either a number or a `{ parameter }` reference to a quantity the case declares about
+ * itself (finding 258). The rules above read the resolved hash, and the expansion reads the *file* --
+ * so a declaration passed through unchanged gives `declaration.post - declaration.baseline` as
+ * `object - number`, which is `NaN`, and the expansion then produces sixteen `NaN` samples with no
+ * complaint. Nothing downstream would complain either: `Math.abs(NaN) >= 2` is false, so such a
+ * series is invisible to G3 and to both baselines at once.
+ *
+ * This function exists because the round that added the count rule below called the expansion with
+ * the raw declaration, and the guard then reported `client_pool_connections_in_use` as `NaN` -- a
+ * defect in the rule, filed against the corpus. The rule is gone (finding 285) and the resolution
+ * stays, because the call it was written for is the one thing below that must not read the file.
+ */
+function resolvedDeclaration(one, readings) {
+  return { ...one, ...(readings.get(String(one?.metric)) ?? {}) };
+}
+
+/**
  * Every layer's annotation must show the sentence it came from.
  *
  * `why` is prose and cannot be checked; a quote can. The annotations in this directory are made
@@ -458,6 +477,10 @@ for (const entry of index.cases) {
       );
     }
     const text = fold(sampleById.get(sampleId)?.incidentText);
+    // Stated once, here, because two rules below expand the same declaration: the telemetry a solver
+    // is given, and the grid check that reads the samples. A second `expansionTime` call would be a
+    // second chance for the two to disagree about the window.
+    const when = expansionTime(parsedCase);
     const series = Array.isArray(declaration.series) ? declaration.series : [];
     if (series.length === 0) {
       problems.push(`'${caseId}' declares an empty signal series`);
@@ -590,6 +613,27 @@ for (const entry of index.cases) {
           }
         }
       }
+      // The other side of the grid: the number an author writes is a reading too, and it is not the
+      // same rule as the samples below. The expansion can round a sample, and it must not round the
+      // declared post -- a counter's last sample is required to *be* that number, so a declaration of
+      // 201.5 things would either break the invariant or move the reading the file states.
+      if (typeof one?.unit === 'string' && !core.admitsFraction(one.unit)) {
+        for (const point of core.SERIES_POINTS) {
+          const value = resolvedReadings.get(String(one?.metric))?.[point];
+          if (typeof value !== 'number' || Number.isInteger(value)) continue;
+          problems.push(
+            `'${caseId}' declares ${point} ${String(value)} for '${String(one?.metric)}' in ` +
+              `'${one.unit}', and a count lands on whole things -- the expansion would have to ` +
+              'round the number the file states',
+          );
+        }
+      }
+      // The samples are not checked here, deliberately. `expandSeries` is the only producer of them and
+      // `derived-telemetry.test.ts` pins its output to sixteen written-out numbers, so a second rule
+      // that expanded the declaration again would be comparing the arithmetic with itself -- and it
+      // would be unreachable, because the expansion quantizes before any caller can see a fraction.
+      // A gate that no input can fail is a gate a reader learns to skip; finding 285 records the first
+      // version of this rule, which was exactly that.
     }
     const logs = Array.isArray(declaration.logs) ? declaration.logs : [];
     for (const one of logs) {
@@ -849,17 +893,11 @@ for (const entry of index.cases) {
       }
     }
 
-    const when = expansionTime(parsedCase);
     // A case's own declaration wins on the `(service, metric)` pair, and the background arrives flat
     // with `noise: 'none'` -- both rules live in `fault/background.ts`, where they are unit-tested.
     const backgroundDeclarations = core.backgroundSeries(series, background.series);
     const signals = [
-      ...series.flatMap((one) =>
-        core.expandSeries(
-          { ...one, ...(resolvedReadings.get(String(one?.metric)) ?? {}) },
-          when,
-        ),
-      ),
+      ...series.flatMap((one) => core.expandSeries(resolvedDeclaration(one, resolvedReadings), when)),
       ...backgroundDeclarations.flatMap((one) => core.expandSeries(one, when)),
       ...logs.flatMap((one) => core.expandLog(one, when)),
       ...core.expandTraces(traces, when, caseId),

@@ -136,6 +136,28 @@ export function measurementBounds(unit: string): MeasurementBounds | undefined {
 }
 
 /**
+ * Whether a reading in this unit can land between two whole numbers.
+ *
+ * A `count` is a number of things, and half of one is not a reading: a corpus that samples noise as
+ * a fraction of the reading turned `200` records into `203.2` of them and one 504 response into
+ * `1.02` of them (finding 284). Every other dimension in this table is a continuous quantity -- a
+ * duration, a byte count, a rate and a share all land between two integers, and a share above a
+ * ceiling is handled by `clampToUnit` rather than here. `cores` belongs with them rather than with
+ * `count` for the reason its own comment gives: `500m` is a quantity stated in thousandths, not half
+ * a processor.
+ *
+ * A unit the table does not know answers `true`. That is the same decision `measurementBounds` makes
+ * when it returns `undefined` -- a rule nobody declared is a claim about someone else's unit -- and
+ * the two have to agree in shape, or a guard built on this would refuse a reading the bounds could
+ * not describe.
+ */
+export function admitsFraction(unit: string): boolean {
+  const def = UNITS[unit];
+  if (def === undefined) return true;
+  return def.dimension !== 'count';
+}
+
+/**
  * A reading clamped into its unit's range.
  *
  * Used where a value is *derived* rather than declared: the corpus's sampling noise is a fraction of
@@ -153,8 +175,27 @@ export function clampToUnit(unit: string | undefined, value: number): number {
   return Math.min(Math.max(value, bounds.min), bounds.max);
 }
 
-/** All units known to the converter, grouped by dimension. */
-export function knownUnits(): Record<Dimension, string[]> {
+/**
+ * A reading put on the grid its unit admits, beside `clampToUnit`'s range.
+ *
+ * A unit says two things about a reading: how large it may be, and what it may land on. `clampToUnit`
+ * holds the first and this holds the second, and the second exists because a corpus that samples
+ * noise as a fraction of the reading produced `203.2` records and `1.02` of a 504 response -- values
+ * inside the range of `count` and not on its grid (finding 284).
+ *
+ * Rounding rather than refusing, because the reader of a count is entitled to the nearest whole thing
+ * and the direction is not a decision: a counter that accumulated 300 events over eight samples and a
+ * reading that jitters around 200 have the same obligation, to land on an event.
+ *
+ * A unit the table does not know, and no unit at all, are returned unchanged -- the same decision
+ * `admitsFraction` makes, for the same reason.
+ */
+export function quantizeToUnit(unit: string | undefined, value: number): number {
+  if (unit === undefined) return value;
+  return admitsFraction(unit) ? value : Math.round(value);
+}
+
+/** All units known to the converter, grouped by dimension. */export function knownUnits(): Record<Dimension, string[]> {
   const out: Record<Dimension, string[]> = {
     time: [],
     bytes: [],

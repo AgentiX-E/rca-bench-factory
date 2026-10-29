@@ -1,0 +1,128 @@
+{
+  "caseId": "history-code-off-by-one-invoice-renderer",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-22T10:00:00.000Z",
+  "window": {
+    "start": "2026-10-22T09:40:00.000Z",
+    "end": "2026-10-22T10:40:00.000Z"
+  },
+  "fault": {
+    "type": "logic-off-by-one-pagination",
+    "category": "code",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "invoice-renderer",
+      "pageSize": {
+        "value": 6,
+        "unit": "count"
+      },
+      "renderedLinesPerPage": {
+        "value": 5,
+        "unit": "count"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/invoice-renderer-app",
+    "rootCauseComponent": "invoice-renderer",
+    "rootCauseReason": "The pagination loop appends a page and then advances its index by the page size, so the item on the boundary is written to the current page and then skipped on the next one: every page the process emits carries five of the six lines it has room for, and every multi-page invoice is missing its last line. Nothing failed, which is the whole difficulty. No request errored, no log line was written, and the printed total still adds up -- because the total is summed from the source list rather than from the rendered pages, so the one number a reader would check is computed by a path that never enters the loop. The fault is therefore invisible to every reading except the count of lines a page actually carries, and that count moves by one, from six to five, which is a change no magnitude threshold is obliged to notice. Advancing by the page size minus one reproduces every line, which is the arithmetic the case states rather than an opinion about a fix.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "rendered_lines_per_page",
+        "description": "each page carries one line fewer than its declared capacity, which is the only reading in the window that can locate the defect"
+      },
+      {
+        "type": "metric",
+        "ref": "invoice_totals_matched_ratio",
+        "description": "every total still reconciles, which is a correct reading produced by a path that never enters the loop that is wrong"
+      },
+      {
+        "type": "metric",
+        "ref": "invoice_render_log_lines",
+        "description": "no log line at all, which is what makes an error-rate reading silent rather than low"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/invoice-renderer-app",
+        "toEntityId": "pod:synthetic-storefront/invoice-renderer-0",
+        "mechanism": "the loop in the container's process appends a page and then advances its index by the page size, so the item on the boundary is written to the current page and then skipped on the next one, and every page the process emits carries one line fewer than its capacity",
+        "evidenceRefs": [
+          "cp-lines-per-page",
+          "cp-page-size"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/invoice-renderer-0",
+        "toEntityId": "service:synthetic-storefront/invoice-renderer",
+        "mechanism": "the service returns the pod's response unchanged, so every caller receives a multi-page invoice missing its last line while the total printed on it still reconciles, because the total is summed from the source list",
+        "evidenceRefs": [
+          "cp-totals-match",
+          "cp-no-logs"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-lines-per-page",
+        "entityRef": "container:synthetic-storefront/invoice-renderer-app",
+        "signalRef": "rendered_lines_per_page",
+        "comparator": "==",
+        "value": 5,
+        "unit": "count",
+        "description": "five lines on a page with room for six: the size of the gap is what makes this an off-by-one rather than a truncation, and it is exact because a page carries a whole number of lines"
+      },
+      {
+        "checkpointId": "cp-page-size",
+        "entityRef": "container:synthetic-storefront/invoice-renderer-app",
+        "signalRef": "pageSize",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 6,
+        "unit": "count",
+        "description": "the capacity the page was laid out for, cited from the case's own parameters rather than copied: the reading is one less than this, and a change to the capacity moves both together"
+      },
+      {
+        "checkpointId": "cp-totals-match",
+        "entityRef": "service:synthetic-storefront/invoice-renderer",
+        "signalRef": "invoice_totals_matched_ratio",
+        "comparator": "==",
+        "value": 1,
+        "unit": "1",
+        "description": "every total reconciles, and it is a correct reading rather than a control: the total is summed from the source list, so the defect is upstream of the only number a reader would check"
+      },
+      {
+        "checkpointId": "cp-no-logs",
+        "entityRef": "service:synthetic-storefront/invoice-renderer",
+        "signalRef": "invoice_render_log_lines",
+        "comparator": "==",
+        "value": 0,
+        "unit": "count",
+        "description": "not one log line, which is why no error-rate reading can see this: the loop skipped an item without a condition that could fail"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "advance the index by the page size minus one after appending, so the boundary item is written once and is still reachable on the next page",
+        "target": "container:synthetic-storefront/invoice-renderer-app"
+      },
+      {
+        "step": 2,
+        "action": "assert the rendered line count against the source line count in the export step, because the total is summed from the source list and cannot see a line missing from a rendered page",
+        "target": "service:synthetic-storefront/invoice-renderer"
+      }
+    ]
+  },
+  "query": "Multi-page invoices came back missing their last line, with nothing in the logs and totals that still reconciled. Which component holds the defect, and why did no reading other than the lines a page carries move?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

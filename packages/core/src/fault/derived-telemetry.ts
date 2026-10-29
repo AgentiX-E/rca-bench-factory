@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { LogSeverity, SignalPayload, TelemetrySignal } from '../ir/types.js';
-import { clampToUnit } from '../util/unit.js';
+import { clampToUnit, quantizeToUnit } from '../util/unit.js';
 
 /**
  * The corpus's derived telemetry, as a module rather than as a script's private helper.
@@ -175,15 +175,18 @@ function at(epochMs: number): string {
 }
 
 /**
- * A level reading with its sampling noise applied, kept inside the unit's range.
+ * A level reading with its sampling noise applied, kept inside the unit's range and on its grid.
  *
- * The one place where "a measurement plus noise" happens, so the bound is applied wherever noise is
- * and nowhere else. `clampToUnit` leaves the value alone when the declaration names no unit or names
- * one the table does not know, because then there is no range to keep it in.
+ * The one place where "a measurement plus noise" happens, so the two obligations a unit states are
+ * both applied here and nowhere else. `clampToUnit` holds the range -- a share above a ceiling is not
+ * a noisy share -- and `quantizeToUnit` holds the grid, because a count is a number of things and
+ * `203.2` records is a fractional record rather than a noisy one (finding 284). Neither obligation
+ * can stand in for the other: a range says how large a reading may be, and a grid says what it may
+ * land on, and `count` has no ceiling for a range to find.
  *
  * A declaration that says `noise: 'none'` gets its level back unchanged, which is what an exact
- * reading is: the clamp is then a no-op too, because the level is already inside the range the
- * declaration was checked against.
+ * reading is: both calls are then a no-op, because the level is already inside the range and on the
+ * grid the declaration was checked against.
  */
 function withNoise(
   level: number,
@@ -191,8 +194,8 @@ function withNoise(
   unit: string | undefined,
   noise: SeriesNoise | undefined,
 ): number {
-  if (noise === 'none') return clampToUnit(unit, level);
-  return clampToUnit(unit, level * (1 + SERIES_JITTER[index]! * 0.02));
+  if (noise === 'none') return quantizeToUnit(unit, clampToUnit(unit, level));
+  return quantizeToUnit(unit, clampToUnit(unit, level * (1 + SERIES_JITTER[index]! * 0.02)));
 }
 
 /**
@@ -237,8 +240,13 @@ export function expandSeries(declaration: SeriesDeclaration, when: ExpansionTime
           : declaration.post;
     // The jitter is applied to the level a sample sits at, so a spike's excursion is post-sized and
     // its return is baseline-sized, and a counter's accumulation is exact because it is a total.
+    // A counter is exact but not necessarily whole: (178 - 0) / 8 is 22.25 of a restart, so the
+    // accumulation lands on the unit's grid as well -- the same obligation the noise has, and the
+    // reason the quantize call is outside the `derivation` test rather than a fourth branch.
     const value =
-      derivation === 'counter' ? level : withNoise(level, index, declaration.unit, declaration.noise);
+      derivation === 'counter'
+        ? quantizeToUnit(declaration.unit, level)
+        : withNoise(level, index, declaration.unit, declaration.noise);
     out.push({ timestamp: at(onsetMs + (index + 1) * postSpacing), value });
   }
 

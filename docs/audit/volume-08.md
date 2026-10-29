@@ -636,3 +636,143 @@ exists. The second is that both failures in this round were reported as "the sui
 was a test failing, so the sentence "the suite is red" is not a diagnosis — the exit code, the `FAIL`
 line, and the report's `status` field are three different pieces of evidence, and this round needed all
 three to say what had happened.
+
+## Finding 284 — a reading sits on its unit's grid, not only inside its range
+
+The corpus's count readings were fractional, and nothing had ever looked.
+
+The round began with a different question: the next case to annotate is a pagination off-by-one, whose
+only moving reading is *how many lines a page carries* -- six before the defect, five after. That is a
+count of things, so the annotation would declare it exact. Writing the guard for it raised a question
+the corpus had never been asked: does anything check that a declared count expands to whole numbers?
+
+Nothing did. The rule was written (one integer test per sample, for every series whose unit is `count`),
+and the shipped corpus failed it in **31 places across 6 series**:
+
+| case | series | declared | what the expansion produced |
+| --- | --- | --- | --- |
+| `config-ingress-timeout-partner-portal` | `ingress_504_responses_total` | 0 → 1 | `1.02`, `0.984`, `1.016`, `0.99` … |
+| `queue-watermark-ledger-writer` | `producer_buffer_records` | 200 → 40000 | `203.2`, `196.8`, `201.2` |
+| `resource-memory-request-ingest-writer` | `backlog_messages` | 200 → 50000 | `203.2`, `196.8`, `201.2` |
+| `container-crash-loop-media` | `container_restarts_total` | 0 → 178 | `22.25`, `44.5`, `66.75` … |
+| `pod-shutdown-webhook-dispatcher` | `webhook_deliveries_dropped_total` | 0 → 300 | `37.5`, `112.5` … |
+| `database-pool-deadlock-billing` | `client_pool_connections_in_use` | 3 → 20 | *see finding 285 — this one was the rule's own defect* |
+
+Two mechanisms, and only one of them is the one the rule was written for:
+
+| mechanism | where | example |
+| --- | --- | --- |
+| sampling noise, applied as a fraction of the reading | `withNoise`, the `sampled` default | 200 records ± 2 % is 203.2 records |
+| accumulation divided into `SERIES_POINTS` | the `counter` branch, `(post - baseline) / 8` | 178 restarts in eight samples is 22.25 restarts per sample |
+
+The second is the one worth stating: **a counter was assumed to be exact, and exact is not the same as
+whole.** The module's own docstring says a counter's samples are "exact because it is a total", and the
+round that added `noise: 'none'` (finding 254) was about a reading that wobbled when it should not. Both
+true, and both beside the point here: the accumulation is exact *and* it is `22.25` of a restart.
+
+Why every door was open:
+
+- **the range cannot see it.** `measurementBounds('count')` is `[0, ∞)` — a count of restarts has no
+  ceiling, and `clampToUnit` is silent by construction. Finding 252's rule asks whether the number an
+  author wrote is one its unit admits; `178` is, and `22.25` is not the author's number.
+- **the vocabulary check cannot see it.** Finding 254 refused `noise` on a counter and refused a typo
+  in `noise`; it never asked what the samples were. A field can be spelled correctly and still be
+  describing a reading nobody can measure.
+- **the anomaly gate cannot see it.** G3 asks whether a metric sustains `|Z| >= 2`; `Math.abs(NaN) >= 2`
+  is `false` and `Math.abs(203.2) >= 2` is `true`, so a fractional reading is not *wrong* to G3 — it is
+  merely a number, and G3 has no opinion about which numbers exist.
+
+The fix is the unit table's second obligation, stated beside the first:
+
+```ts
+export function admitsFraction(unit: string): boolean { … }   // count: false, everything else: true
+export function quantizeToUnit(unit: string | undefined, value: number): number {
+  if (unit === undefined) return value;
+  return admitsFraction(unit) ? value : Math.round(value);
+}
+```
+
+`withNoise` applies both — `quantizeToUnit(unit, clampToUnit(unit, level))` — and the counter branch
+applies the grid alone, which is why the call sits outside the `derivation` test rather than as a fourth
+branch. Nothing in `golden-master` changed: not one declaration was edited, and the corpus went from 31
+problems to zero. That is the shape a correct fix has here — the data was always right, the arithmetic
+that read it was not.
+
+**What the grid does not decide.** Rounding is a decision about direction, and `Math.round` makes it at
+the half: a counter accumulating `0.125, 0.25, 0.375, 0.5 …` of a response reports its first event at
+the fourth sample, not the fifth. The alternative — refusing any declaration whose `(post - baseline)`
+is not divisible by `SERIES_POINTS` — was rejected because it would make `178 restarts` inexpressible
+in a corpus whose incident text says 178. The one reading the file states is protected separately: a
+declaration of `201.5` things is refused, because a counter's last sample is required to *be* the
+declared post and rounding it would move the number the annotation asserts.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `admitsFraction` / `quantizeToUnit` | absent | **stated, and the reason `cores` is not `count` is written down** |
+| `expandSeries` on a `count` | `203.2`, `1.02`, `22.25` | **whole things**, by both mechanisms |
+| `derived-telemetry.test.ts` | 30 tests | **31**, one pinning sixteen written-out numbers across both mechanisms |
+| the corpus as it stood | 31 fractional samples, 6 series | **0** — no declaration was edited |
+| the guard | read `noise` for its vocabulary only | **also refuses a count declared as a fraction**, which the grid cannot repair |
+| `unit.test.ts` | 16 tests | **19** (`admitsFraction` ×2, `quantizeToUnit` ×1) |
+
+**What this does not fix.** The corpus's `count` readings are now whole, and the `noise: 'sampled'`
+declarations on them still say the reading was jittered — which it was, by whole things. Whether a count
+should carry sampling noise at all is a modelling question this rule answers "yes, on its grid" to, and
+a different corpus could answer differently without either being wrong.
+
+## Finding 285 — a gate no input can fail, and the NaN it was written to catch
+
+The rule in finding 284 was written three times before it was right, and the first two versions are the
+finding.
+
+**First version.** It read the samples and reported seven problems against
+`database-pool-deadlock-billing`, including `derives NaN for 'client_pool_connections_in_use'`. That
+case's `post` is `{ "parameter": "poolSize" }` — a reference to a quantity the case declares about
+itself, which `readDeclaredReading` resolves for every rule above and which the expansion does not
+understand. The rule had called `expandSeries(one, …)` with the raw declaration, so
+`object - number` was `NaN` for all sixteen samples, and the guard reported it as a defect in the
+corpus. **It was a defect in the rule, filed against the data.**
+
+Two things came out of it. The resolution is now one function, `resolvedDeclaration(one, readings)`,
+used by both call sites — the expansion that produces the telemetry and any rule that wants a sample —
+so "expand the declaration" has one spelling rather than two. And the NaN itself is worth naming: a
+`{ parameter }` reference passed through unresolved produces sixteen `NaN` samples and **nothing
+downstream complains**, because `Math.abs(NaN) >= 2` is false, so such a series is invisible to G3 and
+to both baselines at once. The case would still have read as solvable, on the strength of its other
+series.
+
+**Second version.** With the quantize fix in place the sample-level rule could no longer fail: the
+expansion rounds before any caller sees a fraction, so the rule's loop was unreachable. It was kept for
+about ten minutes on the argument that checking the *output* is more fundamental than checking the
+declaration — and that argument is true, and beside the point. **A gate no input can fail is not a
+strict gate; it is a line a reader learns to skip**, and it would have been the first unreachable branch
+in a tree that has spent six rounds deleting exactly this shape.
+
+| version | what it checked | could it fail? | what happened |
+| --- | --- | --- | --- |
+| 1 | samples, from the raw declaration | yes — **falsely** | reported the corpus as `NaN`; the `NaN` was the rule's |
+| 2 | samples, from the resolved declaration | **no** — the expansion quantizes first | removed, with the reason in the code where it stood |
+| 3 | the **declared** reading, per point | yes: `post: 201.5` in `count` | kept, and pinned by a test |
+
+The surviving rule asks a different question from finding 284's: not "did the samples come out whole"
+(which the arithmetic now guarantees) but "is the number the file states one the expansion can keep" —
+because a counter's last sample is required to equal it, and a grid applied to `201.5` would move the
+reading the annotation asserts. The two rules are one arithmetic and one annotation, which is the split
+this log keeps arriving at.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the expansion call sites | one resolved, one raw | **one function**, `resolvedDeclaration` |
+| the NaN | reachable, silent, and invisible to G3 and both baselines | **not produced**, and the reason is in the function's own comment |
+| the sample-level rule | written, then unreachable | **removed**, with three lines saying why it must not come back |
+| the declaration-level rule | absent | **stated and falsifiable**: `post: 201.5` in `count` is refused, `201` passes |
+| `check-fault-cases.test.ts` | 109 tests | **110** (one added, one that had lost its premise removed) |
+
+**What this does not fix.** `resolvedReadings` is built by the script, and `expandSeries`'s signature
+still takes `Number`s — so the obligation to resolve lives in a comment and a helper rather than in the
+type. A `.ts` caller would get the same `NaN` from the same mistake, and the compiler would have caught
+it in the script if the script had been TypeScript.

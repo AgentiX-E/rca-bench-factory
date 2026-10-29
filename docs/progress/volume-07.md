@@ -1601,3 +1601,102 @@ per-test-only spelling reads as 0, a budget inside a comment reads as 0, an unde
 Unchanged from the round before, and each still a limit rather than a task: ten samples remain and top
 out at two hops; the third hop's reader is implied rather than quoted; the new case's answer sits at
 rank 1 on a zero baseline; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired annotation.
+
+## v3.09 — a reading sits on its unit's grid, and the twenty-first case
+
+**What the round set out to do.** The plan's first item was the next annotation: one of the ten
+samples without a four-layer case, one round at a time. The sample chosen was
+`code-off-by-one-invoice-renderer`, because its only moving reading is *how many lines a page carries*
+— a count of things — and writing the guard for it raised a question the corpus had never been asked.
+
+**What the question found.** Nothing checked that a declared count expands to whole numbers. The rule
+was written, and the shipped corpus failed it in **31 places across 6 series**:
+
+| case | series | declared | the expansion produced |
+| --- | --- | --- | --- |
+| `config-ingress-timeout-partner-portal` | `ingress_504_responses_total` | 0 → 1 | `1.02`, `0.984`, `1.016` |
+| `queue-watermark-ledger-writer` | `producer_buffer_records` | 200 → 40000 | `203.2`, `196.8`, `201.2` |
+| `resource-memory-request-ingest-writer` | `backlog_messages` | 200 → 50000 | `203.2`, `196.8`, `201.2` |
+| `container-crash-loop-media` | `container_restarts_total` | 0 → 178 | `22.25`, `44.5`, `66.75` |
+| `pod-shutdown-webhook-dispatcher` | `webhook_deliveries_dropped_total` | 0 → 300 | `37.5`, `112.5` |
+
+Two mechanisms, and the second is the one worth stating: sampling noise is a fraction of the reading
+(`200 ± 2 % = 203.2` records), **and** a counter's accumulation is divided into eight equal steps
+(`178 / 8 = 22.25` restarts). The module's docstring says a counter is "exact because it is a total",
+and exact is not the same as whole — that is the sentence the round had been missing.
+
+**Why every door was open.** The range cannot see it (`count` has no ceiling, so `clampToUnit` is silent
+by construction, finding 252). The vocabulary check cannot see it (finding 254 refused the `noise` field
+on a counter; it never asked what the samples were). And the anomaly gate cannot see it: G3 asks whether
+a metric sustains `|Z| >= 2`, and `Math.abs(203.2) >= 2` is true — a fractional reading is not *wrong*
+to G3, it is merely a number.
+
+**The fix, and the fact that no data changed.** The unit table states a second obligation beside the
+range: the grid a reading may land on.
+
+| function | answer | why it is not the other thing |
+| --- | --- | --- |
+| `admitsFraction('count')` | **false** | a count is a number of things |
+| `admitsFraction('cores')` | true | `500m` is a quantity in thousandths, not half a processor |
+| `admitsFraction('MiB/s')` | true | a unit the table does not know: same decision `measurementBounds` makes |
+| `quantizeToUnit(unit, value)` | `Math.round` for a count, unchanged otherwise | rounding rather than refusing, because 178 restarts must stay expressible |
+
+`withNoise` applies both — `quantizeToUnit(unit, clampToUnit(unit, level))` — and the counter branch
+applies the grid alone. **Not one declaration in `golden-master` was edited**, and the corpus went from
+31 problems to zero: the data was always right, the arithmetic that read it was not.
+
+**The rule that was written three times.** The first version called the expansion with the raw
+declaration and reported `NaN` for `client_pool_connections_in_use` — a defect in the rule, filed
+against the corpus, because that case's `post` is a `{ parameter }` reference and `object - number` is
+`NaN`. The resolution is now one function used by both call sites. The second version checked the
+samples and could not fail once the expansion quantized; it was removed, because **a gate no input can
+fail is a line a reader learns to skip**. The third asks a different question — is the *declared*
+reading one the expansion can keep — and `post: 201.5` in `count` now fails it.
+
+| gate | before | after |
+| --- | --- | --- |
+| `unit.test.ts` | 16 tests | **19** (`admitsFraction` ×2, `quantizeToUnit` ×1) |
+| `derived-telemetry.test.ts` | 30 tests | **31**, one pinning sixteen numbers across both mechanisms |
+| `check-fault-cases.test.ts` | 109 tests | **110** (one added, one whose premise the fix removed) |
+| the corpus | 31 fractional samples | **0** |
+| the guard | `noise` vocabulary only | **also refuses a count declared as a fraction** |
+| core / cli / repo | 192 / 4787 · 4 / 187 · 196 / 4974 | 192 / **4792** · 4 / 187 · 196 / **4979** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | **unchanged** |
+| audit | 8 volumes, findings 1–283 | **1–285** |
+
+**The twenty-first case.** `history-code-off-by-one-invoice-renderer` — L3, two hops, and the first
+case in the corpus whose *correct* readings outnumber its moving one. The total reconciles, no log line
+was written, and the only series that moves is `rendered_lines_per_page`, from six to five. Both
+numbers are the case's own parameters (`pageSize`, `renderedLinesPerPage`), so the gap of one is
+arithmetic the text states rather than two values edited into agreement.
+
+| reading | before | after | what it is |
+| --- | --- | --- | --- |
+| `rendered_lines_per_page` | 6 | 5 | the only reading that can locate the defect, and it moves by one |
+| `invoice_totals_matched_ratio` | 1 | 1 | a **correct** reading: the total is summed from the source list, off the loop's path |
+| `invoice_render_log_lines` | 0 | 0 | an absent log, not a quiet one: the item was dropped without a condition that could fail |
+
+The corpus reading: **21 of 30**, `L1 2 / L2 9 / L3 7 / L4 3`, 71 of 71 checkpoint references resolve,
+0 of 67 comparable assertions fail, 56 entities and 39 edges, 24 services each with a background
+series. Strict displacement stays at **2** — the new case's answer is at rank 1 on both baselines, which
+is the honest reading and not the one this round wanted.
+
+### Left open
+
+- **The third strict displacement is still not built.** Both existing ones are "one fault plus one loud
+  bystander"; what is wanted is a case where the loudest reading belongs to a *different fault*. None of
+  the ten remaining samples carries two faults, so this needs either a new sample or a decision.
+  `[open: a case where the loudest reading belongs to a different fault, not to a bystander]`
+- **The stalest volume has 107 bytes left.** `docs/audit/volume-03.md` is 279,893 of a 280,000-byte
+  budget. Any edit to it fails the gate, and the failure will look like a broken guard rather than a
+  full volume. `[open: volume-03 is 107 bytes under its budget; nothing warns before the edit]`
+- **`resolvedReadings` is a convention, not a type.** `expandSeries` takes `Number`s, the script builds
+  the resolution, and the obligation to apply it lives in a helper's comment. A `.ts` caller makes the
+  same mistake and gets the same silent `NaN`.
+  `[open: the resolution is enforced by a helper and a comment, not by the signature]`
+- **Ten samples remain unannotated**, and the structural ceiling is still two hops for all of them.
+  `[open: ten of thirty samples carry no four-layer case]`
+
+Unchanged from the round before: the trigger for a suite budget is a property of the runner; the
+`same-component` rename is uncounted; rule 7 is a file-level claim; `ROOT_OFF_ITS_CHAIN`'s evidence is a
+test rather than a repaired annotation; and a budget that is *missing* is invisible to every static arm.

@@ -358,6 +358,24 @@
       "kind": "node",
       "name": "cache-node-3",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/invoice-renderer",
+      "kind": "service",
+      "name": "invoice-renderer",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/invoice-renderer-0",
+      "kind": "pod",
+      "name": "invoice-renderer-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/invoice-renderer-app",
+      "kind": "container",
+      "name": "invoice-renderer-app",
+      "aliases": []
     }
   ],
   "edges": [
@@ -545,6 +563,16 @@
       "from": "service:synthetic-storefront/catalog-service",
       "to": "service:synthetic-storefront/product-index",
       "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/invoice-renderer",
+      "to": "pod:synthetic-storefront/invoice-renderer-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/invoice-renderer-0",
+      "to": "container:synthetic-storefront/invoice-renderer-app",
+      "relation": "contains"
     }
   ]
 }

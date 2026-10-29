@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  admitsFraction,
   clampToUnit,
   convertUnit,
   dimensionOf,
   isConvertible,
   knownUnits,
   measurementBounds,
+  quantizeToUnit,
   UnitError,
 } from '../src/util/unit.js';
 
@@ -114,6 +116,54 @@ describe('dimensionOf', () => {
 
   it('throws for unknown units', () => {
     expect(() => dimensionOf('furlong')).toThrow(UnitError);
+  });
+});
+
+describe('admitsFraction', () => {
+  it('says a count lands on whole things, and that every continuous dimension does not', () => {
+    // A count is a number of things: 203.2 records is not a reading a system can produce, and a
+    // hundredth of a 504 response is not a response. The other five dimensions here are continuous
+    // -- a duration, a byte count, a rate and a share all land between two integers -- and `cores`
+    // belongs with them, because `500m` is a quantity stated in thousandths rather than half a
+    // processor.
+    expect(admitsFraction('count')).toBe(false);
+    expect(admitsFraction('ms')).toBe(true);
+    expect(admitsFraction('MiBy')).toBe(true);
+    expect(admitsFraction('rps')).toBe(true);
+    expect(admitsFraction('%')).toBe(true);
+    expect(admitsFraction('1')).toBe(true);
+    expect(admitsFraction('mcore')).toBe(true);
+    expect(admitsFraction('core')).toBe(true);
+  });
+
+  it('answers true for a unit it does not know, rather than inventing a rule for it', () => {
+    // The same decision `measurementBounds` makes when it returns `undefined`: a caller must not be
+    // told that half of something is impossible in a unit nobody declared. The two answers have to
+    // agree in shape, or a guard built on one would refuse what the other could not describe.
+    expect(admitsFraction('MiB/s')).toBe(true);
+    expect(admitsFraction('parsec')).toBe(true);
+    expect(measurementBounds('parsec')).toBeUndefined();
+  });
+});
+
+describe('quantizeToUnit', () => {
+  it('puts a count on a whole thing, and leaves every continuous reading where it was', () => {
+    // The grid a reading has to sit on, as the range's companion. A count is a number of things, so
+    // the nearest whole thing is what a measurement in it can report: 203.2 records is not a
+    // measurement, it is a fraction of one record (finding 284).
+    expect(quantizeToUnit('count', 203.2)).toBe(203);
+    expect(quantizeToUnit('count', 196.8)).toBe(197);
+    expect(quantizeToUnit('count', 1.02)).toBe(1);
+    expect(quantizeToUnit('count', 12)).toBe(12);
+    // Continuous readings are untouched, and that is the half that would be lost if rounding were
+    // applied to every unit: a latency percentile between two integers is the normal case.
+    expect(quantizeToUnit('ms', 4.3)).toBe(4.3);
+    expect(quantizeToUnit('%', 87.5)).toBe(87.5);
+    expect(quantizeToUnit('mcore', 500.5)).toBe(500.5);
+    // No unit, or one the table does not know: nothing to round against, for the reason
+    // `admitsFraction` gives.
+    expect(quantizeToUnit(undefined, 203.2)).toBe(203.2);
+    expect(quantizeToUnit('parsec', 1.5)).toBe(1.5);
   });
 });
 

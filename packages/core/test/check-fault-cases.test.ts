@@ -926,6 +926,31 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     );
   });
 
+  it('refuses a count declared as a fraction of a thing', () => {
+    // The other side of the same grid. The rule above holds the *samples*; this holds the number the
+    // author wrote, and it is not the same rule: a declaration of 12.5 things expands to samples the
+    // grid can round, but a counter's last sample is required to be the declared post, and rounding
+    // it would move the reading the file states. A file whose reading moved on the way to a solver is
+    // the failure this whole guard exists to prevent.
+    const declared = JSON.parse(
+      readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+    ) as { series: Array<Record<string, unknown>> };
+    declared.series.push({
+      service: 'checkout-api',
+      metric: 'throttled_periods',
+      unit: 'count',
+      baseline: 200,
+      post: 201.5,
+      noise: 'none',
+      quote: 'the pod sat pinned at its 500m limit',
+      why: 'a count declared as a fraction, which is the number the expansion would have to round',
+    });
+    const result = run(['--cases', corpus({ signals: declared })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("declares post 201.5 for 'throttled_periods' in 'count'");
+    expect(result.out).toContain('a count lands on whole things');
+  });
+
   it('refuses a derivation outside the vocabulary instead of treating it as a step', () => {
     // The first version of the expansion tested `derivation === 'counter'` and let everything else
     // mean `step`, so `"counters"` would have produced a step series silently -- a file that reads

@@ -1072,6 +1072,7 @@ const TESTED = [
   'parseTimestamp',
   // util/unit.ts
   'UnitError',
+  'admitsFraction',
   'clampToUnit',
   'convertUnit',
   'dimensionOf',
@@ -1079,6 +1080,7 @@ const TESTED = [
   'isConvertible',
   'knownUnits',
   'measurementBounds',
+  'quantizeToUnit',
 ];
 
 /**

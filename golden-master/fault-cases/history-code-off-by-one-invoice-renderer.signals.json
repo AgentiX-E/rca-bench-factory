@@ -1,0 +1,38 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-code-off-by-one-invoice-renderer",
+  "why": "Telemetry for the pagination case, and the corpus's first whose two flat series are both correct readings rather than controls. A page that carries five lines instead of six is the whole of the evidence, and it is a count of things, so it is declared exact: a page does not carry 5.1 lines. The ratio at one is not a control -- every total really did reconcile, because the total is summed from the source list and the loop that lost the line is not on that path -- and the log count at zero is not a quiet log but an absent one: the loop skipped an item without evaluating a condition that could fail, so there is nothing for an error-rate reading to have missed. A corpus whose only moving reading is a line count is a case that a threshold on latency or on errors cannot solve at all.",
+  "series": [
+    {
+      "service": "invoice-renderer",
+      "metric": "rendered_lines_per_page",
+      "unit": "count",
+      "baseline": { "parameter": "pageSize" },
+      "post": { "parameter": "renderedLinesPerPage" },
+      "noise": "none",
+      "quote": "The invoice renderer skipped the last line of every multi-page invoice",
+      "why": "the checkpoint `cp-lines-per-page` holds the five: both numbers are the case's own parameters, so the gap of one is the arithmetic the text states rather than two values edited into agreement"
+    },
+    {
+      "service": "invoice-renderer",
+      "metric": "invoice_totals_matched_ratio",
+      "unit": "1",
+      "baseline": 1,
+      "post": 1,
+      "noise": "none",
+      "quote": "totals still match",
+      "why": "the checkpoint `cp-totals-match` holds the one: the total is summed from the source list, so it is correct and it is blind, and a reader who checks only the total concludes nothing is wrong"
+    },
+    {
+      "service": "invoice-renderer",
+      "metric": "invoice_render_log_lines",
+      "unit": "count",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "Nothing is logged",
+      "why": "the checkpoint `cp-no-logs` holds the zero: the item was dropped without a condition that could fail, so the absence of a log line is the fault's shape rather than a gap in collection"
+    }
+  ]
+}
