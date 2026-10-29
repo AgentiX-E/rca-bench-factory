@@ -538,3 +538,17 @@ number the guard prints.
 | --- | --- | --- |
 | the sentence | `seventeen quiet neighbours` against 22 series | **`every quiet neighbour the graph holds`** against 23 |
 | the guard | no test on the prose | **a test refusing a cardinality in front of the phrase**, by shape, so a new spelling is caught |
+
+### The same shape, once more, in a file written minutes earlier
+
+The round's new case arrived with a sentence of the same kind: its slot checkpoint was described as
+"the only reading in the window that moved" while the case's own signals file carries two moving series,
+the second being the first expressed as a share. Nothing checked the claim, and nothing would have: it
+is prose about a set, written while the set had one member and kept after it had two. Three descriptions
+now say "one of the two readings that moved" and name the other.
+
+That is the point of recording it here rather than in a commit message. Finding 282 is not about a typo
+in an old file; it is about a class of sentence — *a count, a total or an exclusivity claim about the
+corpus, written when the corpus was smaller* — and the class recurs within hours, in the same round, by
+the same hand. The only structural defence the log has found is the one applied twice above: move the
+number to where it is derived and refuse the prose form that carries it.
