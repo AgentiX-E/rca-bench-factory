@@ -3,6 +3,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    // The suite's stopwatch. A file that blocks the event loop past the worker's
+    // RPC deadline makes vitest exit non-zero while every test passes, and until
+    // v3.12 nothing measured it -- see `test/support/event-loop-stall.ts` and
+    // finding 290 for the controlled pair that established the mechanism.
+    setupFiles: ['./test/setup/stall-watch.ts'],
     // The number of files run at once, capped rather than left to the CPU count.
     //
     // ## The measurement

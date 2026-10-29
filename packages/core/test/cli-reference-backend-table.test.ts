@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -29,16 +29,32 @@ const DRIVES = ['scripts/check-cli-reference.mjs'];
  *     [vitest-worker]: Timeout calling "onTaskUpdate"
  *
  * while **every test passed** -- `Test Files 140 passed`, `Tests 3756 passed`,
- * `Errors 1 error`. The worker's RPC to the main process timed out under the
- * accumulated update traffic, and vitest exits non-zero for an unhandled error
- * even when the suite is green. Locally the same run passed, because this machine
- * is faster.
+ * `Errors 1 error`. Vitest exits non-zero for an unhandled error even when the
+ * suite is green, and locally the same run passed.
  *
- * Splitting the file is the fix rather than widening a timeout: it restores the
- * parallelism a second test file gets for free, and it costs nothing else. That
- * the symptom appeared only on the runner is the point of the `cold-tree` job and
- * of the budget measurements recorded in `.github/workflows/ci.yml` -- a local
- * green is not a reading about the runner.
+ * ## What this file got wrong about why, and what replaced it
+ *
+ * The paragraph above used to continue: *"the worker's RPC to the main process
+ * timed out under the accumulated update traffic **... Splitting the file is the
+ * fix rather than widening a timeout**"*. Both halves were wrong.
+ *
+ * The timeout is not about traffic. `onTaskUpdate` is a call the worker makes to
+ * the main process over a bridge whose deadline is 60 s, and the deadline is
+ * measured by a timer **in the worker**. A file whose children are spawned
+ * synchronously blocks the worker's own event loop, so the loop never reaches the
+ * timers phase to notice that the answer arrived long ago; when it finally does,
+ * the first thing it sees is an expired timer. v3.12 established that with a
+ * controlled pair rather than by reading: nine seven-second synchronous `sleep`
+ * children in one file reproduce this exact error with every test passing, and the
+ * same nine children `await`ed do not. The split therefore fixed nothing -- it
+ * halved the blocking window, so the same file grew back past the deadline two
+ * rounds later, which is what CI run `40886479390` reported.
+ *
+ * The two files now wait for their children (`execFile`) instead of blocking on
+ * them, which removes the blocking rather than the budget it was spending. The
+ * split is kept because two files still run in parallel and cost nothing, not
+ * because it was the fix. `docs/audit/volume-09.md` records the pair, and
+ * `stall-budget.test.ts` measures the property that replaced this one.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -76,22 +92,34 @@ function treeWith(functionalReference: string): string {
   return tree;
 }
 
-function run(tree: string): Outcome {
-  const result = spawnSync(process.execPath, [join(tree, 'scripts', SCRIPT)], {
-    encoding: 'utf8',
-    cwd: tree,
+/** One child, as an `Outcome`, whether it exited or failed to start. */
+function runNode(args: string[], cwd: string): Promise<Outcome> {
+  return new Promise<Outcome>((settle) => {
+    // `execFile` rather than a synchronous spawn: see the header. `promisify` is
+    // deliberately not used, because rule 7 of `gate-sites-are-proven.test.ts`
+    // reads these calls to infer which scripts this file drives.
+    execFile(process.execPath, args, { encoding: 'utf8', cwd }, (error, stdout, stderr) => {
+      if (error === null) {
+        settle({ status: 0, stdout, stderr });
+        return;
+      }
+      const code = (error as { code?: unknown }).code;
+      settle({
+        status: typeof code === 'number' ? code : -1,
+        stdout,
+        stderr: typeof code === 'number' ? stderr : error.message,
+      });
+    });
   });
-  if (result.error !== undefined) {
-    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
-  }
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
+function run(tree: string): Promise<Outcome> {
+  return runNode([join(tree, 'scripts', SCRIPT)], tree);
 }
 
 /** The commands the real binary advertises, read from its own `--help`. */
-function advertisedTopics(): string[] {
-  const help = spawnSync(process.execPath, [resolve(ROOT, 'packages/cli/dist/main.js'), '--help'], {
-    encoding: 'utf8',
-  }).stdout;
+async function advertisedTopics(): Promise<string[]> {
+  const help = (await runNode([resolve(ROOT, 'packages/cli/dist/main.js'), '--help'], ROOT)).stdout;
   const section = help.split('Commands:')[1]?.split('\n\n')[0] ?? '';
   return [...section.matchAll(/^ {2}([a-z][\w-]*)\s{2,}\S/gm)]
     .map((m) => m[1]!)
@@ -104,15 +132,13 @@ function advertisedTopics(): string[] {
  * The flag lists are read from each command's real `--help` rather than invented,
  * so the only thing the caller varies is the *structure*.
  */
-function referenceFor(topics: string[]): string {
+async function referenceFor(topics: string[]): Promise<string> {
   const lines = ['# CLI reference', '', '## Implemented commands', '', '| Command | What it does |', '| --- | --- |'];
   for (const topic of topics) lines.push(`| \`${topic}\` | a command |`);
   lines.push('');
   for (const topic of topics) {
     lines.push(`### \`rca-bench ${topic}\``, '');
-    const help = spawnSync(process.execPath, [resolve(ROOT, 'packages/cli/dist/main.js'), topic, '--help'], {
-      encoding: 'utf8',
-    }).stdout;
+    const help = (await runNode([resolve(ROOT, 'packages/cli/dist/main.js'), topic, '--help'], ROOT)).stdout;
     const flags = [...help.matchAll(/^ {2}(--[\w-]+)/gm)].map((m) => m[1]!);
     lines.push(`Flags: ${flags.map((f) => `\`${f}\``).join(', ')}`, '');
   }
@@ -145,8 +171,8 @@ function committedPullTable(): string {
 }
 
 /** A reference whose `pull` section carries the given per-backend table. */
-function referenceWithPullTable(table: string): string {
-  const document = referenceFor(advertisedTopics());
+async function referenceWithPullTable(table: string): Promise<string> {
+  const document = await referenceFor(await advertisedTopics());
   const withTable = document.replace(
     /(### `rca-bench pull`\n\nFlags: [^\n]*\n)/,
     `$1\n${table}\n`,
@@ -169,46 +195,46 @@ function referenceWithPullTable(table: string): string {
  * error a reader would act on.
  */
 describe('scripts/check-cli-reference.mjs · the per-backend table', () => {
-  it('accepts the committed table', { timeout: 30_000 }, () => {
-    const result = run(treeWith(referenceWithPullTable(committedPullTable())));
+  it('accepts the committed table', { timeout: 30_000 }, async () => {
+    const result = await run(treeWith(await referenceWithPullTable(committedPullTable())));
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('CLI reference check PASSED');
   });
 
-  it('refuses a backend the table leaves out', { timeout: 30_000 }, () => {
+  it('refuses a backend the table leaves out', { timeout: 30_000 }, async () => {
     const table = committedPullTable().replace(/^\| `kubernetes` \|.*\n?/m, '');
     expect(table).not.toContain('`kubernetes`');
 
-    const result = run(treeWith(referenceWithPullTable(table)));
+    const result = await run(treeWith(await referenceWithPullTable(table)));
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('kubernetes');
   });
 
-  it('refuses a backend the table invents', { timeout: 30_000 }, () => {
+  it('refuses a backend the table invents', { timeout: 30_000 }, async () => {
     const table = `${committedPullTable()}\n| \`graphite\` | \`--base-url\` | \`--query\` |`;
 
-    const result = run(treeWith(referenceWithPullTable(table)));
+    const result = await run(treeWith(await referenceWithPullTable(table)));
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('graphite');
   });
 
-  it('refuses a required flag the table never names', { timeout: 30_000 }, () => {
+  it('refuses a required flag the table never names', { timeout: 30_000 }, async () => {
     const table = committedPullTable().replace(
       /^\| `clickhouse` \|.*$/m,
       '| `clickhouse` | `--base-url --query --columns --user` | `--timestamp-unit --password --database --timeout-ms` |',
     );
     expect(table).not.toMatch(/`clickhouse`[^|]*\|[^|]*--limit/);
 
-    const result = run(treeWith(referenceWithPullTable(table)));
+    const result = await run(treeWith(await referenceWithPullTable(table)));
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('--limit');
   });
 
-  it('refuses a flag moved from required to optional, which a set comparison would accept', { timeout: 30_000 }, () => {
+  it('refuses a flag moved from required to optional, which a set comparison would accept', { timeout: 30_000 }, async () => {
     // Both columns still name `--service-label`; only the column changed. A gate
     // that compared the union of the two would stay green here, and a reader who
     // followed the document would omit a flag Loki refuses to run without.
@@ -217,7 +243,7 @@ describe('scripts/check-cli-reference.mjs · the per-backend table', () => {
       '| `loki` | `--base-url --query --start --end --limit --direction` | `--service-label --timeout-ms` |',
     );
 
-    const result = run(treeWith(referenceWithPullTable(table)));
+    const result = await run(treeWith(await referenceWithPullTable(table)));
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('--service-label');

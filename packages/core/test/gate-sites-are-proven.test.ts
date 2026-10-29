@@ -82,7 +82,20 @@ import { afterAll, describe, expect, it } from 'vitest';
  *      claim, like `status` and `provedBy` -- and, like them, one this file can
  *      now reject.
  *   2. **Inferred.** The test file contains a `spawnSync`/`execFileSync`/
- *      `execSync` call whose argument list names the script.
+ *      `execSync`/`spawn`/`execFile`/`exec` call whose argument list names the
+ *      script.
+ *
+ * The asynchronous spellings were added in v3.12, and the reason is not tidiness.
+ * Until then a file could only be inferred as driving a script if it spawned it
+ * **synchronously** -- and the corpus's slowest proof files were exactly the ones
+ * that did, because a synchronous spawn is a blocked event loop. Converting
+ * `check-cli-reference.test.ts` to `execFile` therefore made rule 7 report the
+ * site as `declares it but never spawns it`, so the rule quietly required the
+ * defect that `docs/audit/volume-09.md` records: a test file whose children total
+ * more than 60 seconds of blocked loop, after which vitest exits non-zero with
+ * every test passing. A rule about *evidence* had become a rule about *blocking*.
+ * The set of spellings is one value (`SPAWN_CALL`) so the two places that read it
+ * cannot drift apart again.
  *
  * Neither alone is sufficient, and the reason is measured rather than assumed.
  * Inference alone would reject four real proofs: `probe-built-module-guards.ts`
@@ -249,6 +262,17 @@ function declaredDrives(body: string): string[] {
  * regex, because `spawnSync(node, [SCRIPT, ...args])` nests a call inside the
  * argument list and a lazy match would stop at the inner `)`.
  */
+/**
+ * Every spelling of "a child process was started" this repository uses.
+ *
+ * `exec` and `execFile` are here for the reason the header states: rule 7 infers
+ * what a file *runs*, and an asynchronous call runs the same script as the
+ * synchronous one. The negative lookbehind keeps `someRegExp.exec(...)` out --
+ * without it the helper scan classifies any function that matches a pattern as a
+ * spawning helper and then reads the arguments of every call to it as evidence.
+ */
+const SPAWN_CALL = /(?<![.\w])(?:spawnSync|execFileSync|execSync|spawn|execFile|exec)\s*\(/;
+
 function inferredDrives(body: string): string[] {
   // Identifier -> script filename, from the file's own top-level declarations.
   const bindings = new Map<string, string>();
@@ -348,7 +372,8 @@ function inferredDrives(body: string): string[] {
   }
 
   // Class 1: the spawn call itself.
-  for (const call of body.matchAll(/\b(?:spawnSync|execFileSync|execSync)\s*\(/g)) {
+  const calls = new RegExp(SPAWN_CALL.source, 'g');
+  for (const call of body.matchAll(calls)) {
     scriptsIn(argumentList(call.index));
   }
 
@@ -357,7 +382,7 @@ function inferredDrives(body: string): string[] {
   // unrelated cannot be read as a drive.
   const helpers = new Set<string>();
   for (const fn of body.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(/g)) {
-    if (/\b(?:spawnSync|execFileSync|execSync)\s*\(/.test(functionBody(fn.index))) helpers.add(fn[1]);
+    if (SPAWN_CALL.test(functionBody(fn.index))) helpers.add(fn[1]);
   }
   for (const helper of helpers) {
     const calls = [...body.matchAll(new RegExp(`\\b${helper}\\s*\\(`, 'g'))];

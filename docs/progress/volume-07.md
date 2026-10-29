@@ -1902,3 +1902,93 @@ number `volume-03` has been sitting on for two rounds); the resolution obligatio
 without naming it; `same-component`'s rename is uncounted; rule 7 is a file-level claim; `ROOT_OFF_ITS_CHAIN`
 evidence is a test rather than a repaired annotation; a modality declared and lost in the export is still
 green; and a log checkpoint's `entityRef` is never compared with the service its line is attributed to.
+
+## v3.12 — every test passed and the run was not green
+
+**Where the round started.** Not with the plan. v3.11 was pushed as `92a1f9319` / `76b8a02f4` and CI
+came back failed with `Test Files 192 passed (192)`, `Tests 4807 passed (4807)`, `Errors 1 error` and
+coverage complete on all four dimensions. A round that cannot tell whether its own predecessor was
+green cannot claim the next step, so the first item became the red instead of the twenty-fourth
+annotation. `docs/audit/volume-09.md` carries the two findings; this is the round's account of them.
+
+**What the error was, and what it was not.** `[vitest-worker]: Timeout calling "onTaskUpdate"` names
+the worker's call to the main process and no test at all. Three explanations were available and each
+predicted something the log does not show: a starved runner predicts a timeline gap (the largest in
+157 KB of log is 7.7 s, and it is the gap before a slow file's own completion line); a per-test timeout
+predicts a `Test timed out` line (there is none); a slower machine predicts a local pass with a shorter
+wall time (the local run takes the same 108 s). What survived was a controlled pair.
+
+**The pair is the finding.** Two files, nine tests each, seven seconds of `sleep` in each test, one
+token different:
+
+| the file | total | result | exit |
+| --- | --- | --- | --- |
+| nine synchronous children | 63.97 s | `[vitest-worker]: Timeout calling "onTaskUpdate"` | 1 |
+| nine awaited children | 63.91 s | clean | 0 |
+
+Both pass every test, both spend 63 seconds, and the wall times agree to 60 ms — so anything that
+explains the red as *slowness* predicts the wrong row. The bridge's deadline is 60 s (`birpc`'s
+`DEFAULT_TIMEOUT = 6e4`, not configurable through any vitest option), the timer that measures it runs
+in the worker, and Node's timers phase runs before pending IPC: a loop blocked for 60 s reads its own
+expired timer first and throws, having never read the answer that arrived long before.
+
+**Which file, measured from the report rather than guessed.** `check-cli-reference.test.ts` ran
+61,201 ms on the runner across nine cases, each spawning the gate and one `--help` per topic — nine
+synchronous children of about seven seconds, awaiting only microtasks between them. Its sibling
+`cli-reference-backend-table.test.ts` was at 28,237 ms.
+
+**The fix removes the blocking rather than spending less of it.** Both files wait for their children
+now (`execFile` in a promise), and the suite's wall time is unchanged because the children take the
+same time either way. Then, because "no file blocks the loop past the bridge's deadline" is a property
+of the suite rather than of a file, it is measured:
+
+| what | where | reading |
+| --- | --- | --- |
+| the gauge | `test/support/event-loop-stall.ts` | longest stretch the loop did not turn, sampled every 50 ms, plus the stretch in progress when the file ends |
+| the hook | `test/setup/stall-watch.ts` | `setupFiles`, so every file's worker runs it; fails the file, naming the budget and the deadline |
+| the budget | 45,000 ms | three quarters of the deadline; the two largest legitimate stalls (36.7 s `typecheck-entrypoint`, 33.6 s `ingest-report`) sit inside it with 15 s of headroom |
+| the calibration | `stall-budget.test.ts` | reads `DEFAULT_TIMEOUT` out of the installed chunk and holds the constant equal to it |
+| the proof it can fail | `stall-budget.test.ts` | a real vitest over a two-case project at a 300 ms budget: the blocking case fails with the verdict, the awaited case passes |
+
+**The second finding is about the rule that proves gates can be tested.** Rule 7 of
+`gate-sites-are-proven.test.ts` accepted three spellings of "this file runs that script", and all three
+were synchronous. Converting the CLI-reference file to `execFile` therefore made the rule report the
+site as `declares it but never spawns it`: a rule about *evidence* had become a requirement that a
+proved gate's test block its own event loop. The evidence classes are now one constant (`SPAWN_CALL`)
+covering `spawn`, `execFile` and `exec` as well, with a negative lookbehind so a regex's `.exec(` is not
+read as a child. Both readers use it; the alternation had been typed twice, which is how the two could
+drift.
+
+**And the previous round's "fix" for this symptom is corrected where it was written.** The header that
+introduced `cli-reference-backend-table.test.ts` said the timeout came "under the accumulated update
+traffic" and that "splitting the file is the fix rather than widening a timeout". The split halved the
+blocking window instead of removing it; the file it left behind grew back past 60 s two rounds later,
+and `40886479390` is the recurrence. The paragraph is replaced with the pair and the mechanism.
+
+### Left open
+
+- **The `cli` package is not instrumented.** Its four files are small and the gauge lives in core's test
+  tree, so wiring it there needs a shared module this round did not pay for.
+  `[open: the property is measured in one package of two, and the cli package has no gauge at all]`
+- **Sixty-nine other test files still spawn synchronously.** The gauge makes a file's total visible
+  only when it crosses the budget; that is a threshold, not a prohibition.
+  `[open: the budget is a bound on the symptom rather than a prohibition, and the suite's largest legitimate stall is 82% of it]`
+- **The budget is chosen from two points and a constant.** 36.7 s legitimate, 61.2 s fatal, 60 s the
+  deadline, 45 s the line between them; a slower runner moves the legitimate side without moving the
+  fatal one. `[open: a number with three anchors and no measurement of the runner it protects, which is where this could break next]`
+- **A starved main process would say the same thing.** The pair proves the worker-side mechanism, not
+  that it is the only one; `maxWorkers: 8` on a two-vCPU runner is still an over-subscription.
+  `[open: only the worker side of the bridge is measured, and the main process can be starved by maxWorkers alone]`
+- **Rule 7 now accepts `spawn` of anything.** A helper that spawns a non-script child and is also called
+  with a script path would have that path counted as driven; a false inference shows up as a
+  disagreement with `DRIVES` rather than as silence, which bounds it but does not remove it.
+  `[open: the widened evidence class is bounded by the declaration rather than by the call, so a false inference is loud, not silent]`
+
+Unchanged from the round before: seven samples remain unannotated and the twenty-fourth was **not**
+built this round; the fourth strict displacement would still need a shape the corpus has not got; the
+resolution of a continuous unit is a convention; a measurable spread still divides by itself; the floor
+is called in two modules with nothing tying them; `settlement`'s second hop is a claim about a deploy;
+`volume-08` is at its budget (the ninth volume now exists, opening with this round's findings);
+`same-component`'s rename is uncounted; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired
+annotation; a modality declared and lost in the export is still green; and a log checkpoint's
+`entityRef` is never compared with the service its line is attributed to.
