@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -229,14 +229,41 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
   return dir;
 }
 
-function run(args: string[]): { status: number | null; out: string } {
-  const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', cwd: ROOT });
-  return { status: result.status, out: `${result.stdout}${result.stderr}` };
+/**
+ * Run the guard once, without holding the event loop.
+ *
+ * This file runs the guard **116 times**, one invocation per defect, and each
+ * invocation is a node process. `spawnSync` was the obvious way to write it and it
+ * made the file's whole duration a single block: a synchronous file never returns
+ * to the event loop, so the stall gauge -- which exists to keep a worker able to
+ * answer the main process -- measured 23 s on a fast runner and **55 s on a slow
+ * one**, past its 45 s budget and into the 60 s bridge deadline it protects
+ * (finding 297). Awaiting a child costs the same wall time and yields while it
+ * runs, so the longest block becomes one invocation.
+ */
+async function run(args: string[]): Promise<{ status: number | null; out: string }> {
+  const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    out += chunk;
+  });
+  child.stderr.on('data', (chunk: string) => {
+    out += chunk;
+  });
+  // `close`, not `exit`: it fires after the pipes have drained, so `out` is the
+  // whole of what the guard said rather than the part that arrived first.
+  const status = await new Promise<number | null>((done, fail) => {
+    child.on('error', fail);
+    child.on('close', (code) => done(code));
+  });
+  return { status, out };
 }
 
 describe('check-fault-cases · the corpus as it stands', () => {
-  it('accepts the shipped corpus and reports how many samples carry a case', () => {
-    const result = run([]);
+  it('accepts the shipped corpus and reports how many samples carry a case', async () => {
+    const result = await run([]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(`${String(CORPUS_SIZE)} of ${String(SAMPLE_COUNT)} sample(s) carry a four-layer case`);
     expect(result.out).toContain('every reference resolves');
@@ -244,12 +271,12 @@ describe('check-fault-cases · the corpus as it stands', () => {
     expect(result.out).toContain('every case passes G1, G2 and G5 -- structure, references, units, and no leaked identifiers');
   });
 
-  it('reports the shipped corpus as within its difficulty target, which the readout never said before', () => {
+  it('reports the shipped corpus as within its difficulty target, which the readout never said before', async () => {
     // The line is printed rather than gated, deliberately: a share is a property of the set, and a
     // rule that fails every run on something no label can repair teaches people to skip the line.
     // `difficulty-floor.test.ts` holds the same claim with an assertion, so the number a reader sees
     // in CI and the number the suite would refuse to lose are the same number.
-    const result = run([]);
+    const result = await run([]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('within the target');
     expect(result.out, 'the L4 share is the one this corpus spent seven rounds without').not.toContain(
@@ -257,17 +284,17 @@ describe('check-fault-cases · the corpus as it stands', () => {
     );
   });
 
-  it('accepts a corpus whose only case is the same one copied to a scratch directory', () => {
+  it('accepts a corpus whose only case is the same one copied to a scratch directory', async () => {
     // The path is a parameter, so the guard is not pinned to one directory. This is also what
     // lets the negative cases below run without touching the repository.
-    const result = run(['--cases', corpus({})]);
+    const result = await run(['--cases', corpus({})]);
     expect(result.status, result.out).toBe(0);
     // One, because the scratch corpus holds the one case the helper writes -- which is also what
     // proves the count is read from the directory it was given rather than from the repository.
     expect(result.out).toContain('1 of 30');
   });
 
-  it('states no neighbour count in the background file, because nothing re-derives one', () => {
+  it('states no neighbour count in the background file, because nothing re-derives one', async () => {
     // The file's own justification said a case's anomaly had "seventeen quiet neighbours", and that
     // may have been true when it was written. By the round this test was added the file held more
     // than twenty series -- so the one number in it that a reader would take as a property of the
@@ -289,19 +316,19 @@ describe('check-fault-cases · the corpus as it stands', () => {
 });
 
 describe('check-fault-cases · a case that is not complete', () => {
-  it('refuses a case whose causal chain was deleted, naming the layer and the reason', () => {
+  it('refuses a case whose causal chain was deleted, naming the layer and the reason', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         const truth = faultCase.groundTruth as Record<string, unknown>;
         delete truth.causalChain;
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('process: groundTruth.causalChain is absent or empty');
   });
 
-  it('refuses a case whose checkpoint names an entity the graph does not carry', () => {
+  it('refuses a case whose checkpoint names an entity the graph does not carry', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         const truth = faultCase.groundTruth as Record<string, unknown>;
@@ -309,12 +336,12 @@ describe('check-fault-cases · a case that is not complete', () => {
         checkpoints[0]!.entityRef = 'container:synthetic-storefront/gone';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('groundTruth.evidenceCheckpoints[cp-cpu-limit].entityRef -> container:synthetic-storefront/gone');
   });
 
-  it('refuses a case whose step cites evidence it does not state', () => {
+  it('refuses a case whose step cites evidence it does not state', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         const truth = faultCase.groundTruth as Record<string, unknown>;
@@ -322,39 +349,39 @@ describe('check-fault-cases · a case that is not complete', () => {
         chain[0]!.evidenceRefs = ['cp-nowhere'];
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('step 1 -> cp-nowhere');
   });
 
-  it('refuses a case whose root cause resolves nowhere', () => {
+  it('refuses a case whose root cause resolves nowhere', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         const truth = faultCase.groundTruth as Record<string, unknown>;
         truth.rootCauseEntityId = 'service:synthetic-storefront/never-existed';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('entity: \'service:synthetic-storefront/never-existed\' resolves to no entity in the graph');
   });
 });
 
 describe('check-fault-cases · the link back to the extraction key', () => {
-  it('refuses a case annotated from a sample the key does not carry', () => {
+  it('refuses a case annotated from a sample the key does not carry', async () => {
     // Otherwise the coverage figure is a number about a directory rather than about the key.
     const dir = corpus({ entry: { sampleId: 'no-such-sample' } });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("names sample 'no-such-sample', which the extraction key does not carry");
   });
 
-  it('refuses a fault type that disagrees with the sample the case is annotated from', () => {
+  it('refuses a fault type that disagrees with the sample the case is annotated from', async () => {
     // Finding 255. The corpus is two documents -- an extraction key of thirty samples and a set of
     // four-layer annotations -- joined by one string, and nothing compared them: the key says what the
     // fault is and the annotation says what the case ran, and a disagreement between the two would
     // have left the benchmark scoring an answer the key does not ask for.
-    const result = run([
+    const result = await run([
       '--cases',
       corpus({
         mutate: (faultCase) => {
@@ -368,8 +395,8 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     );
   });
 
-  it('refuses a category that disagrees with the sample', () => {
-    const result = run([
+  it('refuses a category that disagrees with the sample', async () => {
+    const result = await run([
       '--cases',
       corpus({
         mutate: (faultCase) => {
@@ -383,10 +410,10 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     );
   });
 
-  it('refuses a root cause component that disagrees with the sample', () => {
+  it('refuses a root cause component that disagrees with the sample', async () => {
     // The one that matters most: the component is the answer a solver has to name, so a case whose
     // truth is a different component from the key's is a case with two answers.
-    const result = run([
+    const result = await run([
       '--cases',
       corpus({
         mutate: (faultCase) => {
@@ -401,105 +428,105 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     );
   });
 
-  it('accepts the corpus, where every case agrees with its sample', () => {
-    const result = run(['--cases', CASES]);
+  it('accepts the corpus, where every case agrees with its sample', async () => {
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
   });
 
-  it('refuses an entry that does not say where its annotation came from', () => {
+  it('refuses an entry that does not say where its annotation came from', async () => {
     const dir = corpus({ entry: { why: 'because' } });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('does not say in at least forty characters');
   });
 
-  it('refuses two annotations of one case', () => {
+  it('refuses two annotations of one case', async () => {
     const dir = corpus({});
     const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as Record<string, unknown>;
     const cases = index.cases as unknown[];
     index.cases = [...cases, cases[0]];
     writeFileSync(join(dir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('appears twice in the index');
   });
 
-  it('refuses a case file the index does not name', () => {
+  it('refuses a case file the index does not name', async () => {
     // A file nobody indexed is a case that never runs, and the directory reading as one case
     // while holding two is the count defect this repository keeps fixing.
     const dir = corpus({ extraFiles: ['orphan.json'] });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('orphan.json is not named in index.json');
   });
 });
 
 describe('check-fault-cases · the floor moves up, and cannot be quietly lowered', () => {
-  it('refuses a corpus below its own floor', () => {
+  it('refuses a corpus below its own floor', async () => {
     const dir = corpus({ min: 2 });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('1 four-layer case(s), below the floor of 2');
     expect(result.out).toContain('lowering it is a decision, not a repair');
   });
 
-  it('reads a missing floor as zero rather than refusing the corpus', () => {
+  it('reads a missing floor as zero rather than refusing the corpus', async () => {
     // `min` is the one field that may be absent: a corpus with cases and no floor still has
     // cases, and inventing a floor would be the guard grading its own homework.
     const dir = corpus({});
     const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as Record<string, unknown>;
     delete index.min;
     writeFileSync(join(dir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('floor 0');
   });
 });
 
 describe('check-fault-cases · inputs it will not guess at', () => {
-  it('refuses a case that does not parse, with exit 1 and the schema message', () => {
+  it('refuses a case that does not parse, with exit 1 and the schema message', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         (faultCase.fault as Record<string, unknown>).category = 'not-a-category';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(1);
     expect(result.out).toContain('does not parse');
   });
 
-  it('refuses an index with the wrong schema', () => {
+  it('refuses an index with the wrong schema', async () => {
     const dir = corpus({ index: { schema: 'something-else', cases: [] } });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(1);
     expect(result.out).toContain("has schema 'something-else'");
   });
 
-  it('refuses an index with no cases array', () => {
+  it('refuses an index with no cases array', async () => {
     const dir = corpus({ index: { schema: 'rca-bench-fault-cases/2' } });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(1);
     expect(result.out).toContain("has no 'cases' array");
   });
 
-  it('refuses a missing index and a missing key by name', () => {
+  it('refuses a missing index and a missing key by name', async () => {
     const empty = workspace();
-    const missingIndex = run(['--cases', empty]);
+    const missingIndex = await run(['--cases', empty]);
     expect(missingIndex.status).toBe(1);
     expect(missingIndex.out).toContain('could not read the case index');
 
     const dir = corpus({});
-    const missingKey = run(['--cases', dir, '--samples', join(empty, 'nope.json')]);
+    const missingKey = await run(['--cases', dir, '--samples', join(empty, 'nope.json')]);
     expect(missingKey.status).toBe(1);
     expect(missingKey.out).toContain('could not read the extraction key');
   });
 
-  it('refuses an unknown argument and explains itself on --help', () => {
-    const unknown = run(['--nonsense']);
+  it('refuses an unknown argument and explains itself on --help', async () => {
+    const unknown = await run(['--nonsense']);
     expect(unknown.status).toBe(1);
     expect(unknown.out).toContain("unknown argument '--nonsense'");
 
-    const help = run(['--help']);
+    const help = await run(['--help']);
     expect(help.status).toBe(0);
     expect(help.out).toContain('usage: node scripts/check-fault-cases.mjs');
   });
@@ -513,59 +540,59 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
     return JSON.parse(JSON.stringify(REAL_SOURCES)) as Source[];
   }
 
-  it('refuses a quote the incident text does not contain, one word changed', () => {
+  it('refuses a quote the incident text does not contain, one word changed', async () => {
     // The defect this is for: an annotator paraphrases the source from memory and the case then
     // rests on a sentence nobody wrote. One word is enough to fail it.
     const edited = sources();
     edited[0]!.quote = 'the pod sat pinned at its 400m limit';
-    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('cites a entity quote the incident text does not contain');
     expect(result.out).toContain('the pod sat pinned at its 400m limit');
   });
 
-  it('accepts a quote whose whitespace differs from the text, because words are the claim', () => {
+  it('accepts a quote whose whitespace differs from the text, because words are the claim', async () => {
     // The comparison folds whitespace rather than bytes: a quote reflowed across two lines is the
     // same sentence, and failing it would train the annotator to copy line breaks.
     const edited = sources();
     edited[1]!.quote = 'Container CPU throttling   counters climbed the whole time';
-    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
     expect(result.status, result.out).toBe(0);
   });
 
-  it('refuses a corpus that quotes three layers and leaves one unsupported', () => {
+  it('refuses a corpus that quotes three layers and leaves one unsupported', async () => {
     const edited = sources().filter((source) => source.layer !== 'process');
-    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('quotes no sentence for: process');
   });
 
-  it('refuses a quote too short to be a sentence about anything', () => {
+  it('refuses a quote too short to be a sentence about anything', async () => {
     const edited = sources();
     edited[0]!.quote = 'the pod';
-    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('quote shorter than 12 characters');
   });
 
-  it('refuses a source whose layer is not one of the four', () => {
+  it('refuses a source whose layer is not one of the four', async () => {
     const edited = sources();
     edited[2]!.layer = 'timeline';
-    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("layer 'timeline', which is not one of entity / fault / process / evidence");
   });
 
-  it('refuses a quote with no statement of what it supports', () => {
+  it('refuses a quote with no statement of what it supports', async () => {
     const edited = sources();
     edited[3]!.why = 'because';
-    const result = run(['--cases', corpus({ entry: { sources: edited } })]);
+    const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('quotes for evidence without saying what it supports');
   });
 
-  it('refuses an entry that cites no sources at all', () => {
-    const result = run(['--cases', corpus({ entry: { sources: [] } })]);
+  it('refuses an entry that cites no sources at all', async () => {
+    const result = await run(['--cases', corpus({ entry: { sources: [] } })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('cites no sources');
   });
@@ -577,19 +604,19 @@ describe('check-fault-cases · the case is also held to L2, not only to its four
   // `checkG1Structural`, which requires milliseconds. Nothing noticed, because the guard had never
   // asked G1 anything. These two tests are the ask.
 
-  it('refuses a timestamp that is not canonical UTC ISO-8601', () => {
+  it('refuses a timestamp that is not canonical UTC ISO-8601', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         faultCase.injectTime = '2026-09-14T02:03:00Z';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('fails the L2 structural contract: injectTime must be canonical UTC ISO-8601');
     expect(result.out).toContain("got '2026-09-14T02:03:00Z'");
   });
 
-  it('refuses an onset that falls outside its own declared window', () => {
+  it('refuses an onset that falls outside its own declared window', async () => {
     // A four-layer complete case with `injectTime` after `window.end` passes every check in
     // `assessFourLayer` and is a case no evaluator can score.
     const dir = corpus({
@@ -599,7 +626,7 @@ describe('check-fault-cases · the case is also held to L2, not only to its four
         window.end = '2026-09-14T04:00:00.000Z';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('injectTime falls outside the declared window');
   });
@@ -610,7 +637,7 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
   // person writes and the conversion table does not have: `m` for millicores, `messages` for a
   // lag, `x` for a multiple. Nothing downstream could ever convert them, and nothing noticed
   // until G2 was asked.
-  it('refuses a checkpoint whose unit is not in the conversion table', () => {
+  it('refuses a checkpoint whose unit is not in the conversion table', async () => {
     const dir = corpus({
       mutate: (faultCase) => {
         const truth = faultCase.groundTruth as Record<string, unknown>;
@@ -618,12 +645,12 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
         checkpoints[0]!.unit = 'messages';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("fails the L2 reference contract: checkpoint 'cp-cpu-limit' uses unknown unit 'messages'");
   });
 
-  it('refuses a causal step that the topology does not connect', () => {
+  it('refuses a causal step that the topology does not connect', async () => {
     // The step is annotated, the entities exist, and the graph has no path between them -- a
     // chain that reads as propagation and cannot be walked.
     // The chain stays continuous -- step 2 starts where step 1 ended -- and the topology has no
@@ -641,7 +668,7 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
         chain[1]!.toEntityId = 'pod:synthetic-storefront/checkout-api-0';
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('asserts propagation with no path in the topology');
   });
@@ -664,16 +691,16 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     return declaration.series as Array<Record<string, unknown>>;
   }
 
-  it('accepts the shipped declaration and says how many cases carry telemetry', () => {
+  it('accepts the shipped declaration and says how many cases carry telemetry', async () => {
     const dir = corpus({ signals: signals() });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain(
       '1 of 1 also carry telemetry whose origin is declared, which passes G3, and which both the peak-z and the median-shift baselines place in their top-K',
     );
   });
 
-  it('refuses a series with no anomaly in it', () => {
+  it('refuses a series with no anomaly in it', async () => {
     // Both series flat: the case still has four layers, resolves, and quotes its text, and G3
     // says the telemetry carries no fault. This is the assertion that proves the gate is running
     // rather than skipping a case with no metrics.
@@ -681,38 +708,38 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     for (const one of seriesOf(edited)) {
       one.post = one.baseline;
     }
-    const result = run(['--cases', corpus({ signals: edited, competitor: false })]);
+    const result = await run(['--cases', corpus({ signals: edited, competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('signals fail G3: no metric sustains |Z| >= 2 for 3 samples after injection');
   });
 
-  it('refuses a derived value whose quote is not in the incident text', () => {
+  it('refuses a derived value whose quote is not in the incident text', async () => {
     const edited = signals();
     seriesOf(edited)[0]!.quote = '180ms to 4.4s';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('derives \'request_duration_p99_ms\' from a quote the incident text does not contain');
   });
 
-  it('refuses a declaration that names another case', () => {
+  it('refuses a declaration that names another case', async () => {
     const edited = signals();
     edited.caseId = 'history-something-else';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("names signals for 'history-something-else'");
   });
 
-  it('refuses an empty series', () => {
+  it('refuses an empty series', async () => {
     const edited = signals();
     edited.series = [];
-    const result = run(['--cases', corpus({ signals: edited, competitor: false })]);
+    const result = await run(['--cases', corpus({ signals: edited, competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares an empty signal series');
   });
 });
 
 describe('check-fault-cases · G5 is asked of every case, because it needs no telemetry', () => {
-  it('refuses a case that does not isolate its answer key', () => {
+  it('refuses a case that does not isolate its answer key', async () => {
     // `answerKeyIsolated` is a claim the case makes about itself, and until this round nothing
     // read it. A case whose answer key sits beside its query is a case whose oracle is the payload.
     const dir = corpus({
@@ -720,7 +747,7 @@ describe('check-fault-cases · G5 is asked of every case, because it needs no te
         faultCase.answerKeyIsolated = false;
       },
     });
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('fails the anti-pollution gate');
   });
@@ -743,32 +770,32 @@ describe('check-fault-cases · origin is a closed vocabulary, not a sentence', (
     return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
   }
 
-  it('refuses an origin that is neither derived nor captured', () => {
+  it('refuses an origin that is neither derived nor captured', async () => {
     const edited = signals();
     edited.origin = 'measured';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("declares origin 'measured', which is neither 'derived' nor 'captured'");
   });
 
-  it('refuses the old field name instead of reading it as no origin at all', () => {
+  it('refuses the old field name instead of reading it as no origin at all', async () => {
     // A declaration that still says `provenance` would otherwise arrive with no `origin`, and the
     // guard would report a vocabulary error about an empty string -- a message pointing at the value
     // when the thing that has to move is the key.
     const edited = signals();
     edited.provenance = edited.origin;
     delete edited.origin;
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("declares 'provenance'; the signals field is 'origin'");
   });
 
-  it('accepts captured, which nothing uses yet and the schema must still admit', () => {
+  it('accepts captured, which nothing uses yet and the schema must still admit', async () => {
     // The value exists for the case that is eventually collected from a deployment. A vocabulary
     // with one member would make the word "derived" unfalsifiable.
     const edited = signals();
     edited.origin = 'captured';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status, result.out).toBe(0);
   });
 });
@@ -788,14 +815,14 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
     return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
   }
 
-  it('accepts a case whose own service carries the anomaly the baseliner finds', () => {
-    const result = run(['--cases', corpus({ signals: signals() })]);
+  it('accepts a case whose own service carries the anomaly the baseliner finds', async () => {
+    const result = await run(['--cases', corpus({ signals: signals() })]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('1 of 1 also carry telemetry');
     expect(result.out).toContain('both the peak-z and the median-shift baselines place in their top-K');
   });
 
-  it('refuses a case whose anomaly belongs to a service the annotation does not name', () => {
+  it('refuses a case whose anomaly belongs to a service the annotation does not name', async () => {
     // The signals stay anomalous, so G3 passes; the ranking is built from them, so the annotated
     // component is outranked by every metric that moved and G4 refuses. This is the shape of a case
     // that reads as valid and cannot be scored, which is exactly what the gate is for.
@@ -809,7 +836,7 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
     for (const one of (edited.series as Array<Record<string, unknown>>)) {
       one.service = 'somebody-else';
     }
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
     // The message names both ranks, because "not solvable" is a claim about two runs and a reader
@@ -883,7 +910,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     };
   }
 
-  it('refuses a case that only the spike-sensitive baseline can locate', () => {
+  it('refuses a case that only the spike-sensitive baseline can locate', async () => {
     // The negative control for `minSolvers: 2`. The spike is the root cause's only evidence: peak-z
     // sees it, the median of the window does not, so the robust ranking places `checkout-api` fourth
     // of four -- outside a top-K of three -- and the case is refused. Under one solver it would pass.
@@ -897,37 +924,37 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     // baseline's median cannot see a lone spike, so it places the answer fourth.
     // No competitor: this test is about the two solvers disagreeing, and a corpse-wide refusal for a
     // second reason would make its numbers unreadable.
-    const result = run(['--cases', corpus({ signals: spikeCase(), competitor: false })]);
+    const result = await run(['--cases', corpus({ signals: spikeCase(), competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
     expect(result.out).toContain('peak-z-by-service=1, median-shift-by-service=4');
   });
 
-  it('refuses a noise value outside the vocabulary', () => {
+  it('refuses a noise value outside the vocabulary', async () => {
     // Finding 254. The field decides whether a reading is exact, so a typo must not be read as
     // `sampled`: `"none "` would otherwise produce a jittered series that reads as exact.
     const edited = spikeCase();
     (edited.series as Array<Record<string, unknown>>)[0]!.noise = 'samppling';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares noise 'samppling' for 'request_duration_p99_ms', which is not one of sampled / none",
     );
   });
 
-  it('refuses a noise claim on a counter, because a counter is already exact', () => {
+  it('refuses a noise claim on a counter, because a counter is already exact', async () => {
     // Two ways to say one thing is one too many: a counter's samples are its accumulation and carry no
     // noise either way, so the field beside it says nothing and would let a reader believe it did.
     const edited = spikeCase();
     (edited.series as Array<Record<string, unknown>>)[1]!.noise = 'none';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares noise for 'container_cpu_throttled_seconds_total', which is a counter -- its samples are exact either way",
     );
   });
 
-  it('refuses a count declared as a fraction of a thing', () => {
+  it('refuses a count declared as a fraction of a thing', async () => {
     // The other side of the same grid. The rule above holds the *samples*; this holds the number the
     // author wrote, and it is not the same rule: a declaration of 12.5 things expands to samples the
     // grid can round, but a counter's last sample is required to be the declared post, and rounding
@@ -946,19 +973,19 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
       quote: 'the pod sat pinned at its 500m limit',
       why: 'a count declared as a fraction, which is the number the expansion would have to round',
     });
-    const result = run(['--cases', corpus({ signals: declared })]);
+    const result = await run(['--cases', corpus({ signals: declared })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("declares post 201.5 for 'throttled_periods' in 'count'");
     expect(result.out).toContain('a count lands on whole things');
   });
 
-  it('refuses a derivation outside the vocabulary instead of treating it as a step', () => {
+  it('refuses a derivation outside the vocabulary instead of treating it as a step', async () => {
     // The first version of the expansion tested `derivation === 'counter'` and let everything else
     // mean `step`, so `"counters"` would have produced a step series silently -- a file that reads
     // as a counter and expands as a level.
     const edited = spikeCase();
     (edited.series as Array<Record<string, unknown>>)[1]!.derivation = 'counters';
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares derivation 'counters' for 'container_cpu_throttled_seconds_total', which is not one of step / counter / spike",
@@ -979,8 +1006,8 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     return JSON.parse(JSON.stringify(REAL_SIGNALS)) as Record<string, unknown>;
   }
 
-  it('prints what the coverage report says about each suite the corpus could be exported to', () => {
-    const result = run(['--cases', corpus({ signals: signals() })]);
+  it('prints what the coverage report says about each suite the corpus could be exported to', async () => {
+    const result = await run(['--cases', corpus({ signals: signals() })]);
     expect(result.status, result.out).toBe(0);
     // RE3's reason lost its `trace` half in the round that gave the latency cases their spans: the
     // checkout declaration is one of the three, so the fixture now supplies a span and the suite is
@@ -990,30 +1017,30 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     );
   });
 
-  it('prints how many exported files exist with no data in them', () => {
+  it('prints how many exported files exist with no data in them', async () => {
     // One per case for RE2 now: `logs.csv`, header only. `traces.csv` carries the checkout case's
     // span since the round that gave the latency cases theirs, and `inject_time.txt` is one line by
     // design, so neither is counted -- the first version counted lines and reported RE1 as three
     // empty files when it was writing real data.
-    const result = run(['--cases', corpus({ signals: signals() })]);
+    const result = await run(['--cases', corpus({ signals: signals() })]);
     expect(result.out).toContain('export RE1 1 case(s) written, 0 file(s) with no rows');
     expect(result.out).toContain('RE2 1 case(s) written, 1 file(s) with no rows');
     expect(result.out).toContain('RE3 0 case(s) written, 0 file(s) with no rows, 1 skipped');
   });
 
-  it('names the file each empty export belongs to, not just how many there are', () => {
+  it('names the file each empty export belongs to, not just how many there are', async () => {
     // A count of empty files is a fact about the exporter's output that no reader can act on: it
     // does not say which modality the corpus is missing, and a corpus missing logs wants a
     // different repair from one missing spans. The breakdown is read off the file names, so a new
     // modality is named by whatever the exporter calls it rather than by a list kept here.
-    const result = run(['--cases', corpus({ signals: signals() })]);
+    const result = await run(['--cases', corpus({ signals: signals() })]);
     expect(result.out).toContain('1 file(s) with no rows (logs.csv in 1 case(s))');
   });
 
-  it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', () => {
+  it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', async () => {
     // A corpus with no signals has no coverage to report, and printing `0%` for every modality would
     // be a measurement of nothing. The line is absent, which is the honest form of "not asked".
-    const result = run(['--cases', corpus({})]);
+    const result = await run(['--cases', corpus({})]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).not.toContain('check-fault-cases: coverage');
     expect(result.out).not.toContain('check-fault-cases: export');
@@ -1049,8 +1076,8 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     return copy;
   }
 
-  it('accepts the shipped log line, because it quotes the broker and not the author', () => {
-    const result = run(['--cases', CASES]);
+  it('accepts the shipped log line, because it quotes the broker and not the author', async () => {
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
@@ -1060,13 +1087,13 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.out).toMatch(new RegExp(`RE2 ${String(CORPUS_SIZE)} case\\(s\\) written, \\d+ file\\(s\\) with no rows`));
   });
 
-  it('accepts a log line whose quote is in its own case text', () => {
-    const result = run(['--cases', corpus({ signals: withLog(() => undefined) })]);
+  it('accepts a log line whose quote is in its own case text', async () => {
+    const result = await run(['--cases', corpus({ signals: withLog(() => undefined) })]);
     expect(result.status, result.out).toBe(0);
   });
 
-  it('refuses a log body whose quote is not in the incident text', () => {
-    const result = run([
+  it('refuses a log body whose quote is not in the incident text', async () => {
+    const result = await run([
       '--cases',
       corpus({
         signals: withLog((line) => {
@@ -1078,8 +1105,8 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.out).toContain('derives a log line from a quote the incident text does not contain');
   });
 
-  it('refuses a log body too short to be a line', () => {
-    const result = run([
+  it('refuses a log body too short to be a line', async () => {
+    const result = await run([
       '--cases',
       corpus({
         signals: withLog((line) => {
@@ -1091,8 +1118,8 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.out).toContain('declares a log body shorter than twelve characters');
   });
 
-  it('refuses a log line that does not say what it supports', () => {
-    const result = run([
+  it('refuses a log line that does not say what it supports', async () => {
+    const result = await run([
       '--cases',
       corpus({
         signals: withLog((line) => {
@@ -1132,8 +1159,8 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     };
   }
 
-  it('accepts a log checkpoint whose phrase is in the line it cites', () => {
-    const result = run([
+  it('accepts a log checkpoint whose phrase is in the line it cites', async () => {
+    const result = await run([
       '--cases',
       corpus({ mutate: withLogCheckpoint(() => undefined), signals: withLog(() => undefined) }),
     ]);
@@ -1141,10 +1168,10 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.out).toContain('1 of 1 log assertion(s) hold against the body they cite');
   });
 
-  it('refuses a log checkpoint whose phrase the line it cites does not contain', () => {
+  it('refuses a log checkpoint whose phrase the line it cites does not contain', async () => {
     // The phrase is the whole assertion: a log line has no magnitude and no unit, so a checker that
     // stopped at "the id resolves" would accept every claim anyone wrote beside it.
-    const result = run([
+    const result = await run([
       '--cases',
       corpus({
         mutate: withLogCheckpoint((checkpoint) => {
@@ -1159,8 +1186,8 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     );
   });
 
-  it('refuses a log checkpoint that orders two numbers, because a log has one relation', () => {
-    const result = run([
+  it('refuses a log checkpoint that orders two numbers, because a log has one relation', async () => {
+    const result = await run([
       '--cases',
       corpus({
         mutate: withLogCheckpoint((checkpoint) => {
@@ -1175,12 +1202,12 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     );
   });
 
-  it('says how many log assertions hold, over the corpus it was given', () => {
+  it('says how many log assertions hold, over the corpus it was given', async () => {
     // Printed on every run because the line above it counts *comparable* assertions, and a log
     // assertion is not one of them: it is compared with text rather than ordered. Before this
     // line, four checkpoints of the shipped corpus stated a containment and the report counted
     // none of them -- one of the four was false, and the run was green.
-    const result = run(['--cases', CASES]);
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toMatch(/(\d+) of \1 log assertion\(s\) hold against the body they cite/);
   });
@@ -1220,14 +1247,14 @@ describe('check-fault-cases · a span, which is the last modality and the only o
     return copy;
   }
 
-  it('makes the coverage report call every suite ready, which it never could before', () => {
-    const result = run(['--cases', CASES]);
+  it('makes the coverage report call every suite ready, which it never could before', async () => {
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('rcaeval-re3 ready');
   });
 
-  it('accepts a parent that names a span in the same file, and fills traces.csv', () => {
-    const result = run(['--cases', corpus({ signals: withTraces(() => undefined) })]);
+  it('accepts a parent that names a span in the same file, and fills traces.csv', async () => {
+    const result = await run(['--cases', corpus({ signals: withTraces(() => undefined) })]);
     expect(result.status, result.out).toBe(0);
     // One data-less file for this case, and it is `logs.csv`: the spans were emitted, so
     // `traces.csv` has rows. That is the whole point of the modality -- a file that used to be a
@@ -1235,8 +1262,8 @@ describe('check-fault-cases · a span, which is the last modality and the only o
     expect(result.out).toContain('RE2 1 case(s) written, 1 file(s) with no rows');
   });
 
-  it('refuses a span whose quote is not in the incident text', () => {
-    const result = run([
+  it('refuses a span whose quote is not in the incident text', async () => {
+    const result = await run([
       '--cases',
       corpus({
         signals: withTraces((spans) => {
@@ -1248,8 +1275,8 @@ describe('check-fault-cases · a span, which is the last modality and the only o
     expect(result.out).toContain('derives a span from a quote the incident text does not contain');
   });
 
-  it('refuses a duration of zero, which is a span that did not happen', () => {
-    const result = run([
+  it('refuses a duration of zero, which is a span that did not happen', async () => {
+    const result = await run([
       '--cases',
       corpus({
         signals: withTraces((spans) => {
@@ -1261,10 +1288,10 @@ describe('check-fault-cases · a span, which is the last modality and the only o
     expect(result.out).toContain("declares span 'render_cart' with a duration of 0");
   });
 
-  it('refuses a parent that names no span in the file', () => {
+  it('refuses a parent that names no span in the file', async () => {
     // A row whose parent id belongs to nothing is a span an exporter writes and no reader can
     // assemble, which is worse than a missing row because it looks complete.
-    const result = run([
+    const result = await run([
       '--cases',
       corpus({
         signals: withTraces((spans) => {
@@ -1276,8 +1303,8 @@ describe('check-fault-cases · a span, which is the last modality and the only o
     expect(result.out).toContain("whose parent 'POST /nothing' is not declared in the same file");
   });
 
-  it('refuses a span that does not say what it supports', () => {
-    const result = run([
+  it('refuses a span that does not say what it supports', async () => {
+    const result = await run([
       '--cases',
       corpus({
         signals: withTraces((spans) => {
@@ -1291,13 +1318,13 @@ describe('check-fault-cases · a span, which is the last modality and the only o
 });
 
 describe('check-fault-cases · the first code-level case', () => {
-  it('writes an RE3 case, which no annotation could do before', () => {
+  it('writes an RE3 case, which no annotation could do before', async () => {
     // RE3 selects on `category === 'code'`, and the corpus had none: four cases of resource,
     // network and middleware. The fifth is an uncaught exception in a CSV writer, so the suite that
     // had always reported `0 case(s) written, 4 skipped` now writes one -- and the reason its
     // `traces.csv` is empty is that the text states no duration, which is printed rather than
     // hidden.
-    const result = run(['--cases', CASES]);
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     // The count, not the history. RE3 selects on `category === 'code'`, so the number it writes is
     // the number of code-level cases in the corpus -- derived here from the case files rather than
@@ -1328,8 +1355,8 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     });
   }
 
-  it('resolves every reference in the corpus by its own kind', () => {
-    const result = run(['--cases', CASES]);
+  it('resolves every reference in the corpus by its own kind', async () => {
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     // Twelve of twelve: eight name a series, two are derived and read four readings between them
     // (one of the two reads two points of one series), one names a log line by id, and one is a
@@ -1361,51 +1388,51 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     ).toBe(Number(total));
   });
 
-  it('refuses a series reference the signals file does not declare', () => {
-    const result = run(['--cases', withCheckpoint((cp) => { cp.signalRef = 'request_duration_p99'; })]);
+  it('refuses a series reference the signals file does not declare', async () => {
+    const result = await run(['--cases', withCheckpoint((cp) => { cp.signalRef = 'request_duration_p99'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' names 'request_duration_p99', which the signals file does not declare");
     expect(result.out).toContain('it declares: request_duration_p99_ms, container_cpu_throttled_seconds_total');
   });
 
-  it('refuses a checkpoint whose unit disagrees with its series', () => {
-    const result = run(['--cases', withCheckpoint((cp) => { cp.unit = 's'; })]);
+  it('refuses a checkpoint whose unit disagrees with its series', async () => {
+    const result = await run(['--cases', withCheckpoint((cp) => { cp.unit = 's'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("is in 's' but the series 'request_duration_p99_ms' is in 'ms'");
   });
 
-  it('refuses a checkpoint its own series fails', () => {
+  it('refuses a checkpoint its own series fails', async () => {
     // The defect that only a resolved reference can reveal: `>` against a value equal to the post.
-    const result = run(['--cases', withCheckpoint((cp) => { cp.comparator = '>'; cp.value = 4300; })]);
+    const result = await run(['--cases', withCheckpoint((cp) => { cp.comparator = '>'; cp.value = 4300; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("asserts request_duration_p99_ms > 4300, and the series' post value is 4300");
   });
 
-  it('refuses a configuration fact that names a series', () => {
+  it('refuses a configuration fact that names a series', async () => {
     // Two statements of one value, one of which the guard would start comparing with telemetry.
-    const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'configuration'; })]);
+    const result = await run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'configuration'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' calls 'request_duration_p99_ms' a configuration fact");
   });
 
-  it('refuses a log reference that matches no declared line', () => {
-    const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'log'; cp.signalRef = 'nothing'; })]);
+  it('refuses a log reference that matches no declared line', async () => {
+    const result = await run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'log'; cp.signalRef = 'nothing'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' names log 'nothing', which the signals file does not declare");
   });
 
-  it('refuses a checkpoint with no reference at all', () => {
-    const result = run(['--cases', withCheckpoint((cp) => { delete cp.signalRef; })]);
+  it('refuses a checkpoint with no reference at all', async () => {
+    const result = await run(['--cases', withCheckpoint((cp) => { delete cp.signalRef; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' names no signal, so nothing carries it");
   });
 
-  it('refuses a signal kind outside the vocabulary, and the schema does it', () => {
+  it('refuses a signal kind outside the vocabulary, and the schema does it', async () => {
     // `signalKind` is a published vocabulary in `ir/types.ts`, so a bad member fails the parse --
     // exit 1, "could not be read as a FaultCase" -- rather than the guard's own check. The guard had
     // a membership test for one round after the schema gained the enum, and it was unreachable: an
     // unrecognised kind never reached it. Deleted rather than kept as a second opinion.
-    const result = run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'telemetry'; })]);
+    const result = await run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'telemetry'; })]);
     expect(result.status).toBe(1);
     expect(result.out).toContain('could not be read as a FaultCase');
     // The message carries the field and the reason -- `describeSchemaFailure` composes it, because
@@ -1413,10 +1440,10 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     expect(result.out).toContain('signalKind: Invalid enum value.');
   });
 
-  it('refuses a log line with no id, because nothing can reference it', () => {
+  it('refuses a log line with no id, because nothing can reference it', async () => {
     const edited = JSON.parse(readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8')) as Record<string, unknown>;
     edited.logs = [{ service: 'checkout-api-0', body: 'throttled for eleven minutes', quote: 'Container CPU throttling counters climbed the whole time', why: 'a line with no id is a line no checkpoint can name' }];
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares a log line with no id, which nothing can reference');
   });
@@ -1457,16 +1484,16 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     });
   }
 
-  it('accepts a derived checkpoint that computes what the data says', () => {
+  it('accepts a derived checkpoint that computes what the data says', async () => {
     // 4300ms at the post onset, 180ms at the baseline, both declared beside the sentence that states
     // them: the difference is 4120ms and the annotation now has to say so in arithmetic.
-    const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline')]);
+    const result = await run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline')]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('1 of them computed from 2 reading(s)');
   });
 
-  it('refuses a stated value the expression does not produce', () => {
-    const result = run([
+  it('refuses a stated value the expression does not produce', async () => {
+    const result = await run([
       '--cases',
       derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 }),
     ]);
@@ -1477,10 +1504,10 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     );
   });
 
-  it('reports a computed value at twelve significant digits, not seventeen', () => {
+  it('reports a computed value at twelve significant digits, not seventeen', async () => {
     // `4300 / 180` is 23.88888888888889. Printing all of it makes an author hunt for a difference
     // that is not the one the message is about.
-    const result = run([
+    const result = await run([
       '--cases',
       derived('request_duration_p99_ms.post / request_duration_p99_ms.baseline', { value: 24, unit: '1' }),
     ]);
@@ -1488,8 +1515,8 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain('and it computes to 23.8888888889');
   });
 
-  it('refuses a computed value stated in the wrong unit', () => {
-    const result = run([
+  it('refuses a computed value stated in the wrong unit', async () => {
+    const result = await run([
       '--cases',
       derived('request_duration_p99_ms.post / request_duration_p99_ms.baseline', { value: 23.8888888889, unit: 'ms' }),
     ]);
@@ -1497,13 +1524,13 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain("computes 'request_duration_p99_ms.post / request_duration_p99_ms.baseline' to a value in '1', but states 'ms'");
   });
 
-  it('refuses arithmetic over a metric the signals file does not declare', () => {
-    const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.median')]);
+  it('refuses arithmetic over a metric the signals file does not declare', async () => {
+    const result = await run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.median')]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("reads the point 'median' at character 55, which is not one of baseline, post");
   });
 
-  it('adds two units the table can convert, and reports the sum in the left one', () => {
+  it('adds two units the table can convert, and reports the sum in the left one', async () => {
     // The first version of this test asserted that `ms + s` was refused. It was wrong: the units are
     // both durations, `util/unit.ts` holds the factor, and a refusal of a legitimate conversion is a
     // false rejection rather than a check (finding 246). What the guard has to prove end to end is
@@ -1520,7 +1547,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
       quote: 'over eleven minutes',
       why: 'the sentence states the window, and the window is a duration in another unit',
     });
-    const result = run([
+    const result = await run([
       '--cases',
       corpus({
         signals,
@@ -1541,7 +1568,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain('0 of 3 comparable assertion(s) fail');
   });
 
-  it('refuses a derived checkpoint with no expression, and says which field is missing', () => {
+  it('refuses a derived checkpoint with no expression, and says which field is missing', async () => {
     const dir = derived('request_duration_p99_ms.post');
     const text = readFileSync(join(dir, 'case.json'), 'utf8');
     const edited = JSON.parse(text) as Record<string, unknown>;
@@ -1549,13 +1576,13 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
     delete checkpoints.find((one) => one.checkpointId === 'cp-p99')!.expression;
     writeFileSync(join(dir, 'case.json'), `${JSON.stringify(edited, null, 2)}\n`);
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status).toBe(1);
     expect(result.out).toContain('expression: a derived checkpoint states the arithmetic that produces its value');
   });
 
-  it('refuses a derived checkpoint that also names one series', () => {
-    const result = run([
+  it('refuses a derived checkpoint that also names one series', async () => {
+    const result = await run([
       '--cases',
       derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', {
         extra: { signalRef: 'request_duration_p99_ms' },
@@ -1565,10 +1592,10 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain('signalRef: a derived checkpoint is referenced by its expression');
   });
 
-  it('refuses an expression on a checkpoint that is not derived', () => {
+  it('refuses an expression on a checkpoint that is not derived', async () => {
     // One field with one meaning: a series checkpoint carrying arithmetic would be a second statement
     // of how its number was obtained, which nothing would compare.
-    const result = run([
+    const result = await run([
       '--cases',
       corpus({
         signals: JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown>,
@@ -1583,18 +1610,18 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     expect(result.out).toContain("only a derived checkpoint carries an expression; this one is 'series'");
   });
 
-  it('refuses two series with one name, because a reference to it names neither', () => {
+  it('refuses two series with one name, because a reference to it names neither', async () => {
     const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & { series: Array<Record<string, unknown>> };
     edited.series.push({ ...edited.series[0]!, post: 1 });
-    const result = run(['--cases', corpus({ signals: edited })]);
+    const result = await run(['--cases', corpus({ signals: edited })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("declares two series named 'request_duration_p99_ms', so a reference to it names neither");
   });
 
-  it('counts a derived assertion among the comparable ones, and only one that resolves', () => {
+  it('counts a derived assertion among the comparable ones, and only one that resolves', async () => {
     // The count is what makes the corpus's own line meaningful: a checkpoint that could not be
     // evaluated must not appear in the denominator as though it had been checked.
-    const result = run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 })]);
+    const result = await run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 })]);
     expect(result.out).toContain('1 of 3 comparable assertion(s) fail');
   });
 });
@@ -1624,8 +1651,8 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     });
   }
 
-  it('accepts the corpus checkpoint, which cites the injection\'s own parameter', () => {
-    const result = run(['--cases', CASES]);
+  it('accepts the corpus checkpoint, which cites the injection\'s own parameter', async () => {
+    const result = await run(['--cases', CASES]);
     expect(result.status, result.out).toBe(0);
     // What has to hold is that a configuration checkpoint is admitted at all -- the rule exists
     // because `container_spec_cpu_quota` was a plausible metric name that nothing declared -- and
@@ -1644,10 +1671,10 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     expect(failed, 'a configuration checkpoint must be comparable, and must hold').toBe('0');
   });
 
-  it('refuses a configuration fact the case does not declare, and names what it does', () => {
+  it('refuses a configuration fact the case does not declare, and names what it does', async () => {
     // This is the defect itself: `container_spec_cpu_quota` is a plausible metric name that nothing
     // in the case declares, so the checkpoint was citing prose.
-    const result = run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container_spec_cpu_quota'; })]);
+    const result = await run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container_spec_cpu_quota'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "calls 'container_spec_cpu_quota' a configuration fact, but fault.parameters declares no such key " +
@@ -1655,16 +1682,16 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     );
   });
 
-  it('refuses a stated value the case does not declare', () => {
-    const result = run(['--cases', withConfiguration((cp) => { cp.value = 600; })]);
+  it('refuses a stated value the case does not declare', async () => {
+    const result = await run(['--cases', withConfiguration((cp) => { cp.value = 600; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("asserts 'cpuLimit' == 600, and fault.parameters declares 500 mcore");
   });
 
-  it('converts a checkpoint stated in another unit of the same dimension', () => {
+  it('converts a checkpoint stated in another unit of the same dimension', async () => {
     // 500 mcore is 0.5 cores, and the table says so: the checkpoint may state the quota in either
     // unit and the comparison is against the converted value.
-    const result = run(['--cases', withConfiguration((cp) => { cp.unit = 'core'; cp.value = 0.5; })]);
+    const result = await run(['--cases', withConfiguration((cp) => { cp.unit = 'core'; cp.value = 0.5; })]);
     expect(result.status, result.out).toBe(0);
     // One case: three checkpoints, all comparable, none failing. The conversion is visible in the
     // fact that the assertion is counted at all -- `0.5 core` is compared with `500 mcore`.
@@ -1673,17 +1700,17 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     );
   });
 
-  it('refuses a unit the table cannot convert into the declared one', () => {
-    const result = run(['--cases', withConfiguration((cp) => { cp.unit = 's'; })]);
+  it('refuses a unit the table cannot convert into the declared one', async () => {
+    const result = await run(['--cases', withConfiguration((cp) => { cp.unit = 's'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "is in 's' and 'cpuLimit' is declared in 'mcore', which are not the same unit and not convertible",
     );
   });
 
-  it('refuses a unit beside a parameter that declares none', () => {
+  it('refuses a unit beside a parameter that declares none', async () => {
     // A unit nothing can check is a claim, not a fact: the parameter holds a bare number.
-    const result = run([
+    const result = await run([
       '--cases',
       withConfiguration(
         (cp) => {
@@ -1702,16 +1729,16 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     );
   });
 
-  it('refuses a parameter cited without the unit it is declared in', () => {
-    const result = run(['--cases', withConfiguration((cp) => { delete cp.unit; })]);
+  it('refuses a parameter cited without the unit it is declared in', async () => {
+    const result = await run(['--cases', withConfiguration((cp) => { delete cp.unit; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain("cites 'cpuLimit' without a unit, and fault.parameters declares it in 'mcore'");
   });
 
-  it('refuses a string parameter, which is an identifier rather than a fact', () => {
+  it('refuses a string parameter, which is an identifier rather than a fact', async () => {
     // `container == 'checkout-api-app'` restates the parameter in a second place, and the parameter is
     // already in the file.
-    const result = run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container'; cp.unit = '1'; })]);
+    const result = await run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container'; cp.unit = '1'; })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "cites parameter 'container', whose value \"checkout-api-app\" is not a number or a { value, unit } quantity",
@@ -1743,8 +1770,8 @@ describe('check-fault-cases · a declared reading stays inside the range its uni
     return corpus({ signals });
   }
 
-  it('refuses a share above 100 per cent, and says what the unit admits', () => {
-    const result = run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1.2 })]);
+  it('refuses a share above 100 per cent, and says what the unit admits', async () => {
+    const result = await run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1.2 })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares post 1.2 for 'scratch_reading' in '1', and a reading in '1' lies in [0, 1]",
@@ -1752,25 +1779,25 @@ describe('check-fault-cases · a declared reading stays inside the range its uni
     expect(result.out).toContain('FAILED — 1 problem(s)');
   });
 
-  it('accepts a share of exactly 1, which is the sentence "every request failed"', () => {
-    const result = run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1 })]);
+  it('accepts a share of exactly 1, which is the sentence "every request failed"', async () => {
+    const result = await run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1 })]);
     expect(result.status, result.out).toBe(0);
   });
 
-  it('refuses a negative duration, because a duration is not signed', () => {
+  it('refuses a negative duration, because a duration is not signed', async () => {
     // The lower bound is a statement rather than a default: nothing in this table is a signed
     // quantity, so -1 ms is not a small duration, it is the wrong shape.
-    const result = run(['--cases', withSeries({ unit: 'ms', baseline: -1, post: 4300 })]);
+    const result = await run(['--cases', withSeries({ unit: 'ms', baseline: -1, post: 4300 })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares baseline -1 for 'scratch_reading' in 'ms', and a reading in 'ms' lies in [0, ∞)",
     );
   });
 
-  it('says nothing about a unit the table does not know, because it has no range to state', () => {
+  it('says nothing about a unit the table does not know, because it has no range to state', async () => {
     // `MiB/s` is a compound the conversion table has no entry for. Refusing a reading in it would be
     // this rule inventing a bound, which is the failure mode it exists to prevent at the other end.
-    const result = run(['--cases', withSeries({ unit: 'MiB/s', baseline: -5, post: 4 })]);
+    const result = await run(['--cases', withSeries({ unit: 'MiB/s', baseline: -5, post: 4 })]);
     // G2 refuses the unit itself, which is a different rule and the one that should speak here.
     expect(result.out).not.toContain('lies in');
   });
@@ -1812,15 +1839,15 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
     return corpus({ signals });
   }
 
-  it('accepts a reference to a quantity the case declares, and expands the resolved number', () => {
+  it('accepts a reference to a quantity the case declares, and expands the resolved number', async () => {
     // `cpuLimit` is `{ value: 500, unit: 'mcore' }`, so a series in `mcore` can cite it. The case is
     // accepted, which is the whole point: the reading and the parameter are one number.
-    const result = run(['--cases', withPost({ parameter: 'cpuLimit' }, 'mcore')]);
+    const result = await run(['--cases', withPost({ parameter: 'cpuLimit' }, 'mcore')]);
     expect(result.status, result.out).toBe(0);
   });
 
-  it('refuses a reference to a parameter the case does not declare, and lists the ones it does', () => {
-    const result = run(['--cases', withPost({ parameter: 'poolSize' })]);
+  it('refuses a reference to a parameter the case does not declare, and lists the ones it does', async () => {
+    const result = await run(['--cases', withPost({ parameter: 'poolSize' })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares post as parameter 'poolSize' for 'scratch_reading', and fault.parameters declares no " +
@@ -1828,9 +1855,9 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
     );
   });
 
-  it('refuses a parameter whose value is not a quantity', () => {
+  it('refuses a parameter whose value is not a quantity', async () => {
     // `container` is a name, not a number: a reading that cites it has no value to be.
-    const result = run(['--cases', withPost({ parameter: 'container' })]);
+    const result = await run(['--cases', withPost({ parameter: 'container' })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares post as parameter 'container' for 'scratch_reading', whose value \"checkout-api-app\" " +
@@ -1838,8 +1865,8 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
     );
   });
 
-  it('refuses a parameter whose unit cannot convert into the series unit', () => {
-    const result = run(['--cases', withPost({ parameter: 'cpuLimit' }, 'count')]);
+  it('refuses a parameter whose unit cannot convert into the series unit', async () => {
+    const result = await run(['--cases', withPost({ parameter: 'cpuLimit' }, 'count')]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares post for 'scratch_reading' in 'count', and parameter 'cpuLimit' is declared in " +
@@ -1847,8 +1874,8 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
     );
   });
 
-  it('refuses a reading that is neither a number nor a reference', () => {
-    const result = run(['--cases', withPost('five')]);
+  it('refuses a reading that is neither a number nor a reference', async () => {
+    const result = await run(['--cases', withPost('five')]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       "declares post '\"five\"' for 'scratch_reading', which is neither a number nor a { parameter } " +
@@ -1885,11 +1912,11 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
     return dir;
   }
 
-  it('refuses a corpus whose every answer is the loudest component', () => {
+  it('refuses a corpus whose every answer is the loudest component', async () => {
     // `history-cart-network-delay` is solved at rank 1 by both baselines: its answer is the only
     // thing that moved. A corpus of those reports a 100% score for a method that returns the
     // largest excursion, and the report calls it localisation.
-    const result = run(['--cases', oneCaseCorpus('history-cart-network-delay')]);
+    const result = await run(['--cases', oneCaseCorpus('history-cart-network-delay')]);
     expect(result.status).toBe(2);
     expect(result.out).toContain(
       'the corpus fails G4: no case places a strictly louder, separate component above its answer (none 2), ' +
@@ -1905,8 +1932,8 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
     'history-middleware-replica-lag-analytics',
     'history-resource-memory-request-ingest-writer',
   ]) {
-    it(`accepts a corpus whose only case is '${caseId}', because its answer is displaced`, () => {
-      const result = run(['--cases', oneCaseCorpus(caseId)]);
+    it(`accepts a corpus whose only case is '${caseId}', because its answer is displaced`, async () => {
+      const result = await run(['--cases', oneCaseCorpus(caseId)]);
       expect(result.status, result.out).toBe(0);
       expect(result.out).toContain(`strictly displaced in 1 case(s) (${caseId})`);
     });
@@ -1918,29 +1945,29 @@ describe('check-fault-cases · the difficulty distribution is a property of the 
   // or 1 against a minimum of ten and the branches could not be taken. A rule no caller can reach
   // is not a gate, and the only way to know it is reachable is to make the corpus reach it.
 
-  it('reports a set that is entirely the easiest level, and fails it for the labels', () => {
+  it('reports a set that is entirely the easiest level, and fails it for the labels', async () => {
     // Two verdicts, and they are different. Every case here is labelled L1 while its chain supports
     // L3, so the run fails on the shortfalls -- an annotation contradicting its own case is a
     // one-line repair. The distribution is printed and also misses its target, but that is a
     // statement about the set: no correction to a label in it could produce an L4 case.
-    const result = run(['--cases', corpusOf(10, 'L1')]);
+    const result = await run(['--cases', corpusOf(10, 'L1')]);
     expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('a level may not claim less structure than the case carries');
     expect(result.out).toContain('L1 share 1.000 exceeds the 0.2 ceiling');
   });
 
-  it('reports a set with no hardest case without failing the run', () => {
+  it('reports a set with no hardest case without failing the run', async () => {
     // `L3` is exactly the floor of this two-step, three-kind annotation, so there is no shortfall.
     // What is missing is an L4 case, and no label can invent one: the chain is two steps deep.
     // Printing it and passing is the deliberate choice -- a rule that fails every run on a property
     // only a new case can change is a rule everyone learns to skip.
-    const result = run(['--cases', corpusOf(10, 'L3')]);
+    const result = await run(['--cases', corpusOf(10, 'L3')]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('L4 share 0.000 is below the 0.1 floor');
     expect(result.out, 'the spread is named, not just the violation').toContain('difficulty spread L1 0 / L2 0 / L3 10');
   });
 
-  it('accepts a spread set, so the rule can pass as well as fail', () => {
+  it('accepts a spread set, so the rule can pass as well as fail', async () => {
     // Nine at the floor and one above it: no L1, a tenth at L4, and nothing claiming less structure
     // than it carries. Asserted on the verdict rather than on the absence of a phrase, which is what
     // the earlier version did -- and that version passed while the run was red, because the message
@@ -1949,24 +1976,24 @@ describe('check-fault-cases · the difficulty distribution is a property of the 
     const hardest = JSON.parse(readFileSync(join(dir, 'case-9.json'), 'utf8')) as Record<string, unknown>;
     hardest.difficulty = 'L4';
     writeFileSync(join(dir, 'case-9.json'), `${JSON.stringify(hardest, null, 2)}\n`);
-    const result = run(['--cases', dir]);
+    const result = await run(['--cases', dir]);
     expect(result.status, result.out).toBe(0);
     expect(result.out).toContain('within the target');
     expect(result.out).toContain('difficulty spread L1 0 / L2 0 / L3 9 / L4 1');
   });
 
-  it('says how many cases state a level, because an unset level exports as medium', () => {
-    const ungraded = run(['--cases', corpusOf(10)]);
+  it('says how many cases state a level, because an unset level exports as medium', async () => {
+    const ungraded = await run(['--cases', corpusOf(10)]);
     expect(ungraded.out).toContain('difficulty 0 of 10 case(s) state a level');
 
-    const graded = run(['--cases', corpusOf(10, 'L2')]);
+    const graded = await run(['--cases', corpusOf(10, 'L2')]);
     expect(graded.out).toContain('difficulty 10 of 10 case(s) state a level');
   });
 
-  it('does not apply the distribution rule below its own sample size', () => {
+  it('does not apply the distribution rule below its own sample size', async () => {
     // Nine is the largest set that cannot answer the question, and it must not answer it anyway:
     // a share computed from nine cases is a share of nine cases.
-    const result = run(['--cases', corpusOf(9, 'L1')]);
+    const result = await run(['--cases', corpusOf(9, 'L1')]);
     expect(result.out).not.toContain('the corpus fails G4');
     expect(result.out).toContain('difficulty 9 of 9 case(s) state a level');
   });

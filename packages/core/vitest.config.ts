@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -69,7 +70,35 @@ export default defineConfig({
     // written down. `heavy-fixtures-do-not-contend.test.ts` asserts the
     // properties of the suite that make this cap sufficient -- one heavy file,
     // it runs a package manager, and it does so inside a worktree.
-    maxWorkers: 8,
+    // ## The cap is the machine's, not this one's (finding 297)
+    //
+    // It was a flat 8. This box reports 32 CPUs, so 8 is under its capacity and the
+    // memory measurement above is about this box. A GitHub runner reports **4**, and
+    // 8 workers on 4 vCPUs is 2x oversubscription: every file's wall time doubles,
+    // and the files that pay for it are the CPU-bound ones.
+    //
+    // Measured on the 2026-10-29 run, comparing the same suite on two runners:
+    //
+    //     total test time      316 s       540 s
+    //     check-fault-cases     23.0 s      55.2 s     <- past the 45 s stall budget
+    //     ingest-report         23.5 s      54.2 s     <- past it too
+    //
+    // Both files were green on the faster runner and red on the slower one, with
+    // every one of the 4854 tests passing: the stall gauge fired because a
+    // synchronous file turns its whole duration into one block. So the flat 8 was a
+    // configuration that depended on which machine ran it, and the two repairs are
+    // one per cause: `check-fault-cases.test.ts` now awaits its 116 child processes
+    // instead of blocking through all of them, and the cap follows the machine it is
+    // on. `ingest-report.test.ts` still holds the loop for its whole duration -- its
+    // cost is CPU work in this process -- so the cap is what keeps it under the
+    // budget, and that is the honest division of labour between the two.
+    //
+    // `availableParallelism()` is the number of CPUs this process may actually use,
+    // which is what an oversubscription argument is about; `cpus().length` reports
+    // the host's. Leaving one CPU for the main process keeps the reporter responsive.
+    // The floor of 2 is for a one-core container, where 1 worker would serialise the
+    // suite into a timeout.
+    maxWorkers: Math.max(2, Math.min(8, availableParallelism() - 1)),
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
