@@ -1,0 +1,38 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-middleware-cache-shard-product-index",
+  "why": "Telemetry for the unassigned-slot case, derived from the three quantities the ticket states: two of sixteen slots unassigned, ninety minutes of stale and missing entries, and readers that kept answering. The shape is deliberately two moving series that are one fact in two forms plus a zero control. The first pair is the answer's own reading -- a slot gauge that is zero on every healthy day and the keyspace coverage that follows arithmetically from it -- and the third is the reader's error share, which is zero for the whole window and is the sentence that rules out everything the readers touch. There is no latency series here, and that is a decision rather than an omission: the ticket says the reads kept being answered and says nothing about how long they took, so a latency curve would be a plausible-looking invention answering a question the ticket did not ask. Both slot series carry `noise: none` because a count of slots is counted rather than sampled -- sixteen slots is sixteen -- and a jittered zero would be a claim about a measurement nobody took.",
+  "series": [
+    {
+      "service": "product-index",
+      "metric": "unassigned_cluster_slots",
+      "unit": "count",
+      "baseline": 0,
+      "post": 2,
+      "noise": "none",
+      "quote": "Two of the sixteen cluster slots were unassigned",
+      "why": "the checkpoint `cp-slots` holds the two, and it is the only reading in the window that moved: a gauge at zero for the whole pre-window, because a cluster with every slot owned reads zero and nothing else in this incident leaves a trace a level-based reading can see"
+    },
+    {
+      "service": "product-index",
+      "metric": "keyspace_coverage_percent",
+      "unit": "%",
+      "baseline": 100,
+      "post": 87.5,
+      "noise": "none",
+      "quote": "Two of the sixteen cluster slots were unassigned",
+      "why": "the same fact as the slot count, expressed as the share of the keyspace that still has an owner: fourteen of sixteen is 87.5 and the arithmetic is the ticket's, in the way the pricing case derives 60% from 'every failure'. Exact rather than sampled, because a share of slots is counted"
+    },
+    {
+      "service": "catalog-service",
+      "metric": "http_5xx_ratio_percent",
+      "unit": "%",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "which is why dashboards showed partial success rather than an outage",
+      "why": "the control, and the sentence the case turns on: the reader's error share is zero throughout because a read into an unowned range is still answered, so nothing the readers publish can place the fault. A zero here is a counted zero, not a measured one"
+    }
+  ]
+}

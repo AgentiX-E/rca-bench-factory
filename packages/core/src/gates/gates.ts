@@ -306,6 +306,35 @@ export function checkCaseSemantics(bundle: IrBundle): GateResult {
         }
         visited.add(entityId);
       }
+      // The root cause has to be an entity the chain visits, and the rule is "visits" rather than
+      // "starts at" (finding 281). `fault/difficulty.ts` justifies the absence of a `breadth >= 3`
+      // row by saying that a root cause off its own chain is a defect the four-layer assessment
+      // already refuses -- and nothing did: the entity layer asked only that the root resolve and
+      // the process layer only that each step's ends resolve, so a case could name its answer in a
+      // component its chain never touches and pass every gate. Both of the corpus's node-first
+      // chains begin at an actor that acts on the root rather than at the root itself, so "starts
+      // at" would refuse the two cases that show the shape is deliberate.
+      const rootRef = c.groundTruth.rootCauseEntityId;
+      // Compared by resolved id rather than by the string, because an alias and an id name the same
+      // entity and a rule that could not see that would refuse a case for how it spelled its answer.
+      const chainIds = new Set<string>();
+      for (const step of ordered) {
+        const from = resolveEntityRef(step.fromEntityId, index);
+        const to = resolveEntityRef(step.toEntityId, index);
+        if (from !== null) chainIds.add(from);
+        if (to !== null) chainIds.add(to);
+      }
+      const root = rootRef === '' ? null : resolveEntityRef(rootRef, index);
+      // An unresolvable root is UNRESOLVED_ROOT_CAUSE's business, above; report one defect once.
+      if (root !== null && !chainIds.has(root)) {
+        v.push({
+          code: 'ROOT_OFF_ITS_CHAIN',
+          message:
+            `the root cause '${rootRef}' is not an entity the causal chain visits, so the answer ` +
+            'and the propagation it is the answer to are two unrelated statements',
+          fieldPath: `${c.caseId}.groundTruth.rootCauseEntityId`,
+        });
+      }
     }
     for (const step of ordered) {
       for (const ref of step.evidenceRefs) {

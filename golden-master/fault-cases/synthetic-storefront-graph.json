@@ -338,6 +338,26 @@
       "aliases": [
         "the request path"
       ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/product-index",
+      "kind": "service",
+      "name": "product-index",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/product-index-2",
+      "kind": "pod",
+      "name": "product-index-2",
+      "aliases": [
+        "product-index pod"
+      ]
+    },
+    {
+      "entityId": "node:synthetic-storefront/cache-node-3",
+      "kind": "node",
+      "name": "cache-node-3",
+      "aliases": []
     }
   ],
   "edges": [
@@ -509,6 +529,21 @@
     {
       "from": "service:synthetic-storefront/api-gateway",
       "to": "service:synthetic-storefront/pricing-service",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/product-index",
+      "to": "pod:synthetic-storefront/product-index-2",
+      "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/cache-node-3",
+      "to": "pod:synthetic-storefront/product-index-2",
+      "relation": "hosts"
+    },
+    {
+      "from": "service:synthetic-storefront/catalog-service",
+      "to": "service:synthetic-storefront/product-index",
       "relation": "calls"
     }
   ]

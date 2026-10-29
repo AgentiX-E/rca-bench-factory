@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 19,
+  "min": 20,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -570,6 +570,36 @@
           "layer": "evidence",
           "quote": "including paths with no downstream call",
           "why": "the control the case turns on: the slow paths need no service behind them, so nothing the gateway fronts can be where the time is spent"
+        }
+      ]
+    },
+    {
+      "caseId": "history-middleware-cache-shard-product-index",
+      "sampleId": "middleware-cache-shard-product-index",
+      "case": "history-middleware-cache-shard-product-index.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-middleware-cache-shard-product-index.signals.json",
+      "why": "annotated from the incident text of `middleware-cache-shard-product-index`. It is the corpus's first three-step chain whose last hop lands inside the system being measured: the other two run container -> pod -> service and then out to the callers, while this one starts at the node whose label is missing, passes through the replica that joined with no slot, and ends at the reader that kept answering. The text names the label, the count and the duration, and names its readers only as reads and dashboards -- `catalog-service` is the graph's reader of a product index and is the one entity here that is implied rather than quoted, which the entity layer of this case does not rest on. The case is filed at L4 because there are three hops and three entity kinds, and because the second hop is the one a magnitude-based method cannot take: nothing in the window except a slot gauge moved, so the loudest component is the absence of a symptom.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Two of the sixteen cluster slots were unassigned",
+          "why": "the count that locates the fault inside the cache rather than at any of its readers: sixteen slots is the cluster, and two of them having no owner is a state of the cache alone"
+        },
+        {
+          "layer": "fault",
+          "quote": "a node had been replaced and the cluster's replica placement pins a copy to a zone label the replacement does not carry",
+          "why": "the cause and its shape: placement is a rule keyed on a label, the replacement lacks one, and the fault is the requirement unmet rather than the replacement"
+        },
+        {
+          "layer": "process",
+          "quote": "Reads against the surviving shards kept answering",
+          "why": "why the failure never becomes an error at the reader: an unowned range is still answered, so the fault propagates as stale content rather than as a failed request"
+        },
+        {
+          "layer": "evidence",
+          "quote": "served stale and missing entries for ninety minutes",
+          "why": "the window the incident occupies, and the reader-visible form of the two unowned slots -- stale for the keys answered by the previous owner, missing for the ones no owner claims"
         }
       ]
     }

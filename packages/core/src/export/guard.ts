@@ -48,8 +48,8 @@ export function assertExportableBundle(bundle: IrBundle): void {
  * The G2 codes that mean the bundle contradicts *itself* rather than merely
  * describing one weak case.
  *
- * This set is deliberately two entries wide. The distinction it encodes is
- * whether the defect can be handled per case:
+ * This set is deliberately narrow. The distinction it encodes is whether the
+ * defect can be handled per case:
  *
  *  - `graph` is shared by every case in the bundle, so a contradictory graph
  *    cannot be worked around by skipping one case. No export of that file can
@@ -113,6 +113,11 @@ export const CASE_LEVEL_CODES: ReadonlySet<string> = new Set([
   // skipped with the case, on the same reasoning as the break above (finding 253).
   'CAUSAL_STEPS_NOT_NUMBERED',
   'CAUSAL_CHAIN_REVISITS',
+  // An answer the case's own chain never reaches. Case-level for the same reason the two above are:
+  // it is a contradiction inside one annotation -- the answer and the propagation it is the answer
+  // to are two unrelated statements -- and a bundle of a thousand cases should lose the one that
+  // says it rather than all of them (finding 281).
+  'ROOT_OFF_ITS_CHAIN',
   // Quality conditions: exportable so a consumer can inspect them.
   'BAD_SIGNAL_TIMESTAMP',
   'NON_MONOTONIC_TIMESTAMP',

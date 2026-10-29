@@ -223,6 +223,45 @@ describe('G2 semantic', () => {
     );
   });
 
+  it('flags a root cause the chain never visits, which a comment said another gate refused', () => {
+    // `fault/difficulty.ts` declines a `breadth >= 3` row on the grounds that "a root cause off its
+    // own chain is a defect the four-layer assessment already refuses". Nothing refused it: the
+    // entity layer asked only that the root resolve and the process layer only that each step's
+    // ends resolve, so an annotation could name its answer in a component its chain never reaches
+    // and pass every gate in this package (finding 281).
+    const b = validBundle();
+    b.graph.entities.push({
+      entityId: 'pod:default/order-0',
+      kind: 'pod',
+      name: 'order-0',
+      namespace: 'default',
+      aliases: [],
+    });
+    b.graph.edges.push({
+      from: 'service:default/order',
+      to: 'pod:default/order-0',
+      relation: 'contains',
+    });
+    const fc = b.cases[0] as (typeof b.cases)[number];
+    fc.groundTruth.rootCauseEntityId = 'pod:default/order-0';
+    expect(checkG2Semantic(b).violations).toContainEqual(
+      expect.objectContaining({ code: 'ROOT_OFF_ITS_CHAIN' }),
+    );
+  });
+
+  it('accepts a root the chain reaches at its far end, and one named by an alias', () => {
+    // "Visits" rather than "starts at": the corpus's node-first chains begin at the actor that acts
+    // on the answer, so a rule demanding the root be the first entity would refuse both of them.
+    // And the comparison is by resolved id, because an alias and an id name one entity and a rule
+    // that could not see that would refuse a case for how it spelled its own answer.
+    const b = validBundle();
+    const fc = b.cases[0] as (typeof b.cases)[number];
+    fc.groundTruth.rootCauseEntityId = 'service:default/cart';
+    expect(checkG2Semantic(b).violations.map((v) => v.code)).not.toContain('ROOT_OFF_ITS_CHAIN');
+    fc.groundTruth.rootCauseEntityId = 'svc-order-prod-01';
+    expect(checkG2Semantic(b).violations.map((v) => v.code)).not.toContain('ROOT_OFF_ITS_CHAIN');
+  });
+
   it('says neither thing about the chain it accepts', () => {
     const b = validBundle();
     const codes = checkG2Semantic(b).violations.map((v) => v.code);

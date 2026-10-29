@@ -470,3 +470,71 @@ defect rule 7 was written for.
 | `core` | 191 / 4772 | **192 / 4778** (six new tests, one new file) |
 | repo | 195 / 4959 | **196 / 4965** |
 | coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged — no `src/` file was touched |
+
+## Finding 281 — a rule was declined on the authority of a check that did not exist
+
+`fault/difficulty.ts` explains why the ladder carries no `breadth >= 3` row. A one-step chain runs from
+the root cause to its consequence, so its ends contribute at most two entity kinds "unless the root
+cause is off the chain — and a root cause off its own chain is a defect the four-layer assessment
+already refuses". The first half is right. The second half was false when it was written and false
+every round since: `assessFourLayer` asks two separate questions — does the root resolve, and do both
+ends of every step resolve — and nothing joins them, so a case could name its answer in a component its
+chain never visits and pass G1, G2 and G5 together. Twenty annotations passed it without exercising it,
+because twenty annotators happened to agree with the rule the comment described.
+
+The rule now exists, in `checkCaseSemantics`, as `ROOT_OFF_ITS_CHAIN`. Two decisions in it are stated
+rather than inherited:
+
+| decision | why |
+| --- | --- |
+| "visits", not "starts at" | both of the corpus's node-first chains begin at the actor that acts on the answer (`worker-3 -> user-profile-0`, `cache-node-3 -> product-index-2`), so demanding the root be the chain's *first* entity would refuse the two cases that show the shape is deliberate |
+| compared by resolved id | `resolveEntityRef` answers with an id and accepts an alias, so a rule comparing the strings would refuse a case for how it spelled its own answer |
+
+**The first draft of the check passed everything, including the case built to make it fail.**
+`resolveEntityRef` returns `string | null`; the draft wrote `chainIds.add(from.entityId)` and
+`chainIds.has(root.entityId)` on the assumption that it returned the entity. Every id in the set was
+therefore `undefined`, the root's id was `undefined`, and `has(undefined)` was true. The test written
+beside it caught the draft immediately — which is the only reason this paragraph exists rather than a
+silent gate that agrees with everything — and the shape of the mistake is the one this volume keeps
+recording: a check written against an imagined signature answers a different question, and its answer
+looks exactly like a pass.
+
+`guard.ts` then forced a third decision. Every G2 code has to be classified as structural or case-level,
+and `ROOT_OFF_ITS_CHAIN` is a contradiction inside one annotation rather than inside the shared graph,
+so it is **case-level**: an exporter skips the case the way it already skips a broken chain, and
+`guard.test.ts` failed until that decision was written down. The same file's rationale had also said
+`STRUCTURAL_CODES` "is deliberately two entries wide" while it held four, which is corrected here for
+the reason finding 282 gives.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| G2's chain rules | numbering, contiguity, no revisit | **plus `ROOT_OFF_ITS_CHAIN`**, held by two tests: an off-chain root refused, a far-end root and an alias accepted |
+| `gates.test.ts` | 72 tests | **74**, both new tests green and the existing `passes a valid bundle` unchanged |
+| the shipped corpus | 19 cases | **20 cases, all passing the new rule** — the check is exercised by the corpus rather than only by fixtures |
+| `guard.ts` | `ROOT_OFF_ITS_CHAIN` unclassified, `guard.test.ts` red | **classified case-level**, and the stale width corrected |
+| `datamodel` | three chain rules in the table | **four**, with the "visits not starts-at" decision stated |
+
+## Finding 282 — the file that makes a ranking falsifiable stated a count of its own neighbours, and the count was wrong
+
+`background-telemetry.json`'s `why` said a case's own anomaly "has seventeen quiet neighbours to be
+chosen from". The file holds one series per service in the graph and the graph has grown twice since
+that sentence was written; at the round this was found it held twenty-two and the same round adds a
+twenty-third. The count is not decoration — it is the argument for why the file exists — and a reader
+who checks it gets a number that disagrees with the file it is in.
+
+Nothing re-derived it, and nothing could: the guard prints the width on every run
+(`rankings 23-25 candidate(s) wide`), which is where a count belongs. The phrase now reads "every
+quiet neighbour the graph holds", and a test refuses the *shape* rather than the value: any number word
+or digit in front of "quiet neighbour" fails, so a future author cannot restate the count under a new
+spelling. The claim the sentence does make — one series per service, both directions — was already
+enforced by `backgroundProblems`; what was missing was any reason for prose to carry a second copy of a
+number the guard prints.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the sentence | `seventeen quiet neighbours` against 22 series | **`every quiet neighbour the graph holds`** against 23 |
+| the guard | no test on the prose | **a test refusing a cardinality in front of the phrase**, by shape, so a new spelling is caught |

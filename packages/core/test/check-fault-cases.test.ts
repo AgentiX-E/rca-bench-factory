@@ -266,6 +266,26 @@ describe('check-fault-cases · the corpus as it stands', () => {
     // proves the count is read from the directory it was given rather than from the repository.
     expect(result.out).toContain('1 of 30');
   });
+
+  it('states no neighbour count in the background file, because nothing re-derives one', () => {
+    // The file's own justification said a case's anomaly had "seventeen quiet neighbours", and that
+    // may have been true when it was written. By the round this test was added the file held more
+    // than twenty series -- so the one number in it that a reader would take as a property of the
+    // corpus was wrong, and it was wrong in the file that exists to make a ranking falsifiable. The
+    // readout prints the width on every run, which is where a count belongs; prose that repeats it
+    // is a second statement that nothing checks. Refused by shape rather than by value: any number
+    // word or digit in front of the phrase, so a future author cannot restate it in a new spelling.
+    const background = JSON.parse(readFileSync(join(CASES, 'background-telemetry.json'), 'utf8')) as {
+      why: string;
+      series: unknown[];
+    };
+    const numbers =
+      '(?:\\b\\d+\\b|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\\b)';
+    expect(background.why).not.toMatch(new RegExp(`${numbers}\\s+(?:[a-z-]+\\s+)?quiet\\s+neighbou?rs?`, 'i'));
+    // And the claim it does make is the one the guard checks: one series per service the graph
+    // holds, refused in both directions by `backgroundProblems`.
+    expect(background.series.length).toBeGreaterThan(0);
+  });
 });
 
 describe('check-fault-cases · a case that is not complete', () => {

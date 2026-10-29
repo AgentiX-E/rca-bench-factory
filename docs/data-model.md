@@ -153,10 +153,14 @@ The distribution of levels across a corpus is checked once per corpus (`checkDif
 ten graded cases before it says anything). A corpus with no `L4` case reports that fact on every run
 rather than failing: no correction to a label can produce a level the corpus's chains cannot reach.
 That was true of this corpus for as long as every chain in it was one or two steps, and it stopped
-being true the round two three-step chains were annotated: the share is now met, so the suite holds it
-(`difficulty-floor.test.ts` names both cases) while the guard keeps printing the number rather than
-gating on it. A rule that fails on a property no annotation can repair teaches people to skip the
-line; a rule nothing asserts is a number that drifts back to zero.
+being true the round the corpus's first three-step chains were annotated. Three of its twenty cases
+now carry three hops, one of them ending inside the system rather than at a caller, and the share is
+met with **exactly one case of margin**: three of thirty -- the size the corpus is committed to
+annotating -- is 0.100, which is the floor itself and not above it. The suite holds that number
+(`difficulty-floor.test.ts` names all three cases and asserts the share against the committed
+denominator as well as against today's count) while the guard keeps printing it rather than gating on
+it. A rule that fails on a property no annotation can repair teaches people to skip the line; a rule
+nothing asserts is a number that drifts back to zero.
 
 #### Background telemetry, and what "top-K" means
 
@@ -202,13 +206,19 @@ of all four.
 
 ### `causalChain` — a numbered run of propagation
 
-A chain is a **run**, and G2 holds three things that follow from the word:
+A chain is a **run**, and G2 holds four things that follow from the word:
 
 | rule | code | what it refuses |
 | --- | --- | --- |
 | the steps are numbered `1..n` | `CAUSAL_STEPS_NOT_NUMBERED` | a chain numbered 2, 3, which sorts into a sequence and therefore looks ordered while saying nothing about its order |
 | each step starts where the last ended | `CAUSAL_CHAIN_BREAK` | two claims presented as a sequence |
 | no entity is visited twice | `CAUSAL_CHAIN_REVISITS` | `a -> b -> a`, which is connected at every hop and asserts that the consequence caused its own cause |
+| the root cause is one the chain visits | `ROOT_OFF_ITS_CHAIN` | an answer and a propagation that have nothing to do with each other: the entity layer asked only that the root resolve, so before finding 281 a case could name its answer in a component its own chain never reaches |
+
+The root rule is "**visits**", not "starts at": both of the corpus's node-first chains begin at the
+actor that acts on the answer rather than at the answer itself, and a rule demanding otherwise would
+refuse the two cases that show the shape is deliberate. The comparison is by resolved id, because an
+alias and an id name one entity.
 
 A **self-hop is allowed** (`a -> a`) and is collapsed rather than refused: it states that an entity
 amplified its own condition -- a saturated thread pool whose retries deepen the saturation -- which is

@@ -60,9 +60,11 @@ export function difficultyFloor(input: {
   // Depth decides above one step, and breadth decides below it. `breadth >= 3` is deliberately not
   // a separate row: a one-step chain runs from the root cause to its consequence, so its ends
   // contribute at most two kinds unless the root cause is off the chain -- and a root cause off its
-  // own chain is a defect the four-layer assessment already refuses. Writing that row as though it
-  // were reachable was a branch no case can take, which is the shape this volume spends its rounds
-  // removing; the first draft of this function had it.
+  // own chain is a defect G2's case semantics refuses (`ROOT_OFF_ITS_CHAIN`, finding 281). That
+  // sentence used to say "the four-layer assessment already refuses", and it was false when it was
+  // written: nothing refused it, and this row's justification rested on a check that did not exist.
+  // Writing the row as though it were reachable was a branch no case can take, which is the shape
+  // this volume spends its rounds removing; the first draft of this function had it.
   if (depth >= 3) return 'L4';
   if (depth >= 2) return 'L3';
   if (breadth >= 2) return 'L2';

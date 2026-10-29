@@ -1424,3 +1424,104 @@ the next two cases would spend it; both three-step chains end outside the system
 counter at rank 1 is the floor rather than a localisation; RE3 emits no rows for the dispatcher case;
 eleven samples carry no case; the reversal between two entities of one kind is still not detectable
 statically; and upstream's loader still refuses a system it does not know.
+
+## v3.07 — the third rung had to end inside the system, and only one sample could carry it
+
+**What was at stake.** The ladder's top rung was met at two of nineteen the round before: 0.105 against
+a floor of 0.1, which is one annotation of margin. The corpus is committed to annotating every sample
+in the extraction key, so the size the share has to survive is thirty — two of twenty is exactly 0.100
+and two of twenty-one is 0.095. A third three-step chain was therefore not an improvement to the corpus
+but the **gate on every remaining annotation in it**, and it had a second requirement the first two do
+not meet: both of them end at an `external:` entity, so the corpus had no three-step chain whose
+propagation stays inside the system being measured.
+
+**The eleven samples that could not carry one.** Read against the rule the chain gate applies — every
+hop is an edge in the topology, and every entity a chain names is either named by the ticket or a
+deployment fact of one that is — the unannotated samples top out where their text stops:
+
+| sample | furthest chain | what stops it |
+| --- | --- | --- |
+| `resource-memory-leak-recommendation` | container → pod → service | the leak, the OOM kill and the restart are all inside one service; no caller is named |
+| `resource-disk-full-log-collector` | node → pod → service | the volume is a node fact and the agent is the collector itself |
+| `network-loss-payment-gateway` | gateway → caller | one hop, and **backwards**: the drop counter is on the client's node, so a chain from the ticket's component would run from the victim |
+| `network-partition-search-cluster` | node → pod → service | the querying side is "queries on one side", not a component |
+| `code-null-dereference-reporting` | service | one workload, one line, no second entity |
+| `config-feature-flag-checkout` | storefront → callers | the key's component is `storefront`, which is the top of the call graph, so nothing is above it to reach |
+| `dependency-version-incompatibility-shipping` | container → pod → service | it never starts, so nothing downstream of it moves |
+| `runtime-container-start-notification-worker` | container → pod → service | same shape: a workload that never serves has no consequence to follow |
+| `code-off-by-one-invoice-renderer` | service | the totals still match and nothing is logged |
+| `dependency-schema-change-currency-feed` | feed → settlement | the fields that were wrong are read by a party the ticket does not name |
+| `middleware-cache-shard-product-index` | **node → pod → service → reader** | the third hop is there: "reads against the surviving shards kept answering" is a sentence about the readers |
+
+That table is a **reading of eleven texts against one rule**, not a measurement, and it is written down
+so the next round can disagree with it by name rather than rediscover it.
+
+**The one that could, and the last hop it needed.** `history-middleware-cache-shard-product-index` is
+the corpus's first three-step chain that ends inside the storefront. The chain is a replacement cache
+node whose zone label is missing → the replica that joined with no slot → the cluster with two of
+sixteen slots unowned → the catalogue, which keeps answering. The ticket names the label, the count and
+the duration; it names its readers only as "reads" and "dashboards", so `catalog-service` — the graph's
+reader of a product index — is the one entity in this case that is **implied rather than quoted**. That
+is stated in the case's index entry rather than glossed there, and the entity layer of the case does
+not rest on it.
+
+**The signals are two forms of one fact and a zero.** A slot gauge at 0 that reads 2, the keyspace
+coverage that follows arithmetically from it (fourteen of sixteen is 87.5), and the reader's error
+share at zero for the whole window. There is deliberately **no latency series**: the ticket says the
+reads kept being answered and says nothing about how long they took, and a plausible-looking latency
+curve would be the corpus answering a question the ticket did not ask.
+
+**A gate nobody had, found while trying to justify a comment.** `difficulty.ts` declined a `breadth >=
+3` row by asserting that "a root cause off its own chain is a defect the four-layer assessment already
+refuses". Nothing refused it — the entity layer asks only that the root resolve, the process layer only
+that each step's ends resolve — so an annotation could answer in a component its chain never reaches
+and pass G1, G2 and G5 together. The rule now exists as `ROOT_OFF_ITS_CHAIN`, and its first draft
+passed everything *including the case written to fail it*, because `resolveEntityRef` returns an id and
+the draft read `.entityId` off it (finding 281). The test beside it is the only reason the round says
+this rather than shipping a gate that agrees with everything.
+
+**And a count nobody re-derived.** `background-telemetry.json` justified itself with "seventeen quiet
+neighbours" while holding twenty-two series, in the one file whose purpose is to make a ranking
+falsifiable (finding 282). The phrase now names no count, and a test refuses the shape.
+
+### Acceptance
+
+| gate | before | after |
+| --- | --- | --- |
+| the corpus | 19 of 30, `L1 2 / L2 9 / L3 6 / L4 2` | **20 of 30, `L1 2 / L2 9 / L3 6 / L4 3`** — 0.150 today, **0.100 at the committed thirty** |
+| three-step chains | 2, both ending at `external:` | **3, and the third ends at `catalog-service`** — held by a test, not by the readout |
+| the graph | 50 entities, 34 edges | **53 / 37** (a cache service, its second replica, the replaced node, and the reader's call) |
+| background | 22 services | **23**, and the omission direction is refused by `backgroundProblems` as before |
+| G2's chain rules | numbering, contiguity, no revisit | **plus `ROOT_OFF_ITS_CHAIN`** (finding 281), case-level at the export boundary |
+| `core` | 192 / 4778 | **192 / 4783** |
+| repo | 196 / 4965 | **196 / 4970** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | 99.97 / 99.75 / 100 / 99.97 (the new branch in `gates.ts` is covered in both directions) |
+| audit | 8 volumes, findings 1–280 | **1–282** |
+| the guard's readout | `22-24 candidate(s) wide`, `strictly displaced in 2` | `23-25 wide`, unchanged at **2** — the new case's answer is at rank 1 under both baselines |
+
+### What the margin is now, stated once
+
+Three of thirty is 0.100 and the floor is 0.1, so the corpus can annotate **all ten remaining samples
+as L1 to L3** and still meet its own target — and not one case more. The suite asserts that share
+against the committed denominator as well as against today's count, because the number that decides
+the plan is the one at full size, not the one on the day it was written.
+
+### Left open
+
+- **Ten samples remain, and every one of them tops out at two hops.** `[open: the next three-step
+  chain cannot be annotated from the key as it stands, so a fourth L4 case is a decision about the
+  extraction key rather than about effort]`
+- **The third hop's reader is implied rather than quoted.** `[open: the ticket says "reads" and
+  "dashboards"; `catalog-service` is the graph's reader, so a reviewer who disagreed with that
+  modelling choice would find no sentence in the ticket to overrule it]`
+- **The new case's answer is at rank 1 because its diagnostic series has a zero baseline.** `[open:
+  the slot gauge is 0 before and 2 after, so its z is `2 / 1e-6`; the case is a structural L4 and a
+  trivial localisation at the same time, which is the counter-at-rank-1 limit this log already carries]`
+- **`ROOT_OFF_ITS_CHAIN` is exercised by fixtures and by the corpus, not by a case that failed it in the
+  wild.** `[open: the rule was written after the corpus had already agreed with it twenty times, so its
+  evidence is a test rather than a repaired annotation]`
+
+Unchanged from the rounds before, and each still a limit rather than a task: both earlier three-step
+chains end outside the system; a counter at rank 1 is the floor rather than a localisation; RE3 emits
+no rows for the cache case; the reversal between two entities of one kind is still not detectable
+statically; and upstream's loader still refuses a system it does not know.

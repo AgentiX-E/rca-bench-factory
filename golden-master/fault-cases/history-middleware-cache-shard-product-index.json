@@ -1,0 +1,138 @@
+{
+  "caseId": "history-middleware-cache-shard-product-index",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-23T03:05:00.000Z",
+  "window": {
+    "start": "2026-10-23T02:05:00.000Z",
+    "end": "2026-10-23T05:05:00.000Z"
+  },
+  "fault": {
+    "type": "cache-shard-unassigned",
+    "category": "middleware",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "product-index",
+      "clusterSlots": {
+        "value": 16,
+        "unit": "count"
+      },
+      "unassignedSlots": {
+        "value": 2,
+        "unit": "count"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "pod:synthetic-storefront/product-index-2",
+    "rootCauseComponent": "product-index",
+    "rootCauseReason": "A cache node was replaced, and the replacement carries every label the placement rule keys on but one, so the copies the rule wants on a node with that label have nowhere to be placed: two of the cluster's sixteen slots end up with no owner, and the keys in those two ranges are answered by whichever replica held them before the replacement or not at all. The catalogue -- the only reader of this index in the graph, and the one entity here the ticket implies rather than names -- therefore serves prices and stock counts from before the change for exactly those keys, and it keeps serving: a read that lands in an unowned range is answered eventually, so no request fails, no latency climbs, and every dashboard that watches the readers reports partial success rather than an outage. That is the whole of the difficulty -- the loudest thing in the window is the absence of a symptom, and a reader who ranks components by how far their published numbers moved finds the catalogue, which is the victim, and never the cache, whose request rate did not move either. Nor is the replacement the fault: replacing a node is routine and the cluster was healthy before it. The fault is that placement is a requirement the new node's labels have to satisfy, the replacement satisfied all but one of them, and nothing compared the labels against the rule before the node joined.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "unassigned_cluster_slots",
+        "description": "two slots with no owner, against a gauge that reads zero on every healthy day: the one number in the window that moved at all"
+      },
+      {
+        "type": "metric",
+        "ref": "keyspace_coverage_percent",
+        "description": "fourteen sixteenths of the keyspace, which is the same fact as the slot count and the form in which a reader can see that a share of the catalogue lost its owner"
+      },
+      {
+        "type": "metric",
+        "ref": "http_5xx_ratio_percent",
+        "description": "the catalogue's error share stayed at zero throughout, which is the control that rules out every component the readers touch"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "node:synthetic-storefront/cache-node-3",
+        "toEntityId": "pod:synthetic-storefront/product-index-2",
+        "mechanism": "the replacement node carries every zone label the placement rule keys on but one, so the replica the rule wants on a node with that label has nowhere to be pinned and the process on the replacement joins the cluster with no slot assigned to it",
+        "evidenceRefs": [
+          "cp-slots",
+          "cp-declared"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/product-index-2",
+        "toEntityId": "service:synthetic-storefront/product-index",
+        "mechanism": "two of sixteen slots have no owner, so the keys in those ranges are served by whichever replica held them before the replacement: the cluster answers every read, and the answers for one eighth of the keyspace are stale or missing",
+        "evidenceRefs": [
+          "cp-slots",
+          "cp-coverage"
+        ]
+      },
+      {
+        "step": 3,
+        "fromEntityId": "service:synthetic-storefront/product-index",
+        "toEntityId": "service:synthetic-storefront/catalog-service",
+        "mechanism": "the catalogue reads from the cluster and receives an answer for every key, so it reports success while showing the stale and missing entries; the failure never becomes an error at the reader, which is why nothing that watches the catalogue moved",
+        "evidenceRefs": [
+          "cp-coverage",
+          "cp-readers"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-slots",
+        "entityRef": "service:synthetic-storefront/product-index",
+        "signalRef": "unassigned_cluster_slots",
+        "comparator": ">=",
+        "value": 2,
+        "unit": "count",
+        "description": "the two slots the cluster could not assign, which is the only reading in the window that moved"
+      },
+      {
+        "checkpointId": "cp-coverage",
+        "entityRef": "service:synthetic-storefront/product-index",
+        "signalRef": "keyspace_coverage_percent",
+        "comparator": "<=",
+        "value": 87.5,
+        "unit": "%",
+        "description": "fourteen of sixteen slots assigned, which is the same fact as the slot count expressed as the share of the keyspace that still has an owner"
+      },
+      {
+        "checkpointId": "cp-readers",
+        "entityRef": "service:synthetic-storefront/catalog-service",
+        "signalRef": "http_5xx_ratio_percent",
+        "comparator": "==",
+        "value": 0,
+        "unit": "%",
+        "description": "the control: the reader's error share is zero for the whole window, so nothing the catalogue touches can be where the fault is"
+      },
+      {
+        "checkpointId": "cp-declared",
+        "entityRef": "service:synthetic-storefront/product-index",
+        "signalKind": "configuration",
+        "signalRef": "unassignedSlots",
+        "comparator": "==",
+        "value": 2,
+        "unit": "count",
+        "description": "the count the case declares, which the gauge has to agree with: two statements of one fact that now have to match"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "give the replacement the zone label the placement rule keys on and let the cluster rebalance, which converges in four minutes because the data for the two ranges still exists on their surviving copies",
+        "target": "node:synthetic-storefront/cache-node-3"
+      },
+      {
+        "step": 2,
+        "action": "alert on unassigned slots and on keyspace coverage rather than on read errors, because the client of this cluster reports success while serving stale entries and no error budget ever moves",
+        "target": "service:synthetic-storefront/product-index"
+      }
+    ]
+  },
+  "query": "The product index served stale and missing entries for ninety minutes while every dashboard stayed green. Which component was at fault, and why did nothing that watches its readers report a single error?",
+  "difficulty": "L4",
+  "answerKeyIsolated": true
+}
