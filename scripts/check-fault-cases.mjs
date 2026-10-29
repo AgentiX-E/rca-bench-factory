@@ -214,6 +214,8 @@ const checkpointRefs = {
   derived: 0,
   derivedRefs: 0,
   configuration: 0,
+  logLines: 0,
+  logHolds: 0,
   inequalities: 0,
   false: 0,
 };
@@ -699,6 +701,7 @@ for (const entry of index.cases) {
       points: resolvedReadings.get(String(one?.metric)) ?? {},
     }));
     const logIds = new Set();
+    const logBodies = new Map();
     for (const one of logs) {
       const id = typeof one?.id === 'string' ? one.id : '';
       if (id === '') {
@@ -707,6 +710,7 @@ for (const entry of index.cases) {
       }
       if (logIds.has(id)) problems.push(`'${caseId}' declares two log lines with id '${id}'`);
       logIds.add(id);
+      logBodies.set(id, typeof one?.body === 'string' ? one.body : '');
     }
 
     for (const checkpoint of parsedCase.groundTruth.evidenceCheckpoints ?? []) {
@@ -773,10 +777,43 @@ for (const entry of index.cases) {
         continue;
       }
       if (kind === 'log') {
-        if (logIds.has(ref)) checkpointRefs.resolvedAny += 1;
+        // A log checkpoint is the only one whose assertion is about a *string*, and until this round
+        // the guard stopped at "the id resolves". Three of the shipped corpus's four log
+        // checkpoints were true and the fourth was not -- it cited "segmentation fault" while the
+        // line it named said `SIGSEGV` -- and nothing in the repository read the body, so the claim
+        // and the reconstruction were two statements that never met. A log line has no magnitude, no
+        // unit and no order, so the one relation it can be asked about is containment, and the check
+        // is that the phrase is in the text the case itself wrote (finding 286).
         if (!logIds.has(ref)) {
           problems.push(`'${caseId}' checkpoint '${id}' names log '${ref}', which the signals file does not declare (it declares: ${[...logIds].join(', ') || 'none'})`);
+          continue;
         }
+        checkpointRefs.resolvedAny += 1;
+        checkpointRefs.logLines += 1;
+        if (checkpoint.comparator !== 'contains') {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' compares a log line with '${String(checkpoint.comparator)}', ` +
+              'and a log has one relation: whether it contains the phrase the checkpoint cites',
+          );
+          continue;
+        }
+        const phrase = typeof checkpoint.value === 'string' ? checkpoint.value : '';
+        if (phrase === '') {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' states ${JSON.stringify(checkpoint.value)} as the phrase to ` +
+              `find in log '${ref}', which is not a non-empty string`,
+          );
+          continue;
+        }
+        const body = logBodies.get(ref) ?? '';
+        if (!body.includes(phrase)) {
+          problems.push(
+            `'${caseId}' checkpoint '${id}' asserts log '${ref}' contains '${phrase}', and the line it ` +
+              `cites does not (it reads: '${body}')`,
+          );
+          continue;
+        }
+        checkpointRefs.logHolds += 1;
         continue;
       }
       if (kind === 'configuration') {
@@ -1105,13 +1142,20 @@ function logLocalisationReading() {
 
 function logCheckpointCounts() {
   if (checkpointRefs.total === 0) return;
+  // The log kind is counted inside the parenthetical, because the four kinds are a partition of the
+  // total and a reader has to be able to add them up. Its *assertion* is counted outside it, on the
+  // other side of the semicolon, because a log checkpoint is not one of the comparable ones: it is
+  // compared with text, so it fails or holds for a reason the arithmetic beside it cannot express.
   console.log(
     `check-fault-cases: checkpoints ${String(checkpointRefs.resolvedAny)} of ` +
       `${String(checkpointRefs.total)} reference(s) resolve by kind (${String(checkpointRefs.resolved)} over a ` +
       `series, ${String(checkpointRefs.derived)} of them computed from ` +
       `${String(checkpointRefs.derivedRefs)} reading(s), ${String(checkpointRefs.configuration)} citing a ` +
-      `declared configuration fact); ${String(checkpointRefs.false)} of ` +
-      `${String(checkpointRefs.inequalities)} comparable assertion(s) fail against the data they name`,
+      `declared configuration fact, ${String(checkpointRefs.logLines)} over a log line); ` +
+      `${String(checkpointRefs.false)} of ` +
+      `${String(checkpointRefs.inequalities)} comparable assertion(s) fail against the data they name; ` +
+      `${String(checkpointRefs.logHolds)} of ${String(checkpointRefs.logLines)} log assertion(s) hold ` +
+      'against the body they cite',
   );
 }
 
@@ -1186,7 +1230,24 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
     // A CSV with a header and no rows is a file that exists and says nothing. Counted rather than
     // refused, because refusing would change a shared contract the official round trip depends on
     // (the round trip's own RE2 case carries metrics only) -- so the count is the report.
-    const emptyFiles = Object.entries(outcome.files).filter(([path, body]) => isEmptyDataFile(path, body));
+    //
+    // And a *breakdown*, because the count on its own was a number no reader could act on: `35
+    // file(s) with no rows` says the corpus is missing something and not which modality, and a
+    // corpus with no logs wants a different repair from one with no spans. The names come from the
+    // exporter's own paths, so a new modality is named by whatever the exporter calls it rather
+    // than by a list kept here (finding 287).
+    const emptyByFile = new Map();
+    let emptyTotal = 0;
+    for (const [path, body] of Object.entries(outcome.files)) {
+      if (!isEmptyDataFile(path, body)) continue;
+      emptyTotal += 1;
+      const name = path.slice(path.lastIndexOf('/') + 1);
+      emptyByFile.set(name, (emptyByFile.get(name) ?? 0) + 1);
+    }
+    const breakdown = [...emptyByFile.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, count]) => `${name} in ${String(count)} case(s)`)
+      .join(', ');
     // The leaf case directory, `{suite}-{system}/{service}_{fault}/{instance}`, not
     // the suite-system directory above it: every case of one system shares that
     // top level, so counting it reported 13 annotated cases as one (finding 267).
@@ -1194,7 +1255,8 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
       Object.keys(outcome.files).map((path) => path.slice(0, path.lastIndexOf('/'))),
     );
     exportLines.push(
-      `${suite} ${String(dirs.size)} case(s) written, ${String(emptyFiles.length)} file(s) with no rows` +
+      `${suite} ${String(dirs.size)} case(s) written, ${String(emptyTotal)} file(s) with no rows` +
+        (breakdown === '' ? '' : ` (${breakdown})`) +
         (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
     );
   }

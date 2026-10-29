@@ -1,0 +1,110 @@
+{
+  "caseId": "history-code-null-dereference-reporting",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-24T11:52:00.000Z",
+  "window": {
+    "start": "2026-10-24T11:32:00.000Z",
+    "end": "2026-10-24T12:32:00.000Z"
+  },
+  "fault": {
+    "type": "null-dereference",
+    "category": "code",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "reporting-service",
+      "endpoint": "/v2/summary"
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/reporting-app",
+    "rootCauseComponent": "reporting-service",
+    "rootCauseReason": "The response mapper fills the subscription field only for an account with an active subscription, and it writes the key either way: for an account created after the migration the key is present and holds null rather than being absent. The guard in the summary handler tests for absence, so a null passes it and the next statement dereferences it, which throws inside the handler for /v2/summary and for no other route. Nothing about the request is unusual and no account is expired; the difference is when the account was created, which is why the failures read as a share of traffic rather than as an outage. The migration is the trigger and not the defect: it changed what the mapper writes, and the guard had been asking the wrong question since it was written. A guard that accepts either a missing key or a null one reproduces every response the endpoint used to produce, which is the repair the case states rather than an opinion about one.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "summary_5xx_ratio",
+        "description": "the share of /v2/summary responses that failed, which is a property of one endpoint and not of the service"
+      },
+      {
+        "type": "metric",
+        "ref": "summary_mapper_null_share",
+        "description": "the share of mapped accounts whose field is present and null, which is the population the guard lets through"
+      },
+      {
+        "type": "log",
+        "ref": "stack-trace",
+        "description": "the exception's own frame, which names the line that dereferences and nothing about the caller"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/reporting-app",
+        "toEntityId": "pod:synthetic-storefront/reporting-service-0",
+        "mechanism": "the summary handler dereferences a field the mapper wrote as null, so the request throws inside the pod and every other route the pod serves keeps answering",
+        "evidenceRefs": [
+          "cp-stack-trace",
+          "cp-null-share"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/reporting-service-0",
+        "toEntityId": "service:synthetic-storefront/reporting-service",
+        "mechanism": "callers of /v2/summary receive a 500 for the accounts whose field is null and a normal response for every other account, so the service sees a share of failures on one route while its health and its other routes stay green",
+        "evidenceRefs": [
+          "cp-5xx-ratio"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-5xx-ratio",
+        "entityRef": "service:synthetic-storefront/reporting-service",
+        "signalRef": "summary_5xx_ratio",
+        "comparator": "==",
+        "value": 0.12,
+        "unit": "1",
+        "description": "the failed share of one endpoint, which is what a caller sees: not an outage, because eleven of twelve requests still succeed"
+      },
+      {
+        "checkpointId": "cp-null-share",
+        "entityRef": "container:synthetic-storefront/reporting-app",
+        "signalRef": "summary_mapper_null_share",
+        "comparator": "==",
+        "value": 0.31,
+        "unit": "1",
+        "description": "the share of mapped accounts whose field is present and null, which is the set the guard was supposed to refuse and did not"
+      },
+      {
+        "checkpointId": "cp-stack-trace",
+        "entityRef": "container:synthetic-storefront/reporting-app",
+        "signalKind": "log",
+        "signalRef": "stack-trace",
+        "comparator": "contains",
+        "value": "summarize()",
+        "description": "the exception's frame, which is the only reading that names the line: the failure is a dereference rather than a schema change or a timeout, and the line it names is the same one every time"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "treat a present-and-null field as the absent case in the guard, so the response carries the default the mapper means rather than a dereference of it",
+        "target": "container:synthetic-storefront/reporting-app"
+      },
+      {
+        "step": 2,
+        "action": "assert the mapper's output shape in the export step rather than only the mapper's input, because the migration that triggered this changed what was written and not what was read",
+        "target": "service:synthetic-storefront/reporting-service"
+      }
+    ]
+  },
+  "query": "The reporting service began returning 500 on /v2/summary alone, with a stack trace that ends on one line every time. Which component holds the defect, and what about the account decides whether a request fails?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

@@ -271,30 +271,40 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(atFullSize).toBeCloseTo(0.1, 10);
   });
 
-  it('keeps the property when one L4 case is taken away and loses it when two are', () => {
-    // The margin, measured rather than described. With three of twenty the rule survives the loss of
-    // one case -- two of nineteen is 0.105 -- which makes this a weaker ratchet than it was at two
-    // of nineteen and an honest one: what protects the corpus now is the third case and the fact
-    // that removing two of them is not a small edit.
-    const one = {
+  it('loses the property the moment one L4 case is taken away, and states how wide the corpus may grow', () => {
+    // It used to survive the loss of one case: three L4 among twenty-one is 0.143. The corpus has
+    // since grown at L3 without growing at L4, so removing one now lands at two of twenty-one --
+    // 0.095 -- and the ratchet is the commitment itself rather than the count. Two numbers follow
+    // from that and both are derived here rather than written into a plan: the corpus is inside the
+    // target at thirty cases and outside it at thirty-one, so the ninth remaining annotation is the
+    // first one that cannot be L1, L2 or L3.
+    const hardest = shipped.filter((one) => one.difficulty === 'L4');
+    const withoutOne = {
       irVersion: '1.0.0',
       graph: shippedGraph,
-      cases: shipped.filter((one) => one.caseId !== 'history-code-slow-regex-api-gateway'),
+      cases: shipped.filter((one) => one.caseId !== hardest[0]!.caseId),
       signals: {},
     };
-    expect(checkDifficultyDistribution(one).violations).toEqual([]);
-    const two = {
-      irVersion: '1.0.0',
-      graph: shippedGraph,
-      cases: shipped.filter(
-        (one) =>
-          one.caseId !== 'history-code-slow-regex-api-gateway' &&
-          one.caseId !== 'history-middleware-cache-shard-product-index',
-      ),
-      signals: {},
-    };
-    expect(checkDifficultyDistribution(two).violations.map((one) => one.code)).toEqual([
+    expect(checkDifficultyDistribution(withoutOne).violations.map((one) => one.code)).toEqual([
       'DIFFICULTY_SKEWED_HARD',
     ]);
+    // Padded with copies of a shipped L3 case rather than with literals, because what the rule reads
+    // is a share: the point is the size at which the same numerator stops being enough.
+    const filler = shipped.find((one) => one.difficulty === 'L3')!;
+    const at = (size: number): string[] =>
+      checkDifficultyDistribution({
+        irVersion: '1.0.0',
+        graph: shippedGraph,
+        cases: [
+          ...shipped,
+          ...Array.from({ length: size - shipped.length }, (_, index) => ({
+            ...filler,
+            caseId: `history-padding-${String(index)}`,
+          })),
+        ],
+        signals: {},
+      }).violations.map((one) => one.code);
+    expect(at(30), 'three of thirty is exactly the floor').toEqual([]);
+    expect(at(31), 'three of thirty-one is below it').toEqual(['DIFFICULTY_SKEWED_HARD']);
   });
 });

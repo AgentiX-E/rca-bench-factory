@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 21,
+  "min": 22,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -630,6 +630,36 @@
           "layer": "evidence",
           "quote": "the item on the boundary is written to the current page and then skipped on the next one",
           "why": "the sentence that makes the moving reading the right one: the page carries five lines of a six-line capacity, so the count of lines is the reading that can see this and it is exact rather than sampled"
+        }
+      ]
+    },
+    {
+      "caseId": "history-code-null-dereference-reporting",
+      "sampleId": "code-null-dereference-reporting",
+      "case": "history-code-null-dereference-reporting.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-code-null-dereference-reporting.signals.json",
+      "why": "annotated from the incident text of `code-null-dereference-reporting`. It is the corpus's first case whose evidence layer includes a log checkpoint, and the first whose answer is a code defect visible only as a share of one route's failures: the service is healthy, its other routes answer, and no threshold on the service as a whole has a reason to fire. The chain is two hops and ends inside the system (container -> pod -> service), and the text gives no third: the caller is named only as the account. The guard that admits a null is the defect and the migration is the trigger, which is the distinction the annotation is built to keep -- a case that named the migration would be answerable by reading the deploy log instead of the code.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The reporting service started returning 500 on /v2/summary",
+          "why": "the component and the route: the failures belong to one endpoint of one service, which is what makes the answer a code path rather than a host"
+        },
+        {
+          "layer": "fault",
+          "quote": "dereferencing a field the response mapper populates only when the account has an active subscription",
+          "why": "the defect stated as a data-flow fact: the mapper owns the field, and the code that reads it assumes a population the mapper does not always produce"
+        },
+        {
+          "layer": "process",
+          "quote": "Accounts created after the migration have the field present but null rather than absent",
+          "why": "why the guard never fired: it asks whether the key is missing, and after the migration the key is always there, so the branch that would have refused the value is never reached"
+        },
+        {
+          "layer": "evidence",
+          "quote": "Every stack trace ends in summarize() on the same line",
+          "why": "the reading that names the line, and the reason the case carries a log checkpoint: no metric says \"a dereference\", so the evidence layer would be a guess without it"
         }
       ]
     }

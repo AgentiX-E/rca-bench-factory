@@ -31,5 +31,14 @@
       "quote": "its own logs show the work completing",
       "why": "the application finished the work the ingress had already given up on -- the sentence that turns a 504 into a timeout rather than a crash"
     }
+  ],
+  "traces": [
+    {
+      "service": "partner-portal",
+      "spanName": "POST /upload",
+      "durationMs": 8000,
+      "quote": "the upload handler needs about eight seconds",
+      "why": "the handler span the ingress is measured against: the text states the work takes eight seconds and the timeout was set to one, which is the comparison the case is about"
+    }
   ]
 }

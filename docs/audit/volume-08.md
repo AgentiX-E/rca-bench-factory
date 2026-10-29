@@ -776,3 +776,128 @@ this log keeps arriving at.
 still takes `Number`s — so the obligation to resolve lives in a comment and a helper rather than in the
 type. A `.ts` caller would get the same `NaN` from the same mistake, and the compiler would have caught
 it in the script if the script had been TypeScript.
+
+## Finding 286 — a log checkpoint stated a containment, and the body it named was read by nothing
+
+Four checkpoints in the shipped corpus carry `signalKind: 'log'`, and each states a `comparator` and a
+`value` beside the log id it cites — `contains "upload handled"`, `contains "connection pool
+exhausted"`, `contains "segmentation fault"`, `contains "unhandled TypeError"`. The guard resolved the
+id and stopped. `checkpointRefs.resolvedAny` was incremented, the reference counted, and the phrase was
+never compared with anything.
+
+Three of the four were true. The fourth was not:
+
+| case | the checkpoint cites | the line it names reads |
+| --- | --- | --- |
+| `history-runtime-container-crash-loop-media` | `contains "segmentation fault"` | `SIGSEGV in native ffmpeg binding 1.8s after accepting job 0x41f2, ...` |
+
+Both halves are right in their own terms. The incident text says the container "logs a segmentation
+fault in the native ffmpeg binding", so the checkpoint quotes the text's words; the log body is a
+reconstruction and its author wrote the signal's name. They are two statements about one line, written
+by two hands, and **nothing in the repository put them beside each other** — so the case has been
+green since the log line existed, and its evidence layer has carried a claim its own data contradicts.
+
+**Why every other door was open.** `compareExactly` orders numbers and the phrase is a string. `contains`
+is not a member of `NUMERIC_COMPARATORS`, so the comparable branch did not see it and the assertion
+count did not include it. `assessFourLayer` is handed a case and a graph, never the signals, so it
+reports the checkpoint as filled and every reference as resolved. And the log-line rules that do exist
+check the *quote* (`the quote is in the incident text`), the *body's length*, and the *why* — three
+properties of a line that say nothing about what the line will be asked to prove.
+
+**The repair, and the vocabulary that came with it.** A log line has no magnitude, no unit and no
+order, so the one relation it can be asked about is containment; the comparator is closed to
+`contains`, the phrase must be a non-empty string, and the phrase must appear in the body the case
+declares. Anything else is refused by name rather than skipped:
+
+| input | before | after |
+| --- | --- | --- |
+| `contains` + a phrase in the body | counted as resolved | **counted as holding**, `1 of 1` |
+| `contains` + a phrase the body does not carry | **accepted** | refused, naming the phrase and quoting the body |
+| `>=` beside a log id | **accepted** | refused: `a log has one relation` |
+| `value: 3` beside a log id | **accepted** | refused: not a non-empty string |
+
+The counter is separate from `comparable assertion(s)`, deliberately: a log assertion is compared with
+text, so it fails for a reason the arithmetic beside it cannot express, and folding it into that pair
+would have made both numbers mean two things. The printed line grew a fourth kind inside its
+parenthetical — `4 over a log line` — and with it the three kinds finally **sum to the total**, which a
+previous round had tried to assert and could not: the test that once withdrew that arithmetic now
+states it, so a fifth kind added without a counter fails there rather than quietly making the report a
+list that no longer adds up.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the shipped corpus | 4 log checkpoints, 1 of them false | **4 of 4 hold**, and the false one was repaired in the body it names |
+| the rule | resolved the id | **compares the phrase with the body**, and refuses the two other comparators |
+| `check-fault-cases.test.ts` | 110 tests | **114** (three refusals and one count) |
+| the report | three kinds that did not add up to the total | **four kinds that do**, asserted |
+
+**What this does not fix.** The body is a reconstruction, so the rule can only say the two statements
+agree — a case whose body and phrase are wrong together is as green as one where both are right, and
+no check here can tell them apart. `expandLog` emits three lines at fixed offsets, so "the phrase is in
+the body" is not "the phrase is in the log": the same text is asserted three times at 30, 150 and 270
+seconds after onset. And nothing compares a checkpoint's `entityRef` with the `service` its log line is
+attributed to, so a case can cite a container and quote a line the graph says belongs to another
+service.
+
+## Finding 287 — thirty-five files with no rows, and the run printed the number and not the files
+
+RE2 writes `logs.csv` and `traces.csv` for every case it exports. Of the corpus's twenty-one cases,
+six declared a log and one declared a span, so the export wrote **35 files that hold a header and
+nothing else** — and the only place that appeared was a count in the middle of a status line. The
+corpus was described as having telemetry, G1/G3/G4 were all green, and the modality that the counts
+were about was empty in twenty of twenty-one cases.
+
+The number was also not decomposable: `35` is `15` (logs) plus `20` (traces), and a reader had no way
+to know whether the two modalities accounted for it or whether a third file was in there. That is the
+same defect as finding 267's directory count, one layer down — a count of things that does not say
+which things.
+
+**What the round did about it, and what it decided not to do.** The count stays a count: refusing to
+write a header-only file would change a layout the official round trip depends on, and the round trip's
+own RE2 case carries metrics only. So the repair is that the count now names its parts, read off the
+exporter's own paths rather than from a list kept by hand:
+
+```
+RE2 22 case(s) written, 32 file(s) with no rows (logs.csv in 15 case(s), traces.csv in 17 case(s))
+```
+
+and, in the same round, the corpus was given the spans its incident texts already stated. A span needs
+a duration, and a duration can only be quoted; five of the thirty texts state one as a *request
+latency*, and one of the five was annotated. The other four had the number in their own words and no
+span in their declaration:
+
+| case | the text's number | the span |
+| --- | --- | --- |
+| `history-checkout-cpu-saturation` | `p99 latency went from 180ms to 4.3s` | `checkout` at **4300 ms** |
+| `history-middleware-redis-latency-session-cache` | `Cache GETs ... went from 0.4ms to 55ms` | `GET` at **55 ms** |
+| `history-code-slow-regex-api-gateway` | `request latency spiked to 8s` | `HTTP request` at **8000 ms** |
+| `history-config-ingress-timeout-partner-portal` | `the upload handler needs about eight seconds` | `POST /upload` at **8000 ms** |
+
+| reading | before | after |
+| --- | --- | --- |
+| cases with a log line | 6 of 21 | **7 of 22** |
+| cases with a span | 1 of 21 | **5 of 22** |
+| RE2 files with no rows | 35 (15 + 20) | **32 (15 + 17)** |
+| RE2's trace modality | empty in 20 of 21 cases | empty in **17 of 22** |
+| `rcaeval-re3` cases written | 4 | **5** |
+
+The remaining seventeen are not a backlog of missing authorship: nineteen of the thirty incident texts
+state a duration for a *window* (`12 hours`, `40 minutes`, `24h`) rather than for a request, and a span
+whose duration was invented to fill a column would be the one modality in this corpus that is fiction
+rather than reconstruction. The honest reading is that the trace modality is bounded by the extraction
+key, and the census now says so on every run instead of leaving it to be inferred from a count.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the empty-file count | a number with no parts | **the number, then each file name and how many cases it is empty in** |
+| a case whose text states a latency | no span unless it had been remembered | **every annotated one carries its span**, quoted |
+| `check-fault-cases.test.ts` | 114 tests | **115** (the fixture's empty count moved, and the breakdown is asserted) |
+
+**What this does not fix.** The breakdown is a reading and not a gate: nothing refuses a new case that
+declares a log and exports none, because the export is downstream of the declaration and the only
+instrument that could compare them lives in this script rather than in the exporter. A corpus that
+declares a modality and loses it in the port would still be green, as long as the count moved.

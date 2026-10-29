@@ -376,6 +376,24 @@
       "kind": "container",
       "name": "invoice-renderer-app",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/reporting-service",
+      "kind": "service",
+      "name": "reporting-service",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/reporting-service-0",
+      "kind": "pod",
+      "name": "reporting-service-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/reporting-app",
+      "kind": "container",
+      "name": "reporting-app",
+      "aliases": []
     }
   ],
   "edges": [
@@ -572,6 +590,16 @@
     {
       "from": "pod:synthetic-storefront/invoice-renderer-0",
       "to": "container:synthetic-storefront/invoice-renderer-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/reporting-service",
+      "to": "pod:synthetic-storefront/reporting-service-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/reporting-service-0",
+      "to": "container:synthetic-storefront/reporting-app",
       "relation": "contains"
     }
   ]

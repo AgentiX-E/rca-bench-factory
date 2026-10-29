@@ -1,0 +1,36 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-code-null-dereference-reporting",
+  "why": "Telemetry for the null-dereference case, derived from the two shares the incident text states. It is the corpus's first case whose evidence includes a log line that is a *checkpoint* rather than a decoration: the exception's frame is the only reading that names the failing line, and a metric cannot say 'a dereference' in words. The two shares are one fact seen from two sides -- the accounts the mapper wrote as null, and the requests that therefore failed -- so a corpus carrying either alone would let a reader mistake a population for a rate. Neither series moves at a magnitude a threshold would call large; what makes the case solvable is that they are the only two that move at all.",
+  "series": [
+    {
+      "service": "reporting-service",
+      "metric": "summary_5xx_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0.12,
+      "quote": "started returning 500 on /v2/summary",
+      "why": "the checkpoint `cp-5xx-ratio` holds the share: a failure rate rather than an outage, and it belongs to one endpoint rather than to the service"
+    },
+    {
+      "service": "reporting-service",
+      "metric": "summary_mapper_null_share",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0.31,
+      "quote": "the field present but null rather than absent",
+      "why": "the checkpoint `cp-null-share` holds the population: the accounts the mapper wrote as null after the migration, which is the set the guard admitted"
+    }
+  ],
+  "logs": [
+    {
+      "service": "reporting-service",
+      "id": "stack-trace",
+      "severity": "error",
+      "body": "NullPointerException at com.storefront.reporting.SummaryMapper.summarize(): subscriptionState was present and null",
+      "quote": "Every stack trace ends in summarize() on the same line",
+      "why": "the checkpoint `cp-stack-trace` holds the frame: a reconstruction of the line the text describes, and the phrase it cites is the frame rather than a paraphrase of one"
+    }
+  ]
+}

@@ -29,7 +29,7 @@
     {
       "service": "media-transcoder",
       "id": "segfault-on-first-job",
-      "body": "SIGSEGV in native ffmpeg binding 1.8s after accepting job 0x41f2, listener not yet bound",
+      "body": "segmentation fault (SIGSEGV) in native ffmpeg binding 1.8s after accepting job 0x41f2, listener not yet bound",
       "quote": "logs a segmentation fault in the native ffmpeg binding within two seconds of receiving the first job",
       "why": "the crash itself, on every start, which is the sentence the log checkpoint quotes"
     }

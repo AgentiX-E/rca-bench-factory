@@ -32,5 +32,14 @@
       "quote": "Application-side connection pool utilisation is normal, so clients are not the bottleneck",
       "why": "the control `cp-client-pool`: the text says the pool was normal, not that it was empty, so the level is the annotation's and the assertion is the text's -- below its ceiling, unchanged. A counted utilisation is exact, so it carries no sampling noise"
     }
+  ],
+  "traces": [
+    {
+      "service": "session-cache",
+      "spanName": "GET",
+      "durationMs": 55,
+      "quote": "0.4ms to 55ms",
+      "why": "the client's own GET against the session Redis, which is the only place the 55ms exists: the instance reports a saturated thread and not a request, so a span is what makes the two views of one fault comparable"
+    }
   ]
 }

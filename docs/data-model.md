@@ -256,6 +256,27 @@ assertion, a `log` reference must name a declared line `id`, a `derived` one car
 `expression` over the readings it names, and a `configuration` reference must name a
 key of the case's own `fault.parameters` and agree with what that key holds.
 
+#### A log checkpoint asserts a containment, and the body is where it is checked
+
+A log line has no magnitude, no unit and no order, so the only relation a checkpoint can
+ask of one is whether it contains a phrase:
+
+| field | for `signalKind: 'log'` |
+| --- | --- |
+| `comparator` | **`contains`**, and nothing else; `>=` beside a line id is refused by name |
+| `value` | a non-empty string: the phrase the case says the line carries |
+| `signalRef` | the `id` of a log line the same signals file declares |
+| the check | the phrase appears in that line's `body` |
+
+This was resolved-only until finding 286: the guard counted the reference and never
+compared the phrase with the body, so one of the shipped corpus's four log checkpoints
+asserted `contains "segmentation fault"` about a line that reads `SIGSEGV`, and the run
+was green. The log body is a **reconstruction** -- the one modality where the text is
+written rather than measured -- so the phrase and the body are two authored statements
+about one line, and the rule is that they agree; nothing here can tell which of them is
+right when they do not.
+
+
 ### `fault.parameters` — the facts a checkpoint can cite
 
 `fault.parameters` is the injector's record, open by design: a `container`, a

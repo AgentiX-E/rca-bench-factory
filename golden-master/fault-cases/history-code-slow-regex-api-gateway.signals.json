@@ -31,5 +31,14 @@
       "quote": "including paths with no downstream call",
       "why": "the checkpoint `cp-downstream-clean` holds the eleven milliseconds, and it is the case's control rather than its evidence: a service behind the gateway is unchanged while the gateway is at eight seconds, so the time cannot be its. Declared as its own series because a flat reading is a claim the annotation has to make somewhere, and a control that exists only in prose is a control no graph can see"
     }
+  ],
+  "traces": [
+    {
+      "service": "api-gateway",
+      "spanName": "HTTP request",
+      "durationMs": 8000,
+      "quote": "request latency spiked to 8s",
+      "why": "one request through the gateway, which is the unit the text's own number is in: every path moved, so the span is named for the request rather than for a route that was never the point"
+    }
   ]
 }

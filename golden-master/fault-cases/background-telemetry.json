@@ -75,6 +75,12 @@
       "value": 160
     },
     {
+      "service": "invoice-renderer",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 25
+    },
+    {
       "service": "ledger-writer",
       "metric": "request_rate",
       "unit": "rps",
@@ -123,6 +129,12 @@
       "value": 780
     },
     {
+      "service": "reporting-service",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 35
+    },
+    {
       "service": "session-cache",
       "metric": "request_rate",
       "unit": "rps",
@@ -139,12 +151,6 @@
       "metric": "request_rate",
       "unit": "rps",
       "value": 40
-    },
-    {
-      "service": "invoice-renderer",
-      "metric": "request_rate",
-      "unit": "rps",
-      "value": 25
     }
   ]
 }

@@ -1700,3 +1700,89 @@ is the honest reading and not the one this round wanted.
 Unchanged from the round before: the trigger for a suite budget is a property of the runner; the
 `same-component` rename is uncounted; rule 7 is a file-level claim; `ROOT_OFF_ITS_CHAIN`'s evidence is a
 test rather than a repaired annotation; and a budget that is *missing* is invisible to every static arm.
+
+## v3.10 — a log checkpoint stated a containment, and the body it named was read by nothing
+
+**Where the round started.** The plan's first item was the twenty-second annotation, and the sample
+chosen was `code-null-dereference-reporting` — a case whose evidence is a stack trace, which meant the
+annotation would need its first `signalKind: 'log'` checkpoint in three rounds. The question that
+stopped the round before the case existed was the obvious one: **what checks a log checkpoint?**
+
+The answer was nothing. The guard resolved the log id it cited, counted the reference, and moved on.
+Four checkpoints of the shipped corpus state a phrase beside that id, and the phrase was never compared
+with the line.
+
+**What that found in data that had been green for rounds.** Three of the four hold. The fourth is
+`history-runtime-container-crash-loop-media`, which asserts `contains "segmentation fault"` about a body
+that reads `SIGSEGV in native ffmpeg binding …`. The incident text says the container "logs a
+segmentation fault", so the phrase is right; the body is a reconstruction, so the signal's name is right
+too. They were written by two hands and nothing put them beside each other (finding 286).
+
+**The repair.** A log has no magnitude, no unit and no order, so the one relation it can be asked about
+is containment. The comparator is closed to `contains`, the phrase has to be a non-empty string, and it
+has to appear in the body the case declares. The count is separate from the comparable pair, because a
+log assertion fails for a reason arithmetic cannot express, and the report's parenthetical gained its
+fourth kind — which is what finally makes the printed kinds **sum to the total**, an arithmetic a
+previous round tried to assert, found broken, and withdrew.
+
+**The other half of the round is a count that could not be decomposed.** RE2 writes `logs.csv` and
+`traces.csv` for every case, and the corpus supplied neither for most of them: **35 files with a header
+and no rows**, printed as a number and nothing else. `35` is `15 + 20`, and no reader could tell whether
+two modalities accounted for it or three. The count now names its parts, read off the exporter's own
+paths (finding 287), and the corpus was given the spans its own texts already state — four cases whose
+incident text states a request latency and whose declaration carried no span:
+
+| case | the text's number | the span |
+| --- | --- | --- |
+| `history-checkout-cpu-saturation` | `180ms to 4.3s` | `checkout` at 4300 ms |
+| `history-middleware-redis-latency-session-cache` | `0.4ms to 55ms` | `GET` at 55 ms |
+| `history-code-slow-regex-api-gateway` | `spiked to 8s` | `HTTP request` at 8000 ms |
+| `history-config-ingress-timeout-partner-portal` | `needs about eight seconds` | `POST /upload` at 8000 ms |
+
+**The twenty-second case.** `history-code-null-dereference-reporting` — L3, two hops, the corpus's
+seventh case with a log line and its first whose evidence layer *is* a log checkpoint. The mechanism is
+the distinction the corpus exists to keep: the migration is the trigger, the guard that admits a null is
+the defect, and a case that named the migration would be answerable from the deploy log instead of from
+the code.
+
+| gate | before | after |
+| --- | --- | --- |
+| `check-fault-cases.test.ts` | 110 tests | **115** |
+| the corpus | 21 of 30, L1 2 / L2 9 / L3 7 / L4 3 | **22 of 30, L1 2 / L2 9 / L3 8 / L4 3** |
+| log checkpoints | 4, one of them false, none asserted | **5, all asserted**, `5 of 5` hold |
+| cases with a span | 1 of 21 | **5 of 22** |
+| RE2 files with no rows | 35 | **32**, and named |
+| RE2 / RE3 cases written | 21 / 4 | **22 / 5** |
+| entities and edges | 56 / 39 | **59 / 41** |
+| core / cli / repo | 192 / 4792 · 4 / 187 · 196 / 4979 | 192 / **4797** · 4 / 187 · 196 / **4984** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | **unchanged** |
+| audit | 8 volumes, findings 1–285 | **1–287** |
+
+**The ladder lost its slack, and the round says so with an assertion.** The difficulty test used to
+prove the L4 share survived the loss of one case — two of nineteen is 0.105. The corpus has since grown
+at L3 without growing at L4, so removing one now lands at two of twenty-one, 0.095, and the property is
+gone. What replaced the old assertion is derived rather than described: three L4 among **thirty** cases
+is exactly the floor and among **thirty-one** it is not, so the ninth remaining annotation is the first
+that cannot be L1, L2 or L3. That is P3's deadline expressed as arithmetic.
+
+### Left open
+
+- **The trace modality is bounded by the extraction key, not by the corpus.** Nineteen of the thirty
+  incident texts state a duration for a window rather than for a request, so a span for them would be
+  the only fabricated number in the corpus. `[open: a span needs a duration and nineteen of thirty
+  texts state none, so the trace modality cannot be completed by annotation]`
+- **A modality declared and lost in the export is still green.** The breakdown names the files; nothing
+  refuses a case that declares a log and exports none, because the comparison lives in the gate script
+  rather than in the exporter. `[open: the export is downstream of the declaration and no instrument
+  compares them]`
+- **A log checkpoint cites an entity and quotes a line attributed to a service, and nothing compares
+  them.** `[open: checkpoint entityRef and log service are two statements about one owner]`
+- **The fourth L4 case is now on a deadline, not on a wish.** At thirty-one cases the ladder is red
+  without one. `[open: three L4 of thirty is the floor exactly; the ninth further annotation must be L4
+  or the corpus is outside its target]`
+
+Unchanged from the round before: eight samples remain unannotated; the third strict displacement needs a
+case with two faults; `volume-03` is 107 bytes under its budget; the resolution obligation lives in a
+helper rather than in a type; the probe reads some build without naming it; `same-component`'s rename is
+uncounted; rule 7 is a file-level claim; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired
+annotation; and a budget that is *missing* is invisible to every static arm.

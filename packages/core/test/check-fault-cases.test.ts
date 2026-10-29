@@ -981,19 +981,32 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
   it('prints what the coverage report says about each suite the corpus could be exported to', () => {
     const result = run(['--cases', corpus({ signals: signals() })]);
     expect(result.status, result.out).toBe(0);
+    // RE3's reason lost its `trace` half in the round that gave the latency cases their spans: the
+    // checkout declaration is one of the three, so the fixture now supplies a span and the suite is
+    // degraded for the modality it still has none of.
     expect(result.out).toContain(
-      'coverage rcaeval-re1 ready · rcaeval-re2 degraded (no log) · rcaeval-re3 degraded (no log, trace)',
+      'coverage rcaeval-re1 ready · rcaeval-re2 degraded (no log) · rcaeval-re3 degraded (no log)',
     );
   });
 
   it('prints how many exported files exist with no data in them', () => {
-    // Two per case for RE2: `logs.csv` and `traces.csv`, header only. `metrics.json` is one line of
-    // JSON and `inject_time.txt` is one line by design, so neither is counted -- the first version
-    // counted lines and reported RE1 as three empty files when it was writing real data.
+    // One per case for RE2 now: `logs.csv`, header only. `traces.csv` carries the checkout case's
+    // span since the round that gave the latency cases theirs, and `inject_time.txt` is one line by
+    // design, so neither is counted -- the first version counted lines and reported RE1 as three
+    // empty files when it was writing real data.
     const result = run(['--cases', corpus({ signals: signals() })]);
     expect(result.out).toContain('export RE1 1 case(s) written, 0 file(s) with no rows');
-    expect(result.out).toContain('RE2 1 case(s) written, 2 file(s) with no rows');
+    expect(result.out).toContain('RE2 1 case(s) written, 1 file(s) with no rows');
     expect(result.out).toContain('RE3 0 case(s) written, 0 file(s) with no rows, 1 skipped');
+  });
+
+  it('names the file each empty export belongs to, not just how many there are', () => {
+    // A count of empty files is a fact about the exporter's output that no reader can act on: it
+    // does not say which modality the corpus is missing, and a corpus missing logs wants a
+    // different repair from one missing spans. The breakdown is read off the file names, so a new
+    // modality is named by whatever the exporter calls it rather than by a list kept here.
+    const result = run(['--cases', corpus({ signals: signals() })]);
+    expect(result.out).toContain('1 file(s) with no rows (logs.csv in 1 case(s))');
   });
 
   it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', () => {
@@ -1088,6 +1101,87 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     ]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('declares a log line without saying what it supports');
+  });
+
+  /**
+   * The checkout annotation with one log checkpoint, over the line `withLog` declares.
+   *
+   * A log checkpoint is the only kind whose assertion is about a *string*, and a string is the one
+   * thing `compareExactly` cannot hold: the body is a reconstruction of a line the incident text
+   * describes, so "this line says what the case needs it to say" is a claim about text the case
+   * itself wrote. That is exactly the claim nothing read until this round.
+   */
+  function withLogCheckpoint(
+    edit: (checkpoint: Record<string, unknown>) => void,
+  ): (faultCase: Record<string, unknown>) => void {
+    return (faultCase) => {
+      const truth = faultCase.groundTruth as Record<string, unknown>;
+      const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+      const checkpoint: Record<string, unknown> = {
+        checkpointId: 'cp-throttling-line',
+        entityRef: 'container:synthetic-storefront/checkout-api-app',
+        signalKind: 'log',
+        signalRef: 'throttling-line',
+        comparator: 'contains',
+        value: 'cpu throttling',
+        description: "the pod's own words for the state, which no metric states in words",
+      };
+      edit(checkpoint);
+      checkpoints.push(checkpoint);
+    };
+  }
+
+  it('accepts a log checkpoint whose phrase is in the line it cites', () => {
+    const result = run([
+      '--cases',
+      corpus({ mutate: withLogCheckpoint(() => undefined), signals: withLog(() => undefined) }),
+    ]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('1 of 1 log assertion(s) hold against the body they cite');
+  });
+
+  it('refuses a log checkpoint whose phrase the line it cites does not contain', () => {
+    // The phrase is the whole assertion: a log line has no magnitude and no unit, so a checker that
+    // stopped at "the id resolves" would accept every claim anyone wrote beside it.
+    const result = run([
+      '--cases',
+      corpus({
+        mutate: withLogCheckpoint((checkpoint) => {
+          checkpoint.value = 'memory pressure';
+        }),
+        signals: withLog(() => undefined),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "checkpoint 'cp-throttling-line' asserts log 'throttling-line' contains 'memory pressure', and the line it cites does not",
+    );
+  });
+
+  it('refuses a log checkpoint that orders two numbers, because a log has one relation', () => {
+    const result = run([
+      '--cases',
+      corpus({
+        mutate: withLogCheckpoint((checkpoint) => {
+          checkpoint.comparator = '>=';
+        }),
+        signals: withLog(() => undefined),
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "checkpoint 'cp-throttling-line' compares a log line with '>=', and a log has one relation: whether it contains the phrase the checkpoint cites",
+    );
+  });
+
+  it('says how many log assertions hold, over the corpus it was given', () => {
+    // Printed on every run because the line above it counts *comparable* assertions, and a log
+    // assertion is not one of them: it is compared with text rather than ordered. Before this
+    // line, four checkpoints of the shipped corpus stated a containment and the report counted
+    // none of them -- one of the four was false, and the run was green.
+    const result = run(['--cases', CASES]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toMatch(/(\d+) of \1 log assertion\(s\) hold against the body they cite/);
   });
 });
 
@@ -1244,22 +1338,26 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // The literal form (`41 of 41 ... 0 of 37`) restated the corpus and went red on the round that
     // annotated one more case, which is the shape a guard must not have: it reports a change in
     // the data as a defect in the guard.
-    const summary = /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series, (\d+) of them computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
-      result.out,
-    );
+    const summary =
+      /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series, (\d+) of them computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact, (\d+) over a log line\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+        result.out,
+      );
     expect(summary, result.out).not.toBeNull();
-    const [, resolved, total, , , , , failed, comparable] = summary as unknown as string[];
+    const [, resolved, total, overSeries, , , configuration, logLines, failed, comparable] =
+      summary as unknown as string[];
     expect(resolved, 'every reference must resolve').toBe(total);
     expect(Number(total), 'the corpus must carry references for this to be a measurement').toBeGreaterThan(0);
     expect(Number(comparable), 'the guard must compare something').toBeGreaterThan(0);
     expect(failed, 'no comparable checkpoint may disagree with the data it names').toBe('0');
-    // The per-kind breakdown is deliberately not asserted. It is a *reading* of how the corpus
-    // happens to be shaped -- how many cite a series, how many a configuration fact -- and this
-    // test's subject is that every reference resolves, not that the corpus divides in a
-    // particular way. An earlier draft summed the printed kinds and compared the sum with the
-    // total; it failed, and the failure was the assertion's: the printed parts do not sum to the
-    // total, because a kind this regex does not capture is counted too. Writing an arithmetic
-    // rule I could not derive is how a guard starts reporting its own guess as a defect.
+    // The kinds are a partition, and this assertion is the one an earlier draft had to withdraw:
+    // it summed `over a series` and `computing from a reading` and got a larger number than the
+    // total, because the log kind was counted and not printed. With the fourth kind printed the
+    // arithmetic closes, so a fifth kind added without a counter fails here rather than quietly
+    // making the report a list that no longer adds up.
+    expect(
+      Number(overSeries) + Number(configuration) + Number(logLines),
+      'the printed kinds must account for every reference',
+    ).toBe(Number(total));
   });
 
   it('refuses a series reference the signals file does not declare', () => {
@@ -1532,9 +1630,10 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // because `container_spec_cpu_quota` was a plausible metric name that nothing declared -- and
     // that admitting it made it comparable rather than excusing it. The count itself is the
     // corpus's business, and pinning it here made every new case a test edit.
-    const admitted = /(\d+) citing a declared configuration fact\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
-      result.out,
-    );
+    const admitted =
+      /(\d+) citing a declared configuration fact, \d+ over a log line\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+        result.out,
+      );
     expect(admitted, result.out).not.toBeNull();
     const [, configuration, failed, comparable] = admitted as unknown as string[];
     expect(Number(configuration), 'no configuration checkpoint is admitted; the rule would be untested').toBeGreaterThan(0);
@@ -1568,7 +1667,9 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     expect(result.status, result.out).toBe(0);
     // One case: three checkpoints, all comparable, none failing. The conversion is visible in the
     // fact that the assertion is counted at all -- `0.5 core` is compared with `500 mcore`.
-    expect(result.out).toContain('1 citing a declared configuration fact); 0 of 3 comparable assertion(s) fail');
+    expect(result.out).toContain(
+      '1 citing a declared configuration fact, 0 over a log line); 0 of 3 comparable assertion(s) fail',
+    );
   });
 
   it('refuses a unit the table cannot convert into the declared one', () => {
