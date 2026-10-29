@@ -35,7 +35,7 @@
       {
         "type": "metric",
         "ref": "unassigned_cluster_slots",
-        "description": "two slots with no owner, against a gauge that reads zero on every healthy day: the one number in the window that moved at all"
+        "description": "two slots with no owner, against a gauge that reads zero on every healthy day: the cluster's own account of what it could not place, and the only kind of number in this incident that moves"
       },
       {
         "type": "metric",
@@ -88,7 +88,7 @@
         "comparator": ">=",
         "value": 2,
         "unit": "count",
-        "description": "the two slots the cluster could not assign, which is the only reading in the window that moved"
+        "description": "the two slots the cluster could not assign: the ticket's own number, and one of the two readings the cluster publishes that moved at all"
       },
       {
         "checkpointId": "cp-coverage",

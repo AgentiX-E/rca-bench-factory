@@ -12,7 +12,7 @@
       "post": 2,
       "noise": "none",
       "quote": "Two of the sixteen cluster slots were unassigned",
-      "why": "the checkpoint `cp-slots` holds the two, and it is the only reading in the window that moved: a gauge at zero for the whole pre-window, because a cluster with every slot owned reads zero and nothing else in this incident leaves a trace a level-based reading can see"
+      "why": "the checkpoint `cp-slots` holds the two, and it is one of the two readings that moved at all -- the other is the same fact as a share, below. A gauge at zero for the whole pre-window, because a cluster with every slot owned reads zero, and no reader-visible series in this incident moves"
     },
     {
       "service": "product-index",
