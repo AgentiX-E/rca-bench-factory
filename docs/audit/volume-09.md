@@ -182,3 +182,121 @@ accepts `spawn` of *anything*, so a file whose helper spawns a non-script child 
 a script path elsewhere would have that path counted as driven. That is the same class of imprecision
 the widened set buys, and it is bounded the same way: the declaration must agree with it, so a false
 inference shows up as a disagreement rather than as silence.
+
+---
+
+## Finding 292 — the stopwatch was proved to work, and never proved to be installed
+
+Finding 290 ended with an instrument: `test/support/event-loop-stall.ts` measures the longest stretch
+during which a test file held the worker's event loop, and `test/setup/stall-watch.ts` is the `afterAll`
+hook that turns an over-budget stretch into a failure attributed to the file that caused it. Finding 291
+records the meta-level half of the same repair.
+
+The instrument is installed by one line:
+
+```ts
+setupFiles: ['./test/setup/stall-watch.ts'],
+```
+
+in `packages/core/vitest.config.ts`. Every claim v3.12 made about the instrument survived deleting that
+line, and this finding is the measurement of that.
+
+### The demonstration
+
+`stall-budget.test.ts` proves the hook can fail: it builds a two-case project, gives it a 300 ms budget,
+and asserts that a blocking case fails while an awaiting case of the same duration passes. Both cases
+named the hook with a literal path resolved from the repository root:
+
+```ts
+setupFiles: [${JSON.stringify(resolve(ROOT, 'packages/core/test/setup/stall-watch.ts'))}],
+```
+
+So the battery was a proof about a file it happened to name, and not about this suite. The controlled
+experiment is one deletion:
+
+| state of `packages/core/vitest.config.ts` | `stall-budget.test.ts` | `stall-watch-is-installed.test.ts` | suite |
+| --- | --- | --- | --- |
+| line present | 9 passed | (did not exist) | green, 4 816 tests |
+| line deleted | 9 passed | (did not exist) | **green, 4 816 tests, no gauge** |
+| line deleted, after this finding | **2 failed** | **1 failed** | red, 3 failures in 2 files |
+
+The third row is the measurement, with the failure text the repository now produces:
+
+```
+× event loop · the hook fails the file that blocked it > fails a suite whose child blocks the loop,
+  with every test passing
+  → the core vitest config installs no setup file, so there is no hook to test:
+    the config installs no setup file: `setupFiles` appears nowhere in it, so the suite runs
+    without whatever the setup file was for, and nothing else in the repository would notice
+
+× setup files · this package installs the stopwatch > installs exactly one setup file, and it is
+  the stall watch
+```
+
+### Why this shape keeps recurring
+
+The suite's own comment on `maxWorkers` says it: a claim that is true by luck is the shape of finding
+123. Here the luck is structural rather than numeric, and it has three parts:
+
+1. **a config file is imported by nothing.** Deleting a line from it breaks no import graph, no type, and
+   no build. Every mechanism the repository has for noticing a deletion — the compiler, the module
+   resolver, the test count — is blind to it, because a config is read by a process that starts outside
+   the module graph.
+2. **the artefact is an absence.** The gauge's only output is an attribution of a stall. When it is not
+   installed it produces no attributions, and "no attributions" is exactly what a healthy suite looks
+   like. There is no wrong number to notice, only a missing sentence.
+3. **the battery was self-contained.** It proved the hook works by installing the hook itself. That is
+   the right way to test a hook and the wrong way to test an installation, and the two were the same
+   file.
+
+This is finding 290's structure one level up. There, every test passed and the run was not green because
+nothing measured the blocking. Here, every test passes and the *measuring* has been deleted; the
+difference is that the second one is silent for longer, because a suite with no gauge fails nothing at
+all until the next file blocks for sixty seconds — and then reports the same unattributable
+`Timeout calling "onTaskUpdate"` that cost a round to diagnose.
+
+### The fix
+
+| piece | where | what it holds |
+| --- | --- | --- |
+| the reader | `packages/core/test/support/installed-setup-files.ts` | parses `setupFiles` out of a config **as text**, resolves each entry against the config's own directory, and refuses what it cannot confirm |
+| the join | `packages/core/test/stall-watch-is-installed.test.ts` | one entry, it is `stall-watch.ts`, it exists, it registers `afterAll`, it reads its budget from the support module, and it throws on a verdict |
+| the load-bearing proof | `packages/core/test/stall-budget.test.ts` | the battery installs the hook the config installs, read from the config, so a deleted entry makes the blocking case pass and fails the battery |
+
+Text rather than an import, for the reason `coverage-thresholds.test.ts` already gives about the two
+configs: importing a config executes it, which answers "what object would vitest receive" rather than
+"what does the file say". The two agree today and would stop agreeing on the day someone computed the
+entry — which is the case the reader refuses instead of guessing at.
+
+Three refusals carry the weight, and each is a way the sentence can be absent while the file still looks
+like it says it:
+
+| the config | what a grep for `setupFiles` sees | what the reader reports |
+| --- | --- | --- |
+| no key at all | nothing, which nobody greps for | `installs no setup file` |
+| `setupFiles: []` | the key, present and installed-looking | `the list is empty` |
+| two `setupFiles` keys | both; vitest installs the last, a reviewer reads the first | `more than one setupFiles` |
+| `setupFiles: files` | a key and a value | `not a list of string literals` |
+| `setupFiles: ['./gone.ts']` | a key and a path | `does not exist` |
+| `setupFiles: ['./hooks']` (a directory) | a key and a path that `stat`s | `exists and is not a file` |
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| delete the install line | suite green, 4 816 tests, no gauge | **3 tests red in 2 files** |
+| the battery's hook | a literal path it resolved itself | the entry `packages/core/vitest.config.ts` installs |
+| `stall-watch-is-installed.test.ts` | did not exist | **13 tests** |
+| the reader's refusals | none | 6, each with a case that produces it |
+| `core` suite | 193 files, 4 816 tests | **194 files, 4 829 tests** |
+| `repo` suite | 197 files, 5 003 tests | **198 files, 5 016 tests** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged (the new files are tests) |
+
+**What this does not fix.** The `cli` package still has no gauge at all — its config declares no
+`setupFiles`, so the suite that runs 187 tests over the CLI is measured for nothing, and this finding's
+check is written against `packages/core/vitest.config.ts` by name rather than against every package that
+runs tests. A third package added tomorrow inherits the same silence. Nor does the check establish that
+the hook *would* throw: it asserts the source contains the `throw`, which is a reading of the file rather
+than an execution of it — the execution is the battery's half, and the two halves are joined only by the
+path. A hook that referenced `stallVerdict` and discarded its result would pass the reading and fail the
+battery, which is the right way round.

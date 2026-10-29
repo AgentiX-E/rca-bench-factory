@@ -1992,3 +1992,90 @@ is called in two modules with nothing tying them; `settlement`'s second hop is a
 `same-component`'s rename is uncounted; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired
 annotation; a modality declared and lost in the export is still green; and a log checkpoint's
 `entityRef` is never compared with the service its line is attributed to.
+
+---
+
+## v3.13 — the stopwatch was proved to work, and never proved to be installed
+
+**Starting point.** v3.12 ended with an instrument and a CI reading. The instrument is the suite's
+stopwatch: `test/support/event-loop-stall.ts` measures the longest stretch a file held the worker's
+event loop, and `test/setup/stall-watch.ts` fails that file when the stretch is over budget. The CI
+reading, on `c83a2521a`, is `Test Files 193 passed`, `Tests 4816 passed`, and **no `Errors` line** —
+which is the one line whose absence is the difference between finding 290 and a green run.
+
+**What this round found.** The instrument is installed by a single line of
+`packages/core/vitest.config.ts`, and nothing in the repository would have noticed its deletion. This
+was measured rather than argued: with the line removed, `stall-budget.test.ts` still passed all nine
+cases and the suite was green with 4 816 tests, because the battery that proves the hook can fail
+resolved the hook's path itself. A proof about a file it happens to name, and not about this suite.
+
+| state of the install line | the battery | the new check | the suite |
+| --- | --- | --- | --- |
+| present | 9 passed | — | green, gauge installed |
+| deleted, before this round | 9 passed | did not exist | **green, gauge gone** |
+| deleted, after this round | **2 failed** | **1 failed** | red, 3 failures in 2 files |
+
+**The fix has three parts, and the third is the one that matters.**
+
+| part | where | what it holds |
+| --- | --- | --- |
+| a reader for configs | `test/support/installed-setup-files.ts` | parses `setupFiles` as text, resolves each entry against the config's own directory, and refuses six ways of being absent while looking present |
+| the join | `test/stall-watch-is-installed.test.ts` | one entry, it is `stall-watch.ts`, it exists, it registers `afterAll`, its budget comes from the support module, and it throws on a verdict |
+| the load-bearing proof | `test/stall-budget.test.ts` | the battery now installs the hook the config installs, read from that config, so a deleted entry makes the blocking case *pass* and fails the battery |
+
+Text rather than an import, for the reason `coverage-thresholds.test.ts` already gives about the same two
+configs: importing a config executes it and answers "what would vitest receive", not "what does the file
+say". The two agree today; they would stop agreeing the day someone computed the entry, and that is the
+case the reader refuses instead of guessing at.
+
+**Why this is the right next step rather than the twenty-fourth case.** The corpus is at 23 of 30 and has
+waited a round already. But v3.12's repair ends in a sentence that is only true if a config line survives
+review, and the round that bought it also produced a CI reading whose new property — "the longest single
+stall is under 45 s" — is *only* observable through that instrument. Shipping the next case on top of an
+unverified instrument is how a measurement quietly becomes a claim. The case is next, and nothing about
+it has changed.
+
+### Readings
+
+| what | reading |
+| --- | --- |
+| delete the install line | **3 tests red in 2 files** (was: suite green, no gauge) |
+| `stall-watch-is-installed.test.ts` | **13 tests** (did not exist before) |
+| the reader's refusals | **6**, each with a case that produces it |
+| `core` suite | **194 files, 4829 tests passed** |
+| `repo` suite | **198 files, 5016 tests passed** |
+| coverage (statements / branches / functions / lines) | **99.97 / 99.75 / 100 / 99.97**, unchanged |
+| `cli` suite | **4 files, 187 tests passed**, 100 on all four dimensions |
+| `docs:check` | OK — audit 1–292, 289 findings, largest volume 279,893 of 280,000 bytes |
+
+The runner numbers for the two files v3.12 converted are worth stating because they are not the numbers
+this round's summariser first wrote down: `check-cli-reference.test.ts` is **52,862 ms** on the runner
+(not the 18,731 ms measured locally) and `cli-reference-backend-table.test.ts` is **26,468 ms**. Awaiting
+a child does not shorten it; it only lets the loop turn. The property that was bought is `longest single
+stall < 45,000`, and the CI log has no `held the event loop` in it.
+
+### Left open
+
+- **The `cli` package has no gauge.** Its config declares no `setupFiles`, so 187 tests over the CLI are
+  measured for nothing, and this round's check names `packages/core/vitest.config.ts` rather than every
+  package that runs tests. `[open: the property is measured in one package of two, and a third package would inherit the silence]`
+- **The hook's throw is read, not executed, by the installation check.** Execution is the battery's half
+  and the two halves are joined only by the path; a hook that called `stallVerdict` and discarded the
+  result would pass the reading. `[open: the installation check reads a throw rather than producing one, so the battery is the only execution of it]`
+- **An installed hook could throw only sometimes.** Nothing asserts the budget the hook runs with beyond
+  "it comes from the support module"; an environment override is a legitimate way to raise it in CI.
+  `[open: the effective budget is whatever the environment says, and nothing compares it with the deadline at run time]`
+- **`volume-09` is at its budget** (279,893 of 280,000 bytes), so the next finding opens `volume-10`.
+  `[open: the next finding needs a tenth volume and the table row that names it]`
+- **Two hundred and eighty-nine findings across nine volumes**, three numbers absent (118, 132–133); the
+  count of *entries* is what the table carries, and it is now one row behind the corpus.
+  `[open: the volume table states counts, and a count that is retyped per append is the defect it documents]`
+
+Unchanged: seven samples remain unannotated and the twenty-fourth case was **not** built this round
+either; the fourth strict displacement needs a shape the corpus has not got; the resolution of a
+continuous unit is a convention; a measurable spread still divides by itself; the floor is called in two
+modules with nothing tying them; `settlement`'s second hop is a claim about a deploy; `same-component`'s
+rename is uncounted; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired annotation; a
+modality declared and lost in the export is still green; a log checkpoint's `entityRef` is never compared
+with the service its line is attributed to; and the sixty-nine files that spawn synchronously are bounded
+by the budget rather than prohibited.

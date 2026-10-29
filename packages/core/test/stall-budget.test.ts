@@ -16,6 +16,7 @@ import {
   stallVerdict,
   startStallWatch,
 } from './support/event-loop-stall.js';
+import { installedSetupFiles } from './support/installed-setup-files.js';
 
 /**
  * The stopwatch the suite runs under, and the proof that it can fail.
@@ -48,6 +49,12 @@ import {
  *    anything. Point 3 is what the battery at the end of this file does: it runs a
  *    real vitest over a two-case project with a lowered budget and asserts the
  *    verdict arrives on the blocking case and not on the awaited one.
+ *
+ * The battery installs the file `packages/core/vitest.config.ts` installs, read
+ * from that config rather than spelled here, so its proof is about this suite's
+ * installation and not about a path it happens to name. The other half of that
+ * link -- one entry, it exists, and it throws -- is
+ * `stall-watch-is-installed.test.ts`.
  *
  * ## Why the pair below is the whole finding
  *
@@ -188,10 +195,35 @@ describe('event loop · the hook fails the file that blocked it', () => {
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
   /**
+   * The setup file this package installs, or a failure that says so.
+   *
+   * A battery that cannot find a hook has to fail loudly rather than install an
+   * empty list: the empty list is the defect it is meant to detect, and a battery
+   * that shrugged at it would pass while the suite had no gauge.
+   */
+  function installedHook(): string {
+    const scan = installedSetupFiles(resolve(ROOT, 'packages', 'core', 'vitest.config.ts'));
+    const hook = scan.resolved[0];
+    if (hook === undefined) {
+      throw new Error(
+        'the core vitest config installs no setup file, so there is no hook to test: ' + scan.problems.join('; '),
+      );
+    }
+    return hook;
+  }
+
+  /**
    * A one-case project that runs this repository's own setup file.
    *
    * The hook is pointed at rather than copied: a copy would be a second
    * implementation, and the battery would then assert that *the copy* can fail.
+   *
+   * It is also the hook the core config *installs*, read from that config rather
+   * than spelled here. The first version of this battery wrote the path itself,
+   * which made its two cases a proof about a file it happened to name: deleting
+   * `setupFiles` from `packages/core/vitest.config.ts` left the battery green and
+   * the suite without a gauge. Now a deleted entry makes both cases fail, one for
+   * having no hook to install and one for the blocking case passing without it.
    */
   function project(name: string, caseSource: string): string {
     const dir = join(scratch, name);
@@ -203,7 +235,7 @@ describe('event loop · the hook fails the file that blocked it', () => {
         'export default defineConfig({',
         '  test: {',
         "    include: ['case.test.ts'],",
-        `    setupFiles: [${JSON.stringify(resolve(ROOT, 'packages/core/test/setup/stall-watch.ts'))}],`,
+        `    setupFiles: [${JSON.stringify(installedHook())}],`,
         '  },',
         '});',
         '',
