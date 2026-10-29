@@ -300,3 +300,320 @@ the hook *would* throw: it asserts the source contains the `throw`, which is a r
 than an execution of it — the execution is the battery's half, and the two halves are joined only by the
 path. A hook that referenced `stallVerdict` and discarded its result would pass the reading and fail the
 battery, which is the right way round.
+
+---
+
+## Finding 293 — the checkpoint says which entity it is about, and nothing asked the line
+
+The corpus's twenty-fourth case is `resource-disk-full-log-collector`: a collector whose segment
+pruner stopped firing after the pod was moved, so the volume the writer shares with it filled and every
+write began returning `ENOSPC`. Its evidence layer names six checkpoints, and one of them is a log
+line -- the agent's own `no space left on device`. Writing that checkpoint is what produced this
+finding.
+
+The guard had checked two things about a log checkpoint and joined neither:
+
+- the four-layer assessment resolves its `entityRef` against the graph, so the entity exists;
+- since finding 286 the guard compares the phrase the checkpoint states against the body of the line
+  it cites, so the phrase is in the text.
+
+**What nothing asked is whose line it is.** A checkpoint on the checkout pod could cite the settlement
+parser's warning, find its phrase, and pass both checks -- and the case would then rest on a sentence
+written by a component its chain never touches.
+
+### The demonstration
+
+One edit to a copy of the corpus: the new case's `cp-enospc-log` is pointed at
+`service:synthetic-storefront/settlement`, a service that is in the graph and is not in this case's
+chain. Nothing else changes; the line, its body and the phrase stay as they were.
+
+| rule | verdict on the mutated corpus |
+| --- | --- |
+| absent (before this finding) | `OK (24 of 30 sample(s) … every case passes G1, G2 and G5 …)`, exit 0 |
+| present (after) | `FAILED — 1 problem(s) across 24 case(s)`, exit 2 |
+
+```
+check-fault-cases: 'history-resource-disk-full-log-collector' checkpoint 'cp-enospc-log' names
+'service:synthetic-storefront/settlement', and the log line it cites is attributed to
+'log-collector-agent': they are a different component, so the phrase is evidence about something other
+than what the checkpoint is about
+```
+
+### Why the relation is containment rather than equality
+
+The obvious rule -- the checkpoint's entity name equals the line's `service` -- would refuse **three of
+the corpus's seven log checkpoints**, and all three are right:
+
+| case | the checkpoint names | the line is attributed to | equal? |
+| --- | --- | --- | --- |
+| `code-null-dereference-reporting` | `container:…/reporting-app` | `reporting-service` | no |
+| `runtime-container-crash-loop-media` | `container:…/media-transcoder-app` | `media-transcoder` | no |
+| `resource-disk-full-log-collector` (new) | `pod:…/log-collector-0` | `log-collector-agent` | no |
+| `config-ingress-timeout-partner-portal` | `service:…/partner-portal` | `partner-portal` | yes |
+| `dependency-schema-change-currency-feed` | `service:…/settlement` | `settlement` | yes |
+| `middleware-database-pool-deadlock-billing` | `service:…/billing-service` | `billing-service` | yes |
+| `unhandled-exception-export` | `service:…/export-worker` | `export-worker` | yes |
+
+Four of the seven agree on the name, which is why equality looks right and is not: a convention that
+holds four times out of seven is a convention that fails the first time evidence is collected one layer
+in -- which is what two of these containers and this round's pod are.
+
+A service, its pods, its containers and the node hosting them are one component at four resolutions,
+and which of the four a checkpoint names is a matter of where the evidence was collected rather than of
+what it is about. So the rule is `sameComponent` -- the judgement `classifyDisplacement` already makes
+about a ranking -- and its second caller is why the definition moved from `fault/displacement.ts` into
+`entity/graph.ts`. Two copies of that walk would have been two answers within a release.
+
+What it still refuses is the case that judgement was built to refuse: **the wrong replica.** Two pods of
+one service are siblings, not ancestors, and a line from `checkout-1` is not a line from `checkout-0`.
+
+### The fix
+
+| piece | where | what it holds |
+| --- | --- | --- |
+| the judgement | `packages/core/src/entity/graph.ts` | `isContainedIn` / `sameComponent`, moved here so a second caller cannot grow a second definition; the walk keeps a `seen` set, so a graph whose containment is not a tree terminates |
+| the rule | `packages/core/src/fault/log-attribution.ts` | for every log checkpoint: resolve the entity, resolve the line's author, refuse a different component and refuse a line whose author resolves to nothing |
+| the join | `scripts/check-fault-cases.mjs` | one call, beside the phrase check it completes; the two now say "this phrase is in this line" and "this line is from this entity" |
+| the tests | `packages/core/test/log-attribution.test.ts` | **13 cases**, including the two acceptance shapes, the sibling refusal, the alias, the cycle, and the two defects left to the checks that own them |
+
+Emptying the rule was measured too, because a rule whose absence changes nothing is the defect this
+volume is about: with `checkLogAttribution` replaced by a no-op, **4 of the 13 cases go red** (the three
+refusals and the second-checkpoint case) and the nine permissive cases stay green -- the right direction,
+since a rule that refuses nothing cannot fail a corpus that is right.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| a checkpoint citing another component's line | green, 24/24 | **red, one problem naming both** |
+| the corpus's own seven log checkpoints | unchecked | **all pass, and the two container shapes and the pod shape are cases in the unit test** |
+| the corpus | 23 of 30 samples | **24 of 30**, `disk-full` counted for the first time |
+| the graph | 65 entities, 46 edges | **70 entities, 50 edges** (the collector, its pod, two containers, its node) |
+| `core` suite | 194 files, 4 829 tests | **195 files, 4 845 tests** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged |
+
+**What this does not fix.** Containment is a relation between two names, not an argument about a body:
+a checkpoint on a node and a line from a pod that node hosts are one component here, so a checkpoint
+could cite a neighbouring workload's line on the same node and pass -- the resolution is deliberately
+coarse and the coarseness is undefended. The rule reads `resolveEntityRef`, so a line attributed by a
+name two entities claim resolves to nothing and is refused as unattributed rather than reported as
+ambiguous, which is one message for two repairs. And the corpus's log lines are all *declared* rather
+than captured, so this rule joins two authored fields; it cannot say whether the sentence a signals file
+invented is one a real agent would print.
+
+---
+
+## Finding 294 — the fullest volume was reported without its name, and the reader supplied one
+
+v3.13 closed with a statement it had measured nothing for:
+
+> **`volume-09` is at its budget** (279,893 of 280,000 bytes), so the next finding opens `volume-10`.
+
+Both halves are wrong. `volume-09.md` held **18,803 bytes**; 279,893 is `volume-03.md`. The next finding
+does not open a tenth volume; it appends to the ninth, which is what this finding and finding 293 do.
+
+### Where the number came from
+
+The guard prints, on success:
+
+```
+check-audit-volumes: OK — 9 volume(s), 289 finding(s), 1–292; largest 279,893 of 280,000 bytes; absent: 118, 132–133
+```
+
+`largest 279,893 of 280,000 bytes` is a true statement about the set and a silent one about the file.
+The round that needed it had just written in the newest volume, so it attached the newest name to the
+largest number. Nothing anywhere compares the two: a size with no subject is not a claim about any
+volume, so no reader and no rule could be wrong about it.
+
+This is finding 290's shape in a smaller place. There, an error message said an operation timed out and
+did not say what had blocked; here, a summary reports the largest size and does not say which volume is
+largest. In both the reader is handed a fact that requires a decision they are not equipped to make, and
+in both the reader makes it -- plausibly, and wrongly.
+
+### The fix
+
+| piece | where | what it holds |
+| --- | --- | --- |
+| the named reading | `scripts/audit-volumes.mjs` | `largestVolume(volumes)` returns `volume-03.md at 279,893 of 280,000 bytes`; the reduction is over every volume rather than `Math.max` of the sizes, so the name is carried rather than reconstructed |
+| the same defect, second place | `scripts/progress-volumes.mjs` | the progress index printed its largest volume the same way. Here the guess is **usually right** -- the fullest progress volume is nearly always the newest -- and that is the argument for fixing it rather than against: a reading that is usually right is the one nobody checks |
+| the tests | `packages/core/test/audit-volumes.test.ts`, `packages/core/test/progress-volumes.test.ts` | one case each, with a fixture whose **fullest volume is the first**, so a rule that names a position instead of a file fails |
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the audit summary | `largest 279,893 of 280,000 bytes` | `largest volume-03.md at 279,893 of 280,000 bytes` |
+| the progress summary | `largest 148,336 of 200,000 bytes` | `largest volume-07.md at 148,336 of 200,000 bytes` |
+| the claim in `volume-07` | `volume-09` is at its budget | corrected in place, with the arithmetic that shows it was not |
+| `audit-volumes.test.ts` | 16 tests | **17** |
+| `progress-volumes.test.ts` | 26 tests | **27** |
+
+**What this does not fix.** The size is still a number a reader can misquote; naming it makes the
+sentence self-contained rather than checking that anyone read it. The byte budget is still the one
+reading in that summary with no assertion behind it -- a volume 30,000 bytes past the budget is refused,
+but a volume *near* it says nothing about how close the next append may come. And the same shape is
+still present wherever a summary reports an extremum: `docs/progress.md`'s `1 unread phrase(s)` is a
+count whose subjects are named only in the file's own `UNMEASURED` list.
+
+---
+
+## Finding 295 — the probe asked whether the number was taken, not whether the child was there
+
+A coverage run of the whole suite reported one failure:
+
+```
+FAIL test/step-process.test.ts > one step, run as CI would run it >
+     forwards a signal to the step, and then dies of it rather than swallowing it
+AssertionError: the grandchild 547275 outlived the runner: expected false to be true
+   1 failed | 4846 passed (4847)
+```
+
+The test spawns a runner, the runner spawns a step in its own process group, the step backgrounds a
+`sleep 30` and records its pid, and the test sends the runner `SIGTERM`. The runner asserts the runner
+died *of* `SIGTERM`, and then that everything the step started is gone within five seconds.
+
+### What could not be reproduced, and what that rules out
+
+| replay | conditions | result |
+| --- | --- | --- |
+| 2 | full core suite, plain | 4847 of 4847, twice |
+| 3 | the file alone | 8 of 8, three times |
+| 1 | the scenario alone, idle machine | grandchild gone in **0 ms** |
+| 8 | the scenario alone, 16 busy loops on a 32-CPU box | gone in **0–1 ms** |
+| 10 | the scenario alone, three process-churn loops recycling pids | gone in **0–1 ms** |
+
+Nineteen replays of the exact scenario, every one of them reporting the grandchild gone inside a
+millisecond. So two explanations that look plausible on paper are ruled out by measurement rather than
+by preference:
+
+| hypothesis | the measurement that kills it |
+| --- | --- |
+| the pid was **recycled** and the probe answered about a different process | `kernel.pid_max` is **4,194,304** and the namespace was at ~547,000. Recycling inside five seconds would take 3.6 million spawns |
+| the grandchild exited and its corpse was never **reaped**, which answers `kill(pid, 0)` | `/proc/<pid>` was gone within 1 ms in all nineteen replays: this container reaps promptly, so a corpse did not sit in front of the probe |
+
+That leaves one candidate -- the group signal **missed**, so the grandchild was still running -- and no
+evidence for or against it. Recording that is the honest end of the reproduction attempt.
+
+### The defect in the probe, which does not depend on reproducing the event
+
+`alive(pid)` was `process.kill(pid, 0)`. That answers *"is there a process with this number"*, and the
+question both group-kill tests ask is *"is the process I started still there"*. The two differ in two
+directions, and neither is exotic:
+
+| what `kill(pid, 0)` says | what the kernel actually holds |
+| --- | --- |
+| "alive" | a process that exited and has not been reaped yet -- a `Z` corpse still owns its number |
+| "alive" | a number the kernel has handed to an unrelated process |
+| "alive" | the grandchild, which is the only case the test meant |
+
+So the probe is a gate that a wrong world can pass, in a suite that spawns thousands of processes and
+therefore runs beside the exact conditions under which those two false positives occur. The repair
+captures the process's **start time** while the number is known to name it, and asks later about that
+process: same start time, and not in a state that means it is over (`Z`, `X`). Where the platform reports
+no start time at all -- `/proc` is Linux-only -- the probe answers with the signal question alone rather
+than claiming an identity it never saw, which is why the two assertions are written to hold on both.
+
+The failure message is now part of the instrument. An assertion that waits five seconds and then says a
+number is still alive has thrown away everything it learned; the message now carries what the pid *is*:
+
+```
+the grandchild 547275 outlived the runner (it is in state 'S' under parent 1, running 'sleep 30')
+```
+
+That sentence separates the surviving hypotheses the reproduction could not. `parent 1` means the
+grandchild was orphaned -- the group signal never reached it. `parent <runner>` means the runner died
+before its kill landed. A `Z` here instead would mean the process was over and the report was the
+probe's.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the probe | `kill(pid, 0)`, identity-blind, corpse-blind | start time + state, per process |
+| the failure message | `the grandchild 547275 outlived the runner` | `… (it is in state 'S' under parent 1, running 'sleep 30')` |
+| `step-process.test.ts` | 8 tests | **10** |
+| turning `stillRunning` back into `alive` | -- | **1 test red** (the probe's own; the two group-kill tests stay green, which is the honest statement about what they can see) |
+| the corrected probe over 19 replays | -- | gone in ≤ 1 ms, unchanged |
+
+**What this does not fix.** It does not explain the one failure, and it does not make a missed group
+signal less likely. `signalGroup` still swallows `ESRCH` -- if `kill(-pid)` fails because the group does
+not exist yet, the forwarder re-raises into its own death and the step's children live on, and nothing
+records that the kill went nowhere. That is a real hole, it is not this defect, and it is on the open
+list rather than half-fixed here. What changed is that the next occurrence will arrive with a state, a
+parent and a command line attached instead of a number.
+
+---
+
+## Finding 296 — the coverage bound was a mean over 195 files, so the newest one was invisible
+
+The round that added `fault/log-attribution.ts` closed with this reading:
+
+> coverage unchanged **99.97 / 99.75 / 100 / 99.97**
+
+Measured after the module landed, the package reported **99.68** branches. The difference is one file:
+
+```
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+ src/fault         |     100 |    99.64 |     100 |     100 |
+  ...attribution.ts|     100 |    77.77 |     100 |     100 | 62,68,75-76
+```
+
+Both halves of that are defects, and they are different defects.
+
+**The reading was carried, not taken.** 99.75 was the previous round's number. Nothing in the round
+re-ran coverage after the last edit, so the row was a copy of a measurement of different code -- the same
+shape as finding 294, where a size was copied from a summary and attached to the wrong volume. A number
+that is quoted from the last time it was true is a number nobody has.
+
+**The gate could not have caught it anyway.** The thresholds were package totals:
+
+```
+thresholds: { statements: 95, branches: 95, functions: 100, lines: 95 }
+```
+
+Against 195 files, a mean of 99.68 is satisfied by a file at 77.77 -- and the file under it was the
+newest one, which is the file least likely to have been read by anyone. A mean is not a statement about
+any member, and a threshold on a mean is a bound that an addition cannot offend. It is also the second
+time this suite has had to learn that a package-wide figure is not a per-unit guarantee; the `core`/`cli`
+split in finding 123 is the same arithmetic one level up.
+
+### Why the module was where it was
+
+Four branches, at `62`, `68` and `75-76`, all of them the rule's tolerance for what it is handed:
+
+| line | what it guards | why it is reachable |
+| --- | --- | --- |
+| 62 | a log entry with no `id`, an empty `id`, or a `null` entry | the guard parses `signals.json` with `typeof` checks and no schema, so these are shapes it really passes in |
+| 68 | a `log` checkpoint whose `signalRef` is absent | `signalRef` is optional on the type |
+| 75-76 | a line that declares no `service` | same: the entry is raw JSON, and the rule reports an authorless line rather than skipping it |
+
+Three tests were added for those shapes, and one assertion makes the empty-`id` guard *observable*
+rather than merely present: a checkpoint with no `signalRef` resolves to `''`, so an entry registered
+under `''` would be found by it and joined against. Removing `|| one.id === ''` turns that test red.
+
+### The bound, moved to the file
+
+`perFile: true`, thresholds unchanged. The cost was measured before it was chosen: the lowest per-file
+figures in the package are `score/official.ts` at 99.73 statements and 98.23 branches, and its two
+uncovered statements are the `never` backstop whose own comment argues they must stay uncovered -- so
+every file clears 95/95/100/95 today and the change needs no exemptions. The `cli` package is one file
+at 100 in every dimension and deliberately does not get the setting: a knob that cannot fail is a knob a
+reader learns to skip.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `fault/log-attribution.ts` | 100 / **77.77** / 100 / 100 | **100 / 100 / 100 / 100** |
+| the package | 99.97 / **99.68** / 100 / 99.97 | **99.97 / 99.75 / 100 / 99.97** |
+| the bound | a mean over 195 files | each file, 95 / 95 / 100 / 95 |
+| proof the bound can fail | -- | with the three new tests removed the file alone reports `77.77` and the run dies: `ERROR: Coverage for branches (77.77%) does not meet global threshold (95%)` |
+| proof the guard is observable | -- | removing `|| one.id === ''` turns **1 test** red |
+| `log-attribution.test.ts` | 13 tests | **16** |
+| `coverage-thresholds.test.ts` | 6 tests | **8** |
+| the core suite | 4845 tests | **4854** (2 from the 24th case, 2 probe, 3 attribution, 2 threshold) |
+
+**What this does not fix.** `perFile` bounds a file, not a module that nobody wrote tests for at all: a
+file whose every branch is reached by an import has 100% and proves nothing. And the reading in the
+v3.14 chapter of `volume-07` said `4845 tests` for a corpus that had just grown by a case -- the same
+carried number, four lines above the coverage row, found while correcting the one above it.

@@ -2042,11 +2042,18 @@ it has changed.
 | delete the install line | **3 tests red in 2 files** (was: suite green, no gauge) |
 | `stall-watch-is-installed.test.ts` | **13 tests** (did not exist before) |
 | the reader's refusals | **6**, each with a case that produces it |
-| `core` suite | **194 files, 4829 tests passed** |
-| `repo` suite | **198 files, 5016 tests passed** |
+| suite counts | **moved by exactly what this round added: one file and thirteen tests, in `core`** |
 | coverage (statements / branches / functions / lines) | **99.97 / 99.75 / 100 / 99.97**, unchanged |
 | `cli` suite | **4 files, 187 tests passed**, 100 on all four dimensions |
 | `docs:check` | OK — audit 1–292, 289 findings, largest volume 279,893 of 280,000 bytes |
+
+The absolute numbers for the pass above are in `volume-05.md`'s status table, which is the one place a
+count lives. This section states the movement instead of a second copy, and the reason is a measurement
+rather than a style: the second copy was caught going stale **within one round**. The row said
+`194 files, 4829 tests passed` when this section was written, and the next round's status table said
+`195 files, 4842 tests passed` at a *higher* line of a *lower* volume -- so the guard read the pair as a
+suite that lost thirteen tests. A per-round narrative that retypes a count is a row that is born correct
+and becomes a falsehood when someone else adds a test.
 
 The runner numbers for the two files v3.12 converted are worth stating because they are not the numbers
 this round's summariser first wrote down: `check-cli-reference.test.ts` is **52,862 ms** on the runner
@@ -2065,8 +2072,11 @@ stall < 45,000`, and the CI log has no `held the event loop` in it.
 - **An installed hook could throw only sometimes.** Nothing asserts the budget the hook runs with beyond
   "it comes from the support module"; an environment override is a legitimate way to raise it in CI.
   `[open: the effective budget is whatever the environment says, and nothing compares it with the deadline at run time]`
-- **`volume-09` is at its budget** (279,893 of 280,000 bytes), so the next finding opens `volume-10`.
-  `[open: the next finding needs a tenth volume and the table row that names it]`
+- ~~**`volume-09` is at its budget** (279,893 of 280,000 bytes), so the next finding opens `volume-10`.~~
+  Closed by finding 294. It was false when written: `volume-09.md` held **18,803** bytes and 279,893 is
+  `volume-03.md`. The number came from the guard's `largest 279,893 of 280,000 bytes`, which names no file,
+  and the round that needed it supplied the name it had just been writing in. Both summaries now print the
+  file, and the next finding appends to `volume-09` rather than opening a tenth.
 - **Two hundred and eighty-nine findings across nine volumes**, three numbers absent (118, 132–133); the
   count of *entries* is what the table carries, and it is now one row behind the corpus.
   `[open: the volume table states counts, and a count that is retyped per append is the defect it documents]`
@@ -2079,3 +2089,140 @@ rename is uncounted; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a rep
 modality declared and lost in the export is still green; a log checkpoint's `entityRef` is never compared
 with the service its line is attributed to; and the sixty-nine files that spawn synchronously are bounded
 by the budget rather than prohibited.
+
+---
+
+## v3.14 — the twenty-fourth case, and the four defects the round produced
+
+**Starting point.** The corpus was at 23 of 30, with seven samples unannotated and P1 untouched for two
+rounds. v3.13 closed with an instrument whose installation is now checked; v3.12 closed with the
+instrument itself. Nothing was waiting on either of them.
+
+**What this round did.** It built the twenty-fourth case — `resource-disk-full-log-collector`, the corpus's
+first `disk-full` — and the case produced two defects that had nothing to do with the case.
+
+| layer | the case's answer |
+| --- | --- |
+| entity | `container:…/log-collector-pruner` — the scheduled job that stopped running after the pod moved |
+| fault | `resource` / `disk-full`, from `/var/lib/collector is at 100% usage` |
+| process | pruner → pod → service: nothing trims, the volume fills, every write returns `ENOSPC` |
+| evidence | six checkpoints: the ceiling, the pruner's stalled counter as arithmetic (`post - baseline == 0`), the 31-hour gap against a 24-hour window, the 20 GiB volume, the agent's `no space left on device`, and the write-failure ratio at 1 |
+
+**It is the corpus's first case whose decisive reading is an absence.** Every other case argues from
+something that happened — a spike, a step, a ratio going to one, a queue past a watermark. A scheduled job
+that stopped produces nothing to point at except the flatness: `retention_runs_total` is a counter at 744
+that does not move across the window, and the checkpoint states `post - baseline == 0` as arithmetic rather
+than as a level, because no level can say "nothing ran". The full volume is the symptom every dashboard
+already alerts on; the 31-hour gap against a 24-hour window is the policy violation, and the node's 20 GiB
+is a checkpoint rather than a suspect — twenty gigabytes is a reasonable volume for a day of segments, and
+it is the reason the fullness arrived this week rather than next.
+
+### Defect one: nothing asked whose line a log checkpoint cites (finding 293)
+
+The evidence layer's log checkpoint cites the agent's `ENOSPC` line. The guard resolved the checkpoint's
+entity and compared its phrase with the body — and never compared the two. One edit to a copy of the
+corpus, pointing the checkpoint at `service:…/settlement`, produced the controlled pair:
+
+| rule | verdict on the corpus with the checkpoint pointed at another component |
+| --- | --- |
+| absent | **`OK`, 24 of 30, every gate green** |
+| present | **`FAILED — 1 problem(s)`**, naming both the entity and the line's author |
+
+The rule is containment rather than equality because equality would refuse **three of the corpus's seven**
+log checkpoints -- two name a container over a service-attributed line and one names a pod over a
+container-attributed line -- and all three are right. Four of the seven agree on the name, which is why
+equality is plausible and wrong. `sameComponent` moved from `fault/displacement.ts` to
+`entity/graph.ts` rather than being copied, and the rule is a module with **16 tests**; emptying it turns
+**6** of them red.
+
+### Defect two: the fullest volume was reported without its name (finding 294)
+
+v3.13's last "left open" item said `volume-09` was at its budget, 279,893 of 280,000 bytes. It was not:
+`volume-09.md` held 18,803 bytes, and 279,893 is `volume-03.md`. The number came from the guard's own
+summary, `largest 279,893 of 280,000 bytes`, which names no file — so the round attached the name of the
+volume it had just been writing in. Both summaries now print the file, and both have a test whose
+fixture's fullest volume is the **first**, so a rule that names a position rather than a file fails.
+
+That is finding 290's shape again — a reading the reader must complete, completed wrongly and plausibly —
+and it is why this round's own readings below state movement and point at the status table rather than
+retyping a count that the next round will make false.
+
+### Defect three: the probe answered about a number, not about a child (finding 295)
+
+A coverage run of the suite failed once: `the grandchild 547275 outlived the runner`. Nineteen replays of
+the same scenario — idle, under sixteen busy loops, under three pid-churn loops — found the grandchild
+gone inside a millisecond every time. Two explanations were killed by measurement rather than by
+argument: `kernel.pid_max` is 4,194,304 and the namespace was at ~547,000, so a recycled number in five
+seconds is arithmetically impossible; and `/proc/<pid>` disappeared in ≤ 1 ms in all nineteen replays, so
+no corpse sat in front of the probe.
+
+What is left is the probe itself. `kill(pid, 0)` answers *"is there a process with this number"*, and the
+question the group-kill tests ask is *"is the process I started still there"* — two questions that differ
+for an exited-but-unreaped process and for a recycled number, both of which answer yes. The probe now
+captures the process's **start time** while the number is known to name it and asks later about that
+process, treating `Z`/`X` as over; where the platform reports no start time it falls back to the signal
+question rather than claiming an identity it never saw. The failure message now carries what the pid is —
+`state 'S' under parent 1, running 'sleep 30'` — which distinguishes the two remaining hypotheses a
+survivor could have meant. The one failure itself remains unexplained, and the entry says so.
+
+### Defect four: the coverage bound was a mean, and this round's own reading was a copy (finding 296)
+
+The round closed by reporting `99.97 / 99.75 / 100 / 99.97` as unchanged. Measured after
+`fault/log-attribution.ts` landed, the package read **99.68** branches — and the file read **77.77**, four
+branches at `62`, `68`, `75-76`, all of them the rule's tolerance for the raw-JSON shapes the guard
+actually passes in. Two separate faults:
+
+| fault | what it looked like |
+| --- | --- |
+| the reading | 99.75 was the previous round's number, quoted rather than taken — the same shape as finding 294, one chapter above |
+| the gate | thresholds were package totals, and a mean over 195 files is satisfied by any one file being terrible, especially the newest one |
+
+Three tests cover the shapes, and one assertion makes the empty-`id` guard observable: a checkpoint with no
+`signalRef` resolves to `''`, so an entry registered under `''` would be found by it. Removing
+`|| one.id === ''` turns one test red. The bound is now `perFile: true` with the thresholds unchanged —
+the cost was measured first, and the lowest per-file figures in the package are `official.ts` at 99.73
+statements and 98.23 branches, whose uncovered statements are its documented `never` backstop. With the
+three tests removed the file alone reports 77.77 and the run dies:
+`ERROR: Coverage for branches (77.77%) does not meet global threshold (95%)`. The `cli` package does not
+get `perFile`: one file at 100 in every dimension is a knob that cannot fail.
+
+### Readings
+
+| what | reading |
+| --- | --- |
+| the corpus | **24 of 30 samples**, floor raised 23 → 24 |
+| the graph | **70 entities, 50 edges** (five entities and four edges for the collector) |
+| `disk-full` | the corpus's **first**, and the twenty-third distinct fault type |
+| difficulty spread | **L1 2 / L2 9 / L3 9 / L4 4**, all 24 graded, within the target |
+| localisation | 48 baseline runs over 24 cases, rankings 28–30 candidates wide; **rank 1: 40, rank 2: 8**; strict 6, tie 2, same-component 0, none 40; **three cases strictly displaced** |
+| checkpoints | **84 of 84 resolve** (61 series, **3 derived** computed from 6 readings, 16 configuration, 7 log); **0 of 77** comparable assertions false; **7 of 7** log assertions hold |
+| suite counts | **+9 tests in `core`** (2 from the case's telemetry, 2 the probe, 3 the attribution rule, 2 the bound); no new file, since all four new tests live in files that existed. The status table in `volume-05.md` holds the absolutes |
+| coverage | **99.97 / 99.75 / 100 / 99.97** (statements / branches / functions / lines), now enforced **per file** -- the first measurement of the round read 99.68, because the new module was at 77.77 branches (finding 296) |
+| `docs:check` | see the commit's CI reading; audit 1–296, **293 findings**, largest `volume-03.md` at 279,893 of 280,000 |
+
+### Left open
+
+- **Six samples remain unannotated**, and each needs a shape the graph has not got or a decision this
+  corpus has not made. `[open: the next case is a graph edit and an annotation, and the sample list is the plan]`
+- **The node is coarser than the evidence.** A checkpoint on a node and a line from any pod it hosts are
+  "the same component" under finding 293's rule, so a checkpoint could cite a neighbouring workload's line
+  and pass. `[open: containment is a name relation with no argument about which workload on the node spoke]`
+- **An ambiguous line author is reported as unattributed.** `resolveEntityRef` refuses a name two entities
+  claim, so the message says the line has no author rather than that its author is ambiguous.
+  `[open: one message covers two repairs, and the second is a graph defect the message does not name]`
+- **`cli` still has no stall gauge**, the installation check names one package by hand, and 69 test files
+  still spawn synchronously. Unchanged from v3.13. `[open: the property is measured in one package of two, and a third would inherit the silence]`
+- **A group kill that fails says nothing.** `signalGroup` swallows `ESRCH`: if `kill(-pid)` runs before
+  the child's `setsid` has taken effect, the forwarder re-raises into its own death and the step's children
+  survive, and nothing records that the signal went nowhere. It is the one hypothesis finding 295 could not
+  rule out, and fixing it means deciding what the runner should do when it cannot signal a group it owns.
+  `[open: the hole is real, the failure is unexplained, and the diagnosis is now what the message reports]`
+- **A per-round count is a row that goes stale.** The guard caught the second copy within one round; the
+  repair was to stop writing a second copy, which is a convention rather than a rule. `[open: nothing refuses a new round narrative that retypes the status table's numbers]`
+
+Unchanged: the fourth strict displacement still needs a shape the corpus has not got; the resolution of a
+continuous unit is a convention; a measurable spread still divides by itself; the floor is called in two
+modules with nothing tying them; `settlement`'s second hop is a claim about a deploy; `same-component`'s
+rename is uncounted; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired annotation; a
+modality declared and lost in the export is still green; and the upstream SLI table, RE3 traces and logs
+and the aggregation table (P4) are untouched.
