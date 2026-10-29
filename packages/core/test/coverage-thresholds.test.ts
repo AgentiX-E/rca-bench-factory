@@ -145,6 +145,19 @@ function parseClaims(workflow: string): Claim[] {
   return claims;
 }
 
+/**
+ * Whether a configuration applies its thresholds to each file or to the package.
+ *
+ * `vitest` takes `perFile` as a boolean beside `thresholds`, and an absent key
+ * means the package total -- which is the weaker of the two and the shape that
+ * let a module ship at 77.77% of its branches while the package reported 99.68
+ * (finding 296). Absent therefore reads as `false` here, and that is a failure
+ * for any configuration this file cares about.
+ */
+function parsePerFile(source: string): boolean {
+  return /\bperFile\s*:\s*true\b/.test(source);
+}
+
 const CORE_CONFIG = 'packages/core/vitest.config.ts';
 const CLI_CONFIG = 'packages/cli/vitest.config.ts';
 
@@ -220,6 +233,23 @@ describe('coverage · the published claim is the enforced threshold', () => {
     const parsed = parseThresholds(before, 'pre-fix fixture');
     expect(parsed.functions).toBe(95);
     expect(parsed.functions).not.toBe(claimed[0]!.functions);
+  });
+
+  it('applies the bound to every file rather than to their mean', () => {
+    // 195 files averaged 99.68% of branches while one of them -- the module this
+    // package had just gained -- was at 77.77%. A bound on the mean is not a bound on
+    // any particular file, and the file under it was the newest one, which is the
+    // file least likely to have been read. The mean cannot notice an addition; a
+    // bound per file cannot avoid one.
+    expect(parsePerFile(read(CORE_CONFIG)), `${CORE_CONFIG} applies its thresholds to the package total`).toBe(true);
+  });
+
+  it('reads an absent perFile as the package total, which is the shape that hid the file', () => {
+    // The parser is the other half of the claim: if it answered `true` for any text,
+    // the assertion above would be a constant compared with itself.
+    expect(parsePerFile('thresholds: { statements: 95 }')).toBe(false);
+    expect(parsePerFile('thresholds: { perFile: false, statements: 95 }')).toBe(false);
+    expect(parsePerFile('thresholds: { statements: 95 },\n      perFile: true')).toBe(true);
   });
 
   it('refuses a configuration that omits a dimension rather than reading it as zero', () => {

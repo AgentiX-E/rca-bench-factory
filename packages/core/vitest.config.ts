@@ -96,6 +96,22 @@ export default defineConfig({
       // luck rather than by construction -- the same defect as finding 123's
       // test counts, one level down. `coverage-thresholds.test.ts` now holds the
       // two numbers equal.
+      // `perFile` is not decoration. The thresholds below were package totals
+      // until finding 296, and a package total is a mean: `fault/log-attribution.ts`
+      // shipped with **77.77% of its branches** covered while the package reported
+      // 99.68, which is above every threshold here. The gate could not see the file
+      // that was 22 points under it, and the published reading quoted a number
+      // (99.75) that had not been measured after the module landed. A mean over 195
+      // files is not a statement about any of them, so the bound is applied to each.
+      //
+      // Measured at the commit this was added, the lowest per-file figures in the
+      // package are `score/official.ts` at 99.73 statements and 98.23 branches --
+      // its two uncovered statements are the `never` backstop that its own comment
+      // argues must stay uncovered -- so every file clears 95/95/100/95 today and
+      // the change costs no exemptions. The `cli` package is one file of 100% in
+      // every dimension; it gets no `perFile` because there is nothing to compare
+      // there, and a setting that cannot fail is a setting a reader learns to skip.
+      perFile: true,
       thresholds: {
         statements: 95,
         branches: 95,
