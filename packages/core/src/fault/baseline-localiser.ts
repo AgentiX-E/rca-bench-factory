@@ -2,6 +2,7 @@ import { locatedRank } from '../gates/gates.js';
 import type { BaselineOutcome } from '../gates/gates.js';
 import { mean, stddev, zScore } from '../gates/gates.js';
 import type { FaultCase, TelemetrySignal } from '../ir/types.js';
+import { resolutionOf } from '../util/unit.js';
 
 /**
  * A baseline localiser, so that G4 can be asked at all.
@@ -52,6 +53,14 @@ export interface LocalisationReading {
 /** The method name recorded in every outcome, so a later reader knows what produced a rank. */
 export const PEAK_Z_METHOD = 'peak-z-by-service';
 
+/**
+ * The divisor under a baseline that moved, kept from `zScore` so that a denormal spread cannot divide.
+ *
+ * It is *under* the measured spread rather than beside it: this constant no longer decides any
+ * statistic in the corpus, which is what finding 288 is about.
+ */
+const ZERO_SPREAD_FLOOR = 1e-6;
+
 const DEFAULT_TOP_K = 3;
 
 
@@ -69,6 +78,8 @@ export function rankServicesByPeakZScore(
   const onset = Date.parse(faultCase.injectTime);
   const baseline = new Map<string, number[]>();
   const post = new Map<string, number[]>();
+  /** The unit of each `service|metric` key, which the floor divisor is a property of. */
+  const unitByKey = new Map<string, string | undefined>();
 
   for (const signal of signals) {
     // Narrowed through a local rather than through `signal.payload`: TypeScript does not carry the
@@ -80,6 +91,7 @@ export function rankServicesByPeakZScore(
     if (Number.isNaN(at) || Number.isNaN(onset)) continue;
     const target = at < onset ? baseline : post;
     const key = `${signal.resource['service.name']}|${payload.name}`;
+    if (!unitByKey.has(key)) unitByKey.set(key, payload.unit);
     const bucket = target.get(key) ?? [];
     bucket.push(payload.value);
     target.set(key, bucket);
@@ -91,7 +103,14 @@ export function rankServicesByPeakZScore(
     const before = baseline.get(key) ?? [];
     if (before.length === 0 || after.length === 0) continue;
     const mu = mean(before);
-    const sigma = stddev(before);
+    // A baseline that moved is a distribution and its measured spread is the divisor -- `1e-6` stays
+    // under it only to keep a denormal spread from dividing. A baseline that did not move has no
+    // spread of its own, and the divisor is one step of the declaration's own unit: see
+    // `resolutionOf`, and finding 288 for what `1e-6` reported when it stood in for that step.
+    // `moved` is exact rather than an epsilon test: identical samples produce identical extrema, so
+    // this cannot be decided by floating-point drift the way `spread > 0` would be.
+    const moved = Math.max(...before) !== Math.min(...before);
+    const sigma = moved ? Math.max(stddev(before), ZERO_SPREAD_FLOOR) : resolutionOf(unitByKey.get(key));
     let peak = 0;
     for (const value of after) {
       peak = Math.max(peak, Math.abs(zScore(value, mu, sigma)));

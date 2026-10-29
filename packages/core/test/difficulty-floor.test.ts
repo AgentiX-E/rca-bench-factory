@@ -217,9 +217,10 @@ describe('the shipped corpus · the labels and the ladder', () => {
     // Named rather than counted: at this size a share of 0.1 is satisfied by two cases, so a count
     // alone would let a chain be shortened while the number stayed whole.
     const hardest = shipped.filter((one) => difficultyFloor({ case: one, graph: shippedGraph }) === 'L4');
-    expect(hardest.map((one) => one.difficulty)).toEqual(['L4', 'L4', 'L4']);
+    expect(hardest.map((one) => one.difficulty)).toEqual(['L4', 'L4', 'L4', 'L4']);
     expect(hardest.map((one) => one.caseId).sort()).toEqual([
       'history-code-slow-regex-api-gateway',
+      'history-dependency-schema-change-currency-feed',
       'history-middleware-cache-shard-product-index',
       'history-runtime-pod-shutdown-webhook-dispatcher',
     ]);
@@ -228,21 +229,29 @@ describe('the shipped corpus · the labels and the ladder', () => {
     for (const one of hardest) expect(one.groundTruth.causalChain).toHaveLength(3);
   });
 
-  it('ends one of its three-step chains inside the system being measured', () => {
-    // The corpus's two three-step chains both left the system at their last hop -- container, pod,
-    // service, then out to the callers or to a merchant -- so a case whose propagation stays inside
-    // was missing, and a corpus of chains that all exit has only one shape of hard question. The
-    // last hop is read from the chain, and `external:` is what "outside" means here: an entity in
-    // the graph whose kind is `external` is a party this system calls rather than one of its parts.
+  it('holds both shapes of three-step chain, one that exits the system and one that stays in it', () => {
+    // The corpus's first two three-step chains both left the system at their last hop -- container,
+    // pod, service, then out to the callers or to a merchant -- so a case whose propagation stays
+    // inside was missing, and a corpus of chains that all exit has only one shape of hard question.
+    // The third hop can stay inside in two different ways, and the corpus now has both: a chain
+    // that ends at a neighbouring service the root cause does not belong to
+    // (`history-middleware-cache-shard-product-index`), and one that crosses a service boundary on
+    // its way there (`history-dependency-schema-change-currency-feed`). The last hop is read from
+    // the chain, and `external:` is what "outside" means here: an entity in the graph whose kind is
+    // `external` is a party this system calls rather than one of its parts.
     const threeStep = shipped.filter((one) => (one.groundTruth.causalChain ?? []).length >= 3);
-    const inside = threeStep.filter((one) => {
-      const last = (one.groundTruth.causalChain ?? []).at(-1);
-      return last !== undefined && !last.toEntityId.startsWith('external:');
-    });
-    expect(inside.map((one) => one.caseId)).toEqual(['history-middleware-cache-shard-product-index']);
-    // Printed by this assertion rather than by the guard: the corpus holds both shapes, and the
-    // count is what says the new one did not replace the old ones.
-    expect(threeStep).toHaveLength(3);
+    const endsOutside = (one: (typeof threeStep)[number]): boolean =>
+      ((one.groundTruth.causalChain ?? []).at(-1)?.toEntityId ?? '').startsWith('external:');
+    const inside = threeStep.filter((one) => !endsOutside(one));
+    const outside = threeStep.filter((one) => endsOutside(one));
+    expect(inside.map((one) => one.caseId)).toEqual([
+      'history-middleware-cache-shard-product-index',
+      'history-dependency-schema-change-currency-feed',
+    ]);
+    // Both shapes, and the count on each side: a corpus that swapped one for the other would keep
+    // the total and lose the property the test is about.
+    expect(threeStep).toHaveLength(4);
+    expect(outside).toHaveLength(2);
   });
 
   it('meets the published L4 share, which is the claim the level was never able to make', () => {
@@ -255,39 +264,48 @@ describe('the shipped corpus · the labels and the ladder', () => {
     expect(hardest.length / graded.length).toBeGreaterThanOrEqual(0.1);
   });
 
-  it('meets that share at the denominator it is committed to, which is where the margin is', () => {
+  it('meets that share at the denominator it is committed to, and states the size at which it would not', () => {
     // The corpus is committed to annotating every sample in the extraction key, so the size the
-    // share has to survive is the key's size and not today's count. Three of thirty is exactly the
-    // floor: the remaining ten annotations can all be L1 to L3 and the target still holds, and the
-    // eleventh could not. That is the whole margin, and it is the number the plan turns on rather
-    // than a sentence in a document.
+    // share has to survive is the key's size and not today's count. The margin was zero until the
+    // fourth L4 case: three of thirty is exactly the floor, which meant the next annotation to
+    // arrive at any level below L4 would have taken the corpus outside its target.
+    //
+    // The deadline is now *outside the key* rather than merely ahead of it, and that is a derived
+    // statement rather than a promise: four L4 cases fall below a tenth of the corpus at forty-one
+    // cases, and the extraction key carries thirty samples, so no annotation the key can supply
+    // moves the ladder off its floor.
     const key = JSON.parse(
       readFileSync(resolve(CORPUS, '..', 'fault-extraction', 'samples.json'), 'utf8'),
     ) as { samples: unknown[] };
     const hardest = shipped.filter((one) => one.difficulty === 'L4');
     const atFullSize = hardest.length / key.samples.length;
     expect(atFullSize).toBeGreaterThanOrEqual(0.1);
-    // Exactly at it, not above: a fourth L4 case would buy margin, and the corpus has none.
-    expect(atFullSize).toBeCloseTo(0.1, 10);
+    // The smallest corpus at which the same numerator is no longer enough, derived from the floor
+    // rather than quoted: floor(n / 0.1) + 1 is the first size below a tenth.
+    const bindsAt = Math.floor(hardest.length / 0.1) + 1;
+    expect(bindsAt).toBeGreaterThan(key.samples.length);
   });
 
-  it('loses the property the moment one L4 case is taken away, and states how wide the corpus may grow', () => {
-    // It used to survive the loss of one case: three L4 among twenty-one is 0.143. The corpus has
-    // since grown at L3 without growing at L4, so removing one now lands at two of twenty-one --
-    // 0.095 -- and the ratchet is the commitment itself rather than the count. Two numbers follow
-    // from that and both are derived here rather than written into a plan: the corpus is inside the
-    // target at thirty cases and outside it at thirty-one, so the ninth remaining annotation is the
-    // first one that cannot be L1, L2 or L3.
+  it('survives the loss of one L4 case and loses the property at two, which is the ratchet', () => {
+    // How many L4 cases the corpus can lose is a number, and it moved in the round the fourth one
+    // arrived: three of twenty-two is 0.136 and survives, two of twenty-one is 0.095 and does not.
+    // The assertion is on both sides because a ratchet that only reports where it breaks cannot
+    // say how much slack is left, and the slack is what the next seven annotations spend.
     const hardest = shipped.filter((one) => one.difficulty === 'L4');
-    const withoutOne = {
+    const drop = (...dropIds: string[]) => ({
       irVersion: '1.0.0',
       graph: shippedGraph,
-      cases: shipped.filter((one) => one.caseId !== hardest[0]!.caseId),
+      cases: shipped.filter((one) => !dropIds.includes(one.caseId)),
       signals: {},
-    };
-    expect(checkDifficultyDistribution(withoutOne).violations.map((one) => one.code)).toEqual([
-      'DIFFICULTY_SKEWED_HARD',
-    ]);
+    });
+    expect(
+      checkDifficultyDistribution(drop(hardest[0]!.caseId)).violations.map((one) => one.code),
+    ).toEqual([]);
+    expect(
+      checkDifficultyDistribution(drop(hardest[0]!.caseId, hardest[1]!.caseId)).violations.map(
+        (one) => one.code,
+      ),
+    ).toEqual(['DIFFICULTY_SKEWED_HARD']);
     // Padded with copies of a shipped L3 case rather than with literals, because what the rule reads
     // is a share: the point is the size at which the same numerator stops being enough.
     const filler = shipped.find((one) => one.difficulty === 'L3')!;
@@ -304,7 +322,9 @@ describe('the shipped corpus · the labels and the ladder', () => {
         ],
         signals: {},
       }).violations.map((one) => one.code);
-    expect(at(30), 'three of thirty is exactly the floor').toEqual([]);
-    expect(at(31), 'three of thirty-one is below it').toEqual(['DIFFICULTY_SKEWED_HARD']);
+    expect(at(hardest.length * 10), 'four of forty is exactly the floor').toEqual([]);
+    expect(at(hardest.length * 10 + 1), 'four of forty-one is below it').toEqual([
+      'DIFFICULTY_SKEWED_HARD',
+    ]);
   });
 });

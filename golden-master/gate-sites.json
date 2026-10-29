@@ -490,7 +490,7 @@
     },
     {
       "script": "scripts/probe-z-floor.mjs",
-      "line": 79,
+      "line": 86,
       "diagnostic": "probe-z-floor: ${message}",
       "status": "proved",
       "provedBy": "packages/core/test/probe-z-floor.test.ts"

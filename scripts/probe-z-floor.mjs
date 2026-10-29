@@ -12,9 +12,16 @@
  * headline reading would be measuring its own constant.
  *
  * So the question is decidable and this answers it: rank every case twice, once with the shipped
- * `1e-6` floor and once with a *relative* floor of one percent of the baseline's own magnitude, and
- * report the cases whose order changed — separating a change of the answer's rank from a change of
- * its displacement *kind*, because only the second is what the corpus's claim rests on.
+ * floor -- one resolution of the declaration's own unit (finding 288) -- and once with a *relative*
+ * floor of one percent of the baseline's own magnitude, and report the cases whose order changed,
+ * separating a change of the answer's rank from a change of its displacement *kind*, because only
+ * the second is what the corpus's claim rests on.
+ *
+ * The shipped arm used to be the `1e-6` constant restated, and comparing a constant against a share
+ * of the baseline was the only comparison available while the constant *was* the shipped rule. Now
+ * that the floor is a property of the unit, the second arm is the old behaviour, which makes this
+ * probe a regression detector for the change itself: the cases whose description moves between the
+ * arms are the cases the epsilon was deciding.
  *
  * ## What this is not
  *
@@ -79,7 +86,14 @@ function fail(message) {
   process.exit(1);
 }
 
-/** The shipped floor, restated so the probe states what it is comparing against. */
+/**
+ * The alternative arm's absolute fallback.
+ *
+ * The shipped arm no longer needs a constant: it asks `resolutionOf` what one step of the declaration's
+ * own unit is. This number is what the *alternative* arm falls back to when its own scale is zero --
+ * one percent of a baseline of zero is zero, and dividing by it is not a ranking -- so it is the
+ * behaviour the corpus had before finding 288, kept here on purpose as the thing to compare against.
+ */
 const EPSILON_FLOOR = 1e-6;
 
 /** The alternative: one percent of the baseline's own magnitude, or the absolute floor if that is larger. */
@@ -147,9 +161,12 @@ function stddev(xs) {
 function rankByPeakZ(signals, onsetMs, floor) {
   const before = new Map();
   const after = new Map();
+  /** The unit of each key, which is what the shipped floor is a property of. */
+  const unitByKey = new Map();
   for (const one of signals) {
     const at = Date.parse(one.timestamp);
     const key = `${one.resource['service.name']}|${one.payload.name}`;
+    if (!unitByKey.has(key)) unitByKey.set(key, one.payload.unit);
     const target = at < onsetMs ? before : after;
     const bucket = target.get(key) ?? [];
     bucket.push(one.payload.value);
@@ -162,7 +179,16 @@ function rankByPeakZ(signals, onsetMs, floor) {
     if (pre.length === 0) continue;
     const centre = mean(pre);
     const spread = stddev(pre);
-    const divisor = floor === 'relative' ? Math.max(spread, Math.abs(centre) * RELATIVE_FLOOR, EPSILON_FLOOR) : Math.max(spread, EPSILON_FLOOR);
+    // The shipped arm is `baseline-localiser.ts`'s rule: a baseline that moved is measured, and one
+    // that did not is one step of what the declaration counts. The alternative arm is the behaviour
+    // before finding 288, where the absolute constant stood in for that step either way.
+    const moved = Math.max(...pre) !== Math.min(...pre);
+    const divisor =
+      floor === 'relative'
+        ? Math.max(spread, Math.abs(centre) * RELATIVE_FLOOR, EPSILON_FLOOR)
+        : moved
+          ? Math.max(spread, EPSILON_FLOOR)
+          : core.resolutionOf(unitByKey.get(key));
     let peak = 0;
     for (const value of post) {
       const z = Math.abs((value - centre) / divisor);
@@ -244,17 +270,17 @@ if (!quiet) {
 for (const one of kindMoved) {
   console.error(
     `probe-z-floor: '${one.caseId}' is classified ${one.shippedKind} under the shipped floor and ` +
-      `${one.relativeKind} under a relative one -- its displacement is a property of the constant`,
+      `${one.relativeKind} under a relative one -- how its non-answer is described depends on the floor`,
   );
 }
 // The distinction the corpus's claim turns on. `checkDiscrimination` accepts a case only when a
 // separate component is strictly louder, so a kind that moves between `same-component` and `none` is
 // a change in how a *non*-displacement is described; only a move into or out of `strict` would mean
-// the corpus's evidence is the constant rather than the data.
+// the corpus's evidence is the floor rather than the data.
 const strictMoved = kindMoved.filter((one) => one.shippedKind === 'strict' || one.relativeKind === 'strict');
 console.log(
   `probe-z-floor: ${String(moved.length)} of ${String(seen.length)} case(s) put the answer at a different rank ` +
-    `(floor ${String(EPSILON_FLOOR)} versus ${String(RELATIVE_FLOOR * 100)}% of |baseline|); ` +
+    `(one resolution of the declared unit versus ${String(RELATIVE_FLOOR * 100)}% of |baseline|); ` +
     `${String(kindMoved.length)} change kind, ${String(strictMoved.length)} of them into or out of strict; ` +
     `${String(unresolved)} unresolved reading(s), ${String(nonFinite)} non-finite statistic(s)`,
 );

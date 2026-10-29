@@ -1081,6 +1081,7 @@ const TESTED = [
   'knownUnits',
   'measurementBounds',
   'quantizeToUnit',
+  'resolutionOf',
 ];
 
 /**

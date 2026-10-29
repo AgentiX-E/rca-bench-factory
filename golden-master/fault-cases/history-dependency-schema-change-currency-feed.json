@@ -1,0 +1,136 @@
+{
+  "caseId": "history-dependency-schema-change-currency-feed",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-28T09:00:00.000Z",
+  "window": {
+    "start": "2026-10-28T08:48:00.000Z",
+    "end": "2026-10-28T11:30:00.000Z"
+  },
+  "fault": {
+    "type": "upstream-schema-change",
+    "category": "dependency",
+    "injectionMethod": "historical",
+    "parameters": {
+      "dependency": "currency-feed",
+      "changedField": "rate",
+      "addedField": "inverse",
+      "durationMinutes": {
+        "value": 120,
+        "unit": "min"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/currency-feed-app",
+    "rootCauseComponent": "currency-feed",
+    "rootCauseReason": "The feed changed what one field means while leaving its name alone: `rate` was the exact ratio and is now the same ratio rounded to two places, and `inverse` was added beside it. A consumer cannot detect that from the outside -- the key exists, its type is unchanged, and its value is still a plausible number -- so every reader of `rate` inherited a rounding error it had no way to refuse. Settlement is the reader, not the answer: its parser does exactly what the contract it was written against says, and the two-hour window is the deploy's, not the parser's. The deploy is the timestamp of the defect rather than its cause, which is the distinction this annotation keeps: a case that named the deploy would be answerable from a release log without reading what changed in the payload.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "currency_feed_response_field_count",
+        "description": "the shape of the response, which is the only reading on the feed that moved: one field before the change and two after"
+      },
+      {
+        "type": "metric",
+        "ref": "settlement_total_mismatch_ratio",
+        "description": "the share of orders whose total disagreed by cents, which is a property of the reader and therefore points away from the answer"
+      },
+      {
+        "type": "log",
+        "ref": "parser-warning",
+        "description": "the parser naming the field it read and what the feed now does to it, which is the only reading that says \"rounded\" in words"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/currency-feed-app",
+        "toEntityId": "pod:synthetic-storefront/currency-feed-0",
+        "mechanism": "the release changes what the serialiser writes into one existing key: the exact ratio became a two-place approximation, and a second key was added beside it, so the payload is wider by one field and less precise by an amount the reader cannot see",
+        "evidenceRefs": [
+          "cp-field-count",
+          "cp-parser-log"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/currency-feed-0",
+        "toEntityId": "service:synthetic-storefront/currency-feed",
+        "mechanism": "every replica runs the release, so every caller receives the new shape at once and none of them receives the old one; the feed answers every request successfully, at its usual rate and latency, which is why nothing measured at the feed's edge looks wrong",
+        "evidenceRefs": [
+          "cp-field-count",
+          "cp-declared-window"
+        ]
+      },
+      {
+        "step": 3,
+        "fromEntityId": "service:synthetic-storefront/currency-feed",
+        "toEntityId": "service:synthetic-storefront/settlement",
+        "mechanism": "settlement reads `rate` as the contract says and multiplies, so a rate that is off by less than a cent in the feed becomes a total that is off by a cent or two; the calls all succeed, no timeout is logged, and the only visible symptom is that a share of the totals on the settlement side disagree with the same totals computed before the change",
+        "evidenceRefs": [
+          "cp-mismatch",
+          "cp-parser-log"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-mismatch",
+        "entityRef": "service:synthetic-storefront/settlement",
+        "signalRef": "settlement_total_mismatch_ratio",
+        "comparator": ">=",
+        "value": 0.38,
+        "unit": "1",
+        "description": "the share of orders whose stored total differs from the total recomputed at the pre-change rate, which is the symptom and not the cause: it is a property of the reader"
+      },
+      {
+        "checkpointId": "cp-field-count",
+        "entityRef": "container:synthetic-storefront/currency-feed-app",
+        "signalRef": "currency_feed_response_field_count",
+        "comparator": "==",
+        "value": 2,
+        "unit": "count",
+        "description": "the number of fields the rate object carries, which is the only thing on the feed that moved: one before the change, two after"
+      },
+      {
+        "checkpointId": "cp-declared-window",
+        "entityRef": "service:synthetic-storefront/currency-feed",
+        "signalKind": "configuration",
+        "signalRef": "durationMinutes",
+        "comparator": "==",
+        "value": 120,
+        "unit": "min",
+        "description": "the window the injection declared, which is the two hours between the deploy at 09:00 and the revert at 11:00 -- the same interval the incident text states twice"
+      },
+      {
+        "checkpointId": "cp-parser-log",
+        "entityRef": "service:synthetic-storefront/settlement",
+        "signalKind": "log",
+        "signalRef": "parser-warning",
+        "comparator": "contains",
+        "value": "the feed rounds to two places",
+        "description": "the parser's own line, which names the field it read and the rounding it inherited: the only reading that turns \"wrong by a few cents\" into a mechanism rather than a magnitude"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "carry the new field additively and keep the old one exact, or put a version on the payload so a consumer can refuse a shape it was not written for -- a field whose meaning changes under its own name is undetectable downstream",
+        "target": "container:synthetic-storefront/currency-feed-app"
+      },
+      {
+        "step": 2,
+        "action": "assert the response shape settlement depends on, so a narrowing of a field it reads is a startup failure rather than a cent-sized error in every total",
+        "target": "service:synthetic-storefront/settlement"
+      }
+    ]
+  },
+  "query": "Settlement totals were wrong by a few cents for two hours while every call to the currency feed succeeded. Which component changed, and why did nothing in the settlement service's own telemetry look wrong?",
+  "difficulty": "L4",
+  "answerKeyIsolated": true
+}

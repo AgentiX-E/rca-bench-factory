@@ -60,6 +60,7 @@ function seriesFor(
   metric: string,
   before: number[],
   after: number[],
+  unit?: string,
 ): TelemetrySignal[] {
   const start = Date.parse(faultCase.window.start);
   const onset = Date.parse(faultCase.injectTime);
@@ -73,7 +74,12 @@ function seriesFor(
     resource: { 'service.name': service },
     timestamp: row.timestamp,
     signal: 'metric',
-    payload: { kind: 'metric' as const, name: metric, value: row.value },
+    payload: {
+      kind: 'metric' as const,
+      name: metric,
+      value: row.value,
+      ...(unit === undefined ? {} : { unit }),
+    },
   }));
 }
 
@@ -317,6 +323,37 @@ describe('what the shift refuses to invent', () => {
       'multi-service',
       'single-service',
     ]);
+  });
+});
+
+describe("the scale floor is one step of the declaration's own unit", () => {
+  it('reads a deterministic count as a one-unit change, not as a division by an epsilon', () => {
+    // Finding 288, seen through the robust statistic: a page count of six never moves, so its median
+    // absolute deviation is zero, and the constant that stood in for it made a one-line change a
+    // million. The unit's step is one line.
+    const declared = seriesFor(BASE, 'invoice-renderer', 'rendered_lines_per_page', [6, 6, 6, 6], [5, 5, 5, 5], 'count');
+    expect(rankServicesByMedianShift(BASE, declared).ranking[0]!.shift).toBe(1);
+  });
+
+  it('still uses the measured spread when the baseline moved', () => {
+    // The other side of the rule: a baseline with a distribution is measured, and the floor must not
+    // replace what the data says. Three of the four points below are equal, which leaves the median
+    // absolute deviation positive but small -- the divisor is that number and not the unit's step.
+    const moving = seriesFor(
+      BASE,
+      'cart-service',
+      'client_span_duration_ms',
+      [12, 12.4, 11.8, 12.2],
+      [900, 880, 910, 895],
+      'ms',
+    );
+    // Baseline median 12.1 and MAD 0.2, so the scale is 1.4826 * 0.2 = 0.29652. This statistic
+    // takes a median on the post side too -- the point of it -- and the median of
+    // [900, 880, 910, 895] is 897.5 rather than the largest sample, so the shift is 885.4 / 0.29652.
+    expect(rankServicesByMedianShift(BASE, moving).ranking[0]!.shift).toBeCloseTo(
+      885.4 / (1.4826 * 0.2),
+      6,
+    );
   });
 });
 

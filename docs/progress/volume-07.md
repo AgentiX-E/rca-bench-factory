@@ -1786,3 +1786,119 @@ case with two faults; `volume-03` is 107 bytes under its budget; the resolution 
 helper rather than in a type; the probe reads some build without naming it; `same-component`'s rename is
 uncounted; rule 7 is a file-level claim; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired
 annotation; and a budget that is *missing* is invisible to every static arm.
+
+## v3.11 — the statistic was a change times a million
+
+**Where the round started.** The plan's first item was the twenty-third annotation, and the case chosen,
+`dependency-schema-change-currency-feed`, was meant to test a hypothesis the plan had carried for four
+rounds: that a corpus can only get a *third* strictly displaced case from a sample with two faults in it,
+and that a fourth L4 needs a deeper extraction gold standard. Building the case was how both claims got
+disproved. Understanding *why* they were wrong is what found the bug.
+
+**The bug.** A case is located by a statistic, and both baselines compute one by dividing a change by a
+baseline's spread. `zScore` floors that divisor at `1e-6`, and the corpus's noise is a *fraction* of the
+reading — so a baseline of zero (an error ratio in healthy operation) and a count on its own grid (six
+lines per page, always six) both have a spread of exactly zero. The floor then became the scale:
+
+| case | the answer's statistic before | after |
+| --- | --- | --- |
+| `history-kafka-consumer-lag` | 4 200 000 000 000 | 4 200 000 |
+| `history-middleware-cache-shard-product-index` | 12 500 000 | 12.5 |
+| `history-unhandled-exception-export` | 3 060 000 | 3.06 |
+| `history-config-ingress-timeout-partner-portal` | 1 000 000 | 1.49 |
+| `history-config-datasource-url-orders` | 1 000 000 | 126.85 |
+| `history-network-mtu-blackhole-catalog` | 1 000 000 | 100 |
+| `history-code-off-by-one-invoice-renderer` | 1 000 000 | 1 |
+
+Seven of twenty-two cases were located by their change times a million, which means "the loudest
+component" was, for those cases, "the component whose metric started on zero or on a grid". Within a
+case it was worse than that: a metric that never moved beat one that moved fivefold with two per cent
+noise, because it did not have to move to win — only to be flat.
+
+**The fix is a third statement the unit table owed.** A unit already said how large a reading may be
+(`measurementBounds`) and what it may land on (`admitsFraction`, finding 284). It now says how small a
+change it can express: `resolutionOf` answers `1` for a `count`, `1` for `%`, `0.01` for `1`, one of the
+unit as written for a duration, a byte count, a rate or a core, and the old constant only where nobody
+declared a unit at all. It is the divisor **only** when the baseline never moved; a baseline that moved
+is measured and its own spread divides, because this is a floor and not a cap.
+
+**The probe was the instrument that was already asking.** `probe-z-floor.mjs` exists to answer "does the
+corpus's classification depend on the floor", and it was comparing `1e-6` against one per cent of the
+baseline — two constants, one of which was the shipped rule. Its shipped arm now *is* the shipped rule,
+which turns the probe into a regression detector for this change:
+
+```
+1 of 23 case(s) put the answer at a different rank (one resolution of the declared unit versus
+1% of |baseline|); 1 change kind, 0 of them into or out of strict
+```
+
+`0 of them into or out of strict` is the claim the corpus's evidence rests on, and it survives: all three
+strictly displaced cases are strictly displaced under both arms.
+
+**The twenty-third case, and the two claims it refuted.** `dependency-schema-change-currency-feed` — the
+feed changed what one existing field *means* (`rate` was exact, now rounded to two places, with `inverse`
+added beside it) and settlement reads `rate` as its contract says. Three hops that leave the service they
+start in: container → pod → service `currency-feed` → service `settlement`. That is `L4` by depth, **with
+no change to the extraction key** — the depth came from a cross-service chain, and the graph already had
+the `calls` edge to express it.
+
+And the displacement needed no second fault: settlement's mismatch share reads **38** while the answer's
+field count reads **1**, so a method that returns the largest excursion returns the victim. The plan had
+assumed the decoy had to be another incident; it does not have to be, because a symptom is naturally
+larger than the change that caused it. That is the stronger statement of the two — a corpus with two
+faults can be answered by finding the louder incident, while this one punishes ranking by magnitude on a
+single incident.
+
+| gate | before | after |
+| --- | --- | --- |
+| the corpus | 22 of 30, `L1 2 / L2 9 / L3 8 / L4 3` | **23 of 30, `L1 2 / L2 9 / L3 8 / L4 4`** |
+| strictly displaced cases | 2 | **3**, the first where the louder component is the victim |
+| the L4 share at the committed size | 0.100, exactly | **0.133**, and the floor binds only at 41 cases |
+| L4 cases the corpus can lose | 0 | **1** |
+| checkpoints | 74 of 74 | **78 of 78**, and 6 log assertions instead of 5 |
+| entities / edges / background | 59 / 41 / 25 | **65 / 46 / 27** |
+| core / cli / repo | 192 / 4797 · 4 / 187 · 196 / 4984 | 192 / **4807** · 4 / 187 · 196 / **4994** |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | **unchanged** |
+| audit | 8 volumes, findings 1–287 | **1–289** |
+
+**Two readings moved that the round did not set out to move.** `same-component 2` became `same-component
+0`, and `rank 1: 36` became `rank 1: 38`: the two cases whose pod used to outrank its own service were
+being ranked that way *by the constant*, and the test that recorded one of them said so in a comment --
+"the `epsilon` floor turns its rise into an enormous z, and the pod that carries it outranks the
+service". A pod is not a miss (`classifyDisplacement` is right to call it `same-component`), so nothing
+was broken; but the corpus was reporting that its answer had been displaced in two cases where the
+service was in fact first, and a reader who counts displacements was counting the epsilon.
+
+**Two deadlines dissolved, and one is recorded as arithmetic.** Last round closed with "three L4 among
+thirty is exactly the floor and among thirty-one it is not", which made the next annotation mandatory at
+L4. Four of thirty is 0.133 and four fall below a tenth only at forty-one cases — beyond the thirty the
+extraction key holds — so the ladder is safe for every corpus the key can supply. The test now derives
+that size instead of quoting it, and it asserts the other side too: the corpus survives losing one L4
+case and fails at two.
+
+### Left open
+
+- **The resolution of a continuous unit is a convention.** A duration declared in `ms` resolves in
+  milliseconds although the declaration can express `12.4`; the table says so rather than deriving it.
+  `[open: a resolution is stated per dimension, not derived from what a declaration has actually written]`
+- **A measurable spread still divides however small it is.** The fix bounds the degenerate case and does
+  not make the statistic unit-free: a metric with vanishing noise still outsizes one of a coarser unit.
+  `[open: the divisor is max(spread, step) only when the baseline is flat; two noisy metrics of different
+  units are still compared through their own spreads]`
+- **The floor is called in two modules and nothing ties them.** `resolutionOf` is invoked by
+  `baseline-localiser.ts` and `robust-localiser.ts`, and a third localiser could divide by something else.
+  `[open: the agreement between the baselines is a convention rather than a type]`
+- **The new case's second hop is a claim about a deploy.** "Every replica runs the release" is not a
+  reading; nothing in the corpus checks it, and the same sentence appears in two other chains.
+  `[open: a hop whose mechanism is a rollout has no reading behind it]`
+- **`settlement` carries one series.** A control showing its other dependencies healthy would have been
+  the honest third reading, and the incident text does not state one — the gate refused the draft that
+  invented it. `[open: the case's evidence rests on two readings and a log line]`
+
+Unchanged from the round before: seven samples remain unannotated; the third strict displacement now
+exists but the *fourth* would need a shape the corpus has not got; **`volume-08` is 107 bytes under the
+280,000-byte budget**, so the next finding has to start a ninth volume rather than append (the same
+number `volume-03` has been sitting on for two rounds); the resolution obligation lives in a helper rather than in a type; the probe reads some build
+without naming it; `same-component`'s rename is uncounted; rule 7 is a file-level claim; `ROOT_OFF_ITS_CHAIN`
+evidence is a test rather than a repaired annotation; a modality declared and lost in the export is still
+green; and a log checkpoint's `entityRef` is never compared with the service its line is attributed to.

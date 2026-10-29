@@ -394,6 +394,42 @@
       "kind": "container",
       "name": "reporting-app",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/settlement",
+      "kind": "service",
+      "name": "settlement",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/settlement-0",
+      "kind": "pod",
+      "name": "settlement-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/settlement-app",
+      "kind": "container",
+      "name": "settlement-app",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/currency-feed",
+      "kind": "service",
+      "name": "currency-feed",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/currency-feed-0",
+      "kind": "pod",
+      "name": "currency-feed-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/currency-feed-app",
+      "kind": "container",
+      "name": "currency-feed-app",
+      "aliases": []
     }
   ],
   "edges": [
@@ -601,6 +637,31 @@
       "from": "pod:synthetic-storefront/reporting-service-0",
       "to": "container:synthetic-storefront/reporting-app",
       "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/settlement",
+      "to": "pod:synthetic-storefront/settlement-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/settlement-0",
+      "to": "container:synthetic-storefront/settlement-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/currency-feed",
+      "to": "pod:synthetic-storefront/currency-feed-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/currency-feed-0",
+      "to": "container:synthetic-storefront/currency-feed-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/settlement",
+      "to": "service:synthetic-storefront/currency-feed",
+      "relation": "calls"
     }
   ]
 }

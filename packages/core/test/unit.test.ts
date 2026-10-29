@@ -8,6 +8,7 @@ import {
   knownUnits,
   measurementBounds,
   quantizeToUnit,
+  resolutionOf,
   UnitError,
 } from '../src/util/unit.js';
 
@@ -175,5 +176,52 @@ describe('knownUnits', () => {
     expect(groups.time).toContain('ms');
     expect(groups.bytes).toContain('By');
     expect(groups.cores).toEqual(['core', 'mcore']);
+  });
+});
+
+describe('resolutionOf', () => {
+  // The smallest change a reading in a unit can express. Every statistic in `fault/` divides a change
+  // by a spread, and this number is what stands in when the baseline has no spread at all -- see
+  // finding 288, where the stand-in was `1e-6` and a one-line page change was reported as 1 000 000.
+  it('answers one whole thing for a count, which has no reading between six and seven', () => {
+    expect(resolutionOf('count')).toBe(1);
+  });
+
+  it('answers a hundredth for a share written as 1 and whole points for one written as %', () => {
+    // The same statement twice, in the two spellings the table carries: a share is read to the
+    // percentage point, and 0.000001 of a whole is not a change anyone acts on.
+    expect(resolutionOf('1')).toBe(0.01);
+    expect(resolutionOf('%')).toBe(1);
+  });
+
+  it('answers one of the unit as declared, so a duration resolves in the unit it is written in', () => {
+    // `500 mcore` resolves in thousandths and `2.5 ms` in milliseconds: the declaration names the
+    // grid, and a duration in seconds is not the same reading as one in milliseconds.
+    expect(resolutionOf('ms')).toBe(1);
+    expect(resolutionOf('s')).toBe(1);
+    expect(resolutionOf('mcore')).toBe(1);
+    expect(resolutionOf('MiBy')).toBe(1);
+    expect(resolutionOf('rps')).toBe(1);
+  });
+
+  it('answers the old constant only where nobody declared a unit', () => {
+    // Not dead, and not a default: an absent unit and a unit the table does not know are both
+    // "someone else's unit", which is the same decision `measurementBounds` makes by returning
+    // `undefined` rather than a guessed range.
+    expect(resolutionOf(undefined)).toBe(1e-6);
+    expect(resolutionOf('furlongs')).toBe(1e-6);
+  });
+
+  it('answers something positive for every unit in the table, so a new unit cannot divide by zero', () => {
+    // The shape a future dimension arrives in: a unit added to `UNITS` and left out of
+    // `resolutionOf` would answer this test's subject with a zero and make every statistic on it an
+    // infinity. Iterating the table rather than listing it is the point -- a list would be a second
+    // inventory of the units, and the first would be free to drift.
+    const all = Object.values(knownUnits()).flat();
+    expect(all.length).toBeGreaterThan(10);
+    for (const unit of all) {
+      expect(resolutionOf(unit), unit).toBeGreaterThan(0);
+      expect(Number.isFinite(resolutionOf(unit)), unit).toBe(true);
+    }
   });
 });

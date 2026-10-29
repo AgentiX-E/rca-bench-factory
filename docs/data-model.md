@@ -395,9 +395,10 @@ before the fault is a claim the file does not make.
 
 `baseline` and `post` are what the annotation says the reading was; the samples are what an exporter
 would have written down. Both have to be values their unit admits, and `util/unit.ts` is the one place
-that says what those are. A unit makes **two** statements about a reading, and they are not the same
-statement: how large it may be, and what it may land on. `measurementBounds(unit)` returns `{ min, max }`
-for a unit it knows and `undefined` for one it does not; `admitsFraction(unit)` answers the second.
+that says what those are. A unit makes **three** statements about a reading, and they are not the same
+statement: how large it may be, what it may land on, and how small a change it can express.
+`measurementBounds(unit)` returns `{ min, max }` for a unit it knows and `undefined` for one it does not;
+`admitsFraction(unit)` answers the second; `resolutionOf(unit)` answers the third.
 
 | unit | range | why |
 | --- | --- | --- |
@@ -411,6 +412,23 @@ for a unit it knows and `undefined` for one it does not; `admitsFraction(unit)` 
 | `ms`, `s`, `min`, `By`, `MiBy`, `rps`, `%`, `1` | continuous | a duration, a byte count, a rate and a share all land between two integers |
 | `core`, `mcore` | continuous | `500m` is a quantity stated in thousandths, not half a processor |
 | a unit the table does not know | treated as continuous | the same `undefined` `measurementBounds` returns, for the same reason: a rule nobody declared is a claim about someone else's unit |
+
+The third statement is about the *grader* rather than about the annotation, and it exists because of what
+a fold of zero width does: both baselines divide a change by a baseline's spread, so a baseline that never
+moved has no divisor. The divisor is then one step of the declaration's own unit.
+
+| unit | resolution | why |
+| --- | --- | --- |
+| `count` | `1` | a count is whole things; there is no reading between six and seven |
+| `%` | `1` | a percentage point |
+| `1` | `0.01` | a share is read to the percentage point, and a millionth of a whole is not a change anyone acts on |
+| `ms`, `s`, `By`, `MiBy`, `rps`, `core`, `mcore` | `1` of the unit as declared | a reading is written in the unit it declares, and `500 mcore` resolves in thousandths |
+| no unit, or a unit the table does not know | `1e-6` | the old constant, kept only where nobody declared a unit -- the same refusal `measurementBounds` makes by returning `undefined` |
+
+A baseline that *did* move is measured and its own spread divides; the resolution stands in only where
+there is no spread to measure, which is why a two per cent jitter on a latency percentile is still a
+z-score. Before this, `1e-6` stood in either way, and a corpus series whose baseline was a flat zero or a
+flat six reported its change *times a million* -- a statistic that measured the constant (finding 288).
 
 Four rules follow, and they are different rules:
 
@@ -428,6 +446,10 @@ Four rules follow, and they are different rules:
   and `178 restarts / 8` was `22.25` of them. "Exact because it is a total" and "whole" are two
   different claims, and a counter satisfies the first while failing the second. A unit with no grid is
   returned unchanged, so a latency percentile is not rounded.
+- **A statistic is measured in the unit's own steps.** `resolutionOf` is the divisor a localiser uses when
+  a baseline never moved, so the ranking compares "38 percentage points" with "one whole field" rather
+  than two records of `1e-6`. It is a *floor* and not a cap: a baseline whose spread is measurable divides
+  by that spread.
 
 ## Layer 4 — `QualityGateReport`
 

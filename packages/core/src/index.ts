@@ -314,6 +314,7 @@ export {
   isConvertible,
   knownUnits,
   measurementBounds,
+  resolutionOf,
 } from './util/unit.js';
 export type { Dimension, MeasurementBounds } from './util/unit.js';
 

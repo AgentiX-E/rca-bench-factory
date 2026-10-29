@@ -1,0 +1,38 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-dependency-schema-change-currency-feed",
+  "why": "Telemetry for the upstream-schema-change case, and the corpus's first case in which the loudest series belongs to the victim rather than to the answer. Every reading the text supports is small: the feed changed one field and one more appeared, so the change at the cause is a single unit, and the error at the reader is a share of orders. The two are deliberately not the same size, because they are not the same quantity -- a magnitude method ranks settlement first and the answer second, deterministically, and the case exists to penalise that. Both series are counted rather than sampled (a share of orders and a field count), so neither carries the corpus's plus-or-minus-two-per-cent jitter: a jittered field count would be a claim that a response sometimes had one and a half fields. There is deliberately no third series: a control showing settlement's other dependencies healthy would be a reading the incident text does not state, and a corpus that invents a quiet series to make its own argument is the shape every other rule here refuses.",
+  "series": [
+    {
+      "service": "settlement",
+      "metric": "settlement_total_mismatch_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0.38,
+      "quote": "wrong by a few cents",
+      "noise": "none",
+      "why": "the checkpoint `cp-mismatch` holds the symptom: the share of orders whose total disagreed, which the text states as a size (\"a few cents\") rather than as a share -- the share is the reading that makes the size locatable, and the baseline is zero because the text says totals matched again once the feed reverted"
+    },
+    {
+      "service": "currency-feed",
+      "metric": "currency_feed_response_field_count",
+      "unit": "count",
+      "baseline": 1,
+      "post": 2,
+      "quote": "carry a single rate field and now carries rate plus inverse",
+      "noise": "none",
+      "why": "the checkpoint `cp-field-count` holds the change itself: one field before, two after, which is the whole of what moved on the answer and is a single unit of a count -- a magnitude method has nothing to be impressed by here, and the case is built so that this is the honest reading rather than a weakness of it"
+    }
+  ],
+  "logs": [
+    {
+      "service": "settlement",
+      "id": "parser-warning",
+      "severity": "warn",
+      "body": "WARN currency-rate parser: response carries rate and inverse; reading rate as before, which the feed rounds to two places",
+      "quote": "Settlement's parser still reads the old field, which is now rounded",
+      "why": "the checkpoint `cp-parser-log` holds this line: a reconstruction of what the parser would emit, since the incident text states the fact and not the message -- it is the only reading on the settlement side that names the field rather than the size of the error"
+    }
+  ]
+}

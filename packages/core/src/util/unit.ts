@@ -195,6 +195,39 @@ export function quantizeToUnit(unit: string | undefined, value: number): number 
   return admitsFraction(unit) ? value : Math.round(value);
 }
 
+/**
+ * The smallest change a reading in this unit can express: the unit's own resolution.
+ *
+ * A spread of zero is not a spread, and every statistic in this repository divides a change by one.
+ * `zScore` floored that divisor at `1e-6`, which is a statement about the epsilon and not about the
+ * metric: a share that never left zero and then moved by 0.12 came out as a z of `120 000`, and a
+ * page count that stepped from six lines to five came out as `1 000 000`. Both numbers are the
+ * change times a million, and a ranking built on them compares apples in one case with apples in
+ * the next only when both baselines happen to have the same spread (finding 288).
+ *
+ * What the divisor means when the baseline never moved is *the smallest change this declaration can
+ * express*, and that is a property of the unit:
+ *
+ * | unit | resolution | why |
+ * | --- | --- | --- |
+ * | `count` | `1` | a count is whole things; there is no reading between six and seven |
+ * | `core`, `mcore` | `1` of the unit as declared | a quantity in thousandths resolves in thousandths |
+ * | `ms`, `MiBy`, `rps` | `1` of the unit as declared | a reading is written in the unit it declares |
+ * | `1` | `0.01` | a *share* is read to the percentage point; 0.000001 of a whole is not a reading anyone acts on |
+ * | `%` | `1` | the same statement in the unit that already says per cent |
+ * | anything else | `1e-6` | unchanged, because a unit nobody declared is a claim about someone else's unit |
+ *
+ * Note that the fallback is not dead: it is what `undefined` and an unknown unit still get, and the
+ * point of the table is that the four dimensions the corpus uses no longer fall into it.
+ */
+export function resolutionOf(unit: string | undefined): number {
+  if (unit === undefined) return 1e-6;
+  const def = UNITS[unit];
+  if (def === undefined) return 1e-6;
+  if (def.dimension !== 'ratio') return 1;
+  return unit === '1' ? 0.01 : 1;
+}
+
 /** All units known to the converter, grouped by dimension. */export function knownUnits(): Record<Dimension, string[]> {
   const out: Record<Dimension, string[]> = {
     time: [],

@@ -901,3 +901,148 @@ key, and the census now says so on every run instead of leaving it to be inferre
 declares a log and exports none, because the export is downstream of the declaration and the only
 instrument that could compare them lives in this script rather than in the exporter. A corpus that
 declares a modality and loses it in the port would still be green, as long as the count moved.
+
+## Finding 288 — the statistic was a change times a million, and seven cases were located by the constant
+
+Both baselines divide a change by a spread: `zScore` by `max(sigma, 1e-6)`, the robust one by
+`max(1.4826 * MAD, 1e-6)`. The constant is there so that a baseline with no variance cannot divide. It
+also, quietly, became the *scale of the statistic* — because the corpus's noise is a **fraction of the
+reading**, two things make a baseline's spread exactly zero:
+
+- a **share that is zero** in healthy operation — an error ratio, a loss ratio, a mismatch share —
+  because `0 × (1 ± 2%)` is zero;
+- a **count on its own grid** — six lines per page, always six — because `6 × (1 ± 2%)` rounds back to
+  six, which is finding 284's quantisation doing exactly what it was asked to.
+
+A zero-spread baseline then divided by `1e-6`, so the statistic was *the change times a million* and
+nothing else. Seven of the corpus's twenty-two cases were located by a number of that shape:
+
+| case | the answer's statistic before | after |
+| --- | --- | --- |
+| `history-kafka-consumer-lag` | 4 200 000 000 000 | **4 200 000** |
+| `history-middleware-cache-shard-product-index` | 12 500 000 | **12.5** |
+| `history-unhandled-exception-export` | 3 060 000 | **3.06** |
+| `history-config-ingress-timeout-partner-portal` | 1 000 000 | **1.49** |
+| `history-config-datasource-url-orders` | 1 000 000 | **126.85** |
+| `history-network-mtu-blackhole-catalog` | 1 000 000 | **100** |
+| `history-code-off-by-one-invoice-renderer` | 1 000 000 | **1** |
+
+Three consequences, in order of how much they cost:
+
+1. **A magnitude method was being scored against a constant rather than against the data.** "The
+   loudest component" meant "the component whose metric happened to start at zero or on a grid".
+2. **Cross-case comparisons were meaningless.** `4.2 × 10¹²` against `3.06 × 10⁶` is a comparison of two
+   other recordings of the same epsilon, and the corpus's difficulty argument reads those numbers.
+3. **Within a case, a metric that never moved beat one that moved fivefold with two per cent noise**,
+   because it did not need to move to win — it only had to be flat.
+
+**What the fix is, and what it deliberately is not.** The divisor for a baseline that **never moved** is
+now one step of the declaration's own unit (`resolutionOf` in `util/unit.ts`): one whole thing for a
+`count`, one percentage point for `%`, a hundredth of a whole for `1`, one of the unit as written for a
+duration, a byte count, a rate or a core — and the old constant only where nobody declared a unit at
+all. A baseline that **did** move is measured, and its own spread divides, because the floor is a floor
+and not a cap. The difference between "moved" and "did not" is `max(before) !== min(before)` rather
+than `spread > 0`, because eight identical shares computed through a mean can produce a spread of
+`1e-17` and would then divide by it.
+
+**Why every other instrument was silent.** Nothing in the corpus reads a statistic's *magnitude*: the
+gate reads ranks against a top-K, `checkDiscrimination` reads a kind, and the report prints the count of
+each kind. Coverage cannot see it either — the line executed on every case, and it returned a number
+every time. And `probe-z-floor.mjs` had been asking the neighbouring question — *does the corpus's
+classification depend on the floor* — with an arm that restated the same constant, so it compared the
+constant with itself on the cases the constant decided.
+
+**The probe was rewired rather than retired.** Its shipped arm is now `baseline-localiser.ts`'s rule,
+which makes it a regression detector for this change: the cases whose description moves between the
+shipped arm and the old behaviour are the cases the epsilon was deciding. The reading it takes is:
+
+```
+probe-z-floor: 1 of 23 case(s) put the answer at a different rank (one resolution of the declared
+unit versus 1% of |baseline|); 1 change kind, 0 of them into or out of strict
+```
+
+`0 of them into or out of strict` is the claim the corpus's evidence rests on, and it holds: the three
+strictly-displaced cases are strictly displaced under both arms. The one case that moves is
+`history-resource-ephemeral-capacity-image-builder`, whose description moves between `none` and
+`same-component` — a pod outranking its own service, which is not a miss.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| a deterministic count's step | a statistic of 1 000 000 | **1** |
+| a share that moves from 0 to 0.38 | 38 000 000 | **38** |
+| a baseline that moved | measured spread | **measured spread, unchanged** |
+| `unit.test.ts` | 19 tests | **24** |
+| `baseline-localiser.test.ts` / `robust-localiser.test.ts` | 13 / 12 | **16 / 14** |
+| the probe's two arms | the constant against itself | **the shipped rule against the constant** |
+| the corpus | 22 of 22 in top-K | **23 of 23**, and the numbers are readable |
+
+**What this does not fix.** The resolution of a *continuous* unit is a convention and the file says so:
+a duration declared in `ms` resolves in milliseconds even though the declaration can express `12.4`. A
+baseline that moved still divides by its own spread however small that spread is, so a metric whose
+noise happens to be tiny still outsizes one of a coarser unit — the fix bounds the degenerate case, it
+does not make the statistic unit-free. And the two baselines have to agree about the floor by
+construction rather than by type: `resolutionOf` is called in two modules and nothing refuses a third
+one from dividing by something else.
+
+## Finding 289 — the fourth L4 was not behind the extraction key, and the deadline it was waiting for dissolved
+
+Three items on the plan were blocked, and all three were blocked on the same assumption: that a case's
+chain cannot be three hops unless the extraction key supplies a deeper gold standard, and that a
+strictly displaced case needs a sample with **two faults** in it. Neither is true, and the
+twenty-third case shows why.
+
+`dependency-schema-change-currency-feed` is one fault with a chain that leaves the service it starts
+in: container `currency-feed-app` → pod → service `currency-feed` → service `settlement`. The feed
+changed what one existing field *means* — `rate` was exact and is now rounded to two places, with
+`inverse` added beside it — and settlement reads `rate` as its contract says. Three hops, four entities,
+so `difficultyFloor` reads `L4` **without any change to the extraction key**: the depth came from a
+cross-service chain, which the corpus already had the edges to express (`calls`, `settlement →
+currency-feed`).
+
+The displacement is the corpus's third, and its first where the louder component is the **victim**:
+
+| | settlement | currency-feed |
+| --- | --- | --- |
+| the moving reading | `settlement_total_mismatch_ratio` 0 → 0.38 | `currency_feed_response_field_count` 1 → 2 |
+| the statistic, both baselines | **38** | **1** |
+
+A method that returns the largest excursion returns settlement, deterministically, and it is wrong. No
+second fault was needed: the decoy is the *reader*, and what makes it louder is that a symptom is
+naturally bigger than the change that caused it — a rounding of less than a cent per rate becomes a
+whole share of orders whose totals disagree. That is a stronger statement than a corpus with two faults
+in it, because two faults is a corpus that can be answered by finding the louder of two incidents,
+while this is a corpus that punishes ranking by magnitude *on a single incident*.
+
+**The ladder.** The previous round closed with a deadline: three L4 among thirty cases is exactly the
+floor and among thirty-one it is not, so the next annotation could not be L1, L2 or L3. The fourth L4
+removes the deadline rather than meeting it — four of thirty is 0.133, and four fall below a tenth only
+at forty-one cases, which is beyond the thirty the extraction key can supply:
+
+| what | before | after |
+| --- | --- | --- |
+| L4 cases | 3 of 22 | **4 of 23** |
+| the share at the committed size | 0.100, exactly | **0.133** |
+| the corpus size at which the floor binds | 31 | **41** |
+| L4 cases the corpus can lose | 0 | **1** (two would take it to 0.095) |
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the corpus | 22 of 30, `L1 2 / L2 9 / L3 8 / L4 3` | **23 of 30, `L1 2 / L2 9 / L3 8 / L4 4`** |
+| strictly displaced cases | 2 | **3** |
+| the chain shapes at three hops | 3 chains, 1 staying inside | **4 chains, 2 each** |
+| entities and edges | 59 / 41 | **65 / 46** |
+| background series | 25 | **27** |
+| `checkpoints` | 74 of 74, 5 log assertions | **78 of 78, 6 log assertions** |
+| `difficulty-floor.test.ts` | 18 tests | **18**, four of them rewritten for the new arithmetic |
+
+**What this does not fix.** The case's two series are both deterministic, so it is the case that most
+depends on finding 288's floor: its numbers are `38` and `1` because a share resolves in hundredths and
+a count in wholes, and a reader who disagrees with that table disagrees with the case. `settlement` has
+no third series: a control showing its other dependencies healthy would have been a reading the incident
+text does not state, and the gate refused the first draft that carried one. And the chain's second hop
+is the weakest in the corpus — "every replica runs the release" is a fact about a deploy rather than a
+measurement, and nothing in the corpus checks it.

@@ -1,6 +1,7 @@
 import { locatedRank } from '../gates/gates.js';
 import type { BaselineOutcome } from '../gates/gates.js';
 import type { FaultCase, TelemetrySignal } from '../ir/types.js';
+import { resolutionOf } from '../util/unit.js';
 
 /**
  * A second baseline, with the opposite bias to the first.
@@ -65,7 +66,7 @@ export const ROBUST_SHIFT_METHOD = 'median-shift-by-service';
 /** Consistency constant: `1.4826 * MAD` estimates a normal distribution's standard deviation. */
 const MAD_SCALE = 1.4826;
 
-/** The same floor `zScore` applies to a zero standard deviation, for the same reason. */
+/** The floor under a *measured* scale, kept from `zScore` so a zero MAD on a moved baseline cannot divide. */
 const EPSILON = 1e-6;
 
 const DEFAULT_TOP_K = 3;
@@ -91,6 +92,8 @@ export function rankServicesByMedianShift(
   const onset = Date.parse(faultCase.injectTime);
   const baseline = new Map<string, number[]>();
   const post = new Map<string, number[]>();
+  /** The unit of each `service|metric` key, which the scale floor is a property of. */
+  const unitByKey = new Map<string, string | undefined>();
 
   for (const signal of signals) {
     // Narrowed through a local rather than through `signal.payload`, for the reason the peak-z
@@ -102,6 +105,7 @@ export function rankServicesByMedianShift(
     if (Number.isNaN(at) || Number.isNaN(onset)) continue;
     const target = at < onset ? baseline : post;
     const key = `${signal.resource['service.name']}|${payload.name}`;
+    if (!unitByKey.has(key)) unitByKey.set(key, payload.unit);
     const bucket = target.get(key) ?? [];
     bucket.push(payload.value);
     target.set(key, bucket);
@@ -113,7 +117,15 @@ export function rankServicesByMedianShift(
     const before = baseline.get(key) ?? [];
     if (before.length === 0 || after.length === 0) continue;
     const centre = medianOf(before);
-    const scale = Math.max(MAD_SCALE * medianOf(before.map((value) => Math.abs(value - centre))), EPSILON);
+    // The same rule as `baseline-localiser.ts`, and for the same reason: a baseline that moved is
+    // measured, a baseline that did not is one step of what the declaration counts (finding 288).
+    // The absolute floor survives *under* a measured scale rather than beside it, because a median
+    // absolute deviation of zero is possible on a baseline that did move -- four points, three equal
+    // -- and dividing by it would report an infinity as a rank.
+    const moved = Math.max(...before) !== Math.min(...before);
+    const scale = moved
+      ? Math.max(MAD_SCALE * medianOf(before.map((value) => Math.abs(value - centre))), EPSILON)
+      : resolutionOf(unitByKey.get(key));
     const shift = Math.abs(medianOf(after) - centre) / scale;
     const service = key.slice(0, key.indexOf('|'));
     shiftByService.set(service, Math.max(shiftByService.get(service) ?? 0, shift));

@@ -183,7 +183,7 @@ function withLoudCompetitor(signals: Record<string, unknown>): Record<string, un
       metric: 'scratch_competitor',
       unit: 'count',
       baseline: 0,
-      post: 500,
+      post: 50_000,
       quote: 'No error rate change in the downstream payment service',
       why: 'the fixture\'s loud competitor, so a one-case corpus still has a component that outranks its answer',
     },
@@ -888,18 +888,19 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     // sees it, the median of the window does not, so the robust ranking places `checkout-api` fourth
     // of four -- outside a top-K of three -- and the case is refused. Under one solver it would pass.
     //
-    // `peak-z-by-service=2` rather than 1 is the counter's doing, and it is a consequence of finding
-    // 249: the throttling counter's pre-window is now flat at its baseline, so its baseline has no
-    // spread at all, the `epsilon` floor turns its rise into an enormous z, and the *pod* that carries
-    // it (`checkout-api-0`, a different `service.name`) outranks the service. The case is still
-    // refused for the reason the test is about; the number moved because a claim the expansion used
-    // to invent -- a rate before the fault -- was removed.
+    // `peak-z-by-service=1` rather than 2 is finding 288's doing. Finding 249 made the throttling
+    // counter's pre-window flat at its baseline, which left its baseline with no spread at all; the
+    // `1e-6` floor then turned its rise into an enormous z and the *pod* carrying it
+    // (`checkout-api-0`, a different `service.name`) outranked the service -- a ranking decided by an
+    // epsilon. The floor is the unit's resolution now, the pod's statistic is a real number, and the
+    // service is first. The case is still refused for the reason the test is about: the robust
+    // baseline's median cannot see a lone spike, so it places the answer fourth.
     // No competitor: this test is about the two solvers disagreeing, and a corpse-wide refusal for a
     // second reason would make its numbers unreadable.
     const result = run(['--cases', corpus({ signals: spikeCase(), competitor: false })]);
     expect(result.status).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
-    expect(result.out).toContain('peak-z-by-service=2, median-shift-by-service=4');
+    expect(result.out).toContain('peak-z-by-service=1, median-shift-by-service=4');
   });
 
   it('refuses a noise value outside the vocabulary', () => {

@@ -38,7 +38,13 @@ const BASE = faultCaseSchema.parse(
 ) as unknown as FaultCase;
 
 /** Four baseline points and four post-onset points, ninety seconds apart, on the case's window. */
-function series(service: string, metric: string, before: number[], after: number[]): TelemetrySignal[] {
+function series(
+  service: string,
+  metric: string,
+  before: number[],
+  after: number[],
+  unit?: string,
+): TelemetrySignal[] {
   const start = Date.parse(BASE.window.start);
   const onset = Date.parse(BASE.injectTime);
   const step = 90_000;
@@ -51,7 +57,12 @@ function series(service: string, metric: string, before: number[], after: number
     resource: { 'service.name': service },
     timestamp: row.timestamp,
     signal: 'metric',
-    payload: { kind: 'metric' as const, name: metric, value: row.value },
+    payload: {
+      kind: 'metric' as const,
+      name: metric,
+      value: row.value,
+      ...(unit === undefined ? {} : { unit }),
+    },
   }));
 }
 
@@ -207,5 +218,46 @@ describe('inputs the ranking declines to interpret', () => {
     const broken = { ...BASE, injectTime: 'not-a-date' } as unknown as FaultCase;
     const signals = series('cart-service', 'client_span_duration_ms', [12, 12.4, 11.8, 12.2], [900, 880, 910, 895]);
     expect(rankServicesByPeakZScore(broken, signals).ranking).toEqual([]);
+  });
+});
+
+describe("the floor is one step of the declaration's own unit", () => {
+  // Finding 288. `zScore` divides by `max(sigma, 1e-6)`, and the corpus's noise is a *fraction* of the
+  // reading -- so a baseline of zero, or a count of six, has no spread at all. The constant then became
+  // the scale of the statistic: a one-unit step was reported as 1 000 000, a 38 % share as 38 000 000,
+  // and the ranking compared those numbers with each other. The divisor is now the smallest change the
+  // declaration can express, and these three assertions are what that means.
+  it('reads a deterministic count as a one-unit change, not as a division by an epsilon', () => {
+    // Six lines per page, always six: two per cent of six rounds back to six, so the baseline is flat
+    // by construction and there is no distribution to normalise by. One line fewer is one unit.
+    const flat = series('invoice-renderer', 'rendered_lines_per_page', [6, 6, 6, 6], [5, 5, 5, 5], 'count');
+    expect(rankServicesByPeakZScore(BASE, flat).ranking[0]!.peakZ).toBe(1);
+  });
+
+  it('scales a share by a hundredth, so a share that moves by a whole moves by a hundred', () => {
+    // A share is read to the percentage point, in either spelling of it: `1` resolves in hundredths
+    // and `%` in whole points, which is the same statement twice.
+    const hundredths = series('catalog-service', 'packet_loss_ratio', [0, 0, 0, 0], [1, 1, 1, 1], '1');
+    expect(rankServicesByPeakZScore(BASE, hundredths).ranking[0]!.peakZ).toBe(100);
+    const points = series('catalog-service', 'packet_loss_ratio', [0, 0, 0, 0], [100, 100, 100, 100], '%');
+    expect(rankServicesByPeakZScore(BASE, points).ranking[0]!.peakZ).toBe(100);
+  });
+
+  it('uses the measured spread when the baseline moved more than one step of its unit', () => {
+    // The floor is a floor, not a cap: a baseline that did move is a distribution, and a z-score is
+    // exactly the statement "how many of those it moved". The fourth post sample is the peak.
+    const noisy = series(
+      'cart-service',
+      'client_span_duration_ms',
+      [12, 12.4, 11.8, 12.2],
+      [900, 880, 910, 895],
+      'ms',
+    );
+    // mean 12.1, variance 0.05, peak |z| at 910. Written as the arithmetic rather than as 4015.53, so
+    // that a reader can check the number instead of trusting it.
+    expect(rankServicesByPeakZScore(BASE, noisy).ranking[0]!.peakZ).toBeCloseTo(
+      897.9 / Math.sqrt(0.05),
+      6,
+    );
   });
 });

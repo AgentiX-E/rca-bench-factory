@@ -51,6 +51,12 @@
       "value": 85
     },
     {
+      "service": "currency-feed",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 40
+    },
+    {
       "service": "export-worker",
       "metric": "request_rate",
       "unit": "rps",
@@ -139,6 +145,12 @@
       "metric": "request_rate",
       "unit": "rps",
       "value": 320
+    },
+    {
+      "service": "settlement",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 30
     },
     {
       "service": "user-profile",
