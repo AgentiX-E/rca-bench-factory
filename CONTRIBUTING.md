@@ -17,6 +17,14 @@ rules. They are not guidelines — CI fails on them.
    ```
 5. **Open a PR.** CI re-runs the same gate. A red CI is a hard stop.
 
+`pnpm install` runs `prepare`, which points this clone's `core.hooksPath` at `.githooks` and makes the
+hook executable. `pre-commit` runs `scripts/check-staged-mutation.mjs`: it refuses a commit whose index
+holds a byte a mutation battery's journal says it rewrote, which is finding 310 — `git add -A` during a
+running battery stages the battery's mutation, and `git status` cannot see it because the index took it
+too. `git commit --no-verify` skips it. If the suite reports that `core.hooksPath` is not `.githooks`,
+run `pnpm hooks:install`; git ignores a hook it cannot execute, prints one `hint:`, and commits anyway
+(finding 312).
+
 ## Testing rules
 
 - **No mocks.** Use real, hand-written fixtures. `scripts/check-no-mock.mjs` bans

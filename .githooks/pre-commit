@@ -1,0 +1,6 @@
+#!/bin/sh
+# Refuse a commit whose index holds a byte a mutation battery's journal says it
+# rewrote. `scripts/check-staged-mutation.mjs` holds the comparison and why it is
+# made here rather than at push time; this file exists only because git needs a
+# path to run. `git commit --no-verify` skips it, and that is stated in the module.
+exec node "$(dirname "$0")/../scripts/check-staged-mutation.mjs" --quiet

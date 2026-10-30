@@ -58,6 +58,8 @@
     "docs:counts:check": "node scripts/measure-doc-counts.mjs --check",
     "docs:counts:write": "node scripts/measure-doc-counts.mjs --write-doc",
     "verify:local": "node scripts/verify-local.mjs",
+    "prepare": "node scripts/install-git-hooks.mjs",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
     "examples:verify": "node scripts/verify-example-pack.mjs",
     "verify:scorer-stability": "node scripts/verify-scorer-stability.mjs",
     "verify:gates-are-testable": "node scripts/verify-gates-are-testable.mjs",

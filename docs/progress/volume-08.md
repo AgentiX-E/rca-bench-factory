@@ -1426,9 +1426,11 @@ tree to the index, not the tree to what it was meant to be. Restored in the next
 
 ### Left open
 
-- **A commit can still be staged inside a session that mutates the tree** (finding 310). The journal is
-  on disk and `_witnesses.py` can see it; what is missing is a reader at the commit boundary.
-  `[open: a pre-commit refusal while a witness journal exists, which is the one thing this round named and did not build]`
+- ~~**A commit can still be staged inside a session that mutates the tree** (finding 310). The journal is
+  on disk and `_witnesses.py` can see it; what is missing is a reader at the commit boundary.~~
+  Closed by finding 311, one round later, and the repair it named turned out to be the wrong question:
+  a refusal while a journal *exists* refuses the two states that publish nothing. What closes it is the
+  index against the record, which needs the journal's bytes and one `git ls-files -s`.
 - **The other two aggregate tables cannot be produced, and the reason is not a missing decision.**
   Their input is not in the archive: eight reductions, no match, a 61x spread that rules out a unit.
   `[open: a produced table nobody can check is worse than an absent one]`
@@ -1447,3 +1449,110 @@ a round has nothing to say in it, and `check-open-list` refuses a list padded wi
 
 The corpus, the anchors, the backends, the gates and the coverage bound. `perFile: true` holds every
 file at 95/95/100/95 with no exemption, and `fault/sample-coverage.ts` is still 100/100/100/100.
+
+## v3.19 — the instrument the last round named, and the two silences under it
+
+### One: the repair as it was written would have refused the wrong two states
+
+Finding 310 ended with a sentence: *the repair is a pre-commit refusal while a witness journal exists,
+and it is named and not built*. This round built it, and the sentence did not survive being built.
+
+A journal exists in three states, and only the third publishes anything:
+
+| state | journal | index | publishes a mutation? |
+| --- | --- | --- | --- |
+| a battery is measuring, has not mutated yet | on disk | the file's bytes | **no** |
+| a battery finished and restored, its record still settling | on disk | the file's bytes | **no** |
+| a battery holds a mutation and `git add -A` ran | on disk | **the mutation** | **yes** |
+
+Thirteen batteries run 30 to 350 seconds each. A guard that refused a commit for that whole window
+would be turned off within a day, and the way it would be turned off is `--no-verify`, which it cannot
+survive. So the guard asks the third row's question and nothing else: **is the staged blob the one whose
+bytes hash to the digest the record wrote?** Finding 311.
+
+### Two: the three things, and the pair git does not compare
+
+| what | how it is named |
+| --- | --- |
+| the working tree | bytes |
+| the index | blob ids, from `git ls-files -s` |
+| what the tree was meant to hold | the journal a battery writes before its first mutation |
+
+`git status` compares the first two -- and it was right to be clean, because `git add -A` had put the
+mutation in both. `tree-repair.mjs` compares the third against the first, at the start of a session. The
+pair nothing read is **index against record**, and the index is the only one of the three a commit keeps.
+
+The comparison costs one `git` process for the whole index, because git's name for a file is
+`hash("blob <length>\0" + bytes)` and the journal already carries the bytes: the expected id is computed
+from the record and compared to `ls-files -s`. The algorithm is asked rather than assumed, and the
+reimplementation is pinned against `git hash-object` over three payloads -- the third has a NUL byte in
+it, where the length is a count of bytes rather than characters.
+
+### Three: two roads not taken
+
+| candidate | why it was refused |
+| --- | --- |
+| the gate receipt | it answers *did a gate run over these bytes*, and the question is *are these the bytes the tree was meant to hold*. Intent is only written down in the journal. A poisoned commit is refused by the receipt only when no run has blessed that tree -- an accident of which tree was named |
+| a blanket refusal while a journal exists | it refuses two of the three states above, and provokes the one bypass it cannot see |
+
+### Four: the silence under the guard (finding 312)
+
+The hook was written and correct and refused nothing, and the reason is two lines:
+
+```
+hint: The '.githooks/pre-commit' hook was ignored because it's not set as executable.
+hint: You can disable this warning with `git config advice.ignoredHook false`.
+[main 7c0a857] nope
+```
+
+**git commits anyway.** One setting up it is quieter still: `core.hooksPath` naming a directory that is
+not there commits with no message at all. So the installer sets the mode bit instead of trusting the
+checkout's, and reads `core.hooksPath` back instead of trusting the exit status that wrote it -- a
+`git config` returning 0 without writing what it was asked for is a real possibility, and only a reading
+catches it.
+
+### Five: `prepare` is the only place the wiring can live
+
+`core.hooksPath` lives in `.git/config`, which is not committed, so no file in this repository can make a
+clone run a hook. `package.json`'s `prepare` runs the installer, and an install is the one command every
+clone runs before it can do anything. `git-hooks.test.ts` asserts the mode bit with `pnpm hooks:install`
+in the failure message, and asserts `core.hooksPath` in the clone the suite is running in -- the one
+claim this round makes about a clone rather than about the tree.
+
+### Readings
+
+| what | this round |
+| --- | --- |
+| the guard | `.githooks/pre-commit` → `check-staged-mutation.mjs` → `staged-mutation.mjs`; one comparison, three readers of one journal format |
+| the question | the index against the record, not presence of a record |
+| the cost | one `git ls-files -s` for the whole index, and no staged file is read |
+| the silence | a hook with no execute bit commits anyway; a `core.hooksPath` that is not there commits with no message |
+| the corpus | unchanged at **30 of 30**; no case touched |
+| the suite | **+2 files, +36 tests** in `core`; the absolutes are in `volume-05.md` |
+| `docs:check` | audit 1–313, **310 findings**; the three suite counts still add up |
+| the inventory | **95 failure sites across 50 of 67 scripts**; each of the four new ones carries its proof |
+| `--no-verify` | still commits the mutation, and a test asserts the mutated bytes are in the revision |
+
+### Left open
+
+- **The guard cannot be made to run.** `git commit --no-verify`, and any revision built by something
+  other than `git commit`, skip it; the record is on disk and nothing forces a caller to ask.
+  `[open: the comparison answers any boundary that asks, and a commit made by another tool never asks]`
+- **A clone that installs with `--ignore-scripts` never runs `prepare`** (finding 312), so the hook file is
+  there and the clone is not pointed at it. The suite reports it, one run later than the commit that needed it.
+  `[open: git-hooks.test.ts is the reader, and a test is not in the commit path]`
+- ~~**A pre-commit refusal while a witness journal exists** -- the repair finding 310 named and this round
+  built.~~ Closed by finding 311. It was the wrong question: a journal exists in three states and only one
+  of them publishes a mutation, so the guard now compares the staged blobs to the recorded bytes instead
+  of refusing on the record's presence.
+
+The two five-second budgets, the two aggregate tables, P4's first two items and the two ledger rules that
+v3.18 and v3.17 left open are unchanged and are **not re-signed here**: an item that did not move in a
+round has nothing to say in it, and `check-open-list` refuses a list whose entries repeat each other's
+reasons -- measured on this round's first draft, which restated four of them and was refused.
+
+### Unchanged
+
+The corpus, the anchors, the backends and the coverage bound. `perFile: true` holds every file at
+95/95/100/95 with no exemption. Nothing this round wrote is executed by CI: the hook runs on a
+developer's `git commit`, and the gate that proves it is the suite.

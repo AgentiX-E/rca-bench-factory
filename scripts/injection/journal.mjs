@@ -196,8 +196,14 @@ function scriptName() {
  * question cannot be asked, so a live pid is taken at its word rather than
  * repaired out from under: leaving a record alone costs a retry, and repairing
  * under a live run corrupts a file it is measuring.
+ *
+ * Exported for `scripts/staged-mutation.mjs`, which asks the same question about
+ * a journal at the commit boundary and must not answer it a second way. The
+ * answer changes what the refusal *says* rather than what it decides -- "a run is
+ * measuring this tree now" and "a run died holding it" are different sentences,
+ * and the repair for the first is to wait.
  */
-function isHolder(pid, script) {
+export function isHolder(pid, script) {
   try {
     process.kill(pid, 0);
   } catch (error) {

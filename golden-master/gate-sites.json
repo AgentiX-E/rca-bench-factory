@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 63,
+  "scanned": 67,
   "excluded": {
     "zero": 13,
     "indirect": 3,
@@ -132,7 +132,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1145,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -140,7 +140,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1263,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -148,7 +148,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1272,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -156,7 +156,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1280,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -310,6 +310,21 @@
       "provedBy": "packages/core/test/check-roundtrip-record.test.ts"
     },
     {
+      "script": "scripts/check-staged-mutation.mjs",
+      "line": 41,
+      "diagnostic": "usage: check-staged-mutation.mjs [--quiet] [--cache <dir>]",
+      "status": "proved",
+      "provedBy": "packages/core/test/staged-mutation.test.ts"
+    },
+    {
+      "script": "scripts/check-staged-mutation.mjs",
+      "line": 143,
+      "condition": "verdict.differing.length > 0",
+      "diagnostic": "check-staged-mutation: FAILED (${String(problems.length)} problem(s))",
+      "status": "proved",
+      "provedBy": "packages/core/test/staged-mutation.test.ts"
+    },
+    {
       "script": "scripts/check-user-guide.mjs",
       "line": 114,
       "diagnostic": "check-user-guide: FAILED",
@@ -439,6 +454,21 @@
       "diagnostic": "battery: ${injections.length - survivors - inert} caught, ${survivors} survived, ${inert} inert",
       "status": "exempt",
       "reason": "The oldest battery in the tree, and its `main()` reports four properties rather than a single count. It now runs inside the journal, which is why the line's condition reads `invokedDirectly` like its siblings' -- and why the exemption stands: the status is computed from a suite run four times over, so no test can drive this line, and emptying it would surface only as the deriver reporting a site that no longer exists."
+    },
+    {
+      "script": "scripts/install-git-hooks.mjs",
+      "line": 19,
+      "diagnostic": "usage: install-git-hooks.mjs [--root <dir>]",
+      "status": "proved",
+      "provedBy": "packages/core/test/git-hooks.test.ts"
+    },
+    {
+      "script": "scripts/install-git-hooks.mjs",
+      "line": 41,
+      "condition": "result.state === 'missing-hook' || result.state === 'unset'",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
+      "status": "proved",
+      "provedBy": "packages/core/test/git-hooks.test.ts"
     },
     {
       "script": "scripts/measure-doc-counts.mjs",

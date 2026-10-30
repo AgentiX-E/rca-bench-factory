@@ -120,7 +120,47 @@ const REGISTER: Record<string, Entry> = {
       'milestone rests on disagreeing with itself.',
   },
 
+  'staged-mutation.mjs': {
+    class: 'data',
+    why:
+      'The comparison a commit boundary needs: for every file a mutation battery recorded, is the ' +
+      'staged blob the one whose bytes hash to the recorded digest? No main and no exit -- ' +
+      'check-staged-mutation.mjs prints the verdict, and the rule lives here so ' +
+      'staged-mutation.test.ts can drive it, because that gate is hollowed by the meta-gate and a ' +
+      'test may not import it. The defect it answers is finding 310: `git add -A` runs while a ' +
+      'battery holds a mutation, `git status` is clean because the index took it too, and the pair ' +
+      'nothing compared is the index against the record.',
+  },
+  'git-hooks.mjs': {
+    class: 'data',
+    why:
+      'The one decision `pnpm install` makes about this clone: point core.hooksPath at .githooks, ' +
+      'set the hook executable, and read the setting back. No main and no exit -- ' +
+      'install-git-hooks.mjs prints it, and git-hooks.test.ts drives it against fixture checkouts, ' +
+      'including the two states a real checkout cannot be built into: git refusing to write the ' +
+      'setting, and the setting reading back as something else. Finding 312 is the second of those ' +
+      'two silences one level down: git ignores a hook with no execute bit, prints a hint, and ' +
+      'commits anyway.',
+  },
   // --- Gates: each has failure exits, all enumerated in gate-sites.json ---
+  'install-git-hooks.mjs': {
+    class: 'gate',
+    why:
+      'It exits 1 when the checkout has no .githooks/pre-commit, when git refuses to write ' +
+      'core.hooksPath, and when the setting reads back as something else, so it is a gate by the ' +
+      'inventory rule. `prepare` runs it on every install, so a red exit here fails the install ' +
+      'rather than leaving a clone unguarded and quiet about it.',
+  },
+  'check-staged-mutation.mjs': {
+    class: 'gate',
+    why:
+      'The reader at the commit boundary, and the only thing that calls the comparison: it exits 1 ' +
+      'for an argument it cannot honour, a directory that is not a checkout, a journal it cannot ' +
+      'read, a recorded path outside this checkout, a recorded entry whose bytes are missing, and ' +
+      'an index that holds a mutation. `.githooks/pre-commit` runs it, so the failing exit is what ' +
+      'refuses a commit; staged-mutation.test.ts spawns it for every exit it owns and drives a real ' +
+      '`git commit` through the shipped hook for the two that matter.',
+  },
   'apply-pins.mjs': { class: 'gate' },
   'build-example-bundle.mjs': { class: 'gate' },
   'check-backend-support.mjs': { class: 'gate' },

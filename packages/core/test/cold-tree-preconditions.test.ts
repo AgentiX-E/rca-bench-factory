@@ -119,6 +119,21 @@ function manifest(): Manifest {
  * Keeping the reasons next to the names is the point. A list of scripts with no
  * account of why each is on it becomes a list nobody dares edit.
  */
+/**
+ * The names that are **not** `pre<script>` hooks, although they start with `pre`.
+ *
+ * npm's lifecycle scripts share this namespace with pnpm's `pre<script>`
+ * convention, and the two are read by the same prefix. `prepare` is the one this
+ * repository uses, for the hook installer: to a reader that splits on `pre` it is
+ * a build declaration for a script called `pare`, and the rule below refused it on
+ * the first run. Finding 313.
+ *
+ * The set is npm's documented lifecycle names that begin with `pre` and nothing
+ * else, and the test below holds it to that -- a carve-out that grew by one name
+ * per failure would turn the rule off one entry at a time.
+ */
+const NPM_LIFECYCLE = new Set(['prepare', 'prepack', 'prepublishOnly', 'preversion']);
+
 const NEEDS_BUILD: Readonly<Record<string, string>> = {
   'docs:check': 'check-readme-sample imports core dist; check-cli-reference and check-user-guide drive cli dist',
   lint: 'verify-scorer-stability reads the built scorer',
@@ -183,6 +198,8 @@ describe('cold tree · a script that reads a build artefact declares the build',
     // on every developer machine for a precondition that is not required.
     for (const name of Object.keys(scripts)) {
       if (!name.startsWith('pre')) continue;
+      // npm's lifecycles share the namespace and are not hooks (finding 313).
+      if (NPM_LIFECYCLE.has(name)) continue;
       const target = name.slice('pre'.length);
       // `pretypecheck` predates this rule and is the precedent it copies.
       if (target === 'typecheck' || target === 'build') continue;
@@ -190,6 +207,22 @@ describe('cold tree · a script that reads a build artefact declares the build',
         Object.keys(NEEDS_BUILD),
         `${name} declares a build for a script that was measured not to need one`,
       ).toContain(target);
+    }
+  });
+
+  it('carves out npm\'s lifecycle names and nothing else, because a carve-out that grows turns the rule off', () => {
+    // Non-vacuity in both directions: every member is a name npm documents as a
+    // lifecycle script, and `prepare` is actually used -- an empty carve-out would
+    // be a rule nobody needed, and it would be deleted by the next reader.
+    expect([...NPM_LIFECYCLE].sort()).toEqual(['prepack', 'prepare', 'prepublishOnly', 'preversion']);
+    const scripts = manifest().scripts ?? {};
+    expect(scripts['prepare'], 'the carve-out exists for a script that is not there').toBeDefined();
+    // And the set is *disjoint* from what a build hook would be listed for: a
+    // lifecycle name that also reads a build artefact would be exempted here and
+    // checked nowhere, which is the direction that hides a defect rather than
+    // reporting one.
+    for (const name of NPM_LIFECYCLE) {
+      expect(Object.keys(NEEDS_BUILD), `${name} is both a lifecycle and a build dependency`).not.toContain(name);
     }
   });
 

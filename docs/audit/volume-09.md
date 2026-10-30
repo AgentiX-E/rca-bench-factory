@@ -1677,3 +1677,167 @@ is in `Left open` with the shape it should have.
 | `git status` was clean at the time | it was: the file matched the index because the **index** had taken the mutation too |
 | no other file was swept | the working tree now equals `HEAD` except the three files the restore commit names |
 
+## Finding 311 — `git status` compares two of the three things, and the one it leaves out is the one a commit keeps
+
+Finding 310 named the repair as **"a pre-commit refusal while a witness journal exists"** and did not
+build it. This round built it, and building it changed it, because the sentence as written refuses the
+two states in which a commit publishes nothing:
+
+| state | journal | index | publishes a mutation? |
+| --- | --- | --- | --- |
+| a battery is measuring and has not mutated yet | on disk | the file's bytes | **no** |
+| a battery finished and restored, but its record still settles | on disk | the file's bytes | **no** |
+| a battery holds a mutation and `git add -A` ran | on disk | **the mutation** | **yes** |
+
+The first two are not corner cases: thirteen batteries run 30 to 350 seconds each, and a guard that
+refused a commit for that whole window would be turned off inside a day. The way it would be turned off
+is `--no-verify`, which is the one bypass the guard cannot see.
+
+So the guard asks the third row's question and only that one. Three things are in play, and `git status`
+reads exactly two of them:
+
+| what | how it is named |
+| --- | --- |
+| the working tree | bytes |
+| the index | blob ids, from `git ls-files -s` |
+| what the tree was **meant** to hold | the journal a battery writes before its first mutation |
+
+`git status` compares the first two. `tree-repair.mjs` compares the third against the first, at the start
+of a session. The pair nothing read is **the index against the record**, and the index is the only one of
+the three that a commit publishes. That is why `git status` was clean through the whole event: it was not
+blind, it was answering a different question.
+
+### The comparison is one `git` process, and it is git's own name for the bytes
+
+`git ls-files -s` prints each staged entry's object id, and git's object id is
+`hash("blob <length>\0" + bytes)` over the content. The journal already carries those bytes (base64), so
+the expected id can be computed and compared **without reading a single staged file**:
+
+| decision | choice | why not the alternative |
+| --- | --- | --- |
+| compare blob ids | `gitBlobId(recorded bytes)` against `ls-files -s` | one `git` process for the whole index; reading the staged blobs would be a second decoder, and finding 306 is what a decoder for this corpus cost |
+| the hash algorithm | asked with `git rev-parse --show-object-format` | a `sha256` checkout compared against `sha1` ids reports every file as differing |
+| what "clean" means | every recorded file that is staged is staged **at the recorded bytes** | "no journal exists" is a different claim, and it is printed as a different sentence |
+| a journal that will not parse | refuse | an unreadable record is a file a killed battery left; the tree it was holding is unknown |
+| a recorded path outside this checkout | refuse | the cache lives in the checkout, so that record describes a different tree |
+
+The digest reimplementation is pinned against `git hash-object` over three payloads -- empty, a text
+line, and `x\0\0\ny` -- because a constant copied out of git's source would agree with itself.
+
+### Two roads not taken, and the reason each was refused
+
+| candidate | verdict |
+| --- | --- |
+| the gate receipt, keyed on `HEAD^{tree}` | **cannot answer it.** A receipt answers *did a gate run over these bytes*; the question is *are these bytes the ones the tree was meant to hold*, and intent is only written down in the journal. A poisoned commit is refused by the receipt only when no run has happened to bless that tree, which is an accident of which tree was named |
+| refusing while any journal exists (finding 310's own wording) | **refuses two of the three states above**, and the `--no-verify` it would provoke is the bypass it cannot survive |
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `scripts/staged-mutation.mjs` | does not exist | one comparison, three readers of one journal format |
+| `.githooks/pre-commit` | does not exist | runs the guard, and is executable in the tree |
+| a commit whose index holds a mutation | **published** (finding 310) | **refused**, naming the file and both digests |
+| a commit that publishes nothing the record contradicts | -- | **allowed**, in a fixture where a journal exists and a battery holds the tree |
+| failure sites in the inventory | 91 across 48 scripts | **95 across 50** |
+| `--no-verify` | -- | **still commits the mutation**, and the test asserts the mutated content is in the revision rather than pretending otherwise |
+
+### What this cannot do
+
+`git commit --no-verify` skips it, and so does any revision built by something other than `git commit`.
+The record is on disk and the comparison can be asked about any pair of things; nothing here makes a
+caller ask. That is stated in the module rather than left to look like more than it is.
+
+## Finding 312 — the guard's existence is not its execution
+
+The hook was written, placed at `.githooks/pre-commit`, and correct. It then refused nothing for as
+long as it took to measure why, and the measurement is two lines long:
+
+```
+--- mode 644:
+hint: The '.githooks/pre-commit' hook was ignored because it's not set as executable.
+hint: You can disable this warning with `git config advice.ignoredHook false`.
+[main 7c0a857] nope
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+--- mode 755:
+(no commit; exit 1)
+```
+
+**git commits anyway**, and the two lines that say so are `hint:`s that `advice.ignoredHook false` — or
+any log that keeps stdout and drops stderr — removes entirely. The same shape one setting up:
+
+| what | what git does |
+| --- | --- |
+| a hook with no execute bit | prints the hint above and **commits** |
+| `core.hooksPath` naming a directory that is not there | commits with **no message at all** |
+
+So the installer sets the mode bit rather than trusting the checkout's, and **reads the setting back**
+rather than inferring it from the exit status of the command that wrote it: a `git config` that returns 0
+without writing what it was asked for is a real possibility, and only a reading catches it. The two
+branches a real checkout cannot be built into -- git refusing to write, and the setting reading back as
+something else -- are driven through an injected runner, the same seam `verifiedTree` in
+`gate-receipt.mjs` has and for the same reason.
+
+`package.json`'s `prepare` runs the installer, and that is the only committed place the wiring can live:
+`core.hooksPath` is in `.git/config`, which is not committed, so no file in this repository can make a
+clone run the hook. `git-hooks.test.ts` asserts the mode bit **with the command that fixes it in the
+message**, and asserts `core.hooksPath` in the clone the suite is running in -- the one claim in this
+round that is about a clone rather than about the tree.
+
+### What this does not do
+
+Installing replaces `.git/hooks` with `.githooks`, so any hook a person had there stops running: git
+reads one hooks directory, not two. And a clone that installs with `--ignore-scripts` never runs
+`prepare`, which the suite's own assertion reports on its next run rather than four commits later.
+
+## Finding 313 — `prepare` is not `pre` + `pare`, and the reader that thought so was this repository's
+
+The installer went in as `package.json`'s `prepare`, which runs after every `pnpm install` and is the only
+place a clone can be pointed at `.githooks` — `core.hooksPath` lives in `.git/config`, which is not
+committed. The suite then refused the tree:
+
+```
+prepare declares a build for a script that was measured not to need one
+```
+
+`cold-tree-preconditions.test.ts` holds the rule *every script that reads a build artefact declares the
+build*, and its other direction is a loop over `Object.keys(scripts)` whose first line is
+`if (!name.startsWith('pre')) continue` — with `name.slice('pre'.length)` as the script being hooked. For
+`prepare` that target is **`pare`**, and no script called `pare` needs a build.
+
+The collision is not a mistake in the rule. npm's lifecycle scripts and pnpm's `pre<script>` convention
+share one namespace, and the prefix is how this repository reads it:
+
+| name | whose | is it a hook for something |
+| --- | --- | --- |
+| `pretest`, `prelint`, `predocs:check`, `pretypecheck` | pnpm's `pre<script>` | **yes**, and the target has to need a build |
+| `prepare`, `prepack`, `prepublishOnly`, `preversion` | npm's lifecycle | **no** — they run at install and pack time, not before a sibling |
+
+### The repair is a closed set, not a rename
+
+Renaming to `postinstall` would have made the failure go away and left the reading in place: the next
+person adding `prepare` for its npm meaning would get the same false refusal, and the message would be
+about a script that does not exist. So the reader gained a table, and the table is held by three
+assertions rather than by trust:
+
+| assertion | what it stops |
+| --- | --- |
+| the set **equals** the four names, not contains | a carve-out that grows by one name per failure, which turns the rule off one entry at a time |
+| `prepare` is actually defined in the manifest | an exemption for a script nobody has, which no future reader would dare delete |
+| the set is **disjoint** from `NEEDS_BUILD` | a lifecycle name that also reads a build artefact being exempted here and checked nowhere — the direction that hides a defect rather than reporting one |
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `prepare` in the manifest | not present | present, and the rule refuses it |
+| the reader | splits every `pre*` name on the prefix | splits it, except for four names it lists |
+| the carve-out | -- | four names, an equality, and disjointness from the build list |
+| the suite | red on `cold-tree-preconditions` | green, with one test that exists only to keep the set closed |
+
+### What this cannot do
+
+The table is hand-written. It knows which names in npm's documentation begin with `pre` today; it cannot
+know about the one npm adds next, and it will not notice until that name appears in this manifest and the
+suite refuses it. The equality is what makes the refusal happen once rather than the table being right.
+
