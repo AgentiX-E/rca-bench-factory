@@ -2287,5 +2287,6 @@ child's test counts inside the parent.
 It cannot turn a partial run into a gate. The five steps run before the commit were the five its author
 expected to move, and the defect was in the one nobody expected to move -- which is the whole content of
 the argument for running all of them, and the reason the receipt is keyed by tree rather than by
-intention. The cost of the mistake is measured too: two full runs, one over each repaired tree, because a
-commit whose tree cannot pass cannot be pushed at all.
+intention. The cost of the mistake is measured too: three full runs -- one over each repaired tree,
+and one over the tree of the commit that records it, because a receipt is per tree and this text sits in
+one of them. A commit whose tree cannot pass cannot be pushed at all.

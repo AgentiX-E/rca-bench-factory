@@ -1816,8 +1816,8 @@ date.
 
 The commit was made after running the five steps its author expected to move. Step 24 was not one of
 them. That is the entire argument for running all 31, and the reason the receipt is keyed by tree: a tree
-that cannot pass cannot be pushed, so the mistake cost two full runs -- one over each repaired tree --
-rather than one. The two artefacts were regenerated at their own commit and folded into it
+that cannot pass cannot be pushed, so the mistake cost three full runs rather than one: one over each
+repaired tree, and one over the tree this paragraph is written in. The two artefacts were regenerated at their own commit and folded into it
 (`513d2c9` -> `bb87c24`), and the child was rebased onto it (`a15b0d4` -> `6454d96`). Finding 318.
 
 The repair then ran into the mechanism built for finding 310 and was stopped by it for a moment:
