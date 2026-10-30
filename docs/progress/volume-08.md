@@ -1556,3 +1556,84 @@ reasons -- measured on this round's first draft, which restated four of them and
 The corpus, the anchors, the backends and the coverage bound. `perFile: true` holds every file at
 95/95/100/95 with no exemption. Nothing this round wrote is executed by CI: the hook runs on a
 developer's `git commit`, and the gate that proves it is the suite.
+
+## v3.20 — the channel that failed without naming a call
+
+### One: what CI said, and what it did not say
+
+`234fef4b0` was v3.19's revision and CI failed it. Five of six jobs green; the batteries job passed all
+25 battery steps -- 28 witnesses, 0 survivors -- and then failed the step after them:
+
+```
+could not publish the report: HTTP Error 500: Internal Server Error
+```
+
+The report had been written. The artifact upload two steps later succeeded, 10,243 bytes, artifact
+`12983754908`. So this was not a battery that produced nothing; it was the channel that carries the report
+to somewhere readable (finding 86) refusing to say which of its six requests had gone wrong. Finding 314.
+
+### Two: which call, measured
+
+| question | how | answer |
+| --- | --- | --- |
+| which of the six | replayed them by hand against `api.github.com`, one at a time | `POST /git/blobs`, with an empty body |
+| was the report publishable | posted the same bytes again twenty minutes later | `201` six of six in base64, six of six in utf-8 |
+| is it a size limit | posted 1 KiB, 16 KiB, 64 KiB, 100 KB of filler | `201`, `500`, `500`, `201` -- non-monotone |
+
+The third row is why no threshold was written into the script. Two observations would have produced a rule
+like "above N kilobytes use utf-8", and that rule would have started refusing the first report that grew
+past it -- the same mistake, moved.
+
+### Three: the discriminator was already in this repository
+
+`scripts/fetch-official.mjs` states it for the only other outbound channel here: a 4xx is *no amount of
+retrying will change that*, a 5xx is *the one class a retry can legitimately fix*. The publish channel
+never learned it. It does now, and the retry is built so that it cannot make a broken channel look green:
+
+| property | how it is held |
+| --- | --- |
+| 4xx never retried | a test counts the **requests**, not the exit code: a script that hammered four times and failed looks identical from outside |
+| attempts bounded | `RCA_BENCH_PUBLISH_ATTEMPTS`, default 4; exhaustion exits 1 with the call named and `after 4 attempts` |
+| transport failures retried | and through the *same* decision line, not a second copy of the rule |
+| retries printed | on success as well: a publish that needed three attempts is a fact about the endpoint |
+| a 422 on branch creation | read, not refused -- an attempt that answered 500 may have created the ref -- and accepted only when the branch now points at the commit just built |
+
+### Four: two survivors the mutation matrix produced
+
+| survivor | why it survived | repair |
+| --- | --- | --- |
+| the path deleted from the message | the assertion asked whether the output contained `POST /git/blobs`, and the retry line above the failure carries it too | the test now selects **the failure line** by its own text and requires the attempt count there |
+| `retryable(None)` unreachable | the transport branch retried unconditionally, so no input could reach the `status is None` arm | one decision point: both outcomes fall through to `if not retryable(last.status) or attempt >= ATTEMPTS` |
+
+Both are the shape this repository keeps finding: an assertion that holds for a reason other than the one
+it names. Nine mutations were applied to the finished code and each turned at least one test red.
+
+### Five: what the round did not change
+
+The battery itself. The report's content, the branch it goes to, and the three-valued exit codes are as
+v3.16 left them; this round only made a failed publish say *which call* failed and gave one class of
+failure a bounded second chance.
+
+### Readings
+
+| item | value |
+| --- | --- |
+| tests in `publish-battery-report.test.ts` | 6 → **13** |
+| `core` suite | 204 files, 4989 tests passed |
+| `cli` suite | 4 files, 187 tests passed |
+| repo | 208 files, 5176 tests passed |
+| coverage | **99.97 / 99.75 / 100 / 99.97** -- unchanged; `scripts/` is outside the instrument |
+| audits | 1–314, **311 findings** (absent: 118, 132, 133) |
+| mutations | nine, each red; the working tree restored, digest identical |
+
+### Left open
+
+- **The rate of transient 500s is not measured anywhere.** One 500 in twenty minutes is the whole sample:
+  the bound of four attempts was chosen from it, and nothing here would notice the rate getting worse.
+  `[open: the publish prints the retries it needed, and no reader accumulates them across runs]`
+
+### Unchanged
+
+The corpus, the anchors, the backends, the gate inventory and the coverage bound. The 69 prose parameters,
+the two five-second budgets, `signalRef`'s shape and the two ledger rules are where v3.19 left them and are
+**not re-signed here**.

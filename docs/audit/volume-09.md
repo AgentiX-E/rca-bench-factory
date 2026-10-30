@@ -1841,3 +1841,97 @@ The table is hand-written. It knows which names in npm's documentation begin wit
 know about the one npm adds next, and it will not notice until that name appears in this manifest and the
 suite refuses it. The equality is what makes the refusal happen once rather than the table being right.
 
+
+## Finding 314 — one 500 turned a channel red, and the line that said so named no call
+
+`234fef4b0` went up as v3.19's revision and CI failed it. Five of six jobs were green; the batteries job
+passed all 25 battery steps -- 28 witnesses, 0 survivors -- and then:
+
+```
+could not publish the report: HTTP Error 500: Internal Server Error
+##[error]Process completed with exit code 1.
+```
+
+The report existed. The artifact upload two steps later succeeded, 10,243 bytes. What failed was
+`scripts/publish-battery-report.py`, the channel that puts the report where it can be read (finding 86:
+the job log and the artifact metadata are reachable, their content is not; a git object is the one channel
+that is both).
+
+Two defects in one line, and the second is why the first cost a probe:
+
+| defect | what it looked like | what it was |
+| --- | --- | --- |
+| the failure is unnamed | `HTTP Error 500` | the script catches `HTTPError` and does not carry the path it called into the message, so six possible requests are indistinguishable in the log |
+| one bad answer ends the step | exit 1 | a 5xx is retried nowhere, although a 5xx is the one class a retry can fix |
+
+### The measurements that settled both
+
+| question | how it was answered | answer |
+| --- | --- | --- |
+| which call answered 500 | replayed the six calls by hand against `api.github.com` with a PAT, one at a time | `POST /git/blobs` -- and with an **empty body**, so not even a message to read |
+| was the report publishable | posted the same 83,857 bytes again, 20 minutes later | `201` six times of six in base64, six of six in utf-8 |
+| is it size | posted 1 KiB … 100 KB of filler | `1024 → 201`, `16384 → 500`, `100000 → 201` -- non-monotone, so not size |
+
+The third row is the one that rules the size hypothesis out, and it was worth the four calls: a rule like
+"above N kilobytes use utf-8" would have been inferred from two observations and would have started
+refusing the first report that grew past it.
+
+### The discriminator was already written down in this repository
+
+`scripts/fetch-official.mjs` classifies its own failures, for the only other outbound channel here:
+
+> `the server answered ${status}. The asset is not at this URL any more, and no amount of retrying will
+> change that` -- for 4xx
+>
+> `the server answered ${status}, which is a server-side failure and the one class a retry can legitimately
+> fix` -- for 5xx
+
+The publish channel never learned it. It does now, and the retry is bounded so that it cannot turn a broken
+channel green:
+
+| property | how it is held |
+| --- | --- |
+| a 4xx is never retried | `retryable(status)` is false for it; a test counts the requests, not the exit code, because a script that hammered four times and then failed would look identical from outside |
+| the attempts are bounded | `RCA_BENCH_PUBLISH_ATTEMPTS`, default 4; exhausting them exits 1 **with the call named and the attempt count stated** |
+| a transport failure is retried too | no status arrived, so the request's fate is unknown rather than refused -- and it goes through the *same* decision line, not a second copy of the rule |
+| the retries are printed | on success as well as on failure: a publish that needed three attempts is a fact about the endpoint, and a channel that hides it reports a health it did not measure |
+| a 422 on branch creation is read, not refused | an attempt that answered 500 may have created the ref, so the retry is answered "Reference already exists" -- accepted **only** when the branch now points at the commit just built, so a stale branch still fails |
+
+### Two things the tests found while proving it
+
+Both were found by mutation, and both were the shape this repository keeps finding -- an assertion that
+holds for a reason other than the one it names:
+
+| survivor | why it survived | repair |
+| --- | --- | --- |
+| the path deleted from `ChannelFailure` | the test asserted the output *somewhere* contained `POST /git/blobs`, and the retry line above the failure carries the method and the path too | the assertion now selects **the failure line** by its own text, and requires the attempt count there |
+| `retryable(None)` unreachable | the transport branch retried unconditionally, so the `status is None` arm could not be reached by any input -- the "closed connection is not retried" mutation passed the whole suite | one decision point: both outcomes fall through to the same `if not retryable(last.status) or attempt >= ATTEMPTS` |
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| a 500 on the first object write | the job fails, nothing is published | retried; the publish completes and prints `1 retry` |
+| a 403, or any 4xx | fails immediately (correct) | fails immediately, and one test counts the requests to prove it |
+| a 500 on every attempt | fails, naming nothing | fails, naming `POST /git/blobs`, the status and `after 4 attempts` |
+| a connection closed before any answer | fails with a bare `OSError` traceback | retried; on exhaustion, `a transport failure` naming the call |
+| the branch already exists at another commit | not reachable | a red step naming both commits |
+| tests in `publish-battery-report.test.ts` | 6 | 13 |
+| `core` suite | 204 files / 4982 | 204 files / 4989 |
+| coverage | 99.97 / 99.75 / 100 / 99.97 | unchanged -- `scripts/` is outside the coverage instrument |
+
+Nine mutations were applied to the new code and each one turned at least one test red: `retryable` never,
+`retryable` always, a closed connection not retried, the decision ignoring the 4xx rule, the decision
+ignoring the bound, the path dropped from the message, a 422 refused again, a 422 accepted whatever the
+branch points at, and the retry note printed only on failure.
+
+### What this cannot do
+
+A retry cannot distinguish "the endpoint is unwell" from "this request is wrong in a way the endpoint
+answers 500 to". If the second ever happens, the step now takes four attempts and about seven seconds of
+backoff before it fails -- slower, and no more informative than before. And the bound is a number chosen
+from one observation: one 500 that was gone within twenty minutes. An endpoint that is unwell for thirty
+minutes will still fail the job, which is the outcome intended, but the *rate* of transient 500s is not
+measured anywhere, so nothing here would notice it getting worse.
+
+
