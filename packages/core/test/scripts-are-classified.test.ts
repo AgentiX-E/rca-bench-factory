@@ -221,6 +221,17 @@ const REGISTER: Record<string, Entry> = {
       'no exit -- verify-local.mjs decides what to do with the three states, and it is a gate, so the ' +
       'decision lives here where tree-repair.test.ts can drive it against a fixture cache.',
   },
+  'gate-receipt.mjs': {
+    class: 'data',
+    why:
+      'What a green gate run leaves behind: a file under .git/rca-bench-verified keyed on the tree SHA-1 ' +
+      'it verified, so a push can ask whether this content passed the gate instead of assuming it did. ' +
+      'No main and no exit -- verify-local.mjs prints the decision and writes the file, and the decision ' +
+      'is a pure function here because that file is a gate and no test may import it. Measured on the ' +
+      'round that wrote it: the first of three pushed revisions was red on three of six jobs, over a ' +
+      'tree the local gate rejects in under a minute, because the push speaks the Git Data API and a ' +
+      'hook is a property of a command this repository does not use to publish.',
+  },
   'gate-steps.mjs': {
     class: 'data',
     why:

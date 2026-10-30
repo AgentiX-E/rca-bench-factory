@@ -47,10 +47,12 @@ import {
   localCommands,
   notedFailures,
   runSteps,
+  ROOT,
   shippedPlan,
 } from './gate-steps.mjs';
 import { runStep } from './step-process.mjs';
 import { repairAbandonedTree } from './tree-repair.mjs';
+import { receiptDecision, revokeReceipt, verifiedTree, writeReceipt } from './gate-receipt.mjs';
 
 const argv = process.argv.slice(2);
 const listing = argv.includes('--list');
@@ -106,9 +108,24 @@ async function main() {
   }
   process.stdout.write(`\npreflight: ${repair.message}\n`);
 
+  // What this run is evidence about. Resolved before the steps rather than after,
+  // so a step that rewrites the tree cannot change the name it is filed under.
+  const tree = verifiedTree({ root: ROOT });
+
   const result = await runSteps(commands, runStep);
   const selected = only === null ? plan.local.length : plan.local.filter((step) => step.key.includes(only)).length;
   if (!result.ok) {
+    // A red run over content an earlier green run blessed takes the blessing back.
+    // Two verdicts about the same bytes cannot both stand, and the later one wins.
+    //
+    // This line sits *above* the failure report, and the order is not cosmetic:
+    // `golden-master/gate-sites.json` fingerprints this exit by the diagnostic
+    // immediately above it, so anything printed between the report and the exit
+    // renames the site and drops the proof that names its test. Measured here
+    // first -- a withdrawal message written after the report cost
+    // `scripts/verify-local.mjs:129` its `provedBy` on the next derivation.
+    const revoked = tree.state === 'clean' ? revokeReceipt({ root: ROOT, tree: tree.tree }) : { state: 'absent' };
+    if (revoked.state === 'revoked') process.stderr.write(`verify:local: withdrew the receipt for tree ${tree.tree}\n`);
     // The block is built by `failureReport`, which is pure and tested with both
     // shapes -- a step that exited non-zero and a step that ran past its bound.
     // The timeout branch is the reason: reaching it from here would cost fifteen
@@ -137,11 +154,25 @@ async function main() {
           runStepsTotal,
         )} run steps in ci.yml; the other ${String(plan.remote.length)} need a runner`
       : `${String(result.commands)} command(s), ${String(selected)} of the ${String(plan.local.length)} local steps`;
+
+  // The verdict above is a sentence on a terminal and nothing downstream can read
+  // it, so the same verdict is also filed as a fact keyed on the tree it is about.
+  // `receiptDecision` is pure and holds the rule -- a subset run and a dirty tree
+  // both withhold, because neither names content that can be published.
+  const decision = receiptDecision({ tree, full: only === null });
+  const receipt =
+    decision.state === 'issue'
+      ? writeReceipt({ root: ROOT, tree: decision.tree, note: `verify:local ${coverage}` })
+      : null;
+
   process.stdout.write(
     [
       '',
       `verify:local: OK (${coverage})${notes}`,
       ...(only === null ? [] : [`  the full plan: ${String(plan.remote.length)} step(s) need a runner, by scripts/gate-steps.mjs`]),
+      receipt === null
+        ? `  receipt:  none — ${decision.why}`
+        : `  receipt:  tree ${receipt.tree}, in .git/rca-bench-verified — a revision of this tree may be published`,
       // The budgets, spent against declared. The pool is enforced above; printing it
       // here is what turns "still inside" from an assumption into a measurement,
       // and a step that quietly doubled is visible before it breaks the gate.

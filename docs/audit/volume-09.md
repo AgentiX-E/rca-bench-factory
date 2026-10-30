@@ -831,3 +831,124 @@ checkpoint counts, and the number is the argument.
 **What this does not fix.** It does not stop a new case from adding another unreferenced key, because
 nothing can tell a descriptive key from a forgotten one. It makes the corpus's own drift visible
 every run, which is the most a report can do.
+
+## Finding 301 — the gate is a command, and the push is a script that never runs it
+
+Three revisions went up in v3.15. The second and third came back green on all six jobs. The first did
+not:
+
+```
+05cd7a609  golden master / official metric / examples / documents   failure
+05cd7a609  cold tree / no build / every precondition declared       failure
+05cd7a609  build / typecheck / lint / coverage / mutation           failure
+```
+
+The log names two causes. `lint` exited 1, and `gate-sites.json` was stale against
+`derive-gate-sites.mjs --check`:
+
+```
+× gate-sites.json > rule 1 · the committed file matches a fresh derivation > is byte-identical to what the deriver produces now
+× gate-sites.json > scripts/derive-gate-sites.mjs · the deriver proves itself > passes --check against the committed file, and does not rewrite it
+```
+
+Both of those are steps `verify:local` runs, and the same tree fails them locally in under a minute.
+**The gate was not weak. The gate was not asked.**
+
+### Why it was not asked
+
+Because there is nothing to ask it. `verify:local` prints a verdict to a terminal and writes nothing
+down. The sentence exists in the scrollback of one session and nowhere else, so the only thing
+standing between a red tree and a push is whether the person pushing happened to run it over *that*
+tree.
+
+The obvious repair -- a pre-push hook -- is the one this repository already believed it had, and it is
+structurally unable to fire here. A hook is a property of `git push`. This repository does not publish
+with `git push`: every push in its history went through `push_incremental.py`, which uploads blobs to
+`POST /git/blobs` and moves `refs/heads/main` with a `PATCH`. Nothing under `.git/hooks` is consulted
+for any of that. **The hook was not forgotten; it was never in the path.**
+
+And the failure it allowed is the expensive kind. A red tip is visible and gets fixed. A red revision
+in the middle of a three-commit push is invisible, and it is the one `git bisect` lands on -- blaming
+the change *after* it for a fault that came from the change before.
+
+### Why a receipt rather than running the gate in the pusher
+
+The pusher could run the steps itself before uploading. That is the correct rule and the wrong
+instrument: a full run spends about fifteen minutes of wall clock per revision, and the pusher exists
+in the incremental form precisely because a push that takes too long is a push that gets killed -- a
+killed push reports nothing, which is indistinguishable from a push that succeeded.
+
+What the pusher needs is not the run. It is the *fact that the run happened, for this exact content*.
+That fact is cheap to record and cheap to verify, and it cannot be updated by editing the tree
+afterwards, because it is filed under the tree's own name:
+
+| | |
+| --- | --- |
+| where | `.git/rca-bench-verified/<tree>.json`, one file per tree, never committed |
+| written by | `verify:local`, on a green full run over a clean tree |
+| read by | `require_receipt` in the pusher, before the first blob is uploaded |
+| key | `git rev-parse HEAD^{tree}` -- content, not `HEAD` |
+
+The key is the design. `HEAD` moves when a message is amended, so a receipt keyed on it would expire
+for a reason that changes no bytes; a tree SHA moves exactly when the content moves, which is the
+question being asked. Measured refusal, with the receipt absent:
+
+```
+refusing to push eb311d4: tree b7442537b carries no verify:local receipt
+  (.git/rca-bench-verified/b7442537bbdc3b82f865c23475731ac77e7cf212.json).
+  Run `pnpm verify:local` over that tree first. A subset run (--only) and a dirty
+  working tree both withhold one, because neither names content that can be published.
+```
+
+### The three withholds, and the withdrawal
+
+`receiptDecision` is a pure function in `scripts/gate-receipt.mjs`, not four lines inside the gate,
+because `verify-local.mjs` is hollowed out by `verify-gates-are-testable.mjs` and no test may import
+it. It answers one question -- does this run earn a receipt -- and withholds for three different
+reasons, each stated in its own words:
+
+| state | why a receipt would be a lie |
+| --- | --- |
+| dirty working tree | what ran is not in `HEAD`, so it is content that cannot be pushed at all |
+| `--only` subset | `--only docs` proves the documentation guards and says nothing about coverage |
+| not a checkout | there is no tree name to file it under |
+
+A red run over content an earlier green run blessed **withdraws** the receipt. Two verdicts about
+identical bytes cannot both stand, and the later one is the one that stands; the alternative --
+leaving the old receipt in place -- would let a nondeterministic step pass a tree that just failed.
+
+### The price, stated
+
+A receipt is per tree, and a tree is per revision. So a round that pushes three revisions has to gate
+three times. That is not a bug in the mechanism, it is the mechanism working: **a revision nobody
+verified is a revision nobody should publish.** The practice this pass adopts is one revision per
+round -- which is what a round is -- and a second revision only when it has earned its own gate run.
+
+### Proving the tests can fail
+
+Three mutations of the module, one at a time, each restored before the next:
+
+| mutation | red |
+| --- | --- |
+| `receiptDecision` issues on a subset run (`if (!full)` → `if (false)`) | `withholds on a subset run, because a receipt says the gate ran` |
+| `readReceipt` accepts a receipt filed under another tree | `refuses a receipt copied from another tree, because the name is the whole claim` |
+| `verifiedTree` reports a dirty tree as clean | `refuses a dirty tree, because what ran is content that cannot be pushed` |
+
+Each mutation kills exactly one of the eighteen tests and no others, so each test is a claim about
+one rule rather than a claim about the file.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the verdict | a sentence in a terminal | a sentence **and** a file under `.git`, keyed on the tree |
+| a push of an unverified tree | accepted silently | refused before one blob is uploaded |
+| three withhold reasons | -- | dirty, subset, no checkout, each with its own sentence |
+| a green run then a red run, same tree | both verdicts coexist in scrollback | the receipt is withdrawn |
+| tests | -- | **18**, three of them proved to fail by mutation |
+
+**What this does not fix.** The receipt's only consumer is the pusher, which is not in this
+repository, so no test here holds writer and reader together: a push path that ignores the file looks,
+from inside the tree, exactly like one that reads it. What is proved is the file -- its key, its
+shape, and the states that refuse to produce one. The last link is a three-line precondition in a
+script this repository does not own, and it is written down rather than assumed.

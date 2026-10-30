@@ -2363,3 +2363,98 @@ the corpus doing what a benchmark is for.
 The anchors, the exporters, the backends and the coverage bound. All three still read
 `oracle = 1.00` on their pinned runs; `docs:check` is green in every guard; `perFile: true` still
 holds every file at 95/95/100/95 without an exemption.
+
+## v3.16 — the gate was green in a terminal, and the push never asked
+
+This round added no case and no reading. It began with the previous round's own delivery, where three
+revisions went up and the first of them was red:
+
+| revision | what it was | six jobs |
+| --- | --- | --- |
+| `05cd7a609` | `feat(corpus)` -- three cases | **three failures** |
+| `828543f52` | `fix(guard)` -- the join, the inventory, the lint | six successes |
+| `7514fa3d4` | `docs` -- three findings | six successes |
+
+The failures were `lint` exiting 1 and `gate-sites.json` stale against `derive-gate-sites.mjs --check`.
+`verify:local` runs both, and the same tree fails them locally in under a minute. **The gate was not
+weak; it was not asked** (finding 301).
+
+### Why a hook could not have asked it
+
+Because a hook is a property of `git push`, and this repository does not publish with `git push`. Every
+push in its history -- all thirty-one of them -- went through `push_incremental.py`, which creates
+blobs and moves `refs/heads/main` over the Git Data API. Nothing under `.git/hooks` is consulted for
+any of that. The pre-push gate was not forgotten; **it was never in the path**, and the belief that it
+was is what made the omission invisible.
+
+### What was built
+
+| piece | where | what it does |
+| --- | --- | --- |
+| the receipt | `scripts/gate-receipt.mjs` | one JSON file per verified tree under `.git/rca-bench-verified/`, keyed on `HEAD^{tree}` |
+| the decision | `receiptDecision` | pure: issue only for a clean tree on a full run; withhold, in three different sentences, otherwise |
+| the writer | `verify-local.mjs` | files the receipt on a green run, withdraws it on a red one over the same tree |
+| the reader | `require_receipt` in the pusher | refuses a revision whose tree has none, before the first blob is uploaded |
+
+The key is the design. `HEAD` moves when a commit message is amended, so a receipt keyed on it would
+expire over no change of bytes; a tree SHA moves exactly when the content moves, which is the question
+being asked. A dirty working tree gets nothing at all, because what ran is then content that exists
+nowhere and cannot be pushed.
+
+The withdrawal rule is the part that was not obvious. A red run over content an earlier green run
+blessed takes the blessing back: two verdicts about identical bytes cannot both stand, and leaving the
+older one in place would let a nondeterministic step pass a tree that had just failed.
+
+### The price, stated rather than hidden
+
+A receipt is per tree, and a tree is per revision, so a round that pushes three revisions must gate
+three times. That is the mechanism working, not a cost to route around: a revision nobody verified is
+a revision nobody should publish. This pass adopts **one revision per round**, which is what a round
+is, and a second only when it has earned its own run.
+
+### Proving it can fail
+
+| mutation | what went red |
+| --- | --- |
+| `receiptDecision` issues on a subset run | `withholds on a subset run, because a receipt says the gate ran` |
+| `readReceipt` accepts a receipt filed under another tree | `refuses a receipt copied from another tree, because the name is the whole claim` |
+| `verifiedTree` reports a dirty tree as clean | `refuses a dirty tree, because what ran is content that cannot be pushed` |
+
+Each mutation killed exactly one of the eighteen tests, and the pusher itself was driven with a real
+revision that has no receipt:
+
+```
+refusing to push eb311d4: tree b7442537b carries no verify:local receipt
+  (.git/rca-bench-verified/b7442537bbdc3b82f865c23475731ac77e7cf212.json).
+```
+
+### Readings
+
+| what | this round |
+| --- | --- |
+| suite counts | **+1 file and +18 tests in `core`**; the absolutes are in the status table in `volume-05.md` |
+| coverage | unchanged, per file, no exemption |
+| the corpus | **27 of 30**, untouched -- this round bought the delivery path, not a case |
+| the anchors | all three still `oracle = 1.00` on their pinned runs |
+| `docs:check` | audit 1–301, **298 findings** |
+
+### Left open
+
+- **The receipt's consumer is outside this repository.** `verify:local` and this suite prove the file;
+  the three lines that read it live in a pusher this repository does not own.
+  `[open: a push path that ignores the file is indistinguishable, from inside the tree, from one that reads it]`
+- **The gate inventory fingerprints a site by the line above it**, so a diagnostic inserted between a
+  guard and its exit renames the site, and a braced `if` inserted there also drops the enclosing
+  `condition`. Both shapes were produced here while writing this round's fix: `${failureReport(...)}`
+  lost its `provedBy` once and its `!result.ok` once. `[open: the deriver would need to read brace
+  depth for the condition, and nothing reads it today]`
+
+The five items v3.15 left open are unchanged, and they are **not** re-signed here. Re-typing them
+would be five placeholders wearing the same sentence, and `check-open-list` refuses exactly that --
+which is the guard working: an item that did not move in a round has nothing to say in it.
+
+### Unchanged
+
+The corpus, the anchors, the exporters, the backends and the coverage bound. No case file was touched,
+so every count in v3.15's readings table still holds; `perFile: true` still holds every file at
+95/95/100/95 without an exemption.

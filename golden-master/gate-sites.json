@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 60,
+  "scanned": 61,
   "excluded": {
     "zero": 13,
     "indirect": 3,
@@ -639,7 +639,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 78,
+      "line": 80,
       "condition": "plan.errors.length > 0",
       "diagnostic": "${error}\\n",
       "status": "proved",
@@ -647,7 +647,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 95,
+      "line": 97,
       "condition": "commands.length === 0",
       "diagnostic": "verify:local: no step key contains \"${only}\"\\n",
       "status": "proved",
@@ -655,7 +655,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 105,
+      "line": 107,
       "condition": "repair.state === 'held' || repair.state === 'failed'",
       "diagnostic": "verify:local: the tree is not the repository's:\\n ${repair.message}\\n",
       "status": "proved",
@@ -663,7 +663,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 117,
+      "line": 134,
       "condition": "!result.ok",
       "diagnostic": "${failureReport(result).join('\\n')}\\n",
       "status": "proved",
@@ -671,7 +671,7 @@
     },
     {
       "script": "scripts/verify-local.mjs",
-      "line": 174,
+      "line": 205,
       "condition": "process.argv[1] !== undefined && process.argv[1].endsWith('verify-local.mjs')",
       "diagnostic": "verify:local: ${error instanceof Error ? error.message : String(error)}\\n",
       "status": "proved",
