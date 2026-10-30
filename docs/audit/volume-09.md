@@ -2287,6 +2287,8 @@ child's test counts inside the parent.
 It cannot turn a partial run into a gate. The five steps run before the commit were the five its author
 expected to move, and the defect was in the one nobody expected to move -- which is the whole content of
 the argument for running all of them, and the reason the receipt is keyed by tree rather than by
-intention. The cost of the mistake is measured too: three full runs -- one over each repaired tree,
-and one over the tree of the commit that records it, because a receipt is per tree and this text sits in
-one of them. A commit whose tree cannot pass cannot be pushed at all.
+intention. The cost of the mistake is mechanical, and the receipts enumerate it rather than a number
+that a later edit would have to retype: a receipt is per tree, so every tree that gets published costs
+one full run -- `b2b616b` and `264de30` for the two repaired trees, `bc0ed03` for the commit that records
+the repair, `78f3294` for the correction of this paragraph, and one more for this sentence, which is why
+the mechanism is the thing worth writing down.
