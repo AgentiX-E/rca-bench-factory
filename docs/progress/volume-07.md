@@ -2251,3 +2251,115 @@ modules with nothing tying them; `settlement`'s second hop is a claim about a de
 rename is uncounted; `ROOT_OFF_ITS_CHAIN`'s evidence is a test rather than a repaired annotation; a
 modality declared and lost in the export is still green; and the upstream SLI table, RE3 traces and logs
 and the aggregation table (P4) are untouched.
+
+## v3.15 — three cases, three fault types the corpus did not have, and the join nobody made
+
+This round annotated the twenty-fifth, twenty-sixth and twenty-seventh samples: `memory-leak`,
+`network-loss` and `network-partition`. Each is a fault type the corpus did not have, so the count of
+distinct types goes from 24 to 27 with no duplicates, and the corpus is at 27 of 30.
+
+### What the three cases are about
+
+| case | type | the reading that decides it | what it refuses |
+| --- | --- | --- | --- |
+| `resource-memory-leak-recommendation` | `memory-leak` | a **pair** of counters: 7,200 writes, 0 evictions | a cache that is large, and a limit that is small |
+| `network-loss-payment-gateway` | `network-loss` | one wire counted from both ends: 8,600 retransmits, request rate 180 → 165 | a callee that answered and failed -- `gateway_error_ratio = 0` |
+| `network-partition-search-cluster` | `network-partition` | a member count of 3 of 6 and **two** leader elections | a cluster that lost nodes, which looks the same from one side |
+
+The leak case is the first whose evidence is two counters that only mean anything together: an absent
+eviction is innocent on its own, and so is an absent write, and the pair says entries go in and
+nothing comes out. The loss case is the first whose evidence is one quantity counted at both ends.
+The partition case is the first whose answer is a *relationship* between two healthy halves rather
+than a component that got worse -- and the first that records a limit of the annotation format rather
+than working around it silently (finding 299).
+
+### Defect one: the answer is a name, and nothing joined it to the telemetry (finding 298)
+
+The first draft of the leak case filed every reading against the pod, because that is where a heap
+lives, and left the service with one flat series. The guard said:
+
+```
+is not solvable by both baselines (peak-z-by-service=absent, median-shift-by-service=absent):
+only 0 baseline(s) locate the root cause within top-K
+```
+
+That is a sentence about solvers, and the defect was three lines of JSON: the ranking finds the root
+cause by exact match on a series' `service`, and the answer was `recommendation-service` while the
+readings were filed under `recommendation-service-0`. The two files are siblings, so no schema sees
+both, and nothing else did either.
+
+`fault/answer-presence.ts` is the join, six tests, exact equality because the consumer uses exact
+equality -- a check that resolved an alias would pass cases the pipeline cannot read. With the
+readings put back under the pod the corpus now reports two problems, and the first one names the
+component and the names the file actually has, instead of the search for a misspelled word.
+
+### Defect two: one name per reading, so a partition has one viewpoint (finding 299)
+
+A partition's evidence is two observations of one quantity that disagree. The signals file refuses to
+say that -- `declares two series named 'cluster_members_visible', so a reference to it names neither`
+-- and the refusal is correct, because `signalRef` is one string resolved against a map keyed on the
+metric name. So the case says what it can (one member count, one election delta, one stale-read
+ratio) and writes the cost down: *"the same metric on two entities" is the most ordinary shape in
+production telemetry and this corpus cannot express it.* The fix -- `(entity, metric)` resolution --
+touches the evaluator, both baselines and every case's names, and the round that does it should start
+from a case that needs it. This one does.
+
+### Defect three: three quarters of what a case declares about itself is prose (finding 300)
+
+`fault.parameters` holds a case's own facts and a reading may cite one with `{ parameter: 'name' }`
+(finding 258). Measured this round:
+
+```
+parameters 23 of 88 (26 percent) declared across 27 case(s) are read by a series point or a
+configuration checkpoint; 65 are prose, in 27 case(s)
+```
+
+**Every one of the twenty-seven cases has a key nothing reads.** Some are legitimately descriptive
+(`service`, `from`, `trigger`); others restate a number a reading already carries, which is the drift
+the mechanism exists to prevent. `lossPercent: 8` now feeds `client_timeout_ratio.post` through the
+unit table, so the injection spec and the reading are one number; five keys that were prose in a
+parameter were deleted rather than kept. The count is printed on both exits because a rule would have
+to decide which keys are descriptive and nothing in the file says.
+
+### Readings
+
+| what | this round |
+| --- | --- |
+| corpus | **27 of 30** samples carry a four-layer case; `floor 27` |
+| distinct fault types | **27**, because each of the three is new |
+| the graph | **86 entities, 68 edges** (eleven entities and sixteen edges for the three services) |
+| background telemetry | **31 series**, one per service the graph holds |
+| difficulty spread | **L1 2 / L2 9 / L3 12 / L4 4**, all 27 graded, within the target |
+| localisation | 54 baseline runs over 27 cases, rankings 31–33 candidates wide; **rank 1: 44, rank 2: 8, rank 3: 2**; strict 8, tie 2, same-component 0, none 44; **four cases strictly displaced**, the fourth being this round's loss case |
+| checkpoints | **100 of 100 resolve** (74 series, **9 derived** computed from 18 readings, 19 configuration, 7 log); **0 of 93** comparable assertions false; **7 of 7** log assertions hold |
+| parameters | **23 of 88 read**, 65 prose -- the first measurement of a mechanism that had none |
+| suite counts | **+1 file and +9 tests in `core`** (6 for the answer join, 3 the enumerated-surface rules that follow from a new module); the status table in `volume-05.md` holds the absolutes |
+| coverage | **99.97 / 99.75 / 100 / 99.97**, per file, unchanged |
+| `docs:check` | audit 1–300, **297 findings**, largest `volume-03.md` at 279,893 of 280,000 |
+
+The fourth strictly displaced case is worth a sentence. Both baselines rank the loss case
+`order-service` (8,600 retransmits) first and `order-node-5` (2,400 drops) second, with the answer
+`payment-gateway` third on a 15 rps shortfall -- a count and a rate on one leaderboard, and the
+symptoms are three orders of magnitude louder than the cause. That is not a defect to repair; it is
+the corpus doing what a benchmark is for.
+
+### Left open
+
+- **Three samples remain unannotated** -- `config-feature-flag-checkout`,
+  `dependency-version-incompatibility-shipping` and `runtime-container-start-notification-worker`.
+  `[open: three cases to the sample count of 30, and each needs a service the graph has not got]`
+- **`signalRef` is one name, so a partition has one viewpoint** (finding 299). Resolving it as
+  `(entity, metric)` is the right change and it migrates every case at once.
+  `[open: the corpus can say 'this metric moved' and cannot say 'it moved differently over there']`
+- **65 of 88 parameters are prose** (finding 300), including numbers a reading restates by hand.
+  `[open: the mechanism is 26 percent used, and nothing can tell a descriptive key from a forgotten one]`
+- **The stall budget is a margin, not a measurement** (finding 297), and 68 files still spawn
+  synchronously. `[open: one file converted, and one bad runner away from the same verdict]`
+- **`signalGroup` swallows `ESRCH`** (finding 295), so a group kill that reaches nothing is silent.
+  `[open: the hole is real and the failure it was found by is still unexplained]`
+
+### Unchanged
+
+The anchors, the exporters, the backends and the coverage bound. All three still read
+`oracle = 1.00` on their pinned runs; `docs:check` is green in every guard; `perFile: true` still
+holds every file at 95/95/100/95 without an exemption.

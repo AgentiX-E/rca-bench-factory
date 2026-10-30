@@ -691,3 +691,143 @@ because it yields. The stall budget is still 45,000 ms, a number taken from the 
 rather than from a measurement of the slowest file, and the honest statement about it is that it has
 more headroom today rather than that it is calibrated. And the 68 other files that spawn synchronously
 are still one bad runner away from the same verdict.
+
+---
+
+## Finding 298 — the answer is a name, the telemetry is a list of names, and nothing joined them
+
+Three cases were annotated this round, and the first of them failed with this:
+
+```
+check-fault-cases: 'history-resource-memory-leak-recommendation' is not solvable by both baselines
+  (peak-z-by-service=absent, median-shift-by-service=absent): only 0 baseline(s) locate the root cause within top-K
+```
+
+That sentence is about solvers. The defect was three lines of JSON. The annotation had been written
+with every reading filed against the pod -- `recommendation-service-0`, where a heap lives -- and one
+flat request-rate series against the service, and the answer is `recommendation-service`. Both
+baselines reported `absent` for the same reason a search for a misspelled word returns nothing, and
+the report named the search rather than the spelling.
+
+### The join nothing made
+
+| half | what it says | where it lives |
+| --- | --- | --- |
+| the answer | `groundTruth.rootCauseComponent` | the case file |
+| the candidates | `series[].service` | the signals file |
+| the match | `one.service === answerName` | `classifyDisplacement`, and both baselines' key |
+
+The two files are siblings, so no schema sees both; the schemas were right to say nothing. The
+ranking's rule is exact equality, which is why the rule added here is exact equality too: a check
+that resolved an alias through the graph would pass cases the scoring pipeline cannot read, which is
+this defect one level up.
+
+`fault/answer-presence.ts` is the join, asked where both halves are known, and it names the answer
+and the names the file actually carries:
+
+```
+'history-resource-memory-leak-recommendation' names root cause component 'recommendation-service',
+  and no series carries that name, so no ranking can place it; the series name recommendation-service-0
+  -- a reading filed under a component the answer does not name is a reading no solver is scored on
+```
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the corpus with the readings filed under the pod | `is not solvable by both baselines` | **2 problems**, the first naming the component and the one series name the file has |
+| the corpus as repaired | 27 of 30, green | 27 of 30, green |
+| `answer-presence.test.ts` | -- | **6 tests** |
+| an alias accepted instead of a name | -- | refused, because the consumer refuses it (`'Recommendation'` against `recommendation`) |
+
+**What this does not fix.** It does not make the corpus's naming rule *good*. It makes it *stated*.
+A case still has to file at least one moving reading under its answer's exact name, and the reason is
+that the ranking is a map keyed on that string. A better ranking would resolve the answer through
+the graph and score a component's whole subtree; the corpus does not have that ranking, and a guard
+that pretended it did would be describing a pipeline nobody runs.
+
+---
+
+## Finding 299 — one name per reading, so a partition has one viewpoint
+
+The third case this round is a network partition, and a partition is the one fault whose evidence is
+**two observations of the same quantity that disagree**: one side of the cluster sees three members,
+the other sees three, and the truth is six. The signals file cannot say that:
+
+```
+'history-network-partition-search-cluster' declares two series named 'cluster_members_visible',
+  so a reference to it names neither
+```
+
+That refusal is correct given what `signalRef` is. It is one string resolved against a map keyed on
+the metric name, and the evaluator, the checkpoint comparison and the expansion all read that map --
+so two series with one name would make every reference to it a coin toss, which the guard says out
+loud rather than performing.
+
+### What the case does instead, and what it costs
+
+| what the ticket says | how it is expressed | what is lost |
+| --- | --- | --- |
+| each side sees three of six | one series, `cluster_members_visible = 3` | that there are two sides is prose |
+| each side elected a leader | one counter, `+2` across the window | which side elected first is not expressible |
+| one side returns deleted documents | one ratio, `stale_read_ratio = 0.35` | the other side's ratio is not expressible |
+
+So the annotation is honest about its own limit and says so in the file, which is better than a
+second series named `cluster_members_visible_side_b` that would have looked like a measurement and
+been a naming convention. But the limit is real and it is a consequence of the resolution rule, not
+of the fault: *"the same metric on two entities"* is the most ordinary shape in production telemetry
+and this corpus cannot express it.
+
+**What this does not fix.** Making `signalRef` resolve as `(entity, metric)` would touch the
+expression evaluator, both baselines, the checkpoint comparison and all twenty-seven cases' names.
+It is the right change and it is not this round's: the corpus would have to be migrated atomically,
+and the round that does it should start from a case that needs it -- this one does.
+
+---
+
+## Finding 300 — three quarters of what a case declares about itself is prose
+
+`fault.parameters` holds a case's own facts, and a reading may cite one with `{ parameter: 'name' }`
+so that the number in the series and the number in the injection spec cannot drift apart (finding
+258). The mechanism was built and then left alone. Measured this round:
+
+```
+check-fault-cases: parameters 23 of 88 (26 percent) declared across 27 case(s) are read by a series
+  point or a configuration checkpoint; 65 are prose, in 27 case(s)
+```
+
+**Every one of the twenty-seven cases has at least one key nothing reads.** Some of those are
+legitimately descriptive -- `service`, `from`, `to`, `trigger`, `container` -- written for a reader
+and for a replay. Others are numbers that a reading restates by hand, which is exactly the drift the
+mechanism exists to prevent:
+
+| case | key | what it duplicates |
+| --- | --- | --- |
+| `network-loss-payment-gateway` | `lossPercent: 8` | `client_timeout_ratio.post = 0.08` |
+| `middleware-replica-lag-analytics` | `lagSeconds` | the replica-lag reading in prose |
+| `queue-watermark-ledger-writer` | `watermarkPercent: 92` | the broker watermark the ticket names |
+| `config-datasource-url-orders` | `declaredValuePointsAt`, `staleValuePointsAt` | the two database names the chain uses |
+
+The first row is repaired here: `client_timeout_ratio.post` is now `{ parameter: 'lossPercent' }`, and
+the unit algebra converts `8 %` to `0.08 1`, so the two numbers are one number.
+
+### Why a report rather than a rule
+
+A rule would have to decide which keys are descriptive, and nothing in the file says. Two shapes were
+considered and both were refused: refusing every unreferenced key would fail twenty-seven cases for
+twenty-seven legitimate reasons, and allow-listing the descriptive names would encode today's list as
+a law and refuse the next case's `node` or `pod`. So the count is printed on both exits, beside the
+checkpoint counts, and the number is the argument.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the reading | absent | `23 of 88 (26 percent)`, printed green and red |
+| `lossPercent` | restated by hand as `0.08` | cited, converted by the unit table |
+| keys removed rather than cited | **5** (`restartIntervalHours`, `clientTimeoutSeconds`, `replicas`, `sides`, `nodesPerSide`) | each was prose in a parameter; the fact is in the reason, where a reader looks |
+| the remaining 65 | unmeasured | measured, and named as the next round's work |
+
+**What this does not fix.** It does not stop a new case from adding another unreferenced key, because
+nothing can tell a descriptive key from a forgotten one. It makes the corpus's own drift visible
+every run, which is the most a report can do.
