@@ -2107,3 +2107,82 @@ log columns have no field and one feeds a closed vocabulary no RE2 archive here 
 `time` column is checked against the instant rather than against the corpus's cell, so a corpus whose
 `time` column were wrong on *every* row would be reported as a large disagreement and not as a failure;
 the instant columns are what carry the proof.
+
+## Finding 317 — the worker cap was derived from a number the container overstates
+
+### The defect
+
+`packages/core/vitest.config.ts` caps the worker count at `min(8, availableParallelism() - 1)`, and
+finding 297 wrote that line for a measured reason: a GitHub runner's wall time is twice this box's, and
+eight workers on four vCPUs is 2x oversubscription, so every file's time doubles and the synchronous
+files -- whose whole duration is one block -- cross the 45 s stall budget. The comment above the line
+says `availableParallelism()` *is* "the number of CPUs this process may actually use".
+
+On 2026-10-31 it was not:
+
+```
+node -e 'console.log(require("node:os").availableParallelism())'   -> 32
+cat /sys/fs/cgroup/cpu.max                                          -> 400000 100000    (4 CPUs)
+```
+
+So the cap was 8, on an allowance of 4. Two-thirds of the parallelism the suite believed it had did not
+exist, and the files that pay for that are exactly the ones the gauge measures.
+
+### What it looked like
+
+`verify:local` failed at step 5 with `pnpm test:coverage` exiting 1, and the log had **no failing test**:
+
+```
+Error: this test file held the event loop for 56358 ms, past the 45000 ms budget.
+```
+
+`ingest-report.test.ts` is synchronous CPU work in this process -- it is not one of the files that spawn
+children -- so its wall time *is* its blocked time, and 2x oversubscription doubles it. Six runs of one
+revision:
+
+| run | workers | `ingest-report.test.ts` | verdict |
+| --- | --- | --- | --- |
+| 1 | 8 | 44 s | green |
+| 2 | 8 | 46 s | green |
+| 3 | 8 | **56 358 ms** | **red, 5039 of 5039 tests passing** |
+| 4 | 8 | **65 578 ms** | **red, no failing test** |
+| 5 | 8 | 44 s | green |
+| 6 | `--maxWorkers=4` | -- | green, 57 s wall |
+
+The same revision was green or red depending on nothing but how the scheduler interleaved it. That is the
+class of red finding 290 and finding 297 were both written about, one layer down: 297 removed the *host*
+count from the decision and kept the *reported* count, which the container also overstates.
+
+### The fix, and why it is a cap rather than a budget
+
+`workerCount(reported, quota)` takes `min(reported, quota)`, leaves one CPU to the main process, keeps the
+floor of 2 (a one-core container) and the ceiling of 8 (the memory measurement), and `quotaFromCpuMax`
+reads `/sys/fs/cgroup/cpu.max`. `max` and any unreadable text return `null`, which leaves the reported
+count in charge -- a missing reading must not become "no CPU", and on the CI runner (4 reported, no quota
+file to read) the answer is the same 3 workers as before the change.
+
+Raising the budget instead would have been the other direction, and it is the wrong one: the budget is a
+statement about how long one file may block, and it was correct. What was wrong was the number of
+processes competing for the allowance it is spent against.
+
+### Acceptance
+
+| claim | how it is held |
+| --- | --- |
+| the quota caps the count | `workerCount(32, 4) === 3` -- the measurement in one line |
+| it never raises it | `workerCount(4, 64) === 3` |
+| no quota leaves finding 297 where it was | `workerCount(4, null) === 3`, `workerCount(32, null) === 8` |
+| `max` is not zero CPUs | `quotaFromCpuMax('max 100000') === null` |
+| a truncated or v1 reading is refused | `''`, `'400000'`, `'0 100000'`, `'four 100000'` all `null` |
+| the floor and the ceiling survive | `workerCount(1, 1) === 2`, `workerCount(64, 64) === 8` |
+
+### What this cannot do
+
+It cannot make the suite green under arbitrary load -- a machine ten times oversubscribed by *other*
+processes still turns a synchronous file's wall time into blocked time. What it removes is the
+oversubscription this repository was doing to itself. And the second red seen in this round,
+`ENOENT coverage/.tmp/coverage-N.json`, is a different defect in a dependency: vitest's coverage provider
+drains its pending writes once and then resets the list, so a write that arrives after the drain has no
+owner and Node turns it into a non-zero exit with no failing test. `coverage-writes-are-drained.test.ts`
+already writes that mechanism down and refuses to describe it as a test failure; the workaround measured
+here (create `coverage/.tmp` before the run) is a workaround, not a fix.

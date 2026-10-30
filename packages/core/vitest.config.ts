@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { defineConfig } from 'vitest/config';
 
@@ -98,7 +99,28 @@ export default defineConfig({
     // the host's. Leaving one CPU for the main process keeps the reporter responsive.
     // The floor of 2 is for a one-core container, where 1 worker would serialise the
     // suite into a timeout.
-    maxWorkers: Math.max(2, Math.min(8, availableParallelism() - 1)),
+    //
+    // ## But it can overstate, when a cgroup quota is lower (finding 317)
+    //
+    // On 2026-10-31 this box reported **32** while its cgroup allowed **4**:
+    //
+    //     node -e 'os.availableParallelism()'          -> 32
+    //     cat /sys/fs/cgroup/cpu.max                   -> 400000 100000   (4 CPUs)
+    //
+    // So the sentence above was true about the wrong number, and the cap was 8:
+    // 2x oversubscription on a 4-CPU quota, which doubles every file's wall time
+    // and spends the doubling on exactly the synchronous files the stall gauge
+    // measures. Six runs of one revision: two red with **no failing test** --
+    // `ingest-report.test.ts` held the loop for 56 358 ms and 65 578 ms against a
+    // 45 000 ms budget, 5039 of 5039 tests passing -- and four green. The same
+    // suite with `--maxWorkers=4` was green in 57 s.
+    //
+    // A red that depends on which machine ran it is the defect finding 297 wrote
+    // this line to remove, one level down: it removed the *host* count from the
+    // decision, not the *container's* overstatement of it. `usableParallelism()`
+    // reads the quota, so the number in the argument is the number this process
+    // can actually use.
+    maxWorkers: workerCount(availableParallelism(), quotaFromCpuMax(readCpuMax())),
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
@@ -150,3 +172,44 @@ export default defineConfig({
     },
   },
 });
+
+/**
+ * The CPU allowance a cgroup v2 quota states, or `null` when it states none.
+ *
+ * `400000 100000` is 4 CPUs: a quota in microseconds and the period it is spent
+ * over. `max` means unlimited, which is the shape a host without a quota writes,
+ * and anything unparseable is treated the same way rather than as zero -- a
+ * missing reading must not become "this machine has no CPU".
+ */
+export function quotaFromCpuMax(text: string): number | null {
+  const [quota, period] = text.trim().split(/\s+/);
+  if (quota === undefined || period === undefined || quota === 'max') return null;
+  const quotaValue = Number(quota);
+  const periodValue = Number(period);
+  if (!Number.isFinite(quotaValue) || !Number.isFinite(periodValue)) return null;
+  if (quotaValue <= 0 || periodValue <= 0) return null;
+  return Math.max(1, Math.floor(quotaValue / periodValue));
+}
+
+/**
+ * How many workers to start, from the CPUs reported and the CPU allowance.
+ *
+ * `min(reported, quota)` is the whole point: the reported number can exceed what
+ * the process may use (finding 317), and the quota can only lower it, never raise
+ * it. One CPU is left to the main process so the reporter stays responsive; the
+ * floor of 2 exists for a one-core container, and the ceiling of 8 is the memory
+ * measurement earlier in this file.
+ */
+export function workerCount(reported: number, quota: number | null): number {
+  const usable = quota === null ? reported : Math.min(reported, quota);
+  return Math.max(2, Math.min(8, usable - 1));
+}
+
+/** `/sys/fs/cgroup/cpu.max`, or `''` where there is no such file (macOS, cgroup v1). */
+export function readCpuMax(): string {
+  try {
+    return readFileSync('/sys/fs/cgroup/cpu.max', 'utf8');
+  } catch {
+    return '';
+  }
+}

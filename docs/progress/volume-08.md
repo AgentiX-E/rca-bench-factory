@@ -1768,6 +1768,34 @@ measurable and the next full run was green.
 The instrument was right in both readings. It named the file, the number and the budget, and
 what it was reporting was a real cost this round had added to a file already at its limit.
 
+### Six and a half: the second cause, which the first repair did not reach
+
+Splitting the file and awaiting its children brought the round-trip file's blocking to nothing, and the
+next full run was still red -- on a *different* file, with the same message and again no failing test:
+`ingest-report.test.ts held the event loop for 56 358 ms`. Six runs of one revision then measured **44,
+46, 56 358, 65 578, 44** -- green, green, red, red, green -- on a file this round never touched.
+
+The variable was not the code. `maxWorkers` is `min(8, availableParallelism() - 1)`, and finding 297
+wrote that line so the cap would follow the machine. On this box it does not:
+
+```
+availableParallelism()            ->  32
+/sys/fs/cgroup/cpu.max            ->  400000 100000     (4 CPUs)
+```
+
+Eight workers on a four-CPU allowance, so every file's wall time doubled and `ingest-report.test.ts` --
+synchronous CPU work, whose whole duration *is* its blocked time -- crossed a budget written for real
+time. `--maxWorkers=4` was green in 57 s.
+
+So the cap now reads the quota as well as the reported count (`min(reported, quota)`, one CPU left to the
+main process, the floor of 2 and the ceiling of 8 unchanged), which leaves the CI runner exactly where
+finding 297 put it: it reports 4 and has no quota file to read, so it gets 3 workers before and after.
+Finding 317.
+
+Raising the budget was the other direction and the wrong one. The budget is a statement about how long
+one file may block, and it was correct; what was wrong was how many processes competed for the allowance
+it is spent against.
+
 ### Seven: what this round did not do
 
 It did not read RE2's tables. RE2's log table is nine columns, four of which the IR has no field for and
@@ -1784,12 +1812,12 @@ that every row is carried and every column that should agree does.
 
 | item | value |
 | --- | --- |
-| `core` suite | **206 files, 5039 tests passed** |
+| `core` suite | **207 files, 5047 tests passed** |
 | `cli` suite | **4 files, 187 tests passed** |
-| repo | **210 files, 5226 tests passed** |
+| repo | **211 files, 5234 tests passed** |
 | coverage | **99.97 / 99.76 / 100 / 99.97** -- branch up from 99.75, and the new module at 100 on all four |
 | `modality-comparison.test.ts` | 35 tests, **100 / 100 / 100 / 100** |
-| audits | 1–316, **313 findings** (absent: 118, 132, 133) |
+| audits | 1–**317**, **314 findings** (absent: 118, 132, 133) |
 | RE3-OB local round trip | 30 of 30 cases; 2 095 206 log rows and 4 755 090 spans carried |
 | the truncation | 6 415 067 cells at the millisecond; 9 043 794 values in two columns |
 | export failure sites | 95 across 50 scripts, annotations carried |
