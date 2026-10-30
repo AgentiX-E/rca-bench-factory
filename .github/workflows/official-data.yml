@@ -364,6 +364,29 @@ jobs:
           # is what finding 155 is about.
           node scripts/check-official.mjs --official-dir "$OFFICIAL_DIR" --cases "$CASES" --report "$SCORES"
 
+      # The aggregate tables are the one part of a case directory that this
+      # repository used to describe without ever opening. It described
+      # `logts.csv` as "log counts per pod", `tracets_lat.csv` as "one row a
+      # minute", and both `timestamp` and `startTime` as microseconds -- three
+      # sentences, none checkable, one of them false by a factor of four and
+      # another by a factor of a thousand (findings 306 and 307).
+      #
+      # One of the three is a *pure function* of two files the corpus ships, so
+      # it can be checked instead of described: reduce `logs.csv` with
+      # `cluster_info.json` and compare cell for cell against the `logts.csv` the
+      # corpus wrote. For `RE2-OB/checkoutservice_cpu/1` that is 2910 cells, and
+      # the run before this step existed disagreed with none of them.
+      #
+      # The other two are not, and the script says so on every run rather than
+      # leaving their absence to be discovered: seven candidate reductions of
+      # `traces.csv` were tried against `tracets_lat.csv` and every one missed all
+      # 1649 cells. RE3 ships none of the three, so this step checks whatever the
+      # fetched anchor happens to hold and refuses an anchor that holds nothing.
+      - name: Every aggregate table the corpus ships is either reproduced or refused
+        run: |
+          set -eu
+          node scripts/check-aggregate-tables.mjs --official-dir "$OFFICIAL_DIR"
+
       - name: Report free disk at the destination after the fetch
         if: always()
         run: df -h "$OFFICIAL_DIR"

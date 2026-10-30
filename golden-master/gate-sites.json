@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 62,
+  "scanned": 63,
   "excluded": {
     "zero": 13,
     "indirect": 3,
@@ -29,6 +29,21 @@
       "diagnostic": "${path} is stale - run \\",
       "status": "proved",
       "provedBy": "packages/core/test/build-example-bundle.test.ts"
+    },
+    {
+      "script": "scripts/check-aggregate-tables.mjs",
+      "line": 52,
+      "diagnostic": "usage: check-aggregate-tables.mjs (--case <dir> | --official-dir <dir>)",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
+    },
+    {
+      "script": "scripts/check-aggregate-tables.mjs",
+      "line": 259,
+      "condition": "problems.length > 0",
+      "diagnostic": "check-aggregate-tables: FAILED (${problems.length} problem(s))",
+      "status": "proved",
+      "provedBy": "packages/core/test/check-aggregate-tables.test.ts"
     },
     {
       "script": "scripts/check-audit-volumes.mjs",

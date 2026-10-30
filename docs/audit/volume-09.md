@@ -1283,3 +1283,397 @@ explained: two sightings of the same shape is a pattern, and a pattern is not ye
 | guards that can see it | 0 of 4 | **1**, inside the guard that already reads the file |
 | tests | -- | **12** (10 rule, 2 wiring) |
 | first reachable state on the shipped file | the table was inconsistent | `no row needed changing` |
+
+## Finding 306 — one sentence, two columns, and a factor of a thousand
+
+`export/rcaeval.ts` wrote every instant in `logs.csv` **1000x too small**, on every case, in both
+suites that ship a log file. The line was
+
+```ts
+/**
+ * An instant as Unix **microseconds**, which is the unit both corpora's
+ * `timestamp` and `startTime` columns use.
+ */
+function epochMicros(iso: string): string {
+  return String(Date.parse(iso) * 1000);
+}
+```
+
+and the docblock is the defect. It names two columns -- `logs.csv`'s `timestamp` and
+`traces.csv`'s `startTime` -- and it is true of one of them.
+
+### Measured, per file, from both archives
+
+| column | `RE2-OB/checkoutservice_cpu/1` | `RE3-OB/emailservice_f1/1` | digits | unit |
+| --- | --- | --- | --- | --- |
+| `traces.startTimeMillis` | `1705353846065` | `1731910960029` | 13 | milliseconds |
+| `traces.startTime` | `1705353846065999` | `1731910960029548` | 16 | microseconds |
+| `logs.timestamp` | `1705353846067349596` | `1731910960181130857` | 19 | **nanoseconds** |
+
+Nineteen digits is not a rounding difference: the IR's instants have millisecond precision, so the
+microsecond column always ends in three zeros and the nanosecond column in six. Both corpora are
+internally consistent -- `time` is `HH:MM` of the same instant in every file -- so the two archives
+agree with each other and disagree with this module.
+
+### Why nothing caught it
+
+Four things read that column and none of them could see a scale:
+
+| reader | what it checks |
+| --- | --- |
+| `checkRcaEvalStructure` | that the eleven / nine / six column *names* are present |
+| `RCAEVAL_UNFILLED_COLUMNS`' test | that named columns are empty and unnamed ones are not |
+| `export.test.ts`, "converts the units" | that `rowOf(logs, 'timestamp')` equals `Date.parse(...) * 1000` |
+| the round trip | that a case scores, and `oracle` never reads `logs.csv` |
+
+The third of those is the interesting one. It **did** check the value, and it asserted exactly what
+the code produced, because it was written in the same pass and from the same sentence. A test and an
+implementation that share a belief are one statement, not two, and the shape of the resulting green
+is indistinguishable from a green where the belief was true.
+
+This is finding 302's family again, one more subject over: two counts, each true of its own scope,
+with nothing comparing them. There, two *totals* over one set; then two *parts* of one total; here
+two *columns* in one sentence. The cost of stating a relation is what keeps producing it.
+
+### The repair
+
+`RCAEVAL_INSTANT_COLUMNS` -- one row per **column**, not per file, because the two archives disagree
+at that granularity: `traces.csv` holds milliseconds and microseconds in the same row, and `logs.csv`
+holds nanoseconds in the column whose name it shares with the microsecond one.
+
+```ts
+export const RCAEVAL_INSTANT_COLUMNS = {
+  'traces.startTimeMillis': { unit: 'ms', perSecond: 1 },
+  'traces.startTime': { unit: 'us', perSecond: 1_000 },
+  'logs.timestamp': { unit: 'ns', perSecond: 1_000_000 },
+} as const;
+```
+
+`instantCell` is the only reader, so the claim and the value cannot drift apart, and the table is
+exported so the documentation guard can hold the published unit to it.
+
+One thing the fix turned up on the way: `String(Date.parse(iso) * 1e6)` is not exact. Nanoseconds
+since the epoch need 61 bits and a `number` carries 53, so the printed digits are the shortest
+representation of a *neighbouring* double. It happens to round-trip for every value the IR can hold,
+and "happens to" is not a unit, so the multiplication is `BigInt`.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `logs.csv`'s `timestamp` for `2024-01-15T21:24:06.067Z` | `1705353846067000` (16 digits) | `1705353846067000000` (19) |
+| a claim about a unit | one sentence covering two columns in two files | one table row per column |
+| tests that fail if the unit regresses | 0 | 2 (the value, and the digit width beside it) |
+| tests that changed | -- | 1 rewritten, 1 added; `export.test.ts` 70 → 72 |
+| the published claim in `docs/targets/rcaeval.md` | "`timestamp`/`startTime` are Unix **microseconds**" | stated per column, with the digits |
+
+## Finding 307 — three sentences about three files, and nobody had opened one
+
+`docs/targets/rcaeval.md` published this, for four rounds:
+
+```text
+logts.csv      # RE2, pre-aggregated event counts
+tracets_lat.csv  # per-endpoint request counts, one row a minute
+| units | `timestamp`/`startTime` are Unix microseconds |
+```
+
+Every clause is wrong, and the wrongness has one cause: none of the three files had ever been read.
+This round read them, out of `RE2-OB.zip` by range request (three inflations of 1229, 2844 and 525
+compressed bytes, against a 1.19 GB archive), together with the same case's `logs.csv` (23 515 107
+bytes), `traces.csv` (71 632 229 bytes) and `cluster_info.json`.
+
+### What the three tables are
+
+| table | columns | grid | values |
+| --- | --- | --- | --- |
+| `logts.csv` | 30, `<container>_<key>` where `key` is a map key of `cluster_info.json`, ordered by the key **as an integer** | 97 rows, step **15 s**, dense | integers, max 501 |
+| `tracets_lat.csv` | 17, `<callee>_<method>`, in **first-appearance order** in `traces.csv` | the same 97 rows | integers, max 54 |
+| `tracets_err.csv` | the same 17, name for name and order for order | the same 97 rows | floats, every one `0.0` |
+
+"One row a minute" is off by a factor of four. 1705353840 is a multiple of 15, so the bucket is
+`floor(t / 15) * 15` on an absolute grid rather than an offset from the first sample. And "log counts
+per pod" is not what the columns are: they are *clusters*, which is why `cluster_info.json` is in the
+same directory and why its `template` strings appear verbatim in `logs.csv`'s `log_template` column.
+
+### One of the three is a reducton, and it is exact
+
+Reducing `logs.csv` with `cluster_info.json` reproduces `logts.csv` **cell for cell**:
+
+```
+97 row(s) x 30 column(s) = 2910 cell(s), all equal
+20 log row(s) match no cluster and appear in no column
+check-aggregate-tables: OK (1 case(s), 2910 cell(s) reduced from logs.csv and equal to the corpus's own logts.csv)
+```
+
+Twenty `redis` rows carry an empty `log_template` and belong to no cluster; the corpus drops them and
+so does the reduction, and the grid still spans their instants.
+
+So that table is now `export/rcaeval-logts.ts` plus `scripts/check-aggregate-tables.mjs`, and the
+second runs in `official-data.yml` against whatever corpus was fetched.
+
+### The other two are not, and the refutation is the deliverable
+
+The natural next guess was that they come from `traces.csv`, and eight candidate reductions were
+tried against the same case: span count, distinct trace id count, server-side span count,
+client-side span count, server-side distinct trace ids, the p50/p90/p95/p99 of the span duration in
+milliseconds, the maximum duration, and -- for the error column -- error-status counts and ratios.
+
+| candidate | cells equal, of 1649 |
+| --- | --- |
+| every one of the eight | **0** |
+
+And no single scale factor rescues them: the ratio between the corpus's value and the count it could
+plausibly be ranges over **a factor of 61** within one column, so the disagreement is not a unit.
+
+`tracets_err.csv` cannot even be interrogated: every published value is `0.0` because no span in that
+case's trace file carries an error status, which is why its own column is serialised as a float while
+`tracets_lat.csv`'s is an integer -- a difference the documentation never mentioned and which is the
+only clue the file gives about what the two columns mean.
+
+### What this changes
+
+| claim | before | after |
+| --- | --- | --- |
+| the grid | "one row a minute" | 97 rows per case, step 15 s, dense, absolute boundaries |
+| `logts.csv`'s columns | "per pod" | per `cluster_info.json` key, `<container>_<key>`, integer order |
+| `logts.csv`'s provenance | unstated | exact: `logs.csv` + `cluster_info.json`, 2910/2910 |
+| `tracets_*`'s provenance | unstated | refuted: 8 candidates, 0/1649, ratio spread 61x |
+| RE3 | "RE3 只带 metric" | RE3 ships `logs.csv` and `traces.csv` and **none** of the three aggregates |
+| who checks it | nobody | `check-aggregate-tables.mjs`, in `official-data.yml`, refusing an anchor with nothing to check |
+
+`golden-master/rcaeval-aggregates.json` is the measurement, and `rcaeval-aggregates.test.ts` does the
+arithmetic between its three rows: each table's row count has to follow from its own interval,
+its cell count from its own shape, all three have to agree on the grid, and each unit has to agree
+with `RCAEVAL_INSTANT_COLUMNS` -- because a spec that is an independent copy of a fact in source is
+two facts, one of which is stale.
+
+### What it does not do
+
+It does not make this repository emit the trace aggregates. Their input is not in the archive, and a
+writer whose output no corpus can be compared against is a writer that produces a plausible file --
+which is the failure this campaign exists to prevent. P4's third item is therefore closed as a
+*measurement* rather than as an emission: one of the three tables is now produced and checked, two
+are refused with the work that refused them.
+
+## Finding 308 — the third five-second budget, and the first one with a mechanism
+
+The coverage run of this round failed one test, and the failure was not an assertion:
+
+```
+FAIL  test/injection-write-discipline.test.ts > the atomic helper is correct on its own
+      > replaces content and removes its temporary file
+      × 12178ms
+      → Test timed out in 5000ms.
+```
+
+Every assertion in it had been satisfied. The test runs a Python helper, and it ran it with `spawnSync`:
+
+```ts
+const result = spawnSync('python3', ['-c', program], { encoding: 'utf8' });
+```
+
+Findings 303 and 305 recorded the same signature -- a five-second budget missed by a few hundred
+milliseconds, not reproduced alone -- and both were left unexplained on the grounds that no mechanism
+had been demonstrated. This one is different in exactly one respect: the mechanism is visible in the
+source, and it is the one finding 195 already named for a different file. **A synchronous spawn makes
+the whole test one blocking call.** Nothing runs while Python starts, so the test's duration is the
+machine's, and the machine is running eight workers under coverage instrumentation.
+
+### Why "raise the timeout" is not the whole repair, and "retry" is not a repair at all
+
+| move | verdict |
+| --- | --- |
+| retry until green | refused -- it converts a budget into a coin, and the user-visible property ("the helper writes atomically") is never what failed |
+| raise the timeout and leave `spawnSync` | insufficient -- it hides the blocking, and the stall gauge exists precisely because blocking is the thing this repository measures |
+| await the spawn, then state a bound larger than a process launch | **taken** |
+| delete the test | refused -- it is the only thing that runs the Python helper at all |
+
+So both halves were done: `spawnSync` became an awaited `spawn`, and the three tests that run an
+interpreter carry `SUBPROCESS_TIMEOUT_MS = 60_000`. The number is stated where it is used, with the
+reason: their duration is the interpreter's, and the five-second default is a budget for work the
+test itself does.
+
+**No assertion moved.** The three tests still fail on a wrong answer, a non-zero exit, and a stray
+`__pycache__` in the tree; what they no longer do is fail because the runner was busy.
+
+### The second member, found by running the command that kept finding it
+
+Half an hour later the same family produced a **reproduction**, and it arrived as an ordinary failure
+rather than as an orphan:
+
+```
+FAIL  test/stall-budget.test.ts > event loop · the hook fails the file that blocked it
+      > passes the same wall time when the child is awaited
+      × 5005ms
+      → Test timed out in 5000ms.
+```
+
+That is finding 305's `5056 ms` sighting. It was recorded as a machine-sized budget exceeded under a
+concurrent suite, with every test in the file green when run alone three times -- and the reason it
+only appeared in `measure-doc-counts` is the reason it is now explained: **that command runs the whole
+suite from inside a suite.** The two cases in that `describe` verify the stall gauge by launching a
+nested `vitest` in a temporary project and reading its exit code and output. Their duration belongs to
+that child, and vitest's five-second default is a budget for work the test itself does.
+
+| what was believed | what was measured |
+| --- | --- |
+| "a rare orphan, indistinguishable from a scheduling delay" | reproducible in one command, at 5 005 ms, every time that command runs the suite |
+| "the fix here would not have prevented it" | the same fix does: the child's duration is not the test's work |
+| "no mechanism can be named" | the mechanism is in the file: `runSuite()` starts `vitest.mjs` |
+
+`NESTED_RUNNER_TIMEOUT_MS = 150_000` now covers both cases, above the 120 000 ms bound the child
+already carries so that the child's timeout speaks first. No assertion moved, exactly as above.
+
+### What this leaves open
+
+**5117 ms on the signal test is still unexplained**, and this finding does not close it: that one is
+not a synchronous spawn and does not launch a runner. The value of the second member is comparative --
+the family now has one member with no cause instead of two, and the two that were explained were both
+explained by the same question: *whose duration is this test's duration?*
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| synchronous interpreter spawns in `injection-write-discipline.test.ts` | 3 | **0** |
+| the bound those three tests run under | vitest's default 5 000 ms | **60 000 ms**, stated with its reason |
+| assertions changed | -- | **0** |
+| the file's own duration, alone | 12 178 ms (the one that timed out) | 253 ms |
+
+## Finding 309 — the chapter that ended after the chapter that followed it
+
+v3.18 was written by inserting a new `## v3.18` section into `docs/progress/volume-07.md` at the first
+`### Readings` heading below v3.17's title. That heading belongs to v3.17, and inserting **at** it
+leaves it where it is: the new chapter opened above the block, and the block stayed below the new
+chapter. The result was a file in which
+
+| the round | what it held |
+| --- | --- |
+| `v3.17` | title, five sections of body, and **no** ledger |
+| `v3.18` | its own `### Readings`, `### Left open`, `### Unchanged` — and then a second set of all three |
+
+Every byte of both rounds was present, in file order, and `pnpm docs:check` was green: fourteen guards,
+`check-progress-volumes` printing `OK — 7 volume(s), 166 round(s)`, `check-open-list` reading both lists
+because it reads **every** `### Left open` it finds. The defect was not a missing section or a
+misordered one. It was a section filed under the wrong title, which is the one thing a rule about file
+boundaries cannot see.
+
+### Why the numbers matter more than the boundary
+
+The block that slid is not prose. It is v3.17's ledger, and it published **v3.18's** measurements:
+
+| row | published under v3.17 | whose number it was |
+| --- | --- | --- |
+| the suite | `+5 files, +60 tests in core (202 / 4941)` | v3.18's tree, after v3.18's three files |
+| `docs:check` | `audit 1–307, 304 findings` | v3.18's audit index |
+
+So a reader of v3.17 was told that the round which closed P1 ended with a tree it had never seen. This
+is the family this campaign keeps finding, one level up from the numbers: **a statement is cheap to
+place and expensive to attribute**, and nothing in the tree was asking which round a table belonged to.
+
+### The two rules, and the half each one covers
+
+`scripts/progress-volumes.mjs` gained, beside the five rules it already had:
+
+| rule | what it refuses | what it would have caught here |
+| --- | --- | --- |
+| a round holds **at most one** of `### Readings`, `### Left open`, `### Unchanged` | a second ledger inside one title | v3.18 holding 2 and 2 |
+| once a round carries `### Readings`, the round **after** it carries one too | a round with no ledger after the convention began | v3.17 holding none, since v3.16 does |
+
+The second rule is a **chain** rather than a list of version numbers: which round the convention began
+at is a fact the volume itself holds, and pinning `v3.13` in the source would be a literal that rots —
+finding 202's lesson, applied before it could be learned again. Measured over the whole log: 6 rounds
+carry `### Readings` and 160 do not, no round carries two of anything, and the Pass-era rounds and the
+`v2.xx` rounds are exempt by construction rather than by an exemption table.
+
+Both rules count headings **outside fences**, because a round may quote the shape it is describing
+(`v2.26` quotes four headings that are not headings), and a quotation counted as a section would make
+the guard refuse the round that documents the grammar.
+
+### Proved on the real document, not only on a fixture
+
+A copy of the live volume was edited back into the old shape — v3.17's block moved to the end of the
+file — and the gate run against it:
+
+```
+volume-07.md: `## v3.18 — a unit that was true of one file and false of the other` holds 2 `### Readings` sections
+  -- a round closes itself once, and the second one belongs to the round that was inserted before it (finding 309)
+volume-07.md: `## v3.18 — …` holds 2 `### Left open` sections
+```
+
+`FAILED`, exit 1. The fixtures in `progress-volumes.test.ts` cover the same two rules from four
+directions: the doubled section, the missing one, the rounds before the convention began, and the
+quoted one inside a fence.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `### Readings` in v3.17 | 0 | **1** |
+| `### Readings` / `### Left open` / `### Unchanged` in v3.18 | 2 / 2 / 2 | **1 / 1 / 1** |
+| rounds in the log with more than one closing section | 1 (unseen) | **0**, refused by two rules |
+| the v3.17 ledger's suite row | `+5 files, +60 tests (202 / 4941)` | **`+2 files, +25 tests (199 / 4906)`** |
+| the v3.17 ledger's audit row | `1–307, 304 findings` | **`1–305, 302 findings`** |
+| the old shape replayed on a copy of the live volume | -- | **FAILED, exit 1**, naming finding 309 |
+
+### What these rules cannot do
+
+They read **presence**, not ownership. Two rounds whose ledgers are swapped — each holding exactly one,
+each well-formed — pass both rules, and the first rule's message ("belongs to the round that was
+inserted before it") is an explanation of the shape that was seen rather than a general diagnosis.
+Checking ownership would mean re-deriving each round's numbers from the tree as it stood in that round,
+which is a git checkout per round and a question this repository has no way to answer for a round that
+was never committed.
+
+The other half is stated rather than repaired: the numbers inside a ledger are checked by
+`measure-doc-counts --check` **for the newest round only**, because that is the only round whose
+measurement can be taken. A ledger that slid into another round is invisible to it, and the file's own
+structure was the only place the question could have been asked.
+
+## Finding 310 — a commit staged while a battery held the tree
+
+`git add -A` stages what the working tree holds, and a verification session here **mutates the working
+tree on purpose**: the injection batteries rewrite a guard, run the suite, and put the bytes back in a
+`finally`. `tree-repair.mjs` exists because a killed run leaves the rewrite behind, and it repairs the
+tree at the start of the next session.
+
+This round found the third case, and it is neither of those two. A full `verify:local` was running in
+one process; a commit was staged in another. At the moment of `git add -A` the battery held
+`packages/core/src/ingest/jaeger.ts` with its process-table fallback rewritten:
+
+```ts
+  const tableName = table?.['serviceName'];
+- return typeof tableName === 'string' && tableName !== '' ? tableName : undefined;
++ return undefined;
+```
+
+The commit that closed four findings therefore **published a mutation**, and the tree was restored
+minutes later by the session that had made it. In between, `git status` was clean -- it reports the
+difference between the tree and the index, not between the tree and what the tree was meant to be.
+
+### Why the existing repair did not cover it
+
+| mechanism | what it protects | why it missed |
+| --- | --- | --- |
+| `_witnesses.py`'s `finally` | a battery that finishes | this battery was still running |
+| `tree-repair.mjs` at session start | a session that starts over a killed run's leftovers | it repairs *before* the plan, and the staging happened *during* it |
+| the gate receipt | a push claiming a verdict it did not earn | correct but not binding here: the run was red for an unrelated reason (`site/assets/data.js` stale), so no receipt was issued at all |
+| the suite itself | a wrong tree | the suite was never run against the staged tree; it was run against the mutated one, by the battery, and against the restored one afterwards |
+
+The one mechanism that **would** have caught it is not built: a pre-commit refusal while a battery
+holds a witness journal. The journal is on disk, `_witnesses.py` already knows how to detect it, and
+`tree-repair.mjs` already turns it into a verdict at the start of a session -- so the ingredient is
+present and only the reader at the commit boundary is missing.
+
+That is stated here rather than implied: **the repair is named and not built in this round**, and it
+is in `Left open` with the shape it should have.
+
+### What was measured, and what was merely claimed
+
+| claim | measurement |
+| --- | --- |
+| the fallback was gone | `git show HEAD:packages/core/src/ingest/jaeger.ts` → `return undefined;`, against `git show e56f957:...` → the ternary |
+| it came back | the restored line is in the next commit, and `pnpm typecheck` and the suite are green over it |
+| `git status` was clean at the time | it was: the file matched the index because the **index** had taken the mutation too |
+| no other file was swept | the working tree now equals `HEAD` except the three files the restore commit names |
+

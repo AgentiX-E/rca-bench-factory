@@ -215,6 +215,7 @@ export type { ExportOutcome, ExportedFiles, SkippedCase } from './export/openrca
 
 export {
   RCAEVAL_CONTRACT_VERSION,
+  RCAEVAL_INSTANT_COLUMNS,
   RCAEVAL_LOGS_COLUMNS,
   RCAEVAL_SUITES,
   RCAEVAL_TARGET_ID,
@@ -227,6 +228,9 @@ export {
   exportRcaEval,
 } from './export/rcaeval.js';
 export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';
+
+export { LOGTS_BUCKET_SECONDS, buildLogtsCsv } from './export/rcaeval-logts.js';
+export type { LogCluster, LogRow, LogtsTable } from './export/rcaeval-logts.js';
 
 export {
   RCA100_CONTRACT_VERSION,

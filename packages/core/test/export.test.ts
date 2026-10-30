@@ -598,14 +598,29 @@ describe('RCAEval exporter · the columns are the corpora’s, measured', () => 
 
   it('converts the units the corpus’s columns are in', () => {
     const trace = buildTracesCsv([fullSpan]);
-    // Microseconds, twice: the corpus's `timestamp`/`start` are µs and its
-    // `duration` is µs, while the IR carries milliseconds for both.
+    // Three units, and the two files disagree about one of them. `traces.csv`'s
+    // `startTimeMillis` is milliseconds and its `startTime` and `duration` are
+    // microseconds; `logs.csv`'s `timestamp` is **nanoseconds**. This assertion
+    // used to demand microseconds for the log column too, and passed, because it
+    // was written from the same belief as the code it was checking: the module's
+    // own docblock said "the unit both corpora's `timestamp` and `startTime`
+    // columns use", which is a true sentence about one of the two files.
     expect(rowOf(trace, 'startTimeMillis')).toBe(String(Date.parse(fullSpan.timestamp)));
     expect(rowOf(trace, 'startTime')).toBe(String(Date.parse(fullSpan.timestamp) * 1000));
     expect(rowOf(trace, 'duration')).toBe('4133');
     // The corpus's `time` column is `HH:MM` of the instant, in UTC.
     expect(rowOf(trace, 'time')).toBe('21:24');
-    expect(rowOf(buildLogsCsv([fullLog], 'RE3'), 'timestamp')).toBe(String(Date.parse(fullLog.timestamp) * 1000));
+    expect(rowOf(buildLogsCsv([fullLog], 'RE3'), 'timestamp')).toBe(String(Date.parse(fullLog.timestamp) * 1e6));
+  });
+
+  it('writes the log instant at the width the corpus writes it', () => {
+    // A digit count is a weak check on its own, so it is stated beside the value
+    // rather than instead of it: the two together say "same unit" and "same
+    // instant", and either alone can be satisfied by a wrong number.
+    const stamp = rowOf(buildLogsCsv([fullLog], 'RE2'), 'timestamp');
+    expect(stamp).toHaveLength(19);
+    expect(rowOf(buildTracesCsv([fullSpan]), 'startTime')).toHaveLength(16);
+    expect(rowOf(buildTracesCsv([fullSpan]), 'startTimeMillis')).toHaveLength(13);
   });
 
   it('spells the span status as the OTel code the column holds', () => {

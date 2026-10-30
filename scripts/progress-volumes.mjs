@@ -36,6 +36,12 @@
  *    and first/last labels are the file's rather than the row's claim.
  * 5. `docs/progress.md` itself holds **no** entry heading: the rounds moved, and an
  *    index that still carried one would be two homes for one round.
+ * 6. A round holds **at most one** of each of its closing sections -- `### Readings`,
+ *    `### Left open`, `### Unchanged` -- and once the log has begun carrying them,
+ *    every round after that carries `### Readings`. Finding 309: v3.18 was inserted
+ *    before v3.17's own `### Readings`, so v3.17 lost its ledger and v3.18 held two.
+ *    Concatenation does not notice -- both halves are in the file, in order -- which
+ *    is why the boundary needed a rule of its own rather than an eyeball.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -88,15 +94,40 @@ export function entriesOf(text) {
   const out = [];
   let fenced = false;
   let offset = 0;
+  let index = 0;
   for (const line of text.split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) {
       fenced = !fenced;
     } else if (!fenced && line.startsWith('## ')) {
-      out.push({ heading: line, label: labelOf(line), offset });
+      out.push({ heading: line, label: labelOf(line), offset, line: index });
     }
     offset += Buffer.byteLength(`${line}\n`);
+    index += 1;
   }
   return out;
+}
+
+/**
+ * The closing sections a round carries, counted between two `## ` headings.
+ *
+ * Fences are tracked for the reason `entriesOf` tracks them: `v2.26` quotes headings
+ * that are not headings, and a quoted `### Unchanged` is not a section.
+ */
+export const CLOSING_SECTIONS = ['### Readings', '### Left open', '### Unchanged'];
+
+export function closingSectionsIn(lines, from, to) {
+  const counts = new Map();
+  let fenced = false;
+  for (const raw of lines.slice(from, to)) {
+    if (/^\s*(```|~~~)/.test(raw)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    const line = raw.trim();
+    if (CLOSING_SECTIONS.includes(line)) counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Every volume, in order, with what it holds and what is wrong with it. */
@@ -157,6 +188,18 @@ export function readVolumes(dir = VOLUMES) {
     }
     const entries = entriesOf(text);
     if (entries.length === 0) errors.push(`${name}: no \`## \` heading, so it holds no round`);
+    const lines = text.split('\n');
+    for (const [position, entry] of entries.entries()) {
+      entry.sections = closingSectionsIn(lines, entry.line + 1, entries[position + 1]?.line ?? lines.length);
+      for (const [section, count] of entry.sections) {
+        if (count > 1) {
+          errors.push(
+            `${name}: \`${entry.heading.trim()}\` holds ${String(count)} \`${section}\` sections -- a round ` +
+              `closes itself once, and the second one belongs to the round that was inserted before it (finding 309)`,
+          );
+        }
+      }
+    }
     for (const entry of entries) order.push(entry);
     volumes.push({
       name,
@@ -212,6 +255,25 @@ export function readVolumes(dir = VOLUMES) {
       lastVersion = pair;
     }
     previous = entry;
+  }
+
+  // The ledger does not thin out. Once a round carries `### Readings`, the round after it
+  // does too -- and a round that does not is the other half of finding 309: the section
+  // that was written for it is sitting in the round that was inserted before it. This is
+  // a **chain**, not a list of numbers: which round the convention started at is a fact
+  // the volume itself holds, and pinning `v3.13` here would be a literal that rots.
+  for (let at = 1; at < order.length; at += 1) {
+    const before = order[at - 1];
+    const after = order[at];
+    const carried = before.sections?.get('### Readings') ?? 0;
+    const own = after.sections?.get('### Readings') ?? 0;
+    if (carried > 0 && own === 0) {
+      errors.push(
+        `\`${after.heading.trim()}\` follows \`${before.heading.trim()}\`, which closes with \`### Readings\`, and ` +
+          'carries none: a round after the ledger began states its own readings, and a missing one means the ' +
+          'section ended up past the heading of the round that follows it (finding 309)',
+      );
+    }
   }
 
   return { volumes, errors, order };

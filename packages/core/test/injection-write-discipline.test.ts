@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -100,6 +100,50 @@ function stripCommentsAndStrings(source: string): string {
 
 const WORKFLOW = resolve(ROOT, '.github', 'workflows', 'fault-extraction-accuracy.yml');
 const CODE = stripCommentsAndStrings(SOURCE);
+
+/**
+ * How long a test that runs an interpreter is allowed to take.
+ *
+ * These tests assert what a Python helper does, so their duration is the
+ * interpreter's rather than the test's, and the default five seconds is a budget
+ * for work the test itself does. On a loaded runner -- eight workers, coverage
+ * instrumentation, a cold page cache -- one of them took **12 178 ms** against
+ * that default and the run failed with `Test timed out in 5000ms` on a test whose
+ * assertions had all been satisfied. This is the third five-second budget in this
+ * campaign to be broken by the machine rather than by the code (findings 303 and
+ * 305 are the others), and the first with a mechanism, which is finding 308: a
+ * synchronous spawn makes the whole test one blocking call, so nothing else runs
+ * while the interpreter starts.
+ *
+ * The fix is both halves. The spawns below are awaited, so the event loop turns
+ * while Python starts, and the bound is stated as a number larger than a process
+ * launch. What is *not* done is retrying the flaky test, or relaxing an
+ * assertion: the assertions are untouched and still fail on a wrong answer.
+ */
+const SUBPROCESS_TIMEOUT_MS = 60_000;
+
+interface Spawned {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** Run a program to completion without blocking the event loop it runs on. */
+function run(file: string, args: string[], env?: NodeJS.ProcessEnv): Promise<Spawned> {
+  return new Promise((settle) => {
+    const child = spawn(file, args, { env: env ?? process.env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', (error) => settle({ status: null, stdout, stderr: `${stderr}${error.message}` }));
+    child.on('close', (status) => settle({ status, stdout, stderr }));
+  });
+}
 
 describe('the injection battery writes atomically', () => {
   it('routes every workflow write through the atomic helper', () => {
@@ -230,7 +274,7 @@ describe('the atomic helper is correct on its own', () => {
     return body;
   };
 
-  it('replaces content and removes its temporary file', () => {
+  it('replaces content and removes its temporary file', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'injection-atomic-'));
     try {
       const target = resolve(dir, 'subject.yml');
@@ -248,15 +292,15 @@ describe('the atomic helper is correct on its own', () => {
         "assert leftovers == [], leftovers",
         "print('OK')",
       ].join('\n');
-      const result = spawnSync('python3', ['-c', program], { encoding: 'utf8' });
+      const result = await run('python3', ['-c', program]);
       expect(result.stderr).toBe('');
       expect(result.stdout.trim()).toBe('OK');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, SUBPROCESS_TIMEOUT_MS);
 
-  it('does not leave a temporary file behind when the rename fails', () => {
+  it('does not leave a temporary file behind when the rename fails', async () => {
     const dir = mkdtempSync(resolve(tmpdir(), 'injection-atomic-fail-'));
     try {
       const target = resolve(dir, 'subject.yml');
@@ -291,13 +335,13 @@ describe('the atomic helper is correct on its own', () => {
         "assert leftovers == [], leftovers",
         "print('OK')",
       ].join('\n');
-      const result = spawnSync('python3', ['-c', program], { encoding: 'utf8' });
+      const result = await run('python3', ['-c', program]);
       expect(result.stderr).toBe('');
       expect(result.stdout.trim()).toBe('OK');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, SUBPROCESS_TIMEOUT_MS);
 
   it('strips prose without stripping code', () => {
     // The stripper is new logic and a gate built on it is only as good as it is.
@@ -327,7 +371,7 @@ describe('the atomic helper is correct on its own', () => {
     expect(stripCommentsAndStrings('a = "it\'s fine"\nb = 2\n')).toMatch(/b = 2/);
   });
 
-  it('is present and syntactically valid as a script', () => {
+  it('is present and syntactically valid as a script', async () => {
     // The battery is a deliverable that is run by hand; a syntax error would be
     // discovered at the worst moment. `py_compile` checks it without running it.
     // Compiled with its bytecode cache sent outside the repository.
@@ -343,9 +387,9 @@ describe('the atomic helper is correct on its own', () => {
     const before = existsSync(inTree);
     const cacheDir = mkdtempSync(join(tmpdir(), 'pycache-'));
     try {
-      const result = spawnSync('python3', ['-m', 'py_compile', BATTERY], {
-        encoding: 'utf8',
-        env: { ...process.env, PYTHONPYCACHEPREFIX: cacheDir },
+      const result = await run('python3', ['-m', 'py_compile', BATTERY], {
+        ...process.env,
+        PYTHONPYCACHEPREFIX: cacheDir,
       });
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
@@ -353,5 +397,5 @@ describe('the atomic helper is correct on its own', () => {
       rmSync(cacheDir, { recursive: true, force: true });
     }
     expect(existsSync(inTree), 'the compile wrote bytecode into the tree').toBe(before);
-  });
+  }, SUBPROCESS_TIMEOUT_MS);
 });

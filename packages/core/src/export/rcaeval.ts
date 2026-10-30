@@ -48,6 +48,32 @@ import { renderCsv } from '../util/csv.js';
  * preference. Columns the IR does not carry are emitted empty and named in
  * `RCAEVAL_UNFILLED_COLUMNS` -- a loss this file states instead of a value it
  * could only invent.
+ *
+ * ## The *units* were not measured, and one of them was wrong by a factor of 1000
+ *
+ * The paragraph above was about columns, and it drew the right conclusion from the
+ * right measurement. The next question -- what unit each instant column is in --
+ * was answered from one file and applied to two:
+ *
+ * > An instant as Unix **microseconds**, which is the unit both corpora's
+ * > `timestamp` and `startTime` columns use.
+ *
+ * That sentence named two columns and was true of one. Measured, per file, from
+ * both archives (finding 306):
+ *
+ * | column | RE2-OB `checkoutservice_cpu/1` | RE3-OB `emailservice_f1/1` | unit |
+ * | --- | --- | --- | --- |
+ * | `traces.startTime` | `1705353846065999` (16 digits) | `1731910960029548` | microseconds |
+ * | `traces.startTimeMillis` | `1705353846065` (13) | `1731910960029` | milliseconds |
+ * | `logs.timestamp` | `1705353846067349596` (19) | `1731910960181130857` (19) | **nanoseconds** |
+ *
+ * So this module wrote every `logs.csv` instant 1000x too small, on every case, in
+ * both suites that ship a log file. Nothing noticed: the shape contract compared
+ * column *names*, and the unit test that did check the value asserted the same
+ * number the code produced, because both were written from the same sentence.
+ * `RCAEVAL_INSTANT_COLUMNS` below is that sentence rewritten as a table with one
+ * row per file, and `instantCell` is the only thing that reads it, so the claim
+ * and the value cannot drift apart again.
  */
 
 export const RCAEVAL_TARGET_ID = 'rcaeval';
@@ -280,16 +306,41 @@ function utcMinute(iso: string): string {
 }
 
 /**
- * An instant as Unix **microseconds**, which is the unit both corpora's
- * `timestamp` and `startTime` columns use.
+ * Every instant column this module writes, the unit it is in, and how many of that
+ * unit are in a second.
  *
- * The IR's instant has millisecond precision, so these are always multiples of
- * 1000 while the corpus's own values are not (`1705353846067349596`). The
- * difference is the IR's, not the export's, and it is stated here rather than
- * papered over with three digits of zero that would read as measured.
+ * One row per *column*, not per file, because that is the granularity the two
+ * archives disagree at: `traces.csv` holds milliseconds and microseconds in the
+ * same row, and `logs.csv` holds nanoseconds in the column whose name both
+ * archives share with `traces.csv`'s microsecond one. A table keyed by file would
+ * have been as wrong as the sentence that started this.
+ *
+ * The IR's instant has millisecond precision, so the two finer columns are always
+ * divisible by their scale while the corpus's own values are not
+ * (`1705353846067349596` ends in `596`). That gap is the IR's, not the export's,
+ * and it is stated here rather than papered over with digits that would read as
+ * measured.
  */
-function epochMicros(iso: string): string {
-  return String(Date.parse(iso) * 1000);
+export const RCAEVAL_INSTANT_COLUMNS = {
+  'traces.startTimeMillis': { unit: 'ms', perSecond: 1 },
+  'traces.startTime': { unit: 'us', perSecond: 1_000 },
+  'logs.timestamp': { unit: 'ns', perSecond: 1_000_000 },
+} as const;
+
+export type RcaEvalInstantColumn = keyof typeof RCAEVAL_INSTANT_COLUMNS;
+
+/**
+ * An instant, in the unit its column is in.
+ *
+ * `BigInt` rather than `* 1e6` because nanoseconds since the epoch do not fit in a
+ * double: `1705353846067e6` needs 61 bits and a `number` carries 53, so the
+ * printed digits would be the shortest representation of a *neighbouring* value
+ * rather than the instant. It happens to round-trip for the values the IR can
+ * produce, and "happens to" is not a unit.
+ */
+function instantCell(column: RcaEvalInstantColumn, iso: string): string {
+  const scale = RCAEVAL_INSTANT_COLUMNS[column].perSecond;
+  return String(BigInt(Date.parse(iso)) * BigInt(scale));
 }
 
 /** Every column name either log table uses, so the cell map has no fallback. */
@@ -308,7 +359,7 @@ export function buildLogsCsv(signals: TelemetrySignal[], suite: RcaEvalLogsSuite
     // than accepts.
     const cells: Record<RcaEvalLogsColumn, string> = {
       time: utcMinute(s.timestamp),
-      timestamp: epochMicros(s.timestamp),
+      timestamp: instantCell('logs.timestamp', s.timestamp),
       container_name: s.resource['service.name'],
       message: p.body,
       level: p.severityText ?? '',
@@ -329,7 +380,6 @@ export function buildLogsCsv(signals: TelemetrySignal[], suite: RcaEvalLogsSuite
 export function buildTracesCsv(signals: TelemetrySignal[]): string {
   const rows = signals.filter(isTraceSignal).map((s) => {
     const p: TracePayload = s.payload;
-    const millis = Date.parse(s.timestamp);
     const cells: Record<(typeof RCAEVAL_TRACES_COLUMNS)[number], string> = {
       time: utcMinute(s.timestamp),
       traceID: p.traceId,
@@ -337,8 +387,8 @@ export function buildTracesCsv(signals: TelemetrySignal[]): string {
       serviceName: s.resource['service.name'],
       methodName: '',
       operationName: p.spanName,
-      startTimeMillis: String(millis),
-      startTime: String(millis * 1000),
+      startTimeMillis: instantCell('traces.startTimeMillis', s.timestamp),
+      startTime: instantCell('traces.startTime', s.timestamp),
       // The corpus's `duration` is microseconds; the IR's is milliseconds.
       duration: String(Math.round(p.durationMs * 1000)),
       statusCode: p.status === undefined ? '' : SPAN_STATUS_CODE[p.status],

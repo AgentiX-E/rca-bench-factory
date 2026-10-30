@@ -195,6 +195,25 @@ describe('event loop · the hook fails the file that blocked it', () => {
   afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
   /**
+   * The budget for a test that launches a **runner**.
+   *
+   * Finding 308 drew the line for the Python helper: vitest's five-second default is a budget for work
+   * the test itself does, and these two cases do almost none of it -- they start a nested `vitest` in a
+   * temporary project and read its exit code and output. The property they assert is handed to that
+   * child through `STALL_BUDGET_ENV` (300 ms) and is not a function of this number, so raising it hides
+   * nothing.
+   *
+   * The number is above the 120 000 ms bound the child already carries, so that the child's timeout is
+   * the one that speaks first and this one only catches a launch that never returns.
+   *
+   * This is finding 305's 5056 ms sighting, re-derived rather than guessed: under `measure-doc-counts`,
+   * which runs the whole suite again from inside a suite, `passes the same wall time when the child is
+   * awaited` came back at **5 005 ms** -- the first reproduction of that sighting, and the same cause
+   * finding 308 named for a different file: the test's duration belongs to a child process.
+   */
+  const NESTED_RUNNER_TIMEOUT_MS = 150_000;
+
+  /**
    * The setup file this package installs, or a failure that says so.
    *
    * A battery that cannot find a hook has to fail loudly rather than install an
@@ -294,7 +313,7 @@ describe('event loop · the hook fails the file that blocked it', () => {
     expect(run.status).not.toBe(0);
     expect(run.output).toContain('held the event loop');
     expect(run.output).toContain('300 ms budget');
-  });
+  }, NESTED_RUNNER_TIMEOUT_MS);
 
   it('passes the same wall time when the child is awaited', async () => {
     // The control. Identical duration, identical budget, one token different:
@@ -322,5 +341,5 @@ describe('event loop · the hook fails the file that blocked it', () => {
     expect(run.output).toContain('1 passed');
     expect(run.status).toBe(0);
     expect(run.output).not.toContain('held the event loop');
-  });
+  }, NESTED_RUNNER_TIMEOUT_MS);
 });

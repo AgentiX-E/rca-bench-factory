@@ -123,6 +123,7 @@ const ENUMERATED_MODULES = [
   'export/openrca.ts',
   'export/openrca2.ts',
   'export/rca100.ts',
+  'export/rcaeval-logts.ts',
   'export/rcaeval.ts',
   'gates/gates.ts',
   'gates/validity.ts',
@@ -616,6 +617,9 @@ const TESTED = [
   'buildRca100Alerts',
   'buildTaskJson',
   'buildGroundTruthJson',
+  // export/rcaeval-logts.ts -- the reduction the corpus performs on its own logs.
+  'LOGTS_BUCKET_SECONDS',
+  'buildLogtsCsv',
   // export/rcaeval.ts
   'RCAEVAL_TARGET_ID',
   'RCAEVAL_CONTRACT_VERSION',
@@ -625,6 +629,7 @@ const TESTED = [
   'RCAEVAL_UNFILLED_COLUMNS',
   'casePath',
   'buildDataCsv',
+  'RCAEVAL_INSTANT_COLUMNS',
   'buildLogsCsv',
   'buildTracesCsv',
   // export/*.ts -- one entry point each, named in score/dispatch.ts.

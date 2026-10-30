@@ -126,6 +126,14 @@ const REGISTER: Record<string, Entry> = {
   'check-backend-support.mjs': { class: 'gate' },
   'check-cli-reference.mjs': { class: 'gate' },
   'check-data-model-vocabularies.mjs': { class: 'gate' },
+  'check-aggregate-tables.mjs': {
+    class: 'gate',
+    why:
+      'It reduces a corpus case\'s logs.csv with its cluster_info.json and compares the result to the ' +
+      'logts.csv the corpus shipped, cell by cell -- 2910 of them for RE2-OB/checkoutservice_cpu/1. ' +
+      'The point is not the table: it is that the three sentences this repository used to publish about ' +
+      'that table were uncheckable, and one of them ("one row a minute") is false by a factor of four.',
+  },
   'check-doc-counts.mjs': { class: 'gate' },
   'check-l4-status.mjs': { class: 'gate' },
   'check-no-absolute-paths.mjs': { class: 'gate' },

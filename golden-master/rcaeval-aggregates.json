@@ -1,0 +1,99 @@
+{
+  "schema": "rca-bench-rcaeval-aggregates/1",
+  "note": "What the three aggregate tables in an RCAEval case directory are, measured from the archives rather than described. Metadata and counts only: no row of any of these files is reproduced here, and none may be, because the corpora are fetched outside the working tree and never committed. The digests are here so a reader who downloads RE2-OB can prove they are looking at the same bytes this table describes.",
+  "measuredFrom": {
+    "case": "RE2-OB/checkoutservice_cpu/1",
+    "archive": "RE2-OB.zip",
+    "archiveSha256": "measured by golden-master/official-assets.json",
+    "read": "three central-directory entries inflated from the archive by range request, and for cross-checking the same case's logs.csv (23 515 107 bytes), cluster_info.json and inject_time.txt",
+    "injectSecond": 1705354566
+  },
+  "bucketSeconds": 15,
+  "bucketNote": "One row per 15 seconds, not the 'one row a minute' that docs/targets/rcaeval.md published for four rounds. The grid is dense -- every step from the first instant to the last, with no gaps -- and every one of the three tables uses the same 97 rows. Traces and logs are bucketed on absolute 15-second boundaries (1705353840 is a multiple of 15), so the boundary is `floor(t / 15) * 15` rather than an offset from the first sample.",
+  "tables": [
+    {
+      "file": "logts.csv",
+      "sha256": "155f3d3e3431b5e26f69ea2d62110857dc815776a77c805dd0c315d412c9bf26",
+      "bytes": 9951,
+      "rows": 97,
+      "columns": 30,
+      "firstSecond": 1705353840,
+      "lastSecond": 1705355280,
+      "cells": 2910,
+      "derivable": "exact",
+      "reducedFrom": ["logs.csv", "cluster_info.json"],
+      "columnRule": "<container>_<cluster key>, ordered by the key as an integer; the key is a decimal string in cluster_info.json and the container is the one that cluster names",
+      "valueRule": "count of log rows in the bucket whose container_name and log_template match that cluster exactly; a row matching no cluster is dropped (twenty `redis` rows with an empty log_template in this case) and the grid still spans its instant",
+      "verified": "2910 of 2910 cells equal, by scripts/check-aggregate-tables.mjs",
+      "verifiedAt": "2026-10-30, against the archive described above"
+    },
+    {
+      "file": "tracets_lat.csv",
+      "sha256": "4b7fb25d8dc8f753c2924089442d0704c1a29e853f3fed63eb6fa9b5bfbe370b",
+      "bytes": 4876,
+      "rows": 97,
+      "columns": 17,
+      "firstSecond": 1705353840,
+      "lastSecond": 1705355280,
+      "cells": 1649,
+      "derivable": "refuted",
+      "columnRule": "<callee class name lowercased>_<methodName, or operationName when methodName is empty>, in first-appearance order in the trace file. Measured, not assumed: that rule reproduces all 17 column names and their order exactly.",
+      "valueRule": "unknown. The values are integers, sparse (many zeros), and no reduction of traces.csv reproduces them.",
+      "refutation": {
+    "candidates": [
+          "span count",
+          "distinct trace id count",
+          "server-side span count",
+          "client-side span count",
+          "server-side distinct trace ids",
+          "p50 / p90 / p95 / p99 span duration in milliseconds",
+          "maximum span duration in milliseconds"
+        ],
+        "cellsEqual": 0,
+        "cells": 1649,
+        "ratioSpread": "up to 61x within a single column between the corpus's value and the count it could plausibly be, so no single scale factor explains the table either"
+      },
+      "conclusion": "not produced by this repository, and not producible from anything the archive ships"
+    },
+    {
+      "file": "tracets_err.csv",
+      "sha256": "82a4b3a6bfb66e232a2597c1bd3c44ff719b10346ad1b3a1e6460f8c7f9a9bc0",
+      "bytes": 8113,
+      "rows": 97,
+      "columns": 17,
+      "firstSecond": 1705353840,
+      "lastSecond": 1705355280,
+      "cells": 1649,
+      "derivable": "refuted",
+      "columnRule": "identical to tracets_lat.csv, name for name and order for order",
+      "valueRule": "unknown. The column is serialised as a float (`0.0`) rather than an integer, and every value in this case is zero because no span in its trace file carries an error status -- so the case cannot distinguish an error rate from an error count even if the source were known.",
+      "refutation": {
+        "candidates": [
+          "span count",
+          "distinct trace id count",
+          "server-side span count",
+          "client-side span count",
+          "server-side distinct trace ids",
+          "p50 / p90 / p95 / p99 span duration in milliseconds",
+          "maximum span duration in milliseconds",
+          "count of spans whose statusCode is 2 (error)",
+          "ratio of error spans to all spans"
+        ],
+        "cellsEqual": 0,
+        "cells": 1649,
+        "ratioSpread": "undefined: every published value is zero, so a ratio cannot be formed"
+      },
+      "conclusion": "not produced by this repository, and this case cannot even reveal what the column means"
+    }
+  ],
+  "alsoMeasured": {
+    "units": {
+      "logs.timestamp": "nanoseconds (19 digits in both archives)",
+      "traces.startTime": "microseconds (16 digits in both archives)",
+      "traces.startTimeMillis": "milliseconds (13 digits in both archives)",
+      "traces.duration": "microseconds"
+    },
+    "unitDefect": "This repository's exporter wrote microseconds into logs.timestamp until finding 306. The claim it was written from named two columns -- 'the unit both corpora's `timestamp` and `startTime` columns use' -- and was true of one of them.",
+    "re3": "RE3 ships none of the three tables. Its case directories hold logs.csv and traces.csv and no aggregate of either, so the reduction above has nothing in RE3 to be checked against."
+  }
+}

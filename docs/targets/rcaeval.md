@@ -64,10 +64,10 @@ rather than to a case — which is the same shape, with the system token carryin
 ├── inject_time.txt             # Unix seconds
 ├── logs.csv                    # RE2 / RE3, raw log lines
 ├── traces.csv                  # RE2 / RE3, raw spans
-├── logts.csv                   # RE2, pre-aggregated event counts
-├── tracets_err.csv             # RE2 (OB and TT)
-├── tracets_lat.csv             # RE2 (OB and TT)
-├── cluster_info.json           # RE2, log templates per node
+├── logts.csv                   # RE2, log counts per 15 s, one column per cluster
+├── tracets_err.csv             # RE2 (OB and TT), per endpoint per 15 s
+├── tracets_lat.csv             # RE2 (OB and TT), per endpoint per 15 s
+├── cluster_info.json           # RE2, the log clusters logts.csv is keyed by
 ├── pod-node-{1,2}.csv          # RE2, placement
 └── metrics.png, metrics_postprocess.log
 ```
@@ -79,12 +79,47 @@ schema of the two files whose *names* match ours. Measured from the archives (fi
 | --- | --- | --- |
 | `traces.csv` | 11 columns, `time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID` | the same 11, identical |
 | `logs.csv` | 9 columns, `time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template` | 6 columns, `time,timestamp,container_name,message,pod_name,node_name` |
-| units | `timestamp`/`startTime` are Unix **microseconds**; `duration` is microseconds; `time` is `HH:MM` UTC | the same |
+| units | `traces.startTime` is Unix **microseconds** (16 digits); `traces.startTimeMillis` is milliseconds (13); `traces.duration` is microseconds; `logs.timestamp` is **nanoseconds** (19 digits); `time` is `HH:MM` UTC | the same |
 
 So the trace table is one schema across both suites and the log table is two, which is why
 `RCAEVAL_TRACES_COLUMNS` is a list and `RCAEVAL_LOGS_COLUMNS` is a map. The columns the IR does not
 carry (`methodName`; RE2's `req_path`, `error`, `cluster_id`, `log_template`) are emitted empty and
 named in `RCAEVAL_UNFILLED_COLUMNS` rather than filled with an invention.
+
+### The units row above was wrong, and it was wrong for one file
+
+This table used to say "`timestamp`/`startTime` are Unix **microseconds**", in one cell, about two
+columns in two different files. Measured, the sentence is true of `startTime` and false of
+`timestamp`: `RE2-OB/checkoutservice_cpu/1/logs.csv` opens at `1705353846067349596` and
+`RE3-OB/emailservice_f1/1/logs.csv` at `1731910960181130857`, both nineteen digits, both
+nanoseconds, while the `startTime` columns beside them are sixteen (finding 306). The exporter wrote
+microseconds into that column on every case of both suites until the measurement was taken, and the
+test that checked the value asserted the same number the code produced, because both were written
+from this one cell.
+
+So the unit is stated per column now, and the exporter's `RCAEVAL_INSTANT_COLUMNS` holds the same
+statement where the writer has to read it.
+
+### The three aggregate tables, measured
+
+`logts.csv`, `tracets_err.csv` and `tracets_lat.csv` were described here for four rounds without
+ever being opened. `golden-master/rcaeval-aggregates.json` records what they are:
+
+| table | columns | grid | derivable |
+| --- | --- | --- | --- |
+| `logts.csv` | 30, `<container>_<cluster_info key>` ordered by the key **as an integer** | 97 rows, one per **15 s**, dense | **yes** -- `logs.csv` + `cluster_info.json`, 2910 of 2910 cells |
+| `tracets_lat.csv` | 17, `<callee>_<method>`, in first-appearance order in `traces.csv` | the same 97 rows | **no** -- seven candidate reductions, 0 of 1649 cells |
+| `tracets_err.csv` | the same 17, name for name | the same 97 rows | **no**, and this case cannot even reveal the column's meaning: every value is `0.0` |
+
+"One row a minute" was wrong by a factor of four: the step between consecutive `time` values is 15 on
+every row of all three files, and 1705353840 is a multiple of 15, so the bucket is
+`floor(t / 15) * 15` rather than an offset from the first sample. The grid is dense -- a quiet
+15 seconds is a row of zeros, not a missing row.
+
+The first of the three is reproduced by `buildLogtsCsv` and checked cell for cell by
+`scripts/check-aggregate-tables.mjs`, which runs in `official-data.yml` against the fetched corpus.
+The other two are not produced by this repository and cannot be: their input is not in the archive.
+RE3 ships none of the three, so nothing in that corpus can be checked against them.
 
 So a corpus case reads `RE2-OB/checkoutservice_cpu/1/`, not `RE2-checkoutservice-cpu_1/`. Two
 components carry labels that a single flat token cannot:
@@ -196,7 +231,7 @@ anomalous window. Unix seconds, no trailing newline.
 <!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/logs.csv -->
 ```csv
 time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template
-00:10,1788653410000000,order,Connection pool exhausted,ERROR,,,,
+00:10,1788653410000000000,order,Connection pool exhausted,ERROR,,,,
 ```
 
 ### `{suite}-{system}/{service}_{fault}/{n}/traces.csv` (RE2 / RE3)

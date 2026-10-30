@@ -340,3 +340,111 @@ describe('the index has not outgrown what it indexes', () => {
     expect(result.summary).toMatch(/index [\d,]+ of smallest volume [\d,]+/);
   });
 });
+
+/**
+ * The sections a round closes itself with, and which round they belong to.
+ *
+ * v3.18 was written by inserting it **above** v3.17's `### Readings`, so v3.17 lost its
+ * ledger and v3.18 held two. Concatenation still passed: every byte was present, in
+ * order, and the split rule ("a boundary between two entries, never inside one") was
+ * satisfied -- the defect was *inside* one entry. Finding 309.
+ *
+ * Two rules, because the defect has two halves: a round holds one of each closing
+ * section, and a round after the ledger began holds its own. The first alone would have
+ * caught the double; only the second says anything about the round that lost it.
+ */
+describe('the closing sections a round owns', () => {
+  it('refuses a round holding two `### Readings`, and names the round inserted before it', () => {
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '| what | this round |',
+        '',
+        '### Left open',
+        '',
+        '- nothing `[open: a fixture]`',
+        '',
+        '## v3.02 — the second round',
+        '',
+        '### Readings',
+        '',
+        '| what | this round |',
+        '',
+        '### Unchanged',
+        '',
+        '### Readings',
+        '',
+        '| what | this round |',
+        '',
+        '### Left open',
+        '',
+        '- nothing `[open: a fixture]`',
+        '',
+      ].join('\n'),
+    });
+    const errors = check(indexFor([['volume-01.md', 2, 'v3.01', 'v3.02']]), dir).errors.join('\n');
+    expect(errors).toContain('holds 2 `### Readings` sections');
+    expect(errors).toContain('finding 309');
+  });
+
+  it('refuses a round with no readings when the round before it has some', () => {
+    // The half the duplication rule cannot see: v3.02's own section is in the file, and it
+    // is in v3.01, which is why the count on v3.01 looked correct.
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — the first round',
+        '',
+        '### Readings',
+        '',
+        '| what | this round |',
+        '',
+        '## v3.02 — the second round',
+        '',
+        'body, and no ledger',
+        '',
+      ].join('\n'),
+    });
+    const errors = check(indexFor([['volume-01.md', 2, 'v3.01', 'v3.02']]), dir).errors.join('\n');
+    expect(errors).toContain('which closes with `### Readings`, and carries none');
+    expect(errors).toContain('finding 309');
+  });
+
+  it('accepts the rounds before the ledger began, because the chain needs a first link', () => {
+    // Pinning the version it started at would be a literal that rots; the volume already
+    // says where, so the rule reads it from the document it is checking.
+    const dir = volumesOf({
+      'volume-01.md': '## Pass 7 — one\n\nbody\n',
+      'volume-02.md': '## v2.06 — two\n\nbody\n',
+    });
+    const result = check(
+      indexFor([['volume-01.md', 1, 'Pass 7', 'Pass 7'], ['volume-02.md', 1, 'v2.06', 'v2.06']]),
+      dir,
+    );
+    expect(result.errors).toEqual([]);
+  });
+
+  it('counts a quoted `### Readings` as prose, not as a second section', () => {
+    // A round may quote a shape it is describing -- v2.26 quotes four headings that are not
+    // headings -- and a fenced quotation counted as a section would make the rule refuse
+    // the round that documents it.
+    const dir = volumesOf({
+      'volume-01.md': [
+        '## v3.01 — a round that quotes its own grammar',
+        '',
+        '```markdown',
+        '### Readings',
+        '### Readings',
+        '```',
+        '',
+        '### Readings',
+        '',
+        '| what | this round |',
+        '',
+      ].join('\n'),
+    });
+    expect(check(indexFor([['volume-01.md', 1, 'v3.01', 'v3.01']]), dir).errors).toEqual([]);
+  });
+});
