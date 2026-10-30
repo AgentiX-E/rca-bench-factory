@@ -131,10 +131,34 @@ export function parseTimestamp(
       if (!/^-?\d+$/.test(value)) {
         throw new TimeParseError(`not an integer epoch for layout ${layout}`, raw);
       }
-      const n = Number(value);
-      const multiplier =
-        layout === 'unix_s' ? 1e3 : layout === 'unix_ms' ? 1 : layout === 'unix_us' ? 1e-3 : 1e-6;
-      return { isoUtc: epochToIsoUtc(n * multiplier), offsetMinutes: 0, offsetWasAssumed: false };
+      // Integer arithmetic, because a double cannot hold a nanosecond epoch.
+      //
+      // This block used to be `Number(value) * 1e-6`, which is wrong in two ways at
+      // once and silently: 2^60 ns exceeds a double's 53 bits by seven digits, so
+      // `Number` first *rounds the input* to the nearest representable value -- a
+      // step of 256 ns at 2024 -- and the product then truncates. A reading within
+      // 128 ns below a millisecond boundary crosses it and the instant is recorded
+      // one millisecond **late**.
+      //
+      // Measured on `RE3-OB/adservice_f3/2/logs.csv`: `1732275121315999877` is
+      // `11:32:01.315987877`, and this parser returned `.316`. Two of that case's
+      // 69 275 log rows came back a millisecond later than the corpus wrote them,
+      // which the round trip reported as two rows the export had invented and two
+      // it had lost (finding 316).
+      //
+      // `BigInt` division truncates toward zero, which is what `TimeClip` does to a
+      // fractional millisecond, so the two conversions agree by construction: the
+      // IR holds whole milliseconds and both the reader and the writer land on the
+      // same one.
+      const n = BigInt(value);
+      const perMillisecond =
+        layout === 'unix_s' ? 1n : layout === 'unix_ms' ? 1n : layout === 'unix_us' ? 1_000n : 1_000_000n;
+      const milliseconds = layout === 'unix_s' ? n * 1_000n : n;
+      return {
+        isoUtc: epochToIsoUtc(Number(milliseconds / perMillisecond)),
+        offsetMinutes: 0,
+        offsetWasAssumed: false,
+      };
     }
     case 'java_log': {
       const m = JAVA_LOG_PATTERN.exec(value);

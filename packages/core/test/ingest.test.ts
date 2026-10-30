@@ -587,3 +587,114 @@ describe('ingestFile - branch completeness', () => {
     expect((signals[0]?.payload as { severityText?: string }).severityText).toBeUndefined();
   });
 });
+
+describe('ingestFile - the columns RCAEval RE3 asks for', () => {
+  /**
+   * RE3's log table has six columns, and two of them say which pod and which node
+   * emitted the line. `RCAEVAL_UNFILLED_COLUMNS['logs/RE3']` is empty -- the export
+   * claims to fill all six -- but until the layout could name these two columns no
+   * file-fed case could fill them, so the claim held only for a bundle whose
+   * signals had been built by a backend rather than read from a table.
+   */
+  it('carries the pod and the node as resource attributes', () => {
+    const src =
+      'timestamp,container_name,message,pod_name,node_name\n' +
+      '2026-09-06T00:00:00Z,frontend,request started,frontend-588fbcd66b-rzd62,ip-192-168-24-141\n';
+    const l: FileLayout = {
+      timestamp: 'timestamp',
+      service: 'container_name',
+      logBody: 'message',
+      podName: 'pod_name',
+      nodeName: 'node_name',
+    };
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout: l });
+    expect(quarantine).toEqual([]);
+    expect(signals[0]?.resource).toEqual({
+      'service.name': 'frontend',
+      'k8s.pod.name': 'frontend-588fbcd66b-rzd62',
+      'k8s.node.name': 'ip-192-168-24-141',
+    });
+  });
+
+  it('omits both keys when the file does not name them', () => {
+    // Absence and emptiness are different claims: `''` would say the source
+    // recorded a pod whose name is the empty string.
+    const src = 'timestamp,container_name,message\n2026-09-06T00:00:00Z,frontend,hello\n';
+    const l: FileLayout = { timestamp: 'timestamp', service: 'container_name', logBody: 'message' };
+    const { signals } = ingestFile(src, { format: 'csv', signalKind: 'log', layout: l });
+    expect(signals[0]?.resource).toEqual({ 'service.name': 'frontend' });
+    expect('k8s.pod.name' in signals[0]!.resource).toBe(false);
+    expect('k8s.node.name' in signals[0]!.resource).toBe(false);
+  });
+
+  it('finds both columns without being told, because they are resource attributes', () => {
+    const layout = detectFileLayout(['timestamp', 'service', 'message', 'pod_name', 'node_name'], 'log');
+    expect(layout.podName).toBe('pod_name');
+    expect(layout.nodeName).toBe('node_name');
+  });
+
+  it('divides a microsecond duration into the IR’s milliseconds', () => {
+    // The corpus's `duration` column is microseconds and its name carries no unit.
+    // `4330` read as milliseconds would be a span of four seconds in a system whose
+    // p99 is fifty milliseconds; nothing downstream can tell that from a slow span.
+    const src = 'startTime,serviceName,traceID,spanID,operationName,duration\n1731910960029548,frontend,tr-1,sp-1,GET /x,4330\n';
+    const l: FileLayout = {
+      timestamp: 'startTime',
+      service: 'serviceName',
+      traceId: 'traceID',
+      spanId: 'spanID',
+      spanName: 'operationName',
+      durationMs: 'duration',
+      durationUnit: 'us',
+    };
+    const { signals, quarantine } = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'trace',
+      layout: l,
+      timeLayout: 'unix_us',
+    });
+    expect(quarantine).toEqual([]);
+    expect((signals[0]?.payload as { durationMs?: number }).durationMs).toBeCloseTo(4.33, 10);
+    // And the value the same file would have produced under the default.
+    const asMs = ingestFile(src, { format: 'csv', signalKind: 'trace', layout: { ...l, durationUnit: undefined }, timeLayout: 'unix_us' });
+    expect((asMs.signals[0]?.payload as { durationMs?: number }).durationMs).toBe(4330);
+  });
+
+  it('still refuses a duration that is not a number, whatever the unit', () => {
+    const src = 'startTime,serviceName,traceID,spanID,operationName,duration\n1731910960029548,frontend,tr-1,sp-1,GET /x,fast\n';
+    const l: FileLayout = {
+      timestamp: 'startTime',
+      service: 'serviceName',
+      traceId: 'traceID',
+      spanId: 'spanID',
+      spanName: 'operationName',
+      durationMs: 'duration',
+      durationUnit: 'us',
+    };
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'trace', layout: l, timeLayout: 'unix_us' });
+    expect(signals).toEqual([]);
+    expect(quarantine[0]?.reason).toMatch(/duration/i);
+  });
+
+  it('keeps the hazard that makes a stated layout necessary', () => {
+    // Not a wish: a measurement, pinned so it cannot be forgotten. RCAEval's log
+    // table opens with `time` (HH:MM) and carries the instant in `timestamp` (ns);
+    // detection picks `time`, `parseTimestamp` refuses `06:22`, and every row of
+    // both tables is quarantined. Reordering the aliases would only move which
+    // corpus is misread, so the answer is for a known schema to state its mapping.
+    const layout = detectFileLayout(['time', 'timestamp', 'container_name', 'message'], 'log');
+    expect(layout.timestamp).toBe('time');
+    const src = 'time,timestamp,container_name,message\n06:22,1731910960181130857,frontend,hello\n';
+    const guessed = ingestFile(src, { format: 'csv', signalKind: 'log', layout: { ...layout, service: 'container_name', logBody: 'message' } });
+    expect(guessed.signals).toEqual([]);
+    expect(guessed.quarantine[0]?.reason).toMatch(/timestamp parse failed/);
+    const stated = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'log',
+      layout: { timestamp: 'timestamp', service: 'container_name', logBody: 'message' },
+      timeLayout: 'unix_ns',
+    });
+    expect(stated.quarantine).toEqual([]);
+    expect(stated.signals[0]?.timestamp).toBe('2024-11-18T06:22:40.181Z');
+  });
+});

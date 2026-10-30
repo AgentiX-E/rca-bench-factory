@@ -60,6 +60,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  compareModalityTables,
+  describeModalityComparison,
   exportForScoreTarget,
   ingestPrimeDataset,
   isVocabularyMember,
@@ -469,6 +471,127 @@ const CASE_PAYLOAD_NAMES = ['metrics.json', 'data.csv', 'simple_metrics.csv', 'm
 const CASE_LABEL = 'inject_time.txt';
 
 /**
+ * The log and trace tables a corpus case ships, read as input rather than ignored.
+ *
+ * ## What this closes
+ *
+ * The fourth anchor scored 735 cases at `oracle=1.00` while every one of their
+ * `logs.csv` and `traces.csv` held **a header and no rows**. The official metric
+ * reads the case directory name and the metric table; the shape check was
+ * satisfied by the two files being present. So RE3 -- the slice that exists to
+ * exercise code-level RCA on logs and traces -- round-tripped as a metric-only
+ * slice, and nothing said so (finding 315).
+ *
+ * ## Why the mapping is stated and not detected
+ *
+ * `detectFileLayout` was measured against these two files and is wrong about all
+ * three of their decisions:
+ *
+ *   - `time` comes first in the timestamp aliases, and both tables open with a
+ *     `time` column holding `HH:MM` while the instant sits in a later column --
+ *     so detection takes `06:22` as the timestamp and `parseTimestamp` refuses it.
+ *     Measured on `RE3-OB/emailservice_f1/1`: 70 076 log rows and 164 920 spans,
+ *     0 signals, every row quarantined.
+ *   - `container_name` is not a service alias, so a log table's service column is
+ *     not found and every row is refused for a missing service.
+ *   - `duration` is in the `durationMs` aliases, and this corpus writes
+ *     microseconds; read as milliseconds every span is a thousand times too long.
+ *
+ * A schema that is known is stated. Detection stays what it is for: a file nobody
+ * has described.
+ *
+ * ## Why RE2 is not here
+ *
+ * Its log table is nine columns, four of which the IR has no field for
+ * (`req_path`, `error`, `cluster_id`, `log_template`) and one of which -- `level`
+ * -- feeds a closed severity vocabulary. Reading it means answering what happens to
+ * a `level` this reader has never seen, and no RE2 archive has been measured in
+ * this tree. Claiming it from a schema table would be inventing the answer; the
+ * omission is recorded as open instead.
+ */
+const MODALITY_PLANS = {
+  RE3: [
+    {
+      table: 'logs',
+      file: 'logs.csv',
+      spec: {
+        signalKind: 'log',
+        format: 'csv',
+        timeLayout: 'unix_ns',
+        layout: {
+          timestamp: 'timestamp',
+          service: 'container_name',
+          logBody: 'message',
+          podName: 'pod_name',
+          nodeName: 'node_name',
+        },
+      },
+      columns: [
+        // `time` is `HH:MM` of the instant, and the corpus stores its own rendering
+        // of the same fact. One log row in 61 828 of `RE3-OB/currencyservice_f1/1`
+        // has `time` = `06:17` beside a `timestamp` of `1731910619999999863` ns,
+        // because the corpus derived that minute through a double at microsecond
+        // resolution and 0.14 us below the boundary rounded up across it. So the
+        // check is against the instant, and the corpus's disagreement with itself
+        // is counted rather than followed.
+        { column: 'time', kind: 'derived', from: 'timestamp' },
+        { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+        { column: 'container_name', kind: 'exact' },
+        { column: 'message', kind: 'exact' },
+        // The two columns RE3's log table has and RE2's does not. The IR carries
+        // them as resource attributes, and until the file layout could name them
+        // they were written empty on every file-fed export -- in a table whose
+        // declared unfilled columns are none.
+        { column: 'pod_name', kind: 'exact' },
+        { column: 'node_name', kind: 'exact' },
+      ],
+    },
+    {
+      table: 'traces',
+      file: 'traces.csv',
+      spec: {
+        signalKind: 'trace',
+        format: 'csv',
+        // `startTime` is microseconds; `startTimeMillis` beside it is milliseconds
+        // and would work too, but the microsecond column is the finer one and the
+        // one the IR's millisecond clock truncates -- which is a fact worth
+        // measuring rather than avoiding.
+        timeLayout: 'unix_us',
+        layout: {
+          timestamp: 'startTime',
+          service: 'serviceName',
+          traceId: 'traceID',
+          spanId: 'spanID',
+          parentSpanId: 'parentSpanID',
+          spanName: 'operationName',
+          durationMs: 'duration',
+          durationUnit: 'us',
+        },
+      },
+      columns: [
+        { column: 'time', kind: 'derived', from: 'startTime' },
+        { column: 'traceID', kind: 'exact' },
+        { column: 'spanID', kind: 'exact' },
+        { column: 'serviceName', kind: 'exact' },
+        // The corpus fills this with the last segment of `operationName` in RE2-OB
+        // and leaves it empty in RE3-OB; the IR has no field either way.
+        { column: 'methodName', kind: 'not-carried' },
+        { column: 'operationName', kind: 'exact' },
+        { column: 'startTimeMillis', kind: 'exact' },
+        { column: 'startTime', kind: 'truncated', unit: 'us' },
+        { column: 'duration', kind: 'exact' },
+        // `14.0` is in this column 138 times in `emailservice_f1/1`, and 14 is gRPC
+        // `UNAVAILABLE`, not an OpenTelemetry status. The exporter writes nothing
+        // here, which is why this is `not-carried` rather than compared.
+        { column: 'statusCode', kind: 'not-carried' },
+        { column: 'parentSpanID', kind: 'exact' },
+      ],
+    },
+  ],
+};
+
+
+/**
  * The payload names are ordered by how much they say about their own schema.
  *
  * `metrics.json` and `data.csv` come first because they are the shapes this
@@ -558,11 +681,34 @@ function adaptCase(root, entry) {
     ? assertRcaevalMetrics(text, entry, found.name)
     : adaptDelimitedMetrics(text, entry, found.name);
   if (!metrics.ok) return metrics;
+
+  const files = { [`${entry.caseId}/metrics.csv`]: metrics.csv };
+  const specs = [];
+  const plans = [];
+  for (const modality of MODALITY_PLANS[entry.suite] ?? []) {
+    const key = `${entry.caseId}/${modality.file}`;
+    let body;
+    try {
+      body = readFileSync(join(dir, modality.file), 'utf8');
+    } catch {
+      // Declared and absent is a finding, not a quietly smaller round trip: the
+      // suite is named a slice by its modalities, and a case without them is a case
+      // that cannot be the evidence the slice exists to produce.
+      return {
+        ok: false,
+        reason: `${entry.suite} declares a ${modality.table} table and ${modality.file} is not readable under ${entry.caseId}`,
+      };
+    }
+    files[key] = body;
+    specs.push({ path: key, ...modality.spec });
+    plans.push({ table: modality.table, file: modality.file, key, columns: modality.columns });
+  }
+
   return {
     ok: true,
-    files: {
-      [`${entry.caseId}/metrics.csv`]: metrics.csv,
-    },
+    files,
+    specs,
+    plans,
     context: metrics.context,
   };
 }
@@ -609,6 +755,52 @@ function describeEntryType(stats) {
   if (stats.isDirectory()) return 'directory';
   if (stats.isSymbolicLink()) return 'symlink';
   return 'non-file entry';
+}
+
+/**
+ * Compare one case's exported log and trace tables with the corpus's own.
+ *
+ * Returns the verdicts for the log line and the failure reasons for the report;
+ * it touches nothing outside itself, so the caller decides what a failure does to
+ * the case's record.
+ *
+ * The export's directory is found by suffix rather than by rebuilding `casePath`:
+ * the directory is whatever the exporter says it is, and a second copy of that rule
+ * here is a second thing that can drift. `inject_time.txt` is written once per
+ * exported case, so the case under test names its own directory.
+ */
+function compareCaseModalities({ entry, adapted, exported }) {
+  const verdicts = [];
+  const failures = [];
+  const stampKey = Object.keys(exported.files).find((key) => key.endsWith('/inject_time.txt'));
+  const exportDir = stampKey === undefined ? undefined : stampKey.slice(0, -'/inject_time.txt'.length);
+
+  for (const plan of adapted.plans) {
+    const body = exportDir === undefined ? undefined : exported.files[`${exportDir}/${plan.file}`];
+    if (body === undefined) {
+      failures.push(`${entry.caseId}: the export carries no ${plan.file}`);
+      continue;
+    }
+    const verdict = compareModalityTables({
+      table: plan.table,
+      corpus: adapted.files[plan.key],
+      exported: body,
+      plan: plan.columns,
+    });
+    verdicts.push(verdict);
+    if (verdict.rowCountMatches && verdict.rowsMatch) continue;
+    const why = [
+      `${verdict.exportedRows} row(s) against the corpus's ${verdict.corpusRows}`,
+      verdict.onlyInCorpus > 0 ? `${verdict.onlyInCorpus} signature(s) only in the corpus` : '',
+      verdict.onlyInExport > 0 ? `${verdict.onlyInExport} only in the export` : '',
+      ...verdict.problems,
+      ...verdict.examples,
+    ]
+      .filter((part) => part !== '')
+      .join('; ');
+    failures.push(`${entry.caseId}: the exported ${plan.table} table is not the corpus's - ${why}`);
+  }
+  return { verdicts, failures };
 }
 
 function argValue(flag) {
@@ -743,6 +935,15 @@ if (caseCount === 0) {
  */
 const scoreRecords = [];
 const declared = [];
+/**
+ * Every modality table compared, so the run can report what it carried.
+ *
+ * A per-case line says whether *that* case's tables are the corpus's; this is the
+ * total, and it is the number a reader compares between runs. It is also the only
+ * place the truncations are summed: a million cells at the millisecond and none of
+ * them exact is a fact about the IR's clock, and one line is where it belongs.
+ */
+const modalityComparisons = [];
 for (const entry of descriptors.cases ?? []) {
   declared.push(entry.caseId);
   if (!files.has(`${entry.caseId}/inject_time.txt`)) {
@@ -814,6 +1015,9 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
         ...(entry.suite === 'RE3' ? { faultCategory: 'code' } : {}),
         injectTime: entry.injectTime,
         pathPrefixes: [entry.pathPrefix],
+        // The declared mapping for every table the case ships. Detection is for
+        // files nobody has described; this corpus has been described.
+        ...(adapted.specs.length > 0 ? { files: adapted.specs } : {}),
       },
     ],
     // The root cause is the service the directory name records, and the ingest
@@ -900,6 +1104,7 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     scoreRecords.push({ caseId: entry.caseId, target, status: 'skipped', reason: 'the target refuses this fault class' });
     continue;
   }
+
   // A skip is not a shape: an RE3 case the exporter refuses writes no files at all,
   // and judging that empty directory against the layout would report the refusal as
   // a malformed export.
@@ -920,6 +1125,29 @@ for (const [index, entry] of (descriptors.cases ?? []).entries()) {
     scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', score: scored, reason });
     continue;
   }
+
+  // The two tables RE3 exists for, compared with the corpus they came from.
+  //
+  // After the score rather than instead of it, because they answer different
+  // questions: the score says the case is loadable by the official rule, and this
+  // says the log and trace tables in the export are the corpus's tables rather than
+  // two headers. Until this existed, both were empty on every RE3 case and the
+  // score was 1.00 anyway (finding 315).
+  //
+  // Placed after the two branches above so a case is recorded exactly once: a
+  // failing modality must not also be filed as `scored`.
+  const modality = compareCaseModalities({ entry, adapted, exported });
+  modalityComparisons.push(...modality.verdicts);
+  for (const verdict of modality.verdicts) {
+    console.log(`ROUNDTRIP MODALITY ${label} ${describeModalityComparison(verdict)}`);
+  }
+  if (modality.failures.length > 0) {
+    console.log(`ROUNDTRIP FAIL ${label} modalities`);
+    for (const failure of modality.failures) roundTripFailures.push(failure);
+    scoreRecords.push({ caseId: entry.caseId, target, status: 'failed', reason: modality.failures.join('; ') });
+    continue;
+  }
+
   scoreRecords.push({ caseId: entry.caseId, target, status: 'scored', score: scored });
   roundTripped += 1;
 }
@@ -980,6 +1208,34 @@ if (droppedContext.cases > 0) {
     `ROUNDTRIP context ${droppedContext.cases} case(s) carried other entities in their table; ` +
       `${droppedContext.columns} column(s) across ${droppedContext.entities} entity reference(s) were ` +
       `not the case's component and were not attributed to it`,
+  );
+}
+
+if (modalityComparisons.length > 0) {
+  // One line for the whole run, because the per-case lines say "this case's tables
+  // are the corpus's" and this says how much of the corpus was carried to say it.
+  // An empty modalities section prints nothing at all rather than a zero, so a run
+  // that read no log or trace table cannot be mistaken for one that read them and
+  // found them empty.
+  const rows = (table) => modalityComparisons.filter((c) => c.table === table).reduce((sum, c) => sum + c.exportedRows, 0);
+  const corpusRows = (table) => modalityComparisons.filter((c) => c.table === table).reduce((sum, c) => sum + c.corpusRows, 0);
+  const exactColumns = modalityComparisons.reduce((sum, c) => sum + c.columns.filter((col) => col.kind === 'exact').length, 0);
+  const totalColumns = modalityComparisons.reduce((sum, c) => sum + c.columns.length, 0);
+  const truncatedCells = modalityComparisons.reduce(
+    (sum, c) => sum + c.columns.filter((col) => col.kind === 'truncated').reduce((n, col) => n + col.lossy, 0),
+    0,
+  );
+  const notCarried = modalityComparisons.reduce(
+    (sum, c) => sum + c.columns.filter((col) => col.kind === 'not-carried').reduce((n, col) => n + col.lossy, 0),
+    0,
+  );
+  console.log(
+    `ROUNDTRIP modalities ${modalityComparisons.length} table(s) over ` +
+      `${new Set(modalityComparisons.map((c) => c.table)).size} modality(ies): ` +
+      `${rows('logs')} of ${corpusRows('logs')} log row(s), ${rows('traces')} of ${corpusRows('traces')} span(s); ` +
+      `${exactColumns} of ${totalColumns} column(s) exact, ` +
+      `${truncatedCells} cell(s) truncated to the millisecond, ` +
+      `${notCarried} value(s) in columns the IR does not carry`,
   );
 }
 

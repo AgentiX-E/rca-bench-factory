@@ -336,7 +336,7 @@ const rcaeval = {
         { name: 'startTimeMillis', type: T.str, required: true, source: 'Date.parse(TelemetrySignal.timestamp)', notes: 'Unix milliseconds.' },
         { name: 'startTime', type: T.str, required: true, source: 'Date.parse(TelemetrySignal.timestamp) * 1000', notes: 'Unix microseconds.' },
         { name: 'duration', type: T.str, required: true, source: 'round(TracePayload.durationMs * 1000)', notes: 'Microseconds; the IR carries milliseconds.' },
-        { name: 'statusCode', type: T.str, required: false, source: 'SPAN_STATUSES -> 0/1/2', notes: 'OTel codes: unset/ok/error. Empty when the span has no status.' },
+        { name: 'statusCode', type: T.str, required: false, source: '(not carried)', notes: 'The corpus writes a gRPC status here (14 = UNAVAILABLE, 138 spans of one RE3-OB case); the IR holds an OTel status, and its OK would be written as 1 = CANCELLED. Empty, and named in RCAEVAL_UNFILLED_COLUMNS.' },
         { name: 'parentSpanID', type: T.str, required: false, source: 'TracePayload.parentSpanId ?? ""', notes: '' },
       ],
     },

@@ -504,6 +504,15 @@ export type {
   OpenRcaScoringPoints,
 } from './score/official.js';
 
+export { MODALITY_TABLES, TRUNCATED_UNITS, compareModalityTables, describeModalityComparison } from './score/modalities.js';
+export type {
+  ColumnComparison,
+  ColumnReading,
+  ModalityComparison,
+  ModalityTable,
+  TruncatedUnit,
+} from './score/modalities.js';
+
 export {
   buildGroundTruthCsv,
   buildScoringPoints,

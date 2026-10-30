@@ -1084,8 +1084,8 @@ window.RBF_DATA = {
               "name": "statusCode",
               "type": "string",
               "required": false,
-              "source": "SPAN_STATUSES -> 0/1/2",
-              "notes": "OTel codes: unset/ok/error. Empty when the span has no status."
+              "source": "(not carried)",
+              "notes": "The corpus writes a gRPC status here (14 = UNAVAILABLE, 138 spans of one RE3-OB case); the IR holds an OTel status, and its OK would be written as 1 = CANCELLED. Empty, and named in RCAEVAL_UNFILLED_COLUMNS."
             },
             {
               "name": "parentSpanID",
@@ -2285,7 +2285,7 @@ window.RBF_DATA = {
         "RE2-order-prod/order_cpu/1/data.csv": "time,order_cpu_usage\n1788652800,20\n1788652830,21\n1788652860,19\n1788652890,20\n1788652920,22\n1788652950,18\n1788652980,20\n1788653010,21\n1788653040,19\n1788653070,20\n1788653400,95\n1788653430,96\n1788653460,97\n1788653490,98\n1788653520,99\n",
         "RE2-order-prod/order_cpu/1/inject_time.txt": "1788653400",
         "RE2-order-prod/order_cpu/1/logs.csv": "time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template\n00:10,1788653410000000000,order,Connection pool exhausted,ERROR,,,,\n",
-        "RE2-order-prod/order_cpu/1/traces.csv": "time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID\n00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,\n00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,1,sp-1\n"
+        "RE2-order-prod/order_cpu/1/traces.csv": "time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID\n00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,,\n00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,,sp-1\n"
       },
       "skipped": [],
       "report": {

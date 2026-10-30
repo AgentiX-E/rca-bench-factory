@@ -132,7 +132,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1145,
       "condition": "invalid.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(invalid.length)} case(s) could not be read as a FaultCase",
+      "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -140,7 +140,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1263,
       "condition": "problems.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
+      "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -148,7 +148,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1272,
       "condition": "unnamed.length > 0",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
+      "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -156,7 +156,7 @@
       "script": "scripts/check-fault-cases.mjs",
       "line": 1280,
       "condition": "index.cases.length < floor",
-      "diagnostic": "check-fault-cases: FAILED \u2014 ${String(index.cases.length)} four-layer case(s), below the floor of",
+      "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
       "provedBy": "packages/core/test/check-fault-cases.test.ts"
     },
@@ -224,7 +224,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 620,
+      "line": 812,
       "condition": "value === undefined || value.startsWith('--')",
       "diagnostic": "error: ${flag} requires a value",
       "status": "proved",
@@ -232,7 +232,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 681,
+      "line": 873,
       "condition": "failures.length > 0",
       "diagnostic": "- ${f}",
       "status": "proved",
@@ -240,7 +240,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 700,
+      "line": 892,
       "condition": "!existsSync(officialDir)",
       "diagnostic": "Fetch the corpus first: node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official",
       "status": "proved",
@@ -248,7 +248,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 705,
+      "line": 897,
       "condition": "!existsSync(casesPath)",
       "diagnostic": "Generate it first: node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official",
       "status": "proved",
@@ -256,7 +256,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 999,
+      "line": 1255,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -264,7 +264,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1017,
+      "line": 1273,
       "condition": "declared.length > 0 && roundTripped !== declared.length",
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${declared.length} case(s) declared but ${roundTripped} round-tripped,",
       "status": "proved",
@@ -466,7 +466,7 @@
       "script": "scripts/install-git-hooks.mjs",
       "line": 41,
       "condition": "result.state === 'missing-hook' || result.state === 'unset'",
-      "diagnostic": "install-git-hooks: FAILED (${result.state}) \u2014 ${result.message}\\n",
+      "diagnostic": "install-git-hooks: FAILED (${result.state}) — ${result.message}\\n",
       "status": "proved",
       "provedBy": "packages/core/test/git-hooks.test.ts"
     },

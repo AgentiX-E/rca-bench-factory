@@ -71,7 +71,7 @@ that is checked.)
 | [volume-06.md](audit/volume-06.md) | 255–266 | 12 | the corpus is two documents joined by one string, and nothing read both |
 | [volume-07.md](audit/volume-07.md) | 267–275 | 9 | the layout we wrote is not the layout the loader reads |
 | [volume-08.md](audit/volume-08.md) | 276–289 | 14 | the loudest series is not the answer, a reading sits on its unit's grid, and a spread of zero is a step of the declaration |
-| [volume-09.md](audit/volume-09.md) | 290–314 | 25 | every test passed and the run was not green, and one 500 turned a channel red without naming a call |
+| [volume-09.md](audit/volume-09.md) | 290–316 | 27 | every test passed and the run was not green, one 500 turned a channel red without naming a call, and the slice that exists for logs and traces carried neither |
 
 **Where a new finding goes.** Append to the last volume. When it would grow past
 280,000 bytes, start the next volume -- one number higher than the last, holding the

@@ -623,24 +623,38 @@ describe('RCAEval exporter · the columns are the corpora’s, measured', () => 
     expect(rowOf(buildTracesCsv([fullSpan]), 'startTimeMillis')).toHaveLength(13);
   });
 
-  it('spells the span status as the OTel code the column holds', () => {
+  it('writes no status code, because the column is a gRPC status and the IR has an OTel one', () => {
+    // This test used to assert the opposite: `UNSET` → `0`, `OK` → `1`,
+    // `ERROR` → `2`, under a docblock that said the column holds OpenTelemetry's
+    // codes "because that is what the column is". RE3-OB says it is not. Of
+    // 164 920 spans in `emailservice_f1/1`: 157 156 carry `0.0`, 7 626 are empty,
+    // and 138 carry `14.0` -- gRPC `UNAVAILABLE`, and the whole of that case's
+    // failure signal: every one of the 138 is `checkoutservice` calling
+    // `hipstershop.EmailService/SendOrderConfirmation`, every one of them after
+    // the injection instant, in a case about a fault in `emailservice`.
+    //
+    // So the mapping is not merely approximate: an OTel `OK` would have been
+    // written as `1`, which is gRPC `CANCELLED` -- a failure. The column is now
+    // empty and named in `RCAEVAL_UNFILLED_COLUMNS`, and this test holds every
+    // status, including the absence of one, to the same cell.
     const span = fullSpan.payload as Extract<TelemetrySignal['payload'], { kind: 'trace' }>;
-    const codeOf = (status: 'OK' | 'ERROR' | 'UNSET' | undefined): string => {
+    const cellOf = (status: 'OK' | 'ERROR' | 'UNSET' | undefined): string => {
       // Built field by field rather than spread-then-override: `{...span, status: undefined}`
-      // keeps the key with an undefined value, and `p.status === undefined` cannot
-      // tell that from an absent key -- which would make the last assertion below
-      // test the spread rather than the writer.
+      // keeps the key with an undefined value, and a writer that asked
+      // `p.status === undefined` could not tell that from an absent key.
       const payload: TelemetrySignal['payload'] =
         status === undefined
           ? { kind: 'trace', traceId: span.traceId, spanId: span.spanId, parentSpanId: span.parentSpanId, spanName: span.spanName, durationMs: span.durationMs }
           : { ...span, status };
       return rowOf(buildTracesCsv([{ ...fullSpan, payload }]), 'statusCode');
     };
-    expect(codeOf('UNSET')).toBe('0');
-    expect(codeOf('OK')).toBe('1');
-    expect(codeOf('ERROR')).toBe('2');
-    // Absent stays absent: `0` is a status, not the absence of one.
-    expect(codeOf(undefined)).toBe('');
+    expect(cellOf('UNSET')).toBe('');
+    expect(cellOf('OK')).toBe('');
+    expect(cellOf('ERROR')).toBe('');
+    expect(cellOf(undefined)).toBe('');
+    // The one value the old mapping produced for the commonest status, named so a
+    // future reader can see why the column is empty rather than suspect a bug.
+    expect(cellOf('OK')).not.toBe('1');
   });
 
   it('leaves exactly the columns it declares it does not carry', () => {

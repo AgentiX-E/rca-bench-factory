@@ -121,6 +121,53 @@ The first of the three is reproduced by `buildLogtsCsv` and checked cell for cel
 The other two are not produced by this repository and cannot be: their input is not in the archive.
 RE3 ships none of the three, so nothing in that corpus can be checked against them.
 
+### The status column is not OTel's
+
+`traces.csv`'s `statusCode` was described here as OpenTelemetry's codes -- `0` unset, `1` ok, `2`
+error -- "because that is what the column is". RE3-OB denies it. Of the 164 920 spans in
+`RE3-OB/emailservice_f1/1`:
+
+| value | spans | what it is |
+| --- | --- | --- |
+| `0.0` | 157 156 | gRPC `OK` |
+| *(empty)* | 7 626 | the frontend's own root spans, which record neither a method nor a status |
+| `14.0` | **138** | gRPC **`UNAVAILABLE`** |
+
+Fourteen is not in OpenTelemetry's vocabulary, and those 138 spans are the whole of that case's
+failure signal: every one of them is `checkoutservice` calling
+`hipstershop.EmailService/SendOrderConfirmation`, every one of them **after** the injection instant
+(`06:34:40`; the first is at `06:34:49`), in a case whose fault is in `emailservice`. The column is the
+gRPC code the client recorded, and it is where a fault shows up in this table.
+
+The export writes nothing there, which is a change: it used to map `SpanStatus` to `0`/`1`/`2`, and the
+one value that mapping produced for an ordinary successful span was `1` -- gRPC `CANCELLED`, a failure.
+A column an exporter cannot mean is left empty and named, and this one is in
+`RCAEVAL_UNFILLED_COLUMNS.traces` beside `methodName`.
+
+### What the round trip carries, measured
+
+`logs.csv` and `traces.csv` were emitted and never read as input, so an RE3 case round-tripped as a
+metric-only case: both files held a header and **no rows** on all 90 of them, and the official metric --
+which reads the case directory name and the metric table -- scored 1.00 regardless. The round trip now
+feeds both tables through the ingest and compares the export with the corpus, row for row.
+
+The comparison is a claim about columns, not about bytes, and there are three kinds:
+
+| kind | meaning | columns |
+| --- | --- | --- |
+| exact | every cell survives, compared as a multiset of strings | `time`, `container_name`, `message`, `pod_name`, `node_name` (logs); `time`, `traceID`, `spanID`, `serviceName`, `operationName`, `startTimeMillis`, `duration`, `parentSpanID` (traces) |
+| truncated | the instant is the same; the digits finer than the IR's millisecond are zero | `logs.timestamp` (ns), `traces.startTime` (us) |
+| not carried | the IR has no field, or a field in another vocabulary; the export writes empty and the count of corpus values is reported | `traces.methodName`, `traces.statusCode` |
+
+Measured on `RE3-OB/adservice_f3/1` and `.../2`: **70 558 + 69 275 log rows** and **165 302 + 162 043
+spans**, every one of them present in the export, 26 of 34 columns exact, 437 305 cells truncated to the
+millisecond and 624 274 values in the two columns the IR does not carry.
+
+The truncations are not incidental. The IR's instant is a `Date`, so a log row written at
+`1731910960181130857` ns exports as `1731910960181000000`: the same millisecond, six digits short. That
+is a fact about the IR, and the round trip reports it per table rather than rounding both sides and
+calling the result equality.
+
 So a corpus case reads `RE2-OB/checkoutservice_cpu/1/`, not `RE2-checkoutservice-cpu_1/`. Two
 components carry labels that a single flat token cannot:
 
@@ -248,15 +295,15 @@ time,timestamp,container_name,message,level,req_path,error,cluster_id,log_templa
 | `startTimeMillis` | string | yes | `Date.parse(TelemetrySignal.timestamp)` | Unix milliseconds. |
 | `startTime` | string | yes | `Date.parse(TelemetrySignal.timestamp) * 1000` | Unix microseconds. |
 | `duration` | string | yes | `round(TracePayload.durationMs * 1000)` | Microseconds; the IR carries milliseconds. |
-| `statusCode` | string | no | `SPAN_STATUSES -&gt; 0/1/2` | OTel codes: unset/ok/error. Empty when the span has no status. |
+| `statusCode` | string | no | `(not carried)` | The corpus writes a gRPC status here (14 = UNAVAILABLE, 138 spans of one RE3-OB case); the IR holds an OTel status, and its OK would be written as 1 = CANCELLED. Empty, and named in RCAEVAL_UNFILLED_COLUMNS. |
 | `parentSpanID` | string | no | `TracePayload.parentSpanId ?? ""` |  |
 <!-- /fields -->
 
 <!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/traces.csv -->
 ```csv
 time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID
-00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,1,
-00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,1,sp-1
+00:10,tr-1,sp-1,order,,GET /checkout,1788653415000,1788653415000000,120000,,
+00:10,tr-1,sp-2,order,,GET /checkout,1788653416000,1788653416000000,120000,,sp-1
 ```
 
 ## Exporting

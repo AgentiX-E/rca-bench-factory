@@ -112,6 +112,7 @@ const ENUMERATED_MODULES = [
   'ir/schema-errors.ts',
   'ir/types.ts',
   'score/dispatch.ts',
+  'score/modalities.ts',
   'score/official.ts',
   'score/score.ts',
   'score/targets.ts',
@@ -492,6 +493,15 @@ const TESTED = [
   'EXPORTERS',
   'exportForScoreTarget',
   'scoreTargetInvocation',
+  // score/modalities.ts -- the comparison the round trip makes between a corpus's
+  // log/trace table and the export of the same case (findings 315 and 316). Four
+  // values and one type; the type is listed with the values because the module's
+  // whole surface is a plan a caller writes by hand, and a name missing from the
+  // list is a name nobody would notice was gone.
+  'MODALITY_TABLES',
+  'TRUNCATED_UNITS',
+  'compareModalityTables',
+  'describeModalityComparison',
   // score/official.ts
   'OFFICIAL_FACETS',
   'OFFICIAL_METRICS',
@@ -980,6 +990,10 @@ const TESTED = [
   'validateExtractedFault',
   // ingest/file.ts
   'FILE_FORMATS',
+  // The duration column's unit, declared rather than assumed: RE3-OB writes
+  // microseconds in a column named `duration` and the reader's default is
+  // milliseconds, a factor of a thousand no reader could notice (finding 315).
+  'DURATION_UNITS',
   'detectFileLayout',
   'ingestFile',
   'parseDelimited',

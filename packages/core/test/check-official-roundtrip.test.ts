@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -53,13 +53,46 @@ interface Outcome {
   stderr: string;
 }
 
-/** `spawnSync`, so a run that exits 0 still yields its stderr. */
-function run(args: string[]): Outcome {
-  const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', cwd: ROOT });
-  if (result.error !== undefined) {
-    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
-  }
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+/** Awaited, so a run that exits 0 still yields its stderr and the loop stays free. */
+async function run(args: string[]): Promise<Outcome> {
+  return await spawnOutcome(process.execPath, [SCRIPT, ...args], {});
+}
+
+/**
+ * A child process, awaited rather than blocked on.
+ *
+ * `spawnSync` blocks this file's event loop for the child's whole lifetime, and
+ * `test/setup/stall-watch.ts` sums that per file against a 45 s budget. This file
+ * holds 58 spawns of a script that runs nine published rules, so the sum sat within
+ * a second of the budget: measured over four consecutive runs of the same revision
+ * it was 44 s, 46 s, 63 s and 66 s, which is the difference between a green suite and
+ * a non-zero exit with no failing test. `await` is the gauge's own advice and the
+ * correct fix -- the wall time is the same, and the loop is free while the child runs.
+ */
+function spawnOutcome(
+  command: string,
+  args: string[],
+  extra: { maxOldSpaceMb?: number },
+): Promise<Outcome> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(
+      command,
+      [...(extra.maxOldSpaceMb === undefined ? [] : [`--max-old-space-size=${extra.maxOldSpaceMb}`]), ...args],
+      { cwd: ROOT },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', (error) => resolvePromise({ status: -1, stdout, stderr: error.message }));
+    child.on('close', (code) => resolvePromise({ status: code ?? -1, stdout, stderr }));
+  });
 }
 
 /**
@@ -77,16 +110,8 @@ function run(args: string[]): Outcome {
  * coincidence: without it the test would pass on a machine with enough RAM and
  * fail on a smaller one, which is the same defect wearing a green tick.
  */
-function runWithHeapMb(args: string[], heapMb: number): Outcome {
-  const result = spawnSync(
-    process.execPath,
-    [`--max-old-space-size=${heapMb}`, SCRIPT, ...args],
-    { encoding: 'utf8', cwd: ROOT },
-  );
-  if (result.error !== undefined) {
-    return { status: -1, stdout: result.stdout ?? '', stderr: result.error.message };
-  }
-  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+async function runWithHeapMb(args: string[], heapMb: number): Promise<Outcome> {
+  return await spawnOutcome(process.execPath, [SCRIPT, ...args], { maxOldSpaceMb: heapMb });
 }
 
 const scratch = mkdtempSync(join(tmpdir(), 'rca-bench-roundtrip-'));
@@ -256,13 +281,13 @@ describe('scripts/check-official.mjs · the round trip leaves the default verdic
   // The default mode's nine lines are a contract read line by line elsewhere.
   // This branch adds lines; if it changed or reordered them, the readers would
   // break and the round trip would have cost us the anchor it depends on.
-  it('still prints exactly one verdict line per target, and the same summary', () => {
+  it('still prints exactly one verdict line per target, and the same summary', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'intact.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const withFlag = run(['--official-dir', root, '--cases', cases]);
-    const without = run([]);
+    const withFlag = await run(['--official-dir', root, '--cases', cases]);
+    const without = await run([]);
     const verdicts = (out: string) =>
       out
         .split('\n')
@@ -272,60 +297,60 @@ describe('scripts/check-official.mjs · the round trip leaves the default verdic
     expect(verdicts(withFlag.stdout)).toHaveLength(SCORE_TARGET_IDS.length);
   });
 
-  it('prefixes every line it adds, so the verdict block stays parseable', () => {
+  it('prefixes every line it adds, so the verdict block stays parseable', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'prefixed.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     const afterSummary = result.stdout.split('skipped by contract)')[1] ?? '';
     for (const line of afterSummary.split('\n').filter((l) => l.trim() !== '')) {
       expect(line.startsWith('ROUNDTRIP')).toBe(true);
     }
   });
 
-  it('does no round trip at all when --official-dir is absent', () => {
-    const result = run([]);
+  it('does no round trip at all when --official-dir is absent', async () => {
+    const result = await run([]);
     expect(result.stdout).not.toContain('ROUNDTRIP');
   });
 });
 
 describe('scripts/check-official.mjs · what the round trip refuses to pass', () => {
-  it('passes a corpus whose one case round-trips', () => {
+  it('passes a corpus whose one case round-trips', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'ok.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.stdout).toContain('ROUNDTRIP PASS');
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
   });
 
-  it('fails when the descriptor file lists no cases', () => {
+  it('fails when the descriptor file lists no cases', async () => {
     // Otherwise the anchor reports success for having scored nothing, which is
     // exactly the "no denominator" failure the anchor exists to rule out.
     const root = freshRoot();
     const cases = join(scratch, 'empty.json');
     writeCases(cases, []);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/scored nothing|score nothing/);
   });
 
-  it('fails when a declared case is absent from the corpus', () => {
+  it('fails when a declared case is absent from the corpus', async () => {
     // Two artefacts generated at different times. Without this the round trip
     // scores the subset that still exists and reports it as the whole corpus.
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'drift.json');
     writeCases(cases, ['RE2-ob-cpu_1', 'RE2-ob-cpu_2']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('RE2-ob-cpu_2');
     expect(result.stderr).toMatch(/absent from/);
   });
 
-  it('fails when the corpus cannot be read into any signal', () => {
+  it('fails when the corpus cannot be read into any signal', async () => {
     const root = freshRoot();
     const dir = join(root, 'RE2-ob-cpu_1');
     mkdirSync(dir, { recursive: true });
@@ -337,12 +362,12 @@ describe('scripts/check-official.mjs · what the round trip refuses to pass', ()
     writeFileSync(join(dir, 'metrics.json'), 'this is not telemetry\n');
     const cases = join(scratch, 'unreadable.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/ROUNDTRIP   - RE2-ob-cpu_1: \S/);
   });
 
-  it('fails when metrics.json parses but holds no samples', () => {
+  it('fails when metrics.json parses but holds no samples', async () => {
     // The adapter's own refusal. An empty series reads as "the fault was
     // reproduced over zero observations", which is the no-denominator failure
     // the anchor exists to prevent.
@@ -353,12 +378,12 @@ describe('scripts/check-official.mjs · what the round trip refuses to pass', ()
     writeFileSync(join(dir, 'metrics.json'), JSON.stringify({ cpu_usage: [] }));
     const cases = join(scratch, 'nosamples.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/zero samples/);
   });
 
-  it('fails when the metrics series have different lengths', () => {
+  it('fails when the metrics series have different lengths', async () => {
     // RCAEval publishes one array per metric with no time column, so the
     // instants have to be reconstructed from a common index. Uneven arrays have
     // no common index: padding one would invent samples and truncating the other
@@ -370,36 +395,36 @@ describe('scripts/check-official.mjs · what the round trip refuses to pass', ()
     writeFileSync(join(dir, 'metrics.json'), JSON.stringify({ cpu_usage: [1, 2, 3], mem_usage: [1, 2] }));
     const cases = join(scratch, 'uneven.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/mem_usage.*2 sample.*first metric has 3/);
   });
 
-  it('names the fetch command when the corpus directory is absent', () => {
+  it('names the fetch command when the corpus directory is absent', async () => {
     const cases = join(scratch, 'any.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', join(scratch, 'absent'), '--cases', cases]);
+    const result = await run(['--official-dir', join(scratch, 'absent'), '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('fetch-official.mjs');
   });
 
-  it('names the generator when the descriptor file is absent', () => {
+  it('names the generator when the descriptor file is absent', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
-    const result = run(['--official-dir', root, '--cases', join(scratch, 'absent.json')]);
+    const result = await run(['--official-dir', root, '--cases', join(scratch, 'absent.json')]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('gen-rcaeval-cases.mjs');
   });
 
-  it('rejects a flag with no value instead of reading the next flag as one', () => {
-    const result = run(['--official-dir', '--cases', 'x.json']);
+  it('rejects a flag with no value instead of reading the next flag as one', async () => {
+    const result = await run(['--official-dir', '--cases', 'x.json']);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/--official-dir requires a value/);
   });
 });
 
 describe('scripts/check-official.mjs · the corpus reader', () => {
-  it('ignores binary files rather than decoding them into the corpus', () => {
+  it('ignores binary files rather than decoding them into the corpus', async () => {
     // A decoded binary would hand every scorer a body of replacement characters
     // to search, and a case could then appear to have telemetry it does not.
     const root = freshRoot();
@@ -407,34 +432,34 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
     writeFileSync(join(root, 'RE2-ob-cpu_1', 'thumbnail.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02]));
     const cases = join(scratch, 'binary.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED/);
   });
 
-  it('reads a nested suite directory as well as a flat one', () => {
+  it('reads a nested suite directory as well as a flat one', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     writeCase(root, 'RE1-ob-cpu_1');
     const cases = join(scratch, 'multi.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('found');
   });
 
-  it('reports the declared count accurately, so a shrunk corpus is visible', () => {
+  it('reports the declared count accurately, so a shrunk corpus is visible', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     writeCase(root, 'RE2-ob-cpu_2');
     const cases = join(scratch, 'counts.json');
     writeCases(cases, ['RE2-ob-cpu_1', 'RE2-ob-cpu_2']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.stdout).toMatch(/declared 2 case/);
     expect(result.stdout).toMatch(/found \d+ file/);
   });
 
-  it('counts the corpus in files, and counts the directory tree too', () => {
+  it('counts the corpus in files, and counts the directory tree too', async () => {
     // The line is the operator's only quantitative view of the download, and
     // `found N file(s)` under a *file* label has to mean files. Counting
     // directories there would report a number that moves when the layout
@@ -449,7 +474,7 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'counted.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     // Two files per case: inject_time.txt and metrics.json.
     expect(result.stdout).toMatch(/found 2 file\(s\)/);
     // One directory: the case itself. The corpus root is not counted, because
@@ -459,7 +484,7 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
 });
 
 describe('scripts/check-official.mjs · the branch reads its own inputs', () => {
-  it('defaults to the committed descriptor path, and says how to make one', () => {
+  it('defaults to the committed descriptor path, and says how to make one', async () => {
     // `--official-dir` alone has to be enough in CI, where the descriptor is the
     // committed one.
     //
@@ -472,17 +497,17 @@ describe('scripts/check-official.mjs · the branch reads its own inputs', () => 
     // generated. A hand-written list would pass that check only by coincidence.
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
-    const result = run(['--official-dir', root]);
+    const result = await run(['--official-dir', root]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('gen-rcaeval-cases.mjs');
   });
 
-  it('takes an explicit --cases file, which is what the workflow passes', () => {
+  it('takes an explicit --cases file, which is what the workflow passes', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'explicit.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP PASSED');
   });
@@ -508,7 +533,7 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
   // These tests hold the walker to the bound the real corpus demands: memory is a
   // function of the largest case, not of how much corpus there is.
 
-  it('still refuses a payload file whose body is binary', () => {
+  it('still refuses a payload file whose body is binary', async () => {
     // The walk no longer opens every file to look for a NUL, so it cannot be the
     // thing that keeps a decoded binary out of the scorers. That duty moved to
     // the one place a payload is opened -- `adaptCase` -- and this is the check
@@ -527,12 +552,12 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     writeFileSync(join(dir, 'metrics.json'), Buffer.from([0x7b, 0x00, 0x01, 0x02, 0x7d]));
     const cases = join(scratch, 'binary-payload.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/metrics\.json is binary/);
   });
 
-  it('survives a corpus many times larger than its heap, and scores every case', () => {
+  it('survives a corpus many times larger than its heap, and scores every case', async () => {
     const root = freshRoot();
     // ~300 MB of corpus, of which the adapter reads ~1 MB. The ratio is the
     // point: the run is given 128 MB, so anything that holds the corpus whole
@@ -542,7 +567,7 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     const casesPath = join(scratch, 'bulk.json');
     writeCases(casesPath, cases);
 
-    const result = runWithHeapMb(['--official-dir', root, '--cases', casesPath], 128);
+    const result = await runWithHeapMb(['--official-dir', root, '--cases', casesPath], 128);
 
     // A heap-limit abort is the failure this test exists for, so it is named
     // separately from a wrong verdict: both exit non-zero, and a green run for
@@ -556,7 +581,7 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     expect(result.stdout.match(/ROUNDTRIP PASS /g)).toHaveLength(20);
   }, BULK_TIMEOUT_MS);
 
-  it('still counts what it walked, so the operator line keeps its meaning', () => {
+  it('still counts what it walked, so the operator line keeps its meaning', async () => {
     // The corpus-wide map was also the only thing backing the "found N file(s)"
     // count. Removing it must not remove the count: the two numbers on that line
     // are the operator's only quantitative view of the download, and a corpus
@@ -566,7 +591,7 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     const { cases } = writeBulkCorpus(root, 3, 40, 0);
     const casesPath = join(scratch, 'counted-bulk.json');
     writeCases(casesPath, cases);
-    const result = run(['--official-dir', root, '--cases', casesPath]);
+    const result = await run(['--official-dir', root, '--cases', casesPath]);
     expect(result.status).toBe(0);
     // Three payload files per case: inject_time.txt, metrics.json and
     // load_0.csv. The `.DS_Store` beside each one is not counted, because the
@@ -667,7 +692,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     writeFileSync(join(dir, 'data.csv'), 'this is not telemetry at all\n');
   }
 
-  it('reads a payload the corpus named data.csv, which is what upstream writes', () => {
+  it('reads a payload the corpus named data.csv, which is what upstream writes', async () => {
     // The accepting half of the same fact. `main.py` globs `**\/data.csv`, so a
     // reader that only knew `metrics.json` would call a perfectly good corpus
     // unreadable -- and a reader that only knew `data.csv` would call this
@@ -692,7 +717,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     const cases = join(scratch, 'datacsv.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     // The child's own words, attached to the assertion. This test failed
     // intermittently under full-suite load while passing 40/40 in isolation, and
@@ -708,7 +733,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
   });
 
-  it('reads a payload named data.csv that holds JSON, because the name is not the format', () => {
+  it('reads a payload named data.csv that holds JSON, because the name is not the format', async () => {
     // The other half, kept because it is what the old fixture actually built and
     // it is a real possibility: the reader's job is the file's *content*, and a
     // corpus that names a JSON payload `data.csv` must still read. Asserting both
@@ -722,13 +747,13 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     const cases = join(scratch, 'datacsv-json.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
   });
 
-  it('fails with a named reason instead of an ENOENT stack trace', () => {
+  it('fails with a named reason instead of an ENOENT stack trace', async () => {
     // A case carrying neither known payload name. This is the shape the real
     // run hit, and the assertion is about the diagnostic rather than the exit:
     // before the fix the log opened with `at Object.openSync`, which tells an
@@ -744,7 +769,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     const cases = join(scratch, 'nopayload.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.stderr).not.toMatch(/openSync/);
     expect(result.stderr).not.toMatch(/at Object\.openSync/);
@@ -756,7 +781,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     expect(result.stderr).toMatch(/samples\.parquet/);
   });
 
-  it('does not report the crash as a scorer failure', () => {
+  it('does not report the crash as a scorer failure', async () => {
     // The distinction the anchor depends on. A corpus that cannot be read and an
     // export that scores 0.0 are different findings, and reporting the first as
     // the second would make a broken download look like a solved corpus.
@@ -772,7 +797,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     const cases = join(scratch, 'noscore.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.stdout).not.toMatch(/ROUNDTRIP PASSED/);
     // The per-case verdict line is the anchor's own vocabulary, so a case that
@@ -781,7 +806,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     expect(result.stderr).toMatch(/ROUNDTRIP   - RE2-OB\/checkoutservice_cpu\/1: \S/);
   });
 
-  it('names every case it cannot read, not only the first', () => {
+  it('names every case it cannot read, not only the first', async () => {
     // The failure that started this. On the real corpus the run stopped at the
     // first unreadable case, so an operator reading the log learns about one
     // case per run -- and a corpus with a systematically wrong payload name
@@ -798,7 +823,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
       'RE2-OB/checkoutservice_cpu/3',
     ]);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status).toBe(1);
     for (const n of ['1', '2', '3']) {
@@ -806,7 +831,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     }
   });
 
-  it('still round-trips a corpus whose cases carry the payload it reads', () => {
+  it('still round-trips a corpus whose cases carry the payload it reads', async () => {
     // The negative control. A reader that refuses everything would pass all
     // three tests above and close the anchor by breaking it, so the accepting
     // path is asserted here beside them.
@@ -815,13 +840,13 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     const cases = join(scratch, 'control.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
   });
 
-  it('rejects a payload named metrics.json that is a directory, by name', () => {
+  it('rejects a payload named metrics.json that is a directory, by name', async () => {
     // The other way the open can fail without the corpus being empty: the name
     // is present and is not a file. `readFileSync` raises `EISDIR`, which is the
     // same class of stack trace from the same call, so it takes the same route
@@ -833,7 +858,7 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     const cases = join(scratch, 'isdir.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.stderr).not.toMatch(/openSync|readFileSync/);
     expect(result.status).toBe(1);
@@ -869,30 +894,30 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
   }
 
   /** Run one RE1-shaped case and return the outcome. */
-  function runOneCsv(body: string, tag: string): Outcome {
+  async function runOneCsv(body: string, tag: string): Promise<Outcome> {
     const root = freshRoot();
     writeCsvBody(root, 'RE1-OB/adservice_cpu/1', body);
     const cases = join(scratch, `${tag}.json`);
     writeCases(cases, ['RE1-OB/adservice_cpu/1']);
-    return run(['--official-dir', root, '--cases', cases]);
+    return await run(['--official-dir', root, '--cases', cases]);
   }
 
-  it('round-trips a well-formed delimited payload, so the refusals below are not a reader that always fails', () => {
+  it('round-trips a well-formed delimited payload, so the refusals below are not a reader that always fails', async () => {
     // The negative control. Without it every assertion in this block would pass
     // against a reader that rejected all CSV.
-    const result = runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,0.95\n', 'csv-ok');
+    const result = await runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,0.95\n', 'csv-ok');
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
     expect(result.stdout).toMatch(/signals=2/);
   });
 
-  it('refuses a non-numeric cell rather than dropping the point', () => {
+  it('refuses a non-numeric cell rather than dropping the point', async () => {
     // The guard whose removal survived an earlier break. A partly-read payload is
     // one whose fault the round trip cannot claim to have reproduced, so the case
     // has to fail by name -- and the reason has to name the column and the line,
     // because "the CSV is bad" does not tell an operator where.
-    const result = runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,oops\n', 'csv-badcell');
+    const result = await runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,oops\n', 'csv-badcell');
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/not a finite number/);
@@ -900,20 +925,20 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     expect(result.stderr).toMatch(/line 3/);
   });
 
-  it('accepts a NaN cell as a declared absence, and keeps the readings around it', () => {
+  it('accepts a NaN cell as a declared absence, and keeps the readings around it', async () => {
     // The corpus's own spelling. RE1-TT ships `NaN` in eight `_istio-*` columns
     // of one service from a single onset to the end of the file, while that
     // service's other eighteen columns stay populated -- a collection gap, not a
     // damaged payload (finding 120). The two readings that did arrive have to
     // survive it.
-    const result = runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,NaN\n1700000120,0.95\n', 'csv-nan');
+    const result = await runOneCsv('time,adservice_cpu\n1700000000,0.21\n1700000060,NaN\n1700000120,0.95\n', 'csv-nan');
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
     expect(result.stdout).toMatch(/signals=2/);
   });
 
-  it('refuses a payload whose every cell is a declared absence', () => {
+  it('refuses a payload whose every cell is a declared absence', async () => {
     // The boundary the acceptance must not cross: skipping every cell leaves the
     // payload with nothing, and a wholly absent payload must not become a green
     // round trip that scored zero readings.
@@ -926,7 +951,7 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     // earlier version of this test did exactly that -- it read `holds no samples`
     // and so failed the moment the skip was removed, reporting a defect where the
     // behaviour was right.
-    const result = runOneCsv(
+    const result = await runOneCsv(
       'time,adservice_cpu\n1700000000,NaN\n1700000060,NaN\n1700000120,NaN\n',
       'csv-allnan',
     );
@@ -936,19 +961,19 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     expect(result.stderr).toMatch(/holds no samples|not a finite number/);
   });
 
-  it('still refuses a near-miss token, so the acceptance is the exact spelling', () => {
+  it('still refuses a near-miss token, so the acceptance is the exact spelling', async () => {
     // `inf` is not the corpus's spelling of absence, and neither is `nan` in
     // lower case. Only the measured token is accepted; the rest remain a file we
     // failed to read, which is a different statement about the payload.
     for (const token of ['nan', 'NAN', 'inf', 'null']) {
-      const result = runOneCsv(`time,adservice_cpu\n1700000000,0.21\n1700000060,${token}\n`, `csv-miss-${token}`);
+      const result = await runOneCsv(`time,adservice_cpu\n1700000000,0.21\n1700000060,${token}\n`, `csv-miss-${token}`);
       expect(result.status, `token ${token}`).toBe(1);
       expect(result.stderr, `token ${token}`).toMatch(/not a finite number/);
     }
   });
 
-  it('refuses a payload with no time column, and names the columns it has', () => {
-    const result = runOneCsv('secs,adservice_cpu\n1700000000,0.21\n', 'csv-notime');
+  it('refuses a payload with no time column, and names the columns it has', async () => {
+    const result = await runOneCsv('secs,adservice_cpu\n1700000000,0.21\n', 'csv-notime');
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/no 'time' column/);
@@ -957,35 +982,35 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     expect(result.stderr).toMatch(/secs, adservice_cpu/);
   });
 
-  it('refuses a non-numeric time rather than inventing an instant', () => {
-    const result = runOneCsv('time,adservice_cpu\nnot-a-time,0.21\n', 'csv-badtime');
+  it('refuses a non-numeric time rather than inventing an instant', async () => {
+    const result = await runOneCsv('time,adservice_cpu\nnot-a-time,0.21\n', 'csv-badtime');
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/non-numeric time/);
   });
 
-  it('refuses a header-only payload, because zero samples is not a case', () => {
-    const result = runOneCsv('time,adservice_cpu\n', 'csv-empty');
+  it('refuses a header-only payload, because zero samples is not a case', async () => {
+    const result = await runOneCsv('time,adservice_cpu\n', 'csv-empty');
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/holds no samples/);
   });
 
-  it('accepts a time column under any casing, which the corpus does not guarantee', () => {
+  it('accepts a time column under any casing, which the corpus does not guarantee', async () => {
     // Upstream's own files spell it `time`. The tolerance is the one
     // `detectFileLayout`'s aliases already carry, and this pins it so the
     // case-insensitivity cannot be dropped as dead-looking code.
-    const result = runOneCsv('Time,adservice_cpu\n1700000000,0.21\n', 'csv-timecase');
+    const result = await runOneCsv('Time,adservice_cpu\n1700000000,0.21\n', 'csv-timecase');
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(1 case/);
   });
 
-  it('reads several metric columns from one delimited payload', () => {
+  it('reads several metric columns from one delimited payload', async () => {
     // `metrics.json` carries many metrics under keys; a CSV carries them as
     // columns. A reader that took only the first column would score a subset of
     // the telemetry and call it a round trip.
-    const result = runOneCsv(
+    const result = await runOneCsv(
       'time,adservice_cpu,adservice_mem\n1700000000,0.21,0.5\n1700000060,0.95,0.5\n',
       'csv-twometrics',
     );
@@ -1023,7 +1048,7 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
  * fails every run cannot pass them either.
  */
 describe('scripts/check-official.mjs · the round trip counts what it declares', () => {
-  it('accepts a corpus in which every declared case was counted', () => {
+  it('accepts a corpus in which every declared case was counted', async () => {
     // The accepting half, and the reason this block is not simply "the gate
     // fires": a gate that failed every run would satisfy a test that only ever
     // asserted a non-zero exit.
@@ -1033,7 +1058,7 @@ describe('scripts/check-official.mjs · the round trip counts what it declares',
     const cases = join(scratch, 'counted.json');
     writeCases(cases, ['RE2-OB/checkoutservice_cpu/1', 'RE2-OB/checkoutservice_cpu/2']);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASSED \(2 case/);
@@ -1042,7 +1067,7 @@ describe('scripts/check-official.mjs · the round trip counts what it declares',
     expect(result.stdout).toMatch(/ROUNDTRIP declared 2 case\(s\)/);
   });
 
-  it('reports the declared count and the round-tripped count as separate numbers', () => {
+  it('reports the declared count and the round-tripped count as separate numbers', async () => {
     // The two counts are only distinguishable when they differ, so the fixture
     // makes them differ: three cases are declared and two exist. Without the
     // summary line, an operator reading `2 of 3` has to know that `3` was the
@@ -1059,7 +1084,7 @@ describe('scripts/check-official.mjs · the round trip counts what it declares',
       'RE2-OB/checkoutservice_cpu/3',
     ]);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/ROUNDTRIP 2 of 3 declared case\(s\) round-tripped/);
@@ -1130,11 +1155,11 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     return [...body.matchAll(/(?:^|,)\s*'([^']+)'\s*:/g)].map((m) => m[1]);
   }
 
-  it('declares a skip table at all, so the extraction cannot pass on nothing', () => {
+  it('declares a skip table at all, so the extraction cannot pass on nothing', async () => {
     expect(skipTargets().length).toBeGreaterThan(0);
   });
 
-  it('names only targets that the scorer actually has', () => {
+  it('names only targets that the scorer actually has', async () => {
     const known = new Set<string>(SCORE_TARGET_IDS);
     const unknown = skipTargets().filter((target) => !known.has(target));
     // A non-empty `unknown` is what the script's own `failures.push` at the
@@ -1143,14 +1168,14 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     expect(unknown).toEqual([]);
   });
 
-  it('excuses at least one target, so the table is not silently empty', () => {
+  it('excuses at least one target, so the table is not silently empty', async () => {
     // The vacuity guard for the assertion above: an empty table trivially names
     // no unknown targets. The table exists to excuse RE3, and if that entry were
     // removed the previous test would still pass.
     expect(skipTargets().length).toBeGreaterThanOrEqual(1);
   });
 
-  it('states a reason for every skip, long enough to be an argument', () => {
+  it('states a reason for every skip, long enough to be an argument', async () => {
     // Each entry is `'<target>': '<reason>'`. A bare `true` would satisfy the
     // key extraction, so the reasons are read too. Length rather than content:
     // the guard cannot judge prose, only that something resembling a reason is
@@ -1163,7 +1188,7 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     }
   });
 
-  it('still prints its verdict and exits 1 when the failure list is non-empty', () => {
+  it('still prints its verdict and exits 1 when the failure list is non-empty', async () => {
     // F-41. This test used to assert the failure block *structurally* -- reading
     // the source and regex-matching `if (failures.length > 0) { ... exit(1) }` --
     // on the stated grounds that reaching it would need "four more copies of the
@@ -1180,7 +1205,7 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     // bundle drives them. So the site is reached by running the script, which is
     // what makes the word "proved" true.
     const regressed = writeRegressedBundle('no-cases');
-    const outcome = run(['--bundle', regressed]);
+    const outcome = await run(['--bundle', regressed]);
 
     expect(outcome.status).toBe(1);
     expect(outcome.stderr).toContain('Official-metric regression FAILED');
@@ -1194,16 +1219,16 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     expect(outcome.stderr).not.toMatch(/^\s+at .*node:internal/m);
   });
 
-  it('does not fire on the shipped example, so the test above means something', () => {
+  it('does not fire on the shipped example, so the test above means something', async () => {
     // The discriminating half. Without it, the assertion above would pass for a
     // script that fails on every input, and the pair is what turns "exits 1" into
     // "exits 1 *because* the bundle regressed".
-    const outcome = run([]);
+    const outcome = await run([]);
     expect(outcome.status).toBe(0);
     expect(outcome.stdout).toContain('Official-metric regression PASSED');
   });
 
-  it('reports the number of findings, not merely that some exist', () => {
+  it('reports the number of findings, not merely that some exist', async () => {
     // A count is what tells an operator whether they are looking at one new
     // regression or a corpus that no longer loads. Both the message and the
     // count are load-bearing and both are asserted, since a version that named
@@ -1212,7 +1237,7 @@ describe('scripts/check-official.mjs · the skip table and the failure exit', ()
     expect(source).toMatch(/const passed = reports\.filter\(\(r\) => r\.status === 'passed'\)\.length/);
     expect(source).toMatch(/Official-metric regression PASSED \(\$\{passed\} targets scored/);
     // Now that the block is reachable, the count is asserted by running it too.
-    const outcome = run(['--bundle', writeRegressedBundle('no-cases')]);
+    const outcome = await run(['--bundle', writeRegressedBundle('no-cases')]);
     expect(outcome.status).toBe(1);
   });
 });
@@ -1237,7 +1262,7 @@ describe('scripts/check-official.mjs · the score report', () => {
     return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
   }
 
-  it('writes one record per declared case, and a summary computed from them', () => {
+  it('writes one record per declared case, and a summary computed from them', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     writeCase(root, 'RE2-ss-mem_1');
@@ -1245,7 +1270,7 @@ describe('scripts/check-official.mjs · the score report', () => {
     writeCases(cases, ['RE2-ob-cpu_1', 'RE2-ss-mem_1']);
     const out = join(scratch, 'scores.json');
 
-    const result = run(['--official-dir', root, '--cases', cases, '--report', out]);
+    const result = await run(['--official-dir', root, '--cases', cases, '--report', out]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP report');
 
@@ -1264,14 +1289,14 @@ describe('scripts/check-official.mjs · the score report', () => {
     expect(Object.values(summary.oracle.distribution).reduce((a, b) => a + b, 0)).toBe(summary.scored);
   });
 
-  it('covers the declared set even when a case is absent from the corpus', () => {
+  it('covers the declared set even when a case is absent from the corpus', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'declared.json');
     writeCases(cases, ['RE2-ob-cpu_1', 'RE2-ob-cpu_2']);
     const out = join(scratch, 'absent.json');
 
-    const result = run(['--official-dir', root, '--cases', cases, '--report', out]);
+    const result = await run(['--official-dir', root, '--cases', cases, '--report', out]);
     expect(result.status).toBe(1);
     const written = report(out) as { cases: { caseId: string; status: string; reason?: string }[] };
     expect(written.cases).toHaveLength(2);
@@ -1280,13 +1305,13 @@ describe('scripts/check-official.mjs · the score report', () => {
     expect(absent?.reason).toContain('absent');
   });
 
-  it('writes the report on a failing run, which is when a reader needs it', () => {
+  it('writes the report on a failing run, which is when a reader needs it', async () => {
     const root = freshRoot();
     const cases = join(scratch, 'unreadable.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
     const out = join(scratch, 'failed.json');
 
-    const result = run(['--official-dir', root, '--cases', cases, '--report', out]);
+    const result = await run(['--official-dir', root, '--cases', cases, '--report', out]);
     expect(result.status).toBe(1);
     const written = report(out) as { summary: { scored: number; failed: number; oracle: { min: number | null; mean: number | null } } };
     expect(written.summary.failed).toBe(1);
@@ -1296,20 +1321,20 @@ describe('scripts/check-official.mjs · the score report', () => {
     expect(written.summary.oracle.mean).toBeNull();
   });
 
-  it('writes nothing when it was not asked to', () => {
+  it('writes nothing when it was not asked to', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'noreport.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
     const out = join(scratch, 'never-written.json');
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
     expect(result.status).toBe(0);
     expect(result.stdout).not.toContain('ROUNDTRIP report');
     expect(existsSync(out)).toBe(false);
   });
 
-  it('leaves no half-written file behind', () => {
+  it('leaves no half-written file behind', async () => {
     const root = freshRoot();
     writeCase(root, 'RE2-ob-cpu_1');
     const cases = join(scratch, 'atomic.json');
@@ -1398,7 +1423,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     );
   }
 
-  it('reads the component out of an entity-prefixed table and says what it left', () => {
+  it('reads the component out of an entity-prefixed table and says what it left', async () => {
     const root = freshRoot();
     // Two services, two metrics each: the component's two columns are the case,
     // the other two are the cluster around it.
@@ -1411,7 +1436,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     const cases = join(scratch, 'snapshot.json');
     writeSnapshotCases(cases, [{ caseId, component: 'checkoutservice' }]);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP PASS');
@@ -1423,7 +1448,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     expect(result.stdout).toContain('2 column(s)');
   });
 
-  it('prefers the per-service table when the corpus ships both', () => {
+  it('prefers the per-service table when the corpus ships both', async () => {
     const root = freshRoot();
     const caseId = writeSnapshotCase(
       root,
@@ -1439,13 +1464,13 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     const cases = join(scratch, 'prefer.json');
     writeSnapshotCases(cases, [{ caseId, component: 'checkoutservice' }]);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP PASS');
   });
 
-  it('reads the per-pod table when it is the only payload present', () => {
+  it('reads the per-pod table when it is the only payload present', async () => {
     const root = freshRoot();
     const caseId = writeSnapshotCase(
       root,
@@ -1456,14 +1481,14 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     const cases = join(scratch, 'perpod.json');
     writeSnapshotCases(cases, [{ caseId, component: 'checkoutservice' }]);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('signals=10');
     expect(result.stdout).toContain('ROUNDTRIP context 1 case(s)');
   });
 
-  it('refuses a snapshot that does not contain the case component', () => {
+  it('refuses a snapshot that does not contain the case component', async () => {
     const root = freshRoot();
     const caseId = writeSnapshotCase(
       root,
@@ -1474,7 +1499,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     const cases = join(scratch, 'absent.json');
     writeSnapshotCases(cases, [{ caseId, component: 'cartservice' }]);
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('names 2 entities in its columns (adservice, frontend)');
@@ -1484,7 +1509,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     expect(result.stdout).not.toContain('ROUNDTRIP PASS');
   });
 
-  it('leaves a single-service table on the path RE1 already round-trips', () => {
+  it('leaves a single-service table on the path RE1 already round-trips', async () => {
     const root = freshRoot();
     // One prefix: a list of that service's metrics, which is what the older corpus
     // ships and what 375 of 375 RE1 cases were read through.
@@ -1508,7 +1533,7 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
       }, null, 2),
     );
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('signals=20');
@@ -1538,9 +1563,24 @@ describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an i
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
     writeFileSync(join(dir, 'data.csv'), 'time,emailservice_cpu\n1699999999,0.2\n1700000001,0.95\n');
+    // RE3 is the slice that carries logs and traces, and the round trip now reads
+    // them: a case without the two files is refused rather than scored as a metric
+    // -only case, which is the whole point of finding 315. One row each is enough
+    // here -- what this fixture is for is the fault *category*, and the modality
+    // contract has its own tests below.
+    writeFileSync(
+      join(dir, 'logs.csv'),
+      'time,timestamp,container_name,message,pod_name,node_name\n' +
+        '22:13,1700000000000000000,emailservice,started,emailservice-1,node-a\n',
+    );
+    writeFileSync(
+      join(dir, 'traces.csv'),
+      'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID\n' +
+        '22:13,tr-1,sp-1,emailservice,Get,hipstershop.EmailService/Send,1700000000000,1700000000000000,1200,0.0,\n',
+    );
   }
 
-  it('scores an RE3 case instead of skipping it, because the suite states the category', () => {
+  it('scores an RE3 case instead of skipping it, because the suite states the category', async () => {
     const root = freshRoot();
     const caseId = 'RE3-OB/emailservice_f1/1';
     writeRe3Case(root, caseId);
@@ -1563,7 +1603,7 @@ describe('scripts/check-official.mjs · the RE3 slice, whose fault label is an i
       }),
     );
 
-    const result = run(['--official-dir', root, '--cases', cases]);
+    const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stdout + result.stderr).toBe(0);
     expect(result.stdout).toMatch(/ROUNDTRIP PASS .*target=rcaeval-re3/);

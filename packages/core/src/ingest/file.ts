@@ -51,10 +51,41 @@ export type FileFormat = (typeof FILE_FORMATS)[number];
  */
 export type FileSignalKind = Extract<SignalKind, 'metric' | 'log' | 'trace'>;
 
+/**
+ * The units a duration column can be in, declared once.
+ *
+ * A duration column's unit is not inferable from its name: RCAEval's `traces.csv`
+ * names its column `duration` and writes microseconds, while the IR -- and every
+ * column this project writes -- counts milliseconds. Reading it as milliseconds is
+ * a factor of a thousand, which no reader can notice from a plausible-looking
+ * number, so the unit is stated by whoever knows it rather than assumed here.
+ *
+ * Two members is the whole of what the archives in this repository use. A third
+ * would be a compile error rather than a silent fallback, because
+ * `durationInMilliseconds` switches exhaustively over this union.
+ */
+export const DURATION_UNITS = ['ms', 'us'] as const;
+
+/** A duration column's unit. Derived from `DURATION_UNITS`. */
+export type DurationUnit = (typeof DURATION_UNITS)[number];
+
 /** Column mapping from source column names to IR fields. */
 export interface FileLayout {
   timestamp?: string;
   service?: string;
+  /**
+   * The pod and the node a signal came from, when the file names them.
+   *
+   * These are resource attributes rather than payload fields, and they are read
+   * here for the same reason `service` is: a log table that says which pod
+   * emitted a line has said something a per-service table cannot, and the
+   * RCAEval RE3 export has two columns for exactly that. Until this layout could
+   * name them, those two columns were written empty on every export fed from a
+   * file -- in a table whose declared unfilled columns were none, so the export
+   * claimed to fill them.
+   */
+  podName?: string;
+  nodeName?: string;
   // metric
   metricName?: string;
   metricValue?: string;
@@ -69,6 +100,8 @@ export interface FileLayout {
   parentSpanId?: string;
   spanName?: string;
   durationMs?: string;
+  /** The unit of the column `durationMs` names. Defaults to `ms`. */
+  durationUnit?: DurationUnit;
   status?: string;
 }
 
@@ -278,6 +311,8 @@ function normalizeColumn(name: string): string {
 const COLUMN_ALIASES = {
   timestamp: ['time', 'timestamp', 'ts', 'datetime', 'time_stamp', '@timestamp', 'date'],
   service: ['service', 'service.name', 'service_name', 'svc', 'cmdb_id', 'app', 'application', 'pod', 'host'],
+  podName: ['pod_name', 'podname', 'k8s_pod_name', 'k8s.pod.name'],
+  nodeName: ['node_name', 'nodename', 'k8s_node_name', 'k8s.node.name'],
   metricName: ['metric', 'metric_name', 'kpi_name', 'name', 'metricname', 'indicator'],
   metricValue: ['value', 'val', 'metric_value'],
   logBody: ['message', 'msg', 'body', 'log', 'content', 'line', 'text'],
@@ -293,6 +328,21 @@ const COLUMN_ALIASES = {
 /**
  * Deterministically infer a column layout from header names. No LLM involved.
  * Returns only the fields whose columns are present; absent fields are omitted.
+ *
+ * ## What detection cannot decide, and must not try to
+ *
+ * `time` comes first in the timestamp alias list, and RCAEval's own log and trace
+ * tables open with a `time` column that holds `HH:MM` and carry the instant in a
+ * *later* column named `timestamp` (ns) or `startTime` (us). Detection picks
+ * `time`, `parseTimestamp` refuses `06:22`, and every row of both tables is
+ * quarantined -- measured on `RE3-OB/emailservice_f1/1`, 70 076 log rows and
+ * 164 920 spans, 0 signals.
+ *
+ * The aliases are not reordered in response. `time` really is the instant in
+ * plenty of files, and putting `timestamp` ahead of it would only move which
+ * corpus gets misread. A corpus whose schema is known states its mapping with
+ * `FileLayout`; detection is for files whose schema nobody has stated. What the
+ * aliases can decide, they decide the same way twice.
  */
 export function detectFileLayout(headers: string[], signalKind: FileSignalKind): FileLayout {
   const normalized = headers.map((raw) => ({ raw, norm: normalizeColumn(raw) }));
@@ -309,6 +359,13 @@ export function detectFileLayout(headers: string[], signalKind: FileSignalKind):
   if (timestamp !== undefined) layout.timestamp = timestamp;
   const service = find(COLUMN_ALIASES.service);
   if (service !== undefined) layout.service = service;
+  // Resource attributes, so they are found for every kind rather than inside one
+  // branch: a pod name is part of where a signal came from, not of what modality
+  // it is.
+  const podName = find(COLUMN_ALIASES.podName);
+  if (podName !== undefined) layout.podName = podName;
+  const nodeName = find(COLUMN_ALIASES.nodeName);
+  if (nodeName !== undefined) layout.nodeName = nodeName;
 
   if (signalKind === 'metric') {
     const metricName = find(COLUMN_ALIASES.metricName);
@@ -412,6 +469,24 @@ function asText(value: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
+/**
+ * A duration in the IR's unit, from a column whose unit the layout stated.
+ *
+ * Exhaustive over `DurationUnit` and ending in nothing: two members, both
+ * handled, so a third would fail to compile rather than fall through. The
+ * division is float arithmetic, and the exporter multiplies back -- `4330` us
+ * becomes `4.33` ms and `4330` us again, exact for every value under 2^53/1000,
+ * which is every span duration that has ever been recorded.
+ */
+function durationInMilliseconds(value: number, unit: DurationUnit | undefined): number {
+  switch (unit ?? 'ms') {
+    case 'ms':
+      return value;
+    case 'us':
+      return value / 1000;
+  }
+}
+
 function buildSignal(record: Record<string, unknown>, options: FileIngestOptions): BuildResult {
   const { layout, signalKind } = options;
   const get = (col: string | undefined): unknown => (col === undefined ? undefined : record[col]);
@@ -502,10 +577,11 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     if (rawDuration === undefined) {
       return { ok: false, kind: 'reject', reason: `missing required column '${layout.durationMs ?? '(none)'}' (span duration)` };
     }
-    const durationMs = Number(rawDuration);
-    if (!Number.isFinite(durationMs) || durationMs < 0) {
+    const rawDurationValue = Number(rawDuration);
+    if (!Number.isFinite(rawDurationValue) || rawDurationValue < 0) {
       return { ok: false, kind: 'reject', reason: `span duration '${rawDuration}' is not a non-negative number` };
     }
+    const durationMs = durationInMilliseconds(rawDurationValue, layout.durationUnit);
     const parentSpanId = asText(get(layout.parentSpanId));
     const rawStatus = asText(get(layout.status));
     let status: SpanStatus | undefined;
@@ -527,9 +603,18 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     };
   }
 
+  // Where the signal came from, in the IR's own resource vocabulary. The pod and
+  // the node are added only when the file names them: an empty string here would
+  // be a claim that the source said the pod is nameless.
+  const podName = asText(get(layout.podName));
+  const nodeName = asText(get(layout.nodeName));
   const signal: TelemetrySignal = {
     irVersion: IR_VERSION,
-    resource: { 'service.name': serviceName },
+    resource: {
+      'service.name': serviceName,
+      ...(podName !== undefined ? { 'k8s.pod.name': podName } : {}),
+      ...(nodeName !== undefined ? { 'k8s.node.name': nodeName } : {}),
+    },
     timestamp: parsed.isoUtc,
     rawOffsetMinutes: parsed.offsetMinutes,
     signal: signalKind,

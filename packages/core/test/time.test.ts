@@ -45,6 +45,32 @@ describe('parseTimestamp', () => {
     expect(parseTimestamp('1788669906000000000', 'unix_ns').isoUtc).toBe(epochMsToIsoUtc(1788669906_000));
   });
 
+  it('reads a nanosecond instant within 128 ns of a boundary as the millisecond below', () => {
+    // Every fixture above is a round number, which is why this survived: a
+    // nanosecond epoch needs 61 bits and a double carries 53, so `Number(value)`
+    // *rounds the input* before any division happens. At 2024 the step is 256 ns,
+    // and a reading within half a step below a millisecond boundary crosses it.
+    //
+    // The value is the corpus's own, from `RE3-OB/adservice_f3/2/logs.csv`, and it
+    // is stated with the row it came from: this parser returned `.316` for it, and
+    // the round trip then reported two log rows the export had invented and two it
+    // had lost (finding 316).
+    expect(parseTimestamp('1732275121315999877', 'unix_ns').isoUtc).toBe('2024-11-22T11:32:01.315Z');
+    // And the same number with the last three digits at their maximum, where the
+    // double rounds up by a whole nanosecond step.
+    expect(parseTimestamp('1732275121315999999', 'unix_ns').isoUtc).toBe('2024-11-22T11:32:01.315Z');
+    // A value that is exactly on the boundary is unaffected either way.
+    expect(parseTimestamp('1732275121315000000', 'unix_ns').isoUtc).toBe('2024-11-22T11:32:01.315Z');
+  });
+
+  it('truncates a fractional millisecond toward zero, like TimeClip', () => {
+    // The IR holds whole milliseconds and the writer multiplies back out. A reader
+    // that floored would disagree with `new Date()` on every instant in 1969, and
+    // the disagreement would look like a clock bug rather than an arithmetic one.
+    expect(parseTimestamp('-1500', 'unix_us').isoUtc).toBe('1969-12-31T23:59:59.999Z');
+    expect(parseTimestamp('-1', 'unix_ms').isoUtc).toBe('1969-12-31T23:59:59.999Z');
+  });
+
   it('parses the java_log layout with millisecond precision', () => {
     const r = parseTimestamp('2026-09-06 12:05:06,123', 'java_log', 480);
     expect(r.isoUtc).toBe('2026-09-06T04:05:06.123Z');

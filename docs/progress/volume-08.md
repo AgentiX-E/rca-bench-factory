@@ -1619,9 +1619,7 @@ failure a bounded second chance.
 | item | value |
 | --- | --- |
 | tests in `publish-battery-report.test.ts` | 6 → **13** |
-| `core` suite | 204 files, 4989 tests passed |
-| `cli` suite | 4 files, 187 tests passed |
-| repo | 208 files, 5176 tests passed |
+| tests added | **7 in `core`**, all of them in that file; the absolute counts are in `volume-05.md` |
 | coverage | **99.97 / 99.75 / 100 / 99.97** -- unchanged; `scripts/` is outside the instrument |
 | audits | 1–314, **311 findings** (absent: 118, 132, 133) |
 | mutations | nine, each red; the working tree restored, digest identical |
@@ -1637,3 +1635,187 @@ failure a bounded second chance.
 The corpus, the anchors, the backends, the gate inventory and the coverage bound. The 69 prose parameters,
 the two five-second budgets, `signalRef`'s shape and the two ledger rules are where v3.19 left them and are
 **not re-signed here**.
+
+## v3.21 — the slice that exists for logs and traces, and the export that carried neither
+
+### One: the number that was right for the wrong reason
+
+The fourth anchor scored 735 cases at `oracle=1.00`. Every one of its 90 RE3 cases exported a `logs.csv`
+and a `traces.csv` holding **a header and no rows**, and no job, guard or document noticed -- because the
+official metric reads the case directory name and the metric table, and the shape check was satisfied by
+the two files existing.
+
+The first measurement of the round took a corpus case already on this machine and asked the exporter what
+it wrote for it:
+
+| file | corpus | export |
+| --- | --- | --- |
+| `logs.csv` | 11 106 711 B, 70 076 rows | 57 B, **0 rows** |
+| `traces.csv` | 29 538 448 B, 164 920 spans | 116 B, **0 rows** |
+
+`adaptCase` returned a file map with one entry -- the metric table. The two files were written and never
+read. Finding 315.
+
+### Two: the reader was wrong about three of the corpus's decisions
+
+Feeding the tables in was not a one-line change, and the measuring was the reason:
+
+| what the generic reader decides | what the file says | what it costs |
+| --- | --- | --- |
+| `time` is the timestamp (`time` is first in the aliases) | `time` is `HH:MM`; the instant is in `timestamp` (ns) / `startTime` (us) | 0 of 235 000 rows survive |
+| `container_name` is not a service alias | it is the service | every log row refused |
+| `duration` is in the `durationMs` aliases | the corpus writes **microseconds** | every span 1 000x too long |
+
+So the layout is stated, and `FileLayout` gained the three things it could not say: a pod column, a node
+column and the duration's unit (`ms` | `us`, exhaustive over a closed tuple). The aliases were not
+reordered: `time` is the instant in plenty of files, and putting `timestamp` first only moves which corpus
+is misread.
+
+Two columns had no route into the IR at all. `pod_name` and `node_name` are RE3's alone and live as
+resource attributes, while `RCAEVAL_UNFILLED_COLUMNS['logs/RE3']` was **empty** -- the export claimed six
+of six while no file-fed case could fill two of them.
+
+### Three: the status column was not OTel's
+
+`traces.statusCode` was documented, coded and tested as OpenTelemetry's `0`/`1`/`2`. The corpus's values
+over one case's 164 920 spans:
+
+| value | spans | reading |
+| --- | --- | --- |
+| `0.0` | 157 156 | gRPC `OK` |
+| *(empty)* | 7 626 | the frontend's root spans |
+| `14.0` | **138** | gRPC `UNAVAILABLE` |
+
+The 138 are the whole failure signal of `emailservice_f1/1`: all of them `checkoutservice` calling
+`hipstershop.EmailService/SendOrderConfirmation`, all after the injection instant. Fourteen is not an OTel
+status. And the mapping was wrong in the *commonest* case, not an edge: an OTel `OK` was written as `1`,
+which in this column is gRPC `CANCELLED`.
+
+The column is now empty and named in `RCAEVAL_UNFILLED_COLUMNS.traces`, and the test that used to assert
+the mapping asserts the opposite with the corpus's numbers in its comment.
+
+### Four: the comparison found a bug in the reader, then one in the corpus
+
+On its first real run the comparison failed on two log rows of `adservice_f3/2`, and the cause was
+`parseTimestamp`:
+
+```ts
+const n = Number(value);            // 1.7e18 needs 61 bits; a double carries 53
+const multiplier = 1e-6;            // so the input is rounded to a step of 256 ns first
+```
+
+`1732275121315999877` ns -- 11:32:01.315987877 -- came back as `.316`. Two of that case's 69 275 rows, and
+one more in `currencyservice_f1/1`. The conversion is `BigInt` now, which also settles the direction: BigInt
+division truncates toward zero exactly as `TimeClip` does. Finding 316.
+
+Then the third disagreement came from the other side: of `currencyservice_f1/1`'s 61 828 log rows, **one**
+has `time` = `06:17` beside a `timestamp` of `1731910619999999863`. The corpus derived that minute through
+a double at microsecond resolution and 0.14 us below the boundary rounded up. **The corpus's own two
+columns disagree.** So `time` is compared against the *instant* rather than against the corpus's rendering
+of it: the exported cell must be the minute of the corpus's instant, and the corpus's disagreements are
+counted. A `time` an hour out still fails.
+
+### Five: what the anchor can now say
+
+```
+ROUNDTRIP modalities 60 table(s) over 2 modality(ies): 2 095 206 of 2 095 206 log row(s),
+4 755 090 of 4 755 090 span(s); 330 of 510 column(s) exact, 6 415 067 cell(s) truncated to
+the millisecond, 9 043 794 value(s) in columns the IR does not carry
+
+ROUNDTRIP PASSED (30 case(s) round-tripped through the official layout)
+```
+
+Every row of a 30-case local slice of RE3-OB, not a sample, and the columns are named by kind: 330 exact,
+60 derived (`time`, checked against the instant), 60 truncated to the millisecond, 60 not carried
+(`methodName`, `statusCode`) -- 510, the plan's whole width.
+
+| gate | result |
+| --- | --- |
+| a row the corpus has and the export does not | the run fails and names the table, the counts and two example rows |
+| an RE3 case with no `logs.csv` | fails on the missing file rather than scoring the case as metric-only |
+| a suite with no plan (RE2) | prints nothing about modalities -- a zero would read as "read them, found nothing" |
+| a declared-unfilled column that carries a value | counted as a disagreement between the export and its own statement |
+| memory | one case needs more than 1 GiB and less than 1.5 GiB of heap; the largest archive case is 29 MB |
+
+One anchor moved, and it moved for a reason that is in this chapter: `golden-master/expected.json` now
+records `RE2-order-prod/order_cpu/1/traces.csv` at **274 bytes / `72650b11…`** rather than 276 /
+`cec8cdf8…`, because the status column carries no value in either of its two rows. That is the whole
+difference -- one byte per row -- and it is the only anchor this round re-signed. A re-signed anchor is
+the one kind of change a reader cannot audit from the diff alone, so it is stated here rather than
+left to `git show`.
+
+### Six: the stopwatch fired, and it was this round's own tests
+
+The first full run after the change failed with **no failing test**:
+
+```
+Error: this test file held the event loop for 63759 ms, past the 45000 ms budget.
+```
+
+`test/setup/stall-watch.ts` sums each file's *blocked* stretches against a 45 s budget, and
+`check-official-roundtrip.test.ts` holds 58 `spawnSync` calls of a script that runs nine
+published rules -- each one blocking the file's loop for the child's whole lifetime. It sat
+within a second of the budget, and this round's four extra spawns tipped it. The same
+revision then measured **44 s, 46 s, 63 s and 66 s** across four runs, which is the
+difference between a green suite and a non-zero exit with nothing failed.
+
+Two repairs, in the order the gauge's own message gives them. The new contract's tests moved
+to `check-official-modalities.test.ts`, so a budget is spent by a file that spends it on one
+subject. And every spawn in the round-trip file is `await`ed rather than blocked on: the same
+wall time, and the loop free while the child runs. That file's blocking went to nothing
+measurable and the next full run was green.
+
+The instrument was right in both readings. It named the file, the number and the budget, and
+what it was reporting was a real cost this round had added to a file already at its limit.
+
+### Seven: what this round did not do
+
+It did not read RE2's tables. RE2's log table is nine columns, four of which the IR has no field for and
+one of which -- `level` -- feeds a closed severity vocabulary that no RE2 archive in this tree has been
+measured against. Reading it means answering what an unseen `level` should do, and inventing that answer
+is the shape this repository spends its rounds undoing. The omission is stated in the script, and it is
+the first item below.
+
+It did not make the export byte-identical to the corpus, and no honest claim could: three of the corpus's
+instants are finer than the IR's clock and two of its columns have no field. What it made is the claim
+that every row is carried and every column that should agree does.
+
+### Readings
+
+| item | value |
+| --- | --- |
+| `core` suite | **206 files, 5039 tests passed** |
+| `cli` suite | **4 files, 187 tests passed** |
+| repo | **210 files, 5226 tests passed** |
+| coverage | **99.97 / 99.76 / 100 / 99.97** -- branch up from 99.75, and the new module at 100 on all four |
+| `modality-comparison.test.ts` | 35 tests, **100 / 100 / 100 / 100** |
+| audits | 1–316, **313 findings** (absent: 118, 132, 133) |
+| RE3-OB local round trip | 30 of 30 cases; 2 095 206 log rows and 4 755 090 spans carried |
+| the truncation | 6 415 067 cells at the millisecond; 9 043 794 values in two columns |
+| export failure sites | 95 across 50 scripts, annotations carried |
+
+### Left open
+
+- **RE2's log and trace tables are still not read.** Four of the nine columns have no IR field and `level`
+  feeds a closed vocabulary; no RE2 archive has been measured in this tree. `[open: reading them needs a
+  measured answer for an unseen level, and the archive to measure it on]`
+- **`time` is checked against the instant, not against the corpus's cell.** A corpus whose `time` column
+  were wrong on every row would be reported as a large disagreement rather than as a failure. That is
+  deliberate -- the corpus disagrees with itself on one row in 62 000 -- and it is the one column whose
+  verdict is a report rather than a gate. `[open: the instant columns carry the proof for it]`
+- **This project's own 30-case corpus still exports empty modality files.** `check-fault-cases`
+  reports `RE2: 44 file(s) with no rows (logs.csv in 19, traces.csv in 25)` over 30 synthetic cases,
+  and RE3's five: the synthetic corpus declares metric telemetry and no log or trace telemetry, so the
+  exporter writes the files its layout requires and nothing in them. The guard counts it, which is why
+  it is a reported gap rather than a silent one -- and it is the same shape as finding 315, one corpus
+  closer to home. `[open: the synthetic cases would each need log and trace declarations, which is a
+  corpus-authoring round rather than a repair]`
+- **The round trip's cost is now data-dependent in a way it was not.** Reading 29 MB of traces per case
+  adds ~4.5 s and ~1.3 GB, so the 90-case RE3 slice takes minutes rather than seconds. `[open: nothing
+  bounds it, and a corpus twice this size would need a heap flag the workflow does not set]`
+
+### Unchanged
+
+The corpus, the metric tables, the anchors, the backends. The 69 prose parameters, the two five-second
+budgets, `signalRef`'s shape, the two ledger rules and the published success ratios are where v3.20 left
+them and are **not re-signed here**.

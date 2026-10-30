@@ -63,6 +63,11 @@ const BOUNDED_SPREAD_APPENDS: ReadonlyArray<{ file: string; line: string; why: s
     line: 'unparsed.push(...collected.unparsed);',
     why: '`unparsed` holds one entry per skipped case directory, not one per telemetry row.',
   },
+  {
+    file: 'scripts/check-official.mjs',
+    line: 'modalityComparisons.push(...modality.verdicts);',
+    why: '`verdicts` holds at most one entry per table in MODALITY_PLANS -- two, a log and a trace table -- not one per row.',
+  },
 ];
 
 /** Every spread-append in the tree, as `file` + trimmed source line. */

@@ -2,7 +2,6 @@ import type {
   FaultCase,
   IrBundle,
   LogPayload,
-  SpanStatus,
   TelemetrySignal,
   TracePayload,
 } from '../ir/types.js';
@@ -263,7 +262,7 @@ export type RcaEvalLogsSuite = keyof typeof RCAEVAL_LOGS_COLUMNS;
  * even when every field the IR has is populated, and every column *not* listed is
  * non-empty for the same signal.
  *
- * ## The four reasons, and none of them is "we forgot"
+ * ## The five reasons, and none of them is "we forgot"
  *
  *  - `traces.methodName` -- the corpus's own two files disagree about what it
  *    means: RE2-OB fills it with the last segment of `operationName` (`Convert`),
@@ -272,6 +271,17 @@ export type RcaEvalLogsSuite = keyof typeof RCAEVAL_LOGS_COLUMNS;
  *    corpus deriving it and the other declining is not a rule we can adopt from
  *    either, and inventing one would put a value in a column that a reader would
  *    take as the corpus's.
+ *  - `traces.statusCode` -- **the column is not what this module said it was.**
+ *    The mapping here used to be "OpenTelemetry's own codes -- 0 unset, 1 ok,
+ *    2 error -- because that is what the column is", and RE3-OB denies it: of
+ *    164 920 spans in `emailservice_f1/1`, 157 156 carry `0.0`, 7 626 are empty,
+ *    and **138 carry `14.0`**. Fourteen is not in OpenTelemetry's vocabulary; it
+ *    is gRPC `UNAVAILABLE`, and the 138 spans are the whole of that case's failure
+ *    signal -- every one of them `checkoutservice` calling
+ *    `hipstershop.EmailService/SendOrderConfirmation`, every one of them after the
+ *    injection instant. So the column carries a **gRPC status**, and the one value
+ *    this module would have written from an OTel `OK` is `1` -- gRPC `CANCELLED`,
+ *    a failure. A column we cannot mean is left empty and named (finding 315).
  *  - `logs.RE2.req_path` / `error` -- the corpus leaves both empty in every row
  *    sampled; they are HTTP-shape fields that a gRPC stack does not fill.
  *  - `logs.RE2.cluster_id` -- a corpus-side cluster handle (`1` in every sampled
@@ -282,20 +292,10 @@ export type RcaEvalLogsSuite = keyof typeof RCAEVAL_LOGS_COLUMNS;
  *    column name.
  */
 export const RCAEVAL_UNFILLED_COLUMNS = {
-  traces: ['methodName'],
+  traces: ['methodName', 'statusCode'],
   'logs/RE2': ['req_path', 'error', 'cluster_id', 'log_template'],
   'logs/RE3': [],
 } as const;
-
-/**
- * The span status vocabulary as the corpus's `statusCode` column spells it.
- *
- * OpenTelemetry's own codes -- `0` unset, `1` ok, `2` error -- because that is what
- * the column is. The corpora serialise them through a float column, so their files
- * say `0.0`; writing `0.0` here would reproduce a serialisation artefact rather
- * than the value, and any consumer parses the column numerically either way.
- */
-const SPAN_STATUS_CODE: Record<SpanStatus, string> = { UNSET: '0', OK: '1', ERROR: '2' };
 
 /** `HH:MM` in UTC, which is the resolution both corpora's `time` columns carry. */
 function utcMinute(iso: string): string {
@@ -391,7 +391,9 @@ export function buildTracesCsv(signals: TelemetrySignal[]): string {
       startTime: instantCell('traces.startTime', s.timestamp),
       // The corpus's `duration` is microseconds; the IR's is milliseconds.
       duration: String(Math.round(p.durationMs * 1000)),
-      statusCode: p.status === undefined ? '' : SPAN_STATUS_CODE[p.status],
+      // Listed in `RCAEVAL_UNFILLED_COLUMNS`, and named at the use site so a reader
+      // of this function does not have to find the list to know they are deliberate.
+      statusCode: '',
       parentSpanID: p.parentSpanId ?? '',
     };
     return RCAEVAL_TRACES_COLUMNS.map((column) => cells[column]);

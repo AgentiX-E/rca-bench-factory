@@ -1935,3 +1935,175 @@ minutes will still fail the job, which is the outcome intended, but the *rate* o
 measured anywhere, so nothing here would notice it getting worse.
 
 
+## Finding 315 — RE3 is the slice that exists for logs and traces, and its export carried neither
+
+The fourth anchor scored **735 cases at `oracle=1.00`** across three corpora. Every one of the 90 RE3
+cases exported a `logs.csv` and a `traces.csv` that held **a header and no rows**, and nothing noticed,
+because the official metric reads the case *directory name* and the metric table, and the shape check was
+satisfied by the two files existing.
+
+Measured, not inferred. On `RE3-OB/emailservice_f1/1`:
+
+| file | corpus | export before this round |
+| --- | --- | --- |
+| `logs.csv` | 11 106 711 bytes, 70 076 rows | 57 bytes, **0 rows** |
+| `traces.csv` | 29 538 448 bytes, 164 920 spans | 116 bytes, **0 rows** |
+
+The adapter `adaptCase` read one payload per case -- the metric table -- and returned a file map holding
+exactly that. Logs and traces were written by the exporter and never read as input.
+
+### Why the tables could not simply be fed in
+
+The generic file reader was measured against both corpora files and is wrong about three of their
+decisions, each of which loses every row:
+
+| what the reader does | what the file says | cost |
+| --- | --- | --- |
+| `time` is first in the timestamp aliases | `time` is `HH:MM`; the instant is in `timestamp` (ns) or `startTime` (us) | `parseTimestamp` refuses `06:22`, and **0 of 235 000 rows** survive |
+| `container_name` is not a service alias | `container_name` is the service | every log row refused for a missing service |
+| `duration` is in the `durationMs` aliases | the corpus writes **microseconds** | every span a thousand times too long |
+
+So the corpus's mapping is stated rather than detected -- `FileLayout` now names the pod column, the node
+column and the duration's unit, and the round trip states all four together with the reason for each. The
+aliases were **not** reordered: `time` really is the instant in plenty of files, and putting `timestamp`
+first would only move which corpus is misread.
+
+Two columns had no route into the IR at all. `pod_name` and `node_name` are RE3's alone, the IR carries
+them as resource attributes, and `RCAEVAL_UNFILLED_COLUMNS['logs/RE3']` was **empty** -- the export
+claimed to fill six columns while no file-fed case could fill two of them. The file reader now reads them.
+
+### The status column was not what it said it was
+
+`traces.statusCode` was documented and coded as OpenTelemetry's codes, `0`/`1`/`2`. RE3-OB's own values,
+over the 164 920 spans of `emailservice_f1/1`:
+
+| value | spans | reading |
+| --- | --- | --- |
+| `0.0` | 157 156 | gRPC `OK` |
+| *(empty)* | 7 626 | the frontend's root spans |
+| `14.0` | **138** | gRPC `UNAVAILABLE` |
+
+Fourteen is not an OpenTelemetry status. The 138 spans are the entire failure signal of that case: all of
+them `checkoutservice` calling `hipstershop.EmailService/SendOrderConfirmation`, all of them after the
+injection instant, in a case whose fault is in `emailservice`. The column is the gRPC code.
+
+The mapping was therefore not approximate but wrong in the commonest case: an OTel `OK` was written as
+`1`, which in this column is gRPC `CANCELLED` -- a failure. `statusCode` is now empty and named in
+`RCAEVAL_UNFILLED_COLUMNS.traces`, which is a narrowing of a claim rather than a loss: the export cannot
+mean the column, so it stops writing one.
+
+### What the round trip can now say, and what it still cannot
+
+`compareModalityTables` compares the exported table with the corpus's own as a multiset of rows over the
+columns the plan names, and reports per column. On the 30-case local slice of RE3-OB:
+
+```
+ROUNDTRIP modalities 60 table(s) over 2 modality(ies): 2 095 206 of 2 095 206 log row(s),
+4 755 090 of 4 755 090 span(s); 330 of 510 column(s) exact, 6 415 067 cell(s) truncated to
+the millisecond, 9 043 794 value(s) in columns the IR does not carry
+
+ROUNDTRIP PASSED (30 case(s) round-tripped through the official layout)
+```
+
+Every row, not a sample. Three kinds of column, each stated:
+
+| kind | columns | what it means |
+| --- | --- | --- |
+| exact | `container_name`, `message`, `pod_name`, `node_name`; `traceID`, `spanID`, `serviceName`, `operationName`, `startTimeMillis`, `duration`, `parentSpanID` | cell for cell |
+| truncated | `logs.timestamp` (ns), `traces.startTime` (us) | the same instant; the IR's clock is milliseconds |
+| derived | `time` (both tables) | checked against the instant, because the corpus's own rendering disagrees with its own instant on one row in 61 828 |
+| not carried | `traces.methodName`, `traces.statusCode` | empty, with the count of corpus values reported |
+
+**It cannot say the export is byte-identical**, and no honest claim could: three of the corpus's instants
+are finer than the IR's clock, and two of its columns have no field. What it can say is that every row is
+there and every column that should agree does.
+
+**It does not read RE2's tables.** RE2's log table is nine columns, four of which the IR has no field for
+(`req_path`, `error`, `cluster_id`, `log_template`) and one of which -- `level` -- feeds a closed severity
+vocabulary that no RE2 archive in this tree has been measured against. Reading it means answering what a
+`level` this reader has never seen should do, and inventing that answer is what this repository spends its
+rounds undoing.
+
+## Finding 316 — a nanosecond instant was read through a double, and one in 62 000 crossed a millisecond
+
+The comparison in finding 315 failed on its first real run, on two log rows of `RE3-OB/adservice_f3/2`,
+and the cause was in `parseTimestamp`, not in the tables:
+
+```
+corpus only: 11:32 | 1732275121315000000 | currencyservice | conversion request successful
+export only: 11:32 | 1732275121316000000 | currencyservice | conversion request successful
+```
+
+The corpus wrote `1732275121315999877` ns -- 11:32:01.315987877. The reader returned `.316`.
+
+```ts
+const n = Number(value);
+const multiplier = layout === 'unix_ns' ? 1e-6 : ...;
+return { isoUtc: epochToIsoUtc(n * multiplier), ... };
+```
+
+`1.7e18` needs 61 bits and a double carries 53, so `Number(value)` **rounds the input** first -- a step of
+256 ns at 2024 -- and the product then truncates. A reading within 128 ns below a millisecond boundary
+crosses it, and the instant is recorded one millisecond late.
+
+Measured: two of that case's 69 275 log rows, and one of `RE3-OB/currencyservice_f1/1`'s 61 828. The
+conversion is now `BigInt` integer arithmetic, which also fixes the truncation direction: `BigInt`
+division truncates toward zero, exactly as `TimeClip` does to a fractional millisecond, so the reader and
+the writer land on the same millisecond by construction rather than by coincidence.
+
+### Why no test caught it
+
+Every fixture in `time.test.ts` was a round number -- `1788669906000000000` -- and a round number is
+exactly representable in a double. The suite asserted that the four layouts agree with `epochMsToIsoUtc`
+on inputs where the conversion is exact, which is the same shape as the exporter's `statusCode` test
+asserting the number the code produced: both were written from the belief the code was written from.
+
+The tests now carry the corpus's own value, and one of them states the property that makes the defect
+possible: a nanosecond epoch needs 61 bits.
+
+### And the corpus has the same defect
+
+The comparison's third finding came from the opposite direction. Of `RE3-OB/currencyservice_f1/1`'s 61 828
+log rows, **one** has `time` = `06:17` beside a `timestamp` of `1731910619999999863` -- 06:16:59.999999863.
+The corpus derived that minute from a double at microsecond resolution, and 0.14 us below the boundary
+rounded up across it. Its own two columns disagree.
+
+So `time` is compared against the **instant**, not against the corpus's rendering of it: the exported cell
+must be the minute of the corpus's instant, and the cells where the corpus disagrees with itself are
+counted and reported. An export whose `time` is an hour out, or empty, still fails.
+
+### Acceptance
+
+| gate | result |
+| --- | --- |
+| log rows carried, 30 local RE3-OB cases | **2 095 206 of 2 095 206** |
+| spans carried, the same | **4 755 090 of 4 755 090** |
+| `RE3-OB/emailservice_f1/1` before / after | 0 / 0 rows -- before; 70 076 / 164 920 -- after |
+| an empty `message` in the corpus | the row is quarantined, the table is one row short, and the round trip **fails** naming the table |
+| an RE3 case with no `logs.csv` | fails, naming the suite and the file, rather than scoring the case as metric-only |
+| a suite with no plan (RE2) | prints nothing about modalities -- a zero would read as "read them, found nothing" |
+| `traces.statusCode` | empty, and in `RCAEVAL_UNFILLED_COLUMNS.traces` |
+| the file reader's status vocabulary | unchanged: the corpus's `0.0` is read as nothing, because it is not one of `UNSET`/`OK`/`ERROR` |
+| tests | `modality-comparison.test.ts` 35 at **100 / 100 / 100 / 100**, `check-official-modalities.test.ts` 4, `ingest.test.ts` +6, `time.test.ts` +2 |
+| coverage | **99.97 / 99.76 / 100 / 99.97**, branch up from 99.75; `scripts/` is outside the instrument |
+
+### The stopwatch, and a file that was already at its budget
+
+The first full run after the change failed with no failing test: `check-official-roundtrip.test.ts` held
+the event loop for **63 759 ms** against a 45 s budget. That file spawns `check-official.mjs` 58 times,
+each spawn blocking its own event loop for the child's whole lifetime, and it sat within a second of the
+budget -- the same revision measured 44 s, 46 s, 63 s and 66 s across four runs.
+
+Two repairs, in the order the gauge advises: the new contract's tests moved to
+`check-official-modalities.test.ts`, and every spawn in the round-trip file is awaited rather than
+blocked on. The blocking went to nothing measurable. This is not finding 315's defect; it is a cost the
+round added to an instrument that measures it, which is the instrument working.
+
+### What this cannot do
+
+It cannot say the export is byte-identical to the corpus, and it does not try: three instants are finer
+than the IR's clock and two columns have no field. It cannot reach RE2's tables either -- four of its nine
+log columns have no field and one feeds a closed vocabulary no RE2 archive here has measured. And the
+`time` column is checked against the instant rather than against the corpus's cell, so a corpus whose
+`time` column were wrong on *every* row would be reported as a large disagreement and not as a failure;
+the instant columns are what carry the proof.

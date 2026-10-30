@@ -42,8 +42,8 @@
       "bytes": 151
     },
     "RE2-order-prod/order_cpu/1/traces.csv": {
-      "sha256": "cec8cdf896b9b4ddb15d60f82de50083b41c0bb3ba9857eaac760f779e81ae92",
-      "bytes": 276
+      "sha256": "72650b113e9057dc7a98e85ea1461cc6e3043bdf866128042cd40f9c5764d849",
+      "bytes": 274
     }
   }
 }
