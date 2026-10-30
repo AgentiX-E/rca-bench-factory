@@ -1,0 +1,61 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-resource-memory-leak-recommendation",
+  "why": "Telemetry for the memory-leak case, and the corpus's first whose decisive reading is a **pair of counters that have to be read together**: `cache_writes_total` moves 7,200 times and `cache_evictions_total` moves zero times. Either one alone is innocent -- a cache that is never written evicts nothing, and a cache that is written and evicted is doing its job -- and only the two side by side say that entries go in and nothing comes out. The disk-full case one round earlier made the same shape out of a single flat counter, and this is the version of it that cannot be argued with: an absent eviction is a reading about a path that does not exist, while an absent completion is a reading about a path that did not run. `rss_bytes` is the growth the pair explains, and it is deliberately the least interesting number here: every dashboard in the building alerts on memory, and it is the symptom. `pod_restart_total` is the clock rather than the fault -- nine restarts in seventy-two hours is one per eight hours, which is how long the slope needs to reach the limit. Every series is recorded against the service rather than against the pod, because the answer is the service and a pod's resident set in a single-replica deployment is the service's — the alternative is a case whose one moving number is filed under a name the ranking never scores, which is how the first draft failed its own localisation check (finding 298). `ingress_requests_per_second` is flat at 142, and it is in the file to be *refused* as an explanation: without it a reader can still believe the process grew because it was asked to do more.",
+  "series": [
+    {
+      "service": "recommendation-service",
+      "metric": "rss_bytes",
+      "unit": "By",
+      "baseline": {
+        "parameter": "rssBaselineBytes"
+      },
+      "post": {
+        "parameter": "heapLimitBytes"
+      },
+      "quote": "RSS climbs from 400Mi to the 2Gi limit",
+      "why": "the checkpoint `cp-rss-ceiling` holds the ceiling: the resident set arrives at the limit, which is what turns a leak into a kill rather than a slow service"
+    },
+    {
+      "service": "recommendation-service",
+      "metric": "cache_writes_total",
+      "unit": "count",
+      "baseline": 18200,
+      "post": 25400,
+      "derivation": "counter",
+      "quote": "entries are written",
+      "why": "the checkpoint `cp-writes-continue` holds the difference: 7,200 entries arrived across the window, so the cache was in use and an absent eviction is a missing path rather than an idle one"
+    },
+    {
+      "service": "recommendation-service",
+      "metric": "cache_evictions_total",
+      "unit": "count",
+      "baseline": 41100,
+      "post": 41100,
+      "derivation": "counter",
+      "quote": "never evicted",
+      "why": "the checkpoint `cp-no-evictions` holds the difference: zero, across a window in which the write path moved 7,200 times -- the counter is not merely quiet, it is a counter for a code path that never runs"
+    },
+    {
+      "service": "recommendation-service",
+      "metric": "pod_restart_total",
+      "unit": "count",
+      "baseline": 2,
+      "post": 11,
+      "derivation": "counter",
+      "quote": "has OOMKilled every 6 to 8 hours for three days",
+      "why": "the checkpoint `cp-restarts` holds the difference: nine restarts in seventy-two hours is one per eight hours, which is the period the slope needs rather than an independent failure rate"
+    },
+    {
+      "service": "recommendation-service",
+      "metric": "ingress_requests_per_second",
+      "unit": "rps",
+      "baseline": 142,
+      "post": 142,
+      "noise": "none",
+      "quote": "Traffic is flat.",
+      "why": "the checkpoint `cp-traffic-flat` holds the equality, and the equality is the point: a flat request rate is the reading that removes load from the list of explanations, so it is evidence for what did *not* cause the growth"
+    }
+  ]
+}

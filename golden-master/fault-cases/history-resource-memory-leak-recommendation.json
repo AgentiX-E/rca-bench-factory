@@ -1,0 +1,156 @@
+{
+  "caseId": "history-resource-memory-leak-recommendation",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-23T06:00:00.000Z",
+  "window": {
+    "start": "2026-10-22T18:00:00.000Z",
+    "end": "2026-10-23T12:00:00.000Z"
+  },
+  "fault": {
+    "type": "memory-leak",
+    "category": "resource",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "recommendation-service",
+      "heapLimitBytes": {
+        "value": 2147483648,
+        "unit": "By"
+      },
+      "rssBaselineBytes": {
+        "value": 419430400,
+        "unit": "By"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/recommendation-app",
+    "rootCauseComponent": "recommendation-service",
+    "rootCauseReason": "The session cache has a write path and no eviction path: entries are put in and nothing takes them out, so the heap is a function of how long the process has been up rather than of how much traffic it serves. That is why the first reading is a pair rather than a number -- the write counter moved 7,200 times across the window and the eviction counter moved zero times, and either one alone is consistent with an innocent process. The heap then walks from 400Mi to the 2Gi limit at a steady slope, and the kernel kills the container at the limit. Three readings are there to be argued with and each one closes a different innocent explanation: the limit is not the fault, because a process that starts at 400Mi and stays flat would live inside the same 2Gi forever and the case declares that limit as a configuration fact; the traffic is not the fault, because the request rate is the same 142 rps across the window as it was the week before; and the node is not the fault, because the kernel is the thing that notices rather than the thing that decided. What is left is the release: the growth starts at the deploy and rolling it back stops the growth, which is the one sentence in the ticket that names a change rather than a symptom.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "rss_bytes",
+        "description": "the resident set walks from 400Mi to the 2Gi limit and is killed there, which is growth with a ceiling rather than a plateau"
+      },
+      {
+        "type": "metric",
+        "ref": "cache_evictions_total",
+        "description": "the eviction counter does not move at all across the window while the write counter moves 7,200 times, which is what separates a leak from a cache that is simply large"
+      },
+      {
+        "type": "metric",
+        "ref": "pod_restart_total",
+        "description": "nine restarts in seventy-two hours is one per eight hours, which is the period the heap needs to reach the limit rather than a rate of failure"
+      },
+      {
+        "type": "metric",
+        "ref": "ingress_requests_per_second",
+        "description": "the request rate is flat at 142 rps, which is why the growth cannot be load and has to be state"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/recommendation-app",
+        "toEntityId": "pod:synthetic-storefront/recommendation-service-0",
+        "mechanism": "the cache writes 7,200 entries across the window and evicts none, so every entry stays resident, the heap climbs from 400Mi to the 2Gi limit at a slope set by uptime rather than by load, and the kernel kills the container when it arrives",
+        "evidenceRefs": [
+          "cp-writes-continue",
+          "cp-no-evictions",
+          "cp-rss-ceiling",
+          "cp-heap-limit"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/recommendation-service-0",
+        "toEntityId": "service:synthetic-storefront/recommendation-service",
+        "mechanism": "the container restarts with an empty heap, the same slope climbs back to the same limit, and the cycle repeats nine times in three days, so the service is never down for long and is never healthy either",
+        "evidenceRefs": [
+          "cp-restarts",
+          "cp-traffic-flat"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-rss-ceiling",
+        "entityRef": "service:synthetic-storefront/recommendation-service",
+        "signalRef": "rss_bytes",
+        "comparator": "==",
+        "value": 2147483648,
+        "unit": "By",
+        "description": "the resident set is at the limit rather than near it, which is what makes the kill the kernel's decision rather than the scheduler's"
+      },
+      {
+        "checkpointId": "cp-heap-limit",
+        "entityRef": "service:synthetic-storefront/recommendation-service",
+        "signalRef": "heapLimitBytes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 2147483648,
+        "unit": "By",
+        "description": "two gigabytes is the limit the process was given and the reading above is the same number, so the ceiling is where the growth was stopped rather than where it was caused"
+      },
+      {
+        "checkpointId": "cp-writes-continue",
+        "entityRef": "service:synthetic-storefront/recommendation-service",
+        "signalKind": "derived",
+        "expression": "cache_writes_total.post - cache_writes_total.baseline",
+        "comparator": ">=",
+        "value": 7200,
+        "unit": "count",
+        "description": "the cache was in use: 7,200 entries arrived across the window, which is the half of the pair that makes the absent evictions a fault rather than an idle cache"
+      },
+      {
+        "checkpointId": "cp-no-evictions",
+        "entityRef": "service:synthetic-storefront/recommendation-service",
+        "signalKind": "derived",
+        "expression": "cache_evictions_total.post - cache_evictions_total.baseline",
+        "comparator": "==",
+        "value": 0,
+        "unit": "count",
+        "description": "the other half: nothing was ever removed, so the only thing that can bound the heap is the process ending"
+      },
+      {
+        "checkpointId": "cp-restarts",
+        "entityRef": "service:synthetic-storefront/recommendation-service",
+        "signalKind": "derived",
+        "expression": "pod_restart_total.post - pod_restart_total.baseline",
+        "comparator": "==",
+        "value": 9,
+        "unit": "count",
+        "description": "nine restarts in seventy-two hours, which is one per eight hours -- the period the slope needs to reach the limit, so the restarts are the leak's clock rather than a separate fault"
+      },
+      {
+        "checkpointId": "cp-traffic-flat",
+        "entityRef": "service:synthetic-storefront/recommendation-service",
+        "signalRef": "ingress_requests_per_second",
+        "comparator": "==",
+        "value": 142,
+        "unit": "rps",
+        "description": "the request rate at the end of the window is the rate at the start of it, which is the reading that refuses every explanation in terms of load"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "bound the session cache with an eviction policy rather than only a write path, or cap the heap so the process fails fast instead of growing until the kernel intervenes",
+        "target": "container:synthetic-storefront/recommendation-app"
+      },
+      {
+        "step": 2,
+        "action": "alert on heap growth per unit of uptime rather than on restarts, because a restart count reports the kill and the slope reports the leak while there is still room to fix it",
+        "target": "pod:synthetic-storefront/recommendation-service-0"
+      }
+    ]
+  },
+  "query": "The recommendation service has been OOMKilled every six to eight hours for three days, with a heap that climbs from 400Mi to the 2Gi limit while traffic is flat. What is growing, and why does restarting only postpone it?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

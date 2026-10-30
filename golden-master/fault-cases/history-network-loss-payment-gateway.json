@@ -1,0 +1,141 @@
+{
+  "caseId": "history-network-loss-payment-gateway",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-25T09:12:00.000Z",
+  "window": {
+    "start": "2026-10-25T08:50:00.000Z",
+    "end": "2026-10-25T09:40:00.000Z"
+  },
+  "fault": {
+    "type": "network-loss",
+    "category": "network",
+    "injectionMethod": "historical",
+    "parameters": {
+      "from": "order-service",
+      "to": "payment-gateway",
+      "lossPercent": {
+        "value": 8,
+        "unit": "%"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "pod:synthetic-storefront/payment-gateway-2",
+    "rootCauseComponent": "payment-gateway",
+    "rootCauseReason": "One of the gateway's four replicas stopped completing handshakes: eight percent of the connections that reach it are dropped before a request is ever read, so the caller sees a three-second timeout and the callee sees nothing at all. The two readings that decide this are a counter on each side of the same wire, and neither is about time: the caller's SYN retransmits climb by 8,600 across the window while the gateway's own request rate falls from 180 to 165 rps, and a gateway that had received those requests and failed them would hold the same request rate and a rising error ratio instead. That is the whole distinction between this and `dependency-upstream-5xx-pricing`, where the callee answers and the answer is bad. The client node's egress drop counter is a symptom rather than a second fault -- a caller that retransmits into a lossy path fills its own egress queue -- and the sentence that names it is the same sentence that names the repair, because retries that land on another replica succeed. Nothing in the application changed and the handler time of the replicas that do answer is untouched, which is why every reading here is a count of things that did not arrive rather than a duration of something that did.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "syn_retransmits_total",
+        "description": "the caller retransmits 8,600 SYNs across the window, which is a path losing packets rather than a callee answering slowly"
+      },
+      {
+        "type": "metric",
+        "ref": "ingress_request_rate",
+        "description": "the gateway's own request rate falls by eight percent while its error ratio stays at zero, which is what separates a request that never arrived from one that arrived and failed"
+      },
+      {
+        "type": "metric",
+        "ref": "client_timeout_ratio",
+        "description": "eight percent of calls time out at three seconds, which matches the loss rate rather than the service's own latency"
+      },
+      {
+        "type": "metric",
+        "ref": "interface_drops_total",
+        "description": "the caller's egress interface drops 2,400 packets, which is where a retransmitting client turns its own queue into a second symptom"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "pod:synthetic-storefront/payment-gateway-2",
+        "toEntityId": "service:synthetic-storefront/payment-gateway",
+        "mechanism": "one replica of four drops eight percent of inbound handshakes before a request is read, so a connection attempt to it is answered by nothing and the caller's SYN is retransmitted rather than refused",
+        "evidenceRefs": [
+          "cp-received-rate",
+          "cp-gateway-errors",
+          "cp-retransmits"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "service:synthetic-storefront/payment-gateway",
+        "toEntityId": "service:synthetic-storefront/order-service",
+        "mechanism": "the caller's three-second deadline expires on the lost connections, eight percent of its calls fail, and its retries double the traffic it sends into the same lossy path so its egress queue starts dropping too",
+        "evidenceRefs": [
+          "cp-timeout-ratio",
+          "cp-drops"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-received-rate",
+        "entityRef": "service:synthetic-storefront/payment-gateway",
+        "signalRef": "ingress_request_rate",
+        "comparator": "==",
+        "value": 165,
+        "unit": "rps",
+        "description": "the gateway admits to 165 requests per second where it was serving 180, so the shortfall exists at the callee and not only in the caller's view of it"
+      },
+      {
+        "checkpointId": "cp-gateway-errors",
+        "entityRef": "service:synthetic-storefront/payment-gateway",
+        "signalRef": "gateway_error_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "the gateway fails nothing, which is the reading that refuses the upstream-5xx explanation: a callee that answers badly keeps its request rate and raises this one"
+      },
+      {
+        "checkpointId": "cp-retransmits",
+        "entityRef": "service:synthetic-storefront/order-service",
+        "signalKind": "derived",
+        "expression": "syn_retransmits_total.post - syn_retransmits_total.baseline",
+        "comparator": ">=",
+        "value": 8600,
+        "unit": "count",
+        "description": "8,600 retransmitted handshakes across the window, which is a count of packets that left and were not answered rather than a duration that grew"
+      },
+      {
+        "checkpointId": "cp-timeout-ratio",
+        "entityRef": "service:synthetic-storefront/order-service",
+        "signalRef": "client_timeout_ratio",
+        "comparator": "==",
+        "value": 0.08,
+        "unit": "1",
+        "description": "eight percent of calls die at the caller's three-second deadline, which is the loss rate rather than a latency distribution that moved"
+      },
+      {
+        "checkpointId": "cp-drops",
+        "entityRef": "node:synthetic-storefront/order-node-5",
+        "signalKind": "derived",
+        "expression": "interface_drops_total.post - interface_drops_total.baseline",
+        "comparator": ">=",
+        "value": 2400,
+        "unit": "count",
+        "description": "2,400 packets dropped on the caller's egress queue, which is the retransmission storm's own cost and the reason this reading is a symptom rather than a second cause"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "replace the replica whose inbound path is dropping, or take it out of the service until the node's network is repaired",
+        "target": "pod:synthetic-storefront/payment-gateway-2"
+      },
+      {
+        "step": 2,
+        "action": "alert on the ratio between what a caller sent and what the callee received rather than on timeouts alone, because a loss rate of eight percent is invisible in a latency percentile until the deadline is crossed",
+        "target": "service:synthetic-storefront/order-service"
+      }
+    ]
+  },
+  "query": "About eight percent of calls from the order service to the payment gateway time out at three seconds, tcpdump shows SYN retransmits, and the gateway reports receiving far fewer requests than were sent. What is failing, and why do retries on another node succeed?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

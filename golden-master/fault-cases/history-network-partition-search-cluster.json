@@ -1,0 +1,140 @@
+{
+  "caseId": "history-network-partition-search-cluster",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-26T03:02:00.000Z",
+  "window": {
+    "start": "2026-10-26T02:40:00.000Z",
+    "end": "2026-10-26T03:40:00.000Z"
+  },
+  "fault": {
+    "type": "network-partition",
+    "category": "network",
+    "injectionMethod": "historical",
+    "parameters": {
+      "cluster": "search-cluster",
+      "splitDurationMinutes": {
+        "value": 17,
+        "unit": "min"
+      },
+      "switchFirmwareRolls": {
+        "value": 1,
+        "unit": "count"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "node:synthetic-storefront/rack-7-switch",
+    "rootCauseComponent": "search-cluster",
+    "rootCauseReason": "The rack switch carried three of the six search nodes, and its firmware roll took those three off the network for seventeen minutes. The cluster did not fail; it forked. Three nodes on one side and three on the other each held a majority of three, each elected its own leader, and both halves kept answering, which is why nothing paged on availability and why the first symptom was wrong data rather than missing data: a read served by the side that had not seen a delete returned the document. That is the shape this case is about -- a partition is not a component that stopped working, it is two components that both work and disagree -- and it is why the annotations are two readings of one cluster rather than a reading per service. The entity layer is the switch because the firmware is what happened, and the answer component is the cluster because the cluster is what an operator can repair: the switch belongs to the network team, and what has to change is how the cluster tolerates losing a rack. Nothing in the application changed, which is written down as a declared fact rather than argued in prose, and the seventeen minutes are the gap between 03:02 and 03:19 rather than an estimate.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "cluster_members_visible",
+        "description": "each side sees three of six members, which is a cluster that has forked rather than one that has lost nodes"
+      },
+      {
+        "type": "metric",
+        "ref": "leader_election_total",
+        "description": "two elections in one window where the cluster normally holds one leader: one per side, which is the reading that says both halves are serving"
+      },
+      {
+        "type": "metric",
+        "ref": "stale_read_ratio",
+        "description": "thirty-five percent of reads returned a document the other side had already deleted, which is what a forked cluster costs and what ordinary unavailability does not"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "node:synthetic-storefront/rack-7-switch",
+        "toEntityId": "service:synthetic-storefront/search-cluster",
+        "mechanism": "the firmware roll takes the three nodes on that rack off the network at 03:02, and the remaining three on each side of the break each hold a majority of three, so both halves elect a leader and keep serving instead of one half refusing",
+        "evidenceRefs": [
+          "cp-firmware-roll",
+          "cp-members-halved",
+          "cp-two-elections"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "service:synthetic-storefront/search-cluster",
+        "toEntityId": "service:synthetic-storefront/catalog-service",
+        "mechanism": "a read served by the half that never saw the delete returns the document, so thirty-five percent of catalog's searches answer with data that no longer exists until the links come back at 03:19",
+        "evidenceRefs": [
+          "cp-stale-reads",
+          "cp-split-window"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-firmware-roll",
+        "entityRef": "node:synthetic-storefront/rack-7-switch",
+        "signalRef": "switchFirmwareRolls",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 1,
+        "unit": "count",
+        "description": "one firmware roll on the rack in the window, which is the only change the ticket allows and the only event it dates"
+      },
+      {
+        "checkpointId": "cp-members-halved",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalRef": "cluster_members_visible",
+        "comparator": "==",
+        "value": 3,
+        "unit": "count",
+        "description": "a member sees three of six, which is the fork itself: a cluster that lost three nodes would see three from every side, and this reading is one side's view of a cluster that has two"
+      },
+      {
+        "checkpointId": "cp-two-elections",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalKind": "derived",
+        "expression": "leader_election_total.post - leader_election_total.baseline",
+        "comparator": "==",
+        "value": 2,
+        "unit": "count",
+        "description": "two elections where a healthy cluster holds one leader for months: one election is a failover, two is a split, and the number is what separates them"
+      },
+      {
+        "checkpointId": "cp-stale-reads",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalRef": "stale_read_ratio",
+        "comparator": "==",
+        "value": 0.35,
+        "unit": "1",
+        "description": "thirty-five percent of reads return a document the other side had deleted, which is the cost a partition imposes and a crash does not"
+      },
+      {
+        "checkpointId": "cp-split-window",
+        "entityRef": "service:synthetic-storefront/search-cluster",
+        "signalRef": "splitDurationMinutes",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 17,
+        "unit": "min",
+        "description": "the interval between the split and the heal, which is the window in which both halves were authoritative and neither was right"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "place the cluster's members across more than two racks so that losing one rack cannot leave two halves each holding a majority",
+        "target": "service:synthetic-storefront/search-cluster"
+      },
+      {
+        "step": 2,
+        "action": "stage switch firmware on a rack that does not carry a majority of any quorum, and alarm on a member count that halves without a matching node failure",
+        "target": "node:synthetic-storefront/rack-7-switch"
+      }
+    ]
+  },
+  "query": "The search cluster split into two halves at 03:02, each half elected its own leader, and one half returned documents the other had already deleted until the links came back at 03:19. Nothing in the application changed. What happened, and why did this not page as an outage?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

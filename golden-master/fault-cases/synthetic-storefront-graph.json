@@ -468,6 +468,116 @@
       "aliases": [
         "the smaller node"
       ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/recommendation-service",
+      "kind": "service",
+      "name": "recommendation-service",
+      "aliases": [
+        "The recommendation service"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/recommendation-service-0",
+      "kind": "pod",
+      "name": "recommendation-service-0",
+      "aliases": []
+    },
+    {
+      "entityId": "container:synthetic-storefront/recommendation-app",
+      "kind": "container",
+      "name": "recommendation-app",
+      "aliases": [
+        "the session cache"
+      ]
+    },
+    {
+      "entityId": "service:synthetic-storefront/payment-gateway",
+      "kind": "service",
+      "name": "payment-gateway",
+      "aliases": [
+        "the payment gateway",
+        "the gateway"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/payment-gateway-1",
+      "kind": "pod",
+      "name": "payment-gateway-1",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/payment-gateway-2",
+      "kind": "pod",
+      "name": "payment-gateway-2",
+      "aliases": []
+    },
+    {
+      "entityId": "node:synthetic-storefront/order-node-5",
+      "kind": "node",
+      "name": "order-node-5",
+      "aliases": [
+        "the client node"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/order-service-0",
+      "kind": "pod",
+      "name": "order-service-0",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/search-cluster",
+      "kind": "service",
+      "name": "search-cluster",
+      "aliases": [
+        "The search cluster"
+      ]
+    },
+    {
+      "entityId": "node:synthetic-storefront/rack-7-switch",
+      "kind": "node",
+      "name": "rack-7-switch",
+      "aliases": [
+        "the rack carrying the third node",
+        "the switch"
+      ]
+    },
+    {
+      "entityId": "pod:synthetic-storefront/search-node-1",
+      "kind": "pod",
+      "name": "search-node-1",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/search-node-2",
+      "kind": "pod",
+      "name": "search-node-2",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/search-node-3",
+      "kind": "pod",
+      "name": "search-node-3",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/search-node-4",
+      "kind": "pod",
+      "name": "search-node-4",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/search-node-5",
+      "kind": "pod",
+      "name": "search-node-5",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/search-node-6",
+      "kind": "pod",
+      "name": "search-node-6",
+      "aliases": []
     }
   ],
   "edges": [
@@ -720,6 +830,96 @@
       "from": "node:synthetic-storefront/log-node-2",
       "to": "pod:synthetic-storefront/log-collector-0",
       "relation": "hosts"
+    },
+    {
+      "from": "service:synthetic-storefront/recommendation-service",
+      "to": "pod:synthetic-storefront/recommendation-service-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/recommendation-service-0",
+      "to": "container:synthetic-storefront/recommendation-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/order-service",
+      "to": "service:synthetic-storefront/payment-gateway",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/payment-gateway",
+      "to": "service:synthetic-storefront/payment-service",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/payment-gateway",
+      "to": "pod:synthetic-storefront/payment-gateway-1",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/payment-gateway",
+      "to": "pod:synthetic-storefront/payment-gateway-2",
+      "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/order-node-5",
+      "to": "pod:synthetic-storefront/order-service-0",
+      "relation": "hosts"
+    },
+    {
+      "from": "service:synthetic-storefront/order-service",
+      "to": "pod:synthetic-storefront/order-service-0",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/search-cluster",
+      "to": "pod:synthetic-storefront/search-node-1",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/search-cluster",
+      "to": "pod:synthetic-storefront/search-node-2",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/search-cluster",
+      "to": "pod:synthetic-storefront/search-node-3",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/search-cluster",
+      "to": "pod:synthetic-storefront/search-node-4",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/search-cluster",
+      "to": "pod:synthetic-storefront/search-node-5",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/search-cluster",
+      "to": "pod:synthetic-storefront/search-node-6",
+      "relation": "contains"
+    },
+    {
+      "from": "node:synthetic-storefront/rack-7-switch",
+      "to": "pod:synthetic-storefront/search-node-4",
+      "relation": "routes"
+    },
+    {
+      "from": "node:synthetic-storefront/rack-7-switch",
+      "to": "pod:synthetic-storefront/search-node-5",
+      "relation": "routes"
+    },
+    {
+      "from": "node:synthetic-storefront/rack-7-switch",
+      "to": "pod:synthetic-storefront/search-node-6",
+      "relation": "routes"
+    },
+    {
+      "from": "service:synthetic-storefront/catalog-service",
+      "to": "service:synthetic-storefront/search-cluster",
+      "relation": "calls"
     }
   ]
 }

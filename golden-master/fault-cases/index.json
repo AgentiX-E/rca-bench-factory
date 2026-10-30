@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 24,
+  "min": 27,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -720,6 +720,96 @@
           "layer": "evidence",
           "quote": "Writes now fail with ENOSPC and the agent is dropping batches.",
           "why": "the errno and the impact: the checkpoint holds `no space left on device` from the agent line, and the dropped-batch ratio is why the ticket is about lost lines rather than latency"
+        }
+      ]
+    },
+    {
+      "caseId": "history-resource-memory-leak-recommendation",
+      "sampleId": "resource-memory-leak-recommendation",
+      "case": "history-resource-memory-leak-recommendation.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-resource-memory-leak-recommendation.signals.json",
+      "why": "Annotated from the incident text of `resource-memory-leak-recommendation`. It is the corpus's first whose decisive reading is a **pair of counters that only mean anything together**: `cache_writes_total` moves 7,200 times across the window and `cache_evictions_total` moves zero times. Either one alone is innocent -- a cache nothing writes to evicts nothing, and a cache that writes and evicts is working -- and the pair is the only statement that entries go in and nothing comes out. The disk-full case a round earlier made the same shape from one flat counter, and this is the version that cannot be argued with: a completion that did not happen is a job that did not run, while an eviction that did not happen is a code path that does not exist. The entity layer is the application container because that is where the cache is, and the chain runs container -> pod -> service so a reader who stops at the service reports 'it keeps restarting'. Three readings exist to refuse three innocent explanations, and each is cited as a checkpoint rather than mentioned in prose: the 2Gi limit is declared as a configuration fact so that 'the limit is too small' is answered by the same number the growth stopped at; the request rate is flat at 142 rps so that 'it grew because it was asked to do more' is answered by an equality; and the nine restarts are read as a difference rather than as a state, because one restart per eight hours is the period the slope needs rather than a failure rate. The release is deliberately *not* a checkpoint: the ticket says rolling it back stops the growth, which is a fact about a deploy rather than a reading inside the window, and putting it in the evidence layer would have made the annotation cite a sentence it cannot measure.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The recommendation service has OOMKilled every 6 to 8 hours for three days.",
+          "why": "the service, the period and the fact that it has been happening for days: the entity layer names the service the chain ends at and dates the symptom rather than the cause"
+        },
+        {
+          "layer": "fault",
+          "quote": "Heap dumps show the session cache growing without bound; entries are written and never evicted.",
+          "why": "the mechanism stated as an asymmetry -- a write path and no eviction path -- which is what makes this `memory-leak` rather than `memory-request-overcommit`, where the process grows into a limit it was never given"
+        },
+        {
+          "layer": "process",
+          "quote": "Rolling back last Tuesday's release stops the growth.",
+          "why": "the only sentence that names a change instead of a symptom: growth that a rollback stops is growth that a deploy started, which is why the chain begins at the container rather than at the node that killed it"
+        },
+        {
+          "layer": "evidence",
+          "quote": "RSS climbs from 400Mi to the 2Gi limit and the kernel kills the container.",
+          "why": "the two readings the checkpoints hold: a resident set that arrives at its limit, and a kill that is the kernel's decision -- the number and the actor, in one sentence"
+        }
+      ]
+    },
+    {
+      "caseId": "history-network-loss-payment-gateway",
+      "sampleId": "network-loss-payment-gateway",
+      "case": "history-network-loss-payment-gateway.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-network-loss-payment-gateway.signals.json",
+      "why": "Annotated from the incident text of `network-loss-payment-gateway`. It is the corpus's first whose decisive evidence is **one wire counted from both ends**: the caller's SYN retransmits climb by 8,600 while the callee's own request rate falls from 180 to 165 rps, and the pair says a packet left and was never answered. The other half of the argument is an absence that is written down as a reading: `gateway_error_ratio` is zero. A callee that received those requests and failed them would hold its request rate and raise that ratio -- which is `dependency-upstream-5xx-pricing`, one case over in this corpus -- so the zero is what separates loss from a bad answer, and a solver explaining the timeouts by a failing gateway has to explain a zero. The entity layer is the replica rather than the service because three of the four replicas are healthy and the ticket says so in the only sentence that names a repair: retries that land on another node succeed. The egress drop counter on the caller's node is cited as evidence and explicitly *not* as the root cause: a caller retransmitting into a lossy path fills its own queue, and an annotation that stopped there would have prescribed repairing the caller's interface for a fault that lives on one replica. The `L3` level is its structure -- a pod, a service and a second service, over two causal steps -- and not a judgement about how hard the question reads.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Roughly 8% of calls from the order service to the payment gateway time out at 3s",
+          "why": "both endpoints and the rate and the deadline: the entity layer names the two services the chain joins, and the three-second deadline is the number that turns a lost packet into a failed call"
+        },
+        {
+          "layer": "fault",
+          "quote": "tcpdump on the client side shows SYN retransmissions; the gateway's own metrics show it received far fewer requests than the client sent",
+          "why": "the mechanism on both sides of one wire -- a handshake repeated and a request never admitted -- which is what makes this `network-loss` rather than `network-delay`, where the callee receives the request and its handler time stays flat"
+        },
+        {
+          "layer": "process",
+          "quote": "Retries succeed when they land on a different node.",
+          "why": "the sentence that makes the fault partial rather than total: a retry that chooses another replica works, so what is broken is one replica's path and not the service or its callers"
+        },
+        {
+          "layer": "evidence",
+          "quote": "The egress interface on the client node reports a rising drop counter",
+          "why": "the reading the fifth checkpoint holds, cited as a symptom of retransmission rather than as the cause -- and the reason the annotation can say why a symptom on the caller is not where the repair goes"
+        }
+      ]
+    },
+    {
+      "caseId": "history-network-partition-search-cluster",
+      "sampleId": "network-partition-search-cluster",
+      "case": "history-network-partition-search-cluster.json",
+      "graph": "synthetic-storefront-graph.json",
+      "signals": "history-network-partition-search-cluster.signals.json",
+      "why": "Annotated from the incident text of `network-partition-search-cluster`. It is the corpus's first where the answer is a *relationship between two healthy things* rather than a component that got worse: six nodes became two three-node clusters, each held a majority, each elected, and both kept serving. That is why the readings are what they are -- a member count of three is one side's view rather than a cluster that lost nodes, and the election counter moved by two because each half voted -- and it is why nothing paged on availability: a fork returns yesterday's answer and is believed, where a crash returns nothing and is escalated. The entity layer is the rack switch because a firmware roll is what happened, and the answer component is the cluster because the cluster is what an operator can repair -- the split is seventeen minutes of a network team's problem and a placement policy that has to outlive it. The annotation deliberately records a gap rather than hiding it: a partition has two viewpoints and `signalRef` is one name resolved case-wide, so 'what side A saw' and 'what side B saw' cannot both be series, and the second viewpoint is prose. The guard refuses two series with one name, which is the honest refusal given that name resolution, and finding 299 is where the cost of that resolution is written down.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The search cluster split into two sides at 03:02 and each side elected its own leader",
+          "why": "the cluster, the fork and the duplication of authority in one sentence, which is the entity layer's whole claim: two leaders over one cluster is the fault, and neither half is broken"
+        },
+        {
+          "layer": "fault",
+          "quote": "Queries on one side returned documents that the other side had already deleted",
+          "why": "the mechanism as data rather than as downtime -- the two halves disagree, and the disagreement is observable in answers"
+        },
+        {
+          "layer": "process",
+          "quote": "The split healed at 03:19 when the inter-node links came back",
+          "why": "the end of the window is the links returning and not a repair in the application: the duration is an interval with two timestamps, which is why it is a declared fact rather than a series"
+        },
+        {
+          "layer": "evidence",
+          "quote": "the only upstream event was a switch firmware roll on the rack carrying the third node",
+          "why": "the one change in the window, and the sentence that puts the cause outside the service graph -- a switch is not a component the application owns, which is why the answer component and the root cause entity differ here"
         }
       ]
     }

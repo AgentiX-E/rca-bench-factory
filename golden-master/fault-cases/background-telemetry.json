@@ -123,6 +123,12 @@
       "value": 22
     },
     {
+      "service": "payment-gateway",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 180
+    },
+    {
       "service": "payment-service",
       "metric": "request_rate",
       "unit": "rps",
@@ -141,10 +147,22 @@
       "value": 780
     },
     {
+      "service": "recommendation-service",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 142
+    },
+    {
       "service": "reporting-service",
       "metric": "request_rate",
       "unit": "rps",
       "value": 35
+    },
+    {
+      "service": "search-cluster",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 240
     },
     {
       "service": "session-cache",

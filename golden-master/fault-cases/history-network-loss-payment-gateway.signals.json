@@ -1,0 +1,60 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-network-loss-payment-gateway",
+  "why": "Telemetry for the loss case, and the corpus's first whose evidence is **one wire counted from both ends**: the caller's SYN retransmits climb while the callee's request rate falls, and the pair is what says a packet left and was never answered. The deliberate absence is the interesting part. A callee that answers badly is visible as a request rate that holds and an error ratio that rises -- that is `dependency-upstream-5xx-pricing`, one case over -- so this file carries `gateway_error_ratio` at zero as a reading rather than an omission, and a solver who explains the timeouts by a failing gateway has to explain a zero. `client_timeout_ratio` is the caller's deadline being crossed, which is a *consequence* of the loss and not a measurement of it: eight percent of calls time out because eight percent of connections are dropped, and a latency percentile would have said four hundred milliseconds and been about nothing. `interface_drops_total` is the second-order symptom -- a caller retransmitting into a lossy path fills its own egress queue -- and it is filed here because the ticket names it, not because it is the cause; a case that put its root cause at the caller's interface would have made the repair 'repair the caller's NIC', which is the wrong repair for a path that fails on one replica of four. Every series is recorded against the service or node the ticket discusses, because the ranking scores names and a number filed under a name no answer can use is a number the localisation check cannot see (finding 298).",
+  "series": [
+    {
+      "service": "payment-gateway",
+      "metric": "ingress_request_rate",
+      "unit": "rps",
+      "baseline": 180,
+      "post": 165,
+      "noise": "none",
+      "quote": "the gateway's own metrics show it received far fewer requests than the client sent",
+      "why": "the checkpoint `cp-received-rate` holds the value: the shortfall is visible at the callee, so it is not an artefact of how the caller measures"
+    },
+    {
+      "service": "payment-gateway",
+      "metric": "gateway_error_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "the gateway's own metrics show it received far fewer requests than the client sent",
+      "why": "the checkpoint `cp-gateway-errors` holds the zero, and the zero is the argument: a callee that received the requests and failed them would show this ratio rising while its request rate held"
+    },
+    {
+      "service": "order-service",
+      "metric": "syn_retransmits_total",
+      "unit": "count",
+      "baseline": 1200,
+      "post": 9800,
+      "derivation": "counter",
+      "quote": "tcpdump on the client side shows SYN retransmissions",
+      "why": "the checkpoint `cp-retransmits` holds the difference: 8,600 handshakes left the caller and were not answered, which is a count of absences rather than of latencies"
+    },
+    {
+      "service": "order-service",
+      "metric": "client_timeout_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": {
+        "parameter": "lossPercent"
+      },
+      "noise": "none",
+      "quote": "Roughly 8% of calls from the order service to the payment gateway time out at 3s",
+      "why": "the checkpoint `cp-timeout-ratio` holds the eight percent, read straight from the case's own `lossPercent` parameter -- the two numbers are one fact, and stating them twice is how a rate becomes a reading that disagrees with the run it describes"
+    },
+    {
+      "service": "order-node-5",
+      "metric": "interface_drops_total",
+      "unit": "count",
+      "baseline": 300,
+      "post": 2700,
+      "derivation": "counter",
+      "quote": "The egress interface on the client node reports a rising drop counter",
+      "why": "the checkpoint `cp-drops` holds the difference: the caller's own queue drops because it retransmits, which is why this reading is evidence about the path rather than about the interface that reports it"
+    }
+  ]
+}
