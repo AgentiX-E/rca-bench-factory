@@ -1796,7 +1796,39 @@ Raising the budget was the other direction and the wrong one. The budget is a st
 one file may block, and it was correct; what was wrong was how many processes competed for the allowance
 it is spent against.
 
-### Seven: what this round did not do
+### Seven: the commit carried the change and not the file the change generates
+
+The commit that made RE3's export carry its log and trace tables also moved two things that are
+generated from it -- the `statusCode` note in the export spec, and the example `traces.csv` rows whose
+status column used to hold a value -- and neither generated file was regenerated. The full gate says so
+at step 24 of 31:
+
+```
+$ pnpm examples:check
+site/assets/data.js is stale - run `pnpm examples:gen` and commit the result.
+```
+
+The round had re-signed its anchor and read that as "the derived things agree". It does not: the anchor
+holds no entry under `site/` (`grep -c 'site/assets/data.js' golden-master/expected.json` -> 0), so it
+could not have said anything about that file. What it did instead was move by two bytes -- one byte per
+row of the status column that no longer carries a value -- while the site data stayed three lines out of
+date.
+
+The commit was made after running the five steps its author expected to move. Step 24 was not one of
+them. That is the entire argument for running all 31, and the reason the receipt is keyed by tree: a tree
+that cannot pass cannot be pushed, so the mistake cost two full runs -- one over each repaired tree --
+rather than one. The two artefacts were regenerated at their own commit and folded into it
+(`513d2c9` -> `bb87c24`), and the child was rebased onto it (`a15b0d4` -> `6454d96`). Finding 318.
+
+The repair then ran into the mechanism built for finding 310 and was stopped by it for a moment:
+`git commit --amend` refused because `golden-master/doc-counts.json` differed from a journal left by a
+`verify:local` killed at step 19. The journal's holder was dead and its record described the *child's*
+counts (207 / 5047) while the index held the parent's (206 / 5039) -- a difference the record cannot
+distinguish from a mutation, which is the record working. The tree was checked against `HEAD` by hand,
+the abandoned journal removed, and the amend made; restoring from it would have published the child's
+test counts inside the parent.
+
+### Eight: what this round did not do
 
 It did not read RE2's tables. RE2's log table is nine columns, four of which the IR has no field for and
 one of which -- `level` -- feeds a closed severity vocabulary that no RE2 archive in this tree has been
@@ -1817,7 +1849,7 @@ that every row is carried and every column that should agree does.
 | repo | **211 files, 5234 tests passed** |
 | coverage | **99.97 / 99.76 / 100 / 99.97** -- branch up from 99.75, and the new module at 100 on all four |
 | `modality-comparison.test.ts` | 35 tests, **100 / 100 / 100 / 100** |
-| audits | 1–**317**, **314 findings** (absent: 118, 132, 133) |
+| audits | 1–**318**, **315 findings** (absent: 118, 132, 133) |
 | RE3-OB local round trip | 30 of 30 cases; 2 095 206 log rows and 4 755 090 spans carried |
 | the truncation | 6 415 067 cells at the millisecond; 9 043 794 values in two columns |
 | export failure sites | 95 across 50 scripts, annotations carried |

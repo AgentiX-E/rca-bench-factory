@@ -2186,3 +2186,106 @@ drains its pending writes once and then resets the list, so a write that arrives
 owner and Node turns it into a non-zero exit with no failing test. `coverage-writes-are-drained.test.ts`
 already writes that mechanism down and refuses to describe it as a test failure; the workaround measured
 here (create `coverage/.tmp` before the run) is a workaround, not a fix.
+
+## Finding 318 — the commit published a spec change without the artefact derived from it
+
+### The defect
+
+The commit that made RE3's export carry its log and trace tables also changed two things other files are
+generated from: the `statusCode` field's note in the export spec, and the example `traces.csv` rows on
+which that column used to hold a value. Neither generated file was regenerated.
+
+| file | generated from | what it still said |
+| --- | --- | --- |
+| `site/assets/data.js` | `scripts/gen-examples.mjs` over the export spec and the example set | `SPAN_STATUSES -> 0/1/2`, and two example spans with `statusCode` `1` |
+| `docs/targets/rcaeval.md` | the same run, into the `<!-- fields -->` block | the new source `(not carried)` beside the old note |
+
+Measured at that commit, on a clean tree:
+
+```
+$ pnpm examples:check
+site/assets/data.js is stale - run `pnpm examples:gen` and commit the result.
+```
+
+### Why the anchor did not say so
+
+`golden-master/expected.json` holds no entry under `site/`:
+
+```
+$ grep -c 'site/assets/data.js' golden-master/expected.json
+0
+```
+
+The round did re-sign one anchor -- `RE2-order-prod/order_cpu/1/traces.csv` from 276 to 274 bytes -- and
+read that as "the derived things agree". An anchor is the list of files somebody chose to freeze. A
+derived artefact nobody listed is a derived artefact nobody compared, and the round's own evidence for
+that sentence is the diff it published: the anchor moved by two bytes while the site data was three
+lines out of date.
+
+### How the commit was made
+
+The step that says this is `artefacts / Examples and site data are up to date`, 24 of 31. That commit was
+made after running the steps that were expected to move -- typecheck, lint, coverage, the documentation
+guards, the anchor -- and not the rest. The first full run over it stopped there:
+
+```
+[24/31] artefacts / Examples and site data are up to date
+/tmp/v321-verify/site/assets/data.js is stale - run `pnpm examples:gen` and commit the result.
+  failed -- the step exited 1
+[25/31] artefacts / Documentation guards are satisfied
+  skipped -- job "artefacts" has failed, and this step declares no condition that widens past a failure
+```
+
+### The repair
+
+The two artefacts are what that change moves, so they belong in that commit rather than in a later one
+that says "regenerate": a tree whose every commit passes the gate is the only kind a per-tree receipt can
+speak about.
+
+```
+git checkout --detach 513d2c9
+node scripts/gen-examples.mjs     # site/assets/data.js, docs/targets/rcaeval.md
+git commit --amend                # bb87c24
+git rebase --onto bb87c24 513d2c9  # 6454d96
+```
+
+Six lines in each file: the note in the field block, and in the site data the same note plus the two
+example rows whose status column is now empty.
+
+### What the repair ran into
+
+`git commit --amend` refused, and not for the reason the commit was about:
+
+```
+check-staged-mutation: golden-master/doc-counts.json is staged at a blob a battery's journal says was
+mutated (recorded bytes bdcf6f226845, staged blob b980f07ea96f)
+```
+
+The journal belonged to the `backend-support` battery of a `verify:local` that was killed at step 19. Its
+holder pid was gone. Its record describes the tree *before* that battery mutated it -- which was the
+child commit, where `doc-counts.json` says 207 files / 5047 tests. Comparing the index at the parent
+(206 / 5039) against that record says "mutation", and there is nothing in the record that distinguishes
+an abandoned run from a legitimate edit. That is the mechanism working: it is what caught finding 310.
+
+The repair is the one the mechanism's own error message names, and it needs the human step it asks for:
+`git status` showed the tree clean apart from the two intended artefacts, so the record was abandoned
+rather than live, and it was removed before committing. Restoring from it would have published the
+child's test counts inside the parent.
+
+### Acceptance
+
+| claim | how it is held |
+| --- | --- |
+| the site data follows the spec | `pnpm examples:check` -- "examples data is up to date" |
+| the pack follows it too | `pnpm examples:bundle:check` -- "example pack is up to date" |
+| the field block matches the code | `pnpm docs:check`, all 15 guards |
+| the arithmetic still holds | `pnpm official:check` -- 8 targets scored, 1 skipped by contract |
+| the pushed tree passed all 31 steps | the receipt is per tree, and a partial run writes none |
+
+### What this cannot do
+
+It cannot turn a partial run into a gate. The five steps run before the commit were the five its author
+expected to move, and the defect was in the one nobody expected to move -- which is the whole content of
+the argument for running all of them, and the reason the receipt is keyed by tree rather than by
+intention. The cost of the mistake is measured too: two full runs, one over each repaired tree, because a
+commit whose tree cannot pass cannot be pushed at all.
