@@ -139,6 +139,7 @@ const ENUMERATED_MODULES = [
   'fault/background.ts',
   'fault/displacement.ts',
   'fault/log-attribution.ts',
+  'fault/answer-presence.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
@@ -943,6 +944,8 @@ const TESTED = [
   'parseBackground',
   // fault/log-attribution.ts -- whose line a log checkpoint cites, joined to the entity it names.
   'checkLogAttribution',
+  // fault/answer-presence.ts -- the answer component, joined to the names the series are filed under.
+  'checkAnswerPresence',
   // fault/difficulty.ts
   'difficultyFloor',
   'findDifficultyShortfalls',

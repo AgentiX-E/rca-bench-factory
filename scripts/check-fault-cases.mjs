@@ -207,6 +207,19 @@ const seen = new Set();
 /** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
 const withTelemetry = [];
 /** What the checkpoints of every annotated case claim about the signals it declares. */
+/**
+ * How much of what a case declares about itself anything actually reads.
+ *
+ * `fault.parameters` holds the case's own facts -- the loss rate, the heap limit, the retention gap
+ * -- and a reading may cite one with `{ parameter: 'name' }` so that the number in the series and
+ * the number in the injection spec cannot drift apart (finding 258). The mechanism existed and
+ * almost nothing used it: of the ninety-odd keys this corpus declares, most are written and never
+ * read, which is the shape this volume has spent its rounds deleting from code. It is reported
+ * rather than gated because a descriptive key (`service`, `from`, `trigger`) is legitimately there
+ * for a human and for a future replay, and a rule that refused it would be arguing with the
+ * injection spec rather than with a mistake.
+ */
+const parameterUse = { declared: 0, referenced: 0, cases: 0, casesWithDeadKeys: 0 };
 const checkpointRefs = {
   total: 0,
   resolved: 0,
@@ -495,6 +508,10 @@ for (const entry of index.cases) {
       ? rawCase.fault.parameters
       : {};
     const parameterKeys = Object.keys(parameters);
+    parameterUse.declared += parameterKeys.length;
+    if (parameterKeys.length > 0) parameterUse.cases += 1;
+    /** The keys a reading in this case cites, by either route: a series point or a configuration. */
+    const citedParameters = new Set();
     // A reading may be a literal or a reference to a quantity the case declares about itself. The
     // resolution happens once, here, and everything downstream -- the range check, the expansion, the
     // expression evaluator, the checkpoint comparison -- reads the hash rather than the file. The
@@ -518,6 +535,7 @@ for (const entry of index.cases) {
           continue;
         }
         const parameterName = resolution.parameter;
+        citedParameters.add(parameterName);
         if (!Object.hasOwn(parameters, parameterName)) {
           problems.push(
             `'${caseId}' declares ${point} as parameter '${parameterName}' for '${metric}', and ` +
@@ -705,6 +723,21 @@ for (const entry of index.cases) {
       }
       seriesByMetric.set(metric, one);
     }
+    // Whether the answer is a name the telemetry can score (finding 298).
+    //
+    // The ranking finds the root cause by exact match on a series' `service`, and nothing joined the
+    // two. The round that annotated this corpus's twenty-fifth case filed every reading under the pod
+    // -- where a heap lives -- and left the service with one flat series; both baselines reported
+    // `absent` and G4 said "no baseline can locate the root cause", which is a sentence about solvers
+    // for a defect in the annotation. Asked here, the report names the component and the names the
+    // file actually carries.
+    for (const problem of core.checkAnswerPresence({
+      case: parsedCase,
+      seriesServices: series.map((one) => String(one?.service ?? '')),
+    })) {
+      problems.push(`'${caseId}' ${problem}`);
+    }
+
     // The same series in the shape the expression evaluator reads, with every point in
     // `SERIES_POINTS` read through the tuple -- so a third point needs an edit in one place.
     const expressionSeries = series.map((one) => ({
@@ -844,6 +877,7 @@ for (const entry of index.cases) {
           );
           continue;
         }
+        citedParameters.add(ref);
         const declaredQuantity = core.readDeclaredQuantity(parameters[ref]);
         if (declaredQuantity === undefined) {
           // A string is an identifier, not a fact a comparison can be about: `container == 'x'` only
@@ -941,6 +975,13 @@ for (const entry of index.cases) {
         );
       }
     }
+
+    // What this case's declarations were for, tallied once the checkpoints have been read: a key is
+    // used if a series point cites it or a configuration checkpoint names it, and nothing else counts.
+    for (const key of citedParameters) {
+      if (Object.hasOwn(parameters, key)) parameterUse.referenced += 1;
+    }
+    if (citedParameters.size < parameterKeys.length) parameterUse.casesWithDeadKeys += 1;
 
     // A case's own declaration wins on the `(service, metric)` pair, and the background arrives flat
     // with `noise: 'none'` -- both rules live in `fault/background.ts`, where they are unit-tested.
@@ -1094,6 +1135,26 @@ if (invalid.length > 0) {
  * says `1 of 10` and then says which one.
  */
 /**
+ * How much of what a case declares about itself anything actually reads.
+ *
+ * Printed on both exits, for the reason the checkpoint counts are: the number that says how much of
+ * the annotation is load-bearing is missing exactly when a run is red, which is when it is worth
+ * knowing. It is a reading rather than a rule -- `service`, `from` and `trigger` are written for a
+ * reader and for a future replay, and refusing them would be arguing with the injection spec.
+ */
+function logParameterUse() {
+  if (parameterUse.declared === 0) return;
+  const prose = parameterUse.declared - parameterUse.referenced;
+  const share = Math.round((parameterUse.referenced / parameterUse.declared) * 100);
+  console.log(
+    `check-fault-cases: parameters ${String(parameterUse.referenced)} of ${String(parameterUse.declared)} ` +
+      `(${String(share)} percent) declared across ${String(parameterUse.cases)} case(s) are read by a series ` +
+      `point or a configuration checkpoint; ${String(prose)} are prose, in ` +
+      `${String(parameterUse.casesWithDeadKeys)} case(s)`,
+  );
+}
+
+/**
  * How many cases state a difficulty level.
  *
  * Printed because the exporter projects an absent level to `medium`, so an unannotated case and a
@@ -1174,6 +1235,7 @@ function logCheckpointCounts() {
 if (problems.length > 0) {
   for (const problem of problems) console.error(`check-fault-cases: ${problem}`);
   logDifficultyCoverage();
+  logParameterUse();
   logLocalisationReading();
   logCheckpointCounts();
   console.error(
@@ -1280,6 +1342,7 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
 // Outside the export block on purpose: a corpus with no derived telemetry still states levels, and
 // the coverage line vanished from exactly those runs while it lived inside it.
 logDifficultyCoverage();
+logParameterUse();
 
 console.log(
   `check-fault-cases: OK (${String(index.cases.length)} of ${String(known.size)} sample(s) carry a four-layer ` +
