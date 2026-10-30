@@ -118,9 +118,17 @@ export function runStep(step) {
      * `process.exit`, which is what the register in `scripts-are-classified.test.ts`
      * says of it -- and a register entry reworded to accommodate a convenience
      * would be describing the code rather than stating a rule.
+     *
+     * The group gets **the signal this process received**, which it did not before
+     * (finding 303). Both handlers forwarded `SIGTERM`, so a step that traps `INT`
+     * to flush its work never ran that trap, and a supervisor sending `INT` got a
+     * step that reported `TERM`. The two are not interchangeable -- `TERM` says stop
+     * when you can and `INT` says a person at the terminal stopped you -- and the
+     * handler above this comment already claims to forward "the operator's
+     * interrupt", which was true of the runner and false of the step.
      */
     const forward = (signal) => () => {
-      signalGroup('SIGTERM');
+      signalGroup(signal);
       process.removeListener('SIGINT', onInterrupt);
       process.removeListener('SIGTERM', onTerminate);
       process.kill(process.pid, signal);

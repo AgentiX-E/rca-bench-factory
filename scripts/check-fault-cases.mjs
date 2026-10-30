@@ -204,6 +204,25 @@ const floor = typeof index.min === 'number' ? index.min : 0;
 const problems = [];
 const invalid = [];
 const seen = new Set();
+
+// Whether the index covers the samples, which is not the same question as whether it is as long as
+// them. The sentence this guard prints -- `n of m sample(s) carry a four-layer case` -- takes its
+// numerator from the index's length and its denominator from the extraction key, and nothing
+// compared the two sets until `fault/sample-coverage.ts` existed. At the corpus's target the two
+// numbers agree by construction, so a sample annotated twice leaves another unannotated while the
+// report says the set is complete (finding 302).
+//
+// Asked once, before the loop, because coverage is a property of the index rather than of any
+// entry: a duplicate belongs to two entries and neither of them owns the defect.
+for (const problem of core.checkSampleCoverage({
+  entries: index.cases.map((entry) => ({
+    caseId: String(entry?.caseId ?? ''),
+    sampleId: String(entry?.sampleId ?? ''),
+  })),
+  knownSampleIds: [...known],
+})) {
+  problems.push(problem);
+}
 /** Cases whose derived telemetry passed G1's signal rules and G3. Reported, not gated. */
 const withTelemetry = [];
 /** What the checkpoints of every annotated case claim about the signals it declares. */

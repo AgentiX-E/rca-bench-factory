@@ -1,0 +1,58 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-runtime-container-start-notification-worker",
+  "why": "Telemetry for the start-failure case, and the corpus's first that has to distinguish two zeros that look identical on a dashboard. The crash loop's probe ratio is zero because every probe failed; here `probe_runs_total` is a counter that stops growing, because no probe is ever sent -- the container never reaches a state the platform would probe. Those are different incidents with different repairs, and a corpus that modelled both as 'the probe reading is zero' could not tell them apart, which is exactly the blind spot this case exists to record. `request_rate` is the second zero and a different kind again: it is counted by the router rather than reported by the service, so it stays at zero even though nothing in the service is running to report anything -- a series that a component incapable of serving can still produce. `process_uptime_seconds` is the only reading here with a non-zero post, and its post is a reference to `fault.parameters.containerEntrypointWaitSeconds` rather than a repeated literal: the twenty seconds the ticket states and the twenty seconds the series reports are one number in one place (finding 258). `container_restarts_total` is six rather than the crash loop's 178, and that difference is the kubelet backing off: a container that dies in twenty seconds is rescheduled, not restarted in place, so a high count here would have contradicted the mechanism.",
+  "series": [
+    {
+      "service": "notification-worker",
+      "metric": "probe_runs_total",
+      "unit": "count",
+      "baseline": 180,
+      "post": 180,
+      "derivation": "counter",
+      "quote": "No probe ever runs",
+      "why": "the checkpoint `cp-probe-never-ran` holds the derived difference of zero: a probe counter that had accumulated 180 samples before the window and did not gain one during it, which is a probe that was never sent rather than one that failed"
+    },
+    {
+      "service": "notification-worker",
+      "metric": "request_rate",
+      "unit": "rps",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "The notification worker has not served a single request since the last rollout",
+      "why": "the checkpoint `cp-no-requests` holds the zero: a rate counted at the router, so zero means no arrival rather than no success, and a service answering errors would still have a rate above zero"
+    },
+    {
+      "service": "notification-worker",
+      "metric": "process_uptime_seconds",
+      "unit": "s",
+      "baseline": 1800,
+      "post": {
+        "parameter": "containerEntrypointWaitSeconds"
+      },
+      "quote": "it exits after twenty seconds",
+      "why": "the checkpoint `cp-exits-at-twenty` holds the value, and the value is the parameter rather than a second copy of it: the ticket's twenty seconds is the wait bound, and a series that restated it could drift from the declaration"
+    },
+    {
+      "service": "notification-worker",
+      "metric": "container_restarts_total",
+      "unit": "count",
+      "baseline": 0,
+      "post": 6,
+      "derivation": "counter",
+      "quote": "the kubelet backs off",
+      "why": "the checkpoint `cp-backoff` holds the total: six attempts in half an hour is what exponential backoff produces, where the crash loop's 178 was restarts in place and a number this size would have been evidence against the mechanism"
+    }
+  ],
+  "logs": [
+    {
+      "service": "notification-worker",
+      "id": "entrypoint-file-wait",
+      "body": "entrypoint: waiting for /var/run/notification-worker/ready.lock, created by the init script of the previous image; not present after 20s, exiting 1",
+      "quote": "the entrypoint waits for a file the new image no longer creates",
+      "why": "the entrypoint's own account of what it is waiting for, which is the object a reader can check against the image and the phrase the checkpoint compares rather than a paraphrase of a restart count"
+    }
+  ]
+}

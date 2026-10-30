@@ -1,0 +1,149 @@
+{
+  "caseId": "history-runtime-container-start-notification-worker",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-29T09:15:00.000Z",
+  "window": {
+    "start": "2026-10-29T08:45:00.000Z",
+    "end": "2026-10-29T09:45:00.000Z"
+  },
+  "fault": {
+    "type": "container-start-failure",
+    "category": "runtime",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "notification-worker",
+      "containerEntrypointWaitSeconds": {
+        "value": 20,
+        "unit": "s"
+      },
+      "rollbackRestoresTraffic": {
+        "value": 1,
+        "unit": "count"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/notification-worker-app",
+    "rootCauseComponent": "notification-worker",
+    "rootCauseReason": "The previous image created a lock file from its init script and the entrypoint waited on it; the new image dropped the script and the wait, so the entrypoint blocks for twenty seconds, finds nothing, and exits 1. The kubelet backs off and tries again, and every attempt ends the same way -- which is why the pod never reaches a state where a readiness probe would be sent. Two readings that look like the same zero are not. `probe_runs_total` stops growing, which says the probe was never **sent**: the platform has no opinion about this container, not a negative one, and this is the shape no probe-based alarm can catch, because the alarm watches the outcome of a probe that is never taken. The request rate is a different zero -- not one the service reports but one the router counts -- and it is what an operator sees first. The corpus already carries a crash loop whose probe never passes; this is the case where no probe happens at all, and the pair is why the distinction is written as two counters rather than as a sentence. The ticket also carries its own control -- rolling back the tag starts it immediately -- which removes the cluster, the node and the network without any further evidence, so the case records it as a declared fact rather than re-deriving it from a second run.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "probe_runs_total",
+        "description": "the probe counter has stopped growing: no probe is ever sent, which is a blind spot rather than a failure the platform reported"
+      },
+      {
+        "type": "metric",
+        "ref": "request_rate",
+        "description": "the router counts zero requests for the whole window, which is the reading a dashboard shows and the one that says the service is not serving"
+      },
+      {
+        "type": "log",
+        "ref": "entrypoint-file-wait",
+        "description": "the entrypoint names the file it waits for, which is the mechanism and the object a reader can go and check against the image"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/notification-worker-app",
+        "toEntityId": "pod:synthetic-storefront/notification-worker-0",
+        "mechanism": "the entrypoint waits twenty seconds for a file the new image no longer creates, exits 1, and the kubelet backs off and retries, so the container never reaches a running state and the pod never becomes ready",
+        "evidenceRefs": [
+          "cp-entrypoint-waits",
+          "cp-exits-at-twenty",
+          "cp-backoff"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/notification-worker-0",
+        "toEntityId": "service:synthetic-storefront/notification-worker",
+        "mechanism": "with no ready endpoint the router has nothing to send to, so the queue behind the worker grows while the service reports zero requests and no probe is ever taken that could say so",
+        "evidenceRefs": [
+          "cp-no-requests",
+          "cp-probe-never-ran",
+          "cp-rollback"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-entrypoint-waits",
+        "entityRef": "container:synthetic-storefront/notification-worker-app",
+        "signalKind": "log",
+        "signalRef": "entrypoint-file-wait",
+        "comparator": "contains",
+        "value": "waiting for",
+        "description": "the entrypoint's own line: it names the file it is waiting for and gives up, which is the mechanism stated by the component that has it rather than inferred from a restart count"
+      },
+      {
+        "checkpointId": "cp-exits-at-twenty",
+        "entityRef": "container:synthetic-storefront/notification-worker-app",
+        "signalRef": "process_uptime_seconds",
+        "comparator": "==",
+        "value": 20,
+        "unit": "s",
+        "description": "twenty seconds of life per attempt, which is the ticket's own number and the wait bound read out of the same declaration rather than restated"
+      },
+      {
+        "checkpointId": "cp-backoff",
+        "entityRef": "pod:synthetic-storefront/notification-worker-0",
+        "signalRef": "container_restarts_total",
+        "comparator": ">=",
+        "value": 6,
+        "unit": "count",
+        "description": "six attempts in half an hour, not hundreds: the kubelet's backoff is what turns a fast failure into a slow one, and the count is small precisely because the pod keeps being rescheduled rather than restarted in place"
+      },
+      {
+        "checkpointId": "cp-no-requests",
+        "entityRef": "service:synthetic-storefront/notification-worker",
+        "signalRef": "request_rate",
+        "comparator": "==",
+        "value": 0,
+        "unit": "rps",
+        "description": "the router counts nothing, and it is a count of arrivals rather than of failures: a service returning errors has a rate above zero, and this one has no rate at all"
+      },
+      {
+        "checkpointId": "cp-probe-never-ran",
+        "entityRef": "service:synthetic-storefront/notification-worker",
+        "signalKind": "derived",
+        "expression": "probe_runs_total.post - probe_runs_total.baseline",
+        "comparator": "==",
+        "value": 0,
+        "unit": "count",
+        "description": "the difference is zero, so the probe counter did not move: no probe was sent, which is not the same as a probe failing and is the half of this incident that explains why nobody was paged"
+      },
+      {
+        "checkpointId": "cp-rollback",
+        "entityRef": "service:synthetic-storefront/notification-worker",
+        "signalRef": "rollbackRestoresTraffic",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 1,
+        "unit": "count",
+        "description": "the ticket's own control: the previous tag starts immediately, so the image is the difference and the cluster, the node and the network are not"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "create the lock file from the image's own entrypoint instead of an init script the rebuild dropped, so the wait cannot outlive the thing it waits for",
+        "target": "container:synthetic-storefront/notification-worker-app"
+      },
+      {
+        "step": 2,
+        "action": "alarm on a pod that stays unscheduled for longer than its backoff budget, because a start failure is invisible to every probe the platform never sends",
+        "target": "pod:synthetic-storefront/notification-worker-0"
+      }
+    ]
+  },
+  "query": "The notification worker has served nothing since the last rollout and no alert fired. What stopped it, and why did the readiness probe say nothing?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

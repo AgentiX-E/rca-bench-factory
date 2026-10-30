@@ -1,7 +1,7 @@
 {
   "schema": "rca-bench-fault-cases/2",
   "why": "M1 has an exit condition that says the ground truth's four layers -- entity, fault, process, evidence -- must all be fillable. Nothing could check it: the schema marks the causal chain and the checkpoints optional, and the root-cause entity id is a string no code resolves. This file names the cases that have been annotated in all four layers, with the graph that answers their references, so the count is a measurement rather than a claim. It grows one case at a time; the guard reports how many of the thirty extraction samples carry one and refuses a case that is incomplete or whose references do not resolve. Every case must carry a quote in each of its four layers, and the guard requires each quote to appear verbatim in the incident text the case was annotated from: an annotation that cannot show where it came from is an opinion about the text, and the quote is the one part of it a machine can check.",
-  "min": 27,
+  "min": 30,
   "cases": [
     {
       "caseId": "history-checkout-cpu-saturation",
@@ -812,6 +812,96 @@
           "why": "the one change in the window, and the sentence that puts the cause outside the service graph -- a switch is not a component the application owns, which is why the answer component and the root cause entity differ here"
         }
       ]
+    },
+    {
+      "caseId": "history-config-feature-flag-checkout",
+      "sampleId": "config-feature-flag-checkout",
+      "case": "history-config-feature-flag-checkout.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "Annotated from the incident text of `config-feature-flag-checkout`: the storefront is named as where the button vanished, the flag service is named as where the value is read from, the one-minute ordering (07:59 flip, 08:00 disappearance) is the text's own, and the copy-paste is the text's own explanation rather than an inference. The deployment counter and the two job definitions are the two facts the text states as absences -- 'No deploy ran' and 'the same key in both job definitions' -- and both are written as checkpoints so that a pair of zeros and a count of writers can be falsified by a later run. Nothing about request rate or error rate is annotated, because the text names neither, and the missing flat error rate is argued in the case's own reason instead of invented here.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "from the storefront for all users at 08:00",
+          "why": "the service whose rendering changed -- the answer component, and the place an operator would first look"
+        },
+        {
+          "layer": "fault",
+          "quote": "a copy-paste left the same key in both job definitions",
+          "why": "the mechanism: not a wrong value chosen by a person but one key owned by two jobs, which is what makes the flip possible at all"
+        },
+        {
+          "layer": "process",
+          "quote": "flipped to false at 07:59 by a scheduled job that was supposed to flip a different flag",
+          "why": "the ordering and the actor: the flip precedes the disappearance, and it was a scheduled job rather than a deploy or a request"
+        },
+        {
+          "layer": "evidence",
+          "quote": "No deploy ran",
+          "why": "the absence the deployment counter holds; it is the one sentence that turns the most common explanation into a reading that can be false"
+        }
+      ],
+      "signals": "history-config-feature-flag-checkout.signals.json"
+    },
+    {
+      "caseId": "history-dependency-version-incompatibility-shipping",
+      "sampleId": "dependency-version-incompatibility-shipping",
+      "case": "history-dependency-version-incompatibility-shipping.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "Annotated from the incident text of `dependency-version-incompatibility-shipping`: the service, the rebuild and the two mechanisms are the text's own sentences, and the two numbers a reader needs -- 2.x to 3.x, and the moved retry option -- are stated there rather than inferred. The deterministic half of the text is written as two readings that agree: a start share of zero and twenty-four attempts, which is a claim a single failure could not make. The clean-namespace sentence is a control the ticket performs on itself, so it is recorded as a declared configuration fact rather than as a second metric, because a reproduction is an event and not a sample. The log line is the constructor's refusal, quoted from the sentence that says construction throws; its body is written out so that the checkpoint's phrase and the reconstructed line can be compared by a rule rather than by a reader's memory.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "The shipping service failed to start after the image rebuild",
+          "why": "the service is the answer component, and the rebuild is the boundary the whole case sits on"
+        },
+        {
+          "layer": "fault",
+          "quote": "the retry option moved from a top-level field into a nested policy object, so construction throws on an unknown option",
+          "why": "the mechanism: a field moved between major versions, which is a version incompatibility rather than a bad value or a missing dependency"
+        },
+        {
+          "layer": "process",
+          "quote": "The failure is deterministic and reproduces in a clean namespace with the same image",
+          "why": "the two properties that make the cause an artifact rather than an environment, both stated by the ticket and neither inferable from a single failure"
+        },
+        {
+          "layer": "evidence",
+          "quote": "bumped from 2.x to 3.x",
+          "why": "the version pair the configuration checkpoint holds: a major bump is what makes the moved option possible, and the number is the text's"
+        }
+      ],
+      "signals": "history-dependency-version-incompatibility-shipping.signals.json"
+    },
+    {
+      "caseId": "history-runtime-container-start-notification-worker",
+      "sampleId": "runtime-container-start-notification-worker",
+      "case": "history-runtime-container-start-notification-worker.json",
+      "graph": "synthetic-storefront-graph.json",
+      "why": "Annotated from the incident text of `runtime-container-start-notification-worker`: the component, the entrypoint's wait, the twenty seconds and the backoff are the text's own sentences, and the rollback is a control the ticket performs on itself rather than a second incident. The two zeros are kept apart on purpose. `probe_runs_total` is a counter that stops growing, which is the text's 'No probe ever runs'; `request_rate` is a count taken at the router, which is the text's 'has not served a single request'. A single 'probe ratio is zero' would have been the same reading as the corpus's crash loop and could not have carried the sentence that explains why nobody was paged. The log line is reconstructed from the sentence that says the entrypoint waits; its body names the file so that the checkpoint's phrase and the line it cites are compared by a rule rather than by memory.",
+      "sources": [
+        {
+          "layer": "entity",
+          "quote": "Its container never gets past start-up",
+          "why": "the container is the root cause entity and the left end of the chain, and the sentence names it as the thing that stops rather than the service that suffers"
+        },
+        {
+          "layer": "fault",
+          "quote": "the entrypoint waits for a file the new image no longer creates, so it exits after twenty seconds and the kubelet backs off",
+          "why": "the mechanism and its three numbers: a wait, a file that stopped being created, and a backoff -- which together say start failure rather than crash"
+        },
+        {
+          "layer": "process",
+          "quote": "The notification worker has not served a single request since the last rollout",
+          "why": "the symptom the operator sees, and the reason the case is scored on the service rather than on the container"
+        },
+        {
+          "layer": "evidence",
+          "quote": "No probe ever runs",
+          "why": "the absence that explains the missing page: a probe that is never sent cannot fail, so no probe-based alarm could have fired"
+        }
+      ],
+      "signals": "history-runtime-container-start-notification-worker.signals.json"
     }
   ]
 }

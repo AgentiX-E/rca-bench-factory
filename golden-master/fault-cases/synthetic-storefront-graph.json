@@ -578,6 +578,72 @@
       "kind": "pod",
       "name": "search-node-6",
       "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/storefront",
+      "kind": "service",
+      "name": "storefront",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/storefront-0",
+      "kind": "pod",
+      "name": "storefront-0",
+      "aliases": [
+        "storefront pod"
+      ]
+    },
+    {
+      "entityId": "container:synthetic-storefront/storefront-app",
+      "kind": "container",
+      "name": "storefront-app",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/flag-service",
+      "kind": "service",
+      "name": "flag-service",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/shipping-service",
+      "kind": "service",
+      "name": "shipping-service",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/shipping-service-0",
+      "kind": "pod",
+      "name": "shipping-service-0",
+      "aliases": [
+        "shipping-service pod"
+      ]
+    },
+    {
+      "entityId": "container:synthetic-storefront/shipping-service-app",
+      "kind": "container",
+      "name": "shipping-service-app",
+      "aliases": []
+    },
+    {
+      "entityId": "service:synthetic-storefront/notification-worker",
+      "kind": "service",
+      "name": "notification-worker",
+      "aliases": []
+    },
+    {
+      "entityId": "pod:synthetic-storefront/notification-worker-0",
+      "kind": "pod",
+      "name": "notification-worker-0",
+      "aliases": [
+        "notification-worker pod"
+      ]
+    },
+    {
+      "entityId": "container:synthetic-storefront/notification-worker-app",
+      "kind": "container",
+      "name": "notification-worker-app",
+      "aliases": []
     }
   ],
   "edges": [
@@ -919,6 +985,56 @@
     {
       "from": "service:synthetic-storefront/catalog-service",
       "to": "service:synthetic-storefront/search-cluster",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/storefront",
+      "to": "pod:synthetic-storefront/storefront-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/storefront-0",
+      "to": "container:synthetic-storefront/storefront-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/storefront",
+      "to": "service:synthetic-storefront/checkout-api",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/storefront",
+      "to": "service:synthetic-storefront/flag-service",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/storefront",
+      "to": "service:synthetic-storefront/catalog-service",
+      "relation": "calls"
+    },
+    {
+      "from": "service:synthetic-storefront/shipping-service",
+      "to": "pod:synthetic-storefront/shipping-service-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/shipping-service-0",
+      "to": "container:synthetic-storefront/shipping-service-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/notification-worker",
+      "to": "pod:synthetic-storefront/notification-worker-0",
+      "relation": "contains"
+    },
+    {
+      "from": "pod:synthetic-storefront/notification-worker-0",
+      "to": "container:synthetic-storefront/notification-worker-app",
+      "relation": "contains"
+    },
+    {
+      "from": "service:synthetic-storefront/notification-worker",
+      "to": "mq:synthetic-storefront/order-events",
       "relation": "calls"
     }
   ]

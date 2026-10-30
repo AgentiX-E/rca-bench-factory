@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SCRIPT = resolve(ROOT, 'scripts', 'check-fault-cases.mjs');
 const CASES = resolve(ROOT, 'golden-master', 'fault-cases');
+const SAMPLES = resolve(ROOT, 'golden-master', 'fault-extraction', 'samples.json');
 
 const DRIVES = ['scripts/check-fault-cases.mjs'];
 
@@ -80,6 +81,13 @@ interface Entry {
 
 const REAL_SOURCES = (JSON.parse(readFileSync(join(CASES, 'index.json'), 'utf8')) as { cases: Array<{ sources: unknown }> })
   .cases[0]!.sources;
+
+/** The sample the real annotation was written from; every copy `corpusOf` makes is also from it. */
+const FIRST_SAMPLE = (
+  JSON.parse(readFileSync(SAMPLES, 'utf8')) as {
+    samples: Array<{ id: string; incidentText: string; expected: unknown }>;
+  }
+).samples.find((one) => one.id === 'resource-cpu-saturation-checkout')!;
 
 /**
  * A corpus directory with one case, plus whatever the caller wants changed.
@@ -199,6 +207,22 @@ function withLoudCompetitor(signals: Record<string, unknown>): Record<string, un
  * `corpus()` because that helper writes one case, and the rule under test needs ten before it says
  * anything -- which is the whole reason it went unreached until the gate was split.
  */
+function copyId(index: number): string {
+  return `copy-${String(index)}`;
+}
+
+/**
+ * Where a fixture's own sample key lives: beside its corpus directory, not inside it.
+ *
+ * The guard treats every `.json` in the corpus directory as a case it was not told about, which is
+ * the rule that catches an annotation dropped into the tree without an index entry. A key is not a
+ * case, so the convention is a sibling path rather than an exception in the guard.
+ */
+function keyOf(corpusDir: string): string {
+  dirs.push(`${corpusDir}-samples.json`);
+  return `${corpusDir}-samples.json`;
+}
+
 function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string {
   const dir = workspace();
   writeFileSync(join(dir, 'graph.json'), `${JSON.stringify(REAL_GRAPH, null, 2)}\n`);
@@ -214,7 +238,7 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
     writeFileSync(join(dir, file), `${JSON.stringify(faultCase, null, 2)}\n`);
     cases.push({
       caseId: faultCase.caseId,
-      sampleId: 'resource-cpu-saturation-checkout',
+      sampleId: copyId(index),
       case: file,
       graph: 'graph.json',
       why: WHY,
@@ -225,8 +249,46 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
     join(dir, 'index.json'),
     `${JSON.stringify({ schema: 'rca-bench-fault-cases/2', min: count, cases }, null, 2)}\n`,
   );
+  // A key of its own, with one sample per copy. The shipped key has thirty ids for thirty real
+  // samples, so ten copies pointing at one of its ids is ten annotations of one sample -- which is
+  // exactly the shape `fault/sample-coverage.ts` refuses, and refusing it here would be the rule
+  // working rather than the fixture being wrong (finding 302). What these copies are is ten
+  // carriers of a difficulty label, so each gets an id of its own and the same incident text.
+  writeFileSync(
+    keyOf(dir),
+    `${JSON.stringify(
+      {
+        ...(JSON.parse(readFileSync(SAMPLES, 'utf8')) as Record<string, unknown>),
+        samples: cases.map((entry, index) => ({
+          id: copyId(index),
+          incidentText: FIRST_SAMPLE.incidentText,
+          expected: FIRST_SAMPLE.expected,
+        })),
+      },
+      null,
+      2,
+    )}\n`,
+  );
   writeFileSync(join(dir, 'background-telemetry.json'), `${JSON.stringify(background(REAL_GRAPH), null, 2)}\n`);
   return dir;
+}
+
+/**
+ * The key a fixture brings with it.
+ *
+ * A directory that carries its own `samples.json` is a corpus that manufactures its own samples --
+ * `corpusOf` does, because ten copies of one annotation need ten ids rather than ten annotations of
+ * one id. Passing the shipped key to such a directory would compare the fixture against a sample
+ * set it was not written from, and the rule that catches that is the coverage rule, which would be
+ * right to fire and would be measuring the harness (finding 302).
+ *
+ * Explicit rather than defaulted: only a directory that has the file is treated this way, and the
+ * file is the statement of intent.
+ */
+function withOwnKey(args: string[]): string[] {
+  if (args[0] !== '--cases' || args[1] === undefined) return args;
+  const own = `${args[1]}-samples.json`;
+  return existsSync(own) ? [...args, '--samples', own] : args;
 }
 
 /**
@@ -242,7 +304,7 @@ function corpusOf(count: number, difficulty?: 'L1' | 'L2' | 'L3' | 'L4'): string
  * runs, so the longest block becomes one invocation.
  */
 async function run(args: string[]): Promise<{ status: number | null; out: string }> {
-  const child = spawn(process.execPath, [SCRIPT, ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [SCRIPT, ...withOwnKey(args)], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');

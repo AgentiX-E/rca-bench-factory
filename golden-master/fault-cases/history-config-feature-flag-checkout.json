@@ -1,0 +1,132 @@
+{
+  "caseId": "history-config-feature-flag-checkout",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-27T08:00:00.000Z",
+  "window": {
+    "start": "2026-10-27T07:30:00.000Z",
+    "end": "2026-10-27T08:30:00.000Z"
+  },
+  "fault": {
+    "type": "feature-flag-misconfiguration",
+    "category": "config",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "storefront",
+      "flagKey": "one_click_checkout",
+      "scheduledJobsWritingFlag": {
+        "value": 2,
+        "unit": "count"
+      },
+      "flagFlipMinutesBeforeOnset": {
+        "value": 1,
+        "unit": "min"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "service:synthetic-storefront/flag-service",
+    "rootCauseComponent": "storefront",
+    "rootCauseReason": "The scheduled job that flips feature flags ran at 07:59 and wrote false into `one_click_checkout`. It was not supposed to touch that flag: a copy-paste left the same key in two job definitions, so the job that owns this flag and the job that owns a different one both write it, and whichever runs second wins. Nothing was deployed -- the deployment counter is flat across the window, which is the reading that removes the most common explanation before any other is considered -- and storefront itself never degraded: it answered every request and rendered every page, because a page without a button is a page that renders successfully. The defect is a value rather than a rate, and that difference decides which layer names what. The answer component is storefront, because that is where the effect is visible and where an operator would first look; the entity layer names the flag service, because that is what has to be repaired. Two limits are declared rather than argued away. The chain has one step, because the intermediate quantity -- the flag's value -- is not an entity kind this graph can hold, so the two mechanisms the ticket states, a job writing the wrong key and storefront ceasing to emit a button, are written as one step whose sentence carries both. And the level is L2 while the structure supports L1: a reader has to walk a `calls` edge backwards from storefront to the flag service, and has to read a zero in the deployment counter as evidence rather than as silence, and neither of those is a property of the chain's length.",
+    "rootCauseIndicators": [
+      {
+        "type": "metric",
+        "ref": "one_click_checkout_enabled",
+        "description": "the flag reads disabled at storefront from 07:59 onward, which is the value the job wrote rather than anything a request could have caused"
+      },
+      {
+        "type": "metric",
+        "ref": "checkout_button_render_ratio",
+        "description": "the share of rendered pages that carry the button falls from one to zero in a single step, which is a removed element rather than a failing page"
+      },
+      {
+        "type": "metric",
+        "ref": "deploys_total",
+        "description": "the deployment counter does not move, which is what turns 'somebody shipped it' from an assumption into a reading that is false"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "service:synthetic-storefront/flag-service",
+        "toEntityId": "service:synthetic-storefront/storefront",
+        "mechanism": "a scheduled job writes false into `one_click_checkout` at 07:59 because a copy-paste left that key in two job definitions, and storefront -- which reads the flag on every render -- stops emitting the button one minute later, without a deploy and without a single failed request",
+        "evidenceRefs": [
+          "cp-flag-off",
+          "cp-button-gone",
+          "cp-two-jobs-one-key",
+          "cp-flip-window"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-flag-off",
+        "entityRef": "service:synthetic-storefront/storefront",
+        "signalRef": "one_click_checkout_enabled",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "storefront evaluates the flag as disabled from the flip onward; the ticket's own word is 'flipped to false', and a share of zero is how a boolean reads when it is counted per render"
+      },
+      {
+        "checkpointId": "cp-button-gone",
+        "entityRef": "service:synthetic-storefront/storefront",
+        "signalRef": "checkout_button_render_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "no rendered page carries the button, for every user at once: a share of exactly zero is what a single flag evaluation produces and what a partial rollout, a cache or a replica problem cannot"
+      },
+      {
+        "checkpointId": "cp-no-deploy",
+        "entityRef": "service:synthetic-storefront/storefront",
+        "signalKind": "derived",
+        "expression": "deploys_total.post - deploys_total.baseline",
+        "comparator": "==",
+        "value": 0,
+        "unit": "count",
+        "description": "the difference across the window is zero deployments, and it is a checkpoint rather than a sentence because a counter that stays put is the one reading that can falsify the explanation every operator reaches for first"
+      },
+      {
+        "checkpointId": "cp-two-jobs-one-key",
+        "entityRef": "service:synthetic-storefront/flag-service",
+        "signalRef": "scheduledJobsWritingFlag",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 2,
+        "unit": "count",
+        "description": "two job definitions name this flag, where the flag has one owner: the count is the copy-paste, stated as the number of writers rather than as a story about one of them"
+      },
+      {
+        "checkpointId": "cp-flip-window",
+        "entityRef": "service:synthetic-storefront/flag-service",
+        "signalRef": "flagFlipMinutesBeforeOnset",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 1,
+        "unit": "min",
+        "description": "the flip precedes the disappearance by one minute, which is the ordering the ticket states and the reason the flag is a cause rather than a coincidence"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "delete the duplicated key from the job that was meant to flip a different flag, and make each job declare only the flags it owns so that two writers cannot exist",
+        "target": "service:synthetic-storefront/flag-service"
+      },
+      {
+        "step": 2,
+        "action": "refuse a flag write whose value did not change since the last run of the same job, so a copy-paste becomes a failed job rather than a silent flip",
+        "target": "service:synthetic-storefront/flag-service"
+      }
+    ]
+  },
+  "query": "The one-click checkout button vanished for every user at 08:00 and no deployment ran that day. What turned it off, and why did nothing page?",
+  "difficulty": "L2",
+  "answerKeyIsolated": true
+}

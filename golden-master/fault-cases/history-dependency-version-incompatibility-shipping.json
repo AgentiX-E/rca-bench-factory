@@ -1,0 +1,149 @@
+{
+  "caseId": "history-dependency-version-incompatibility-shipping",
+  "system": "synthetic-storefront",
+  "environment": {
+    "system": "synthetic-storefront",
+    "version": "2026-10",
+    "deployRef": "authored-not-deployed"
+  },
+  "injectTime": "2026-10-28T14:10:00.000Z",
+  "window": {
+    "start": "2026-10-28T13:40:00.000Z",
+    "end": "2026-10-28T14:40:00.000Z"
+  },
+  "fault": {
+    "type": "library-version-incompatibility",
+    "category": "dependency",
+    "injectionMethod": "historical",
+    "parameters": {
+      "service": "shipping-service",
+      "libraryMajorVersion": {
+        "value": 3,
+        "unit": "count"
+      },
+      "cleanNamespaceReproductions": {
+        "value": 1,
+        "unit": "count"
+      }
+    }
+  },
+  "groundTruth": {
+    "rootCauseEntityId": "container:synthetic-storefront/shipping-service-app",
+    "rootCauseComponent": "shipping-service",
+    "rootCauseReason": "The image rebuild pulled the client library's 3.x release, and 2.x had declared `retry` as a top-level option while 3.x declares it inside a `policy` object. The constructor validates what it is given, so the object the service still builds carries a key the library no longer knows, and it throws before the listener binds -- 0.4 seconds after start, not two seconds after a first job, which is the difference between a program that failed to come up and one that came up and then broke. Every attempt fails: the reading that matters is not that it failed but that it failed twenty-four times out of twenty-four, because one failure out of many is an environment and all failures out of all attempts is a deterministic property of the artifact. The ticket states the second half of that argument in its own words -- reproducible in a clean namespace with the same image -- so the case records it as a declared fact rather than re-deriving it, and pair that with the library's major version to make the cause nameable: version three plus a total start failure is a dependency fault, and either one alone is not. Nothing here is a rate that degraded; the service never served at all, which is why the answer is the service even though the repair is a pin in the container's dependency set.",
+    "rootCauseIndicators": [
+      {
+        "type": "log",
+        "ref": "unknown-retry-option",
+        "description": "the constructor rejects a key it no longer recognises, which names the incompatibility rather than the symptom"
+      },
+      {
+        "type": "metric",
+        "ref": "start_success_ratio",
+        "description": "no start succeeds, which separates a deterministic artifact defect from an intermittent environment one"
+      },
+      {
+        "type": "metric",
+        "ref": "process_uptime_seconds",
+        "description": "the process lives a fraction of a second, which places the failure before the listener rather than after a first request"
+      }
+    ],
+    "causalChain": [
+      {
+        "step": 1,
+        "fromEntityId": "container:synthetic-storefront/shipping-service-app",
+        "toEntityId": "pod:synthetic-storefront/shipping-service-0",
+        "mechanism": "the constructor throws on the retry key within half a second of start, so the container exits before the listener binds and the pod never reaches a ready state",
+        "evidenceRefs": [
+          "cp-library-v3",
+          "cp-unknown-option",
+          "cp-dies-before-serving"
+        ]
+      },
+      {
+        "step": 2,
+        "fromEntityId": "pod:synthetic-storefront/shipping-service-0",
+        "toEntityId": "service:synthetic-storefront/shipping-service",
+        "mechanism": "every attempt ends the same way, so the replica count stays at zero for the whole window and the service has nothing to route to",
+        "evidenceRefs": [
+          "cp-start-ratio-zero",
+          "cp-attempts",
+          "cp-clean-namespace"
+        ]
+      }
+    ],
+    "evidenceCheckpoints": [
+      {
+        "checkpointId": "cp-library-v3",
+        "entityRef": "container:synthetic-storefront/shipping-service-app",
+        "signalRef": "libraryMajorVersion",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 3,
+        "unit": "count",
+        "description": "the major version the rebuilt image resolves to: the ticket says the library went from 2.x to 3.x, and a major number is the whole claim, since an option was moved rather than a patch released"
+      },
+      {
+        "checkpointId": "cp-unknown-option",
+        "entityRef": "container:synthetic-storefront/shipping-service-app",
+        "signalKind": "log",
+        "signalRef": "unknown-retry-option",
+        "comparator": "contains",
+        "value": "unknown option",
+        "description": "the constructor's refusal names an option it does not know, which is what a moved field looks like from the caller's side and what a wrong credential or a missing host does not"
+      },
+      {
+        "checkpointId": "cp-start-ratio-zero",
+        "entityRef": "service:synthetic-storefront/shipping-service",
+        "signalRef": "start_success_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "no start succeeds at any point in the window: a share of zero is the deterministic case, where a share between zero and one would leave the artifact and point at the environment"
+      },
+      {
+        "checkpointId": "cp-attempts",
+        "entityRef": "pod:synthetic-storefront/shipping-service-0",
+        "signalRef": "container_restarts_total",
+        "comparator": ">=",
+        "value": 24,
+        "unit": "count",
+        "description": "twenty-four attempts in thirty minutes -- about one per backoff interval, so the count also says the kubelet was throttling rather than looping freely"
+      },
+      {
+        "checkpointId": "cp-dies-before-serving",
+        "entityRef": "container:synthetic-storefront/shipping-service-app",
+        "signalRef": "process_uptime_seconds",
+        "comparator": "<=",
+        "value": 1,
+        "unit": "s",
+        "description": "less than a second of life, which is the measurement that puts the failure in construction rather than in handling: a process that comes up and then breaks lives for seconds at least"
+      },
+      {
+        "checkpointId": "cp-clean-namespace",
+        "entityRef": "service:synthetic-storefront/shipping-service",
+        "signalRef": "cleanNamespaceReproductions",
+        "signalKind": "configuration",
+        "comparator": "==",
+        "value": 1,
+        "unit": "count",
+        "description": "the ticket's own control: the same image fails in a namespace that shares nothing with production, which is the fact that removes the cluster from the list of explanations"
+      }
+    ],
+    "remediation": [
+      {
+        "step": 1,
+        "action": "pin the client library to the 2.x line until the retry policy is migrated, so the rebuild cannot silently take a major version",
+        "target": "container:synthetic-storefront/shipping-service-app"
+      },
+      {
+        "step": 2,
+        "action": "fail the image build when a dependency resolves to a new major version, so the discovery happens in CI rather than at container start",
+        "target": "container:synthetic-storefront/shipping-service-app"
+      }
+    ]
+  },
+  "query": "The shipping service has not come up once since the image was rebuilt, and the same image fails the same way in a namespace that shares nothing with production. What is the root cause, and why is this not an environment problem?",
+  "difficulty": "L3",
+  "answerKeyIsolated": true
+}

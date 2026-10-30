@@ -63,6 +63,12 @@
       "value": 12
     },
     {
+      "service": "flag-service",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 12
+    },
+    {
       "service": "image-builder",
       "metric": "request_rate",
       "unit": "rps",
@@ -103,6 +109,12 @@
       "metric": "request_rate",
       "unit": "rps",
       "value": 35
+    },
+    {
+      "service": "notification-worker",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 90
     },
     {
       "service": "order-events-consumer",
@@ -175,6 +187,18 @@
       "metric": "request_rate",
       "unit": "rps",
       "value": 30
+    },
+    {
+      "service": "shipping-service",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 28
+    },
+    {
+      "service": "storefront",
+      "metric": "request_rate",
+      "unit": "rps",
+      "value": 520
     },
     {
       "service": "user-profile",

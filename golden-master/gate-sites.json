@@ -1,6 +1,6 @@
 {
   "rule": "a statement-position process.exit(...) whose argument is not the literal 0; see scripts/derive-gate-sites.mjs",
-  "scanned": 61,
+  "scanned": 62,
   "excluded": {
     "zero": 13,
     "indirect": 3,
@@ -78,7 +78,7 @@
     },
     {
       "script": "scripts/check-doc-counts.mjs",
-      "line": 237,
+      "line": 238,
       "diagnostic": "check-doc-counts: FAILED",
       "status": "proved",
       "provedBy": "packages/core/test/check-doc-counts.test.ts"
@@ -115,7 +115,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1126,
+      "line": 1145,
       "condition": "invalid.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(invalid.length)} case(s) could not be read as a FaultCase",
       "status": "proved",
@@ -123,7 +123,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1244,
+      "line": 1263,
       "condition": "problems.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
@@ -131,7 +131,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1253,
+      "line": 1272,
       "condition": "unnamed.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
@@ -139,7 +139,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1261,
+      "line": 1280,
       "condition": "index.cases.length < floor",
       "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",

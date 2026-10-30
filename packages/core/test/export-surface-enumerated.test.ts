@@ -140,6 +140,7 @@ const ENUMERATED_MODULES = [
   'fault/displacement.ts',
   'fault/log-attribution.ts',
   'fault/answer-presence.ts',
+  'fault/sample-coverage.ts',
   'fault/baseline-localiser.ts',
   'fault/robust-localiser.ts',
   'fault/expression.ts',
@@ -946,6 +947,8 @@ const TESTED = [
   'checkLogAttribution',
   // fault/answer-presence.ts -- the answer component, joined to the names the series are filed under.
   'checkAnswerPresence',
+  // fault/sample-coverage.ts -- the count that covers samples rather than entries.
+  'checkSampleCoverage',
   // fault/difficulty.ts
   'difficultyFloor',
   'findDifficultyShortfalls',

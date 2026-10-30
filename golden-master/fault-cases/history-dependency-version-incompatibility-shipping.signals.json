@@ -1,0 +1,46 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-dependency-version-incompatibility-shipping",
+  "why": "Telemetry for the version-incompatibility case, and the corpus's first that says *all* rather than *some*. Every earlier case is a share between one and zero -- eight percent of calls, thirty-five percent of reads, a ratio of one against zero -- because a real system degrades before it stops. This one has no middle: `start_success_ratio` sits at zero for the entire window, and that is a stronger claim than a small number, because a share of zero cannot be produced by a race, a noisy neighbour or a bad node. The same argument is repeated with a different measurement: `container_restarts_total` reaches twenty-four, which is what a kubelet's exponential backoff produces in half an hour, and the pair of a high attempt count and a zero success share is the whole proof of determinism. `process_uptime_seconds` is the reading that separates this from the corpus's crash loop: that container came up, took a job and died two seconds later, and this one never comes up at all, so its lifetime is a fraction of a second. Setting the post at 0.4 rather than at zero is deliberate -- a process that starts, parses its configuration and throws does live for a moment, and a zero would claim it never ran, which is a different failure. What this file does not carry: the client library's version, because a version is a declared fact about a build rather than a series with samples, and it lives in `fault.parameters` where a configuration checkpoint can hold it to account.",
+  "series": [
+    {
+      "service": "shipping-service",
+      "metric": "start_success_ratio",
+      "unit": "1",
+      "baseline": 0.99,
+      "post": 0,
+      "noise": "none",
+      "quote": "The shipping service failed to start after the image rebuild",
+      "why": "the checkpoint `cp-start-ratio-zero` holds the zero: not a degraded start rate but none at all, which is the difference between an environment and an artifact"
+    },
+    {
+      "service": "shipping-service",
+      "metric": "container_restarts_total",
+      "unit": "count",
+      "baseline": 0,
+      "post": 24,
+      "derivation": "counter",
+      "quote": "The failure is deterministic and reproduces in a clean namespace with the same image",
+      "why": "the checkpoint `cp-attempts` holds the total: the kubelet tried twenty-four times in half an hour, so the zero success share is a statement about many attempts and not about one unlucky one"
+    },
+    {
+      "service": "shipping-service",
+      "metric": "process_uptime_seconds",
+      "unit": "s",
+      "baseline": 1800,
+      "post": 0.4,
+      "quote": "so construction throws on an unknown option",
+      "why": "the checkpoint `cp-dies-before-serving` holds the fraction: the throw happens while the client is being constructed, so the process never reaches the listener -- which is what rules out the crash-loop shape, where the process comes up and then fails"
+    }
+  ],
+  "logs": [
+    {
+      "service": "shipping-service",
+      "id": "unknown-retry-option",
+      "body": "TypeError: unknown option 'retry' -- client library 3.x moved retry under policy; ShippingClient construction failed before the listener was bound",
+      "quote": "construction throws on an unknown option",
+      "why": "the constructor's own refusal, and the phrase that makes the cause nameable: an option the library does not know is a moved field, where a credential or a host error would read differently"
+    }
+  ]
+}

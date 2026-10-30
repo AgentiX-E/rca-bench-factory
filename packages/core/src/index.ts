@@ -792,6 +792,7 @@ export type { LogLineAttribution } from './fault/log-attribution.js';
 // while the answer is the service is complete in every layer and impossible to score, and the gate
 // that noticed said "no baseline can locate the root cause" -- a sentence about solvers.
 export { checkAnswerPresence } from './fault/answer-presence.js';
+export { checkSampleCoverage } from './fault/sample-coverage.js';
 
 export { classifyDisplacement } from './fault/displacement.js';
 export type { DisplacementKind, DisplacementReading, RankedCandidate } from './fault/displacement.js';

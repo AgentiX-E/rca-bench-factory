@@ -1,0 +1,38 @@
+{
+  "schema": "rca-bench-derived-signals/1",
+  "origin": "derived",
+  "caseId": "history-config-feature-flag-checkout",
+  "why": "Telemetry for the flag case, and the corpus's first whose most important reading is a counter that does not move. Every earlier case is about something getting worse; here three readings are needed and two of them say 'nothing happened'. `deploys_total` is flat across the window, and that flat line is the evidence that rules out the explanation an operator reaches for first -- it is expressed as a counter and a derived difference rather than as a sentence, because a sentence cannot be falsified by a later run and a zero can. `checkout_button_render_ratio` is the symptom, and its shape is the point: a step from one to zero, not a decay, because a flag is evaluated rather than degraded, and a share of exactly zero for every user at once is what a single evaluation produces where a partial rollout would produce a fraction. `one_click_checkout_enabled` is recorded against storefront rather than against the flag service, and that is deliberate: it is the value storefront resolved on each render, which is what a reader of the page sees, and a reading filed under the service that holds the flag would be a fact about the flag rather than about the outage. What this file deliberately does not say: nothing about request rate, error rate or latency, because the ticket names none of them, and inventing a flat error rate to make the omission visible would be a number the incident text cannot support. The absence is stated in the case's reason instead, where a reader can argue with it. `noise: 'none'` on both shares is the finding-254 rule: a share of counted events is computed, not sampled, and a condition reading zero does not wobble to 0.02.",
+  "series": [
+    {
+      "service": "storefront",
+      "metric": "one_click_checkout_enabled",
+      "unit": "1",
+      "baseline": 1,
+      "post": 0,
+      "noise": "none",
+      "quote": "The flag service shows flag 'one_click_checkout' flipped to false at 07:59",
+      "why": "the checkpoint `cp-flag-off` holds the zero: storefront resolved the flag as disabled on every render after the flip, which is the value the job wrote and not a value any request could have produced"
+    },
+    {
+      "service": "storefront",
+      "metric": "checkout_button_render_ratio",
+      "unit": "1",
+      "baseline": 1,
+      "post": 0,
+      "noise": "none",
+      "quote": "The one-click checkout button disappeared from the storefront for all users at 08:00",
+      "why": "the checkpoint `cp-button-gone` holds the zero: the share of pages that carry the button, and a share of exactly zero for every user at once is what one flag evaluation produces where a rollout would produce a fraction"
+    },
+    {
+      "service": "storefront",
+      "metric": "deploys_total",
+      "unit": "count",
+      "baseline": 3,
+      "post": 3,
+      "derivation": "counter",
+      "quote": "No deploy ran",
+      "why": "the checkpoint `cp-no-deploy` holds the derived difference of zero: a counter that stays at the three deployments it had before the window, which is the reading that makes 'somebody shipped it' false rather than merely unlikely"
+    }
+  ]
+}

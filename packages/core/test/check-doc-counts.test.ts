@@ -100,12 +100,12 @@ afterAll(() => {
  * whose own exemption list cannot be driven from outside can only be shown to
  * accept the list it ships with.
  */
-function run(body: string, unmeasured?: unknown) {
+function run(body: string, unmeasured?: unknown, measured = MEASURED) {
   const dir = mkdtempSync(join(tmpdir(), 'doc-counts-'));
   dirs.push(dir);
   const doc = join(dir, 'progress.md');
   writeFileSync(doc, body);
-  const argv = [SCRIPT, '--doc', doc, '--measured', MEASURED];
+  const argv = [SCRIPT, '--doc', doc, '--measured', measured];
   if (unmeasured !== undefined) argv.push('--unmeasured', JSON.stringify(unmeasured));
 
   // A spawn that never ran is not a verdict about the guard.
@@ -321,6 +321,39 @@ describe('check-doc-counts', () => {
           `when the suite grows, both must be retaken together`,
       ).toEqual(m);
     }
+  });
+
+  // The one relation between the three published numbers.
+  //
+  // Rules 1 to 3 hold the *document* to the declaration. None of them holds the
+  // declaration to arithmetic, so a part typed rather than measured passes all
+  // three: the committed file said 199 + 4 = 202 with every guard green. This is
+  // the wiring test -- the rule itself is `doc-count-additivity.test.ts` -- and it
+  // exists because a pure function nobody calls is a rule nobody applies.
+  it('refuses a measurement whose parts do not add up to the whole', () => {
+    const r = run(
+      `${HEADER}| core test suite | **108 files, 3059 tests passed** |\n`,
+      undefined,
+      JSON.stringify({
+        core: { files: 108, tests: 3059 },
+        cli: { files: 4, tests: 187 },
+        repo: { files: 111, tests: 3246 },
+      }),
+    );
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('is not the sum of its parts');
+    // It names the file count and not the test count: 3059 + 187 is 3246, and one
+    // unit failing must not report the other.
+    expect(r.out).toMatch(/the 'repo' files count is not the sum of its parts/);
+    expect(r.out).not.toMatch(/the 'repo' tests count is not the sum/);
+    expect(r.out).toContain('off by -1');
+  });
+
+  // The arithmetic must not fire on the numbers that ship, or it becomes a rule
+  // everyone learns to add an exemption for.
+  it('accepts the shipped measurement, which adds up', () => {
+    const r = spawnSync('node', [SCRIPT, '--measured', MEASURED], { cwd: ROOT, encoding: 'utf8' });
+    expect(`${r.stdout}${r.stderr}`).not.toContain('is not the sum of its parts');
   });
 });
 

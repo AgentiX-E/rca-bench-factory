@@ -2458,3 +2458,186 @@ which is the guard working: an item that did not move in a round has nothing to 
 The corpus, the anchors, the exporters, the backends and the coverage bound. No case file was touched,
 so every count in v3.15's readings table still holds; `perFile: true` still holds every file at
 95/95/100/95 without an exemption.
+
+## v3.17 — thirty of thirty, and the count that stopped being able to fail
+
+This round finished the annotation: **30 of 30 samples carry a four-layer case**, which closes P1.
+Three cases and, in the act of finishing, three defects that only the finish could expose.
+
+| case | fault | what it is the first in this corpus to say |
+| --- | --- | --- |
+| `history-config-feature-flag-checkout` | `feature-flag-misconfiguration` | the deployment counter **is the evidence**: a scheduled job flipped a flag one minute before the button vanished, and the reading that rules out the obvious explanation is a counter that did not move |
+| `history-dependency-version-incompatibility-shipping` | `library-version-incompatibility` | **all** rather than **some**: a start share of exactly zero over twenty-four attempts, where every earlier case is a share between one and zero |
+| `history-runtime-container-start-notification-worker` | `container-start-failure` | **no probe is ever sent**, which is a different zero from the crash loop's probe that always fails -- and the reason nobody was paged |
+
+### One: what the three cases actually cost
+
+The graph grew to **96 entities and 78 edges** for four services it did not hold — `storefront`,
+`flag-service`, `shipping-service`, `notification-worker` — and the background telemetry to **35
+series**, because a service the ranking can be wrong about has to appear in the ranking.
+
+Each case turns on a distinction the corpus could not make before:
+
+| distinction | before | here |
+| --- | --- | --- |
+| a change with no deploy | every config case was a rollout | `deploys_total` flat at three, and the flat line is a checkpoint |
+| failure of *all* attempts vs a bad environment | shares between 0 and 1 | `start_success_ratio == 0` over 24 attempts |
+| a probe that fails vs a probe never sent | one zero, one meaning | `probe_runs_total` stops growing rather than reading zero |
+| construction-time death vs running-time death | one uptime, two mechanisms | 0.4 s here, two seconds after the first job there |
+
+The flag case declares its own limit rather than arguing it away: **the chain has one step** because
+the intermediate quantity — a flag's value — is not an entity kind this graph can hold. The level is
+L2 while the structure supports L1, and the reason is written in the case: a reader has to walk a
+`calls` edge backwards and has to read a zero as evidence, and neither is a property of the chain's
+length.
+
+### Two: `30 of 30` is two independent totals (finding 302)
+
+The guard's coverage sentence takes its numerator from `index.cases.length` and its denominator from
+the extraction key, and nothing compared the sets those numbers count. A duplicated `sampleId`
+therefore reads differently depending on how far the annotation has got:
+
+| entries | what a duplicate does | what a reader sees |
+| --- | --- | --- |
+| 27 of 30 | one sample twice, one skipped | a numerator visibly short of the denominator |
+| 30 of 30 | one sample twice, **one never annotated** | `30 of 30` |
+
+**The counter lost its ability to fail at the moment it was asked whether the work was done.** The
+repair is `fault/sample-coverage.ts`, which compares sets: a duplicate is always a defect, and a gap
+is a defect **only once the index has caught up**, because before that a gap is the schedule.
+
+Its first run failed three tests, and the failure was correct: `corpusOf` — the fixture that makes
+ten copies of one annotation — gave all ten the same `sampleId`. The fixture now brings its own key,
+beside its directory rather than inside it, because the guard rightly refuses an unindexed `.json` in
+a corpus directory. Measured, with one id overwritten:
+
+```
+'...dependency-version-incompatibility-shipping' and
+'...runtime-container-start-notification-worker' annotate sample
+'dependency-version-incompatibility-shipping', which is one sample covered twice: ...
+
+no case annotates sample 'runtime-container-start-notification-worker', and the index is as long as
+the sample set, so the count that says every sample is covered is counting entries rather than samples
+```
+
+### Three: a 5117-millisecond failure (finding 303)
+
+The full suite failed once, on `forwards a signal to the step`, in 5117 ms — five seconds and a
+scheduling margin, which is the second wait's budget. Seventy-seven runs afterwards (five alone,
+twelve under eight busy cores, sixty driven directly) did not reproduce it, so this round **records
+it rather than claiming a cause**.
+
+Two facts about that path are certain, and one was a defect:
+
+| fact | status |
+| --- | --- |
+| both handlers called `signalGroup('SIGTERM')`, so a step was told TERM even when the runner received INT | **fixed**: the group gets the signal the runner got |
+| `process.on('exit', sweep)` does not run when a process is killed by a signal, so the "last resort" is absent on the only path that leaves orphans | **recorded, not changed**: a sweep before the re-raise would replace the timeout path's grace period with an immediate `SIGKILL` |
+
+The test came first and was red: the step installs traps for both signals, writes which one fired,
+and exits. One line changed, and the fix is **not** an explanation of the 5117 ms — `sleep` dies of
+either signal, which is why the sixty-iteration reproduction survived with the old code.
+
+### Four: an unreachable fallback is not a missing test (finding 304)
+
+`sample-coverage.ts` measured **81.25 % of branches** on its first full run, under the per-file floor.
+Three arms were unreported:
+
+| arm | reachable | repair |
+| --- | --- | --- |
+| `quoted[quoted.length - 1] ?? ''` | no — a non-empty list has a last element | spell it `quoted.slice(-1).join('')` |
+| `coveredBy.get(sampleId) ?? []` | no — the key came from that map | read `entries()` once |
+| `'sample' : 'samples'` | **yes**, and untested | a test with two gaps |
+
+`noUncheckedIndexedAccess` is why the first two exist: an index is `T | undefined`, so the compiler
+demands a fallback that no input can reach. **81.25 % → 92.3 %** from two spellings, then **100 %**
+with the test. The metric could not tell the two kinds of gap apart, and choosing wrong is silent: a
+test for the `?? ''` arm would assert a string for a line that never runs.
+
+### Five: proving the cases can fail
+
+Four mutations, one at a time, each restored:
+
+| mutation | what went red |
+| --- | --- |
+| `deploys_total` 3 → 4 | `cp-no-deploy asserts 'deploys_total.post - deploys_total.baseline' == 0, and it computes to 1` |
+| `process_uptime_seconds` 0.4 → 5 | `cp-dies-before-serving asserts process_uptime_seconds <= 1, and the series' post value is 5` |
+| `probe_runs_total` 180 → 190 | `cp-probe-never-ran ... computes to 10` |
+| every series filed under the pod | `names root cause component 'notification-worker', and no series carries that name` |
+
+### Six: the count that was typed
+
+The last gate run of the round failed at step 6 of 31, and the failure was one this round had
+already written a finding about, one level up:
+
+```
+core   published 199 files / 4894 tests
+       measured  198 files / 4894 tests
+```
+
+The 199 had been **typed, not measured** -- counted by hand out of `packages/core/test/**/*.test.ts`
+and one file high. It survived a green `docs:check` because every rule in `check-doc-counts` holds a
+*document* to the declaration; the only step that holds the declaration to a **run** needs two
+vitest reports and therefore runs inside `verify:local`, which is the step a long round stops
+running. So the table printed
+
+```
+core 199 files + cli 4 files = 203          repo says 202
+```
+
+**Three numbers in one table that disagree by one file, arithmetically visible to any reader who
+added them, and no gate added them** (finding 305). It is finding 302's shape: two counts, each true
+of its own scope, and nothing comparing them -- there between two totals over one set, here between
+two parts of one total.
+
+The repair is `scripts/doc-count-additivity.mjs`, a pure function over the measurement with
+`ADDITIVE_SCOPES = { parts: ['core', 'cli'], whole: 'repo' }`, called from the guard as rule 3a.
+**12 tests**: 10 on the rule, 2 on the wiring -- the second asserts that the measurement which ships
+*does* add up, because a rule that fires on its own file is a rule everyone learns to exempt.
+
+Three things about writing it are worth keeping:
+
+| what happened | what it says |
+| --- | --- |
+| `problems.push(...checkCountAdditivity(measured))` was refused by the spread guard | an exemption for an array bounded at two would weaken a guard to save one line, so it is a `for` loop |
+| the number could not be corrected by the tool that checks it: the measurement refuses to run while the suite is red, and the suite was red *because* a test asserts the published file count | a self-referential count has to be corrected by a run and then **confirmed** by the tool -- `--write-doc` re-measured and reported `no row needed changing` |
+| the same `--write-doc` run failed a second five-second budget at **5056 ms**, green three times alone afterwards | the second sighting of a machine-sized budget this round; a pattern is not yet a cause |
+
+### Readings
+
+| what | this round |
+| --- | --- |
+| the corpus | **30 of 30** samples, the floor at 30, **P1 closed** |
+| cases | 30, one per fault type; 117 checkpoints, 108 comparable, 0 false |
+| levels | L1 2 / L2 10 / L3 14 / L4 4 |
+| parameters | **29 of 98 (30 %)** read by a reading, 69 prose |
+| graph | 96 entities, 78 edges, 35 background series |
+| localisation | 60 baseline runs over 35–37 candidates, rank 1 in 50; **4 cases strictly displaced** |
+| the anchors | all three still `oracle = 1.00` on their pinned runs |
+| suite | **+2 files, +25 tests in `core`** (199 / 4906); the absolutes are in `volume-05.md` |
+| dead branches | 2 removed, 1 tested — `sample-coverage.ts` at **100 %** |
+| `docs:check` | audit 1–305, **302 findings**; the three counts add up |
+
+### Left open
+
+- **The 5117 ms failure is unexplained.** Seventy-seven runs, no reproduction. What is written down
+  is the two facts, not a cause. `[open: an intermittent orphan is indistinguishable, from the test,
+  from a scheduling delay in a five-second budget]`
+- **The sweep on `exit` does not run on the signal path** (finding 303). Its comment says "last
+  resort" and the signal path is the one that needs one.
+  `[open: replacing it with an immediate SIGKILL trades a grace period for a case nobody has seen]`
+- **Two five-second budgets have now been exceeded by the machine rather than by the code** --
+  5117 ms on the signal test and 5056 ms on the event-loop hook, both under a second concurrent
+  suite, both green when run alone. `[open: two sightings is a pattern, and a pattern is not a cause]`
+- **Two cases declare a level above their structural floor** — `history-cart-network-delay` and this
+  round's flag case, both by one step, both argued in their own reason and neither checked by
+  anything. `[open: the floor is a lower bound by design, and there is no upper bound at all]`
+The items v3.16 left open about the corpus -- 69 prose parameters (finding 300), `signalRef` as one
+name so a partition has one viewpoint (finding 299), and P4's three items -- are unchanged and are
+**not re-signed here**. Re-typing them would be four placeholders wearing the same sentence, and
+`check-open-list` refuses exactly that: an item that did not move in a round has nothing to say in it.
+
+### Unchanged
+
+The anchors, the exporters, the backends and the coverage bound. `perFile: true` holds every file at
+95/95/100/95 with no exemption, and `sample-coverage.ts` reaches 100/100/100/100.

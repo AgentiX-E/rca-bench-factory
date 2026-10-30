@@ -248,6 +248,51 @@ describe('one step, run as CI would run it', () => {
     }
   });
 
+  it('forwards the signal it received rather than a fixed one', async () => {
+    // A supervisor's termination and an operator's interrupt are two different signals, and this
+    // module's own docstring says it forwards "the operator's interrupt". It forwarded SIGTERM for
+    // both, so a step that traps INT to flush its work never ran that trap -- and the report said
+    // the step was terminated, which is the other signal. The two are not interchangeable: TERM
+    // says "stop when you can", INT says "the person at the terminal stopped you".
+    const marker = join(SCRATCH, 'trap-ready.txt');
+    const intFile = join(SCRATCH, 'trap-int.txt');
+    const termFile = join(SCRATCH, 'trap-term.txt');
+    const runner = join(SCRATCH, 'trap-runner.mjs');
+    writeFileSync(
+      runner,
+      [
+        `import { runStep } from ${JSON.stringify(MODULE)};`,
+        'await runStep({',
+        "  key: 'a / one',",
+        // Both traps exit, so the step cannot outlive the assertion and leave a loop behind.
+        `  run: ${JSON.stringify(
+          [
+            `trap 'echo int > ${intFile}; exit 0' INT`,
+            `trap 'echo term > ${termFile}; exit 0' TERM`,
+            `echo ready > ${marker}`,
+            'while :; do sleep 0.05; done',
+          ].join('\n'),
+        )},`,
+        "  cwd: '.',",
+        '});',
+      ].join('\n'),
+    );
+    const child = spawn(process.execPath, [runner], { cwd: ROOT, stdio: 'ignore' });
+    try {
+      expect(until(() => existsSync(marker), 15_000), 'the step never installed its traps').toBe(true);
+      child.kill('SIGINT');
+      await new Promise<number | string>((done) => child.on('exit', (code, signal) => done(code ?? signal)));
+      expect(
+        until(() => existsSync(intFile) || existsSync(termFile), 5_000),
+        'the group received neither signal',
+      ).toBe(true);
+      expect(existsSync(intFile), 'the group was sent SIGTERM after the runner received SIGINT').toBe(true);
+      expect(existsSync(termFile), 'the group was sent SIGTERM as well as SIGINT').toBe(false);
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
+
   it('waits as long as the step needs when there is no bound', async () => {
     const marker = join(SCRATCH, 'unbounded.txt');
     await runStep({ key: 'a / one', run: `sleep 0.3; printf '%s' done > ${marker}`, cwd: '.', timeoutMs: null });

@@ -252,6 +252,17 @@ const REGISTER: Record<string, Entry> = {
       'testing was inside it. step-process.test.ts drives this module against real processes: a ' +
       'step that hangs, a step that backgrounds a grandchild, and a step that exits non-zero.',
   },
+  'doc-count-additivity.mjs': {
+    class: 'data',
+    why:
+      'The one relation between the three published suite counts: core and cli are parts of repo, ' +
+      'and nothing computed it. check-doc-counts.mjs holds documents to the declaration and never ' +
+      'held the declaration to arithmetic, so a part typed rather than measured survived every ' +
+      'guard that reads those numbers -- the committed file said 199 + 4 = 202 through a whole ' +
+      'green docs:check. No main and no exit: the rule is a pure function so a test can hand it ' +
+      'three numbers, and the guard only adds its problems to its own list. Plain JavaScript ' +
+      'because the guard runs in the cold-tree job, which has no build.',
+  },
   'doc-counts-vocabulary.mjs': {
     class: 'data',
     why:

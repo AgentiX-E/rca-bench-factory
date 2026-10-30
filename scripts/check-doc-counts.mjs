@@ -101,6 +101,7 @@ import { existsSync, readFileSync, writeSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CURRENT_MARKERS, scopeOf } from './doc-counts-vocabulary.mjs';
+import { checkCountAdditivity } from './doc-count-additivity.mjs';
 import { progressCorpus } from './docs-corpus.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -459,6 +460,21 @@ function main() {
 
   // 3. Rows marked current must equal the live measurement for their scope.
   const measured = liveCounts();
+
+  // 3a. The measurement is two parts and a whole, and this is the only place the
+  //     relation between them is computed. Rules 1 to 3 above hold *documents* to
+  //     the declaration and never hold the declaration to arithmetic, so a part
+  //     typed rather than measured survives all three: `docs:check` was green on
+  //     a committed file that said 199 + 4 = 202 until this rule existed, and the
+  //     only other step that compares the declaration to a run needs two vitest
+  //     reports and therefore runs inside `verify:local`.
+  //
+  //     A `for` loop rather than `problems.push(...checkCountAdditivity(...))`:
+  //     the spread guard refuses every `push(...x)` whose length is a function of
+  //     its input, and carving out an exemption for an array that is bounded at
+  //     two would weaken the guard to save one line.
+  for (const problem of checkCountAdditivity(measured)) problems.push(problem);
+
   for (const row of read) {
     if (!isCurrent(row)) continue;
     if (row.scope === null) continue;

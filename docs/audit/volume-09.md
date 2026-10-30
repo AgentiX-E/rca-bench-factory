@@ -952,3 +952,334 @@ repository, so no test here holds writer and reader together: a push path that i
 from inside the tree, exactly like one that reads it. What is proved is the file -- its key, its
 shape, and the states that refuse to produce one. The last link is a three-line precondition in a
 script this repository does not own, and it is written down rather than assumed.
+
+## Finding 302 — the coverage count loses its error-detecting power at the target it measures
+
+Thirty samples, thirty cases. The guard prints:
+
+```
+OK (30 of 30 sample(s) carry a four-layer case; ... floor 30)
+```
+
+Both numbers are right. What no rule checked is whether they are counting the same thing. The
+numerator is `index.cases.length` — how many entries the index has. The denominator is the number of
+samples in the extraction key. An entry names its sample with `sampleId`, and the guard resolved that
+id against the key, so a typo was refused; nothing asked whether two entries named the **same**
+sample. The sentence was therefore true only while every author happened to pick a distinct id.
+
+### The same defect, opposite symptoms, at the two ends of the schedule
+
+| entries | what a duplicated `sampleId` does | what a reader sees |
+| --- | --- | --- |
+| 27 of 30 | one sample is annotated twice, one is skipped, the count stays 27 | a numerator visibly short of the denominator — something is still open |
+| 30 of 30 | one sample is annotated twice, **one is never annotated** | `30 of 30` — the arithmetic has stopped carrying information |
+
+The second row is the milestone this corpus reached in v3.17, and the two counts agree **by
+construction** there: thirty entries, thirty samples. A copy-paste that duplicates an id leaves one
+sample unannotated while the report says the annotation is finished. **A progress counter stops being
+able to fail at exactly the moment it is asked whether the work is done.**
+
+That is not a mistake in the counter. It is what a pair of independent totals does, and the repair is
+to compare the sets rather than the totals.
+
+### The rule
+
+`fault/sample-coverage.ts` answers the question the totals cannot. It is a module rather than four
+lines in the loop for the reason `answer-presence` is: the rule states shapes — one duplicate, two,
+three; a gap with the index short of the set and a gap with it level — and a script's private `if` can
+only be exercised by editing the corpus.
+
+| arm | when it fires | why it is conditional |
+| --- | --- | --- |
+| a sample annotated more than once | always | a second case for a sample the corpus already carries is an annotation of nothing, whether the schedule is finished or not |
+| a sample nobody annotates | only when `entries.length >= samples` | before that, a gap **is** the schedule: at twenty of thirty, ten samples have no case because ten rounds have not happened, and failing every round until the target teaches everyone to skip the line |
+
+Measured, by mutating one entry's `sampleId` to the previous one's:
+
+```
+'history-dependency-version-incompatibility-shipping' and
+'history-runtime-container-start-notification-worker' annotate sample
+'dependency-version-incompatibility-shipping', which is one sample covered twice: ...
+
+no case annotates sample 'runtime-container-start-notification-worker', and the index is as long as
+the sample set, so the count that says every sample is covered is counting entries rather than samples
+```
+
+The second sentence names the sample the index silently dropped. Without it the first sentence says
+"a duplicate exists" and leaves the reader to work out which annotation is now missing.
+
+### What the rule found in the harness
+
+Its first run failed three tests, all of them in `check-fault-cases.test.ts`, and the failure was
+correct. `corpusOf(count, difficulty)` builds a fixture from **ten copies of one real annotation**,
+and every copy carried `sampleId: 'resource-cpu-saturation-checkout'` — ten annotations of one
+sample, which is the shape the rule refuses.
+
+The fixture is right and the rule is right; what was missing is that a corpus may bring its own
+extraction key. `corpusOf` now writes one, with an id per copy and the same incident text, and the
+test harness passes it with `--samples`. The key lives **beside** the directory rather than inside
+it, because the guard refuses any `.json` in a corpus directory that the index does not name — and a
+sample key is not a case. That rule was right too, so the convention is a sibling path rather than an
+exception in the guard.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `30 of 30` with one duplicated id | printed, and believed | refused, naming both cases |
+| the sample left behind by a duplicate | invisible | named |
+| a gap while the corpus is still growing | — | silent, because that is the schedule |
+| tests | — | **7**, over one duplicate, three duplicates, one gap, an empty index and a duplicate beyond the set |
+
+---
+
+## Finding 303 — a 5117-millisecond failure, and a hard-coded signal
+
+The full suite failed once, on one test:
+
+```
+× one step, run as CI would run it > forwards a signal to the step, and then dies of it
+  rather than swallowing it 5117ms
+```
+
+5117 is five seconds and a scheduling margin, and the only five-second budget in that test is the
+second wait:
+
+```ts
+until(() => !stillRunning(pid, identity), 5_000)
+```
+
+So the runner died of its signal and the **grandchild outlived it** — the exact failure the test
+exists to catch, once, under the load of eight concurrent vitest workers.
+
+### What was tried, and what it cost
+
+| attempt | runs | failures |
+| --- | --- | --- |
+| the file alone | 5 | 0 |
+| the file alone, with eight busy loops on eight cores | 12 | 0 |
+| the same scenario driven directly, sixty iterations | 60 | 0 |
+
+Seventy-seven runs and no reproduction. The step's own script was reproduced exactly — `echo started`,
+`sleep 30 &`, `echo $!`, `sleep 30` — and the driver checked `/proc/<pid>/stat` for the corpse states
+the test checks. Nothing survived, and the pid file was never read while empty.
+
+**So this finding does not claim a root cause.** What it does is record two facts about that path that
+are certain, and one of them was a defect.
+
+### The one that was a defect: the group was always sent `SIGTERM`
+
+The handler's own comment says it forwards *"the operator's interrupt"*. The code said:
+
+```js
+const forward = (signal) => () => {
+  signalGroup('SIGTERM');   // both handlers
+  ...
+  process.kill(process.pid, signal);
+};
+const onInterrupt = forward('SIGINT');
+const onTerminate = forward('SIGTERM');
+```
+
+The runner died of the signal it received and **the step was always told `SIGTERM`**. `TERM` and `INT`
+are not interchangeable: `TERM` says stop when you can, `INT` says a person at the terminal stopped
+you. A step that traps `INT` to flush its work never ran that trap, and a supervisor that sent `INT`
+got a step reporting `TERM`.
+
+The test came first and was red before the change — it asserts the shape rather than the verdict:
+
+```ts
+expect(existsSync(intFile), 'the group was sent SIGTERM after the runner received SIGINT').toBe(true);
+expect(existsSync(termFile), 'the group was sent SIGTERM as well as SIGINT').toBe(false);
+```
+
+The step installs both traps, writes which one fired, and exits, so nothing is left looping after the
+assertion. One line changed. **This is not an explanation of the 5117 ms**: `sleep` dies of either
+signal, which is why the minimal reproduction survived sixty iterations with the old code.
+
+### The one that is not a defect, but is not what its comment says either
+
+```js
+/** Last resort: whatever is left when this process ends anyway. */
+const sweep = () => signalGroup('SIGKILL');
+process.on('exit', sweep);
+```
+
+Node does not emit `exit` when a process is terminated **by a signal** — only on `process.exit()` or
+an empty event loop. So the handler described as the last resort does not run on the path where a
+process is killed, which is the path that leaves orphans behind.
+
+It is left as it is, and the reason is written down rather than acted on: `forward` already sends the
+group the signal the runner received, and the runner then dies of it. A `sweep` that fired *before*
+the re-raise would replace the grace period the timeout path deliberately has with an immediate
+`SIGKILL`, which is a worse behaviour in exchange for a case nobody has observed. What the comment
+claims is not what the code does, and that sentence is now the defect.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `SIGINT` to the runner | the step received `SIGTERM` | the step receives `SIGINT` |
+| a step that traps `INT` to flush | trap never ran | trap runs |
+| tests | — | **+1**, red before the change and green after |
+| the 5117 ms failure | — | **recorded, not explained**, with 77 runs of evidence |
+
+---
+
+## Finding 304 — a fallback the type system demands and no input can reach
+
+`fault/sample-coverage.ts` was written, tested with seven cases, and measured at **81.25 % of
+branches** — under the 95 % per-file floor, so the run failed. Three arms were unreported, and only
+one of them was a missing test.
+
+| line | arm | reachable? |
+| --- | --- | --- |
+| `quoted[quoted.length - 1] ?? ''` | the `?? ''` fallback | **no**: a non-empty list has a last element |
+| `coveredBy.get(sampleId) ?? []` | the `?? []` fallback | **no**: the key came from that same map |
+| `missing.length === 1 ? 'sample' : 'samples'` | the plural | **yes**, and nothing tested two gaps |
+
+`packages/core/tsconfig.json` inherits `noUncheckedIndexedAccess: true`, so `array[index]` is
+`T | undefined` and the two fallbacks are what the compiler requires. They are also **wrong as
+code**: a branch no input can take is dead in the sense this volume has spent several rounds
+removing — `v8 ignore` comments and `if (false)` arms written to satisfy a checker.
+
+### The repair is a spelling, not a test
+
+```ts
+// before: an index, which the compiler widens to `string | undefined`
+`${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1] ?? ''}`
+
+// after: a slice, which is a string
+`${quoted.slice(0, -1).join(', ')} and ${quoted.slice(-1).join('')}`
+```
+
+and for the map, read the entries once instead of iterating the keys and looking each value up:
+
+```ts
+const duplicated = [...coveredBy.entries()]
+  .filter(([, ids]) => ids.length > 1)
+  .sort((left, right) => left[0].localeCompare(right[0]));
+```
+
+Two spellings, no behaviour change, **81.25 % → 92.3 %**, and the remaining gap was the plural,
+which is a real one and got a test rather than a rewrite.
+
+### Why this is a finding rather than a style note
+
+Because the metric could not tell the two gaps apart. A branch that no input reaches and a branch
+that an input reaches and no test supplies both appear as one uncovered arm in the same column of
+the same table. The first is repaired by changing the code and the second by adding a test, and
+**choosing wrong is silent**: a test written for the `?? ''` fallback would assert that an empty
+string comes back, which is a statement about a line that can never run. The suite would go green
+and the file would gain a claim about nothing.
+
+That is the same defect this volume keeps meeting from the other side — a gate that cannot fail, a
+count that cannot disagree — with the sign flipped: here the **measurement** is fine and the
+**reading** of it is wrong.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| branches in `sample-coverage.ts` | 81.25 % (three arms) | **100 %** |
+| two of the three arms | unreachable fallbacks, counted as untested | removed by a change of spelling |
+| the third | reachable and untested | tested, with the plural named |
+| tests | 7 | **9** |
+
+## Finding 305 — three counts published side by side, and the one relation between them never computed
+
+The last gate run of this round failed at step 6 of 31, on the one check that compares the published
+suite counts to a `vitest` report:
+
+```
+core   published 199 files / 4894 tests
+       measured  198 files / 4894 tests
+```
+
+The 199 was **typed, not measured**. The pass that wrote it counted
+`packages/core/test/**/*.test.ts` by hand and came out one file high; the two totals beside it
+(`cli` 4, `repo` 202) were right.
+
+### Why four guards read those numbers and none of them added them
+
+| guard | what it compares |
+| --- | --- |
+| `check-doc-counts.mjs` rules 1 and 2 | a document's row to the vocabulary of scopes, and a row to the row above it |
+| `check-doc-counts.mjs` rule 3 | a row marked current to `golden-master/doc-counts.json` |
+| `check-doc-counts.mjs` rule 4 | a shape it cannot read to the exemption table |
+| `measure-doc-counts.mjs --check --from <report>` | `doc-counts.json` to the run that produced the report |
+
+The first four hold a **document** to the declaration. The fifth holds the declaration to a **run**,
+and it needs two JSON reports, which only `verify:local` has -- so it is the step that stops being
+run when the round is long, and it is exactly the step that was.
+
+So the committed table read
+
+```
+core 199 files  +  cli 4 files  =  203
+                        repo says  202
+```
+
+**A one-file disagreement between three numbers printed in one table, arithmetically visible to any
+reader who added them, and no gate added them.** This is Finding 302 one level up: two counts, each
+true of its own scope, and nothing comparing them. Round 302 was two *totals* over the same set;
+this is two *parts* of one total. The family is the same, and it keeps appearing because a count is
+cheap to publish and a relation is expensive to state.
+
+### The repair
+
+`scripts/doc-count-additivity.mjs`: a pure function over the measurement.
+
+```js
+export const ADDITIVE_SCOPES = { parts: ['core', 'cli'], whole: 'repo' };
+
+export function checkCountAdditivity(measured, relation = ADDITIVE_SCOPES) { ... }
+```
+
+| decision | taken | why not the alternative |
+| --- | --- | --- |
+| where the rule lives | a `data` module under `scripts/`, **plain JavaScript** | it is called from a gate, and `check-doc-counts.mjs` runs in the cold-tree job, which has no build, so it may not import from `packages/core/dist` |
+| a partial measurement | **silent** | `--measured` exists so a caller can hand in the scope it is talking about; several tests hand in one. A gap is reported by rule 3, which refuses a current-state row whose scope has no measurement |
+| one problem or one per unit | **one per unit** | a mistyped file count and a stale test count are two different mistakes in two different files |
+| the magnitude or the sign | **the sign** | `+1` says a part gained a file, `-8` says one lost eight tests |
+| the wiring | `for (const problem of ...) problems.push(problem)` | `problems.push(...checkCountAdditivity(measured))` was the first draft and the spread guard refused it: every `push(...x)` whose length is a function of its input is a candidate for the argument limit, and an exemption for an array bounded at two would weaken the guard to save one line |
+
+**12 tests**: 10 on the rule (`doc-count-additivity.test.ts`) and 2 on the wiring
+(`check-doc-counts.test.ts`), the second of which asserts that the measurement that ships **does
+add up** -- a rule that fires on its own file is a rule everyone learns to exempt.
+
+### Correcting the number was not a one-line edit, and that is the interesting part
+
+The measurement refuses to run while the suite is red, and the suite was red *because* a test
+asserts that the number of test files the scan reads equals the published repo count minus one. So
+the loop is closed:
+
+| step | state |
+| --- | --- |
+| fix the 199 by hand | the suite is still red: one file was added this round, so `repo` is 203 now |
+| retake the measurement | refused: a red run has no counts to publish |
+| add the missing test file to the count | that is a published claim about a run that has not happened yet |
+
+It was broken by reading the totals off a full run (`Test Files 1 failed | 198 passed (199)`,
+`Tests 1 failed | 4905 passed (4906)`), writing those into the declaration and the row, and then
+running `--write-doc` -- which re-measured and reported **`core 199 files, 4906 tests` … `no row
+needed changing`**. A number that a tool cannot correct has to be corrected by a measurement and
+then *confirmed* by the tool; writing it and hoping is what produced the 199.
+
+### A second five-second budget, exceeded under load
+
+The same `--write-doc` run reported `event loop · the hook fails the file that blocked it` at
+**5056 ms**, with every test in that file passing when it was run alone three times afterwards. It
+is the second sighting this round of a five-second budget exceeded by a machine rather than by the
+code (Finding 303's 5117 ms was the first), and neither is reproduced alone. Recorded, not
+explained: two sightings of the same shape is a pattern, and a pattern is not yet a cause.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| `core` files in `doc-counts.json` | 199, typed | **199, measured** (198 before the new test file) |
+| `core + cli == repo` | true of nothing; nothing computed it | **computed on every `docs:check`** |
+| guards that can see it | 0 of 4 | **1**, inside the guard that already reads the file |
+| tests | -- | **12** (10 rule, 2 wiring) |
+| first reachable state on the shipped file | the table was inconsistent | `no row needed changing` |
