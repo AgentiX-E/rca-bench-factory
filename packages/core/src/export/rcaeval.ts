@@ -8,6 +8,8 @@ import type {
 import type { ExportOutcome, ExportedFiles, SkippedCase } from './openrca.js';
 import { isLogSignal, isMetricSignal, isTraceSignal } from '../ir/guards.js';
 import { assertExportableBundle } from './guard.js';
+import { describeSliFault, readSliDeclaration, resolveSli } from './sli.js';
+import { caseToken, faultToken } from './tokens.js';
 import { renderCsv } from '../util/csv.js';
 
 /**
@@ -139,44 +141,15 @@ export type RcaEvalSuite = (typeof RCAEVAL_SUITES)[number];
  * the case's own system, and the reader here reads it back.
  */
 export function casePath(suite: RcaEvalSuite, fc: FaultCase, instance: number): string {
-  const system = sanitiseCaseToken(fc.system);
-  const service = sanitiseCaseToken(fc.groundTruth.rootCauseComponent);
+  const system = caseToken(fc.system);
+  const service = caseToken(fc.groundTruth.rootCauseComponent);
   // The fault token keeps its underscores, and the service does not. That is the
   // corpus's own convention: `RE3-TT/ts-route-service_f3_1/1` names the fault
   // `f3_1`, and no service token anywhere in the corpora carries an underscore.
   // Stripping it wrote `f31`, which is a different label silently -- and the label
   // is the answer key (finding 268).
-  const fault = sanitiseFaultToken(fc.fault.type);
+  const fault = faultToken(fc.fault.type);
   return `${suite}-${system}/${service}_${fault}/${instance}`;
-}
-
-/**
- * Drop the characters a flat `-`-separated directory name cannot carry, and
- * keep the ones it can.
- *
- * A name that sanitises to nothing would collapse the layout — `RE2--cpu_1`
- * has an empty service field that no reader can distinguish from a missing
- * one — so a fully-consumed token falls back to a fixed placeholder rather
- * than emitting a nameless segment.
- */
-function sanitiseCaseToken(raw: string): string {
-  const kept = raw.replace(/[^A-Za-z0-9-]/g, '').replace(/^-+|-+$/g, '');
-  return kept === '' ? 'unnamed' : kept;
-}
-
-/**
- * The fault half of `{service}_{fault}`, which may carry underscores of its own.
- *
- * `parseRcaEvalPath` splits at the **first** underscore, so everything after it is
- * the fault and any underscore in it is part of the label. Keeping the character
- * here is what makes that reading round-trip: `ts-route-service_f3_1` goes out and
- * comes back as the service `ts-route-service` and the fault `f3_1`, where stripping
- * would have written `f31` and lost the distinction the corpus draws between `f3`
- * and `f3_1`.
- */
-function sanitiseFaultToken(raw: string): string {
-  const kept = raw.replace(/[^A-Za-z0-9_-]/g, '').replace(/^[-_]+|[-_]+$/g, '');
-  return kept === '' ? 'unnamed' : kept;
 }
 
 /**
@@ -203,7 +176,18 @@ function sanitiseFaultToken(raw: string): string {
  * handles; a zero written here would be a reading this module invented, and a
  * sensor that was not sampled is not a sensor reading zero.
  */
-export function buildDataCsv(signals: TelemetrySignal[]): string {
+export function buildDataCsv(
+  signals: TelemetrySignal[],
+  /**
+   * The one rename this table may carry: a series published under the name upstream asks for.
+   *
+   * `main.py` ranks by a column named `{service}_latency`, built from the path, and nothing else. A
+   * case that declares its ranking reading (`export/sli.ts`) has that series renamed here rather than
+   * duplicated -- one column per series stays true, and two columns holding one series' numbers would
+   * be the drift this project keeps removing. The column keeps its position; only its name changes.
+   */
+  publish?: { readonly from: string; readonly to: string },
+): string {
   const series = new Map<string, Map<number, number>>();
   const instants = new Set<number>();
   for (const s of signals) {
@@ -224,7 +208,8 @@ export function buildDataCsv(signals: TelemetrySignal[]): string {
       return value === undefined ? '' : String(value);
     }),
   ]);
-  return renderCsv(['time', ...columns], rows);
+  const header = columns.map((column) => (column === publish?.from ? publish.to : column));
+  return renderCsv(['time', ...header], rows);
 }
 
 /**
@@ -459,8 +444,23 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Ex
       return;
     }
 
+    // The ranking declaration, read before any file is written: a case that cannot say which series
+    // ranks it, or says something the telemetry denies, is a case whose `data.csv` would leave
+    // upstream's lookup with nothing to find -- and upstream raises on the path rather than on this,
+    // so the refusal has to be ours and it has to name the case.
+    const sli = readSliDeclaration({ sli: fc.sli, component: fc.groundTruth.rootCauseComponent });
+    if (sli.fault !== null && sli.fault.kind !== 'absent') {
+      skipped.push({ caseId: fc.caseId, reason: describeSliFault(sli.fault, fc.caseId) });
+      return;
+    }
+    const publication = sli.declaration === null ? null : resolveSli({ declaration: sli.declaration, signals });
+    if (publication !== null && publication.fault !== null) {
+      skipped.push({ caseId: fc.caseId, reason: describeSliFault(publication.fault, fc.caseId) });
+      return;
+    }
+
     const dir = casePath(suite, fc, index + 1);
-    files[`${dir}/data.csv`] = buildDataCsv(signals);
+    files[`${dir}/data.csv`] = buildDataCsv(signals, publication?.publish ?? undefined);
     files[`${dir}/inject_time.txt`] = `${Math.floor(Date.parse(fc.injectTime) / 1000)}`;
 
     // Declared by the suite, written only when filled: see the header of this file.

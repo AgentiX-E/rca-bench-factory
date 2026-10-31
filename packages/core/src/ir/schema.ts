@@ -282,6 +282,15 @@ export const faultCaseSchema = z.object({
     parameters: z.record(z.unknown()).optional(),
   }),
   groundTruth: groundTruthSchema,
+  /**
+   * The ranking declaration, admitted as written.
+   *
+   * `export/sli.ts` is the only judge of its shape, and it says *which* half of a malformed
+   * declaration is missing; a schema here would say `Invalid input` and stop. The field is optional
+   * because a bundle is not a corpus: every case in `golden-master/fault-cases` has to answer, and a
+   * three-line bundle in a test does not.
+   */
+  sli: z.unknown().optional(),
   query: z.string().optional(),
   difficulty: z.enum(['L1', 'L2', 'L3', 'L4']).optional(),
   quality: z.unknown().optional(),

@@ -139,6 +139,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the gateway’s own readings are a request rate and a share of failed ones, and the packet-level counters that explain them belong to the order service and its node rather than to the answer key."
+  },
   "query": "About eight percent of calls from the order service to the payment gateway time out at three seconds, tcpdump shows SYN retransmits, and the gateway reports receiving far fewer requests than were sent. What is failing, and why do retries on another node succeed?",
   "difficulty": "L3",
   "answerKeyIsolated": true

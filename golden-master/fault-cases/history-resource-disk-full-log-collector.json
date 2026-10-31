@@ -155,6 +155,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "a full disk is read as the share of the volume used and the share of writes that failed, and the duration this case would have to publish is the one reading it does not carry."
+  },
   "query": "The log collector stopped accepting writes at 09:41 with /var/lib/collector at 100 percent, on a node it had been moved to a few days earlier. Nothing had changed about what the collector writes or how much of it arrives. What stopped reclaiming space, and why did the move matter?",
   "difficulty": "L3",
   "answerKeyIsolated": true

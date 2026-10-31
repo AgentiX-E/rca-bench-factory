@@ -281,6 +281,7 @@ const rcaeval = {
     'The path is three levels - `{suite}-{system}/{service}_{fault}/{instance}` - because upstream recovers the answer key from it (`basename(dirname(dirname(data_path))).split("_")`) and finds a case by globbing for data.csv.',
     'RE3 skips non-code faults - a case whose `fault.category` is not `code` is reported as skipped.',
     'data.csv is wide: a `time` column in Unix seconds, then one column per series named `<service>_<metric>`.',
+    'A case that declares a ranking reading publishes that series under `{service}_latency` — the one name `main.py` looks for, built from the path — and the column is renamed rather than duplicated, so the table still holds one column per series.',
   ],
   files: [
     {
@@ -291,6 +292,7 @@ const rcaeval = {
       fields: [
         { name: 'time', type: T.num, required: true, source: 'floor(Date.parse(TelemetrySignal.timestamp) / 1000)', notes: 'Rows are the union of the series\' instants, ascending. Compared directly against inject_time.txt upstream.' },
         { name: '<service>_<metric>', type: T.num, required: true, source: 'resource[\'service.name\'] + MetricPayload.name -> MetricPayload.value', notes: 'Empty where the series has no sample at that instant: a gap the loader fills forward, not a zero this exporter invented.' },
+        { name: '<service>_latency', type: T.num, required: false, source: 'the column above, renamed when the case declares that series as its sli', notes: 'Present only where the case declared a duration its own component carries (`sli`); upstream ranks by this name and by no other, so the declared series is published under it rather than beside it.' },
       ],
     },
     {

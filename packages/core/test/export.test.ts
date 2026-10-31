@@ -300,6 +300,84 @@ describe('RCAEval exporter', () => {
     expect(rows[rows.length - 1]?.[column]).toBe('7');
   });
 
+  describe('the column upstream ranks by', () => {
+    /**
+     * A bundle whose one case declares a latency series, and optionally a different declaration.
+     *
+     * `validBundle()` carries `order_cpu_usage` in `%`, so the series upstream could rank by is added
+     * here rather than invented from the existing one: a share published under a `_latency` name is
+     * exactly the lie `resolveSli` refuses below.
+     */
+    function bundleDeclaring(sli: unknown): IrBundle {
+      const b = validBundle();
+      return {
+        ...b,
+        cases: [{ ...(b.cases[0] as (typeof b.cases)[number]), sli }],
+        signals: {
+          ...b.signals,
+          'case-001': [
+            ...(b.signals['case-001'] ?? []),
+            metricAt(0, 'request_duration_p99_ms', 180, 'order', 'ms'),
+            metricAt(60, 'request_duration_p99_ms', 4300, 'order', 'ms'),
+          ],
+        },
+      };
+    }
+
+    function headerOfCase(bundle: IrBundle): string {
+      const { files } = exportRcaEval(bundle, 'RE2');
+      const path = Object.keys(files).find((one) => one.endsWith('/data.csv'));
+      return files[path ?? '']?.split('\n')[0] ?? '';
+    }
+
+    it('publishes the declared series under the name the path implies', () => {
+      const header = headerOfCase(bundleDeclaring({ service: 'order', metric: 'request_duration_p99_ms' }));
+      // The name comes from the path this case is exported under, not from the metric's own name.
+      expect(header).toBe('time,order_cpu_usage,order_latency');
+    });
+
+    it('leaves a case that names its own column alone', () => {
+      const header = headerOfCase(bundleDeclaring({ service: 'order', metric: 'request_duration_p99_ms' }));
+      expect(header).not.toContain('order_request_duration_p99_ms');
+    });
+
+    it('writes the same table as before when the case says nothing ranks it', () => {
+      const reason =
+        'the only series this case carries is a CPU share, and a share published under a latency ' +
+        'name would be a different quantity wearing it.';
+      expect(headerOfCase(bundleDeclaring({ none: reason }))).toBe('time,order_cpu_usage,order_request_duration_p99_ms');
+    });
+
+    it('exports a case with no declaration at all, which is a bundle and not a corpus', () => {
+      // `absent` is a fault the corpus guard refuses and the exporter tolerates: a three-line bundle
+      // in a test has no ranking reading to declare, and the table it produces is the table it
+      // produced before this round.
+      expect(headerOfCase(validBundle())).toBe('time,order_cpu_usage');
+    });
+
+    it('refuses a case whose reading is on another service, and names it', () => {
+      const { files, skipped } = exportRcaEval(
+        bundleDeclaring({ service: 'cart', metric: 'request_duration_p99_ms' }),
+        'RE2',
+      );
+      expect(Object.keys(files)).toEqual([]);
+      expect(skipped).toHaveLength(1);
+      expect(skipped[0]?.caseId).toBe('case-001');
+      expect(skipped[0]?.reason).toContain("ranks by a reading on 'cart'");
+    });
+
+    it('refuses a case whose declared series the telemetry does not carry', () => {
+      const { skipped } = exportRcaEval(bundleDeclaring({ service: 'order', metric: 'p50' }), 'RE2');
+      expect(skipped[0]?.reason).toContain("no metric signal in the case carries that pair");
+      expect(skipped[0]?.reason).toContain('order_cpu_usage');
+    });
+
+    it('refuses a share, because the name it would be published under says latency', () => {
+      const { skipped } = exportRcaEval(bundleDeclaring({ service: 'order', metric: 'cpu_usage' }), 'RE2');
+      expect(skipped[0]?.reason).toContain("which is in '%'");
+    });
+  });
+
   it('builds a three-level path from suite, system, service, fault and instance', () => {
     expect(casePath('RE2', validCase(), 1)).toBe('RE2-order-prod/order_cpu/1');
   });

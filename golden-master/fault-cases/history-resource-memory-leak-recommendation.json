@@ -153,6 +153,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "a leak is read as resident bytes climbing while cache writes, evictions and restarts count up, and bytes and counts are the units of a leak rather than a time."
+  },
   "query": "The recommendation service has been OOMKilled every six to eight hours for three days, with a heap that climbs from 400Mi to the 2Gi limit while traffic is flat. What is growing, and why does restarting only postpone it?",
   "difficulty": "L3",
   "answerKeyIsolated": true

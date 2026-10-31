@@ -386,7 +386,7 @@ describe('check-fault-cases · a case that is not complete', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('process: groundTruth.causalChain is absent or empty');
   });
 
@@ -399,7 +399,7 @@ describe('check-fault-cases · a case that is not complete', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('groundTruth.evidenceCheckpoints[cp-cpu-limit].entityRef -> container:synthetic-storefront/gone');
   });
 
@@ -412,7 +412,7 @@ describe('check-fault-cases · a case that is not complete', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('step 1 -> cp-nowhere');
   });
 
@@ -424,7 +424,7 @@ describe('check-fault-cases · a case that is not complete', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('entity: \'service:synthetic-storefront/never-existed\' resolves to no entity in the graph');
   });
 });
@@ -434,7 +434,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     // Otherwise the coverage figure is a number about a directory rather than about the key.
     const dir = corpus({ entry: { sampleId: 'no-such-sample' } });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("names sample 'no-such-sample', which the extraction key does not carry");
   });
 
@@ -451,7 +451,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
         },
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares fault type 'memory-saturation', and the sample it is annotated from expects 'cpu-saturation'",
     );
@@ -466,7 +466,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
         },
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares category 'code', and the sample it is annotated from expects 'resource'",
     );
@@ -483,7 +483,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
         },
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares root cause component 'payment-service', and the sample it is annotated from " +
         "expects 'checkout-api'",
@@ -498,7 +498,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
   it('refuses an entry that does not say where its annotation came from', async () => {
     const dir = corpus({ entry: { why: 'because' } });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('does not say in at least forty characters');
   });
 
@@ -509,7 +509,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     index.cases = [...cases, cases[0]];
     writeFileSync(join(dir, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('appears twice in the index');
   });
 
@@ -518,7 +518,7 @@ describe('check-fault-cases · the link back to the extraction key', () => {
     // while holding two is the count defect this repository keeps fixing.
     const dir = corpus({ extraFiles: ['orphan.json'] });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('orphan.json is not named in index.json');
   });
 });
@@ -527,7 +527,7 @@ describe('check-fault-cases · the floor moves up, and cannot be quietly lowered
   it('refuses a corpus below its own floor', async () => {
     const dir = corpus({ min: 2 });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('1 four-layer case(s), below the floor of 2');
     expect(result.out).toContain('lowering it is a decision, not a repair');
   });
@@ -553,21 +553,21 @@ describe('check-fault-cases · inputs it will not guess at', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain('does not parse');
   });
 
   it('refuses an index with the wrong schema', async () => {
     const dir = corpus({ index: { schema: 'something-else', cases: [] } });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain("has schema 'something-else'");
   });
 
   it('refuses an index with no cases array', async () => {
     const dir = corpus({ index: { schema: 'rca-bench-fault-cases/2' } });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain("has no 'cases' array");
   });
 
@@ -608,7 +608,7 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
     const edited = sources();
     edited[0]!.quote = 'the pod sat pinned at its 400m limit';
     const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('cites a entity quote the incident text does not contain');
     expect(result.out).toContain('the pod sat pinned at its 400m limit');
   });
@@ -625,7 +625,7 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
   it('refuses a corpus that quotes three layers and leaves one unsupported', async () => {
     const edited = sources().filter((source) => source.layer !== 'process');
     const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('quotes no sentence for: process');
   });
 
@@ -633,7 +633,7 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
     const edited = sources();
     edited[0]!.quote = 'the pod';
     const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('quote shorter than 12 characters');
   });
 
@@ -641,7 +641,7 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
     const edited = sources();
     edited[2]!.layer = 'timeline';
     const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("layer 'timeline', which is not one of entity / fault / process / evidence");
   });
 
@@ -649,13 +649,13 @@ describe('check-fault-cases · every layer shows the sentence it came from', () 
     const edited = sources();
     edited[3]!.why = 'because';
     const result = await run(['--cases', corpus({ entry: { sources: edited } })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('quotes for evidence without saying what it supports');
   });
 
   it('refuses an entry that cites no sources at all', async () => {
     const result = await run(['--cases', corpus({ entry: { sources: [] } })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('cites no sources');
   });
 });
@@ -673,7 +673,7 @@ describe('check-fault-cases · the case is also held to L2, not only to its four
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('fails the L2 structural contract: injectTime must be canonical UTC ISO-8601');
     expect(result.out).toContain("got '2026-09-14T02:03:00Z'");
   });
@@ -689,7 +689,7 @@ describe('check-fault-cases · the case is also held to L2, not only to its four
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('injectTime falls outside the declared window');
   });
 });
@@ -708,7 +708,7 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("fails the L2 reference contract: checkpoint 'cp-cpu-limit' uses unknown unit 'messages'");
   });
 
@@ -731,7 +731,7 @@ describe('check-fault-cases · the units in a checkpoint have to exist', () => {
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('asserts propagation with no path in the topology');
   });
 });
@@ -771,7 +771,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
       one.post = one.baseline;
     }
     const result = await run(['--cases', corpus({ signals: edited, competitor: false })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('signals fail G3: no metric sustains |Z| >= 2 for 3 samples after injection');
   });
 
@@ -779,7 +779,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     const edited = signals();
     seriesOf(edited)[0]!.quote = '180ms to 4.4s';
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('derives \'request_duration_p99_ms\' from a quote the incident text does not contain');
   });
 
@@ -787,7 +787,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     const edited = signals();
     edited.caseId = 'history-something-else';
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("names signals for 'history-something-else'");
   });
 
@@ -795,7 +795,7 @@ describe('check-fault-cases · derived telemetry is a claim G3 can refuse', () =
     const edited = signals();
     edited.series = [];
     const result = await run(['--cases', corpus({ signals: edited, competitor: false })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('declares an empty signal series');
   });
 });
@@ -810,7 +810,7 @@ describe('check-fault-cases · G5 is asked of every case, because it needs no te
       },
     });
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('fails the anti-pollution gate');
   });
 });
@@ -836,7 +836,7 @@ describe('check-fault-cases · origin is a closed vocabulary, not a sentence', (
     const edited = signals();
     edited.origin = 'measured';
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("declares origin 'measured', which is neither 'derived' nor 'captured'");
   });
 
@@ -848,7 +848,7 @@ describe('check-fault-cases · origin is a closed vocabulary, not a sentence', (
     edited.provenance = edited.origin;
     delete edited.origin;
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("declares 'provenance'; the signals field is 'origin'");
   });
 
@@ -899,7 +899,7 @@ describe('check-fault-cases · G4, the last gate that needed a run rather than a
       one.service = 'somebody-else';
     }
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
     // The message names both ranks, because "not solvable" is a claim about two runs and a reader
     // has to be able to see which one objected.
@@ -987,7 +987,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     // No competitor: this test is about the two solvers disagreeing, and a corpse-wide refusal for a
     // second reason would make its numbers unreadable.
     const result = await run(['--cases', corpus({ signals: spikeCase(), competitor: false })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('is not solvable by both baselines');
     expect(result.out).toContain('peak-z-by-service=1, median-shift-by-service=4');
   });
@@ -998,7 +998,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     const edited = spikeCase();
     (edited.series as Array<Record<string, unknown>>)[0]!.noise = 'samppling';
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares noise 'samppling' for 'request_duration_p99_ms', which is not one of sampled / none",
     );
@@ -1010,7 +1010,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     const edited = spikeCase();
     (edited.series as Array<Record<string, unknown>>)[1]!.noise = 'none';
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares noise for 'container_cpu_throttled_seconds_total', which is a counter -- its samples are exact either way",
     );
@@ -1036,7 +1036,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
       why: 'a count declared as a fraction, which is the number the expansion would have to round',
     });
     const result = await run(['--cases', corpus({ signals: declared })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("declares post 201.5 for 'throttled_periods' in 'count'");
     expect(result.out).toContain('a count lands on whole things');
   });
@@ -1048,7 +1048,7 @@ describe('check-fault-cases · two baselines, and the shape that separates them'
     const edited = spikeCase();
     (edited.series as Array<Record<string, unknown>>)[1]!.derivation = 'counters';
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares derivation 'counters' for 'container_cpu_throttled_seconds_total', which is not one of step / counter / spike",
     );
@@ -1088,7 +1088,8 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     // RE1 declares no modality, so it carries none: asking whether a metric-only suite's cases have
     // logs would report every RE1 export as deficient.
     expect(result.out).toContain(
-      'export RE1 1 case(s) written · RE2 1 case(s) written, logs in 0 of 1, traces in 1 of 1',
+      'export RE1 1 case(s) written, a `latency` column in 1 of 1 · RE2 1 case(s) written, logs in 0 of 1, ' +
+        'traces in 1 of 1, a `latency` column in 1 of 1',
     );
     expect(result.out).toContain('RE3 0 case(s) written, 1 skipped');
     expect(result.out).not.toContain('file(s) with no rows');
@@ -1160,7 +1161,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('derives a log line from a quote the incident text does not contain');
   });
 
@@ -1173,7 +1174,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('declares a log body shorter than twelve characters');
   });
 
@@ -1186,7 +1187,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('declares a log line without saying what it supports');
   });
 
@@ -1239,7 +1240,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
         signals: withLog(() => undefined),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "checkpoint 'cp-throttling-line' asserts log 'throttling-line' contains 'memory pressure', and the line it cites does not",
     );
@@ -1255,7 +1256,7 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
         signals: withLog(() => undefined),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "checkpoint 'cp-throttling-line' compares a log line with '>=', and a log has one relation: whether it contains the phrase the checkpoint cites",
     );
@@ -1330,7 +1331,7 @@ describe('check-fault-cases · a span, which is the last modality and the only o
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('derives a span from a quote the incident text does not contain');
   });
 
@@ -1343,7 +1344,7 @@ describe('check-fault-cases · a span, which is the last modality and the only o
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("declares span 'render_cart' with a duration of 0");
   });
 
@@ -1358,7 +1359,7 @@ describe('check-fault-cases · a span, which is the last modality and the only o
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("whose parent 'POST /nothing' is not declared in the same file");
   });
 
@@ -1371,7 +1372,7 @@ describe('check-fault-cases · a span, which is the last modality and the only o
         }),
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('declares a span without saying what it supports');
   });
 });
@@ -1471,40 +1472,40 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
 
   it('refuses a series reference the signals file does not declare', async () => {
     const result = await run(['--cases', withCheckpoint((cp) => { cp.signalRef = 'request_duration_p99'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' names 'request_duration_p99', which the signals file does not declare");
     expect(result.out).toContain('it declares: request_duration_p99_ms, container_cpu_throttled_seconds_total');
   });
 
   it('refuses a checkpoint whose unit disagrees with its series', async () => {
     const result = await run(['--cases', withCheckpoint((cp) => { cp.unit = 's'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("is in 's' but the series 'request_duration_p99_ms' is in 'ms'");
   });
 
   it('refuses a checkpoint its own series fails', async () => {
     // The defect that only a resolved reference can reveal: `>` against a value equal to the post.
     const result = await run(['--cases', withCheckpoint((cp) => { cp.comparator = '>'; cp.value = 4300; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("asserts request_duration_p99_ms > 4300, and the series' post value is 4300");
   });
 
   it('refuses a configuration fact that names a series', async () => {
     // Two statements of one value, one of which the guard would start comparing with telemetry.
     const result = await run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'configuration'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' calls 'request_duration_p99_ms' a configuration fact");
   });
 
   it('refuses a log reference that matches no declared line', async () => {
     const result = await run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'log'; cp.signalRef = 'nothing'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' names log 'nothing', which the signals file does not declare");
   });
 
   it('refuses a checkpoint with no reference at all', async () => {
     const result = await run(['--cases', withCheckpoint((cp) => { delete cp.signalRef; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("checkpoint 'cp-p99' names no signal, so nothing carries it");
   });
 
@@ -1514,7 +1515,7 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // a membership test for one round after the schema gained the enum, and it was unreachable: an
     // unrecognised kind never reached it. Deleted rather than kept as a second opinion.
     const result = await run(['--cases', withCheckpoint((cp) => { cp.signalKind = 'telemetry'; })]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain('could not be read as a FaultCase');
     // The message carries the field and the reason -- `describeSchemaFailure` composes it, because
     // the first line of a zod issue list is `[` and that was the whole diagnosis for every refusal.
@@ -1525,7 +1526,7 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     const edited = JSON.parse(readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8')) as Record<string, unknown>;
     edited.logs = [{ service: 'checkout-api-0', body: 'throttled for eleven minutes', quote: 'Container CPU throttling counters climbed the whole time', why: 'a line with no id is a line no checkpoint can name' }];
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('declares a log line with no id, which nothing can reference');
   });
 });
@@ -1590,7 +1591,7 @@ describe('check-fault-cases · a series reference names an entity and a metric',
     const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & { series: Array<Record<string, unknown>> };
     edited.series.push({ ...edited.series[0]!, post: 1 });
     const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares two series for 'request_duration_p99_ms' on 'checkout-api', so a reference to either names neither",
     );
@@ -1609,7 +1610,7 @@ describe('check-fault-cases · a series reference names an entity and a metric',
         cp.entityRef = 'service:synthetic-storefront/payment-service';
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "checkpoint 'cp-p99' names 'request_duration_p99_ms' on 'service:synthetic-storefront/payment-service', " +
         'and the series carrying it are filed under checkout-api: a different component',
@@ -1632,7 +1633,7 @@ describe('check-fault-cases · a series reference names an entity and a metric',
         withSecondCarrier('container_cpu_throttled_seconds_total', 'checkout-api-app'),
       ),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "checkpoint 'cp-throttled-counters' names 'container_cpu_throttled_seconds_total' on " +
         "'service:synthetic-storefront/checkout-api', and 2 series carry it where that entity cannot " +
@@ -1746,7 +1747,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
       '--cases',
       derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline', { value: 4100 }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "checkpoint 'cp-p99' asserts 'request_duration_p99_ms.post - request_duration_p99_ms.baseline' == 4100, " +
         'and it computes to 4120',
@@ -1760,7 +1761,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
       '--cases',
       derived('request_duration_p99_ms.post / request_duration_p99_ms.baseline', { value: 24, unit: '1' }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain('and it computes to 23.8888888889');
   });
 
@@ -1769,13 +1770,13 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
       '--cases',
       derived('request_duration_p99_ms.post / request_duration_p99_ms.baseline', { value: 23.8888888889, unit: 'ms' }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("computes 'request_duration_p99_ms.post / request_duration_p99_ms.baseline' to a value in '1', but states 'ms'");
   });
 
   it('refuses arithmetic over a metric the signals file does not declare', async () => {
     const result = await run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.median')]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("reads the point 'median' at character 55, which is not one of baseline, post");
   });
 
@@ -1826,7 +1827,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     delete checkpoints.find((one) => one.checkpointId === 'cp-p99')!.expression;
     writeFileSync(join(dir, 'case.json'), `${JSON.stringify(edited, null, 2)}\n`);
     const result = await run(['--cases', dir]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain('expression: a derived checkpoint states the arithmetic that produces its value');
   });
 
@@ -1837,7 +1838,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
         extra: { signalRef: 'request_duration_p99_ms' },
       }),
     ]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain('signalRef: a derived checkpoint is referenced by its expression');
   });
 
@@ -1855,7 +1856,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
         },
       }),
     ]);
-    expect(result.status).toBe(1);
+    expect(result.status, result.out).toBe(1);
     expect(result.out).toContain("only a derived checkpoint carries an expression; this one is 'series'");
   });
 
@@ -1916,7 +1917,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // This is the defect itself: `container_spec_cpu_quota` is a plausible metric name that nothing
     // in the case declares, so the checkpoint was citing prose.
     const result = await run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container_spec_cpu_quota'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "calls 'container_spec_cpu_quota' a configuration fact, but fault.parameters declares no such key " +
         '(it declares: container, cpuLimit)',
@@ -1925,7 +1926,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
 
   it('refuses a stated value the case does not declare', async () => {
     const result = await run(['--cases', withConfiguration((cp) => { cp.value = 600; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("asserts 'cpuLimit' == 600, and fault.parameters declares 500 mcore");
   });
 
@@ -1943,7 +1944,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
 
   it('refuses a unit the table cannot convert into the declared one', async () => {
     const result = await run(['--cases', withConfiguration((cp) => { cp.unit = 's'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "is in 's' and 'cpuLimit' is declared in 'mcore', which are not the same unit and not convertible",
     );
@@ -1964,7 +1965,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
         },
       ),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "states 'count' for 'replicas', which fault.parameters declares without a unit",
     );
@@ -1972,7 +1973,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
 
   it('refuses a parameter cited without the unit it is declared in', async () => {
     const result = await run(['--cases', withConfiguration((cp) => { delete cp.unit; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("cites 'cpuLimit' without a unit, and fault.parameters declares it in 'mcore'");
   });
 
@@ -1980,7 +1981,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // `container == 'checkout-api-app'` restates the parameter in a second place, and the parameter is
     // already in the file.
     const result = await run(['--cases', withConfiguration((cp) => { cp.signalRef = 'container'; cp.unit = '1'; })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "cites parameter 'container', whose value \"checkout-api-app\" is not a number or a { value, unit } quantity",
     );
@@ -2013,7 +2014,7 @@ describe('check-fault-cases · a declared reading stays inside the range its uni
 
   it('refuses a share above 100 per cent, and says what the unit admits', async () => {
     const result = await run(['--cases', withSeries({ unit: '1', baseline: 0, post: 1.2 })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares post 1.2 for 'scratch_reading' in '1', and a reading in '1' lies in [0, 1]",
     );
@@ -2029,7 +2030,7 @@ describe('check-fault-cases · a declared reading stays inside the range its uni
     // The lower bound is a statement rather than a default: nothing in this table is a signed
     // quantity, so -1 ms is not a small duration, it is the wrong shape.
     const result = await run(['--cases', withSeries({ unit: 'ms', baseline: -1, post: 4300 })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares baseline -1 for 'scratch_reading' in 'ms', and a reading in 'ms' lies in [0, ∞)",
     );
@@ -2089,7 +2090,7 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
 
   it('refuses a reference to a parameter the case does not declare, and lists the ones it does', async () => {
     const result = await run(['--cases', withPost({ parameter: 'poolSize' })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares post as parameter 'poolSize' for 'scratch_reading', and fault.parameters declares no " +
         'such key (it declares: container, cpuLimit)',
@@ -2099,7 +2100,7 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
   it('refuses a parameter whose value is not a quantity', async () => {
     // `container` is a name, not a number: a reading that cites it has no value to be.
     const result = await run(['--cases', withPost({ parameter: 'container' })]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares post as parameter 'container' for 'scratch_reading', whose value \"checkout-api-app\" " +
         'is not a number or a { value, unit } quantity',
@@ -2108,7 +2109,7 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
 
   it('refuses a parameter whose unit cannot convert into the series unit', async () => {
     const result = await run(['--cases', withPost({ parameter: 'cpuLimit' }, 'count')]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares post for 'scratch_reading' in 'count', and parameter 'cpuLimit' is declared in " +
         "'mcore', which is not convertible",
@@ -2117,7 +2118,7 @@ describe('check-fault-cases · a reading can cite a parameter instead of copying
 
   it('refuses a reading that is neither a number nor a reference', async () => {
     const result = await run(['--cases', withPost('five')]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "declares post '\"five\"' for 'scratch_reading', which is neither a number nor a { parameter } " +
         'reference',
@@ -2158,7 +2159,7 @@ describe('check-fault-cases · the corpus has to be able to be wrong', () => {
     // thing that moved. A corpus of those reports a 100% score for a method that returns the
     // largest excursion, and the report calls it localisation.
     const result = await run(['--cases', oneCaseCorpus('history-cart-network-delay')]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       'the corpus fails G4: no case places a strictly louder, separate component above its answer (none 2), ' +
         'so returning the largest excursion is never wrong',
@@ -2274,7 +2275,7 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
         (fault.parameters as Record<string, unknown>).zone = 'euw1-b';
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "'history-checkout-cpu-saturation' declares 'zone' and no reading cites it, and fault.parameterNotes " +
         'says nothing about it',
@@ -2301,7 +2302,7 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
           'the limit the container ran at, which the throttling series already holds.';
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("carries a note for 'cpuLimit' and a reading cites it");
   });
 
@@ -2313,7 +2314,7 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
           'the lag the replica reached, left behind by a round that renamed the key.';
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain(
       "explains 'lagSeconds' in fault.parameterNotes, and fault.parameters declares no such key",
     );
@@ -2326,7 +2327,7 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
         notesOf(fault).container = 'the container';
       }),
     ]);
-    expect(result.status).toBe(2);
+    expect(result.status, result.out).toBe(2);
     expect(result.out).toContain("explains 'container' with 'the container', which is a label");
   });
 
@@ -2350,5 +2351,101 @@ describe('check-fault-cases · a key nothing cites has to say why it is there', 
       Number(shortest),
       'a note shorter than a clause is a label the rule would have refused',
     ).toBeGreaterThan(40);
+  });
+});
+
+describe('check-fault-cases · a case has to say which reading ranks it', () => {
+  // `main.py` ranks by a column named after the path, so a corpus that stays silent leaves the
+  // ranking series to be guessed and a corpus that publishes a share under a `_latency` name hands
+  // the consumer a number about a different quantity. The module's own refusals are held apart in
+  // `sli.test.ts`; these check the wiring -- that the guard asks every case, that a refusal reaches
+  // the reader as a problem, and that the line printed is a partition of the cases.
+  const SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function declaring(sli: unknown, extra?: (faultCase: Record<string, unknown>) => void): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        faultCase.sli = sli;
+        extra?.(faultCase);
+      },
+    });
+  }
+
+  it('refuses a case that says nothing about what ranks it', async () => {
+    const result = await run([
+      '--cases',
+      corpus({
+        signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
+        mutate: (faultCase) => {
+          delete faultCase.sli;
+        },
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      "'history-checkout-cpu-saturation' carries no sli declaration, and every case says either " +
+        'which reading ranks it',
+    );
+  });
+
+  it('accepts the declaration the annotated case already carries', async () => {
+    const result = await run(['--cases', declaring({ service: 'checkout-api', metric: 'request_duration_p99_ms' })]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('sli 1 of 1 case(s) name the duration that ranks them');
+  });
+
+  it('refuses a reading on a service the path does not name', async () => {
+    // The column is named after the path, which is named after the answer key: a reading on another
+    // service published under it would move one service's numbers under another's name.
+    const result = await run(['--cases', declaring({ service: 'inventory-service', metric: 'server_handler_time_ms' })]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("ranks by a reading on 'inventory-service'");
+    expect(result.out).toContain("which is 'checkout-api'");
+  });
+
+  it('refuses a reason for having no ranking reading when the reason is a label', async () => {
+    const result = await run(['--cases', declaring({ none: 'no latency' })]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("gives 'no latency' as the reason, which is a label");
+  });
+
+  it('refuses a declaration that names both a reading and a reason', async () => {
+    const result = await run([
+      '--cases',
+      declaring({
+        service: 'checkout-api',
+        metric: 'request_duration_p99_ms',
+        none: 'the p99 series is the one that moved, and it is carried by this very service.',
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('names a reading and a reason at the same time');
+  });
+
+  it('prints the declarations as a partition, and the tables as the same number', async () => {
+    // Two instruments for one fact: the file says what it meant, and the exported table says what
+    // was written. They are counted by different code over different evidence, so agreement is a
+    // measurement rather than a restatement.
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    const declared =
+      /sli (\d+) of (\d+) case\(s\) name the duration that ranks them, published as `<service>_latency`; (\d+) say why no reading can/.exec(
+        result.out,
+      );
+    expect(declared, 'the sli line is missing from the report').not.toBeNull();
+    const [, ranking, total, quiet] = declared!;
+    expect(Number(ranking) + Number(quiet)).toBe(Number(total));
+    expect(Number(total)).toBe(CORPUS_SIZE);
+    expect(Number(ranking)).toBeGreaterThan(0);
+    expect(Number(quiet)).toBeGreaterThan(0);
+
+    const exported = new RegExp(String.raw`RE2 ${String(CORPUS_SIZE)} case\(s\) written.*?, a \`latency\` column in (\d+) of ${String(CORPUS_SIZE)}`).exec(
+      result.out,
+    );
+    expect(exported, 'the export line does not report the ranking column').not.toBeNull();
+    expect(Number(exported![1])).toBe(Number(ranking));
   });
 });

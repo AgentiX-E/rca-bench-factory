@@ -108,6 +108,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "this case carries the share of writes that reached staging, the share that reached production and the share that failed, and a share of writes is not a duration whichever of the three the fault moved."
+  },
   "query": "Orders stopped arriving in the production database, yet every write reported success and no alert fired. Which component is the root cause, and why did nothing fail?",
   "difficulty": "L2",
   "answerKeyIsolated": true

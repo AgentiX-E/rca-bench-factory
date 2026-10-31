@@ -109,6 +109,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the seconds a pod took to become ready are a startup measurement, and the impact of the kill is the share of 503s beside it -- the reading a baseline would rank by here is the share."
+  },
   "query": "The user-profile pod was terminated at 14:07 and every request 503'd until a replacement was ready forty seconds later. What is the root cause, and why is the node not it?",
   "difficulty": "L3",
   "answerKeyIsolated": true

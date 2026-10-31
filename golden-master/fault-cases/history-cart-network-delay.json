@@ -94,6 +94,10 @@
       }
     ]
   },
+  "sli": {
+    "service": "cart-service",
+    "metric": "client_span_duration_ms"
+  },
   "query": "Cart-to-inventory calls got slow after a network policy change: client-side span duration rose from 12ms to 900ms while the inventory service's own handler time stayed at 11ms. What failed?",
   "difficulty": "L2",
   "answerKeyIsolated": true

@@ -136,6 +136,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the cluster’s unassigned slots and its keyspace coverage are a count and a share, and the third reading is the share of 5xx that reached the catalog, on a service the answer key does not name."
+  },
   "query": "The product index served stale and missing entries for ninety minutes while every dashboard stayed green. Which component was at fault, and why did nothing that watches its readers report a single error?",
   "difficulty": "L4",
   "answerKeyIsolated": true

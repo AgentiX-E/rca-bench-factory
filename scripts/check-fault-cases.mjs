@@ -259,6 +259,17 @@ const withTelemetry = [];
  * note is.
  */
 const parameterUse = { declared: 0, referenced: 0, noted: 0, cases: 0, shortest: 0 };
+
+/**
+ * What each case says about the reading that ranks it.
+ *
+ * `main.py` decides the ranking series from the *path* -- it recognises a corpus token and looks for
+ * a column named `{service}_latency` -- so a corpus that never says which of its readings moved
+ * leaves the consumer to guess, and a corpus that publishes a share under a `_latency` name hands it
+ * a number about a different quantity. Each case answers one way or the other, and the two counts are
+ * printed on both exits (finding 331).
+ */
+const sliUse = { declared: 0, none: 0 };
 const checkpointRefs = {
   total: 0,
   resolved: 0,
@@ -1068,6 +1079,17 @@ for (const entry of index.cases) {
         : Math.min(parameterUse.shortest, notes.shortest);
     }
 
+    // The ranking declaration, read from the file as written rather than from the parsed case: the
+    // schema admits `sli` without judging it, because the sentence that names *which half* of a
+    // malformed declaration is missing is worth more than `Invalid input` (export/sli.ts).
+    const sli = core.readSliDeclaration({
+      sli: rawCase?.sli,
+      component: String(parsedCase.groundTruth.rootCauseComponent),
+    });
+    if (sli.fault !== null) problems.push(core.describeSliFault(sli.fault, caseId));
+    else if (sli.column === null) sliUse.none += 1;
+    else sliUse.declared += 1;
+
     // A case's own declaration wins on the `(service, metric)` pair, and the background arrives flat
     // with `noise: 'none'` -- both rules live in `fault/background.ts`, where they are unit-tested.
     const backgroundDeclarations = core.backgroundSeries(series, background.series);
@@ -1239,6 +1261,24 @@ function logParameterUse() {
 }
 
 /**
+ * How many cases name the reading that ranks them, and how many say why none can.
+ *
+ * Neither number is a target. The split is a fact about the corpus and about the consumer at once:
+ * upstream's vocabulary is one word wide (`{service}_latency`), so a case whose symptom is a share
+ * or a count has nothing to publish under that name, and the sentence it writes instead is the
+ * honest answer rather than a footnote. A reader who sees the share move knows a case changed its
+ * symptom, not that a rule was relaxed.
+ */
+function logSliUse() {
+  const total = sliUse.declared + sliUse.none;
+  if (total === 0) return;
+  console.log(
+    `check-fault-cases: sli ${String(sliUse.declared)} of ${String(total)} case(s) name the duration ` +
+      `that ranks them, published as \`<service>_latency\`; ${String(sliUse.none)} say why no reading can`,
+  );
+}
+
+/**
  * How many cases state a difficulty level.
  *
  * Printed because the exporter projects an absent level to `medium`, so an unannotated case and a
@@ -1375,6 +1415,13 @@ if (telemetryCases.length > 0 && firstGraph !== null) {
             return `, ${table} in ${String(carrying.size)} of ${String(dirs.size)}`;
           })
         : [];
+    // The column upstream actually looks for, counted off the tables rather than off the
+    // declarations: `sli` says what the file meant and this says what the dataset carries, and two
+    // instruments for one fact is the only way either of them can be wrong out loud (finding 331).
+    const ranking = Object.entries(outcome.files).filter(
+      ([path, text]) => path.endsWith('/data.csv') && text.split('\n')[0]?.split(',').some((column) => column.endsWith(core.SLI_SUFFIX)),
+    ).length;
+    if (dirs.size > 0) modalities.push(`, a \`${core.SLI_SUFFIX.replace('_', '')}\` column in ${String(ranking)} of ${String(dirs.size)}`);
     exportLines.push(
       `${suite} ${String(dirs.size)} case(s) written${modalities.join('')}` +
         (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
@@ -1386,6 +1433,7 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`check-fault-cases: ${problem}`);
   logDifficultyCoverage();
   logParameterUse();
+  logSliUse();
   logExportReading();
   logLocalisationReading();
   logCheckpointCounts();
@@ -1427,6 +1475,7 @@ function logExportReading() {
 // the coverage line vanished from exactly those runs while it lived inside it.
 logDifficultyCoverage();
 logParameterUse();
+logSliUse();
 logExportReading();
 logLocalisationReading();
 logCheckpointCounts();

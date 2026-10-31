@@ -109,6 +109,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the reading that carries this case is the share of tax calls answered 503, and the other two belong to the upstream that caused them -- a share on the affected component is all there is."
+  },
   "query": "The pricing service returned 502 on 60% of requests for eighteen minutes. Which component is the root cause, and what distinguishes it from the pricing service itself?",
   "difficulty": "L2",
   "answerKeyIsolated": true

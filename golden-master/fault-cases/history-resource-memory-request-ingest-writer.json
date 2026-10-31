@@ -125,6 +125,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the request is a size and the working set it produced is a size, and the queue behind them is a count: a memory case has bytes to rank by and no duration."
+  },
   "query": "The ingest writer was killed twice overnight while its own resource request never changed, and the queue behind it grew to fifty thousand messages. Which component was misconfigured, and why is the queue not the answer?",
   "difficulty": "L3",
   "answerKeyIsolated": true

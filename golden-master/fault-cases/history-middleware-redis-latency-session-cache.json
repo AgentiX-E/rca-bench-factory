@@ -108,6 +108,10 @@
       }
     ]
   },
+  "sli": {
+    "service": "session-cache",
+    "metric": "redis_get_duration_ms"
+  },
   "query": "Session cache GETs went from 0.4ms to 55ms at 21:30 and stayed there. Which component is the root cause, and why are the clients not it?",
   "difficulty": "L2",
   "answerKeyIsolated": true

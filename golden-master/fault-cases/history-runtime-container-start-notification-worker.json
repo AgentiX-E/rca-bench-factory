@@ -146,6 +146,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the uptime series is a duration, but it measures a process that keeps being restarted rather than a request that took long, so this case’s readings are counts and a rate."
+  },
   "query": "The notification worker has served nothing since the last rollout and no alert fired. What stopped it, and why did the readiness probe say nothing?",
   "difficulty": "L3",
   "answerKeyIsolated": true

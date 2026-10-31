@@ -155,6 +155,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "a partition is read as how many members each node can see, how many elections ran and what share of reads were stale, and a cluster’s view of itself is a count rather than a time."
+  },
   "query": "The search cluster split into two halves at 03:02, each half elected its own leader, and one half returned documents the other had already deleted until the links came back at 03:19. Nothing in the application changed. What happened, and why did this not page as an outage?",
   "difficulty": "L3",
   "answerKeyIsolated": true

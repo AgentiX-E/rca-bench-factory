@@ -126,6 +126,8 @@ const ENUMERATED_MODULES = [
   'export/rca100.ts',
   'export/rcaeval-logts.ts',
   'export/rcaeval.ts',
+  'export/sli.ts',
+  'export/tokens.ts',
   'gates/gates.ts',
   'gates/validity.ts',
   'cli/args.ts',
@@ -183,6 +185,7 @@ const ENUMERATED_MODULES = [
   'util/csv.ts',
   'util/hash.ts',
   'util/json.ts',
+  'util/prose.ts',
   'util/time.ts',
   'util/unit.ts',
 ];
@@ -705,6 +708,24 @@ const TESTED = [
   // in the report; `extraction-diagnostics.test.ts` is the test that drives both.
   'FAILURE_EXCERPT_LIMIT',
   'describeExtractionFailure',
+  // export/sli.ts -- which reading ranks a case, and the one column name upstream will look for.
+  // The declaration is the corpus's answer and the resolution is the exporter's; the two refusals are
+  // separate because a reading on another service is wrong whether or not the series exists
+  // (finding 331).
+  'SLI_SUFFIX',
+  'describeSliFault',
+  'readSliDeclaration',
+  'resolveSli',
+  'sliColumn',
+  // export/tokens.ts -- the two name shapes the layout is built from. They were private functions in
+  // `rcaeval.ts` until the ranking column needed the same token the path uses: a second sanitiser
+  // would be a column and a directory spelling one service two ways.
+  'caseToken',
+  'faultToken',
+  // util/prose.ts -- what makes a string a sentence rather than a label, asked by both guards that
+  // require authored prose.
+  'MIN_SENTENCE_LENGTH',
+  'looksLikeSentence',
   // fault/baseline-localiser.ts -- G4 reads outcomes, so the corpus needs a run behind it.
   'PEAK_Z_METHOD',
   'locateWithPeakZScore',

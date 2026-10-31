@@ -146,6 +146,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "`process_uptime_seconds` is a duration and it measures how long the container has been up rather than how long a request took, which leaves the share of starts that succeeded as the reading nearest the symptom."
+  },
   "query": "The shipping service has not come up once since the image was rebuilt, and the same image fails the same way in a namespace that shares nothing with production. What is the root cause, and why is this not an environment problem?",
   "difficulty": "L3",
   "answerKeyIsolated": true

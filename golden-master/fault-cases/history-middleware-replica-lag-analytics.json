@@ -117,6 +117,10 @@
       }
     ]
   },
+  "sli": {
+    "service": "analytics-replica",
+    "metric": "replica_relay_lag_seconds"
+  },
   "query": "The analytics dashboard served four-hour-old totals for a morning while every component reported itself healthy. Which component was behind, and why is the busiest series in the window not the answer?",
   "difficulty": "L2",
   "answerKeyIsolated": true

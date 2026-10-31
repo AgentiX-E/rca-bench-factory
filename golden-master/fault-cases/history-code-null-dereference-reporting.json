@@ -108,6 +108,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the two readings on this service are the share of summaries answering 5xx and the share of rows the null mapper reached, and both are shares: there is no duration here for a column named `_latency` to carry."
+  },
   "query": "The reporting service began returning 500 on /v2/summary alone, with a stack trace that ends on one line every time. Which component holds the defect, and what about the account decides whether a request fails?",
   "difficulty": "L3",
   "answerKeyIsolated": true

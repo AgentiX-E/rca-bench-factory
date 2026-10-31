@@ -97,6 +97,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the duration on this service is the size of the lead-time error -- a distance between two timestamps rather than a time a request took -- and the impact beside it is the share of 5xx."
+  },
   "query": "Booking reminders went out an hour early for every appointment created after the daylight saving change. Which component is the root cause, and why is the scheduler not it?",
   "difficulty": "L1",
   "answerKeyIsolated": true

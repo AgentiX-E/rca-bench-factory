@@ -131,6 +131,10 @@
       }
     ]
   },
+  "sli": {
+    "service": "api-gateway",
+    "metric": "http_request_duration_p99_ms"
+  },
   "query": "Every request through the API gateway took eight seconds, including requests that call nothing behind it, and the only change that day was a WAF rule. Which component was doing the work, and what rules out the services it fronts?",
   "difficulty": "L4",
   "answerKeyIsolated": true

@@ -130,6 +130,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the flag’s own state, the share of pages that rendered the button and a deploy count are what this case carries, and a boolean, a share and a count share one property: none of them is a time."
+  },
   "query": "The one-click checkout button vanished for every user at 08:00 and no deployment ran that day. What turned it off, and why did nothing page?",
   "difficulty": "L2",
   "answerKeyIsolated": true

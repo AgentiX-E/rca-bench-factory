@@ -81,6 +81,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the writer’s own reading is how many records are buffered, and the watermark that caused it is a share of disk on a broker the answer key does not name."
+  },
   "query": "Ledger publishes started timing out at 21:40 and the producer buffer grew to 40,000 records while the broker throttled rather than failed them. The topic's retention had been raised to seven days the week before. What failed?",
   "difficulty": "L3",
   "answerKeyIsolated": true

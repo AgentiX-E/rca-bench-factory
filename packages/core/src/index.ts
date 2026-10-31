@@ -231,6 +231,13 @@ export {
 } from './export/rcaeval.js';
 export type { RcaEvalLogsSuite, RcaEvalSuite } from './export/rcaeval.js';
 
+// The ranking declaration: which reading upstream should rank a case by. `readSliDeclaration` is what
+// the corpus guard asks about the file, and `resolveSli` is what the exporter asks about the data;
+// the two refusals are separate because a declaration that names another service is wrong whether or
+// not the series it names exists (finding 331).
+export { SLI_SUFFIX, describeSliFault, readSliDeclaration, resolveSli, sliColumn } from './export/sli.js';
+export type { CaseSli, SliFault, SliPublication, SliRead } from './export/sli.js';
+
 export { LOGTS_BUCKET_SECONDS, buildLogtsCsv } from './export/rcaeval-logts.js';
 export type { LogCluster, LogRow, LogtsTable } from './export/rcaeval-logts.js';
 

@@ -125,6 +125,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the symptom is a page of wrong totals, read as a count of rendered lines and a share of invoices that match, and a count and a share are what this case has instead of a time a request took."
+  },
   "query": "Multi-page invoices came back missing their last line, with nothing in the logs and totals that still reconciled. Which component holds the defect, and why did no reading other than the lines a page carries move?",
   "difficulty": "L3",
   "answerKeyIsolated": true

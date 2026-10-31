@@ -104,6 +104,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "a crash loop is read as how many times the container restarted and what share of liveness probes passed, and neither is a time the harness could rank by."
+  },
   "query": "The media-transcoder container has restarted 178 times in twelve hours. What is the root cause, and why are the liveness probes not it?",
   "difficulty": "L3",
   "answerKeyIsolated": true

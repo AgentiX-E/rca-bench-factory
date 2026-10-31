@@ -3167,3 +3167,178 @@ reading the output rather than by a test.
 | a recording with no run / no commit / no date | -- | refused, each by name |
 | a recording older than the job's budget | -- | refused, "re-measured together" |
 | `battery-budget.test.ts` | did not exist | **17 tests**, one of them the shipped tree |
+
+## Finding 331 — the ranking reading was chosen by the path, so the corpus says it itself
+
+Finding 267 left this open and said why rather than guessing at it:
+
+> Making that work needs either the corpus's own system tokens (which only fit the corpus) or a
+> mapping and a `_latency` series in the IR -- a decision about what an exporter is allowed to claim,
+> not a repair.
+
+The decision is the last of the eight. `main.py` does not ask a dataset which series to rank by; it
+recognises the dataset by a token in the **path** and then takes a column whose name it also decides:
+
+```python
+elif "online-boutique" in data_path or ... or "RE2-OB" in data_path or "RE3-OB" in data_path:
+    sli = "frontend_latency"
+    if f"{service}_latency" in data: sli = f"{service}_latency"
+...
+else:
+    raise ValueError("SLI not implemented")
+```
+
+So a case exported as `RE2-order-prod/order_cpu/1/data.csv` is well formed, on the right clock,
+complete in its modalities, and refused before a single number is compared -- and the refusal names
+our path rather than any defect of the data.
+
+### The option that was refused, and the one taken
+
+Copying the corpus's token list into our layout would make upstream run tomorrow. It is also the
+allow-list this campaign rejected one round ago in a different file (`fault.parameterNotes`, finding
+326): today's roster written into code, correct until the next system exists. Worse here, because the
+token it would copy is an *identity* -- a synthetic storefront's dataset claiming `online-boutique` is
+the one thing a benchmark's path must not do.
+
+So the corpus answers the half that belongs to the data. A case declares `sli`:
+
+```json
+"sli": { "service": "checkout-api", "metric": "request_duration_p99_ms" }
+"sli": { "none": "the two readings on this service are the share of summaries answering 5xx …" }
+```
+
+and the exporter publishes the declared series under `checkout-api_latency`, the name upstream
+constructs from the path.
+
+### One token, two spellings, and the test that stops them parting
+
+The alias and the directory segment are the same word: `service` in `main.py` is
+`basename(dirname(dirname(data_path))).split("_")[0]`, which is `casePath`'s service segment, which is
+`caseToken(rootCauseComponent)`. A second sanitiser in the new module would have been two chances to
+spell one service two ways -- a column named `checkout_api_latency` while upstream computed
+`checkoutapi` -- and neither half's tests could see it. So `sanitiseCaseToken`/`sanitiseFaultToken`
+moved out of `export/rcaeval.ts` into `export/tokens.ts`, and the acceptance test takes `casePath`'s
+own output, applies `main.py`'s two lines to it, and requires the answer to be `sliColumn`'s.
+
+### Renamed, not duplicated
+
+The obvious alternative is a second column: keep `checkout-api_request_duration_p99_ms` and add
+`checkout-api_latency` beside it. That breaks the table's one invariant (`time, then one column per
+series`), and the two columns would hold the same numbers under two names -- the shape finding 327
+spent a round removing. The declared series is therefore **renamed**, and the doc comment says what
+that costs: the case's own vocabulary stays in the bundle, and the export speaks the consumer's.
+
+### Seven ways a declaration fails to answer
+
+| kind | what it catches | why it is its own repair |
+| --- | --- | --- |
+| `absent` | the key is not there | the corpus requires an answer; the exporter tolerates one, because a bundle is not a corpus |
+| `unreadable` | not an object, both shapes at once, neither, an empty half, a reason that is not text | each names *which* half is wrong, which `Invalid input` cannot |
+| `foreign` | the reading is on a service the path does not name | the column is named after the answer key, so this would put one service's numbers under another's name |
+| `vague` | `{ "none": "no latency" }` | a reason is a sentence; the floor and the full stop are shared with `fault/parameter-notes.ts` through `util/prose.ts` |
+| `unresolved` | the named `(service, metric)` pair no metric signal carries | the table would have no column upstream could find, and the refusal lists what the case does carry |
+| `notDuration` | a share, a count, a byte size, a unit nobody can convert | the published name ends in `_latency`: a share under it is a different quantity wearing the name |
+| `collision` | the table already has a column of the name the alias wants | the rename would replace another series' numbers |
+
+Shape is decided before the data: `foreign` and `vague` are read from the file alone, so a corpus is
+refused before its telemetry is built, and `unresolved`/`notDuration`/`collision` are read from the
+signals, at the only place the table exists. A malformed declaration is refused by the exporter too,
+by name, because the alternative is a `data.csv` whose ranking column is missing for a reason nobody
+wrote down.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| cases that say which reading ranks them | **0 of 30** | **7 of 30** declare, **23 of 30** give a reason |
+| the column upstream looks for, in the exported tables | **0 of 30** | **7 of 30** (RE3: 1 of its 5 code cases) |
+| the name, derived from `main.py`'s own two lines applied to `casePath` | -- | equal to `sliColumn` for `checkout-api`, `order`, `ts-route-service` |
+| a reading on another service | accepted | refused, naming both services |
+| a share declared as the ranking series | accepted | refused, naming the unit |
+| `sli.test.ts` | did not exist | **20 tests**, six refusals among them |
+| `check-fault-cases.test.ts` | 124 | **130**: absent, foreign, vague, both-at-once, and the partition |
+| the two instruments | -- | `sli 7 of 30 …` and `a \`latency\` column in 7 of 30` agree, and the test requires it |
+
+### What this does not do
+
+It does not make upstream recognise the path. `{system}` stays the case's own name, so `main.py`'s
+token table will still refuse `RE2-order-prod` -- and that refusal is now *correct information*: a
+corpus it does not know is a corpus whose baselines were never tuned on it. What changed is that the
+part which was ours to answer is answered, in the file, per case, and checkable.
+
+It does not change what our own scorers do. They read the bundle, not `data.csv`, and every published
+ratio in this repository is computed from the bundle.
+
+## Finding 332 — twenty-three of thirty cases have nothing to say in a one-word vocabulary
+
+The split measured above is not a corpus defect, and it is not a defect of the mechanism. It is a
+statement about the consumer: upstream's SLI is one word -- `{service}_latency` -- so a case whose
+symptom is a share, a count or a state has nothing it can publish under that name without lying.
+
+The twenty-three reasons are therefore not filler. Each names the reading that came closest and why
+it is not one, and the shapes they fall into say something the corpus did not know about itself:
+
+| shape | cases | the reading it has instead |
+| --- | --- | --- |
+| a share moved | 11 | 5xx shares, failure shares, coverage shares |
+| a count moved | 6 | restarts, unassigned slots, buffered records, dropped deliveries |
+| bytes or a size moved | 2 | resident bytes, memory requested and working set |
+| a duration that is not a latency | 3 | process uptime, pod readiness, the size of a lead-time error |
+| a rate moved | 1 | requests per second at a gateway whose failures are the symptom |
+
+Three of the four last rows are the interesting ones, because a guard cannot see them: `isDuration`
+answers whether a unit is in the time dimension, so `process_uptime_seconds` and
+`reminder_lead_time_error_seconds` pass it -- and both are *durations that are not latencies*. The
+author says so in the reason, and the reason is checked for being a sentence rather than for being
+true. That division is stated rather than implied, and it is the same division finding 326 drew for
+parameter notes.
+
+The mechanism this leaves behind is the useful part: a future case whose symptom is a request
+duration declares it and is published under the name the harness reads, and a case that is not
+rankable says why in a file rather than being ranked by whichever column upstream happens to find.
+
+## Finding 333 — eighty-six of a hundred and twenty assertions could not say why the guard refused
+
+The gate run that closed finding 267 reported one failure:
+
+```
+FAIL  test/check-fault-cases.test.ts > the units in a checkpoint have to exist
+      > refuses a causal step that the topology does not connect
+AssertionError: expected 1 to be 2
+```
+
+That is the whole of it. The test knows the guard exits `2` when it refuses a corpus and `1` when
+it cannot read one, and it compared the number without asking what the guard had said -- so a run
+that cost eighteen minutes ended with one integer and no subject. The same file carried 120 status
+assertions, of which **34 passed `result.out` as the assertion message and 86 did not**, and the one
+that failed was in the 86.
+
+### What the missing sentence would have separated
+
+The guard has four ways to exit `1`, and every one of them prints a sentence first: an unreadable
+index, an index whose schema is not `rca-bench-fault-cases/2`, a corpus whose case file cannot be
+parsed, and an argument it does not know. A child that dies at `await import(dist)` prints a
+`node:` error instead. Those are five different repairs and they arrived as `1`.
+
+Ruled out, in the order each was measured:
+
+| candidate | the reading | verdict |
+| --- | --- | --- |
+| the cgroup ceiling | `memory.peak` 8 392 404 992 B against `memory.max` 8 589 934 592 B; `memory.events max 0` before and after a full coverage run | not hit |
+| a concurrent `tsc` into `dist` | the only test that runs a package manager does it in a `git worktree`; `typecheck` is `--noEmit`; `heavy-fixtures-do-not-contend` holds the property | not it |
+| a shared fixture directory | `mkdtempSync` per test, `rmSync` in `afterAll`; counted before and after a run: 283 and 283 | not it |
+| a stale `dist` | `pretest:coverage` builds before the first import | not it |
+| the guard's own refusals | reproduced alone twice, the file twice, `core` coverage twice, root coverage twice -- 130/130, 5198/5198 each time | not reproduced in six runs |
+
+So the cause of that one exit is still unknown, and this finding does not claim otherwise. What it
+changes is that it cannot happen quietly again: **every status assertion in the file now carries
+`result.out`**, so the next child that exits `1` arrives with its own sentence attached and the
+five candidates above collapse to one.
+
+### The rule this leaves
+
+An assertion about an exit code is an assertion about a subject that has already spoken. Passing
+that subject's output as the message costs one line and is the difference between a report that
+says `expected 1 to be 2` and a report that says which of five things happened. The 34 that already
+did it were not a style; they were the file's own precedent, and the 86 were the part nobody had
+needed yet.

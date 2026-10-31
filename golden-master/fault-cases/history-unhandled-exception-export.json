@@ -79,6 +79,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the whole of this case is the share of exports that failed, and an exception is read as a share rather than as a duration."
+  },
   "query": "About three percent of exports fail and the jobs are never retried. The broker sees the connection close rather than a nack, and the logs show an unhandled TypeError in the CSV writer when a column contains an embedded newline. What failed?",
   "difficulty": "L3",
   "answerKeyIsolated": true

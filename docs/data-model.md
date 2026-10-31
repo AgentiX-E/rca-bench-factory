@@ -367,6 +367,44 @@ are the two properties a label lacks. They are a proxy for "a sentence" rather t
 truth, and `fault/parameter-notes.ts` says so where the rule lives: presence, placement and
 shape are what a guard can check, and the truth of a sentence is what a reader checks.
 
+### `sli` — which reading ranks the case
+
+`main.py` does not ask a dataset which series to rank by. It recognises the dataset by a token in
+the **path** and then looks for a column whose name it decides:
+
+```python
+elif "online-boutique" in data_path or ... or "RE2-OB" in data_path or "RE3-OB" in data_path:
+    sli = "frontend_latency"
+    if f"{service}_latency" in data: sli = f"{service}_latency"
+else:
+    raise ValueError("SLI not implemented")
+```
+
+`{service}` is the path's service segment, which is `casePath`'s, which is `caseToken` of
+`groundTruth.rootCauseComponent`. So the only name available to a corpus that is not Online
+Boutique is `{service}_latency`, and a case that wants to be rankable has to have a duration its own
+component carries. `sli` is where it says so:
+
+```ts
+sli?:
+  | { service: string; metric: string }   // a duration this case carries, published as `{service}_latency`
+  | { none: string };                     // one sentence: which reading came closest, why it is not one
+```
+
+| what the case says | what the exporter writes | when it is refused |
+| --- | --- | --- |
+| `{ service, metric }` resolving to a duration on the path's service | that series, **renamed** to `{service}_latency` | the pair no signal carries; the unit is not in the time dimension; the name is already another series'; the service is not the path's |
+| `{ none: "<sentence>" }` | nothing under that name | the reason is shorter than 40 characters or does not end in a full stop |
+| absent | nothing, unchanged | by the corpus guard, for every annotated case |
+
+The rename rather than a copy is the point: the table keeps one column per series, so a declared
+series cannot appear twice and drift. `export/sli.ts` owns both readings -- the shape from the file
+and the resolution against the signals -- and `export/tokens.ts` owns the one token the column name
+and the directory segment are both built from.
+
+Measured on the shipped corpus: **7 of 30** cases declare a ranking reading and **23** say why none
+of their readings can be published under that name (finding 332).
+
 ### `expression` — the arithmetic a derived checkpoint states
 
 A derived checkpoint's value is computed from one or more series, so it carries an

@@ -220,6 +220,7 @@ invented.
 | --- | --- | --- | --- | --- |
 | `time` | number | yes | `floor(Date.parse(TelemetrySignal.timestamp) / 1000)` | Rows are the union of the series' instants, ascending. Compared directly against inject_time.txt upstream. |
 | `&lt;service&gt;_&lt;metric&gt;` | number | yes | `resource['service.name'] + MetricPayload.name -&gt; MetricPayload.value` | Empty where the series has no sample at that instant: a gap the loader fills forward, not a zero this exporter invented. |
+| `&lt;service&gt;_latency` | number | no | `the column above, renamed when the case declares that series as its sli` | Present only where the case declared a duration its own component carries (`sli`); upstream ranks by this name and by no other, so the declared series is published under it rather than beside it. |
 <!-- /fields -->
 
 <!-- example: rcaeval-re2/RE2-order-prod/order_cpu/1/data.csv -->

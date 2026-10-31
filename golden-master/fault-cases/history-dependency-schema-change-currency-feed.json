@@ -135,6 +135,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the mismatch is read as a share of settlements that disagree and a count of response fields, and the answer key’s own component contributes only the count: it carries no duration."
+  },
   "query": "Settlement totals were wrong by a few cents for two hours while every call to the currency feed succeeded. Which component changed, and why did nothing in the settlement service's own telemetry look wrong?",
   "difficulty": "L4",
   "answerKeyIsolated": true

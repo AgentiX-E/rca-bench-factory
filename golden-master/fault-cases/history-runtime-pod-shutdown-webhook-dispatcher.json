@@ -126,6 +126,9 @@
       }
     ]
   },
+  "sli": {
+    "none": "the only reading is how many deliveries were dropped, and a shutdown that drops them is a count of losses rather than a time anything took."
+  },
   "query": "Every deploy of the webhook dispatcher loses about three hundred deliveries and not one request ever fails. Which component is at fault, and why do the request-level dashboards stay green throughout?",
   "difficulty": "L4",
   "answerKeyIsolated": true

@@ -527,6 +527,20 @@ export interface FaultCase {
     parameterNotes?: Record<string, string>;
   };
   groundTruth: GroundTruth;
+  /**
+   * Which reading ranks this case, or a sentence saying why none can.
+   *
+   * `main.py` decides the ranking series from the *path*: it recognises a corpus token and then looks
+   * for a column named `{service}_latency`. So a case that wants to be rankable by that harness has to
+   * name a duration its own component carries, and a case whose symptom is a share or a count has to
+   * say so rather than have a ratio published under a name that means latency
+   * (`export/sli.ts`).
+   *
+   * Typed as `unknown` on purpose. The shape is either `{ service, metric }` or `{ none }` with a
+   * sentence, and one module reads it; a schema that validated it would refuse the second half of a
+   * malformed declaration with `Invalid input` instead of naming which half is missing.
+   */
+  sli?: unknown;
   /** Natural-language task description required by OpenRCA-style benchmarks. */
   query?: string;
   difficulty?: 'L1' | 'L2' | 'L3' | 'L4';

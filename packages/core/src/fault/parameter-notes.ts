@@ -1,3 +1,5 @@
+import { MIN_SENTENCE_LENGTH, looksLikeSentence } from '../util/prose.js';
+
 /**
  * What a case has to say about the facts it declares and no reading cites.
  *
@@ -39,11 +41,14 @@
 /**
  * How short a note may be before it is a label rather than a sentence.
  *
- * Not a measure of quality -- the shortest note the shipped corpus carries is longer than this --
+ * The number and the rule live in `util/prose.ts`, because the same question is asked of a case's
+ * reason for having no ranking reading; the name stays here because a caller reading a refusal about
+ * a *note* should not have to know that a slice of the answer is shared with the exporter. The floor
+ * is not a measure of quality -- the shortest note the shipped corpus carries is longer than this --
  * but the point below which a string cannot say what a fact is for *and* why nothing cites it. A
  * note that clears this floor can still be wrong, and that is stated rather than papered over.
  */
-export const MIN_NOTE_LENGTH = 40;
+export const MIN_NOTE_LENGTH = MIN_SENTENCE_LENGTH;
 
 /** Why a case's notes do not answer for its parameters. */
 export type ParameterNoteFault =
@@ -68,11 +73,6 @@ export interface ParameterNotesReport {
 
 function isNoteMap(notes: unknown): notes is Record<string, unknown> {
   return typeof notes === 'object' && notes !== null && !Array.isArray(notes);
-}
-
-function isSentence(value: string): boolean {
-  const trimmed = value.trim();
-  return trimmed.length >= MIN_NOTE_LENGTH && trimmed.endsWith('.');
 }
 
 /** The type of a note map that is not a map, in the words the refusal uses for it. */
@@ -127,7 +127,7 @@ export function checkParameterNotes(input: {
     }
     noted += 1;
     shortest = shortest === 0 ? note.trim().length : Math.min(shortest, note.trim().length);
-    if (!isSentence(note)) faults.push({ kind: 'label', key, note });
+    if (!looksLikeSentence(note)) faults.push({ kind: 'label', key, note });
   }
 
   for (const key of Object.keys(notes)) {

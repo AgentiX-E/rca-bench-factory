@@ -79,6 +79,42 @@ as L1 to L3** and still meet its own target — and not one case more. The suite
 against the committed denominator as well as against today's count, because the number that decides
 the plan is the one at full size, not the one on the day it was written.
 
+### The gate that failed without saying why
+
+`pnpm verify:local` came back `FAILED at 5/31` with one failing test and no sentence:
+
+```
+AssertionError: expected 1 to be 2    test/check-fault-cases.test.ts:734:27
+```
+
+The guard exits `2` when it refuses a corpus and `1` when it cannot read one, and this assertion
+compared the number without asking what the guard had said -- as did 85 of the file's other 119
+status assertions. Five candidates fit `1`: an unreadable index, a wrong index schema, an
+unparseable case, an unknown argument, or a child that died before reaching any of them. The
+eighteen-minute run reported none of the five.
+
+Four were measured and excluded rather than argued away: the cgroup ceiling was never touched
+(`memory.peak` 8 392 404 992 B against `memory.max` 8 589 934 592 B, `memory.events max 0` before and
+after), no test rebuilds `dist` in the real tree (`typecheck` is `--noEmit`, the one file that runs a
+package manager runs it in a `git worktree`), the fixture directories are per-test `mkdtemp` and were
+counted at 283 before and 283 after a run, and `pretest:coverage` builds before the first import. The
+fifth was not reproducible in six runs: the file alone twice, `core` coverage twice, root coverage
+twice, 130/130 and 5198/5198 each time.
+
+So the round did not fix the exit it could not reproduce. It removed the condition that made it
+unreadable: **all 120 assertions now pass `result.out`**, and the next `1` arrives with the guard's
+own sentence attached. Finding 333 states the rule and the four exclusions.
+
+The second run of that gate was green at 5/31 and red at **24/31**, on
+`artefacts / Examples and site data are up to date`: `site/assets/data.js is stale - run
+`pnpm examples:gen` and commit the result`. This is finding 318's shape, hit again by the same
+route -- `scripts/format-spec.mjs` gained a boundary and a `<service>_latency` field, and the file
+derived from it was not regenerated. Same repair: `pnpm examples:gen` rewrote `site/assets/data.js`
+and synced the examples block in `docs/targets/rcaeval.md`. What is worth recording is not that it
+happened but that it was caught at the step that exists for it, in a run where the coverage suite,
+the mutation suite, the golden master and the official-metric regression were all green -- the
+author had checked the five steps he expected to move.
+
 ### Left open
 
 - **Ten samples remain, and every one of them tops out at two hops.** `[open: the next three-step
@@ -2430,9 +2466,9 @@ test that covered the old sentence was corrected to cover both.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **210 files, 5156 tests passed** (as of this commit) |
+| `core` test suite | **210 files, 5156 tests passed** (as of `45af109e2`) |
 | `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **214 files, 5343 tests passed** (as of this commit) |
+| repo test suite | **214 files, 5343 tests passed** (as of `45af109e2`) |
 | coverage | **99.97 / 99.73 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- identical to the last round, because every line this round changed lives in `scripts/`, which the coverage surface does not include |
 | ledgers naming their round | **12 of 12** (was 0 of 12) |
 | a swapped pair, on a copy of the live log | **FAILED, exit 1**, both rounds named |
@@ -2466,3 +2502,116 @@ test that covered the old sentence was corrected to cover both.
 The corpus, the metric tables, the anchors, the backends, the localisation readings, the published
 success ratios, and every budget number the plan already enforced. The two rules changed what the log
 can be asked about itself and what the plan can attribute; no case's answer moved.
+
+## v3.26 — the ranking reading stops being chosen by the path, and twenty-three cases have nothing to say in a one-word vocabulary
+
+The last item of the eight, and the only one that needed a decision rather than a repair. It was
+written down as such when it was found (finding 267) and again when the list was ordered:
+
+> `[open: v3.26, and the decision is whether a case declares its own SLI as a reading the guard can
+> resolve, or the exporter copies the corpus's token list -- which is the allow-list this campaign
+> rejected in v3.24]`
+
+### One: the refusal was about a path, not about the data
+
+`main.py` recognises a dataset by a token in the **directory path** and then takes a column whose name
+it also decides: `frontend_latency` for Online Boutique, `{service}_latency` when that column exists,
+and `raise ValueError("SLI not implemented")` for a corpus it does not know. A case we export as
+`RE2-order-prod/order_cpu/1/data.csv` is well formed, on the right clock, complete in its
+modalities -- and refused before a single number is compared, with a message about our path.
+
+### Two: the option that copies the token list, refused for the second time in two rounds
+
+Pasting `online-boutique`/`RE2-OB`/`RE3-OB` into our layout would make upstream run tomorrow. It is
+also the allow-list v3.24 refused in `fault.parameterNotes`, with one extra cost: the token being
+copied is an *identity*. A synthetic storefront's dataset claiming `online-boutique` is the one thing
+a benchmark's path must not do.
+
+So the case answers the half that belongs to the data. `sli` is either the reading that ranks the
+case or one sentence saying why none can:
+
+```json
+"sli": { "service": "checkout-api", "metric": "request_duration_p99_ms" }
+"sli": { "none": "the two readings on this service are the share of summaries answering 5xx …" }
+```
+
+and the exporter publishes that series as `checkout-api_latency` -- **renamed**, not copied, because
+a second column holding one series' numbers is the drift v3.24 removed (`time, then one column per
+series` stays true).
+
+### Three: one token, two spellings, and the function that keeps them one
+
+The column name upstream builds and the directory segment we write are the same word. `casePath`'s
+service segment `caseToken(rootCauseComponent)` and `main.py`'s `service` are the same expression, so
+`export/sli.ts` uses the same function rather than a second sanitiser -- which would have produced
+`checkout_api_latency` against upstream's `checkoutapi` and been invisible to both halves' tests. The
+acceptance test takes `casePath`'s own output, applies `main.py`'s two lines to it, and requires the
+result to be `sliColumn`'s for `checkout-api`, `order` and `ts-route-service`.
+
+### Four: seven ways a declaration fails, and two of them need no telemetry
+
+`absent`, `unreadable` (five shapes, each naming which half is missing), `foreign`, `vague`,
+`unresolved`, `notDuration`, `collision`. `foreign` and `vague` are read from the file alone, so a
+corpus is refused before its telemetry is built; the other three are read from the signals, where the
+table exists. The exporter refuses a case by name rather than writing a `data.csv` whose ranking
+column is missing for a reason nobody wrote down.
+
+`notDuration` asks `util/unit.ts` rather than a list of its own: `_latency` asserts a dimension, so
+the unit has to be in it, and a unit nobody can convert is refused rather than assumed.
+
+### Five: the measurement, and the sentence it forces
+
+Two instruments, counted over different evidence:
+
+```
+sli 7 of 30 case(s) name the duration that ranks them, published as `<service>_latency`; 23 say why no reading can
+export RE1 30 case(s) written, a `latency` column in 7 of 30 · RE2 30 case(s) written, logs in 11 of 30, traces in 5 of 30, a `latency` column in 7 of 30 · RE3 5 case(s) written, logs in 2 of 5, traces in 1 of 5, a `latency` column in 1 of 5, 25 skipped
+```
+
+**Seven of thirty.** That is not a target missed; it is what a one-word vocabulary can rank. Upstream
+has exactly one name for the ranking series, so a case whose symptom is a share, a count or a byte
+size has nothing to publish under it, and the twenty-three reasons say which reading came closest.
+Three of them are durations that are not latencies -- `process_uptime_seconds`,
+`pod_ready_after_start_seconds`, the size of a lead-time error -- which is exactly the line a guard
+cannot draw and an author must.
+
+### Readings
+
+> Ledger for `v3.26`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **211 files, 5198 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **215 files, 5385 tests passed** (as of this commit) |
+| coverage | **99.97 / 99.75 / 100 / 99.97** (cli 100 / 100 / 100 / 100); `sli.ts` is 100 on all four |
+| cases that say which reading ranks them | **30 of 30** answer: **7** declare, **23** give a reason |
+| the column upstream looks for, in the exported tables | **7 of 30** (RE3: **1 of its 5** code cases) |
+| `sli.ts` and its test | **20 tests**: seven refusals, two resolutions, the path-parity proof, the sentence table |
+| `check-fault-cases.test.ts` | 124 → **130**: absent, foreign, vague, both-at-once, and the two-instrument partition |
+| status assertions that carry the guard's output | 34 of 120 → **120 of 120** |
+| export failure sites | **99** across 52 of 70 scripts, all annotated (line numbers moved, annotations did not) |
+| audits | 1–**333**, **330 findings** (absent: 118, 132–133) |
+
+### Left open
+
+- **The exporters publish `signal_ref` as the metric name alone.** Unchanged and now the oldest open
+  item on the list: a checkpoint of a two-carrier metric still reaches `rca100`, `openrca2` and
+  `itbench` as a bare name. `[open: the export format is a published contract with three targets, and
+  widening it is a decision rather than a repair, so it is not this round's to take]`
+- **Upstream's token table still refuses our path.** The half that was ours is answered; the half that
+  is theirs is not ours to answer, and `{system}` stays the case's own name.
+  `[open: a corpus whose path upstream recognises is a corpus whose baselines were tuned on it, and
+  ours are not]`
+- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round has not
+  started, and this round changed a declaration rather than a case's telemetry]`
+- **The bounds have never expired**, and the recording they are sized from is one run on one runner.
+  `[open: the refresh is a deliberate act (`measure-ci-baseline.mjs`), and the next round that adds
+  mutations to a battery re-takes it]`
+
+### Unchanged
+
+The corpus's telemetry, the metric tables, the anchors, the backends, the localisation readings, the
+published success ratios, and every budget the plan enforces. The export gained one column name for
+seven cases and lost the series' original name in those seven tables; no published number moved,
+because every ratio this repository computes is computed from the bundle rather than from `data.csv`.
