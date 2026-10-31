@@ -1402,6 +1402,21 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
   ) as Record<string, unknown>;
 
+  /**
+   * The checkout declaration plus a second series carrying one metric on another entity.
+   *
+   * The copy inherits the quote and the reason of the series it is copied from and moves one second
+   * past it, so the two are different readings of one quantity rather than two names for one number.
+   */
+  function withSecondCarrier(metric: string, service: string): Record<string, unknown> {
+    const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & {
+      series: Array<Record<string, unknown>>;
+    };
+    const first = edited.series.find((one) => one.metric === metric)!;
+    edited.series.push({ ...first, service, post: Number(first.post) + 1 });
+    return edited;
+  }
+
   /** The checkout declaration with one checkpoint edited, which is the case the scratch corpus writes. */
   function withCheckpoint(edit: (checkpoint: Record<string, unknown>) => void): string {
     return corpus({
@@ -1426,16 +1441,23 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // annotated one more case, which is the shape a guard must not have: it reports a change in
     // the data as a defect in the guard.
     const summary =
-      /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series, (\d+) of them computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact, (\d+) over a log line\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+      /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series -- (\d+) on the entity the checkpoint names and (\d+) on one that contains it -- (\d+) computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact, (\d+) over a log line\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
         result.out,
       );
     expect(summary, result.out).not.toBeNull();
-    const [, resolved, total, overSeries, , , configuration, logLines, failed, comparable] =
+    const [, resolved, total, overSeries, byEntity, byComponent, derived, , configuration, logLines, failed, comparable] =
       summary as unknown as string[];
     expect(resolved, 'every reference must resolve').toBe(total);
     expect(Number(total), 'the corpus must carry references for this to be a measurement').toBeGreaterThan(0);
     expect(Number(comparable), 'the guard must compare something').toBeGreaterThan(0);
     expect(failed, 'no comparable checkpoint may disagree with the data it names').toBe('0');
+    // The two halves of the series count are a partition of everything that is not derived, and the
+    // component half is not zero: an equality rule would have refused twelve annotations, so a guard
+    // that reported `0` here would mean the containment arm had become dead code.
+    expect(Number(byEntity) + Number(byComponent), 'each series resolves one way or the other').toBe(
+      Number(overSeries) - Number(derived),
+    );
+    expect(Number(byComponent), 'the corpus relies on containment, and the count says how much').toBeGreaterThan(0);
     // The kinds are a partition, and this assertion is the one an earlier draft had to withdraw:
     // it summed `over a series` and `computing from a reading` and got a larger number than the
     // total, because the log kind was counted and not printed. With the fourth kind printed the
@@ -1508,6 +1530,174 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
   });
 });
 
+describe('check-fault-cases · a series reference names an entity and a metric', () => {
+  // Finding 323, and the half of finding 299's repair that makes it a rule rather than a wish.
+  //
+  // A series is a reading taken *on* something, so `(entity, metric)` is its identity -- the pair
+  // `fault/background.ts` uses, and the pair both localisers key their statistics on. The guard built
+  // a map keyed on the metric name and read out of it, so the entity in a checkpoint was decoration:
+  // measured over the shipped corpus, 12 of 73 series checkpoints name an entity that does not carry
+  // the reading, and the same code would have accepted a checkpoint pointed at anything in the graph.
+  //
+  // The rule cannot be equality. All 12 are legitimate -- a container's memory figure filed under the
+  // service, because the ranking a solver reads is per service -- so what is required is that the
+  // reading is on the entity or on a component of it, which is the judgement `checkLogAttribution`
+  // has made about log lines since finding 286. Run over the corpus, the rule found one annotation
+  // that was wrong: `cp-lag` asserted the consumer group's lag on the *queue*, the wrong end of a
+  // producer/consumer pair, in a case whose own root-cause reason says the lag was consumer-side.
+  const CHECKOUT = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  /**
+   * The checkout declaration plus a second series carrying one metric on another entity.
+   *
+   * The copy inherits the quote and the reason of the series it is copied from and lands one second
+   * past it, so the two are two readings of one quantity rather than two names for one number --
+   * which is what makes the resolution observable: a checkpoint made true by one carrier and false by
+   * the other reports which one was read.
+   */
+  function withSecondCarrier(metric: string, service: string): Record<string, unknown> {
+    const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & {
+      series: Array<Record<string, unknown>>;
+    };
+    const first = edited.series.find((one) => one.metric === metric)!;
+    edited.series.push({ ...first, service, post: Number(first.post) + 1 });
+    return edited;
+  }
+
+  /** The checkout declaration with one checkpoint edited, which is the case the scratch corpus writes. */
+  function withCheckpoint(
+    id: string,
+    edit: (checkpoint: Record<string, unknown>) => void,
+    signals: Record<string, unknown> = CHECKOUT,
+  ): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(signals)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        const truth = faultCase.groundTruth as Record<string, unknown>;
+        const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+        edit(checkpoints.find((one) => one.checkpointId === id)!);
+      },
+    });
+  }
+
+  it('refuses two series with one pair, because a reference to either names neither', async () => {
+    // The rule used to read the *metric*, which is not the identity of a series: a reading is a
+    // quantity on something, so `(entity, metric)` is what a reference has to name (finding 323).
+    // The refusal now says both halves, because "two series named X" was true of a case that
+    // declared one metric on two entities -- which is legal, and is how a partition is written.
+    const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & { series: Array<Record<string, unknown>> };
+    edited.series.push({ ...edited.series[0]!, post: 1 });
+    const result = await run(['--cases', corpus({ signals: edited })]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "declares two series for 'request_duration_p99_ms' on 'checkout-api', so a reference to either names neither",
+    );
+  });
+
+  it('refuses a series the entity the checkpoint names does not carry', async () => {
+    // The defect the rule was written for. Before it, `signalRef` was resolved against a map keyed
+    // on the metric name, so this checkpoint -- which asserts a latency the payment service has
+    // nothing to do with -- resolved and compared and passed. Measured over the corpus: 12 of 73
+    // series checkpoints are carried a component away and all 12 are legitimate, so the rule cannot
+    // be equality; one of them pointed at the wrong end of a producer/consumer pair, which is the
+    // one that was wrong and this is why the rule is containment rather than either extreme.
+    const result = await run([
+      '--cases',
+      withCheckpoint('cp-p99', (cp) => {
+        cp.entityRef = 'service:synthetic-storefront/payment-service';
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "checkpoint 'cp-p99' names 'request_duration_p99_ms' on 'service:synthetic-storefront/payment-service', " +
+        'and the series carrying it are filed under checkout-api: a different component',
+    );
+  });
+
+  it('refuses a metric two components carry inside the entity the checkpoint names', async () => {
+    // The other half of finding 299's repair. One metric on two entities is now a legal declaration
+    // -- and the checkpoint that names the container of both has said something the data cannot
+    // answer, which is a refusal rather than a tie broken in whichever order the file was written.
+    const result = await run([
+      '--cases',
+      withCheckpoint(
+        'cp-throttled-counters',
+        (cp) => {
+          // The service contains both carriers and is neither of them, so the pair the checkpoint
+          // states is two series wide and the entity cannot choose between them.
+          cp.entityRef = 'service:synthetic-storefront/checkout-api';
+        },
+        withSecondCarrier('container_cpu_throttled_seconds_total', 'checkout-api-app'),
+      ),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "checkpoint 'cp-throttled-counters' names 'container_cpu_throttled_seconds_total' on " +
+        "'service:synthetic-storefront/checkout-api', and 2 series carry it where that entity cannot " +
+        'tell them apart (checkout-api-0, checkout-api-app)',
+    );
+  });
+
+  it('resolves the reading a checkpoint names when two components carry one metric', async () => {
+    // The capability, not only the refusal: the same two series, and a checkpoint that says which
+    // one it means. This is the shape a partition needs and the corpus could not write at all
+    // before the pair (`the members each side sees` was one series and one prose sentence).
+    const result = await run([
+      '--cases',
+      corpus({
+        signals: withSecondCarrier('container_cpu_throttled_seconds_total', 'checkout-api-app'),
+        mutate: (faultCase) => {
+          const truth = faultCase.groundTruth as Record<string, unknown>;
+          const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+          const checkpoint = checkpoints.find((one) => one.checkpointId === 'cp-throttled-counters')!;
+          checkpoint.entityRef = 'container:synthetic-storefront/checkout-api-app';
+          // The copy on the container climbs by one second, so the assertion has to be about the
+          // container's reading rather than the pod's: a test that passed on either would not say
+          // which series the pair resolution picked.
+          checkpoint.value = 95;
+        },
+      }),
+    ]);
+    expect(result.out).not.toContain('cannot tell them apart');
+    expect(result.status, result.out).toBe(0);
+  });
+
+  it('reads the series the pair names, which is a different number from its twin', async () => {
+    // The assertion above says the corpus is accepted; this one says *which* series was read. The
+    // two carriers differ by one second, so a checkpoint made true by one of them and false by the
+    // other turns the resolution into a visible decision: `> 96` against the pod's 96 fails, and the
+    // same case naming the container holds. A guard that resolved by rewriting the pair into a name
+    // would answer one of these two runs wrongly and both would look plausible.
+    const withPost = (entityRef: string, value: number): string =>
+      corpus({
+        signals: withSecondCarrier('container_cpu_throttled_seconds_total', 'checkout-api-app'),
+        mutate: (faultCase) => {
+          const truth = faultCase.groundTruth as Record<string, unknown>;
+          const checkpoints = truth.evidenceCheckpoints as Array<Record<string, unknown>>;
+          const checkpoint = checkpoints.find((one) => one.checkpointId === 'cp-throttled-counters')!;
+          checkpoint.entityRef = entityRef;
+          checkpoint.value = value;
+        },
+      });
+    const onPod = await run([
+      '--cases',
+      withPost('pod:synthetic-storefront/checkout-api-0', 96),
+    ]);
+    expect(onPod.status).toBe(2);
+    expect(onPod.out).toContain(
+      "asserts container_cpu_throttled_seconds_total > 96, and the series' post value is 96",
+    );
+    const onContainer = await run([
+      '--cases',
+      withPost('container:synthetic-storefront/checkout-api-app', 96),
+    ]);
+    expect(onContainer.status, onContainer.out).toBe(0);
+  });
+
+});
+
 describe('check-fault-cases · a derived checkpoint states the arithmetic it claims', () => {
   // Finding 245. `cp-processing-tripled` asserted `== 3` over a series whose post value is `0.06`,
   // because the 3 was `0.06 / 0.02` and the divisor appeared nowhere in the annotation. The guard
@@ -1548,7 +1738,7 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     // them: the difference is 4120ms and the annotation now has to say so in arithmetic.
     const result = await run(['--cases', derived('request_duration_p99_ms.post - request_duration_p99_ms.baseline')]);
     expect(result.status, result.out).toBe(0);
-    expect(result.out).toContain('1 of them computed from 2 reading(s)');
+    expect(result.out).toContain('1 computed from 2 reading(s)');
   });
 
   it('refuses a stated value the expression does not produce', async () => {
@@ -1667,14 +1857,6 @@ describe('check-fault-cases · a derived checkpoint states the arithmetic it cla
     ]);
     expect(result.status).toBe(1);
     expect(result.out).toContain("only a derived checkpoint carries an expression; this one is 'series'");
-  });
-
-  it('refuses two series with one name, because a reference to it names neither', async () => {
-    const edited = JSON.parse(JSON.stringify(CHECKOUT)) as Record<string, unknown> & { series: Array<Record<string, unknown>> };
-    edited.series.push({ ...edited.series[0]!, post: 1 });
-    const result = await run(['--cases', corpus({ signals: edited })]);
-    expect(result.status).toBe(2);
-    expect(result.out).toContain("declares two series named 'request_duration_p99_ms', so a reference to it names neither");
   });
 
   it('counts a derived assertion among the comparable ones, and only one that resolves', async () => {

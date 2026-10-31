@@ -32,16 +32,35 @@ import { convertUnit, dimensionOf, isConvertible, type Dimension } from '../util
  * unary      := '-' unary | primary
  * primary    := number | reference | '(' expression ')'
  * number     := digit+ ('.' digit+)? (('e' | 'E') ('+' | '-')? digit+)?
- * reference  := identifier '.' point
+ * reference  := identifier ('@' entity)? '.' point
  * identifier := [A-Za-z_][A-Za-z0-9_]*
+ * entity     := [A-Za-z0-9_-]+
  * point      := a member of SERIES_POINTS
  * ```
  *
- * Twelve lines of grammar is the whole language, and that is a decision rather than a limitation.
+ * Thirteen lines of grammar is the whole language, and that is a decision rather than a limitation.
  * Every operator added is an operator the guard must evaluate the same way the annotator meant, and
  * an expression language that grew functions and conditionals would be a programming language with
  * no specification. Multiplication, division, addition, subtraction and parentheses cover every
  * derived quantity this corpus can state: a ratio of two readings and a difference of two readings.
+ *
+ * ## A reference names an entity as well as a metric
+ *
+ * `request_duration_p99_ms` is not a series. It is half of one: a reading is a quantity taken *on*
+ * something, and production telemetry carries the same metric on many things at once -- every node
+ * of a cluster reports its own view of the member count, and a partition is precisely the case where
+ * two of them disagree. The first version of this module resolved a bare identifier against a map
+ * keyed on the metric name and read whichever entry came first, and that was safe only because the
+ * corpus guard refused two series with one name: **a rule that held because another rule refused the
+ * input**. The moment a case may declare one metric on two entities, the evaluator has to answer the
+ * question itself -- and it is the only place that can, because a checkpoint's `entityRef` is not part
+ * of the arithmetic.
+ *
+ * So a reference may name the entity, as `cluster_members_visible@search-node-4.post`, and a bare
+ * reference resolves only when exactly one entity carries the metric. Two carriers is a refusal
+ * naming both; a named entity that carries nothing is a refusal listing the carriers. The entity is
+ * spelled the way the signals file spells a series' `service`, because that is the string both sides
+ * of the join actually hold.
  *
  * ## Units: symbols with exponents, and the repository's conversion table where it applies
  *
@@ -88,15 +107,25 @@ export const RELATIVE_TOLERANCE = 1e-9;
 /** How deeply parentheses may nest before the parser refuses the expression. */
 export const MAX_EXPRESSION_DEPTH = 32;
 
-/** One series as an expression sees it: its metric name, its unit, and the points it declares. */
+/**
+ * One series as an expression sees it: which entity carries it, its metric name, its unit, and the
+ * points it declares.
+ *
+ * `entity` is required rather than optional. A reading is a quantity on something, and an optional
+ * field would let a caller build a series with no carrier -- which is the shape the module comment
+ * calls out: the reference is a pair, or it is not a reference.
+ */
 export interface ExpressionSeries {
+  /** The entity the reading was taken on, spelled as the signals file spells a series' `service`. */
+  entity: string;
   metric: string;
   unit: string;
   points: Partial<Record<SeriesPoint, number>>;
 }
 
-/** One reading an expression took. */
+/** One reading an expression took, named by the pair that identifies it. */
 export interface ExpressionReference {
+  entity: string;
   metric: string;
   point: SeriesPoint;
 }
@@ -120,6 +149,10 @@ export type ExpressionProblem =
   | { kind: 'tooDeep'; at: number }
   | { kind: 'unknownPoint'; at: number; point: string }
   | { kind: 'unknownSeries'; metric: string }
+  /** A reference named an entity, and no declared series carries that metric there. */
+  | { kind: 'unknownEntity'; metric: string; entity: string; carriers: string[] }
+  /** A bare reference to a metric that more than one entity carries. */
+  | { kind: 'ambiguousSeries'; metric: string; carriers: string[] }
   | { kind: 'missingPoint'; metric: string; point: SeriesPoint }
   | { kind: 'unsupportedUnit'; unit: string }
   | {
@@ -137,9 +170,18 @@ export type ExpressionProblem =
 /** Evaluation either produced a quantity or named the one thing that stopped it. */
 export type ExpressionOutcome = { ok: true; value: ExpressionValue } | { ok: false; problem: ExpressionProblem };
 
+type ReferenceNode = {
+  kind: 'reference';
+  /** Present only when the text named one: a bare reference is resolved, not assumed. */
+  entity?: string;
+  metric: string;
+  point: SeriesPoint;
+  at: number;
+};
+
 type Node =
   | { kind: 'number'; value: number }
-  | { kind: 'reference'; metric: string; point: SeriesPoint; at: number }
+  | ReferenceNode
   | { kind: 'negate'; operand: Node }
   | { kind: 'binary'; operator: '+' | '-' | '*' | '/'; left: Node; right: Node; at: number };
 
@@ -188,8 +230,18 @@ function referenceNode(cursor: Cursor): Node | undefined {
   const at = cursor.at;
   const metric = readPattern(cursor, /^[A-Za-z_][A-Za-z0-9_]*/);
   if (metric === undefined) return undefined;
+  let entity: string | undefined;
+  if (cursor.text.charAt(cursor.at) === '@') {
+    cursor.at += 1;
+    const entityAt = cursor.at;
+    entity = readPattern(cursor, /^[A-Za-z0-9_-]+/);
+    if (entity === undefined) {
+      throw new Unreadable({ kind: 'syntax', at: entityAt, expected: `an entity name after the '@' on '${metric}'` });
+    }
+  }
+  const written = entity === undefined ? metric : `${metric}@${entity}`;
   if (cursor.text.charAt(cursor.at) !== '.') {
-    throw new Unreadable({ kind: 'syntax', at: cursor.at, expected: `"." after the series name '${metric}'` });
+    throw new Unreadable({ kind: 'syntax', at: cursor.at, expected: `"." after the series name '${written}'` });
   }
   cursor.at += 1;
   const pointAt = cursor.at;
@@ -203,7 +255,9 @@ function referenceNode(cursor: Cursor): Node | undefined {
     // under `foo` would send the author to the metric name, which is right.
     throw new Unreadable({ kind: 'unknownPoint', at: pointAt, point });
   }
-  return { kind: 'reference', metric, point: point as SeriesPoint, at };
+  return entity === undefined
+    ? { kind: 'reference', metric, point: point as SeriesPoint, at }
+    : { kind: 'reference', entity, metric, point: point as SeriesPoint, at };
 }
 
 function primary(cursor: Cursor): Node {
@@ -457,28 +511,75 @@ interface Quantity {
   unit: Unit;
 }
 
-function evaluate(node: Node, series: ReadonlyMap<string, ExpressionSeries>): Quantity {
+/**
+ * What an evaluation carries: the series it may read, keyed by metric, and the readings it took.
+ *
+ * Keyed by metric and holding a *list*, because the metric alone does not identify a series. The
+ * empty bucket is not possible here -- the index is built from the series, one push per series -- so
+ * a metric that is in the map has at least one carrier, which is what lets `resolveSeries` treat
+ * "absent" and "present but empty" as one case.
+ */
+interface Evaluation {
+  readonly index: ReadonlyMap<string, readonly ExpressionSeries[]>;
+  readonly references: ExpressionReference[];
+}
+
+/**
+ * The series a reference names, or the one thing that stopped it resolving.
+ *
+ * Three outcomes rather than two, and the third is the point of the pair. `unknownSeries` is a metric
+ * no entity carries; `unknownEntity` is a metric that exists on other entities; `ambiguousSeries` is
+ * a bare reference to a metric more than one entity carries. Collapsing the last two into "not
+ * found" would tell an author their metric does not exist when what is missing is a decision.
+ */
+function resolveSeries(
+  index: ReadonlyMap<string, readonly ExpressionSeries[]>,
+  node: ReferenceNode,
+): ExpressionSeries {
+  const candidates = index.get(node.metric);
+  if (candidates === undefined) throw new Unreadable({ kind: 'unknownSeries', metric: node.metric });
+  const carriers = candidates.map((one) => one.entity);
+  if (node.entity !== undefined) {
+    const named = candidates.filter((one) => one.entity === node.entity);
+    if (named.length === 1) return named[0]!;
+    // Two series with one metric on one entity is refused by the signals file, so this arm is not
+    // reachable from a well-formed case. It is here because the module is total: a caller that
+    // handed in a duplicate gets a refusal, not whichever came first.
+    if (named.length > 1) throw new Unreadable({ kind: 'ambiguousSeries', metric: node.metric, carriers });
+    throw new Unreadable({ kind: 'unknownEntity', metric: node.metric, entity: node.entity, carriers });
+  }
+  if (candidates.length === 1) return candidates[0]!;
+  throw new Unreadable({ kind: 'ambiguousSeries', metric: node.metric, carriers });
+}
+
+function evaluate(node: Node, state: Evaluation): Quantity {
   switch (node.kind) {
     case 'number':
       return { value: node.value, unit: new Map() };
     case 'negate': {
-      const operand = evaluate(node.operand, series);
+      const operand = evaluate(node.operand, state);
       return { value: -operand.value, unit: operand.unit };
     }
     case 'reference': {
-      const declared = series.get(node.metric);
-      if (declared === undefined) throw new Unreadable({ kind: 'unknownSeries', metric: node.metric });
+      const declared = resolveSeries(state.index, node);
       const unit = parseUnit(declared.unit);
       if (unit === undefined) throw new Unreadable({ kind: 'unsupportedUnit', unit: declared.unit });
       const value = declared.points[node.point];
       if (typeof value !== 'number') {
         throw new Unreadable({ kind: 'missingPoint', metric: node.metric, point: node.point });
       }
+      // Recorded where it resolved, not by a second walk of the tree: a walk would look the metric up
+      // again and could name an entity this evaluation never read, which is two answers to one
+      // question. The reading is the pair, so the reference reports the pair.
+      const seen = state.references.some(
+        (one) => one.entity === declared.entity && one.metric === node.metric && one.point === node.point,
+      );
+      if (!seen) state.references.push({ entity: declared.entity, metric: node.metric, point: node.point });
       return { value, unit };
     }
     case 'binary': {
-      const left = evaluate(node.left, series);
-      const right = evaluate(node.right, series);
+      const left = evaluate(node.left, state);
+      const right = evaluate(node.right, state);
       if (node.operator === '+' || node.operator === '-') {
         return addOrSubtract(node.operator, left, right);
       }
@@ -491,24 +592,6 @@ function evaluate(node: Node, series: ReadonlyMap<string, ExpressionSeries>): Qu
   }
 }
 
-function collectReferences(node: Node, into: ExpressionReference[]): void {
-  switch (node.kind) {
-    case 'number':
-      return;
-    case 'negate':
-      collectReferences(node.operand, into);
-      return;
-    case 'reference': {
-      const seen = into.some((one) => one.metric === node.metric && one.point === node.point);
-      if (!seen) into.push({ metric: node.metric, point: node.point });
-      return;
-    }
-    case 'binary':
-      collectReferences(node.left, into);
-      collectReferences(node.right, into);
-  }
-}
-
 /**
  * Evaluate an expression against the series a case declares.
  *
@@ -518,24 +601,29 @@ function collectReferences(node: Node, into: ExpressionReference[]): void {
  * invent them differently.
  */
 export function evaluateExpression(text: string, series: readonly ExpressionSeries[]): ExpressionOutcome {
-  const byMetric = new Map<string, ExpressionSeries>();
-  for (const one of series) if (!byMetric.has(one.metric)) byMetric.set(one.metric, one);
-  let node: Node;
+  const index = new Map<string, ExpressionSeries[]>();
+  for (const one of series) {
+    const bucket = index.get(one.metric);
+    if (bucket === undefined) index.set(one.metric, [one]);
+    else bucket.push(one);
+  }
+  const state: Evaluation = { index, references: [] };
   let quantity: Quantity;
   // One `catch`, so there is one place that decides what an unreadable expression is and one place
   // that rethrows something else. Two of each is two chances to swallow a bug as a syntax error --
   // and `Unreadable` is the only thing this module throws on purpose.
   try {
-    node = parseExpression(text);
-    quantity = evaluate(node, byMetric);
+    const node = parseExpression(text);
+    quantity = evaluate(node, state);
   } catch (error) {
     if (error instanceof Unreadable) return { ok: false, problem: error.problem };
     throw error;
   }
   if (!Number.isFinite(quantity.value)) return { ok: false, problem: { kind: 'notFinite' } };
-  const references: ExpressionReference[] = [];
-  collectReferences(node, references);
-  return { ok: true, value: { value: quantity.value, unit: renderUnit(quantity.unit), references } };
+  return {
+    ok: true,
+    value: { value: quantity.value, unit: renderUnit(quantity.unit), references: state.references },
+  };
 }
 
 /**
@@ -612,6 +700,17 @@ export function describeExpressionProblem(problem: ExpressionProblem): string {
       );
     case 'unknownSeries':
       return `reads '${problem.metric}', which the signals file does not declare`;
+    case 'unknownEntity':
+      return (
+        `reads '${problem.metric}@${problem.entity}', and no declared series carries '${problem.metric}' ` +
+        `on that entity (it is carried by: ${problem.carriers.join(', ')})`
+      );
+    case 'ambiguousSeries':
+      return (
+        `reads '${problem.metric}', which ${String(problem.carriers.length)} entities carry ` +
+        `(${problem.carriers.join(', ')}), so a reference to it has to say which: ` +
+        `'${problem.metric}@<entity>.post'`
+      );
     case 'missingPoint':
       return `reads '${problem.metric}.${problem.point}', and that series declares no ${problem.point} value`;
     case 'unsupportedUnit':

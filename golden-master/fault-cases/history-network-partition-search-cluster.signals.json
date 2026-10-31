@@ -2,10 +2,10 @@
   "schema": "rca-bench-derived-signals/1",
   "origin": "derived",
   "caseId": "history-network-partition-search-cluster",
-  "why": "Telemetry for the partition case, and the corpus's first whose readings describe **two authorities at once**. Every earlier case measures one component getting worse; here the member count is three because a member can only see its own side of a fork, and the election counter moved twice because each half held its own vote. `stale_read_ratio` is the number that makes the difference operational: an unavailable cluster returns nothing and pages, a forked cluster returns yesterday's answer and is believed. The two configuration facts carry the parts of the ticket that are not measurements -- one firmware roll, seventeen minutes -- and they are declared rather than modelled as series because a roll is an event and a duration is an interval between two events, neither of which has samples. Everything is recorded against the cluster rather than against a node, and that is a limit rather than a choice: `signalRef` is one name resolved across the case, so 'the members each side sees' cannot be two series with one name, and a partition's two viewpoints are therefore one series and one prose sentence. The guard refuses two series with one name outright (finding 299 records why that refusal is the honest one, and what it costs).",
+  "why": "Telemetry for the partition case, and the corpus's first whose readings describe **two authorities at once**. Every earlier case measures one component getting worse; here the member count is three because a member can only see its own side of a fork, and the election counter moved twice because each half held its own vote. `stale_read_ratio` is the number that makes the difference operational: an unavailable cluster returns nothing and pages, a forked cluster returns yesterday's answer and is believed. The two configuration facts carry the parts of the ticket that are not measurements -- one firmware roll, seventeen minutes -- and they are declared rather than modelled as series because a roll is an event and a duration is an interval between two events, neither of which has samples. The two halves are two series of one metric, on two nodes, which the file could not express at all until finding 323: a reading is a quantity taken on something, so `(entity, metric)` is what a checkpoint names, and `cluster_members_visible` on `search-node-1` and on `search-node-4` are two statements rather than one name used twice. `stale_read_ratio` is the reading that needed it: the rack side answers from a half that never saw the deletes and reads 0.35, the half that kept the deletes reads 0, and a corpus that could hold one number per metric would have had to describe that asymmetry in prose.",
   "series": [
     {
-      "service": "search-cluster",
+      "service": "search-node-1",
       "metric": "cluster_members_visible",
       "unit": "count",
       "baseline": 6,
@@ -15,6 +15,16 @@
       "why": "the checkpoint `cp-members-halved` holds the value: three is one side's view of a six-node cluster that became two three-node clusters"
     },
     {
+      "service": "search-node-4",
+      "metric": "cluster_members_visible",
+      "unit": "count",
+      "baseline": 6,
+      "post": 3,
+      "noise": "none",
+      "quote": "each side elected its own leader",
+      "why": "the checkpoint `cp-members-other-side` holds the same three on the other half, and the pair is the fork: one series would not distinguish a cluster that lost three nodes from a cluster that has two halves"
+    },
+    {
       "service": "search-cluster",
       "metric": "leader_election_total",
       "unit": "count",
@@ -22,10 +32,10 @@
       "post": 20,
       "derivation": "counter",
       "quote": "each side elected its own leader",
-      "why": "the checkpoint `cp-two-elections` holds the difference: two elections in seventeen minutes, one per side, which is the count that separates a split from a failover"
+      "why": "the checkpoint `cp-two-elections` holds the difference: two elections in seventeen minutes, one per side, which is the count that separates a split from a failover. Recorded against the cluster because it is the only reading here that genuinely is the cluster's: each half contributed one election to a counter the cluster reports"
     },
     {
-      "service": "search-cluster",
+      "service": "search-node-4",
       "metric": "stale_read_ratio",
       "unit": "1",
       "baseline": 0,
@@ -33,6 +43,16 @@
       "noise": "none",
       "quote": "Queries on one side returned documents that the other side had already deleted",
       "why": "the checkpoint `cp-stale-reads` holds the value: the half that never saw a delete answers confidently, which is why a partition reads as a data-quality problem before it reads as an outage"
+    },
+    {
+      "service": "search-node-1",
+      "metric": "stale_read_ratio",
+      "unit": "1",
+      "baseline": 0,
+      "post": 0,
+      "noise": "none",
+      "quote": "Queries on one side returned documents that the other side had already deleted",
+      "why": "the checkpoint `cp-stale-reads-elsewhere` holds the zero: the other half saw the deletes, so it returns nothing stale at all. The contrast is the finding -- one side stale, one side correct, both serving -- and it is a second reading of one metric on a second node rather than a sentence in a `why`"
     }
   ]
 }

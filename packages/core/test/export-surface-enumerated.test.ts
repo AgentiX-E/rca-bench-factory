@@ -141,6 +141,7 @@ const ENUMERATED_MODULES = [
   'fault/background.ts',
   'fault/displacement.ts',
   'fault/log-attribution.ts',
+  'fault/reading-reference.ts',
   'fault/answer-presence.ts',
   'fault/sample-coverage.ts',
   'fault/baseline-localiser.ts',
@@ -265,6 +266,9 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'fault/expression.ts::ExpressionProblem': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionReference': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionSeries': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/reading-reference.ts::ReadingCarrier': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/reading-reference.ts::ReadingMatch': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/reading-reference.ts::ReadingRefusal': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionValue': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::ValidityCheck': 'type-only declaration; erases at runtime, so no consumer can name it',
   'ir/types.ts::FaultValidityVerdict': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -968,6 +972,10 @@ const TESTED = [
   'parseBackground',
   // fault/log-attribution.ts -- whose line a log checkpoint cites, joined to the entity it names.
   'checkLogAttribution',
+  // fault/reading-reference.ts -- which series a checkpoint names, which is `(entity, metric)` and
+  // was read as the metric alone until finding 323.
+  'resolveReading',
+  'describeReadingProblem',
   // fault/answer-presence.ts -- the answer component, joined to the names the series are filed under.
   'checkAnswerPresence',
   // fault/sample-coverage.ts -- the count that covers samples rather than entries.

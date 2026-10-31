@@ -2662,3 +2662,207 @@ ROUNDTRIP modalities 2 table(s) over 2 modality(ies): 2 of 2 log row(s), 2 of 2 
 
 `signals=84` is 80 metric readings plus two log lines and two spans, on the same case: the
 number says the modalities arrived, which the count-based assertions could not.
+
+## Finding 323 — the entity in a reference was decoration
+
+**What was wrong.** A checkpoint states an entity and a metric, and the guard resolved the metric.
+It built a map keyed on the metric name, looked the reference up in it, and compared the checkpoint's
+number with that series' post value. The entity was carried through the schema, printed in three
+exporters and never compared with anything -- the guard's text did not contain the string `entityRef`
+at all:
+
+```
+$ grep -c entityRef scripts/check-fault-cases.mjs     # before this round
+0
+```
+
+A series is a *reading taken on something*, so `(entity, metric)` is its identity. That is not a
+reading of the code, it is the pair the rest of the package already uses: `fault/background.ts`
+resolves a case's own declaration against the background on it, both localisers key their statistics
+on `service|metric`, and `fault/log-attribution.ts` has resolved a log checkpoint's entity against
+the line's author since finding 286. Ten lines below the series branch, in the same file, the log
+branch refused two entities as "a different component". The series branch did not look.
+
+**The measurement.** Before the rule existed, over the shipped corpus:
+
+```
+73 series checkpoints, 0 of them compared with the entity they name
+12 of the 73 name an entity that does not carry the reading
+  e.g. 'container_memory_working_set_mebibytes' asserted about container:ingest-writer-jvm,
+       filed under service:ingest-writer
+```
+
+All twelve are legitimate, which is why nothing ever disagreed: a container's working set is a
+container measurement and the corpus files it under the service because the ranking a solver reads
+is per service. The same code would have accepted a checkpoint pointed at anything in the graph, and
+that is not a hypothetical -- the test below is exactly that experiment:
+
+```
+# guard at HEAD, with cp-p99's entityRef repointed at service:payment-service
+$ git show HEAD:scripts/check-fault-cases.mjs > scripts/check-fault-cases.mjs
+$ npx vitest run test/check-fault-cases.test.ts -t "refuses a series the entity"
+  AssertionError: expected +0 to be 2
+1 failed
+```
+
+Exit `0`: a latency assertion about the checkout service, carried by the checkout service, attributed
+to the payment service, admitted.
+
+### The repair
+
+Three statements and one module.
+
+1. **The pair resolves, and containment counts.** `fault/reading-reference.ts` resolves
+   `(entityRef, metric)` against the series a case declares: the carrier has to be the entity the
+   checkpoint names, or a component of it -- the judgement `sameComponent` states and
+   `checkLogAttribution` already relies on. Equality would refuse the corpus's twelve; anything looser
+   is what the guard had.
+2. **Ambiguity is a refusal, not a tiebreak.** One metric on two entities is legal after finding 324,
+   so the resolver can find two carriers a named entity cannot tell apart. It reports them by name
+   instead of picking one.
+3. **The split is printed, not assumed.** The guard now counts how each series resolved --
+   `63 on the entity the checkpoint names and 12 on one that contains it` -- because a rule whose
+   weaker arm is never taken is a rule to delete, and a rule whose weaker arm is taken twelve times is
+   a fact about the corpus that a reader should see.
+4. **The sentences live with the type.** `describeReadingProblem` sits beside `resolveReading`, so the
+   four refusals cannot collapse into "does not resolve" at a call site that only knows it failed.
+
+| what | before | after |
+| --- | --- | --- |
+| the resolution | the metric name, in a map keyed on it | `(entity, metric)`, through the graph |
+| a checkpoint naming another component | accepted | refused, naming the entity and the carriers |
+| a metric two components carry | refused at the file | refused at the checkpoint that cannot say which |
+| series references that resolve | 73 of 73, none compared | 75 of 75, 63 exact and 12 through containment |
+| tests | — | `reading-reference.test.ts` (every arm, including the sibling replica), and five in the guard's own suite |
+
+### Why the rule found something on its first run
+
+The corpus run went red on one annotation, and the finding is worth its own entry: see 325. The
+rule's first act was to disagree with the corpus, which is the only evidence that a rule was asked
+rather than written to agree.
+
+### Acceptance
+
+```
+check-fault-cases: checkpoints 119 of 119 reference(s) resolve by kind (86 over a series --
+  63 on the entity the checkpoint names and 12 on one that contains it -- 11 computed from
+  22 reading(s), 24 citing a declared configuration fact, 9 over a log line);
+  0 of 110 comparable assertion(s) fail against the data they name
+```
+
+## Finding 324 — one metric on two entities was a name the file refused
+
+**What was wrong.** The signals file refused two series with one metric name, and the refusal was
+correct given what a name meant: a reference resolved to whichever series came first, so two series
+with one name made every reference to it a coin toss. But the refusal was not a defect in a case --
+it was a limit on what a case could say. A partition is two observations of one quantity that
+disagree, and the corpus could not write them:
+
+> "`signalRef` is one name, so a partition has one viewpoint" — finding 299, v3.16
+
+The case that needed it says so in its own `why`: *"`signalRef` is one name resolved across the case,
+so 'the members each side sees' cannot be two series with one name, and a partition's two viewpoints
+are therefore one series and one prose sentence."*
+
+**The second half.** The evaluator had the same defect one level down, and was safe only because the
+first rule refused the input:
+
+```ts
+// fault/expression.ts, before
+const byMetric = new Map<string, ExpressionSeries>();
+for (const one of series) if (!byMetric.has(one.metric)) byMetric.set(one.metric, one);
+```
+
+First wins, deterministically, and the test beside it said so: *"resolves a metric declared twice to
+the first, so the guard can report the ambiguity"*. That sentence is the defect stated as a design:
+the evaluator's rule held because another rule refused the input. The moment a duplicate is legal,
+the evaluator is the only place that can answer, and it has to.
+
+### The repair
+
+1. **The duplicate rule is the pair.** `(service, metric)` is what may not repeat; the same metric on
+   two entities is ordinary telemetry. The refusal now names both halves, because "two series named
+   X" was also true of a case that had done nothing wrong.
+2. **The grammar names the carrier.** `reference := identifier ('@' entity)? '.' point`, so
+   `cluster_members_visible@search-node-4.post` reads the half it says. A bare reference resolves only
+   when exactly one entity carries the metric; two carriers is a refusal naming both, and a named
+   entity that carries nothing is a refusal listing the carriers.
+3. **`ExpressionReference` reports the pair.** The evaluator pushes each reading where it resolves --
+   `{ entity, metric, point }` -- and `collectReferences`, the second walk of the tree that used to
+   build that list, is deleted. A walk would look the metric up a second time, and two lookups are two
+   answers to one question.
+4. **The corpus migrated.** `history-network-partition-search-cluster` is the case finding 299 said
+   should start the round, and it now carries two readings of `cluster_members_visible` on the two
+   halves (`search-node-1`, `search-node-4`), two of `stale_read_ratio` (`0` on the side that kept the
+   deletes, `0.35` on the side that never saw them), and the election counter still on the cluster
+   because that reading genuinely is the cluster's. Two checkpoints were added for the second half of
+   each pair.
+
+| reading | value | which half |
+| --- | --- | --- |
+| `cluster_members_visible` | 6 → 3 | both nodes: a member sees its own side, and each side is a majority of three |
+| `stale_read_ratio` | 0 | `search-node-1`, the half that saw the deletes |
+| `stale_read_ratio` | 0 → 0.35 | `search-node-4`, on the rack the firmware roll isolated |
+| `leader_election_total` | 18 → 20 | the cluster: two elections, one per side, a counter the cluster reports |
+
+### What it cost the benchmark, measured rather than argued
+
+```
+attributable      before            after
+rank 1            50 of 60 runs     48 of 60 runs
+strictly displaced   4 cases          5 cases
+```
+
+The fifth is the partition case, and it is the correct verdict rather than a regression: the loudest
+reading in that case is now a node's member count, and both baselines therefore answer
+`search-node-1` where the answer is the rack switch that forked it. A magnitude-based method
+answering "the node whose number moved most" for a partition is exactly the failure the corpus
+exists to record -- v3.16 said the same thing about the loss case in those words: *"not a defect to
+repair; it is the corpus doing what a benchmark is for"*. The case is still inside both baselines'
+top-K, so G4 holds; what changed is that it now discriminates.
+
+### Acceptance
+
+```
+check-fault-cases: OK (30 of 30 sample(s) carry a four-layer case; ... every case passes G1, G2
+  and G5 ...; 30 of 30 also carry telemetry whose origin is declared, which passes G3, and which
+  both the peak-z and the median-shift baselines place in their top-K; floor 30)
+```
+
+## Finding 325 — the rule's first run found one: the lag was asserted on the wrong end
+
+**What was wrong.** With finding 323's resolution in place, the corpus went red on one annotation:
+
+```
+check-fault-cases: 'history-kafka-consumer-lag' checkpoint 'cp-lag' names
+  'kafka_consumergroup_lag' on 'mq:synthetic-storefront/order-events', and the series
+  carrying it are filed under order-events-consumer: a different component, so the
+  assertion is about something other than what the checkpoint is about
+```
+
+Three statements in that case agree with the series and disagree with the checkpoint: the series is
+filed under `order-events-consumer`, the metric is `kafka_consumergroup_lag` -- a *consumer group's*
+lag -- and the case's own root-cause reason says the number was consumer-side:
+
+> "the consumers stayed alive and kept polling, so the lag was produced by consumer-side throughput
+> rather than by broker capacity"
+
+The checkpoint named the queue. That is where the symptom is visible to an operator and not where the
+reading was taken, and the two differed by nothing the guard could see: both entities exist, the
+metric name resolved, the assertion held.
+
+### The repair
+
+`cp-lag` names `service:synthetic-storefront/order-events-consumer`, and its description now carries
+the distinction the reading is for -- *"it accumulated on the group rather than on the topic: the
+broker served what it had while the consumers drained it more slowly"*. The reading itself did not
+move: where a number is measured is a fact about the data, and what it is asserted about is a
+statement the annotation makes.
+
+### Why this is the useful kind of evidence
+
+The rule was written because a name could be anything. It found one wrong annotation in thirty cases
+and twelve legitimate ones, and both numbers are needed: one refusal with no legitimate uses would
+suggest the rule is too strict to keep, and twelve legitimate uses with no refusal would suggest it
+is decoration. The split is `63 exact, 12 through containment, 0 refused` after the repair, and the
+one refusal is what the round can point at.

@@ -1990,9 +1990,9 @@ the modalities arrived, which no count of cases could.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **207 files, 5076 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **211 files, 5263 tests passed** (as of this commit) |
+| `core` test suite | **207 files, 5076 tests passed** (as of `3334f81`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `3334f81`) |
+| repo test suite | **211 files, 5263 tests passed** (as of `3334f81`) |
 | coverage | **99.97 / 99.76 / 100 / 99.97** (cli 100 / 100 / 100 / 100) — unchanged |
 | `export.test.ts` | 71 → **77 tests**, 5 of them the empty-table rule and one the structure verdict |
 | `target-requirements.test.ts` | 21 → **24 tests**, the blindness now asserted in both directions |
@@ -2019,3 +2019,156 @@ the modalities arrived, which no count of cases could.
 The corpus, the metric tables, the anchors, the backends, the 69 prose parameters, the two five-second
 budgets, `signalRef`'s shape, the two ledger rules and the published success ratios. v3.22 touched the
 export and the requirement row, and nothing that grades a full run.
+
+## v3.23 — the entity in a reference was decoration, and the rule's first run found one
+
+**What was at stake.** A checkpoint states two things: the entity an assertion is about, and the
+signal that carries it. The guard resolved the signal. It built a map keyed on the metric name and
+read the post value out of it, and the entity travelled through the schema, three exporters and the
+four-layer assessment without ever being compared with the reading. The guard's text did not contain
+the string `entityRef`:
+
+```
+$ grep -c entityRef scripts/check-fault-cases.mjs     # before this round
+0
+```
+
+That is not a missing check in the ordinary sense. A series is a quantity taken *on* something --
+`fault/background.ts` resolves a case's own declaration against the background on the pair, both
+localisers key their statistics on `service|metric`, and `fault/log-attribution.ts` has compared a
+log checkpoint's entity with the line's author since finding 286. Ten lines below the series branch,
+in the same file, the log branch refused two entities as "a different component". One reference kind
+was checked and the other was decoration.
+
+### One: the rule is containment, and the corpus decided that rather than the author
+
+Measured before writing anything, over the 73 series checkpoints the corpus carries: **12 of them name
+an entity that does not carry the reading**, and all 12 are the same legitimate shape -- a container's
+working set asserted about the container and filed under the service, because the ranking a solver
+reads is per service. Equality would refuse twelve correct annotations; the loose rule the guard had
+accepted anything. What is required is that the reading is on the entity the checkpoint names *or on a
+component of it*, which is what `sameComponent` states, and the split is now printed:
+
+```
+63 on the entity the checkpoint names and 12 on one that contains it
+```
+
+The demonstration that the loose rule was loose is an experiment rather than an argument: with
+`cp-p99`'s entity repointed at `service:payment-service`, the guard at HEAD exits `0` and the new one
+exits `2` naming both entities. `reading-reference.ts` is the module, `describeReadingProblem` sits
+beside the type so the four refusals cannot collapse into "does not resolve", and 15 unit tests plus 5
+guard tests cover every arm -- including the sibling replica, which is the one the *strict* rule gets
+right and the loose one gets wrong.
+
+### Two: one metric on two entities was a name the file refused
+
+The same defect's other face. The signals file refused two series with one metric name, and the
+refusal was correct given that a reference resolved to whichever came first -- but it was not a defect
+in a case, it was a limit on what a case could say. Finding 299 wrote the limit down in v3.16 and named
+the repair: resolve `(entity, metric)`.
+
+The evaluator held the same defect one level down, and was safe only because the file refused the
+input: `byMetric` kept the first entry, and the test beside it said so -- *"resolves a metric declared
+twice to the first, so the guard can report the ambiguity"*. A rule that holds because another rule
+refuses the input is not a rule; the moment a duplicate is legal, the evaluator is the only place that
+can answer. It now does: `reference := identifier ('@' entity)? '.' point`, a bare reference resolves
+only when exactly one entity carries the metric, and two carriers is a refusal naming both. The
+reference an evaluation reports is the pair, recorded where it resolved -- `collectReferences`, the
+second walk of the tree, is deleted.
+
+### Three: the corpus case that asked for it, and what it cost
+
+`history-network-partition-search-cluster` is the case finding 299 said a round should start from, and
+its own `why` described the limit: *"'the members each side sees' cannot be two series with one name,
+and a partition's two viewpoints are therefore one series and one prose sentence."* It now carries two
+readings of `cluster_members_visible` on the two halves, two of `stale_read_ratio` -- `0` on the side
+that kept the deletes and `0.35` on the side that never saw them -- and the election counter still on
+the cluster, because that reading genuinely is the cluster's. Two checkpoints carry the second half of
+each pair.
+
+The benchmark moved, and the movement is the argument for the migration rather than against it:
+
+| reading | before | after |
+| --- | --- | --- |
+| rank 1 | 50 of 60 runs | 48 of 60 runs |
+| strictly displaced | 4 cases | **5 cases** |
+| series references resolving | 73 of 73, none compared | 75 of 75, 63 exact and 12 through containment |
+
+The fifth displaced case is the partition itself: its loudest reading is now a node's member count, so
+both baselines answer `search-node-1` where the answer is the rack switch that forked it. A
+magnitude-based method answering "the node whose number moved most" for a partition is the failure the
+corpus exists to record, and the case stays inside both baselines' top-K, so G4 holds. What changed is
+that the case now discriminates.
+
+### Four: a refusal at the file became a refusal at the checkpoint
+
+The duplicate rule keyed on the metric name, so it could not tell two things apart: two series with one
+identity (a defect) and one quantity on two entities (ordinary telemetry). It reads the pair now, and
+its message names both halves. The ambiguity the change creates is refused where the entity is known --
+at the checkpoint, by the resolver -- rather than at the file, where it would have made a partition
+unwritable.
+
+### Five: the rule's first run found one
+
+With the resolution in place the corpus went red on one annotation:
+
+```
+checkpoint 'cp-lag' names 'kafka_consumergroup_lag' on 'mq:synthetic-storefront/order-events',
+and the series carrying it are filed under order-events-consumer: a different component
+```
+
+Three statements in that case agree with the series and disagree with the checkpoint: the series is
+filed under the consumer, the metric is a *consumer group's* lag, and the case's own root-cause reason
+says "the lag was produced by consumer-side throughput rather than by broker capacity". The checkpoint
+named the queue -- where the symptom is visible, not where the reading was taken. It names the consumer
+now, and its description carries the distinction the reading is for. The reading did not move: where a
+number is measured is a fact about the data.
+
+That is the whole value of the rule, and both halves are needed: one refusal with no legitimate uses
+would mean the rule is too strict to keep, twelve legitimate uses with no refusal would mean it is
+decoration. `63 exact, 12 through containment, 0 refused` after the repair.
+
+### Readings
+
+| item | value |
+| --- | --- |
+| `core` test suite | **208 files, 5104 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **212 files, 5291 tests passed** (as of this commit) |
+| coverage | **99.97 / 99.76 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- unchanged |
+| `reading-reference.test.ts` | **new, 15 tests**: exact, containment, sibling replica, other service, unknown metric, unknown entity, the two halves of a split, a duplicate pair, a carrier the graph does not hold, a missing field on each side, and the sentences |
+| `expression.test.ts` | 43 → **47 tests**, the duplicate reading now refused instead of resolved to the first |
+| `check-fault-cases.test.ts` | **+5 tests** in a block of their own, and the resolution split asserted as a partition |
+| series references | **75 of 75** resolve: 63 on the entity named, 12 on a component of it |
+| all references | **119 of 119** resolve (86 over a series, 24 configuration, 9 log) |
+| comparable assertions | **0 of 110** fail against the data they name |
+| localisation | 60 baseline runs over 30 cases; rank 1: **48**, rank 2: 8, rank 3: 4; strict **10**, tie 2, same-component 0, none 48; **five cases strictly displaced** |
+| audits | 1–**325**, **322 findings** (absent: 118, 132–133) |
+| export failure sites | 95 across 50 scripts, annotations carried (re-derived) |
+
+### Left open
+
+- **The exporters publish `signal_ref` as the metric name alone.** A checkpoint of a two-carrier
+  metric reaches `rca100`, `openrca2` and `itbench` as a bare name, and the entity beside it in the
+  export is the causal step's end rather than the reading's carrier. Nothing in the official scoring
+  path joins on that field, so no number moves -- but the published field is now a half of what the
+  annotation states, and `format-spec.mjs` is where that would be repaired. `[open: the export format
+  is a published contract with three targets, and widening it is a decision rather than a fix]`
+- **The two ledger rules read presence, not ownership** (finding 309). Two rounds whose ledgers were
+  swapped would each hold exactly one and pass. `[open: unchanged this round, and it is the last of the
+  two ledger items v3.19 left]`
+- **69 of 98 parameters are prose** (finding 300), 30 percent read. `[open: the mechanism is still 30
+  percent used, and the round that closes it has to decide what a descriptive key is]`
+- **The stall budget is a margin, not a measurement** (finding 297), and the two five-second readings
+  (5117 ms, 5056 ms) have never been reproduced alone. `[open: unchanged, and the gauge that would
+  replace it is the item v3.21 left]`
+- **19 of 30 cases still have no log line and 25 no span.** `[open: the shares moved not at all this
+  round; the corpus-authoring round is still unstarted]`
+
+### Unchanged
+
+The corpus size, the metric tables, the anchors, the backends, the 69 prose parameters, the two
+five-second budgets, the two ledger rules and the published success ratios. v3.23 touched how a
+reference resolves and what a signals file may declare, so every case was re-read and no case's
+answer changed; the partition case's readings moved from the cluster to its two halves, which is the
+migration finding 299 asked for and the one number that moved.

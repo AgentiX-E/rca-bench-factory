@@ -150,7 +150,23 @@ function expansionTime(faultCase) {
  * stays, because the call it was written for is the one thing below that must not read the file.
  */
 function resolvedDeclaration(one, readings) {
-  return { ...one, ...(readings.get(String(one?.metric)) ?? {}) };
+  return { ...one, ...(readings.get(readingKey(one)) ?? {}) };
+}
+
+/**
+ * The key a reading is filed under: the entity and the metric, not the metric alone.
+ *
+ * A series is a quantity taken *on* something, so `(entity, metric)` is its identity -- the pair
+ * `fault/background.ts` uses to let a case's own declaration win over the background, and the pair
+ * both localisers key their per-service statistics on. This map was keyed on the metric name, which
+ * meant a case could declare one quantity on two entities (a partition's two halves, each reporting
+ * its own member count) and the second would silently overwrite the first (finding 323).
+ *
+ * `\u0000` rather than a printable separator because a service name may contain any punctuation a
+ * `|`, `/` or `.` would collide with, and two keys that collide is the defect this replaced.
+ */
+function readingKey(one) {
+  return `${String(one?.service ?? '')}\u0000${String(one?.metric ?? '')}`;
 }
 
 /**
@@ -243,6 +259,10 @@ const checkpointRefs = {
   total: 0,
   resolved: 0,
   resolvedAny: 0,
+  /** Series checkpoints whose entity is the very one carrying the reading. */
+  byEntity: 0,
+  /** Series checkpoints that resolved through containment: the reading is a component away. */
+  byComponent: 0,
   derived: 0,
   derivedRefs: 0,
   configuration: 0,
@@ -593,7 +613,7 @@ for (const entry of index.cases) {
         }
         points[point] = quantity.value;
       }
-      resolvedReadings.set(metric, points);
+      resolvedReadings.set(readingKey(one), points);
     }
 
     for (const one of series) {
@@ -642,7 +662,7 @@ for (const entry of index.cases) {
         const unbounded = bounds.max === Number.POSITIVE_INFINITY;
         const range = `[${String(bounds.min)}, ${unbounded ? '∞)' : `${String(bounds.max)}]`}`;
         for (const point of core.SERIES_POINTS) {
-          const value = resolvedReadings.get(String(one?.metric))?.[point];
+          const value = resolvedReadings.get(readingKey(one))?.[point];
           if (typeof value !== 'number') continue;
           if (value < bounds.min || value > bounds.max) {
             problems.push(
@@ -658,7 +678,7 @@ for (const entry of index.cases) {
       // 201.5 things would either break the invariant or move the reading the file states.
       if (typeof one?.unit === 'string' && !core.admitsFraction(one.unit)) {
         for (const point of core.SERIES_POINTS) {
-          const value = resolvedReadings.get(String(one?.metric))?.[point];
+          const value = resolvedReadings.get(readingKey(one))?.[point];
           if (typeof value !== 'number' || Number.isInteger(value)) continue;
           problems.push(
             `'${caseId}' declares ${point} ${String(value)} for '${String(one?.metric)}' in ` +
@@ -730,17 +750,30 @@ for (const entry of index.cases) {
     // eight of eleven named a series that did not exist (finding 243). `signalKind` says which kind,
     // and each kind has its own rule, because a rule that treated them alike would be wrong for at
     // least one of them.
+    const seriesByPair = new Map();
     const seriesByMetric = new Map();
     for (const one of series) {
       const metric = String(one?.metric);
-      // Two declarations of one metric: a reference resolves to whichever came second, and nothing in
+      const key = readingKey(one);
+      // Two declarations of one *pair*: a reference resolves to whichever came second, and nothing in
       // the file says which of them the checkpoint meant. Reported because the resolution that
       // follows would otherwise be a coin toss the guard does not know it is making.
-      if (seriesByMetric.has(metric)) {
-        problems.push(`'${caseId}' declares two series named '${metric}', so a reference to it names neither`);
+      //
+      // One metric on two entities is not that defect, and until this round the rule could not tell
+      // the two apart: it keyed on the name, so a case could not say "the members each side sees" at
+      // all (finding 299). It can now, and the ambiguity that creates is resolved where the entity is
+      // known -- at the checkpoint, by `resolveReading`.
+      if (seriesByPair.has(key)) {
+        problems.push(
+          `'${caseId}' declares two series for '${metric}' on '${String(one?.service ?? '')}', ` +
+            'so a reference to either names neither',
+        );
         continue;
       }
-      seriesByMetric.set(metric, one);
+      seriesByPair.set(key, one);
+      const bucket = seriesByMetric.get(metric);
+      if (bucket === undefined) seriesByMetric.set(metric, [one]);
+      else bucket.push(one);
     }
     // Whether the answer is a name the telemetry can score (finding 298).
     //
@@ -760,9 +793,12 @@ for (const entry of index.cases) {
     // The same series in the shape the expression evaluator reads, with every point in
     // `SERIES_POINTS` read through the tuple -- so a third point needs an edit in one place.
     const expressionSeries = series.map((one) => ({
+      // The carrier travels with the metric: an expression over a quantity two entities report has
+      // to be able to say which, and `cluster_members_visible@node-4.post` is how (`finding 324`).
+      entity: String(one?.service ?? ''),
       metric: String(one?.metric),
       unit: typeof one?.unit === 'string' ? one.unit : '',
-      points: resolvedReadings.get(String(one?.metric)) ?? {},
+      points: resolvedReadings.get(readingKey(one)) ?? {},
     }));
     const logIds = new Set();
     const logBodies = new Map();
@@ -957,16 +993,27 @@ for (const entry of index.cases) {
         }
         continue;
       }
-      const declared = seriesByMetric.get(ref);
-      if (declared === undefined) {
-        problems.push(
-          `'${caseId}' checkpoint '${id}' names '${ref}', which the signals file does not declare ` +
-            `(it declares: ${[...seriesByMetric.keys()].join(', ') || 'none'})`,
-        );
+      // Which series the pair names. The guard read the metric alone out of a map keyed on the name,
+      // so the entity in a checkpoint was decoration: 13 of the corpus's 73 series checkpoints name
+      // an entity that does not carry the reading -- a container's memory figure filed under its
+      // service -- and the same code would have accepted a checkpoint pointed at an unrelated pod.
+      // The rule next door had it right, for log lines, since finding 286; ten lines apart, the series
+      // branch never looked (finding 323).
+      const resolution = core.resolveReading({
+        metric: ref,
+        entityRef: typeof checkpoint.entityRef === 'string' ? checkpoint.entityRef : '',
+        series,
+        graph: parsedGraph,
+      });
+      if (resolution.kind !== 'resolved') {
+        problems.push(`'${caseId}' checkpoint '${id}' ${core.describeReadingProblem(resolution)}`);
         continue;
       }
+      const declared = resolution.series;
       checkpointRefs.resolved += 1;
       checkpointRefs.resolvedAny += 1;
+      if (resolution.via === 'entity') checkpointRefs.byEntity += 1;
+      else checkpointRefs.byComponent += 1;
       if (declared.unit !== checkpoint.unit) {
         problems.push(
           `'${caseId}' checkpoint '${id}' is in '${String(checkpoint.unit)}' but the series '${ref}' is in '${String(declared.unit)}'`,
@@ -982,7 +1029,7 @@ for (const entry of index.cases) {
       // The resolved reading, and `compareExactly` rather than a chain of ternaries: this branch
       // carried its own copy of the six operators until finding 258, which is the third time the
       // package had implemented "compare two numbers" (finding 247 consolidated the other two).
-      const post = resolvedReadings.get(ref)?.post;
+      const post = resolvedReadings.get(readingKey(declared))?.post;
       // A reading that did not resolve already produced a problem; comparing `undefined` here would
       // report it a second time as a failing assertion.
       if (typeof post !== 'number') continue;
@@ -1241,7 +1288,8 @@ function logCheckpointCounts() {
   console.log(
     `check-fault-cases: checkpoints ${String(checkpointRefs.resolvedAny)} of ` +
       `${String(checkpointRefs.total)} reference(s) resolve by kind (${String(checkpointRefs.resolved)} over a ` +
-      `series, ${String(checkpointRefs.derived)} of them computed from ` +
+      `series -- ${String(checkpointRefs.byEntity)} on the entity the checkpoint names and ` +
+      `${String(checkpointRefs.byComponent)} on one that contains it -- ${String(checkpointRefs.derived)} computed from ` +
       `${String(checkpointRefs.derivedRefs)} reading(s), ${String(checkpointRefs.configuration)} citing a ` +
       `declared configuration fact, ${String(checkpointRefs.logLines)} over a log line); ` +
       `${String(checkpointRefs.false)} of ` +

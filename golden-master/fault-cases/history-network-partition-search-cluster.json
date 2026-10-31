@@ -30,7 +30,7 @@
   "groundTruth": {
     "rootCauseEntityId": "node:synthetic-storefront/rack-7-switch",
     "rootCauseComponent": "search-cluster",
-    "rootCauseReason": "The rack switch carried three of the six search nodes, and its firmware roll took those three off the network for seventeen minutes. The cluster did not fail; it forked. Three nodes on one side and three on the other each held a majority of three, each elected its own leader, and both halves kept answering, which is why nothing paged on availability and why the first symptom was wrong data rather than missing data: a read served by the side that had not seen a delete returned the document. That is the shape this case is about -- a partition is not a component that stopped working, it is two components that both work and disagree -- and it is why the annotations are two readings of one cluster rather than a reading per service. The entity layer is the switch because the firmware is what happened, and the answer component is the cluster because the cluster is what an operator can repair: the switch belongs to the network team, and what has to change is how the cluster tolerates losing a rack. Nothing in the application changed, which is written down as a declared fact rather than argued in prose, and the seventeen minutes are the gap between 03:02 and 03:19 rather than an estimate.",
+    "rootCauseReason": "The rack switch carried three of the six search nodes, and its firmware roll took those three off the network for seventeen minutes. The cluster did not fail; it forked. Three nodes on one side and three on the other each held a majority of three, each elected its own leader, and both halves kept answering, which is why nothing paged on availability and why the first symptom was wrong data rather than missing data: a read served by the side that had not seen a delete returned the document. That is the shape this case is about -- a partition is not a component that stopped working, it is two components that both work and disagree -- and it is why the annotations are two readings of one metric on two nodes rather than one reading of the cluster. The entity layer is the switch because the firmware is what happened, and the answer component is the cluster because the cluster is what an operator can repair: the switch belongs to the network team, and what has to change is how the cluster tolerates losing a rack. Nothing in the application changed, which is written down as a declared fact rather than argued in prose, and the seventeen minutes are the gap between 03:02 and 03:19 rather than an estimate.",
     "rootCauseIndicators": [
       {
         "type": "metric",
@@ -84,7 +84,7 @@
       },
       {
         "checkpointId": "cp-members-halved",
-        "entityRef": "service:synthetic-storefront/search-cluster",
+        "entityRef": "pod:synthetic-storefront/search-node-1",
         "signalRef": "cluster_members_visible",
         "comparator": "==",
         "value": 3,
@@ -103,7 +103,7 @@
       },
       {
         "checkpointId": "cp-stale-reads",
-        "entityRef": "service:synthetic-storefront/search-cluster",
+        "entityRef": "pod:synthetic-storefront/search-node-4",
         "signalRef": "stale_read_ratio",
         "comparator": "==",
         "value": 0.35,
@@ -119,6 +119,24 @@
         "value": 17,
         "unit": "min",
         "description": "the interval between the split and the heal, which is the window in which both halves were authoritative and neither was right"
+      },
+      {
+        "checkpointId": "cp-members-other-side",
+        "entityRef": "pod:synthetic-storefront/search-node-4",
+        "signalRef": "cluster_members_visible",
+        "comparator": "==",
+        "value": 3,
+        "unit": "count",
+        "description": "the other half sees three as well, and the pair is the fork: a cluster that lost three nodes would leave the survivors seeing three from one side, while a forked cluster has two sides that each see a majority and each believe it is the cluster"
+      },
+      {
+        "checkpointId": "cp-stale-reads-elsewhere",
+        "entityRef": "pod:synthetic-storefront/search-node-1",
+        "signalRef": "stale_read_ratio",
+        "comparator": "==",
+        "value": 0,
+        "unit": "1",
+        "description": "the half that kept the deletes returns nothing stale, which is what makes the thirty-five percent a property of one side rather than of the cluster"
       }
     ],
     "remediation": [

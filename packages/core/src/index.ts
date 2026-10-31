@@ -810,6 +810,14 @@ export type { BackgroundDeclaration, BackgroundSeries } from './fault/background
 export { checkLogAttribution } from './fault/log-attribution.js';
 export type { LogLineAttribution } from './fault/log-attribution.js';
 
+// Which series a checkpoint's `signalRef` names. A series is a reading taken on something, so its
+// identity is `(entity, metric)` -- and the guard resolved the metric alone for as long as the file
+// refused a repeated metric name. Finding 323 is the entity half of that join, and finding 299's
+// repair (one metric on two entities) is what makes the ambiguity a case the resolver has to answer
+// rather than a tie it may break.
+export { describeReadingProblem, resolveReading } from './fault/reading-reference.js';
+export type { ReadingCarrier, ReadingMatch, ReadingRefusal } from './fault/reading-reference.js';
+
 // Whether the answer is a name the telemetry carries. A case whose readings are filed under its pod
 // while the answer is the service is complete in every layer and impossible to score, and the gate
 // that noticed said "no baseline can locate the root cause" -- a sentence about solvers.

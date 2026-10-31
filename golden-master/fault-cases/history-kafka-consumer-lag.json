@@ -51,12 +51,12 @@
     "evidenceCheckpoints": [
       {
         "checkpointId": "cp-lag",
-        "entityRef": "mq:synthetic-storefront/order-events",
+        "entityRef": "service:synthetic-storefront/order-events-consumer",
         "signalRef": "kafka_consumergroup_lag",
         "comparator": ">=",
         "value": 4200000,
         "unit": "count",
-        "description": "lag accumulated across the six-hour window, in messages"
+        "description": "lag accumulated across the six-hour window, in messages, and it accumulated on the group rather than on the topic: the broker served what it had while the consumers drained it more slowly, which is the reading that separates this case from a broker at capacity"
       },
       {
         "checkpointId": "cp-processing-tripled",

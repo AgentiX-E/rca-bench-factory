@@ -27,8 +27,23 @@ import {
  * an author writes it.
  */
 
-function series(metric: string, unit: string, points: Partial<Record<'baseline' | 'post', number>>): ExpressionSeries {
-  return { metric, unit, points };
+/**
+ * One series, with the entity that carries it.
+ *
+ * The entity is part of the identity rather than decoration, so the default here is a single named
+ * carrier and every test that cares about the pair names its own. A helper that left it out would
+ * build a shape the type refuses, and the tests that passed would be about a reference no case can
+ * write.
+ */
+const CARRIER = 'checkout';
+
+function series(
+  metric: string,
+  unit: string,
+  points: Partial<Record<'baseline' | 'post', number>>,
+  entity: string = CARRIER,
+): ExpressionSeries {
+  return { entity, metric, unit, points };
 }
 
 /** The processing time a `tripled` claim is about: 0.02 s before the change, 0.06 s after. */
@@ -109,8 +124,8 @@ describe('expression · references', () => {
       value: 889,
       unit: 'ms',
       references: [
-        { metric: 'client_span_duration_ms', point: 'post' },
-        { metric: 'server_handler_time_ms', point: 'post' },
+        { entity: CARRIER, metric: 'client_span_duration_ms', point: 'post' },
+        { entity: CARRIER, metric: 'server_handler_time_ms', point: 'post' },
       ],
     });
   });
@@ -122,19 +137,100 @@ describe('expression · references', () => {
     );
     if (!outcome.ok) throw new Error(describeExpressionProblem(outcome.problem));
     expect(outcome.value.references).toEqual([
-      { metric: 'client_span_duration_ms', point: 'post' },
-      { metric: 'client_span_duration_ms', point: 'baseline' },
+      { entity: CARRIER, metric: 'client_span_duration_ms', point: 'post' },
+      { entity: CARRIER, metric: 'client_span_duration_ms', point: 'baseline' },
     ]);
     expect(outcome.value.value).toBe(12);
   });
 
-  it('resolves a metric declared twice to the first, so the guard can report the ambiguity', () => {
-    // The evaluator does not refuse a duplicate: naming it is the corpus guard's job, and it does.
-    // What this pins is that the evaluator is deterministic about which one it read, because
-    // `new Map(pairs)` and a `for` loop would differ and only one of them is testable here.
-    const first = series('request_duration_p99_ms', 'ms', { post: 4300 });
-    const second = series('request_duration_p99_ms', 'ms', { post: 1 });
-    expect(valueOf('request_duration_p99_ms.post', [first, second])).toBe(4300);
+  it('refuses a bare reference to a metric two entities carry, rather than reading the first', () => {
+    // This test used to assert the opposite, and the sentence it asserted was the defect: "resolves
+    // a metric declared twice to the first, so the guard can report the ambiguity". The evaluator was
+    // deterministic, and it was only safe because the signals file refused two series with one name --
+    // a rule that held because another rule refused the input. One metric on two entities is now a
+    // legal declaration (finding 299's repair), so the evaluator is the only place that can answer.
+    const left = series('request_duration_p99_ms', 'ms', { post: 4300 }, 'checkout-0');
+    const right = series('request_duration_p99_ms', 'ms', { post: 1 }, 'checkout-1');
+    expect(problemOf('request_duration_p99_ms.post', [left, right])).toEqual({
+      kind: 'ambiguousSeries',
+      metric: 'request_duration_p99_ms',
+      carriers: ['checkout-0', 'checkout-1'],
+    });
+  });
+
+  it('refuses an "@" with no entity name after it, at the position the name belongs', () => {
+    // One of the two ways the pair can be written wrongly, and the offset is the half that is
+    // missing: a caret under the metric would send the author to a name that is right.
+    expect(problemOf('per_message_processing_seconds@.post')).toEqual({
+      kind: 'syntax',
+      at: 31,
+      expected: "an entity name after the '@' on 'per_message_processing_seconds'",
+    });
+  });
+
+  it('refuses two series on one entity, even when the reference names the entity', () => {
+    // The signals file refuses a duplicate pair, so this arm is not reachable from a well-formed
+    // case. It is here because the module is total: a caller that handed in a duplicate gets the
+    // refusal rather than whichever came first, which is what the previous version of this file
+    // asserted and what one metric on two entities made unsafe.
+    const first = series('request_duration_p99_ms', 'ms', { post: 4300 }, 'checkout-0');
+    const second = series('request_duration_p99_ms', 'ms', { post: 1 }, 'checkout-0');
+    expect(problemOf('request_duration_p99_ms@checkout-0.post', [first, second])).toEqual({
+      kind: 'ambiguousSeries',
+      metric: 'request_duration_p99_ms',
+      carriers: ['checkout-0', 'checkout-0'],
+    });
+  });
+
+  it('names both carriers and the repair when a bare reference is ambiguous', () => {
+    // The sentence is the whole of what an author has to act on, so it carries the shape of the fix
+    // rather than the diagnosis alone: `metric@<entity>.post` is a reference they can copy.
+    const left = series('cluster_members_visible', 'count', { post: 3 }, 'node-1');
+    const right = series('cluster_members_visible', 'count', { post: 3 }, 'node-4');
+    const outcome = evaluateExpression('cluster_members_visible.post', [left, right]);
+    if (outcome.ok) throw new Error('expected the bare reference to be refused');
+    expect(describeExpressionProblem(outcome.problem)).toBe(
+      "reads 'cluster_members_visible', which 2 entities carry (node-1, node-4), so a reference " +
+        "to it has to say which: 'cluster_members_visible@<entity>.post'",
+    );
+  });
+
+  it('names the entity and the carriers when the reference names the wrong one', () => {
+    const only = series('cluster_members_visible', 'count', { post: 3 }, 'node-1');
+    const outcome = evaluateExpression('cluster_members_visible@node-4.post', [only]);
+    if (outcome.ok) throw new Error('expected the wrong entity to be refused');
+    expect(describeExpressionProblem(outcome.problem)).toBe(
+      "reads 'cluster_members_visible@node-4', and no declared series carries " +
+        "'cluster_members_visible' on that entity (it is carried by: node-1)",
+    );
+  });
+
+  it('names the carrier when the reference names an entity that carries nothing', () => {
+    const left = series('request_duration_p99_ms', 'ms', { post: 4300 }, 'checkout-0');
+    expect(problemOf('request_duration_p99_ms@settlement.post', [left])).toEqual({
+      kind: 'unknownEntity',
+      metric: 'request_duration_p99_ms',
+      entity: 'settlement',
+      carriers: ['checkout-0'],
+    });
+  });
+
+  it('reads the half an entity-qualified reference names, and says which reading it took', () => {
+    // The partition case's shape: one quantity, two carriers, two different numbers. The difference
+    // between the halves is the evidence, so an expression that could not name both would be unable
+    // to state the case's only interesting arithmetic.
+    const left = series('cluster_members_visible', 'count', { baseline: 6, post: 3 }, 'node-1');
+    const right = series('cluster_members_visible', 'count', { baseline: 6, post: 3 }, 'node-4');
+    const outcome = evaluateExpression('cluster_members_visible@node-1.post + cluster_members_visible@node-4.post', [
+      left,
+      right,
+    ]);
+    if (!outcome.ok) throw new Error(describeExpressionProblem(outcome.problem));
+    expect(outcome.value.value).toBe(6);
+    expect(outcome.value.references).toEqual([
+      { entity: 'node-1', metric: 'cluster_members_visible', point: 'post' },
+      { entity: 'node-4', metric: 'cluster_members_visible', point: 'post' },
+    ]);
   });
 });
 

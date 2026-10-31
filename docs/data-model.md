@@ -237,7 +237,8 @@ to it rather than to a guessed category.
 interface EvidenceCheckpoint {
   checkpointId: string;
   entityRef: string;                  // must resolve against the EntityGraph
-  signalRef?: string;                 // the series, the log line's id, or the configuration key
+  signalRef?: string;                 // the metric, the log line's id, or the configuration key;
+                                      // with entityRef it is the pair that identifies a series
   signalKind?: CheckpointReference;    // absent means 'series'
   expression?: string;                // present exactly when signalKind is 'derived'
   comparator: Comparator;
@@ -255,6 +256,36 @@ must resolve to a declared series whose unit agrees and whose post value satisfi
 assertion, a `log` reference must name a declared line `id`, a `derived` one carries an
 `expression` over the readings it names, and a `configuration` reference must name a
 key of the case's own `fault.parameters` and agree with what that key holds.
+
+#### A series reference is a pair, and the entity is half of it
+
+A reading is a quantity taken *on* something, so `(entityRef, signalRef)` is what identifies
+a series -- the same pair `fault/background.ts` uses to let a case's own declaration win over
+the background, and the same pair both localisers key their per-service statistics on. The
+guard resolved the metric alone until finding 323: a map keyed on the name, the entity carried
+through the schema and never compared. Twelve of the corpus's seventy-three series checkpoints
+named an entity that does not carry the reading, and the same code accepted a checkpoint
+pointed at anything in the graph.
+
+| the checkpoint's entity | the series' `service` | result |
+| --- | --- | --- |
+| the same entity | it | resolved, `via: entity` |
+| a container whose service carries it | the service | resolved, `via: component` |
+| one replica of a service | another replica | **refused**: siblings are not one component |
+| an unrelated service | a different one | **refused**: the assertion is about something else |
+| a service both halves are inside | two nodes | **refused**: the entity cannot say which half |
+
+Containment rather than equality, because twelve of the corpus's annotations are a container
+measurement filed under its service -- the ranking a solver reads is per service, and a rule
+that refused them would be refusing the corpus rather than a mistake. `fault/reading-reference.ts`
+is the resolver; `describeReadingProblem` gives each of its four refusals its own sentence,
+because "not declared", "carried elsewhere" and "two carriers" are three different repairs.
+
+**One metric on two entities is legal.** Two series with the same `(service, metric)` pair are
+still refused, and a metric carried by two different entities is not: a partition's two halves
+are two readings of one quantity, and a file that could hold only one of them per metric could
+not state the case (finding 324). The ambiguity that creates is refused where the entity is
+known -- at the checkpoint -- rather than at the file.
 
 #### A log checkpoint asserts a containment, and the body is where it is checked
 
@@ -317,10 +348,17 @@ term       := unary (('*' | '/') unary)*
 unary      := '-' unary | primary
 primary    := number | reference | '(' expression ')'
 number     := digit+ ('.' digit+)? (('e' | 'E') ('+' | '-')? digit+)?
-reference  := identifier '.' point
+reference  := identifier ('@' entity)? '.' point
 identifier := [A-Za-z_][A-Za-z0-9_]*
+entity     := [A-Za-z0-9_-]+
 point      := a member of SERIES_POINTS
 ```
+
+A reference may name the entity that carries the series, as
+`cluster_members_visible@search-node-4.post`, and a bare one resolves only when exactly one
+entity carries the metric. Two carriers is a refusal naming both rather than a reading of
+whichever came first -- which is what the evaluator used to do, safely only because the
+signals file refused the duplicate. The reference an evaluation reports is the pair.
 
 The point a reference may name is a member of `SERIES_POINTS` (`baseline`, `post`), a
 tuple in `ir/types.ts`. The parser reads that tuple, so a third point needs an edit in
