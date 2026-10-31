@@ -57,7 +57,8 @@
         "evidenceRefs": [
           "cp-thread-saturated",
           "cp-keys-interval",
-          "cp-get-latency"
+          "cp-get-latency",
+          "cp-client-pool"
         ]
       }
     ],

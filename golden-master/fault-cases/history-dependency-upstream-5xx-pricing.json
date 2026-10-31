@@ -58,7 +58,8 @@
         "evidenceRefs": [
           "cp-upstream-503",
           "cp-502-ratio",
-          "cp-other-dependencies"
+          "cp-other-dependencies",
+          "cp-declared-share"
         ]
       }
     ],

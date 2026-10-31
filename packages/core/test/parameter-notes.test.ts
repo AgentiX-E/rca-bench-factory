@@ -153,4 +153,27 @@ describe('parameter notes · every key nothing cites carries a reason', () => {
         'name to the sentence that explains it',
     );
   });
+
+  it('names the kind of a map that is not a map, for every kind a JSON file can hold', () => {
+    // The other half of the sentence above, and it was the uncovered half: the loop that refuses a
+    // non-map refuses three kinds, and only the array was ever read back. A reader who wrote
+    // `"parameterNotes": "see the ticket"` got "as a string" without a test saying so, which is the
+    // difference between a message and a message somebody checked.
+    const kindOf = (notes: unknown): string => {
+      const message = describeParameterNoteFault({ kind: 'unreadable', notes }, 'history-x');
+      return /as (.*), and it has to be an object/.exec(message)![1]!;
+    };
+    expect(kindOf(['why'])).toBe('an array');
+    expect(kindOf('why')).toBe('a string');
+    expect(kindOf(7)).toBe('a number');
+    expect(kindOf(true)).toBe('a boolean');
+  });
+
+  it('says a stray note has no key to be stray against, rather than printing an empty list', () => {
+    // `declared.join(', ')` over no keys is the empty string, and "it declares: " is a sentence that
+    // stops before its object. The fallback is one word, and it is the only way a reader learns that
+    // the case declares nothing at all.
+    const fault: ParameterNoteFault = { kind: 'stray', key: 'ghost', declared: [] };
+    expect(describeParameterNoteFault(fault, 'history-x')).toContain('(it declares: nothing)');
+  });
 });

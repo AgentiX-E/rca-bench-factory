@@ -56,7 +56,8 @@
         "evidenceRefs": [
           "cp-timeout",
           "cp-504-responses",
-          "cp-upload-completed"
+          "cp-upload-completed",
+          "cp-handler-seconds"
         ]
       }
     ],

@@ -2669,9 +2669,9 @@ reading rather than a gate, and the five are named in the report instead.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **212 files, 5236 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **216 files, 5423 tests passed** (as of this commit) |
+| `core` test suite | **212 files, 5236 tests passed** (as of `bf87e65`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `bf87e65`) |
+| repo test suite | **216 files, 5423 tests passed** (as of `bf87e65`) |
 | cases that answer for a log line | **30 of 30**: **12** show one, **18** say what one could not carry |
 | cases that answer for a span | **30 of 30**: **6** show one, **24** say what one could not carry |
 | cases with no span that still cross a service call | **5 of the 24**, named in the report |
@@ -2691,3 +2691,128 @@ reading rather than a gate, and the five are named in the report instead.
 - **The corpus cannot show a line for an incident that left none.** 18 and 24 are now answers rather
   than gaps, and the difference between them and a filled corpus is the incidents, not the work.
   `[open: further annotation needs another incident, not another sentence]`
+
+## v3.28 — a fact no step cites is a fact two targets never receive
+
+### What the guard had never asked
+
+`assessFourLayer` refused two kinds of broken reference since finding 238: an entity ref no graph
+answers, and a step citing a checkpoint the case does not state. Both are references that were made
+and cannot be answered. Neither is the defect this round measured, which is a reference that was
+never made at all -- a checkpoint no causal step cites.
+
+Every rule that existed asks whether a reference *resolves*, and a checkpoint nothing cites has no
+reference to fail. So it passed the schema, the entity resolver, the unit check and the assertion
+comparison, it was counted in its case's evidence layer, and it was evidence for nothing.
+
+### The measurement, before the repair
+
+| reading | value |
+| --- | --- |
+| checkpoints the corpus states | **120** |
+| checkpoints at least one step cites | **111** |
+| cases holding at least one uncited checkpoint | **9** |
+| of those, checkpoints that state the control ruling out the alternative | **6** |
+
+The three exports disagree about where evidence comes from, and the disagreement is what turned an
+unused annotation into a lost one:
+
+| exporter | source of its evidence list | published before | publishes now |
+| --- | --- | --- | --- |
+| `itbench` | `groundTruth.evidenceCheckpoints` | 120 | 120 |
+| `openrca2` | `CausalStep.evidenceRefs` | **111** | 120 |
+| `rca100` | `CausalStep.evidenceRefs` | **111** | 120 |
+
+`itbench` was never wrong. The other two were, and no count in any report said so -- which is why
+the number above is the finding and not the tidying. The nine, and what each one is:
+
+| checkpoint | what it states | now cited by |
+| --- | --- | --- |
+| `cp-health-green` | the health check never failed, which is why an orchestrator saw nothing wrong | step 1 |
+| `cp-client-pool` | the application-side pool never approached its ceiling: the sentence that rules the clients out | step 1 |
+| `cp-handler-seconds` | what the handler needs, unchanged by the fault | step 1 |
+| `cp-enospc-build` | the refusal itself, on the build's own filesystem | step 1 |
+| `cp-no-deploy` | zero deployments across the window | step 1 |
+| `cp-declared-share` | the share the injection declared, which is the number the telemetry reports | step 1 |
+| `cp-pool-exhausted-errors` | the pool's own words for its state | step 1 |
+| `cp-members-other-side` | the other half also sees three | step 1 |
+| `cp-stale-reads-elsewhere` | the half that kept the deletes returns nothing stale | step 2 |
+
+Two are halves of a pair. A partitioned cluster and a cluster that lost half its nodes report the
+same three-members-visible from one side; the second side is the whole difference, and it was the
+side that reached one target. Six of the nine are controls, which is to say the evidence that
+narrowed the answer to one cause was the evidence two of the three targets never received.
+
+### The rule
+
+`assessFourLayer` returns `uncitedEvidence`, and `complete` requires it empty. A checkpoint is a fact
+about a step; a fact about no step is not a checkpoint, it is a sentence in a field no per-step
+reader reaches. No escape hatch: every one of the nine had a step it defended, and an exception for
+"this one is really off the chain" is a rule no annotation could fail -- the shape finding 300 was
+about.
+
+`describeUncitedEvidence` names the case, the id and **the entity**, because an id alone sends the
+reader to the file to find out whose fact is going unpublished:
+
+```
+history-checkout-cpu-saturation: 'cp-cpu-limit'
+(container:synthetic-storefront/checkout-api-app) is cited by no causal step, so no per-step
+evidence list carries it
+```
+
+The count is a clause inside the checkpoint line, not a line of its own:
+`120 of 120 checkpoint(s) are cited by at least one causal step`. A separate "0 uncited" would be a
+constant zero; a numerator over a denominator grows with the corpus and a new annotation can lower
+it. Both exits print it, so a case that loses a citation shows `119 of 120` before the failure list.
+
+### The rule biting its own fixtures, again
+
+`withLogCheckpoint` adds a checkpoint to the checkout case and stopped there, so the first run of the
+new rule refused the test that adds one -- naming the checkpoint the fixture had just written. It now
+pushes that id onto the step it supports, for the same reason last round's `withLog` deletes
+`noLogs`: a fixture that adds evidence has to say what the evidence is for.
+
+Two older assertions turned on the same edge: a `describeKind` arm that had only ever been read back
+for arrays, and a `'nothing'` fallback for a stray note the case declares no keys against. Both are
+messages a reader can reach, and both are now pinned -- `parameter-notes.ts` went from 94.74 branches
+to 100 on all four.
+
+### Readings
+
+> Ledger for `v3.28`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **212 files, 5248 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **216 files, 5435 tests passed** (as of this commit) |
+| checkpoints stated / cited | **120 / 120** (`120 of 120 checkpoint(s) are cited by at least one causal step`) |
+| references in the chain | **129** across 2 chains' worth of steps, 120 distinct |
+| evidence each target publishes | `itbench` **120**, `openrca2` **120**, `rca100` **120** (was 120 / 111 / 111) |
+| coverage | **99.98 / 99.79 / 100 / 99.98** (cli 100 / 100 / 100 / 100) |
+| `fault/four-layer.ts` | **100 / 100 / 100 / 100** |
+| `fault/parameter-notes.ts` | 94.74 branches → **100 / 100 / 100 / 100** |
+| `four-layer.test.ts` | 15 → **21**: six tests over the new reading |
+| `check-fault-cases.test.ts` | 137 → **141**: both refusals, the dangling precision, and the fraction |
+| `parameter-notes.test.ts` | 13 → **15**: the kind of a non-map, and a stray note with nothing declared |
+| cases that answer for a modality | **30 of 30 on both**, unchanged: 12 log / 18 reasons, 6 span / 24 reasons |
+| export failure sites | **99** across 52 of 70 scripts |
+| audits | 1–**335**, **332 findings** (absent: 118, 132–133) |
+
+### Left open
+
+- **`signal_ref` still reaches three targets as a bare metric name.** Now the oldest open item, and
+  the only one left that is ours to decide: with the citations repaired, the three exports describe
+  one corpus, and what they still describe it with is a metric name without the entity it was read
+  on. `[open: unchanged this round; the fields are a contract three targets publish, and widening one
+  is a decision rather than a fix]`
+- **A citation is checked for presence, not for being the right step.** `cp-stale-reads-elsewhere`
+  could cite step 1 and still pass; the gate establishes that a fact is present, unique, resolvable
+  and used, and whether it is used well stays a judgement about the annotation.
+  `[open: new this round, and the same division of labour `sli.none`, `fault.parameterNotes` and
+  `noLogs` already use]`
+- **Upstream's token table still refuses our path.** `[open: unchanged, and the half that is not ours;
+  the `{system}` field stays the case's own name]`
+- **The corpus cannot show a line for an incident that left none.** 18 and 24 are answers rather than
+  gaps; closing the gap between them and a filled corpus needs another incident.
+  `[open: unchanged this round, and not a matter of writing more sentences]`

@@ -791,7 +791,7 @@ export type {
 // resolves, so until this existed the condition was met by definition. Exported because the
 // count over a corpus is the evidence for the corpus, and a reading only one test can take is a
 // reading nobody can re-take against the next thirty samples.
-export { assessFourLayer, formatFourLayerReading } from './fault/four-layer.js';
+export { assessFourLayer, describeUncitedEvidence, formatFourLayerReading } from './fault/four-layer.js';
 
 // The floor under a difficulty label. `FaultCase.difficulty` had no definition anywhere -- the
 // corpus's five labels do not track structure and are not comparable with each other -- so this is
@@ -855,6 +855,7 @@ export type {
   FourLayerReading,
   LayerName,
   LayerReading,
+  UncitedEvidence,
   UnresolvedRef,
 } from './fault/four-layer.js';
 

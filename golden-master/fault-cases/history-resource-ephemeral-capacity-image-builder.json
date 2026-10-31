@@ -59,6 +59,7 @@
           "cp-overlay-full",
           "cp-ephemeral-limit",
           "cp-builds-fail",
+          "cp-enospc-build",
           "cp-node-disk-healthy"
         ]
       }

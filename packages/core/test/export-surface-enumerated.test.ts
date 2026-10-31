@@ -773,8 +773,11 @@ const TESTED = [
   'evaluateExpression',
   'holdsWithTolerance',
   'isNumericComparator',
-  // fault/four-layer.ts -- M1's four-layer condition, as a definition that can fail.
+  // fault/four-layer.ts -- M1's four-layer condition, as a definition that can fail, and the
+  // third reference defect: a checkpoint no step cites, which is a fact no per-step evidence list
+  // carries and so a fact two of the three exports never receive.
   'assessFourLayer',
+  'describeUncitedEvidence',
   'formatFourLayerReading',
   // fault/reading-record.ts -- finding 229, the transcription step as code. The record's
   // two derived fields (key.digest, totals) have no path from a keyboard, and

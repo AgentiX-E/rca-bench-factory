@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { resolveEntityRef, indexGraph } from '../src/entity/graph.js';
-import { assessFourLayer, formatFourLayerReading } from '../src/fault/four-layer.js';
+import {
+  assessFourLayer,
+  describeUncitedEvidence,
+  formatFourLayerReading,
+} from '../src/fault/four-layer.js';
 import { entityGraphSchema, faultCaseSchema } from '../src/ir/schema.js';
 import type { FaultCase } from '../src/ir/types.js';
 
@@ -254,6 +258,7 @@ describe('the reading is printable, because a verdict nobody can read is a badge
       '  evidence  filled  3 item(s)',
       '  unresolved refs: 0',
       '  dangling evidence refs: 0',
+      '  uncited evidence: 0',
       '  four layers: COMPLETE',
     ]);
   });
@@ -264,5 +269,92 @@ describe('the reading is printable, because a verdict nobody can read is a badge
     const text = formatFourLayerReading(assessFourLayer({ case: edited, graph }));
     expect(text).toContain('process   EMPTY   0 item(s)  -- groundTruth.causalChain is absent or empty');
     expect(text).toContain('four layers: INCOMPLETE');
+  });
+});
+
+/**
+ * The third member of the reference family.
+ *
+ * The module already reports both directions of a *broken* reference: an entity ref no graph
+ * answers, and a step citing a checkpoint the case does not state. It said nothing about the
+ * other direction -- a checkpoint no step cites -- and the corpus carried nine of them, in nine
+ * cases, every one of which read as annotated. A fact stated for a step and cited by none of them
+ * is not evidence for the chain, it is a sentence in a field no per-step evidence list reaches:
+ * two of the three exports build `evidence[]` from `CausalStep.evidenceRefs` and drop it silently.
+ *
+ * The rule is not "cite something", it is "a checkpoint is a fact about a step, and a fact about
+ * no step is not a checkpoint". There is no escape hatch, because every one of the nine had a
+ * step it defended: six of them are the control that rules out the competing hypothesis.
+ */
+describe('a checkpoint no step cites is a fact the chain does not use', () => {
+  it('reports nothing for the shipped annotation, where every checkpoint is cited', () => {
+    expect(assessFourLayer({ case: faultCase, graph }).uncitedEvidence).toEqual([]);
+  });
+
+  it('reports a checkpoint that every step leaves behind, and refuses to call the case complete', () => {
+    const edited = copy();
+    const step = edited.groundTruth.causalChain![0]!;
+    const dropped = step.evidenceRefs.pop()!;
+    const reading = assessFourLayer({ case: edited, graph });
+    expect(reading.uncitedEvidence).toEqual([
+      { checkpointId: dropped, entityRef: expect.any(String) as unknown as string },
+    ]);
+    // The four layers are all still filled: the checkpoint is stated, its entity resolves, and the
+    // step still cites two others. Only the fact that nothing uses it is wrong, which is exactly
+    // the state the nine were in -- complete by every count that existed before this rule.
+    expect(reading.layers.every((layer) => layer.filled)).toBe(true);
+    expect(reading.layers.find((layer) => layer.layer === 'evidence')?.items).toBe(3);
+    expect(reading.complete).toBe(false);
+  });
+
+  it('reports every checkpoint when the chain carries no steps at all', () => {
+    const edited = copy();
+    edited.groundTruth.causalChain = [];
+    const reading = assessFourLayer({ case: edited, graph });
+    expect(reading.uncitedEvidence).toHaveLength(3);
+    expect(reading.uncitedEvidence.map((entry) => entry.checkpointId)).toEqual(
+      (edited.groundTruth.evidenceCheckpoints ?? []).map((checkpoint) => checkpoint.checkpointId),
+    );
+  });
+
+  it('counts a checkpoint two steps cite as cited once, not as an ambiguity', () => {
+    const edited = copy();
+    const [first, second] = edited.groundTruth.causalChain!;
+    // The shipped case has two steps; give the second one the first's refs as well.
+    second!.evidenceRefs = [...first!.evidenceRefs, ...(second!.evidenceRefs ?? [])];
+    const reading = assessFourLayer({ case: edited, graph });
+    expect(reading.uncitedEvidence).toEqual([]);
+    expect(reading.complete).toBe(true);
+  });
+
+  it('names the entity beside the id, so the line can be found without the file', () => {
+    const edited = copy();
+    edited.groundTruth.causalChain![0]!.evidenceRefs = [];
+    const reading = assessFourLayer({ case: edited, graph });
+    const known = new Map(
+      (edited.groundTruth.evidenceCheckpoints ?? []).map((checkpoint) => [checkpoint.checkpointId, checkpoint.entityRef]),
+    );
+    for (const entry of reading.uncitedEvidence) {
+      expect(entry.entityRef).toBe(known.get(entry.checkpointId));
+    }
+  });
+
+  it('prints the count, and states the repair in one sentence per entry', () => {
+    const edited = copy();
+    edited.groundTruth.causalChain![0]!.evidenceRefs = [];
+    const reading = assessFourLayer({ case: edited, graph });
+    // The shipped fixture's first step cites two of the three checkpoints, so emptying it leaves
+    // two behind rather than three: the third is cited by the second step and stays used.
+    expect(formatFourLayerReading(reading)).toContain('  uncited evidence: 2');
+    const sentences = reading.uncitedEvidence.map((entry) => describeUncitedEvidence(entry, 'case-1'));
+    expect(sentences).toHaveLength(2);
+    for (const sentence of sentences) {
+      expect(sentence.startsWith('case-1: ')).toBe(true);
+      expect(sentence).toContain('is cited by no causal step');
+      expect(sentence).toContain('no per-step evidence list carries it');
+      expect(sentence).not.toContain('\n');
+    }
+    // Each names its own checkpoint once, so the two lines are two different repairs.
+    expect(new Set(sentences).size).toBe(2);
   });
 });

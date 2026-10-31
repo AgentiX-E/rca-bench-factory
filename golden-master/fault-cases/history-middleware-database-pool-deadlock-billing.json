@@ -55,7 +55,8 @@
         "evidenceRefs": [
           "cp-connections-held",
           "cp-pool-size",
-          "cp-no-long-query"
+          "cp-no-long-query",
+          "cp-pool-exhausted-errors"
         ]
       }
     ],

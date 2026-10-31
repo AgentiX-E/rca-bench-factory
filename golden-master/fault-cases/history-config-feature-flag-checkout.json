@@ -63,7 +63,8 @@
           "cp-flag-off",
           "cp-button-gone",
           "cp-two-jobs-one-key",
-          "cp-flip-window"
+          "cp-flip-window",
+          "cp-no-deploy"
         ]
       }
     ],

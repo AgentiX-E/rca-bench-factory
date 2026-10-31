@@ -257,6 +257,38 @@ assertion, a `log` reference must name a declared line `id`, a `derived` one car
 `expression` over the readings it names, and a `configuration` reference must name a
 key of the case's own `fault.parameters` and agree with what that key holds.
 
+#### A checkpoint is a fact about a step, and a step has to cite it
+
+The chain's rule above says a control belongs in `evidenceCheckpoints` rather than as a second hop.
+This is the other half of it: a checkpoint belongs to a step, and `CausalStep.evidenceRefs` is how it
+says which one. A checkpoint no step cites is refused (finding 335).
+
+Nine of the corpus's 120 checkpoints were uncited, in nine cases, and every one of them read as
+annotated: the evidence layer counted it, its entity resolved, its number was checked against the
+series or the configuration it names. What none of those rules asks is whether anything *uses* it,
+and the three exports disagree about where evidence comes from:
+
+| exporter | where its evidence list comes from | what it published |
+| --- | --- | --- |
+| `itbench` | `groundTruth.evidenceCheckpoints` | all 120 |
+| `openrca2` | `CausalStep.evidenceRefs` | 111 |
+| `rca100` | `CausalStep.evidenceRefs` | 111 |
+
+So an uncited checkpoint reached one target and no other, silently. Six of the nine were the control
+that rules out the competing hypothesis -- the health check that never failed, the client pool that
+never filled, the handler time the fault did not change -- which is to say the evidence that narrowed
+the answer was the evidence two of the three targets never received.
+
+| rule | code | what it refuses |
+| --- | --- | --- |
+| every checkpoint is cited by at least one step | `assessFourLayer(...).uncitedEvidence` | a fact stated for a step and used by none; `complete` is false while this list is non-empty |
+
+There is no escape hatch, and that is deliberate: a checkpoint is a fact about a step, so a fact about
+no step is not a checkpoint. Every one of the nine had a step it defended, so a rule with an exception
+for "this one is really off the chain" would be a rule no annotation could fail. The guard prints
+`120 of 120 checkpoint(s) are cited by at least one causal step` inside the checkpoint line rather
+than as a line of its own, because a separate "0 uncited" would be a number no run can move.
+
 #### A series reference is a pair, and the entity is half of it
 
 A reading is a quantity taken *on* something, so `(entityRef, signalRef)` is what identifies

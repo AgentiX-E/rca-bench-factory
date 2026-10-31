@@ -32,6 +32,24 @@ import { indexGraph, resolveEntityRef } from '../entity/graph.js';
  * is the same defect one level in. It is reported separately because it is a different repair:
  * an unresolved entity ref is a graph that is missing a node, a dangling evidence ref is a step
  * that cites evidence the case does not state.
+ *
+ * ## The third member of the family, and why it is not symmetric bookkeeping
+ *
+ * Both directions above are about a *broken* reference. The other direction is a reference that
+ * was never made: a checkpoint every step leaves behind. It reads as an annotation -- the layer
+ * count includes it, its entity resolves, its numbers are checked against the series -- and it is
+ * not evidence for anything, because the two exports that carry evidence per step build that list
+ * from `CausalStep.evidenceRefs` and drop what no step named. The corpus had nine of these, in
+ * nine cases, and six of the nine are the checkpoint that rules out the competing hypothesis: the
+ * health check that never failed, the client pool that never filled, the handler time the fault
+ * did not change. The evidence that narrowed the answer to one cause was the evidence two of the
+ * three targets never received.
+ *
+ * There is no escape hatch and it is deliberate. A checkpoint is a fact about a step; a fact about
+ * no step is not a checkpoint, it is a sentence in a field nothing reads. Every one of the nine had
+ * a step it defended, so the rule needs no exception -- and a rule with an exception for "this one
+ * is really off the chain" would be a rule that cannot fail, which is the shape finding 300 was
+ * about.
  */
 
 export type LayerName = 'entity' | 'fault' | 'process' | 'evidence';
@@ -57,13 +75,27 @@ export interface DanglingEvidenceRef {
   ref: string;
 }
 
+/**
+ * A stated checkpoint that no causal step cites.
+ *
+ * `entityRef` travels with the id because a line that reads `'cp-health-green'` and nothing else
+ * sends the reader to the file to find out which entity's fact is going unpublished, which is the
+ * round trip `fault/modality-evidence.ts` refused for the same reason.
+ */
+export interface UncitedEvidence {
+  checkpointId: string;
+  entityRef: string;
+}
+
 export interface FourLayerReading {
   layers: LayerReading[];
   /** Entity references the case's own graph cannot answer. */
   unresolved: UnresolvedRef[];
   /** `CausalStep.evidenceRefs` naming a checkpoint the case does not carry. */
   danglingEvidence: DanglingEvidenceRef[];
-  /** Every layer filled, every entity ref resolved, every evidence ref real. */
+  /** `groundTruth.evidenceCheckpoints` entries no causal step cites. */
+  uncitedEvidence: UncitedEvidence[];
+  /** Every layer filled, every entity ref resolved, every evidence ref real and cited. */
   complete: boolean;
 }
 
@@ -154,23 +186,47 @@ export function assessFourLayer(input: { case: FaultCase; graph: EntityGraph }):
   // supported and is not, which is worse than a step citing nothing.
   const known = new Set(checkpoints.map((checkpoint) => checkpoint.checkpointId));
   const danglingEvidence: DanglingEvidenceRef[] = [];
+  const cited = new Set<string>();
   for (const step of chain) {
     for (const ref of step.evidenceRefs) {
       if (!known.has(ref)) danglingEvidence.push({ step: step.step, ref });
+      else cited.add(ref);
     }
   }
+
+  // The other direction: a fact stated for a step that no step cites. Only ids that name a real
+  // checkpoint can be cited, so a dangling ref neither counts as a citation nor hides one.
+  const uncitedEvidence: UncitedEvidence[] = checkpoints
+    .filter((checkpoint) => !cited.has(checkpoint.checkpointId))
+    .map((checkpoint) => ({ checkpointId: checkpoint.checkpointId, entityRef: checkpoint.entityRef }));
 
   const layers = [entityLayer, faultLayer, processLayer, evidenceLayer];
   return {
     layers,
     unresolved,
     danglingEvidence,
+    uncitedEvidence,
     complete:
-      layers.every((layer) => layer.filled) && unresolved.length === 0 && danglingEvidence.length === 0,
+      layers.every((layer) => layer.filled) &&
+      unresolved.length === 0 &&
+      danglingEvidence.length === 0 &&
+      uncitedEvidence.length === 0,
   };
 }
 
-/** One line per layer plus the two reference counts, for a report or a log. */
+/**
+ * One sentence per uncited checkpoint, naming the case, the checkpoint and its entity.
+ *
+ * It says what actually goes wrong rather than "unused": two of the three exports build their
+ * evidence list per step, so a checkpoint no step cites reaches those files no way at all. The
+ * sentence stops there and does not name a target, because the module does not know which exports
+ * exist and a message that guessed would go stale the first time one was added.
+ */
+export function describeUncitedEvidence(entry: UncitedEvidence, caseId: string): string {
+  return `${caseId}: '${entry.checkpointId}' (${entry.entityRef}) is cited by no causal step, so no per-step evidence list carries it`;
+}
+
+/** One line per layer plus the three reference counts, for a report or a log. */
 export function formatFourLayerReading(reading: FourLayerReading): string {
   const lines = reading.layers.map((layer) => {
     const head = `  ${layer.layer.padEnd(9)} ${layer.filled ? 'filled' : 'EMPTY '} ${String(layer.items).padStart(2)} item(s)`;
@@ -178,6 +234,7 @@ export function formatFourLayerReading(reading: FourLayerReading): string {
   });
   lines.push(`  unresolved refs: ${String(reading.unresolved.length)}`);
   lines.push(`  dangling evidence refs: ${String(reading.danglingEvidence.length)}`);
+  lines.push(`  uncited evidence: ${String(reading.uncitedEvidence.length)}`);
   lines.push(`  four layers: ${reading.complete ? 'COMPLETE' : 'INCOMPLETE'}`);
   return lines.join('\n');
 }

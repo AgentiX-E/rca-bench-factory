@@ -3429,3 +3429,103 @@ the incidents left. What it changes is that every case now answers, that the two
 corpus on both exits, and that the five cases whose chain crosses a call are named. The sentences
 themselves are the next reader's to judge -- and one of them is the corpus saying, in its own words,
 that the absence of a log line is the finding.
+
+## Finding 335 — nine checkpoints were evidence for a step that never cited them
+
+The guard has refused two kinds of broken reference since finding 238: an entity ref no graph
+answers, and a step citing a checkpoint the case does not state (`danglingEvidence`). Both are
+references that were made and cannot be answered. Neither is the defect below, which is a
+reference that was never made at all.
+
+Measured over the shipped corpus: **120 checkpoints stated, 111 cited by a step.** Nine facts sat
+in nine cases, each one resolving, each one checked against the series or the configuration it
+names, each one counted in its case's evidence layer -- and reachable from no causal step. What
+made it invisible is that every existing rule asks whether a reference *resolves*, and a
+checkpoint nothing cites has no reference to fail.
+
+### Why nine facts are not nine units of tidying
+
+The three exporters do not agree on where evidence comes from, and the disagreement is what turns
+an unused annotation into a lost one:
+
+| exporter | source of its evidence list | checkpoints it publishes |
+| --- | --- | --- |
+| `itbench` | `groundTruth.evidenceCheckpoints` | **all 120** |
+| `openrca2` | `CausalStep.evidenceRefs` | 111 |
+| `rca100` | `CausalStep.evidenceRefs` | 111 |
+
+So a checkpoint no step cites reached exactly one of the three targets, silently, and no count in
+any report said so. An evaluator scoring the two graded suites was answering against a case whose
+narrowing evidence had been removed.
+
+The contents make it worse than bookkeeping. Six of the nine are explicitly the control that rules
+out the competing hypothesis:
+
+| checkpoint | case | what it states | why it matters | now cited by |
+| --- | --- | --- | --- | --- |
+| `cp-health-green` | `history-network-mtu-blackhole-catalog` | the health check never failed | which is why an orchestrator saw nothing wrong | step 1 |
+| `cp-client-pool` | `history-middleware-redis-latency-session-cache` | the application-side pool never approached its ceiling | the sentence that rules the clients out | step 1 |
+| `cp-handler-seconds` | `history-config-ingress-timeout-partner-portal` | what the handler needs, unchanged by the fault | makes the timeout the cause rather than the handler | step 1 |
+| `cp-enospc-build` | `history-resource-ephemeral-capacity-image-builder` | the refusal itself, on the build's own filesystem | what makes the 40 percent beside it a red herring | step 1 |
+| `cp-no-deploy` | `history-config-feature-flag-checkout` | zero deployments across the window | separates the flag flip from a deploy | step 1 |
+| `cp-declared-share` | `history-dependency-upstream-5xx-pricing` | the share the injection declared | the same number the telemetry reports, which is what makes the two agree | step 1 |
+| `cp-pool-exhausted-errors` | `history-middleware-database-pool-deadlock-billing` | the service's own words for the state | the pool says it is exhausted in text, not only in a gauge | step 1 |
+| `cp-members-other-side` | `history-network-partition-search-cluster` | the other half also sees three | the pair is the fork; one side alone reads as a cluster that lost three nodes | step 1 |
+| `cp-stale-reads-elsewhere` | `history-network-partition-search-cluster` | the half that kept the deletes returns nothing stale | makes the thirty-five percent a property of one side, not of the cluster | step 2 |
+
+Two of them are pairs: `cp-members-other-side` beside `cp-members-halved`, and
+`cp-stale-reads-elsewhere` beside `cp-stale-reads`. A partitioned cluster and a cluster that lost
+half its nodes produce the same reading from one side; the second side is what tells them apart,
+and it was the side that reached one target.
+
+### The rule, and why it has no escape hatch
+
+`assessFourLayer` now returns `uncitedEvidence`, and `complete` requires it to be empty. A
+checkpoint is a fact about a step; a fact about no step is not a checkpoint, it is a sentence in a
+field nothing per-step reads. Every one of the nine had a step it defended, so the rule needs no
+exception -- and an exception for "this one really is off the chain" is exactly the shape finding
+300 was about: a rule that cannot fail certifies nothing.
+
+`describeUncitedEvidence` says what actually goes wrong rather than "unused":
+
+```
+history-checkout-cpu-saturation: 'cp-cpu-limit'
+(container:synthetic-storefront/checkout-api-app) is cited by no causal step, so no per-step
+evidence list carries it
+```
+
+It names the entity beside the id because a line reading `'cp-health-green'` alone sends the reader
+to the file to discover which entity's fact is going unpublished. It stops short of naming a target,
+because the module does not know which exporters exist and a message that guessed would go stale
+the first time one was added.
+
+The repaired corpus reads `120 of 120 checkpoint(s) are cited by at least one causal step`, printed
+inside the checkpoint line rather than on a line of its own. A separate "0 uncited" line would be a
+constant zero -- a number no run can move -- while a numerator and denominator over the corpus is a
+fraction a new annotation can lower. On the failing path it prints before the exit, so a case that
+loses a citation shows `119 of 120` and names the nine-hundred-and-somethingth reader's problem in
+the same run.
+
+### The two refusals the tests pin
+
+1. A case whose step cites nothing loses two checkpoints and fails, and the failure does **not**
+   say a layer is empty -- no layer is. All four layers are filled, every entity resolves, nothing
+   dangles. A gate that reported an incomplete layer would send the reader to the wrong repair.
+2. A step citing an id no checkpoint carries is refused on its own axis, and the two real
+   checkpoints it used to cite are still reported uncited. One defect does not excuse the other.
+
+### The rule biting its own fixtures again
+
+`withLogCheckpoint` in `check-fault-cases.test.ts` adds a checkpoint to the checkout case and stops
+there, so the first run of the new rule refused the test that adds it -- with the checkpoint's own
+name in the message. The fixture now pushes its id onto the step it supports, for the same reason
+`withLog` deletes `noLogs`: a fixture that adds evidence has to say what the evidence is for.
+
+### What this does not do
+
+It does not add a target. `itbench` already published all 120, and it still does; what changed is
+that the other two now receive the same facts, so the three exports describe one corpus instead of
+two. It does not check that the citation is the *right* step either -- `cp-stale-reads-elsewhere`
+could cite step 1 and still parse. That question is the reader's, on the same division of labour
+`sli.none`, `fault.parameterNotes` and `noLogs` already use: the gate establishes that the fact is
+present, unique, resolvable and used; whether it is used well is a judgement about the annotation.

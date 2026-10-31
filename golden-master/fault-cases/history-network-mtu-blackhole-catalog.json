@@ -63,7 +63,8 @@
         "evidenceRefs": [
           "cp-large-hang",
           "cp-path-mtu",
-          "cp-small-unaffected"
+          "cp-small-unaffected",
+          "cp-health-green"
         ]
       }
     ],

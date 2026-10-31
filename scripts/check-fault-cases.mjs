@@ -310,6 +310,20 @@ const checkpointRefs = {
   false: 0,
 };
 /**
+ * How much of the corpus's evidence the causal chain actually uses.
+ *
+ * `total` is every stated checkpoint; `cited` is the ones at least one step names. The two are
+ * equal when the corpus is right, which is why the pair is printed rather than a defect count: a
+ * separate line saying "0 uncited" would be a constant zero -- a number no run can move -- while
+ * "120 of 120" is a fraction whose denominator grows with the corpus and whose numerator is what a
+ * new annotation can lower. Nine were uncited before this was measured, in nine cases, and six of
+ * the nine were the control that rules out the competing hypothesis: the health check that never
+ * failed, the client pool that never filled, the handler time the fault did not change. Two of the
+ * three exports build their evidence list from `CausalStep.evidenceRefs`, so those nine facts
+ * reached one target and no other.
+ */
+const citedEvidence = { total: 0, cited: 0 };
+/**
  * Cases that state a difficulty level.
  *
  * Counted because the corpus exports every case without one as `medium` -- the exporter's
@@ -1213,11 +1227,21 @@ for (const entry of index.cases) {
   }
 
   const reading = core.assessFourLayer({ case: parsedCase, graph: parsedGraph });
-  if (!reading.complete) {
-    const empty = reading.layers.filter((layer) => !layer.filled).map((layer) => `${layer.layer}: ${String(layer.reason)}`);
-    const refs = reading.unresolved.map((ref) => `${ref.where} -> ${ref.ref}`);
-    const dangling = reading.danglingEvidence.map((ref) => `step ${String(ref.step)} -> ${ref.ref}`);
-    problems.push(`'${caseId}' is not complete: ${[...empty, ...refs, ...dangling].join('; ')}`);
+  citedEvidence.total += (parsedCase.groundTruth.evidenceCheckpoints ?? []).length;
+  citedEvidence.cited += (parsedCase.groundTruth.evidenceCheckpoints ?? []).length - reading.uncitedEvidence.length;
+  const empty = reading.layers.filter((layer) => !layer.filled).map((layer) => `${layer.layer}: ${String(layer.reason)}`);
+  const refs = reading.unresolved.map((ref) => `${ref.where} -> ${ref.ref}`);
+  const dangling = reading.danglingEvidence.map((ref) => `step ${String(ref.step)} -> ${ref.ref}`);
+  const incomplete = [...empty, ...refs, ...dangling];
+  if (incomplete.length > 0) {
+    problems.push(`'${caseId}' is not complete: ${incomplete.join('; ')}`);
+  }
+  // The third reference defect, and the only one whose repair is not in the reference itself: the
+  // checkpoint is stated, its entity resolves, and no step uses it. Pushed separately because
+  // `describeUncitedEvidence` already writes the case's name, and nesting one sentence inside
+  // `'<case>' is not complete: ...` would name the case twice in one line.
+  for (const entry of reading.uncitedEvidence) {
+    problems.push(core.describeUncitedEvidence(entry, caseId));
   }
 }
 
@@ -1429,6 +1453,8 @@ function logCheckpointCounts() {
       `${String(checkpointRefs.byComponent)} on one that contains it -- ${String(checkpointRefs.derived)} computed from ` +
       `${String(checkpointRefs.derivedRefs)} reading(s), ${String(checkpointRefs.configuration)} citing a ` +
       `declared configuration fact, ${String(checkpointRefs.logLines)} over a log line); ` +
+      `${String(citedEvidence.cited)} of ${String(citedEvidence.total)} checkpoint(s) are cited by at least one ` +
+      `causal step; ` +
       `${String(checkpointRefs.false)} of ` +
       `${String(checkpointRefs.inequalities)} comparable assertion(s) fail against the data they name; ` +
       `${String(checkpointRefs.logHolds)} of ${String(checkpointRefs.logLines)} log assertion(s) hold ` +

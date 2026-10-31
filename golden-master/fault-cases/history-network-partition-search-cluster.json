@@ -60,6 +60,7 @@
         "evidenceRefs": [
           "cp-firmware-roll",
           "cp-members-halved",
+          "cp-members-other-side",
           "cp-two-elections"
         ]
       },
@@ -70,6 +71,7 @@
         "mechanism": "a read served by the half that never saw the delete returns the document, so thirty-five percent of catalog's searches answer with data that no longer exists until the links come back at 03:19",
         "evidenceRefs": [
           "cp-stale-reads",
+          "cp-stale-reads-elsewhere",
           "cp-split-window"
         ]
       }

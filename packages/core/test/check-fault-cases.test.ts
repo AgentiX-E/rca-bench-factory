@@ -63,8 +63,24 @@ const SAMPLE_COUNT = (
 const CASE_FILES = INDEX.cases
   .map((entry) => entry.case)
   .filter((name): name is string => typeof name === 'string')
-  .map((name) => JSON.parse(readFileSync(join(CASES, name), 'utf8')) as { fault?: { category?: string } });
+  .map(
+    (name) =>
+      JSON.parse(readFileSync(join(CASES, name), 'utf8')) as {
+        fault?: { category?: string };
+        groundTruth?: { evidenceCheckpoints?: unknown[] };
+      },
+  );
 const CODE_LEVEL_CASES = CASE_FILES.filter((one) => one.fault?.category === 'code').length;
+/**
+ * Every checkpoint the corpus states, counted from its files.
+ *
+ * A literal would pass the day the corpus gained a checkpoint and the guard stopped citing it, so
+ * the fraction the run publishes is read here from the same text the guard reads.
+ */
+const TOTAL_CHECKPOINTS = CASE_FILES.reduce(
+  (sum, one) => sum + (one.groundTruth?.evidenceCheckpoints ?? []).length,
+  0,
+);
 const REAL_GRAPH = JSON.parse(readFileSync(join(CASES, 'synthetic-storefront-graph.json'), 'utf8')) as unknown;
 
 const WHY =
@@ -1220,6 +1236,11 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
       };
       edit(checkpoint);
       checkpoints.push(checkpoint);
+      // A checkpoint is a fact about a step, so the fixture that adds one says which step it
+      // supports. An uncited one is refused, and a fixture that added evidence without citing it
+      // would be testing its own defect rather than the guard's rule.
+      const chain = truth.causalChain as Array<{ evidenceRefs: string[] }>;
+      chain[0]!.evidenceRefs.push(String(checkpoint.checkpointId));
     };
   }
 
@@ -1446,12 +1467,26 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
     // annotated one more case, which is the shape a guard must not have: it reports a change in
     // the data as a defect in the guard.
     const summary =
-      /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series -- (\d+) on the entity the checkpoint names and (\d+) on one that contains it -- (\d+) computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact, (\d+) over a log line\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+      /checkpoints (\d+) of (\d+) reference\(s\) resolve by kind \((\d+) over a series -- (\d+) on the entity the checkpoint names and (\d+) on one that contains it -- (\d+) computed from (\d+) reading\(s\), (\d+) citing a declared configuration fact, (\d+) over a log line\); (\d+) of (\d+) checkpoint\(s\) are cited by at least one causal step; (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
         result.out,
       );
     expect(summary, result.out).not.toBeNull();
-    const [, resolved, total, overSeries, byEntity, byComponent, derived, , configuration, logLines, failed, comparable] =
-      summary as unknown as string[];
+    const [
+      ,
+      resolved,
+      total,
+      overSeries,
+      byEntity,
+      byComponent,
+      derived,
+      ,
+      configuration,
+      logLines,
+      cited,
+      citedTotal,
+      failed,
+      comparable,
+    ] = summary as unknown as string[];
     expect(resolved, 'every reference must resolve').toBe(total);
     expect(Number(total), 'the corpus must carry references for this to be a measurement').toBeGreaterThan(0);
     expect(Number(comparable), 'the guard must compare something').toBeGreaterThan(0);
@@ -1472,6 +1507,14 @@ describe('check-fault-cases · a checkpoint says what its reference is a referen
       Number(overSeries) + Number(configuration) + Number(logLines),
       'the printed kinds must account for every reference',
     ).toBe(Number(total));
+    // The second partition, over the same checkpoints counted a different way: resolvable is not
+    // used. A reference that resolves and no step names is a fact the chain does not carry, and two
+    // of the three exports build their evidence list from the steps -- so the corpus is right only
+    // when both numbers are the same one.
+    expect(cited, 'every stated checkpoint must be cited by a causal step').toBe(citedTotal);
+    expect(Number(citedTotal), 'the corpus must state checkpoints for this to be a measurement').toBe(
+      Number(total),
+    );
   });
 
   it('refuses a series reference the signals file does not declare', async () => {
@@ -1905,7 +1948,7 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // that admitting it made it comparable rather than excusing it. The count itself is the
     // corpus's business, and pinning it here made every new case a test edit.
     const admitted =
-      /(\d+) citing a declared configuration fact, \d+ over a log line\); (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
+      /(\d+) citing a declared configuration fact, \d+ over a log line\); \d+ of \d+ checkpoint\(s\) are cited by at least one causal step; (\d+) of (\d+) comparable assertion\(s\) fail/.exec(
         result.out,
       );
     expect(admitted, result.out).not.toBeNull();
@@ -1942,7 +1985,8 @@ describe('check-fault-cases · a configuration checkpoint cites a fact the case 
     // One case: three checkpoints, all comparable, none failing. The conversion is visible in the
     // fact that the assertion is counted at all -- `0.5 core` is compared with `500 mcore`.
     expect(result.out).toContain(
-      '1 citing a declared configuration fact, 0 over a log line); 0 of 3 comparable assertion(s) fail',
+      '1 citing a declared configuration fact, 0 over a log line); 3 of 3 checkpoint(s) are cited by at ' +
+        'least one causal step; 0 of 3 comparable assertion(s) fail',
     );
   });
 
@@ -2451,6 +2495,70 @@ describe('check-fault-cases · a case has to say which reading ranks it', () => 
     );
     expect(exported, 'the export line does not report the ranking column').not.toBeNull();
     expect(Number(exported![1])).toBe(Number(ranking));
+  });
+});
+
+describe('check-fault-cases · a checkpoint no step cites is a fact two targets never receive', () => {
+  // The third reference defect, and the only one whose repair is not in the reference itself. The
+  // guard already refused an entity ref no graph answers and a step citing a checkpoint the case
+  // does not state. It never asked the reverse, and the corpus held nine states of that defect in
+  // nine cases -- every one of them reading as annotated, because the layer count includes a
+  // checkpoint nobody uses.
+  //
+  // It is not bookkeeping. `openrca2` and `rca100` build their evidence array from
+  // `CausalStep.evidenceRefs`; `itbench` publishes every checkpoint. So a checkpoint no step cites
+  // reaches exactly one of the three exports, silently, and six of the nine were the control that
+  // rules out the competing hypothesis.
+  const dropEverything = (faultCase: Record<string, unknown>): void => {
+    const truth = faultCase.groundTruth as Record<string, unknown>;
+    const chain = truth.causalChain as Array<Record<string, unknown>>;
+    chain[0]!.evidenceRefs = [];
+  };
+
+  it('refuses a case whose first step cites nothing, naming the checkpoint and its entity', async () => {
+    const result = await run(['--cases', corpus({ mutate: dropEverything })]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      "history-checkout-cpu-saturation: 'cp-cpu-limit' (container:synthetic-storefront/checkout-api-app) " +
+        'is cited by no causal step, so no per-step evidence list carries it',
+    );
+  });
+
+  it('refuses it without claiming a layer is empty, because no layer is', async () => {
+    // The whole point: this case passes every rule that existed before. All four layers are filled,
+    // every entity resolves, the step that cites nothing still cites nothing *and* nothing dangles.
+    // A gate that reported it as an incomplete layer would send the reader to the wrong repair.
+    const result = await run(['--cases', corpus({ mutate: dropEverything })]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).not.toContain('is not complete');
+    expect(result.out).toContain('is cited by no causal step');
+  });
+
+  it('does not count a dangling ref as a citation of anything', async () => {
+    // A step citing an id no checkpoint carries is refused on its own axis, and the two real
+    // checkpoints it used to cite are still uncited. One defect does not excuse the other.
+    const result = await run([
+      '--cases',
+      corpus({
+        mutate: (faultCase) => {
+          const truth = faultCase.groundTruth as Record<string, unknown>;
+          const chain = truth.causalChain as Array<Record<string, unknown>>;
+          chain[0]!.evidenceRefs = ['cp-does-not-exist'];
+        },
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('step 1 -> cp-does-not-exist');
+    expect(result.out).toContain("'cp-cpu-limit'");
+    expect(result.out).toContain("'cp-throttled-counters'");
+  });
+
+  it('publishes the fraction, so a new uncited checkpoint lowers a number rather than adding a line', async () => {
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain(
+      `${String(TOTAL_CHECKPOINTS)} of ${String(TOTAL_CHECKPOINTS)} checkpoint(s) are cited by at least one causal step`,
+    );
   });
 });
 
