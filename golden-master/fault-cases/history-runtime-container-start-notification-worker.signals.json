@@ -54,5 +54,6 @@
       "quote": "the entrypoint waits for a file the new image no longer creates",
       "why": "the entrypoint's own account of what it is waiting for, which is the object a reader can check against the image and the phrase the checkpoint compares rather than a paraphrase of a restart count"
     }
-  ]
+  ],
+  "noTraces": "the container exits during start-up before any request could be accepted, so there is no exchange to time."
 }

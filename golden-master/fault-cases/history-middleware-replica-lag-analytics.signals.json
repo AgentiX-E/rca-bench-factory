@@ -18,7 +18,9 @@
       "metric": "replica_relay_lag_seconds",
       "unit": "s",
       "baseline": 60,
-      "post": { "parameter": "lagSeconds" },
+      "post": {
+        "parameter": "lagSeconds"
+      },
       "quote": "fell 40 minutes behind the primary",
       "why": "the checkpoint `cp-replica-lag` holds the forty minutes: the relay log position is the state every read is answered from, and it is the thing that is wrong"
     },
@@ -49,5 +51,7 @@
       "quote": "Reads on the primary are current",
       "why": "the second control, and a stronger one than the first: reads served by the primary were current throughout, so nothing about the primary's own answers was stale"
     }
-  ]
+  ],
+  "noLogs": "the readings are a relay position and one saturated applier thread, and a replica that is behind keeps answering reads rather than writing lines about them.",
+  "noTraces": "the lag is a position on a log rather than a request, and the text quotes no duration for the reads that went to the replica."
 }

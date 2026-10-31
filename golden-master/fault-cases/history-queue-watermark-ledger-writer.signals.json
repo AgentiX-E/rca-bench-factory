@@ -9,7 +9,9 @@
       "metric": "broker_disk_watermark_percent",
       "unit": "%",
       "baseline": 78,
-      "post": { "parameter": "watermarkPercent" },
+      "post": {
+        "parameter": "watermarkPercent"
+      },
       "quote": "the disk watermark crossed 92 percent",
       "why": "the checkpoint `cp-watermark` holds the post-onset value, and the text states the threshold it crossed"
     },
@@ -32,5 +34,6 @@
       "why": "the broker's own line, which is what makes this case's `logs.csv` a file with a row in it",
       "id": "watermark-warning"
     }
-  ]
+  ],
+  "noTraces": "the chain stays inside the writer and its topic, and the text gives a buffer size and a watermark percentage rather than the duration of a publish."
 }

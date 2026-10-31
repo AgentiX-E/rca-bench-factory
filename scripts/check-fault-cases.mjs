@@ -270,6 +270,29 @@ const parameterUse = { declared: 0, referenced: 0, noted: 0, cases: 0, shortest:
  * printed on both exits (finding 331).
  */
 const sliUse = { declared: 0, none: 0 };
+/**
+ * What each case says about the two modalities it can show.
+ *
+ * `logs` and `traces` are lists, so a case with no line and a case nobody filled in were the same
+ * bytes: 19 of 30 declared no log line and 25 no span, and the readout published those as facts about
+ * the incidents. Each case now answers both ways -- it shows the modality or it writes why it cannot
+ * (`noLogs` / `noTraces`, read by `fault/modality-evidence.ts`) -- and the split is printed on both
+ * exits, so "the incident left no line" and "nobody wrote one" stop being the same number.
+ *
+ * The second reading is the half a machine can check: a case whose chain crosses a `calls` edge has
+ * an exchange a span pair could describe, so a case that has no span *and* crosses a call is the one
+ * whose reason is doing real work. The count is a reading rather than a gate, because the missing
+ * half is a judgement: the text of five of those cases quotes no duration for the exchange, and
+ * refusing them for it would be refusing an annotation that is correct.
+ */
+const modalityUse = {
+  log: { shown: 0, absent: 0, refused: 0 },
+  trace: { shown: 0, absent: 0, refused: 0 },
+  /** Cases that carry no span at all, whatever they said about it. */
+  withoutTraces: 0,
+  /** Cases with no span whose causal chain still crosses a service call, by case id. */
+  crossingWithoutSpan: [],
+};
 const checkpointRefs = {
   total: 0,
   resolved: 0,
@@ -757,6 +780,33 @@ for (const entry of index.cases) {
           `'${caseId}' declares span '${String(one?.spanName)}' whose parent '${one.parent}' is not declared in the same file`,
         );
       }
+    }
+
+    // What the case says about the two modalities it does not show. `logs` and `traces` are lists, so
+    // an absent one used to read exactly like an unfilled one; the fields below are the answer, and
+    // the three properties a guard can decide -- is it there, is it alone, is it a sentence -- are
+    // decided in `fault/modality-evidence.ts` rather than here (finding 334).
+    for (const modality of core.EVIDENCE_MODALITIES) {
+      const read = core.readModalityAnswer({
+        modality,
+        declared: modality === 'log' ? declaration.logs : declaration.traces,
+        reason: modality === 'log' ? declaration.noLogs : declaration.noTraces,
+      });
+      if (read.fault !== null) {
+        problems.push(core.describeModalityFault(read.fault, caseId));
+        modalityUse[modality].refused += 1;
+        continue;
+      }
+      if (read.answer.declared > 0) modalityUse[modality].shown += 1;
+      else modalityUse[modality].absent += 1;
+    }
+    // Counted whether or not the answer was readable, because the reading below is about the corpus
+    // rather than about the cases that passed: `6 of the 0 case(s)` is what a count that only sees
+    // the answers prints when the answers are the thing that is missing.
+    if (!Array.isArray(declaration.traces) || declaration.traces.length === 0) {
+      modalityUse.withoutTraces += 1;
+      const crossings = core.callsAcrossChain({ steps: parsedCase.groundTruth.causalChain, graph: parsedGraph });
+      if (crossings.length > 0) modalityUse.crossingWithoutSpan.push(caseId);
     }
 
     // What each checkpoint's reference is a reference *to*, and whether it resolves.
@@ -1279,6 +1329,35 @@ function logSliUse() {
 }
 
 /**
+ * What each case answered about logs and spans, on both exits.
+ *
+ * The share is not a target and not a verdict: an incident that left no useful line is a fact about
+ * the incident. What the line has to keep true is that the two halves add up to the corpus, and that
+ * the cases whose chain crosses a call are named -- those are the ones whose `noTraces` sentence is
+ * carrying weight rather than restating an absence nobody could have filled.
+ */
+function logModalityUse() {
+  const line = (what, counts) => {
+    const total = counts.shown + counts.absent + counts.refused;
+    if (total === 0) return;
+    const unreadable = counts.refused === 0 ? '' : `, ${String(counts.refused)} give no readable answer`;
+    console.log(
+      `check-fault-cases: evidence ${what} ${String(counts.shown)} of ${String(total)} case(s) show one ` +
+        `and ${String(counts.absent)} name what the incident could not carry${unreadable}`,
+    );
+  };
+  line('logs', modalityUse.log);
+  line('traces', modalityUse.trace);
+  if (modalityUse.crossingWithoutSpan.length > 0) {
+    console.log(
+      `check-fault-cases: evidence ${String(modalityUse.crossingWithoutSpan.length)} of the ` +
+        `${String(modalityUse.withoutTraces)} case(s) with no span still cross a service call in their ` +
+        `chain: ${modalityUse.crossingWithoutSpan.join(', ')}`,
+    );
+  }
+}
+
+/**
  * How many cases state a difficulty level.
  *
  * Printed because the exporter projects an absent level to `medium`, so an unannotated case and a
@@ -1434,6 +1513,7 @@ if (problems.length > 0) {
   logDifficultyCoverage();
   logParameterUse();
   logSliUse();
+  logModalityUse();
   logExportReading();
   logLocalisationReading();
   logCheckpointCounts();
@@ -1476,6 +1556,7 @@ function logExportReading() {
 logDifficultyCoverage();
 logParameterUse();
 logSliUse();
+logModalityUse();
 logExportReading();
 logLocalisationReading();
 logCheckpointCounts();

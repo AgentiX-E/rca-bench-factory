@@ -482,6 +482,27 @@ the guard refuses a quote the text does not contain.
 | `logs[]` | `service`, `id`, `body`, `severity`, `quote`, `why` | log signals at onset + 30s, 150s, 270s |
 | `traces[]` | `service`, `spanName`, `durationMs`, `parent`, `quote`, `why` | trace signals at onset + 10s, with span ids derived from `sha256(caseId)` |
 
+Two of those blocks can be absent, and until this round an absent block said nothing at all: 19 of
+the 30 cases carried no `logs` and 25 carried no `traces`, and the readout printed those numbers as
+if they were facts about the incidents. A case now answers the question either way -- it shows the
+modality or it writes why the incident left nothing to show:
+
+| field | says | refused when |
+| --- | --- | --- |
+| `noLogs` | one sentence: which reading came closest, and why no line any process wrote carries it | the case also declares `logs`; the list is empty; the sentence is under 40 characters or has no full stop; the field is not text |
+| `noTraces` | one sentence: why the exchange has no duration to quote | the same four |
+
+`fault/modality-evidence.ts` owns both readings, and the guard prints the split on either exit, so
+`12 of 30 show a line and 18 name what the incident could not carry` is a partition rather than a
+count of the cases that happened to pass. It also prints the half a machine can decide: five of the
+24 cases with no span still cross a `calls` edge in their causal chain, which is one call away from a
+span pair and is why their sentences are doing work rather than restating an absence.
+
+The sentence's **truth** is not checked, and that is the same division `sli.none` and
+`fault.parameterNotes` state: presence, exclusivity and shape are decidable, and "does this text
+describe a line a process would have written" is a judgement. Two of the corpus's reasons are the
+sentence *"no application exception was logged"* -- a case whose subject is that no line exists.
+
 `noise` is the second closed vocabulary, and it says whether the reading is a **measurement** or a
 **computation**:
 

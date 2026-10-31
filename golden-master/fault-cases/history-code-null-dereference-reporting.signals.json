@@ -32,5 +32,6 @@
       "quote": "Every stack trace ends in summarize() on the same line",
       "why": "the checkpoint `cp-stack-trace` holds the frame: a reconstruction of the line the text describes, and the phrase it cites is the frame rather than a paraphrase of one"
     }
-  ]
+  ],
+  "noTraces": "the call throws inside the handler, and the text quotes the frame rather than a duration, so a span would carry a number the incident never gave."
 }

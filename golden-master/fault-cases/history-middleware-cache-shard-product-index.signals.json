@@ -34,5 +34,7 @@
       "quote": "which is why dashboards showed partial success rather than an outage",
       "why": "the control, and the sentence the case turns on: the reader's error share is zero throughout because a read into an unowned range is still answered, so nothing the readers publish can place the fault. A zero here is a counted zero, not a measured one"
     }
-  ]
+  ],
+  "noLogs": "two slots were unassigned and the surviving shards kept answering, so the text quotes a placement rule and a convergence time rather than a line.",
+  "noTraces": "the chain crosses from product-index to catalog-service, and the text states how long the cluster took to converge rather than how long any request took."
 }

@@ -35,5 +35,7 @@
       "why": "the checkpoint `cp-node-healthy` holds the one: the node stayed ready throughout, so the eviction decision came from pressure measured for another workload, not from anything wrong here; a condition is 1 or it is 0; a value of 0.98 would be a different reading wearing a fraction, not a condition slightly less ready",
       "noise": "none"
     }
-  ]
+  ],
+  "noLogs": "the text says no application exception was logged because the process never handled a signal, so the absence is a finding rather than a gap.",
+  "noTraces": "the pod was terminated before it could answer again, and the forty seconds the text quotes is the time to readiness rather than the length of any call."
 }

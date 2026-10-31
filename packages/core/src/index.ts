@@ -825,6 +825,21 @@ export type { LogLineAttribution } from './fault/log-attribution.js';
 export { describeReadingProblem, resolveReading } from './fault/reading-reference.js';
 export { MIN_NOTE_LENGTH, checkParameterNotes, describeParameterNoteFault } from './fault/parameter-notes.js';
 export type { ParameterNoteFault, ParameterNotesReport } from './fault/parameter-notes.js';
+export {
+  ABSENCE_FIELDS,
+  EVIDENCE_MODALITIES,
+  callsAcrossChain,
+  describeModalityFault,
+  readModalityAnswer,
+} from './fault/modality-evidence.js';
+export type {
+  ChainStep,
+  EvidenceModality,
+  ModalityAnswer,
+  ModalityFault,
+  ModalityRead,
+  ServiceCall,
+} from './fault/modality-evidence.js';
 export type { ReadingCarrier, ReadingMatch, ReadingRefusal } from './fault/reading-reference.js';
 
 // Whether the answer is a name the telemetry carries. A case whose readings are filed under its pod

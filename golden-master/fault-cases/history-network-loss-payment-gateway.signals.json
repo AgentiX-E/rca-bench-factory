@@ -56,5 +56,15 @@
       "quote": "The egress interface on the client node reports a rising drop counter",
       "why": "the checkpoint `cp-drops` holds the difference: the caller's own queue drops because it retransmits, which is why this reading is evidence about the path rather than about the interface that reports it"
     }
-  ]
+  ],
+  "traces": [
+    {
+      "service": "order-service",
+      "spanName": "POST /payments/authorize",
+      "durationMs": 3000,
+      "quote": "time out at 3s",
+      "why": "the caller's span of a call that crossed its deadline: 3000 ms is where the client gave up, and the gateway has no child span because the request never arrived, which is the same loss the request rate reports from the other end"
+    }
+  ],
+  "noLogs": "the loss is visible in SYN retransmits and a drop counter, which are counters rather than lines, and the retries that landed on another node succeeded."
 }

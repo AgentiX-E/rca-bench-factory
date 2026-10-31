@@ -23,5 +23,7 @@
       "quote": "per-message processing time tripled",
       "why": "the checkpoint `cp-processing-tripled` is a ratio; this series carries the underlying duration at 1x and 3x so the ratio has something to be a ratio of"
     }
-  ]
+  ],
+  "noLogs": "the consumers stayed alive and polling while their per-message time tripled, so the record of the slowdown is the lag itself and not a line.",
+  "noTraces": "the chain runs from the consumer group to the topic it polls, and the text states no duration for that fetch, so a span would carry a number the incident never gave."
 }

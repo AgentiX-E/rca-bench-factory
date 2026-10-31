@@ -160,6 +160,7 @@ const ENUMERATED_MODULES = [
   'fault/category-derivation.ts',
   'fault/injector.ts',
   'fault/importer.ts',
+  'fault/modality-evidence.ts',
   'ingest/backends.ts',
   'ingest/clickhouse.ts',
   'ingest/elasticsearch.ts',
@@ -273,6 +274,12 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'fault/reading-reference.ts::ReadingCarrier': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/parameter-notes.ts::ParameterNoteFault': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/parameter-notes.ts::ParameterNotesReport': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/modality-evidence.ts::ChainStep': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/modality-evidence.ts::EvidenceModality': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/modality-evidence.ts::ModalityAnswer': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/modality-evidence.ts::ModalityFault': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/modality-evidence.ts::ModalityRead': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/modality-evidence.ts::ServiceCall': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingMatch': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingRefusal': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionValue': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -725,6 +732,11 @@ const TESTED = [
   // util/prose.ts -- what makes a string a sentence rather than a label, asked by both guards that
   // require authored prose.
   'MIN_SENTENCE_LENGTH',
+  'ABSENCE_FIELDS',
+  'EVIDENCE_MODALITIES',
+  'readModalityAnswer',
+  'describeModalityFault',
+  'callsAcrossChain',
   'looksLikeSentence',
   // fault/baseline-localiser.ts -- G4 reads outcomes, so the corpus needs a run behind it.
   'PEAK_Z_METHOD',

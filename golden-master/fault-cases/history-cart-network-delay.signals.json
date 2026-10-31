@@ -39,5 +39,6 @@
       "quote": "stayed at 11ms",
       "why": "the callee's own span as a child of the caller's, so the difference between the two durations is the time on the wire"
     }
-  ]
+  ],
+  "noLogs": "the evidence is two durations and the absence of retransmits, and a delay on the wire produces no line in either service; the text quotes none."
 }

@@ -57,5 +57,7 @@
       "quote": "Traffic is flat.",
       "why": "the checkpoint `cp-traffic-flat` holds the equality, and the equality is the point: a flat request rate is the reading that removes load from the list of explanations, so it is evidence for what did *not* cause the growth"
     }
-  ]
+  ],
+  "noLogs": "the heap grew until the kernel killed the container, which leaves a container state rather than a line; the text quotes RSS and a limit instead.",
+  "noTraces": "the chain stays inside the recommendation service and the text quotes memory rather than the duration of a call."
 }

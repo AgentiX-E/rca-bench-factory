@@ -31,5 +31,7 @@
       "quote": "which is why the first report blamed the scheduler",
       "why": "the checkpoint `cp-scheduler-on-time` holds the zero: the scheduler dispatched at exactly the time it was handed, so its own delay never moved"
     }
-  ]
+  ],
+  "noLogs": "the reminders went out an hour early and nothing refused them: the conversion succeeded with the wrong offset, so no component wrote a line about it.",
+  "noTraces": "the chain crosses from booking-api to booking-scheduler, and the text states the size of the error rather than the duration of a call, so a span would have to invent one."
 }

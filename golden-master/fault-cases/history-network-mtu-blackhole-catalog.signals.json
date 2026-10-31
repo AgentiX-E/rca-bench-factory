@@ -34,5 +34,7 @@
       "quote": "while its health checks stayed green",
       "why": "the control `cp-health-green`: the probe's own response fits in one segment, so it passes while real traffic does not"
     }
-  ]
+  ],
+  "noLogs": "the captures show a handshake and one data segment and then silence, and the process that hung wrote nothing before it stopped.",
+  "noTraces": "the request hung and never completed, so the span that would describe it has no end, and the text quotes the MTU that made it hang rather than a duration."
 }

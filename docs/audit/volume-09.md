@@ -3342,3 +3342,90 @@ that subject's output as the message costs one line and is the difference betwee
 says `expected 1 to be 2` and a report that says which of five things happened. The 34 that already
 did it were not a style; they were the file's own precedent, and the 86 were the part nobody had
 needed yet.
+
+## Finding 334 — a modality that is absent read the same as one nobody looked at
+
+The corpus has two modality blocks, and both are lists:
+
+```
+| `logs[]`   | 11 of 30 cases |
+| `traces[]` |  5 of 30 cases |
+```
+
+A case with no log line and a case nobody had filled in were the same bytes -- nothing -- and the
+guard printed the difference as if it were a fact about the incidents: `logs in 11 of 30, traces in
+5 of 30`. That sentence is true and says the wrong thing. Nineteen incidents left no useful line and
+nineteen were unexamined are different corpora, and only one of them is a corpus where the number
+means anything.
+
+### What replaced it
+
+Two fields, one per modality, and the case answers one way or the other:
+
+| field | when | what it carries |
+| --- | --- | --- |
+| `logs[]` / `traces[]` | the case has the evidence | the declaration `derived-telemetry.ts` expands |
+| `noLogs` / `noTraces` | it does not | one sentence: which reading came closest, and why no line or span carries it |
+
+`fault/modality-evidence.ts` decides six things, and none of them is whether the sentence is true:
+`missing` (neither answer), `both` (a list and a sentence), `empty` (`[]`, which reads as an answer
+and states nothing), `unreadable` (the field is not a list), `notText`, and `vague` (under forty
+characters or no full stop, measured by the same `looksLikeSentence` that `fault.parameterNotes` and
+`sli` use).
+
+`empty` is refused rather than accepted as a synonym for the sentence. One of the two spellings has
+to go, and it is the one that can also mean "nobody filled this in".
+
+### The three cases that looked like they had a line, and the two that did not
+
+Nineteen cases had no log, and five of their texts contain a word a keyword rule would have called
+log-shaped. Read one at a time:
+
+| case | the candidate | what the file says |
+| --- | --- | --- |
+| `history-resource-ephemeral-capacity-image-builder` | `no space left on device`, quoted verbatim | **a line was added**, with a log checkpoint, because it names *which* filesystem refused the write while the node's own reading beside it says 40 percent |
+| `history-middleware-redis-latency-session-cache` | `the SLOWLOG shows a KEYS command issued every 30 seconds` | **refused**: the case already declares `keysIntervalSeconds == 30` as a configuration fact and the command thread at 100 percent as a reading, so a line would state both a third time |
+| `history-config-feature-flag-checkout` | `flipped to false at 07:59 by a scheduled job` | **refused**: already declared as `scheduledJobsWritingFlag == 2` and `flagFlipMinutesBeforeOnset == 1`, and a line would repeat them |
+| `history-runtime-pod-kill-user-profile` | the text says no exception was logged | the absence **is** the evidence: it is the sentence the reason carries |
+| `history-code-off-by-one-invoice-renderer` | the text says nothing is logged and totals match | the same shape: a skipped line is not an error |
+
+The two refusals are finding 327's rule reaching a modality it had not been applied to: a number a
+declaration already holds does not become evidence by being written a second time in prose.
+
+For spans the count moved by one rather than by four. Six cases have no span and cross a `calls` edge
+in their chain, which is where a span pair would come from, and exactly one of their texts quotes a
+duration for the exchange:
+
+| case | the exchange | the text's duration |
+| --- | --- | --- |
+| `history-network-loss-payment-gateway` | order-service to payment-gateway | `time out at 3s` -- **a span was added**, 3000 ms, with the callee's span deliberately absent because the request never arrived |
+| the other five | cross a call | no duration: the texts state when a split began, how long a cluster took to converge, or the size of a lead-time error |
+
+So the reading the guard prints has two halves and both are needed:
+
+```
+check-fault-cases: evidence logs 12 of 30 case(s) show one and 18 name what the incident could not carry
+check-fault-cases: evidence traces 6 of 30 case(s) show one and 24 name what the incident could not carry
+check-fault-cases: evidence 5 of the 24 case(s) with no span still cross a service call in their
+                   chain: history-code-timezone-booking-api, ... 
+```
+
+The third line is the one that makes the twenty-four readable. "No span" and "no span because the
+exchange has no duration" are now different sentences, and the five cases where the difference is
+doing work are named rather than counted.
+
+### The rule biting its own fixtures
+
+Two tests in `check-fault-cases.test.ts` build a log line on top of `history-checkout-cpu-saturation`'s
+signals, and after this round that file carries `noLogs`. Both went red with
+`declares 1 log line entry and also writes 'noLogs': two answers to one question` -- which is the rule
+working on the first fixture it met. The repair is `delete copy.noLogs` in the fixture's one builder,
+with the reason written beside it: a fixture that adds evidence has to stop claiming there is none.
+
+### What this does not do
+
+It does not decide whether a reason is true, and it does not make the corpus carry more evidence than
+the incidents left. What it changes is that every case now answers, that the two halves add up to the
+corpus on both exits, and that the five cases whose chain crosses a call are named. The sentences
+themselves are the next reader's to judge -- and one of them is the corpus saying, in its own words,
+that the absence of a log line is the finding.

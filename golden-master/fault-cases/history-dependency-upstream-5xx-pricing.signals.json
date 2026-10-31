@@ -2,7 +2,7 @@
   "schema": "rca-bench-derived-signals/1",
   "origin": "derived",
   "caseId": "history-dependency-upstream-5xx-pricing",
-  "why": "Telemetry for the upstream-5xx case, derived from the three shares the text states. The shape is deliberately a pair and a control: the pricing service's own 502 share and the dependency's 503 share are both 60% because 'every failure is an upstream tax-calculation call', and the third series is the zero against every other dependency, which is what makes this a dependency fault rather than a fault of the pricing service. All three are percentages, so the jitter stays inside the unit's domain -- a share of 60% can carry the corpus's \u00b12% noise without becoming a share no system could report.",
+  "why": "Telemetry for the upstream-5xx case, derived from the three shares the text states. The shape is deliberately a pair and a control: the pricing service's own 502 share and the dependency's 503 share are both 60% because 'every failure is an upstream tax-calculation call', and the third series is the zero against every other dependency, which is what makes this a dependency fault rather than a fault of the pricing service. All three are percentages, so the jitter stays inside the unit's domain -- a share of 60% can carry the corpus's ±2% noise without becoming a share no system could report.",
   "series": [
     {
       "service": "pricing-service",
@@ -43,5 +43,6 @@
       "quote": "status page shows a degradation window that matches exactly",
       "why": "the provider's own notice, which is the only statement about the fault from the side that had it"
     }
-  ]
+  ],
+  "noTraces": "the text quotes shares rather than durations, and the eighteen minutes is the length of the incident rather than of a call."
 }

@@ -34,5 +34,7 @@
       "quote": "No deploy ran",
       "why": "the checkpoint `cp-no-deploy` holds the derived difference of zero: a counter that stays at the three deployments it had before the window, which is the reading that makes 'somebody shipped it' false rather than merely unlikely"
     }
-  ]
+  ],
+  "noLogs": "the flip is already declared twice, as a count of jobs writing one key and as the minute it happened, and a line would say the same thing a third time.",
+  "noTraces": "the chain crosses from the flag service to the storefront, and the text gives the minute the flag flipped rather than how long the read took."
 }

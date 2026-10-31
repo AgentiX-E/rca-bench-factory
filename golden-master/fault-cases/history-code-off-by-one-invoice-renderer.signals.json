@@ -8,8 +8,12 @@
       "service": "invoice-renderer",
       "metric": "rendered_lines_per_page",
       "unit": "count",
-      "baseline": { "parameter": "pageSize" },
-      "post": { "parameter": "renderedLinesPerPage" },
+      "baseline": {
+        "parameter": "pageSize"
+      },
+      "post": {
+        "parameter": "renderedLinesPerPage"
+      },
       "noise": "none",
       "quote": "The invoice renderer skipped the last line of every multi-page invoice",
       "why": "the checkpoint `cp-lines-per-page` holds the five: both numbers are the case's own parameters, so the gap of one is the arithmetic the text states rather than two values edited into agreement"
@@ -34,5 +38,7 @@
       "quote": "Nothing is logged",
       "why": "the checkpoint `cp-no-logs` holds the zero: the item was dropped without a condition that could fail, so the absence of a log line is the fault's shape rather than a gap in collection"
     }
-  ]
+  ],
+  "noLogs": "the text says nothing is logged and the totals still match, because a skipped line is not an error and the renderer had nothing to report.",
+  "noTraces": "the work is a loop over pages rather than a call, and the chain stays inside the renderer, so there is no exchange to time."
 }

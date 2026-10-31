@@ -100,6 +100,15 @@
         "value": 40,
         "unit": "%",
         "description": "the node's root filesystem did not move from 40 percent, and that is the control that rules out a full disk rather than the evidence for one"
+      },
+      {
+        "checkpointId": "cp-enospc-build",
+        "entityRef": "service:synthetic-storefront/image-builder",
+        "signalKind": "log",
+        "signalRef": "enospc-build",
+        "comparator": "contains",
+        "value": "no space left on device",
+        "description": "the refusal itself, on the filesystem the build writes to rather than the one the node reports, which is what makes the 40 percent beside it a red herring"
       }
     ],
     "remediation": [

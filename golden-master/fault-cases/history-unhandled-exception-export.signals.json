@@ -9,7 +9,9 @@
       "metric": "export_failure_ratio_percent",
       "unit": "%",
       "baseline": 0,
-      "post": { "parameter": "failureShare" },
+      "post": {
+        "parameter": "failureShare"
+      },
       "quote": "Roughly 3% of exports fail",
       "why": "the checkpoint `cp-failure-ratio` holds it; the baseline of zero is the text's own framing of a fault that began with a change in the data, not in the code path"
     }
@@ -23,5 +25,6 @@
       "why": "the mechanism stated in words by the system itself, which is what makes this case a code fault rather than a resource one",
       "id": "typeerror-line"
     }
-  ]
+  ],
+  "noTraces": "the worker died mid-job, so the span that would describe the export has no end; the text quotes a failure share and a stack frame instead."
 }

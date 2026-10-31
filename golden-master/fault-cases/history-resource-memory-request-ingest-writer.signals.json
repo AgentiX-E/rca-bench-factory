@@ -27,9 +27,13 @@
       "metric": "requested_memory_mebibytes",
       "unit": "MiBy",
       "baseline": 1024,
-      "post": { "parameter": "requestedMemory" },
+      "post": {
+        "parameter": "requestedMemory"
+      },
       "quote": "It requests 1Gi but the JVM starts without a heap cap",
       "why": "the checkpoint `cp-requested` holds the flat gibibyte: the request never moved, so the gap between request and use is the whole of the overcommit rather than a change in load"
     }
-  ]
+  ],
+  "noLogs": "the two kills were recorded by the kubelet as a container state, which this case carries as a restart count; the JVM was killed before it could write a line.",
+  "noTraces": "the chain stays inside the writer's pod and the text states its request and its usage rather than the duration of any call it made."
 }

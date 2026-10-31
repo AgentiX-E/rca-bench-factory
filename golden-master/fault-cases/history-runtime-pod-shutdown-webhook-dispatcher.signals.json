@@ -14,5 +14,7 @@
       "quote": "drops about 300 deliveries",
       "why": "the checkpoint `cp-dropped` holds the three hundred. A counter rather than a step, because the text reports an accumulated loss across deploys rather than a rate that changed at one moment: the pre-window is flat at zero, which is what a counter that had never dropped anything reads, and the post-window accumulates to the ticket's number. Nothing else in the window moves, so this is also the case's demonstration that a counter's step is the shape a level-based reading misses"
     }
-  ]
+  ],
+  "noLogs": "the process was killed at thirty seconds in the middle of its drain, so the line that would have counted the dropped deliveries never reached a log.",
+  "noTraces": "the text measures a drain against a grace period, which is a deadline rather than an exchange between two services."
 }

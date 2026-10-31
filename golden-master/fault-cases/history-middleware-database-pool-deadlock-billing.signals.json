@@ -37,5 +37,6 @@
       "quote": "began throwing 'connection pool exhausted' after the replica promotion",
       "why": "the error a human reported, in the service's own words, and the string the log checkpoint asserts"
     }
-  ]
+  ],
+  "noTraces": "the threads never make progress, so a span would never end; the text quotes a pool size and a deadlock instead of a duration."
 }

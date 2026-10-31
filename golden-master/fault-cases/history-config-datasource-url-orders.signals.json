@@ -31,5 +31,7 @@
       "quote": "writes succeeded, into the wrong place",
       "why": "the checkpoint `cp-no-errors` holds the zero: nothing failed, which is why the fault was silent and why every explanation involving a failure is excluded"
     }
-  ]
+  ],
+  "noLogs": "the text says the symptom was silent: the writes succeeded into the wrong database, so no component had a reason to write a line.",
+  "noTraces": "the call to the wrong database has the same duration as the call to the right one, so a span would show nothing that this case's readings do not."
 }

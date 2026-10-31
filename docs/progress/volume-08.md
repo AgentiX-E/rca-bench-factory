@@ -2581,9 +2581,9 @@ cannot draw and an author must.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **211 files, 5198 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **215 files, 5385 tests passed** (as of this commit) |
+| `core` test suite | **211 files, 5198 tests passed** (as of `35ba009ca`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `35ba009ca`) |
+| repo test suite | **215 files, 5385 tests passed** (as of `35ba009ca`) |
 | coverage | **99.97 / 99.75 / 100 / 99.97** (cli 100 / 100 / 100 / 100); `sli.ts` is 100 on all four |
 | cases that say which reading ranks them | **30 of 30** answer: **7** declare, **23** give a reason |
 | the column upstream looks for, in the exported tables | **7 of 30** (RE3: **1 of its 5** code cases) |
@@ -2615,3 +2615,79 @@ The corpus's telemetry, the metric tables, the anchors, the backends, the locali
 published success ratios, and every budget the plan enforces. The export gained one column name for
 seven cases and lost the series' original name in those seven tables; no published number moved,
 because every ratio this repository computes is computed from the bundle rather than from `data.csv`.
+
+## v3.27 — a modality that is absent stops reading like one nobody looked at
+
+The convergence list emptied last round, so this one starts from the product. The first item on the
+list the last report left is the corpus's telemetry: 19 of 30 cases carry no log line and 25 carry no
+span, and every gate was green about it. That number was not a defect. It was a sentence pretending
+to be one.
+
+### 一、an absence and an omission are the same bytes
+
+`logs` and `traces` are lists. A case with no line and a case nobody had filled in both hold nothing,
+so the readout printed `logs in 11 of 30, traces in 5 of 30` -- true, and about the wrong subject.
+Nineteen incidents left no useful line and nineteen were unexamined are different corpora.
+
+Each case now answers one way or the other: the list, or `noLogs` / `noTraces` with a sentence. Six
+refusals in `fault/modality-evidence.ts`: `missing`, `both`, `empty`, `unreadable`, `notText`, and
+`vague` -- the last measured by the same `looksLikeSentence` that `fault.parameterNotes` and `sli`
+share. An empty list is refused rather than read as a synonym, because it is the one spelling that
+can also mean "nobody filled this in".
+
+### 二、the five cases that looked like they had a line
+
+Five of the nineteen texts contain a word a keyword rule would have called log-shaped. Read one at a
+time, **one** turned out to carry a line and **two** turned out to repeat a declared number:
+
+| case | candidate | outcome |
+| --- | --- | --- |
+| `image-builder` | `no space left on device` | **a log and a log checkpoint**, because it names which filesystem refused the write while the node reads 40 percent |
+| `redis-session-cache` | `SLOWLOG ... every 30 seconds` | **refused**: `keysIntervalSeconds == 30` and the thread at 100 percent are already declared |
+| `feature-flag-checkout` | `flipped to false at 07:59` | **refused**: `scheduledJobsWritingFlag == 2` and `flagFlipMinutesBeforeOnset == 1` are already declared |
+| `pod-kill-user-profile` | the text says nothing was logged | the absence is the finding, and it is what the reason says |
+| `off-by-one-invoice-renderer` | the text says nothing is logged | the same shape |
+
+The two refusals are finding 327's rule in a modality it had not been applied to: a number a
+declaration already holds does not become evidence by being written again in prose.
+
+### 三、six cases cross a call, and one of them quotes a duration
+
+Where a span pair would come from is measurable: a chain step whose two ends belong to services the
+graph connects with `calls`. Six of the twenty-five spanless cases do. Exactly one of their texts
+quotes a duration for the exchange -- `time out at 3s` in the payment-gateway case -- so that one got
+a span of 3000 ms, with the callee's span deliberately absent because the request never arrived. The
+other five state when a split began, how long a cluster took to converge, or the size of a lead-time
+error.
+
+A rule that refused `noTraces` on those five would have been wrong five times, so the count is a
+reading rather than a gate, and the five are named in the report instead.
+
+### Readings
+
+> Ledger for `v3.27`.
+
+| item | value |
+| --- | --- |
+| `core` test suite | **212 files, 5236 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **216 files, 5423 tests passed** (as of this commit) |
+| cases that answer for a log line | **30 of 30**: **12** show one, **18** say what one could not carry |
+| cases that answer for a span | **30 of 30**: **6** show one, **24** say what one could not carry |
+| cases with no span that still cross a service call | **5 of the 24**, named in the report |
+| new evidence | **1 log** (with a log checkpoint) and **1 span**; the other 42 answers are reasons |
+| coverage | **99.97 / 99.74 / 100 / 99.97** (cli 100 / 100 / 100 / 100); `modality-evidence.ts` is 100 on all four |
+| `modality-evidence.test.ts` | **28 tests**: six refusals, the boundary, and ten walks over a graph |
+| `check-fault-cases.test.ts` | 130 → **137**: five refusals, the partition, and the crossing reading |
+| export failure sites | **99** across 52 of 70 scripts |
+| audits | 1–**334**, **331 findings** (absent: 118, 132–133) |
+
+### Left open
+
+- **`signal_ref` still reaches three targets as a bare metric name.** Unchanged and now the oldest
+  open item on the list. `[open: the export format is a published contract with three targets]`
+- **Upstream's token table still refuses our path.** `[open: not ours to answer; `{system}` stays the
+  case's own name]`
+- **The corpus cannot show a line for an incident that left none.** 18 and 24 are now answers rather
+  than gaps, and the difference between them and a filled corpus is the incidents, not the work.
+  `[open: further annotation needs another incident, not another sentence]`

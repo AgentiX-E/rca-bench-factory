@@ -1131,6 +1131,10 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     };
     edit(line);
     copy.logs = [line];
+    // The base file says why it has no line, and a case that shows one cannot also explain its
+    // absence: `fault/modality-evidence.ts` refuses both answers at once, and the fixture has to
+    // answer the question it is now asked rather than leaving the old answer beside the new.
+    delete copy.noLogs;
     return copy;
   }
 
@@ -2447,5 +2451,134 @@ describe('check-fault-cases · a case has to say which reading ranks it', () => 
     );
     expect(exported, 'the export line does not report the ranking column').not.toBeNull();
     expect(Number(exported![1])).toBe(Number(ranking));
+  });
+});
+
+describe('check-fault-cases · a case has to answer for the modality it does not show', () => {
+  // `logs` and `traces` are lists, so "this case has no line" and "nobody filled this in" were the
+  // same bytes: 19 of 30 cases carried no `logs` and 25 no `traces`, and the readout printed those as
+  // facts about the incidents. The module's own refusals live in `modality-evidence.test.ts`; these
+  // check the wiring -- that the guard asks every case, that a refusal reaches the reader, and that
+  // the two lines printed are a partition of the corpus rather than of the cases that passed.
+  const SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function answered(edit: (declaration: Record<string, unknown>) => void): string {
+    const declaration = JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>;
+    edit(declaration);
+    return corpus({ signals: declaration });
+  }
+
+  it('refuses a case that neither shows a log line nor says why it cannot', async () => {
+    const result = await run([
+      '--cases',
+      answered((declaration) => {
+        delete declaration.noLogs;
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain(
+      "'history-checkout-cpu-saturation' shows no log line and does not write 'noLogs'",
+    );
+  });
+
+  it('refuses an empty list, because it reads as an answer and states nothing', async () => {
+    const result = await run([
+      '--cases',
+      answered((declaration) => {
+        declaration.logs = [];
+        delete declaration.noLogs;
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain('declares an empty list for its log lines, which states nothing');
+  });
+
+  it('refuses a case that shows a span and explains its absence at the same time', async () => {
+    const result = await run([
+      '--cases',
+      answered((declaration) => {
+        declaration.noTraces = 'the text states a level change on one service and no exchange at all.';
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("declares 1 span entry and also writes 'noTraces'");
+  });
+
+  it('refuses a reason that is a label rather than a sentence', async () => {
+    const result = await run([
+      '--cases',
+      answered((declaration) => {
+        declaration.noLogs = 'no log line';
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("writes 'noLogs' as 'no log line', which is not a sentence");
+  });
+
+  it('refuses a reason that is not text', async () => {
+    const result = await run([
+      '--cases',
+      answered((declaration) => {
+        declaration.noLogs = 7;
+      }),
+    ]);
+    expect(result.status, result.out).toBe(2);
+    expect(result.out).toContain("writes 'noLogs' as 7, which is not a sentence");
+  });
+
+  it('accepts the answers the corpus carries, and prints them as a partition', async () => {
+    // One line per modality, and the two halves add up to the corpus. A count that only saw the
+    // answers would print `12 of 12` and call it a corpus, which is what the first version did.
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    for (const what of ['logs', 'traces']) {
+      const line = new RegExp(
+        `evidence ${what} (\\d+) of (\\d+) case\\(s\\) show one and (\\d+) name what the incident could not carry`,
+      ).exec(result.out);
+      expect(line, `the ${what} line is missing from the report`).not.toBeNull();
+      const [, shown, total, absent] = line!;
+      expect(Number(shown) + Number(absent)).toBe(Number(total));
+      expect(Number(total)).toBe(CORPUS_SIZE);
+      expect(Number(shown)).toBeGreaterThan(0);
+      expect(Number(absent)).toBeGreaterThan(0);
+    }
+  });
+
+  it('names the cases whose chain crosses a call and whose answer is a reason', async () => {
+    // The reading is the half a machine can check: a case whose chain crosses a `calls` edge has an
+    // exchange a span could describe. Counted from the files rather than from the guard's own line,
+    // so the two instruments can disagree.
+    const index = JSON.parse(readFileSync(join(CASES, 'index.json'), 'utf8')) as {
+      cases: Array<{ caseId: string; signals?: string }>;
+    };
+    const withoutTraces = new Set(
+      index.cases
+        .filter((entry) => typeof entry.signals === 'string')
+        .filter((entry) => {
+          const declaration = JSON.parse(readFileSync(join(CASES, entry.signals!), 'utf8')) as {
+            traces?: unknown[];
+          };
+          return !Array.isArray(declaration.traces) || declaration.traces.length === 0;
+        })
+        .map((entry) => entry.caseId),
+    );
+    expect(withoutTraces.size).toBeGreaterThan(0);
+
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    const line = /evidence (\d+) of the (\d+) case\(s\) with no span still cross a service call in their chain: (.+)$/m.exec(
+      result.out,
+    );
+    expect(line, 'the crossing line is missing from the report').not.toBeNull();
+    const [, crossing, total, named] = line!;
+    expect(Number(total)).toBe(withoutTraces.size);
+    expect(Number(crossing)).toBeGreaterThan(0);
+    const cases = named.split(', ');
+    expect(cases).toHaveLength(Number(crossing));
+    for (const caseId of cases) {
+      expect(withoutTraces.has(caseId), `${caseId} carries no span, so it can be named here`).toBe(true);
+    }
   });
 });

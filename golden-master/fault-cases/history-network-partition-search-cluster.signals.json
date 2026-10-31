@@ -54,5 +54,7 @@
       "quote": "Queries on one side returned documents that the other side had already deleted",
       "why": "the checkpoint `cp-stale-reads-elsewhere` holds the zero: the other half saw the deletes, so it returns nothing stale at all. The contrast is the finding -- one side stale, one side correct, both serving -- and it is a second reading of one metric on a second node rather than a sentence in a `why`"
     }
-  ]
+  ],
+  "noLogs": "each side elected its own leader and served its own view, and neither side considered itself broken, so no component wrote a line about the split.",
+  "noTraces": "the chain crosses from search-cluster to catalog-service, and the text states when the split began and healed rather than the duration of a query across it."
 }

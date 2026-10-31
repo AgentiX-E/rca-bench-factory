@@ -42,5 +42,6 @@
       "quote": "construction throws on an unknown option",
       "why": "the constructor's own refusal, and the phrase that makes the cause nameable: an option the library does not know is a moved field, where a credential or a host error would read differently"
     }
-  ]
+  ],
+  "noTraces": "the service never starts, so no request is ever served and no span exists to be recorded."
 }

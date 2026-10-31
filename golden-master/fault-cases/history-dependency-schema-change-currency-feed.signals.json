@@ -34,5 +34,6 @@
       "quote": "Settlement's parser still reads the old field, which is now rounded",
       "why": "the checkpoint `cp-parser-log` holds this line: a reconstruction of what the parser would emit, since the incident text states the fact and not the message -- it is the only reading on the settlement side that names the field rather than the size of the error"
     }
-  ]
+  ],
+  "noTraces": "the chain crosses from the currency feed to settlement, and the text says the totals were wrong for two hours rather than how long any call took."
 }

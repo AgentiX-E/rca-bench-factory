@@ -40,5 +40,6 @@
       "quote": "request latency spiked to 8s",
       "why": "one request through the gateway, which is the unit the text's own number is in: every path moved, so the span is named for the request rather than for a route that was never the point"
     }
-  ]
+  ],
+  "noLogs": "the gateway answered every request slowly and successfully, and a rule that matches late writes no line about matching late."
 }

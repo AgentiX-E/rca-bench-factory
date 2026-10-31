@@ -31,5 +31,16 @@
       "quote": "the image builder began failing every build",
       "why": "the checkpoint `cp-builds-fail` holds the zero: every build failed, which is the impact and the reason the queue that fed the cache kept growing"
     }
-  ]
+  ],
+  "logs": [
+    {
+      "service": "image-builder",
+      "id": "enospc-build",
+      "severity": "ERROR",
+      "body": "build failed: write /var/lib/buildkit/cache: no space left on device",
+      "quote": "began failing every build with 'no space left on device'",
+      "why": "the message the build emits when the writable overlay hits its ceiling, and the only reading that says which filesystem refused the write: the node reads 40 percent and the overlay reads 100"
+    }
+  ],
+  "noTraces": "the failure is a write the filesystem refused, and the chain stays inside the builder's pod, so there is no exchange for a span to describe."
 }

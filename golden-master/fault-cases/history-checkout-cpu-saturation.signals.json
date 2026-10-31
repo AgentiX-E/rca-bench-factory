@@ -32,5 +32,6 @@
       "quote": "180ms to 4.3s",
       "why": "the service's own request span, which is where the p99 the pager fired on is one number rather than a percentile; the text names the service and no route, so the span is named for the service rather than for a path nothing stated"
     }
-  ]
+  ],
+  "noLogs": "the text quotes a pager threshold, a throttling counter and a pinned limit, and no line any process wrote: the pod was busy rather than failing."
 }

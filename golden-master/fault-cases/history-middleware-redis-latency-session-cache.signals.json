@@ -41,5 +41,6 @@
       "quote": "0.4ms to 55ms",
       "why": "the client's own GET against the session Redis, which is the only place the 55ms exists: the instance reports a saturated thread and not a request, so a span is what makes the two views of one fault comparable"
     }
-  ]
+  ],
+  "noLogs": "the SLOWLOG would restate two facts this case already declares, the thirty-second key scan and the saturated command thread, and a line that repeats a declaration is the drift finding 327 removed."
 }
