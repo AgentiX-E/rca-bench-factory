@@ -22,6 +22,10 @@
         "value": 8,
         "unit": "%"
       }
+    },
+    "parameterNotes": {
+      "from": "the caller on the lossy path; the two counters are one per side of the wire, and this is the side whose retransmits climbed.",
+      "to": "the callee whose replica stopped completing handshakes; the request rate that fell is its own, and the name fixes which end of the wire."
     }
   },
   "groundTruth": {

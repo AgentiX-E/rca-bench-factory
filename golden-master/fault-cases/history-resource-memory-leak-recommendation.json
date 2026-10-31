@@ -25,6 +25,9 @@
         "value": 419430400,
         "unit": "By"
       }
+    },
+    "parameterNotes": {
+      "service": "the service whose heap grew with no eviction path; the RSS reading is its process, so the name is the subject rather than a value."
     }
   },
   "groundTruth": {

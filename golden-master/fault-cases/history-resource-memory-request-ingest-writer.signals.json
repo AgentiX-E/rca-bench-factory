@@ -27,7 +27,7 @@
       "metric": "requested_memory_mebibytes",
       "unit": "MiBy",
       "baseline": 1024,
-      "post": 1024,
+      "post": { "parameter": "requestedMemory" },
       "quote": "It requests 1Gi but the JVM starts without a heap cap",
       "why": "the checkpoint `cp-requested` holds the flat gibibyte: the request never moved, so the gap between request and use is the whole of the overcommit rather than a change in load"
     }

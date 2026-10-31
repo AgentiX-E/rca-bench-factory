@@ -21,6 +21,9 @@
         "value": 2400,
         "unit": "s"
       }
+    },
+    "parameterNotes": {
+      "service": "the replica that could not keep up; the lag reading is the relay's, and the replica is the subject every ranking here is per."
     }
   },
   "groundTruth": {

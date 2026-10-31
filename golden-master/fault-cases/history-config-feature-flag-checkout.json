@@ -26,6 +26,10 @@
         "value": 1,
         "unit": "min"
       }
+    },
+    "parameterNotes": {
+      "service": "the component where the effect is visible, which is the answer; the flag's value is a reading, so the name states where it is seen rather than what it is.",
+      "flagKey": "the flag two scheduled jobs both write; its value is in the series, and the key's name is what makes the repair a job definition rather than a deploy."
     }
   },
   "groundTruth": {

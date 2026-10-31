@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * The runner's only piece of machinery: start one step's script, and be able to
@@ -124,6 +124,22 @@ function explainPid(pid: number, started: string | null): string {
   );
 }
 
+/**
+ * How long to wait for a signalled group to disappear here, measured rather than assumed.
+ *
+ * The wait that this constant governs failed once in seventy-seven runs at **5117 ms** (finding 303):
+ * five seconds of budget plus a hundred and seventeen milliseconds of scheduling. Seventy-seven runs
+ * never reproduced it, so the number was never the defect -- but five seconds was also never a
+ * measurement of anything. What this does now is measure the same shape three times before the test
+ * that needs it runs, and derive the budget as twenty times the worst sample with five seconds as a
+ * floor. On a fast machine the floor wins and the number is unchanged; on a loaded one the wait grows
+ * with the machine instead of failing with it, and a failure names both numbers so the next sighting
+ * arrives with its own evidence rather than as a bare duration.
+ */
+const REAP_FLOOR_MS = 5_000;
+let reapBudgetMs = REAP_FLOOR_MS;
+let reapWorstMs = 0;
+
 /** Wait, without a timer, until `predicate` holds or the budget runs out. */
 function until(predicate: () => boolean, budgetMs = 2000): boolean {
   const deadline = Date.now() + budgetMs;
@@ -133,6 +149,35 @@ function until(predicate: () => boolean, budgetMs = 2000): boolean {
   }
   return predicate();
 }
+
+/**
+ * Time one reap: start a step that backgrounds a grandchild, let the bound kill the group, and
+ * measure how long the grandchild takes to leave the process table.
+ *
+ * The same shape the assertion below relies on, run in isolation, so the number it depends on is
+ * measured from the machinery rather than from a feeling about how fast a kernel is.
+ */
+async function measureReap(sample: number): Promise<number> {
+  const pidFile = join(SCRATCH, `reap-${String(sample)}.pid`);
+  try {
+    await runStep({ key: 'a / reap', run: `sleep 30 & echo $! > ${pidFile}\nsleep 30`, cwd: '.', timeoutMs: 300 });
+  } catch {
+    // `StepTimeout` is the expected exit: the bound is what kills the group being measured.
+  }
+  expect(existsSync(pidFile), 'the calibration step never recorded its grandchild').toBe(true);
+  const pid = Number(readFileSync(pidFile, 'utf8').trim());
+  const identity = factsOf(pid)?.started ?? null;
+  const started = Date.now();
+  until(() => !stillRunning(pid, identity), REAP_FLOOR_MS * 2);
+  return Date.now() - started;
+}
+
+beforeAll(async () => {
+  const samples: number[] = [];
+  for (let sample = 0; sample < 3; sample += 1) samples.push(await measureReap(sample));
+  reapWorstMs = Math.max(...samples);
+  reapBudgetMs = Math.max(REAP_FLOOR_MS, reapWorstMs * 20);
+});
 
 describe('one step, run as CI would run it', () => {
   it('runs the body from the step the plan produced and returns', async () => {
@@ -240,8 +285,10 @@ describe('one step, run as CI would run it', () => {
       // number standing in for a signal, and a supervisor can tell the difference.
       expect(how, 'the runner survived the signal a supervisor sent it').toBe('SIGTERM');
       expect(
-        until(() => !stillRunning(pid, identity), 5_000),
-        `the grandchild ${String(pid)} outlived the runner (${explainPid(pid, identity)})`,
+        until(() => !stillRunning(pid, identity), reapBudgetMs),
+        `the grandchild ${String(pid)} outlived the runner within ${String(reapBudgetMs)} ms, and the ` +
+          `same wait took ${String(reapWorstMs)} ms at worst across three samples here ` +
+          `(${explainPid(pid, identity)})`,
       ).toBe(true);
     } finally {
       child.kill('SIGKILL');

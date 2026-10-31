@@ -1,3 +1,5 @@
+import { appendFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 /**
@@ -59,18 +61,25 @@ export const RPC_DEADLINE_MS = 60_000;
 export const STALL_INTERVAL_MS = 50;
 
 /**
- * The budget, at three quarters of the deadline.
+ * The budget: the largest value the deadline admits, and above every legitimate file measured.
  *
- * The margin is not tidiness. The deadline runs from the moment a call is posted,
- * so a file may enter its last stall immediately after posting one; a budget equal
- * to the deadline would leave a file that hits it exactly one call away from
- * failing. Three quarters keeps the largest legitimate blocking work in the suite
- * -- `typecheck-entrypoint.test.ts` at 36.7 s and `ingest-report.test.ts` at 33.6 s,
- * both CPU-bound rather than blocked children -- inside the budget while leaving
- * 15 s of headroom to the deadline.
+ * It used to be described as "three quarters of the deadline", which is a ratio rather than a
+ * reading. Two measurements now bound it, and both are held by `stall-budget.test.ts`:
  *
- * Measured on the run that produced this file: the two files above are the only
- * ones over 20 s, and the file that failed CI was at **61.2 s**.
+ * - **below**, the worst legitimate stall observed on the slowest runner this suite runs on: a
+ *   four-CPU CI runner, where `typecheck-entrypoint.test.ts` held the loop for 36.7 s and
+ *   `ingest-report.test.ts` for 33.6 s, both CPU-bound work rather than blocked children. A budget
+ *   at or under those would fail files that are doing exactly what they are for;
+ * - **above**, 15 s below the deadline. The deadline runs from the moment a call is posted, so a
+ *   file may enter its last stall immediately after posting one; a budget equal to the deadline
+ *   would leave a file that hits it exactly one call away from failing.
+ *
+ * The two bounds are 44,040 ms and 45,000 ms, which is why the number is a ceiling and not a round
+ * figure. What the suite actually spends is measured rather than assumed: with
+ * `RCA_BENCH_STALL_REPORT=<path>` the hook writes one line per file -- 211 files on a 32-core box,
+ * median 4 ms, 95th percentile 1,583 ms, max 7,250 ms, seventeen files over a second and two over
+ * five -- so the headroom this budget leaves is a number a reader can reproduce instead of a
+ * margin somebody chose.
  */
 export const STALL_BUDGET_MS = 45_000;
 
@@ -163,4 +172,55 @@ export function stallVerdict(longestMs: number, budgetMs: number = STALL_BUDGET_
     '`docs/audit/volume-09.md` and the controlled pair in `stall-budget.test.ts`. Await the child, ' +
     'or split the file.'
   );
+}
+
+/** Where the suite writes the stall it measured per file, when anything asks it to. */
+export const STALL_REPORT_ENV = 'RCA_BENCH_STALL_REPORT';
+
+/** One file's measurement, as the report records it. */
+export interface StallEntry {
+  /** The test file, relative to the repository root: a path that survives a different checkout. */
+  readonly file: string;
+  readonly longestMs: number;
+  readonly budgetMs: number;
+}
+
+/**
+ * One line of the report: the file, how long it held the loop, and the budget in force.
+ *
+ * A line per file rather than a summary, because the summary is the one thing the gate already
+ * produces (it fails the file that was over) and the distribution is what nothing could see: which
+ * files are near the budget, how near, and whether the worst of them is the same file every run.
+ * JSONL so that a reader can sort it without a parser and a shell can `grep` it.
+ */
+export function stallReportLine(entry: StallEntry, root: string): string {
+  return `${JSON.stringify({
+    file: relative(root, resolve(entry.file)),
+    longestMs: Math.round(entry.longestMs),
+    budgetMs: entry.budgetMs,
+  })}\n`;
+}
+
+/**
+ * Append this file's measurement to the report the environment names, and do nothing otherwise.
+ *
+ * Reading the environment rather than taking a flag keeps the call site one line: the hook runs for
+ * every file in the suite, and a hook that had to decide whether it was asked would be a second
+ * place for the answer to differ from the report's. `append` is injectable so the line and the path
+ * can be asserted without writing to a file the test then has to find.
+ */
+export function recordStall(
+  entry: StallEntry,
+  options: {
+    environment?: NodeJS.ProcessEnv;
+    root?: string;
+    append?: (path: string, line: string) => void;
+  } = {},
+): void {
+  const environment = options.environment ?? process.env;
+  const path = environment[STALL_REPORT_ENV];
+  if (path === undefined || path === '') return;
+  const root = options.root ?? process.cwd();
+  const append = options.append ?? ((where: string, line: string) => appendFileSync(where, line));
+  append(path, stallReportLine(entry, root));
 }

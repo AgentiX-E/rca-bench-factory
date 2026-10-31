@@ -25,6 +25,9 @@
         "value": 1,
         "unit": "count"
       }
+    },
+    "parameterNotes": {
+      "service": "the service whose entrypoint waited on a lock file nothing creates; the uptime and restart readings are its pod's, and the name is the subject."
     }
   },
   "groundTruth": {

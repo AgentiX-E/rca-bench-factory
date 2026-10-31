@@ -22,6 +22,10 @@
         "value": 10737418240,
         "unit": "By"
       }
+    },
+    "parameterNotes": {
+      "service": "the builder whose overlay filled; the ephemeral used-percent is that pod's, so the name is the subject rather than a measurement.",
+      "cachePath": "where the layer cache lands inside the overlay, which is why the queue fills it; a path is not a quantity any series could hold."
     }
   },
   "groundTruth": {

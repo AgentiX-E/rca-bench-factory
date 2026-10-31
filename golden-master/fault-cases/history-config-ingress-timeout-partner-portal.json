@@ -25,6 +25,10 @@
         "value": 600,
         "unit": "s"
       }
+    },
+    "parameterNotes": {
+      "ingressRule": "the ingress rule whose annotation changed; the 504 counter is per rule in the source, and the corpus carries one rule's worth of it.",
+      "previousUpstreamReadTimeout": "what the annotation held before the change, which is the contrast; the reading is the 504 count, and a value no longer in force measures nothing."
     }
   },
   "groundTruth": {

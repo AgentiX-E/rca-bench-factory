@@ -21,6 +21,9 @@
         "value": 500,
         "unit": "mcore"
       }
+    },
+    "parameterNotes": {
+      "container": "the container that ran at its limit; the throttling counter is per container in the source system, and the corpus keeps one container's worth of it."
     }
   },
   "groundTruth": {

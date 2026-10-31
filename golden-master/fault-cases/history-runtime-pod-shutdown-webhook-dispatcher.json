@@ -25,6 +25,9 @@
         "value": 120,
         "unit": "s"
       }
+    },
+    "parameterNotes": {
+      "service": "the dispatcher that lost its queue to a deadline; the dropped-delivery counter is its own, so the name is the subject rather than a value."
     }
   },
   "groundTruth": {

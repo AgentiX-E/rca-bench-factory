@@ -18,6 +18,10 @@
     "parameters": {
       "consumerGroup": "order-events",
       "trigger": "schema-change"
+    },
+    "parameterNotes": {
+      "consumerGroup": "the group whose lag this is; the lag reading is per group in the source system, and the corpus carries the one group that stalled.",
+      "trigger": "what made the consumers slower, named in a word; the processing-time series states the slowdown and says nothing about its cause."
     }
   },
   "groundTruth": {

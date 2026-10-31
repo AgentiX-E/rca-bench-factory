@@ -516,6 +516,15 @@ export interface FaultCase {
     category: FaultCategory;
     injectionMethod?: 'chaos-mesh' | 'litmus' | 'chaosblade' | 'historical' | 'manual';
     parameters?: Record<string, unknown>;
+    /**
+     * One sentence per parameter nothing cites, saying what the fact is for.
+     *
+     * A parameter a reading cites needs no note: the citation is the statement, and a note beside it
+     * would be a second one that can drift. What this answers is the question only the author can
+     * answer -- why a fact is in the file when no reading of the telemetry speaks for it -- which is
+     * the question finding 300 could not put to a rule (`fault/parameter-notes.ts`).
+     */
+    parameterNotes?: Record<string, string>;
   };
   groundTruth: GroundTruth;
   /** Natural-language task description required by OpenRCA-style benchmarks. */

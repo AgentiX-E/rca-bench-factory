@@ -18,6 +18,10 @@
     "parameters": {
       "service": "reporting-service",
       "endpoint": "/v2/summary"
+    },
+    "parameterNotes": {
+      "service": "the service whose mapper threw; the failure share is a share of that service's responses, so the name is the subject rather than a reading.",
+      "endpoint": "the route the guard sits behind, which is how the ticket separates this route from the ones that stayed clean; no series here is per route."
     }
   },
   "groundTruth": {

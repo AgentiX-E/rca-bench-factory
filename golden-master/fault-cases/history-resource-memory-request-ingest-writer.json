@@ -25,6 +25,9 @@
         "value": 0,
         "unit": "MiBy"
       }
+    },
+    "parameterNotes": {
+      "service": "the writer whose request was a third of its use; both memory readings are its container's, so the name is the subject rather than a value."
     }
   },
   "groundTruth": {

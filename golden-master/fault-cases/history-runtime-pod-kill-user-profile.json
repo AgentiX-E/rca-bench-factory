@@ -23,6 +23,11 @@
         "unit": "s"
       },
       "evictionTrigger": "another-workload-on-the-same-node"
+    },
+    "parameterNotes": {
+      "pod": "the pod the kubelet terminated; the readiness and 503 readings are its own, so the name fixes which pod of the service.",
+      "node": "the node whose eviction decision ended it; no series here is per node, and the name is what makes the decision somebody else's.",
+      "evictionTrigger": "what the eviction was decided for, which is what rules the pod and its application out; a series cannot carry whose memory was over."
     }
   },
   "groundTruth": {

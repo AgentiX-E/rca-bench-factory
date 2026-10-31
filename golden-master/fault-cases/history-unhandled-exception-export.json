@@ -16,8 +16,11 @@
     "category": "code",
     "injectionMethod": "historical",
     "parameters": {
-      "failureShare": 0.03,
+      "failureShare": { "value": 0.03, "unit": "1" },
       "trigger": "a CSV column containing an embedded newline"
+    },
+    "parameterNotes": {
+      "trigger": "what made the writer throw, named as the shape of the data rather than counted; the failure share states how often, and this states why."
     }
   },
   "groundTruth": {

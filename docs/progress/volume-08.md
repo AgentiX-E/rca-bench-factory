@@ -2132,9 +2132,9 @@ decoration. `63 exact, 12 through containment, 0 refused` after the repair.
 
 | item | value |
 | --- | --- |
-| `core` test suite | **208 files, 5104 tests passed** (as of this commit) |
-| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
-| repo test suite | **212 files, 5291 tests passed** (as of this commit) |
+| `core` test suite | **208 files, 5104 tests passed** (as of `2aed8ce`) |
+| `cli` test suite | **4 files, 187 tests passed** (as of `2aed8ce`) |
+| repo test suite | **212 files, 5291 tests passed** (as of `2aed8ce`) |
 | coverage | **99.97 / 99.76 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- unchanged |
 | `reading-reference.test.ts` | **new, 15 tests**: exact, containment, sibling replica, other service, unknown metric, unknown entity, the two halves of a split, a duplicate pair, a carrier the graph does not hold, a missing field on each side, and the sentences |
 | `expression.test.ts` | 43 → **47 tests**, the duplicate reading now refused instead of resolved to the first |
@@ -2172,3 +2172,144 @@ five-second budgets, the two ledger rules and the published success ratios. v3.2
 reference resolves and what a signals file may declare, so every case was re-read and no case's
 answer changed; the partition case's readings moved from the cluster to its two halves, which is the
 migration finding 299 asked for and the one number that moved.
+
+## v3.24 — sixty-nine facts had to answer for themselves, and the answers found five numbers stated twice
+
+**What was at stake.** `fault.parameters` holds the facts a case declares about itself, and a reading
+may cite one so that the series and the injection spec cannot drift apart. Finding 300 measured the
+corpus and found that a quarter of the keys were cited and the rest were written and never read, then
+refused the two rules that could have been written about them. The result was a line printed on every
+run:
+
+```
+parameters 29 of 98 (30 percent) ... are read by a series point or a configuration checkpoint;
+  69 are prose, in 30 case(s)
+```
+
+Eight rounds of reading that line changed nothing. A count that nobody acts on is a complaint, and the
+thing missing was not a stricter rule -- it was a place for the answer to go.
+
+### One: the question moved into the file
+
+There is exactly one party who can say whether `lagSeconds` is a fact a reader needs or a number a
+reading should have cited, and it is the author. So `fault.parameterNotes` asks, one sentence per key
+nothing cites: *what is this fact for, and why does no reading speak for it*. `fault/parameter-notes.ts`
+refuses the six ways that answer can be absent or misplaced:
+
+| refusal | what it catches |
+| --- | --- |
+| `missing` | a key nothing cites and nothing explains |
+| `stray` | a note for a key the case does not declare -- what a rename leaves behind |
+| `cited` | a note beside a citation, which is a second statement of one fact |
+| `label` | `"the container"`: the key's own name, offered as an explanation |
+| `notText` | a note that is a number |
+| `unreadable` | `parameterNotes` as an array, a string or a number |
+
+The shape rule is `MIN_NOTE_LENGTH` (40) and a closing full stop, which are the two properties a label
+lacks. It is a proxy for "a sentence" and the module says so: presence, placement and shape are what a
+guard can check, and the truth of a sentence is what a reader checks. The check runs where every other
+reference rule runs -- inside the signals branch, where citations are resolved -- and a case that
+declares no telemetry is not asked, because it has no citations to resolve.
+
+The line changed from a complaint to a partition:
+
+```
+parameters 34 of 98 (35 percent) cited by a reading across 30 case(s);
+  64 explained by a note, shortest 110 character(s)
+```
+
+### Two: writing the answers found five numbers written twice
+
+Sixty-four notes were written case by case, and five of the sixty-nine keys turned out to be numbers a
+reading already carried -- the drift the mechanism exists to prevent, in the shape the mechanism cannot
+prevent by itself:
+
+| case | the key nothing cited | the reading that already held it |
+| --- | --- | --- |
+| `middleware-replica-lag-analytics` | `lagSeconds: 2400 s` | `replica_relay_lag_seconds.post` |
+| `queue-watermark-ledger-writer` | `watermarkPercent: 92` | `broker_disk_watermark_percent.post` |
+| `runtime-container-crash-loop-media` | `restarts: 178` | `container_restarts_total.post` |
+| `unhandled-exception-export` | `failureShare: 0.03` | `export_failure_ratio_percent.post` |
+| `resource-memory-request-ingest-writer` | `requestedMemory: 1024 MiBy` | `requested_memory_mebibytes.post` |
+
+Three of the five were **bare numbers**, and a bare number cannot be cited into a series that carries a
+unit -- finding 247 refuses a citation whose unit the declaration does not state. The duplication was
+therefore not carelessness at the point of the reading: it was the only way to state the number, given
+a declaration with no unit. Each became a quantity first, and the reading cites it now. The unit table
+carried both directions -- `8 %` to `0.08` in a unit-`1` series, `0.03` to `3` in a `%` one -- and the
+range check runs after the conversion.
+
+Nothing moved in the rankings: rank 1: 48, strict 10, five cases strictly displaced, the same five.
+
+### Three: the stall budget was a ratio, and the suite can now be asked what it spends
+
+Finding 297 left a budget described as "three quarters of the deadline" and nothing that could say
+whether 45,000 ms was six times the worst file or one and a quarter. `RCA_BENCH_STALL_REPORT=<path>`
+makes the hook write one JSONL line per file, before the verdict throws, so a red run still yields its
+measurement:
+
+```
+211 files  --  median 4 ms, p95 1,583 ms, max 7,250 ms; 17 files over 1 s, 2 over 5 s
+ 7,250 ms  test/reader-against-backend.test.ts
+ 6,708 ms  test/typecheck-entrypoint.test.ts
+ 3,743 ms  test/ingest-report.test.ts
+```
+
+On this box the budget is 6.2 times the worst file; on the four-CPU runner that produced finding 297
+the same files held the loop for 36.7 s and 33.6 s, where it is 1.2 times. That gap is why the number
+cannot be derived from the distribution: a budget set from the fast machine fails the slow one. It is
+derived from the deadline instead, and the distribution is what shows it is safe. `stall-budget.test.ts`
+asserted `deadline * 0.75`, which any deadline satisfies; it now asserts both bounds -- at least 1.2
+times the worst legitimate stall on a four-CPU runner (44,040 ms) and at most the deadline less fifteen
+seconds (45,000 ms).
+
+### Four: the five-second wait is calibrated now, and the sighting is still unexplained
+
+`until(() => !stillRunning(pid, identity), 5_000)` is the wait that failed once at 5117 ms. Five
+thousand was not a measurement of anything, so the file measures the same shape three times before the
+test runs -- spawn, bound, signal the group, wait for the grandchild to leave the process table -- and
+takes twenty times the worst sample with five seconds as a floor. On this machine the floor wins and
+the number is what it was; on a loaded one the wait grows with the machine. The failure message names
+both numbers, so the next sighting arrives with its own evidence.
+
+**The 5117 ms is not explained by this**, and the round does not claim it is. Seventy-seven runs did not
+reproduce it. What changed is that a sighting is measured against a calibrated budget rather than being
+a bare duration in a log.
+
+### Readings
+
+| item | value |
+| --- | --- |
+| `core` test suite | **209 files, 5128 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **213 files, 5315 tests passed** (as of this commit) |
+| coverage | **99.97 / 99.73 / 100 / 99.97** (cli 100 / 100 / 100 / 100) -- branches down 0.03, from the new module |
+| parameters | **34 of 98 (35 percent)** cited; **64 explained by a note**, shortest 110 characters |
+| keys with no explanation | **0**, refused by name -- it was 69 in 30 of 30 cases |
+| stall distribution | 211 files, median 4 ms, p95 1,583 ms, max 7,250 ms |
+| `parameter-notes.test.ts` | **new, 13 tests**: the six refusals, the absent map, the partition, the shortest note |
+| `check-fault-cases.test.ts` | 118 → **124**: five wiring cases and the partition assertion |
+| `stall-budget.test.ts` | 9 → **11**: the two bounds, the report line, the quiet path |
+| export failure sites | 95 across 50 scripts, annotations carried (re-derived) |
+| audits | 1–**328**, **325 findings** (absent: 118, 132–133) |
+
+### Left open
+
+- **The exporters publish `signal_ref` as the metric name alone.** Unchanged this round: a checkpoint
+  of a two-carrier metric still reaches `rca100`, `openrca2` and `itbench` as a bare name.
+  `[open: the export format is a published contract with three targets, and widening it is a decision
+  rather than a fix]`
+- **The two ledger rules read presence, not ownership** (finding 309). Two rounds whose ledgers were
+  swapped would each hold exactly one and pass. `[open: the mechanism that would close it is a
+  provenance marker per ledger -- an anchor commit plus a date, strictly increasing in file order --
+  and it is a round of its own rather than a clause in this one]`
+- **19 of 30 cases still have no log line and 25 no span.** `[open: the corpus-authoring round is still
+  unstarted, and the shares did not move this round]`
+- **The upstream SLI table** and **the battery budget** (17 minutes of 30). `[open: both are v3.25, and
+  the first needs a decision about which upstream table the corpus is allowed to trust]`
+
+### Unchanged
+
+The corpus size, the metric tables, the anchors, the backends, the localisation readings and the
+published success ratios. The two gauges changed what is *measured* about the suite and nothing about
+what it measures; the parameter notes changed what the corpus says about itself and no case's answer.

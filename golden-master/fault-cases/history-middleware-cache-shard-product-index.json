@@ -25,6 +25,10 @@
         "value": 2,
         "unit": "count"
       }
+    },
+    "parameterNotes": {
+      "service": "the cache whose placement rule went unmet; the unassigned-slot count is cluster-wide, and the name fixes which cluster it was.",
+      "clusterSlots": "how many slots the cluster has, which is what makes two unassigned ones a share rather than an accident; the reading counts only the unassigned."
     }
   },
   "groundTruth": {

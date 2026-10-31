@@ -18,7 +18,7 @@
       "metric": "replica_relay_lag_seconds",
       "unit": "s",
       "baseline": 60,
-      "post": 2400,
+      "post": { "parameter": "lagSeconds" },
       "quote": "fell 40 minutes behind the primary",
       "why": "the checkpoint `cp-replica-lag` holds the forty minutes: the relay log position is the state every read is answered from, and it is the thing that is wrong"
     },

@@ -21,6 +21,9 @@
         "value": 2,
         "unit": "count"
       }
+    },
+    "parameterNotes": {
+      "service": "the gateway whose own process saturated; the CPU ratio is that process's, so the name is the subject of the reading rather than a value beside it."
     }
   },
   "groundTruth": {

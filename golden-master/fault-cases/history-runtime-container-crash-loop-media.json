@@ -17,12 +17,17 @@
     "injectionMethod": "historical",
     "parameters": {
       "container": "media-transcoder-app",
-      "restarts": 178,
+      "restarts": { "value": 178, "unit": "count" },
       "windowHours": {
         "value": 12,
         "unit": "h"
       },
       "signal": "SIGSEGV"
+    },
+    "parameterNotes": {
+      "container": "the container that segfaulted; the restart counter is per container in the source, and the corpus carries the one that looped.",
+      "windowHours": "the span the restarts were counted over, stated for a replay; the counter's reading is the total, and the window is what makes it a rate.",
+      "signal": "the signal that ended each attempt, which is why every exit precedes any probe; the probe ratio states the outcome, not the cause."
     }
   },
   "groundTruth": {

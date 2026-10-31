@@ -2,6 +2,7 @@ import { afterAll } from 'vitest';
 
 import {
   budgetFromEnvironment,
+  recordStall,
   stallVerdict,
   startStallWatch,
   STALL_INTERVAL_MS,
@@ -25,7 +26,11 @@ import {
 const budgetMs = budgetFromEnvironment();
 const watch = startStallWatch({ intervalMs: STALL_INTERVAL_MS });
 
-afterAll(() => {
-  const verdict = stallVerdict(watch.stop(), budgetMs);
+afterAll((suite) => {
+  const longestMs = watch.stop();
+  // The report first, so a file that is over budget is still measured: the gate throws below, and a
+  // throw before the write would lose the one reading a red run is worth having.
+  recordStall({ file: 'filepath' in suite ? suite.filepath : suite.name, longestMs, budgetMs });
+  const verdict = stallVerdict(longestMs, budgetMs);
   if (verdict !== undefined) throw new Error(verdict);
 });

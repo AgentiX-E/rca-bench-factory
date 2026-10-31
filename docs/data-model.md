@@ -333,6 +333,40 @@ mistake rather than floating-point drift. The `1e-9` tolerance belongs to values
 package *computed*, which is why it lives in `holdsWithTolerance` and not in
 `compareExactly`.
 
+#### A key nothing reads has to say why it is there
+
+`fault.parameters` is open by design, so nothing in the type says which of its keys a reading
+was supposed to cite. Measured before this field existed: **69 of 98 keys were cited by
+nothing**, across all thirty cases. Some are descriptive on purpose (`service`, `from`,
+`trigger`), and some were numbers a reading restated by hand -- and no rule could tell which,
+because the file did not say (finding 300 refused both the strict rule and the allow-list).
+
+`fault.parameterNotes` is that statement: one sentence per uncited key, saying what the fact is
+for and why no reading speaks for it.
+
+```ts
+fault: {
+  type: string;
+  category: FaultCategory;
+  parameters?: Record<string, unknown>;
+  parameterNotes?: Record<string, string>;   // exactly the keys nothing cites
+}
+```
+
+| the key | the note | result |
+| --- | --- | --- |
+| cited by a reading | absent | required -- the citation is the statement |
+| cited by a reading | present | **refused**: two statements of one fact, and the note can drift |
+| cited by nothing | a sentence | accepted, and counted |
+| cited by nothing | absent | **refused**, naming the key |
+| no such key | present | **refused**: what a rename leaves behind |
+| cited by nothing | `"the container"` | **refused**: a label restates the key it explains |
+
+The two shape rules are `MIN_NOTE_LENGTH` (40 characters) and a closing full stop, because those
+are the two properties a label lacks. They are a proxy for "a sentence" rather than a measure of
+truth, and `fault/parameter-notes.ts` says so where the rule lives: presence, placement and
+shape are what a guard can check, and the truth of a sentence is what a reader checks.
+
 ### `expression` — the arithmetic a derived checkpoint states
 
 A derived checkpoint's value is computed from one or more series, so it carries an

@@ -16,9 +16,13 @@
     "category": "middleware",
     "injectionMethod": "historical",
     "parameters": {
-      "watermarkPercent": 92,
+      "watermarkPercent": { "value": 92, "unit": "%" },
       "retentionRaisedToDays": 7,
       "volumesSizedForDays": 3
+    },
+    "parameterNotes": {
+      "retentionRaisedToDays": "the retention the operator raised, which is the first half of the mechanism; the reading is the watermark the raise produced.",
+      "volumesSizedForDays": "the span the volumes were provisioned for, which is what makes the raise an overrun rather than a capacity plan nobody carried out."
     }
   },
   "groundTruth": {

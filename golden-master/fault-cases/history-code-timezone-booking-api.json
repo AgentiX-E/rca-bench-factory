@@ -23,6 +23,12 @@
         "unit": "min"
       },
       "affectedReminders": "created-after-the-daylight-saving-change"
+    },
+    "parameterNotes": {
+      "service": "the API that converts the stored wall-clock time; the error reading is its reminders' lead time, and the name is the subject rather than a measurement.",
+      "offsetSource": "where the offset came from: once at process start, which is the mechanism; a lifetime is not a quantity, and the error it produces is what the reading holds.",
+      "shiftMinutes": "the size of the offset that was captured and then invalidated; the reading is the reminder error, which equals it only because the whole hour was wrong.",
+      "affectedReminders": "which reminders inherited the stale offset, stated as a population rather than a count; the reading is the lead-time error, not how many reminders have one."
     }
   },
   "groundTruth": {

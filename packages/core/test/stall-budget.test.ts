@@ -9,10 +9,12 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import {
   budgetFromEnvironment,
+  recordStall,
   RPC_DEADLINE_MS,
   STALL_BUDGET_ENV,
   STALL_BUDGET_MS,
   STALL_INTERVAL_MS,
+  STALL_REPORT_ENV,
   stallVerdict,
   startStallWatch,
 } from './support/event-loop-stall.js';
@@ -159,13 +161,55 @@ describe('event loop · the numbers the gauge is calibrated against', () => {
     expect(Number(declaration![1])).toBe(RPC_DEADLINE_MS);
   });
 
-  it('keeps the budget under the deadline, with the margin stated', () => {
-    expect(STALL_BUDGET_MS).toBeLessThan(RPC_DEADLINE_MS);
-    // Three quarters. Stated as a fact rather than recomputed, so a change to
-    // either number has to be written down here as well as in the module.
-    expect(STALL_BUDGET_MS).toBe(RPC_DEADLINE_MS * 0.75);
+  it('keeps the budget between the worst legitimate file and the deadline', () => {
+    // Two measurements, one on each side of the number, instead of the ratio this test used to
+    // assert (`RPC_DEADLINE_MS * 0.75`). A ratio is satisfied by any deadline; these two bounds say
+    // what the budget is for, and each fails for its own reason.
+    //
+    // Above: the largest legitimate stall measured on a four-CPU runner -- CPU-bound work in
+    // `typecheck-entrypoint.test.ts` during the run that produced finding 297. A budget under
+    // 1.2 times it fails files that are doing what they exist to do.
+    const WORST_LEGITIMATE_ON_CI_MS = 36_700;
+    expect(STALL_BUDGET_MS).toBeGreaterThanOrEqual(WORST_LEGITIMATE_ON_CI_MS * 1.2);
+    // Below: the deadline, less the fifteen seconds a call in flight needs. A budget equal to the
+    // deadline turns "one call away from failing" into a failure.
+    expect(STALL_BUDGET_MS).toBeLessThanOrEqual(RPC_DEADLINE_MS - 15_000);
     // A budget at or below the interval would report every file.
     expect(STALL_BUDGET_MS).toBeGreaterThan(STALL_INTERVAL_MS * 100);
+  });
+
+  it('reports the distribution it measures, one line per file, when anything asks', () => {
+    // The gate fails the file that went over; nothing could see the distribution -- which files are
+    // near the budget, how near, and whether the worst of them is the same file every run. That is
+    // what makes the budget a margin rather than a measurement, and this is the instrument.
+    const lines: Array<{ path: string; line: string }> = [];
+    recordStall(
+      { file: `${ROOT}/packages/core/test/one.test.ts`, longestMs: 1234.6, budgetMs: STALL_BUDGET_MS },
+      { environment: { [STALL_REPORT_ENV]: '/tmp/report.jsonl' }, root: ROOT, append: (path, line) => lines.push({ path, line }) },
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.path).toBe('/tmp/report.jsonl');
+    expect(lines[0]!.line.endsWith('\n'), 'a report is JSONL, so every record ends its line').toBe(true);
+    expect(JSON.parse(lines[0]!.line)).toEqual({
+      file: 'packages/core/test/one.test.ts',
+      longestMs: 1_235,
+      budgetMs: STALL_BUDGET_MS,
+    });
+  });
+
+  it('writes nothing at all when the environment does not name a report', () => {
+    // The hook runs for every file in the suite, so the quiet path is the one that matters: a
+    // record written by default would make every run append to a file nobody asked for.
+    const lines: string[] = [];
+    recordStall(
+      { file: '/anywhere.test.ts', longestMs: 1, budgetMs: STALL_BUDGET_MS },
+      { environment: {}, append: (_path, line) => lines.push(line) },
+    );
+    recordStall(
+      { file: '/anywhere.test.ts', longestMs: 1, budgetMs: STALL_BUDGET_MS },
+      { environment: { [STALL_REPORT_ENV]: '' }, append: (_path, line) => lines.push(line) },
+    );
+    expect(lines).toEqual([]);
   });
 
   it('fails only what is over budget, and says what to do about it', () => {

@@ -2866,3 +2866,171 @@ and twelve legitimate ones, and both numbers are needed: one refusal with no leg
 suggest the rule is too strict to keep, and twelve legitimate uses with no refusal would suggest it
 is decoration. The split is `63 exact, 12 through containment, 0 refused` after the repair, and the
 one refusal is what the round can point at.
+
+---
+
+## Finding 326 — a key nothing reads had to answer for itself
+
+Finding 300 measured the corpus's `fault.parameters` and found that three quarters of them were
+written and never read. It then refused both rules that could have been written about them: refusing
+every uncited key fails thirty cases for thirty legitimate reasons (`service`, `from`, `trigger` are
+there for a reader), and an allow-list of descriptive names encodes today's list as a law and refuses
+the next case's `pod`. What was left was a count printed on every run.
+
+**A count printed on every run is a complaint, and complaints are skipped.** Eight rounds of reading
+`65 are prose` changed nothing, which is the measurement that says the report was not the instrument.
+
+### The question moved into the file
+
+There is exactly one party who can say whether `lagSeconds` is a fact a reader needs or a number a
+reading should have cited, and it is the author. So the file asks: every parameter nothing cites
+carries a sentence in `fault.parameterNotes` -- *what this fact is for, and why no reading speaks for
+it* -- and `fault/parameter-notes.ts` refuses a case that does not answer.
+
+| refusal | what it catches |
+| --- | --- |
+| `missing` | a key nothing cites and nothing explains, named with its case |
+| `stray` | a note for a key the case does not declare -- what a rename leaves behind |
+| `cited` | a note beside a citation: the citation is the statement, a note beside it is a second one |
+| `label` | `"the container"`, which restates the key name instead of answering for it |
+| `notText` / `unreadable` | a note that is a number, and a map that is not a map |
+
+The three placements are the ones this corpus has had in another form: a second statement of one fact
+is finding 244's `expression` beside `signalRef`, and a note left behind by a rename is the same shape
+as finding 325's reference to the wrong end of a wire.
+
+### What a guard can check, and what it cannot
+
+Presence, placement and shape. `MIN_NOTE_LENGTH` is 40 and a note has to end in a full stop, which are
+two properties a label lacks -- a label is shorter than a clause and does not end. That is a proxy for
+"a sentence" and not a measure of truth: a note that clears the floor can still be wrong, and the
+instrument for that is a reader.
+
+The check runs where every other reference rule in this guard runs -- inside the signals branch, where
+citations are resolved. A case that declares no telemetry is not asked, because it has no citations to
+resolve, and the boundary is written down rather than left for a reader to infer from the code.
+
+### The line changed
+
+| | before | after |
+| --- | --- | --- |
+| printed | `parameters 29 of 98 (30 percent) ... are read ...; 69 are prose, in 30 case(s)` | `parameters 34 of 98 (35 percent) cited by a reading across 30 case(s); 64 explained by a note, shortest 110 character(s)` |
+| what a reader can do with it | nothing | two numbers that must add to the declared total, and a note count that is a share of nothing |
+
+`prose` was a word for "not load-bearing" applied to sixty-nine strings without looking at any of
+them. Of the sixty-four that remain, none is prose in that sense: each states what the fact is for.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| keys cited by a reading | 29 of 98 (30 percent) | **34 of 98 (35 percent)**, five restatements converted (finding 327) |
+| keys with no explanation | **69, in 30 of 30 cases** | **0**, refused by name |
+| notes written | 0 | **64**, shortest 110 characters against a floor of 40 |
+| `parameter-notes.test.ts` | -- | **new, 13 tests**: the six refusals, the absent map, the partition, the shortest note |
+| `check-fault-cases.test.ts` | 118 | **124**: five wiring cases and the partition assertion |
+
+**What this does not fix.** A note is prose and nothing checks that it is true. The rule makes the
+author answer the question once, at the moment they know the answer, and makes a later reader able to
+disagree with a sentence instead of with a count.
+
+---
+
+## Finding 327 — writing the notes down found five numbers that were written twice
+
+The notes were written case by case, and five of the sixty-nine keys turned out to be numbers a
+reading already carried. Each was a pair that stayed in step by being edited together -- the drift the
+parameter mechanism exists to prevent (finding 258), in the one shape it cannot prevent by itself.
+
+| case | the key nothing cited | the reading that already held it |
+| --- | --- | --- |
+| `middleware-replica-lag-analytics` | `lagSeconds: 2400 s` | `replica_relay_lag_seconds.post` |
+| `queue-watermark-ledger-writer` | `watermarkPercent: 92` | `broker_disk_watermark_percent.post`, in `%` |
+| `runtime-container-crash-loop-media` | `restarts: 178` | `container_restarts_total.post`, in `count` |
+| `unhandled-exception-export` | `failureShare: 0.03` | `export_failure_ratio_percent.post`, in `%` |
+| `resource-memory-request-ingest-writer` | `requestedMemory: 1024 MiBy` | `requested_memory_mebibytes.post` |
+
+Three of the five were **bare numbers**, and a bare number cannot be cited into a series that carries
+a unit: finding 247's rule refuses a citation whose unit the declaration does not state. So the
+duplication was not carelessness at the point of writing the reading -- it was the only way to state
+the number, given a declaration that had no unit. Each became `{ "value": ..., "unit": ... }` first,
+and the reading then cites it.
+
+The unit table carried the conversions in both directions, which is what makes the second and fourth
+rows one number rather than two: `8 %` becomes `0.08` in a unit-`1` series (finding 300's repair), and
+`0.03` in unit `1` becomes `3` in a `%` series. The guard's range check runs after the conversion, so
+a share that converts above its ceiling is refused rather than clamped.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| readings that restate a declared number | 5 | **0** |
+| bare numbers among the five | 3 | **0**, each is a quantity now |
+| comparable assertions | 110, 0 failing | 110, **0 failing**, with five of them now reading a declaration |
+| localisation | rank 1: 48, strict 10 | **unchanged** -- the numbers did not move, only where they are stated |
+
+---
+
+## Finding 328 — the budget was a ratio, and the five-second wait was a feeling
+
+Finding 297 left two numbers that were never measurements: a stall budget described as "three quarters
+of the deadline", and two five-second waits that each failed exactly once (5117 ms, 5056 ms) and were
+never reproduced in seventy-seven runs.
+
+### What the suite actually spends
+
+The gauge could fail a file but could not say what the distribution was, so nothing knew whether
+45,000 ms was six times the worst file or one and a quarter. `RCA_BENCH_STALL_REPORT=<path>` now makes
+the hook write one JSONL line per file, and the line is written **before** the verdict throws, so a
+red run still yields its measurement:
+
+```
+211 files  --  median 4 ms, p95 1,583 ms, max 7,250 ms
+            17 files over 1 s, 2 over 5 s
+ 7,250 ms  test/reader-against-backend.test.ts
+ 6,708 ms  test/typecheck-entrypoint.test.ts
+ 3,743 ms  test/ingest-report.test.ts
+ 2,372 ms  test/check-no-unsafe-shell.test.ts
+```
+
+On this box the budget is 6.2 times the worst file. On the four-CPU runner that produced finding 297
+the same two files held the loop for 36.7 s and 33.6 s, where it is 1.2 times. **That gap is the
+finding**: a budget derived from the fast machine would fail the slow one, so the number cannot come
+from the distribution -- it comes from the deadline, and the distribution is what shows it is safe.
+
+### Two bounds instead of a ratio
+
+`stall-budget.test.ts` asserted `STALL_BUDGET_MS === RPC_DEADLINE_MS * 0.75`, which is satisfied by any
+deadline and says nothing about the suite. It now asserts both sides:
+
+| bound | value | what it protects |
+| --- | --- | --- |
+| at least 1.2 × the worst legitimate stall on a four-CPU runner | **44,040 ms** | files doing CPU-bound work they exist to do |
+| at most the deadline less fifteen seconds | **45,000 ms** | a call in flight when the last stall begins |
+
+The budget sits at the top of that window, which is why it is 45,000 and not a rounder 40,000: the
+window is 960 ms wide, and either end of it is a defect.
+
+### The five-second wait
+
+`until(() => !stillRunning(pid, identity), 5_000)` was the wait that failed at 5117 ms. Five thousand
+was not a measurement of anything, so the file now measures the same shape three times before the test
+runs -- spawn, bound, signal the group, wait for the grandchild to leave the process table -- and takes
+twenty times the worst sample with five seconds as a floor. On this machine the floor wins and the
+number is what it was; on a loaded one the wait grows with the machine. The failure message now names
+both numbers, so the next sighting arrives with its own evidence.
+
+**This does not explain the 5117 ms**, and the round does not claim it does. Seventy-seven runs did not
+reproduce it; what changed is that a sighting is now a measurement against a calibrated budget rather
+than a bare duration in a log.
+
+### Acceptance
+
+| what | before | after |
+| --- | --- | --- |
+| the distribution | unmeasurable | **211 lines**, median 4 ms, p95 1,583 ms, max 7,250 ms |
+| the budget's justification | `deadline * 0.75` | **two bounds**, 44,040 to 45,000, both asserted |
+| the 5,000 ms wait | a literal | **twenty times a measured reap**, five-second floor, both named on failure |
+| `stall-budget.test.ts` | 9 tests | **11**: the two bounds, the report line, the quiet path |
+| `step-process.test.ts` | 11 tests | 11, with the wait calibrated before them |

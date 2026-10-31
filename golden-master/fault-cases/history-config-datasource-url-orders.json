@@ -22,6 +22,14 @@
       "staleKey": "jdbc-url",
       "declaredValuePointsAt": "orders-db",
       "staleValuePointsAt": "orders-db-staging"
+    },
+    "parameterNotes": {
+      "service": "the service whose pool opened against the wrong endpoint; both write shares are its writes, so the name is the subject of both.",
+      "configMap": "the ConfigMap the rollout renamed a key in; the readings are where the rows landed, and a ConfigMap name is not a quantity any series could hold.",
+      "declaredKey": "the key the new deployment declares; the case's point is that it is not the key the application reads, which is a name rather than a number.",
+      "staleKey": "the key left behind that still holds the staging URL, and the one the application reads first; naming it is the mechanism, and no reading is per key.",
+      "declaredValuePointsAt": "the endpoint the declared key names; the evidence is the share of writes that landed at the other one, so this is the contrast rather than a reading.",
+      "staleValuePointsAt": "the endpoint the stale key names, which is where every write went; the staging share states that as a quantity, and the name says which endpoint it is."
     }
   },
   "groundTruth": {

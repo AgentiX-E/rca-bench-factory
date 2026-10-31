@@ -25,6 +25,9 @@
         "value": 5,
         "unit": "count"
       }
+    },
+    "parameterNotes": {
+      "service": "the renderer that emits the pages; the line count is a count of rendered lines, and which program rendered them is the subject rather than a number."
     }
   },
   "groundTruth": {

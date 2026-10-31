@@ -21,6 +21,10 @@
         "inventory-service"
       ],
       "sameZone": false
+    },
+    "parameterNotes": {
+      "between": "the two services the delay is between; the readings give a client duration and a server handler time, and neither says which pair produced it.",
+      "sameZone": "the placement answer the ticket gives for the delay; where two services were scheduled is not a quantity any series carries."
     }
   },
   "groundTruth": {

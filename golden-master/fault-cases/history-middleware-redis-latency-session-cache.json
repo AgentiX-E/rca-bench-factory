@@ -24,6 +24,12 @@
       },
       "command": "KEYS",
       "issuedBy": "an-unrelated-debugging-script"
+    },
+    "parameterNotes": {
+      "service": "the cache whose command thread was held; the latency reading is its GET duration, so the name is the subject rather than a value.",
+      "datastore": "the Redis instance the cache talks to; the readings are client-side and instance-wide, and the name says which instance.",
+      "command": "the command that held the thread, which is the mechanism; the utilisation series states the hold, and the command says what caused it.",
+      "issuedBy": "who issued it, which is what makes the case a stranger's script rather than the application's own traffic; a series cannot carry an author."
     }
   },
   "groundTruth": {

@@ -26,6 +26,11 @@
         "value": 18,
         "unit": "min"
       }
+    },
+    "parameterNotes": {
+      "dependency": "the upstream that answered 503; the pricing service's error ratios are per dependency in the source, and this is the one that moved.",
+      "answeredWith": "the status the upstream answered with; the ratio series counts the responses, and a status code says which failure rather than how many.",
+      "durationMinutes": "how long the failures lasted, stated for a replay; the readings are shares and carry no duration of their own."
     }
   },
   "groundTruth": {

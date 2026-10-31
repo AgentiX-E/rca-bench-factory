@@ -248,13 +248,17 @@ const withTelemetry = [];
  * `fault.parameters` holds the case's own facts -- the loss rate, the heap limit, the retention gap
  * -- and a reading may cite one with `{ parameter: 'name' }` so that the number in the series and
  * the number in the injection spec cannot drift apart (finding 258). The mechanism existed and
- * almost nothing used it: of the ninety-odd keys this corpus declares, most are written and never
- * read, which is the shape this volume has spent its rounds deleting from code. It is reported
- * rather than gated because a descriptive key (`service`, `from`, `trigger`) is legitimately there
- * for a human and for a future replay, and a rule that refused it would be arguing with the
- * injection spec rather than with a mistake.
+ * almost nothing used it: of the ninety-odd keys this corpus declares, most were written and never
+ * read, which is the shape this volume has spent its rounds deleting from code.
+ *
+ * The count alone was the whole rule for eight rounds, because nothing in the file said which keys
+ * were descriptive and which were forgotten (finding 300). The file says so now: an uncited key
+ * carries a sentence in `fault.parameterNotes`, and `fault/parameter-notes.ts` refuses a case whose
+ * note is missing, misplaced or a label. What is printed here is the share that is still measured
+ * rather than gated -- how much of the annotation a reading speaks for, and how short the shortest
+ * note is.
  */
-const parameterUse = { declared: 0, referenced: 0, cases: 0, casesWithDeadKeys: 0 };
+const parameterUse = { declared: 0, referenced: 0, noted: 0, cases: 0, shortest: 0 };
 const checkpointRefs = {
   total: 0,
   resolved: 0,
@@ -1043,11 +1047,26 @@ for (const entry of index.cases) {
     }
 
     // What this case's declarations were for, tallied once the checkpoints have been read: a key is
-    // used if a series point cites it or a configuration checkpoint names it, and nothing else counts.
-    for (const key of citedParameters) {
-      if (Object.hasOwn(parameters, key)) parameterUse.referenced += 1;
+    // cited if a series point names it or a configuration checkpoint does, and every other key has to
+    // say why it is there. Refusing an uncited key outright fails thirty cases for thirty legitimate
+    // reasons, and an allow-list of descriptive names is today's list turned into a law (finding 300
+    // refused both), so the question moved into the file: `fault.parameterNotes`, one sentence per
+    // key, and `fault/parameter-notes.ts` refuses a case that does not answer it (finding 326).
+    const notes = core.checkParameterNotes({
+      parameters,
+      notes: rawCase?.fault?.parameterNotes,
+      cited: citedParameters,
+    });
+    for (const fault of notes.faults) {
+      problems.push(core.describeParameterNoteFault(fault, caseId));
     }
-    if (citedParameters.size < parameterKeys.length) parameterUse.casesWithDeadKeys += 1;
+    parameterUse.referenced += notes.cited;
+    parameterUse.noted += notes.noted;
+    if (notes.shortest > 0) {
+      parameterUse.shortest = parameterUse.shortest === 0
+        ? notes.shortest
+        : Math.min(parameterUse.shortest, notes.shortest);
+    }
 
     // A case's own declaration wins on the `(service, metric)` pair, and the background arrives flat
     // with `noise: 'none'` -- both rules live in `fault/background.ts`, where they are unit-tested.
@@ -1210,13 +1229,12 @@ if (invalid.length > 0) {
  */
 function logParameterUse() {
   if (parameterUse.declared === 0) return;
-  const prose = parameterUse.declared - parameterUse.referenced;
   const share = Math.round((parameterUse.referenced / parameterUse.declared) * 100);
   console.log(
     `check-fault-cases: parameters ${String(parameterUse.referenced)} of ${String(parameterUse.declared)} ` +
-      `(${String(share)} percent) declared across ${String(parameterUse.cases)} case(s) are read by a series ` +
-      `point or a configuration checkpoint; ${String(prose)} are prose, in ` +
-      `${String(parameterUse.casesWithDeadKeys)} case(s)`,
+      `(${String(share)} percent) cited by a reading across ${String(parameterUse.cases)} case(s); ` +
+      `${String(parameterUse.noted)} explained by a note, shortest ${String(parameterUse.shortest)} ` +
+      'character(s)',
   );
 }
 

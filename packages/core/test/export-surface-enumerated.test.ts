@@ -142,6 +142,7 @@ const ENUMERATED_MODULES = [
   'fault/displacement.ts',
   'fault/log-attribution.ts',
   'fault/reading-reference.ts',
+  'fault/parameter-notes.ts',
   'fault/answer-presence.ts',
   'fault/sample-coverage.ts',
   'fault/baseline-localiser.ts',
@@ -267,6 +268,8 @@ const EXEMPT_EXPORTS: Record<string, string> = {
   'fault/expression.ts::ExpressionReference': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionSeries': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingCarrier': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/parameter-notes.ts::ParameterNoteFault': 'type-only declaration; erases at runtime, so no consumer can name it',
+  'fault/parameter-notes.ts::ParameterNotesReport': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingMatch': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/reading-reference.ts::ReadingRefusal': 'type-only declaration; erases at runtime, so no consumer can name it',
   'fault/expression.ts::ExpressionValue': 'type-only declaration; erases at runtime, so no consumer can name it',
@@ -976,6 +979,11 @@ const TESTED = [
   // was read as the metric alone until finding 323.
   'resolveReading',
   'describeReadingProblem',
+  // fault/parameter-notes.ts -- what a case has to say about a fact no reading cites, which is the
+  // question 69 of its 98 keys could not answer until finding 326.
+  'MIN_NOTE_LENGTH',
+  'checkParameterNotes',
+  'describeParameterNoteFault',
   // fault/answer-presence.ts -- the answer component, joined to the names the series are filed under.
   'checkAnswerPresence',
   // fault/sample-coverage.ts -- the count that covers samples rather than entries.

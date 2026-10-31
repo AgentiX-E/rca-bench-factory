@@ -2239,3 +2239,116 @@ describe('check-fault-cases · the difficulty distribution is a property of the 
     expect(result.out).toContain('difficulty 9 of 9 case(s) state a level');
   });
 });
+
+describe('check-fault-cases · a key nothing cites has to say why it is there', () => {
+  // The rule's own module is `fault/parameter-notes.ts`, and `parameter-notes.test.ts` holds its six
+  // refusals apart from any corpus. What these cases check is the wiring: that the guard asks the
+  // question of every annotated case, that its answer reaches the reader as a problem, and that the
+  // line it prints is a partition of the keys rather than a share of them.
+  //
+  // Every fixture here declares telemetry, because that is where a citation comes from -- the note is
+  // only meaningful next to the citations that excuse the other keys, and a case with no signals has
+  // no citation to resolve. The limit is stated in the finding rather than papered over: the rule
+  // runs where every other reference rule in this guard runs.
+  const SIGNALS = JSON.parse(
+    readFileSync(join(CASES, 'history-checkout-cpu-saturation.signals.json'), 'utf8'),
+  ) as Record<string, unknown>;
+
+  function fixture(edit: (fault: Record<string, unknown>) => void): string {
+    return corpus({
+      signals: JSON.parse(JSON.stringify(SIGNALS)) as Record<string, unknown>,
+      mutate: (faultCase) => {
+        edit(faultCase.fault as Record<string, unknown>);
+      },
+    });
+  }
+
+  function notesOf(fault: Record<string, unknown>): Record<string, string> {
+    return fault.parameterNotes as Record<string, string>;
+  }
+
+  it('refuses a key nothing cites and nothing explains, and names the case that needs a note', async () => {
+    const result = await run([
+      '--cases',
+      fixture((fault) => {
+        (fault.parameters as Record<string, unknown>).zone = 'euw1-b';
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "'history-checkout-cpu-saturation' declares 'zone' and no reading cites it, and fault.parameterNotes " +
+        'says nothing about it',
+    );
+  });
+
+  it('accepts the same key once the case says what it is for', async () => {
+    const result = await run([
+      '--cases',
+      fixture((fault) => {
+        (fault.parameters as Record<string, unknown>).zone = 'euw1-b';
+        notesOf(fault).zone = 'where the pod was scheduled, which the ticket names and no series reports.';
+      }),
+    ]);
+    expect(result.status, result.out).toBe(0);
+    expect(result.out).toContain('explained by a note');
+  });
+
+  it('refuses a note beside a citation, because the citation is the statement', async () => {
+    const result = await run([
+      '--cases',
+      fixture((fault) => {
+        notesOf(fault).cpuLimit =
+          'the limit the container ran at, which the throttling series already holds.';
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("carries a note for 'cpuLimit' and a reading cites it");
+  });
+
+  it('refuses a note for a key the case no longer declares', async () => {
+    const result = await run([
+      '--cases',
+      fixture((fault) => {
+        notesOf(fault).lagSeconds =
+          'the lag the replica reached, left behind by a round that renamed the key.';
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain(
+      "explains 'lagSeconds' in fault.parameterNotes, and fault.parameters declares no such key",
+    );
+  });
+
+  it('refuses a note that is the key again, rather than a sentence', async () => {
+    const result = await run([
+      '--cases',
+      fixture((fault) => {
+        notesOf(fault).container = 'the container';
+      }),
+    ]);
+    expect(result.status).toBe(2);
+    expect(result.out).toContain("explains 'container' with 'the container', which is a label");
+  });
+
+  it('prints cited and explained as a partition of the keys the corpus declares', async () => {
+    // Two numbers that must add up, rather than two shares that may not: every key is either spoken
+    // for by a reading or explained by a note, and the run is red if any is neither. A line that
+    // printed them as percentages could agree while a key fell between the two.
+    const result = await run([]);
+    expect(result.status, result.out).toBe(0);
+    const line =
+      /parameters (\d+) of (\d+) \((\d+) percent\) cited by a reading across (\d+) case\(s\); (\d+) explained by a note, shortest (\d+) character\(s\)/.exec(
+        result.out,
+      );
+    expect(line, 'the parameter line is missing from the report').not.toBeNull();
+    const [, cited, declared, , cases, noted, shortest] = line!;
+    expect(Number(cited) + Number(noted)).toBe(Number(declared));
+    expect(Number(cases)).toBe(CORPUS_SIZE);
+    expect(Number(cited)).toBeGreaterThan(0);
+    expect(Number(noted)).toBeGreaterThan(0);
+    expect(
+      Number(shortest),
+      'a note shorter than a clause is a label the rule would have refused',
+    ).toBeGreaterThan(40);
+  });
+});

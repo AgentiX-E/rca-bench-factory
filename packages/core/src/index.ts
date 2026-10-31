@@ -816,6 +816,8 @@ export type { LogLineAttribution } from './fault/log-attribution.js';
 // repair (one metric on two entities) is what makes the ambiguity a case the resolver has to answer
 // rather than a tie it may break.
 export { describeReadingProblem, resolveReading } from './fault/reading-reference.js';
+export { MIN_NOTE_LENGTH, checkParameterNotes, describeParameterNoteFault } from './fault/parameter-notes.js';
+export type { ParameterNoteFault, ParameterNotesReport } from './fault/parameter-notes.js';
 export type { ReadingCarrier, ReadingMatch, ReadingRefusal } from './fault/reading-reference.js';
 
 // Whether the answer is a name the telemetry carries. A case whose readings are filed under its pod

@@ -9,7 +9,7 @@
       "metric": "broker_disk_watermark_percent",
       "unit": "%",
       "baseline": 78,
-      "post": 92,
+      "post": { "parameter": "watermarkPercent" },
       "quote": "the disk watermark crossed 92 percent",
       "why": "the checkpoint `cp-watermark` holds the post-onset value, and the text states the threshold it crossed"
     },

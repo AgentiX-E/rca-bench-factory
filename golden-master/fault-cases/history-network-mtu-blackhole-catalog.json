@@ -30,6 +30,12 @@
         "value": 1380,
         "unit": "By"
       }
+    },
+    "parameterNotes": {
+      "service": "the service whose large responses hung; the hang share is per service, and this is the one the overlay was rebuilt under.",
+      "pod": "the pod on the rebuilt path; the interface that still advertises the larger MTU belongs to it, which no series can say.",
+      "interfaceMtu": "what the pod's interface still advertises, which is why the segments left at that size; the reading is the hang share, not the ceiling.",
+      "remediatedMtu": "the path MTU the repair sets, stated for a replay; the two readings are the hang and the health check, and neither moves with this number."
     }
   },
   "groundTruth": {

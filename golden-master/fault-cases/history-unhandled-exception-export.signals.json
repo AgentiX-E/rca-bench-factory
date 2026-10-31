@@ -9,7 +9,7 @@
       "metric": "export_failure_ratio_percent",
       "unit": "%",
       "baseline": 0,
-      "post": 3,
+      "post": { "parameter": "failureShare" },
       "quote": "Roughly 3% of exports fail",
       "why": "the checkpoint `cp-failure-ratio` holds it; the baseline of zero is the text's own framing of a fault that began with a change in the data, not in the code path"
     }

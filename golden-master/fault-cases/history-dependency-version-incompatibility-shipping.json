@@ -25,6 +25,9 @@
         "value": 1,
         "unit": "count"
       }
+    },
+    "parameterNotes": {
+      "service": "the service that never bound its listener; the uptime and restart counters are its processes, so the name is the subject rather than a value."
     }
   },
   "groundTruth": {

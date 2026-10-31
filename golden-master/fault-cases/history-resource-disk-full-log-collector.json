@@ -26,6 +26,10 @@
         "value": 21474836480,
         "unit": "By"
       }
+    },
+    "parameterNotes": {
+      "service": "the collector that stopped accepting writes; the write-failure share is its own, so the name is the subject rather than a value.",
+      "volumePath": "the mount the segments were written to; the used-percent reading is that volume's, and a path is what separates it from the node's root filesystem."
     }
   },
   "groundTruth": {

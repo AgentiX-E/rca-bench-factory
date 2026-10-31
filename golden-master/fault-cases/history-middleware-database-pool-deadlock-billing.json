@@ -23,6 +23,11 @@
         "unit": "count"
       },
       "trigger": "replica-promotion"
+    },
+    "parameterNotes": {
+      "service": "the service whose client pool held every connection; the in-use counter is that pool's, so the name is the subject of the reading.",
+      "datastore": "the database the pool pointed at, named to rule it out: the reading that matters is on the client side, and the server reports nothing.",
+      "trigger": "what preceded the deadlock, named in a word; the connection counter states the exhaustion, and the promotion is why it happened then."
     }
   },
   "groundTruth": {

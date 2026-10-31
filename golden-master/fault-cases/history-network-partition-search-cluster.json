@@ -25,6 +25,9 @@
         "value": 1,
         "unit": "count"
       }
+    },
+    "parameterNotes": {
+      "cluster": "the cluster that forked; both halves are nodes of it, and the name is what makes two readings of one metric one event rather than two."
     }
   },
   "groundTruth": {

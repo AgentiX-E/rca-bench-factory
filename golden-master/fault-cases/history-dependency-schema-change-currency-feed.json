@@ -23,6 +23,11 @@
         "value": 120,
         "unit": "min"
       }
+    },
+    "parameterNotes": {
+      "dependency": "the feed that changed what a field means; the mismatch share belongs to the consumer, so the feed is the mechanism rather than the subject of a reading.",
+      "changedField": "the field whose meaning changed while its name stayed; the field-count series says a field was added, not which one changed.",
+      "addedField": "the field added beside it, which is what makes the change additive and therefore invisible to a parser that only checks for absence."
     }
   },
   "groundTruth": {

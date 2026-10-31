@@ -9,7 +9,7 @@
       "metric": "container_restarts_total",
       "unit": "count",
       "baseline": 0,
-      "post": 178,
+      "post": { "parameter": "restarts" },
       "quote": "has restarted 178 times in 12 hours",
       "derivation": "counter",
       "why": "the checkpoint `cp-restarts` holds the text's count, and the counter accumulates to it by the end of the twelve-hour window"
