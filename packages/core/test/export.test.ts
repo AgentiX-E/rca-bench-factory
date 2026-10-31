@@ -22,7 +22,7 @@ import { exportAioPs2025 } from '../src/export/aiops2025.js';
 import { exportCloudOpsBench } from '../src/export/cloudopsbench.js';
 import { exportItBench } from '../src/export/itbench.js';
 import type { IrBundle, TelemetrySignal } from '../src/ir/types.js';
-import { logAt, validBundle, validCase } from './fixtures.js';
+import { logAt, metricAt, validBundle, validCase } from './fixtures.js';
 
 /**
  * A bundle that is structurally valid but self-contradictory: the graph carries
@@ -177,6 +177,85 @@ describe('RCAEval exporter', () => {
     expect(Object.keys(re2.files).some((p) => p.endsWith('/traces.csv'))).toBe(true);
     expect(Object.keys(re1.files).some((p) => p.endsWith('/logs.csv'))).toBe(false);
     expect(Object.keys(re1.files).some((p) => p.endsWith('/traces.csv'))).toBe(false);
+  });
+
+  /**
+   * A table is written only when it has rows.
+   *
+   * Declaring `logs.csv` and `traces.csv` for the suite is not the same claim as the
+   * case carrying them, and until these four tests the exporter could not tell the
+   * two apart: it wrote both files for every RE2/RE3 case, so the corpus's 30
+   * annotated cases produced 19 header-only `logs.csv` and 25 header-only
+   * `traces.csv`. The reader in `check-official` treats "declared and absent" as a
+   * refusal, so an empty file here is the exporter manufacturing the evidence that
+   * rule asks for (finding 321).
+   */
+  describe('a table is written only when it has rows', () => {
+    const metricsOnly = () =>
+      validBundle({ signals: { 'case-001': validBundle().signals['case-001']!.filter((s) => s.signal === 'metric') } });
+    const withSpans = () =>
+      validBundle({
+        signals: {
+          'case-001': validBundle().signals['case-001']!.filter((s) => s.signal === 'metric' || s.signal === 'trace'),
+        },
+      });
+
+    it('writes neither modality file for a case that carries neither', () => {
+      const { files, skipped } = exportRcaEval(metricsOnly(), 'RE2');
+      expect(skipped).toEqual([]);
+      expect(Object.keys(files).map((p) => p.slice(p.lastIndexOf('/') + 1)).sort()).toEqual([
+        'data.csv',
+        'inject_time.txt',
+      ]);
+    });
+
+    it('writes the span table and no log table for a case with spans and no log line', () => {
+      const { files } = exportRcaEval(withSpans(), 'RE2');
+      const names = Object.keys(files).map((p) => p.slice(p.lastIndexOf('/') + 1));
+      expect(names).toContain('traces.csv');
+      expect(names).not.toContain('logs.csv');
+    });
+
+    it('writes the log table and no span table for a case with a log line and no span', () => {
+      const logsOnly = validBundle({
+        signals: {
+          'case-001': validBundle().signals['case-001']!.filter((s) => s.signal === 'metric' || s.signal === 'log'),
+        },
+      });
+      const names = Object.keys(exportRcaEval(logsOnly, 'RE2').files).map((p) => p.slice(p.lastIndexOf('/') + 1));
+      expect(names).toContain('logs.csv');
+      expect(names).not.toContain('traces.csv');
+    });
+
+    it('skips a case with no metric signal instead of writing a header-only data.csv', () => {
+      // Upstream finds a case by globbing for `data.csv`, so this case would have been
+      // a directory of files the harness never opens -- and a header-only `data.csv`
+      // reads back as "this case has no metric readings", which is a different and
+      // unfixable statement. The same refusal a case with no signals at all gets.
+      const spanOnly = validBundle({
+        signals: { 'case-001': validBundle().signals['case-001']!.filter((s) => s.signal === 'trace') },
+      });
+      const { files, skipped } = exportRcaEval(spanOnly, 'RE2');
+      expect(files).toEqual({});
+      expect(skipped).toEqual([
+        { caseId: 'case-001', reason: 'no metric signals attached, and a case is found by its data.csv' },
+      ]);
+      // And the case with nothing at all keeps the sentence it already had: two
+      // different absences are two different repairs.
+      expect(exportRcaEval(validBundle({ signals: {} }), 'RE2').skipped).toEqual([
+        { caseId: 'case-001', reason: 'no telemetry signals attached' },
+      ]);
+    });
+
+    it('stops a metrics-only case from satisfying the RE2 modality set', () => {
+      // The structural contract is where the blindness was: an empty `logs.csv` is
+      // still a `logs.csv` with the right header, so a case with no log signal used
+      // to pass a check whose own subject is which modalities the case carries.
+      const report = checkRcaEvalStructure(exportRcaEval(metricsOnly(), 'RE2').files, 'RE2');
+      const modality = report.checks.find((c) => c.id === 'modality-set');
+      expect(modality?.passed).toBe(false);
+      expect(modality?.detail).toContain('found logs=false traces=false');
+    });
   });
 
   it('writes the injection time as integer Unix seconds', () => {
@@ -415,9 +494,20 @@ describe('CSV cells · an absent value is an empty cell, not the word "null"', (
     payload: { kind: 'trace', traceId: 't1', spanId: 's1', spanName: 'GET /order', durationMs: 5 },
   };
 
-  /** The RCAEval trace CSV one case produces. */
+  /**
+   * The RCAEval trace CSV one case produces.
+   *
+   * The bundle carries one metric reading beside the span, because a case is found
+   * by its `data.csv`: the exporter skips a case with no metric signal, so a
+   * span-only bundle exports no files at all and this helper would have returned
+   * `undefined` -- which reads as "the writer lost the span" rather than as "this
+   * was never a case" (finding 321).
+   */
   function rcaevalTraceCsv(): string {
-    return Object.entries(exportRcaEval(validBundle({ signals: { 'case-001': [rootSpan] } }), 'RE2').files).find(
+    const oneCase = validBundle({
+      signals: { 'case-001': [metricAt(0, 'cpu_usage', 20), rootSpan] },
+    });
+    return Object.entries(exportRcaEval(oneCase, 'RE2').files).find(
       ([p]) => p.endsWith('/traces.csv'),
     )?.[1] as string;
   }

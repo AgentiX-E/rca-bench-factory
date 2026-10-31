@@ -138,7 +138,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1263,
+      "line": 1329,
       "condition": "problems.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(problems.length)} problem(s) across ${String(index.cases.length)} case(s)",
       "status": "proved",
@@ -146,7 +146,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1272,
+      "line": 1338,
       "condition": "unnamed.length > 0",
       "diagnostic": "check-fault-cases: FAILED — ${String(unnamed.length)} file(s) in ${args.cases} are not indexed",
       "status": "proved",
@@ -154,7 +154,7 @@
     },
     {
       "script": "scripts/check-fault-cases.mjs",
-      "line": 1280,
+      "line": 1346,
       "condition": "index.cases.length < floor",
       "diagnostic": "check-fault-cases: FAILED — ${String(index.cases.length)} four-layer case(s), below the floor of",
       "status": "proved",
@@ -224,7 +224,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 812,
+      "line": 917,
       "condition": "value === undefined || value.startsWith('--')",
       "diagnostic": "error: ${flag} requires a value",
       "status": "proved",
@@ -232,7 +232,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 873,
+      "line": 978,
       "condition": "failures.length > 0",
       "diagnostic": "- ${f}",
       "status": "proved",
@@ -240,7 +240,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 892,
+      "line": 997,
       "condition": "!existsSync(officialDir)",
       "diagnostic": "Fetch the corpus first: node scripts/fetch-official.mjs --anchor rcaeval-re2 --out /tmp/official",
       "status": "proved",
@@ -248,7 +248,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 897,
+      "line": 1002,
       "condition": "!existsSync(casesPath)",
       "diagnostic": "Generate it first: node scripts/gen-rcaeval-cases.mjs --official-dir /tmp/official",
       "status": "proved",
@@ -256,7 +256,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1255,
+      "line": 1360,
       "condition": "roundTripFailures.length > 0",
       "diagnostic": "ROUNDTRIP ${roundTripped} of ${declared.length} declared case(s) round-tripped;",
       "status": "proved",
@@ -264,7 +264,7 @@
     },
     {
       "script": "scripts/check-official.mjs",
-      "line": 1273,
+      "line": 1378,
       "condition": "declared.length > 0 && roundTripped !== declared.length",
       "diagnostic": "\\nROUNDTRIP FAILED\\nROUNDTRIP - ${declared.length} case(s) declared but ${roundTripped} round-tripped,",
       "status": "proved",

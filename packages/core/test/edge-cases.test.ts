@@ -12,7 +12,7 @@ import { parseTimestamp, TimeParseError, type TimeLayout } from '../src/util/tim
 import { checkG5AntiPollution as _unused } from '../src/gates/gates.js';
 import { computeCoverage, exportOpenRca, exportRcaEval } from './helpers.js';
 import type { EntityGraph, IrBundle } from '../src/ir/types.js';
-import { validBundle, validCase } from './fixtures.js';
+import { metricAt, validBundle, validCase } from './fixtures.js';
 
 /**
  * Edge cases that exist purely to reach defensive branches.
@@ -129,9 +129,14 @@ describe('coverage with missing signal buckets', () => {
 
 describe('exporters with optional fields absent', () => {
   it('emits an empty severity cell for a log without a level', () => {
+    // One metric reading beside the log, because a case is found by its `data.csv`:
+    // the exporter skips a case with no metric signal, so a log-only bundle would
+    // export nothing and this test would read as "the writer lost the level cell"
+    // rather than as "this was never a case" (finding 321).
     const b = validBundle({
       signals: {
         'case-001': [
+          metricAt(0, 'cpu_usage', 20),
           {
             irVersion: '2.0',
             resource: { 'service.name': 'order' },
@@ -158,9 +163,12 @@ describe('exporters with optional fields absent', () => {
   });
 
   it('emits an empty status cell for a span without a status', () => {
+    // The same reading, for the same reason: the span table is only written for a case
+    // that is a case.
     const b = validBundle({
       signals: {
         'case-001': [
+          metricAt(0, 'cpu_usage', 20),
           {
             irVersion: '2.0',
             resource: { 'service.name': 'order' },

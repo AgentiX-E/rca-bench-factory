@@ -45,7 +45,14 @@ export const TARGET_REQUIREMENTS: Record<ScoreTargetId, SignalKind[]> = {
   'openrca-1.0': ['metric', 'trace'],
   'openrca-2.0': ['metric', 'trace'],
   'rcaeval-re1': ['metric'],
-  'rcaeval-re2': ['metric', 'log'],
+  // RE2 carries traces as well, and this row said `['metric', 'log']` until the
+  // round that measured RE2's two tables: one case of `RE2-OB` holds 171 322 log
+  // rows **and 391 997 span rows**, eleven columns, and `checkRcaEvalStructure`
+  // has always required both files for this suite. Two statements of one modality
+  // set that disagreed, with the coverage report the lenient one -- so a dataset
+  // with metrics and logs and no spans was reported `ready` for a target whose own
+  // export would then fail its structure contract (finding 321).
+  'rcaeval-re2': ['metric', 'log', 'trace'],
   'rcaeval-re3': ['metric', 'log', 'trace'],
   rca100: ['metric', 'log', 'trace', 'event', 'alert'],
   aiops2025: ['metric', 'log', 'trace'],

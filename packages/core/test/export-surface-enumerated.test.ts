@@ -473,6 +473,13 @@ const TESTED = [
   'IR_VERSION',
   'SIGNAL_KINDS',
   'LOG_SEVERITIES',
+  // The spellings a corpus uses for a level, and the lookup that maps one to a
+  // vocabulary member. Two exports because the ingest and the modality comparison
+  // both have to answer "what severity is this cell" and must answer it the same
+  // way; the table is read by tests that assert a specific spelling, and the
+  // function by the ones that assert an unseen spelling stays a rejection.
+  'LOG_SEVERITY_SPELLINGS',
+  'normaliseLogSeverity',
   'SPAN_STATUSES',
   'MISSING_VALUE_TOKENS',
   'ENTITY_KINDS',
@@ -500,6 +507,7 @@ const TESTED = [
   // list is a name nobody would notice was gone.
   'MODALITY_TABLES',
   'TRUNCATED_UNITS',
+  'COLUMN_TRANSFORMS',
   'compareModalityTables',
   'describeModalityComparison',
   // score/official.ts

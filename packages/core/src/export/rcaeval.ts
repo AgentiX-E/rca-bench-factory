@@ -73,6 +73,31 @@ import { renderCsv } from '../util/csv.js';
  * `RCAEVAL_INSTANT_COLUMNS` below is that sentence rewritten as a table with one
  * row per file, and `instantCell` is the only thing that reads it, so the claim
  * and the value cannot drift apart again.
+ *
+ * ## A table is written only when it has rows, and a case that cannot fill
+ *    `data.csv` is not written at all
+ *
+ * Declaring `logs.csv` and `traces.csv` for RE2 and RE3 made this module emit
+ * both files for every case, whether or not the case carried the modality. On the
+ * annotated corpus that is 30 `logs.csv` files of which **19** hold a header and
+ * nothing under it, and 30 `traces.csv` files of which **25** do -- measured, from
+ * `check-fault-cases`' own export, on a corpus where 11 cases declare a log line
+ * and 5 declare a span.
+ *
+ * The header is not a harmless placeholder. `check-official` reads a declared
+ * modality as present-or-absent and refuses a case that is declared and missing,
+ * so the exporter's own output is the thing that would satisfy that rule: a case
+ * with a header-only `logs.csv` reads back as "has logs, in zero rows", which no
+ * consumer can distinguish from a case whose log table was truncated to nothing.
+ * A file that exists and says nothing is the shape this project keeps removing one
+ * layer out (`score/modalities.ts` opens with the 1.00 over 735 cases that was
+ * measured while both tables held a header and no rows).
+ *
+ * So the rule here is the shape of the data rather than the shape of the layout:
+ * a table is written iff the case has at least one signal of its modality, and a
+ * case with no metric signal is skipped by name -- upstream finds a case by
+ * globbing for `data.csv`, so a case it cannot see at all is a case whose absence
+ * has to be stated rather than implied by an empty file.
  */
 
 export const RCAEVAL_TARGET_ID = 'rcaeval';
@@ -425,14 +450,25 @@ export function exportRcaEval(bundle: IrBundle, suite: RcaEvalSuite = 'RE2'): Ex
       skipped.push({ caseId: fc.caseId, reason: 'RE3 targets code-level faults only' });
       return;
     }
+    // Upstream reaches a case by globbing for `data.csv`, so a case with no metric
+    // signal can only be represented by a header with no rows under it -- a file
+    // that exists and is invisible to the metric the harness computes. Named as a
+    // skip, which is the same treatment a case with no signals at all gets.
+    if (!signals.some(isMetricSignal)) {
+      skipped.push({ caseId: fc.caseId, reason: 'no metric signals attached, and a case is found by its data.csv' });
+      return;
+    }
 
     const dir = casePath(suite, fc, index + 1);
     files[`${dir}/data.csv`] = buildDataCsv(signals);
     files[`${dir}/inject_time.txt`] = `${Math.floor(Date.parse(fc.injectTime) / 1000)}`;
 
+    // Declared by the suite, written only when filled: see the header of this file.
+    // The suite test is the type's narrowing (`RcaEvalLogsSuite` is RE2 or RE3), not
+    // a second copy of the modality rule.
     if (suite === 'RE2' || suite === 'RE3') {
-      files[`${dir}/logs.csv`] = buildLogsCsv(signals, suite);
-      files[`${dir}/traces.csv`] = buildTracesCsv(signals);
+      if (signals.some(isLogSignal)) files[`${dir}/logs.csv`] = buildLogsCsv(signals, suite);
+      if (signals.some(isTraceSignal)) files[`${dir}/traces.csv`] = buildTracesCsv(signals);
     }
   });
 

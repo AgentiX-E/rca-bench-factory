@@ -93,6 +93,15 @@ export interface PrimeFileSpec {
   hasHeader?: boolean;
   /** Fallback `service.name` when the file has no service column. */
   serviceName?: string;
+  /**
+   * Spellings this corpus uses for one service, mapped to the name the IR holds.
+   *
+   * Declared per file rather than per case because it is a property of how one
+   * table spells its service column: RE2-OB writes `frontendservice` in
+   * `traces.csv` and `frontend` in `logs.csv`, and the two tables of one case need
+   * different answers.
+   */
+  serviceAliases?: Readonly<Record<string, string>>;
 }
 
 /** One benchmark case: where its telemetry lives and what the answer is. */
@@ -141,6 +150,7 @@ export interface PrimeIngestDefaults {
   delimiter?: string;
   hasHeader?: boolean;
   serviceName?: string;
+  serviceAliases?: Readonly<Record<string, string>>;
 }
 
 export interface PrimeIngestOptions {
@@ -402,6 +412,7 @@ function resolveFileOptions(
       ...(merged.delimiter !== undefined ? { delimiter: merged.delimiter } : {}),
       ...(merged.hasHeader !== undefined ? { hasHeader: merged.hasHeader } : {}),
       ...(merged.serviceName !== undefined ? { serviceName: merged.serviceName } : {}),
+      ...(merged.serviceAliases !== undefined ? { serviceAliases: merged.serviceAliases } : {}),
     },
   };
 }

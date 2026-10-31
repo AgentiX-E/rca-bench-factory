@@ -1,9 +1,9 @@
 import {
   IR_VERSION,
-  LOG_SEVERITIES,
   MISSING_VALUE_TOKENS,
   SPAN_STATUSES,
   isVocabularyMember,
+  normaliseLogSeverity,
   type LogSeverity,
   type SpanStatus,
   type MetricPayload,
@@ -119,6 +119,28 @@ export interface FileIngestOptions {
   hasHeader?: boolean;
   /** Fallback `service.name` when no service column maps. */
   serviceName?: string;
+  /**
+   * Spellings the corpus uses for one service, mapped to the name the IR holds.
+   *
+   * RE2-OB writes `frontendservice` in `traces.csv` and `frontend` in `logs.csv`
+   * and in the metric columns of the same case. Three tables, one service, two
+   * spellings -- and a reader that passes both through makes two entities, so the
+   * attribution that joins a span to the log lines beside it joins nothing. The
+   * measured shape: `frontend` is in `container_name` and in every metric column
+   * name of `RE2-OB/checkoutservice_cpu/1`, and `frontendservice` is in its spans
+   * and nowhere else.
+   *
+   * It sits here rather than in `FileLayout` because the layout says which column
+   * holds a fact and this says what one of the fact's values means. Putting it in
+   * the layout made `rulegen`'s `layout[field]` read the map as a column name --
+   * a type error, which is the compiler saying the same thing.
+   *
+   * The map is exact-match and one-way. A name it does not mention is carried
+   * unchanged, because which spellings exist is a fact about one corpus: it
+   * belongs in the reading plan that corpus declares, not in a rule this module
+   * applies to every file it opens.
+   */
+  serviceAliases?: Readonly<Record<string, string>>;
 }
 
 export interface FileParseError {
@@ -505,14 +527,18 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
   }
 
   const rawService = asText(get(layout.service));
-  const serviceName = rawService ?? options.serviceName;
-  if (serviceName === undefined || serviceName === '') {
+  const declaredName = rawService ?? options.serviceName;
+  if (declaredName === undefined || declaredName === '') {
     return {
       ok: false,
       kind: 'reject',
       reason: `missing service name (column '${layout.service ?? '(none)'}' or options.serviceName)`,
     };
   }
+  // The fallback `options.serviceName` goes through the map too: it is the same
+  // kind of claim about the same corpus, and a plan that renamed its spans but not
+  // its fallback would split the service again from the other side.
+  const serviceName = options.serviceAliases?.[declaredName] ?? declaredName;
 
   let payload: SignalPayload;
   if (signalKind === 'metric') {
@@ -553,11 +579,11 @@ function buildSignal(record: Record<string, unknown>, options: FileIngestOptions
     const rawSeverity = asText(get(layout.severity));
     let severityText: LogSeverity | undefined;
     if (rawSeverity !== undefined) {
-      const upper = rawSeverity.toUpperCase();
-      if (!isVocabularyMember(LOG_SEVERITIES, upper)) {
+      const normalised = normaliseLogSeverity(rawSeverity);
+      if (normalised === undefined) {
         return { ok: false, kind: 'reject', reason: `invalid severity '${rawSeverity}'` };
       }
-      severityText = upper;
+      severityText = normalised;
     }
     payload = { kind: 'log', body, ...(severityText !== undefined ? { severityText } : {}) };
   } else {

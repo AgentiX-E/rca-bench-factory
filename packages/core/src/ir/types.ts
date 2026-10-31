@@ -62,6 +62,46 @@ export const LOG_SEVERITIES = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL
 export type LogSeverity = (typeof LOG_SEVERITIES)[number];
 
 /**
+ * Spellings a corpus uses for a severity, and the vocabulary member each one means.
+ *
+ * `LOG_SEVERITIES` is OpenTelemetry's vocabulary and it says `WARN`, not `WARNING`.
+ * RE2-OB's `level` column says `warning`: 4 742 rows across the 91 `logs.csv` files
+ * in that archive, out of 15 224 545 rows. Upper-casing the cell and then consulting
+ * the vocabulary rejects every one of them, and nothing about those rows is
+ * malformed -- their instant, container and body are as good as the rows beside
+ * them. The corpus spelled a level the way its own log library does.
+ *
+ * The table is short on purpose, and every entry is a count rather than a guess.
+ * `warning` is here because it was measured. `err` is not, because those same
+ * 15 224 545 rows contain no such value -- and a spelling that is in neither the
+ * vocabulary nor this table stays a rejection, which is how an unseen one remains
+ * visible instead of being folded into its nearest neighbour.
+ *
+ * It is a lookup and not a `ColumnTransform` of its own because two readers need the
+ * same answer: the ingest when it builds a signal, and `score/modalities.ts` when it
+ * decides whether the exported cell reproduces the corpus's. Two implementations of
+ * one normalisation is the shape of finding 316 (a conversion that agreed with
+ * itself in two places and with the corpus in neither).
+ */
+export const LOG_SEVERITY_SPELLINGS: Readonly<Record<string, LogSeverity>> = { warning: 'WARN' };
+
+/**
+ * The severity a cell means, or `undefined` when the spelling is not one this IR
+ * recognises.
+ *
+ * Upper-casing first is what admits `info` and `INFO` as one severity -- RE2-OB
+ * writes both in the same column of the same case, 6 202 823 and 2 138 278 rows
+ * respectively, because two services in one cluster use two log libraries. A cell
+ * that is empty is not passed here at all: the caller treats an absent severity as
+ * "the source declared none", which is what `severityText` being optional means.
+ */
+export function normaliseLogSeverity(raw: string): LogSeverity | undefined {
+  const upper = raw.toUpperCase();
+  if (isVocabularyMember(LOG_SEVERITIES, upper)) return upper;
+  return LOG_SEVERITY_SPELLINGS[upper.toLowerCase()];
+}
+
+/**
  * `TracePayload.status`, declared once, for the same reason. `UNSET` is a real
  * member of the vocabulary -- a span with no status -- not a default applied
  * when parsing fails.

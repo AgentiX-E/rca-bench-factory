@@ -485,3 +485,175 @@ describe('modality comparison · a stale plan still produces a report', () => {
     expect(text).not.toContain('disagree');
   });
 });
+
+describe('modality comparison · a column whose spelling is normalised', () => {
+  // RE2-OB's `level` column writes one severity two ways: `info` 6 202 823 times and
+  // `INFO` 2 138 278 times across its 91 log tables, because two services in one
+  // cluster use two log libraries. The IR holds the upper-cased form, so the export
+  // writes `INFO` where the corpus wrote `info` -- and a byte comparison reports
+  // 6.2 million differences for a transform that lost nothing.
+
+  const LEVEL_LOGS: readonly ColumnComparison[] = [
+    { column: 'time', kind: 'derived', from: 'timestamp' },
+    { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+    { column: 'container_name', kind: 'exact' },
+    { column: 'message', kind: 'exact' },
+    { column: 'level', kind: 'normalised', transform: 'upper-case' },
+  ];
+  const HEADER = 'time,timestamp,container_name,message,level';
+
+  it('agrees when the two spellings are one level', () => {
+    const corpus = [
+      HEADER,
+      '06:22,1731910960181130857,frontend,a,info',
+      '06:22,1731910960181334492,frontend,b,INFO',
+    ].join('\n');
+    const exported = [
+      HEADER,
+      '06:22,1731910960181000000,frontend,a,INFO',
+      '06:22,1731910960181000000,frontend,b,INFO',
+    ].join('\n');
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan: LEVEL_LOGS });
+    expect(result.rowsMatch).toBe(true);
+    const level = result.columns.find((c) => c.column === 'level');
+    expect(level).toMatchObject({ kind: 'normalised', differ: 0, lossy: 1 });
+  });
+
+  it('disagrees when the export does not reproduce the level at all', () => {
+    // The one-sided rule: only the corpus's cell goes through the transform. An
+    // exporter that wrote the level back in the corpus's spelling would be an
+    // exporter that never normalised anything.
+    const corpus = `${HEADER}\n06:22,1731910960181130857,frontend,a,info\n`;
+    const exported = `${HEADER}\n06:22,1731910960181000000,frontend,a,info\n`;
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan: LEVEL_LOGS });
+    expect(result.rowsMatch).toBe(false);
+    expect(result.columns.find((c) => c.column === 'level')).toMatchObject({ differ: 1 });
+  });
+
+  it('disagrees when the export drops the level', () => {
+    const corpus = `${HEADER}\n06:22,1731910960181130857,frontend,a,error\n`;
+    const exported = `${HEADER}\n06:22,1731910960181000000,frontend,a,\n`;
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan: LEVEL_LOGS });
+    expect(result.rowsMatch).toBe(false);
+  });
+
+  it('keeps the level in the row signature, so a dropped one is not a match', () => {
+    // `derived` columns are excluded from the signature because they restate an
+    // instant it already holds. A severity is not a restatement: a row whose level
+    // was lost must not collide with a row whose level was `INFO`.
+    const corpus = [
+      HEADER,
+      '06:22,1731910960181130857,frontend,a,info',
+      '06:22,1731910960181334492,frontend,a,error',
+    ].join('\n');
+    const exported = [
+      HEADER,
+      '06:22,1731910960181000000,frontend,a,INFO',
+      '06:22,1731910960181000000,frontend,a,INFO',
+    ].join('\n');
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan: LEVEL_LOGS });
+    expect(result.rowsMatch).toBe(false);
+    expect(result.onlyInCorpus + result.onlyInExport).toBe(2);
+  });
+
+  it('maps the corpus’s spelling through the same table the ingest uses', () => {
+    // `warning` is the one spelling in that archive that is not a case variant:
+    // `LOG_SEVERITIES` says `WARN`. The transform has to know that, or the 4 742
+    // rows the ingest accepts are 4 742 rows the comparison rejects.
+    const plan: readonly ColumnComparison[] = [
+      { column: 'time', kind: 'derived', from: 'timestamp' },
+      { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+      { column: 'container_name', kind: 'exact' },
+      { column: 'message', kind: 'exact' },
+      { column: 'level', kind: 'normalised', transform: 'severity' },
+    ];
+    const corpus = `${HEADER}\n06:22,1731910960181130857,frontend,a,warning\n`;
+    const exported = `${HEADER}\n06:22,1731910960181000000,frontend,a,WARN\n`;
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan });
+    expect(result.rowsMatch).toBe(true);
+    expect(result.columns.find((c) => c.column === 'level')).toMatchObject({ differ: 0, lossy: 1 });
+  });
+
+  it('counts a spelling neither the vocabulary nor the table names as a difference', () => {
+    // The fallback is the upper-cased cell, not the nearest known level: an unseen
+    // spelling must read as a disagreement rather than as a silent agreement with a
+    // value nothing wrote.
+    const plan: readonly ColumnComparison[] = [
+      { column: 'time', kind: 'derived', from: 'timestamp' },
+      { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+      { column: 'container_name', kind: 'exact' },
+      { column: 'message', kind: 'exact' },
+      { column: 'level', kind: 'normalised', transform: 'severity' },
+    ];
+    const corpus = `${HEADER}\n06:22,1731910960181130857,frontend,a,notice\n`;
+    const exported = `${HEADER}\n06:22,1731910960181000000,frontend,a,INFO\n`;
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan });
+    expect(result.rowsMatch).toBe(false);
+    // `lossy` counts the spellings this table cannot write back, and `notice` is one
+    // of them: it reached the export as `NOTICE`, which is not what the corpus said.
+    expect(result.columns.find((c) => c.column === 'level')).toMatchObject({ differ: 1, lossy: 1 });
+  });
+
+  it('says the normalisation in the one-line verdict', () => {
+    const corpus = `${HEADER}\n06:22,1731910960181130857,frontend,a,info\n`;
+    const exported = `${HEADER}\n06:22,1731910960181000000,frontend,a,INFO\n`;
+    const result = compareModalityTables({ table: 'logs', corpus, exported, plan: LEVEL_LOGS });
+    expect(describeModalityComparison(result)).toMatch(/normalised level normalised \(1 of 1 cell\(s\) spelled differently\)/);
+  });
+});
+
+describe('modality comparison · a column whose values are renamed', () => {
+  // RE2-OB calls the front end `frontendservice` in `traces.csv` while its own log
+  // table and every metric column of the same case call it `frontend`. The reading
+  // plan maps the name on the way in, so the export holds `frontend` and the corpus
+  // holds `frontendservice` -- one service, two spellings, and a comparison that
+  // reads the difference as a loss would report 199 519 spans of one case as wrong.
+
+  // No `time` column: this block is about the rename, and a derived column would need
+  // an instant column beside it to derive from.
+  const plan: readonly ColumnComparison[] = [
+    { column: 'traceID', kind: 'exact' },
+    { column: 'serviceName', kind: 'normalised', transform: 'alias', aliases: { frontendservice: 'frontend' } },
+    { column: 'duration', kind: 'exact' },
+  ];
+  const HEADER = 'traceID,serviceName,duration';
+
+  it('agrees when the export holds the name the map produces', () => {
+    const corpus = `${HEADER}\ntr-1,frontendservice,4133\ntr-2,currencyservice,186\n`;
+    const exported = `${HEADER}\ntr-1,frontend,4133\ntr-2,currencyservice,186\n`;
+    const result = compareModalityTables({ table: 'traces', corpus, exported, plan });
+    expect(result.rowsMatch).toBe(true);
+    expect(result.columns.find((c) => c.column === 'serviceName')).toMatchObject({ differ: 0, lossy: 1 });
+  });
+
+  it('disagrees when the export keeps the corpus’s spelling', () => {
+    // The one-sided rule again: the map is what the reader was told to do, so an
+    // export that did not do it is an export that did not read its own plan.
+    const corpus = `${HEADER}\ntr-1,frontendservice,4133\n`;
+    const exported = `${HEADER}\ntr-1,frontendservice,4133\n`;
+    const result = compareModalityTables({ table: 'traces', corpus, exported, plan });
+    expect(result.rowsMatch).toBe(false);
+    expect(result.columns.find((c) => c.column === 'serviceName')).toMatchObject({ differ: 1 });
+  });
+
+  it('carries a name the map does not mention', () => {
+    const corpus = `${HEADER}\ntr-1,adservice,10\n`;
+    const exported = `${HEADER}\ntr-1,adservice,10\n`;
+    const result = compareModalityTables({ table: 'traces', corpus, exported, plan });
+    expect(result.rowsMatch).toBe(true);
+    expect(result.columns.find((c) => c.column === 'serviceName')).toMatchObject({ differ: 0, lossy: 0 });
+  });
+
+  it('treats a missing map as the identity rather than as a wildcard', () => {
+    // `aliases` is optional on the union member. Without it the transform has to be
+    // the identity -- not "match anything", which would make the column vacuous.
+    const bare: readonly ColumnComparison[] = [
+      { column: 'traceID', kind: 'exact' },
+      { column: 'serviceName', kind: 'normalised', transform: 'alias' },
+    ];
+    const corpus = `${HEADER}\ntr-1,frontendservice,4133\n`;
+    const exported = `${HEADER}\ntr-1,frontend,4133\n`;
+    const result = compareModalityTables({ table: 'traces', corpus, exported, plan: bare });
+    expect(result.rowsMatch).toBe(false);
+  });
+});

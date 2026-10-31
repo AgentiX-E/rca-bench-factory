@@ -1251,10 +1251,76 @@ function logCheckpointCounts() {
   );
 }
 
+/** Where the two numbers below are kept, so they can be printed on both exits. */
+let coverageLine = null;
+const exportLines = [];
+const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', 'rcaeval-re3']];
+
+// The corpus through the two modules that decide whether it can be evaluated at all. Neither number
+// existed before this round: the coverage report was only ever handed bundles bound for official
+// scoring, and the exporter only ever saw datasets that already had what it needs. Asked of the
+// annotated corpus, they disagree, and the disagreement is the finding (238).
+//
+// ## What this used to count, and why it now reads the cases instead
+//
+// The exporter declared `logs.csv` and `traces.csv` for RE2 and RE3 and wrote both for every case:
+// 19 of 30 `logs.csv` and 25 of 30 `traces.csv` held a header and nothing under it. This block
+// counted those files and printed the count. The exporter now writes a table only when the case has
+// the modality (finding 321), so the count would be a constant zero -- a number no run can move and a
+// branch no input can reach, which is the shape this project removes rather than keeps (finding 285).
+// The invariant that used to be measured here is asserted where it can fail: the exporter's own unit
+// tests, over cases built to carry one modality, the other, both and neither.
+//
+// What replaces it is the fact the corpus can act on: how many exported cases carry a log table and
+// how many carry a span table. A case with no log line is a case the log-based methods cannot be
+// asked about, and the old count said so only as a total over files.
+if (telemetryCases.length > 0 && firstGraph !== null) {
+  const bundle = { irVersion: '1.0.0', graph: firstGraph, cases: telemetryCases, signals: telemetrySignals };
+  const { feasibility } = core.computeCoverage(bundle);
+  coverageLine = SUITE_TARGETS.map(([, target]) => {
+    const entry = feasibility.find((f) => f.target === target);
+    const missing = entry === undefined || entry.missingSignals.length === 0 ? '' : ` (no ${entry.missingSignals.join(', ')})`;
+    return `${target} ${entry === undefined ? 'absent' : entry.status}${missing}`;
+  }).join(' · ');
+
+  for (const [suite] of SUITE_TARGETS) {
+    const outcome = core.exportRcaEval(bundle, suite);
+    // The leaf case directory, `{suite}-{system}/{service}_{fault}/{instance}`, not
+    // the suite-system directory above it: every case of one system shares that
+    // top level, so counting it reported 13 annotated cases as one (finding 267).
+    const dirs = new Set(
+      Object.keys(outcome.files).map((path) => path.slice(0, path.lastIndexOf('/'))),
+    );
+    // Which modalities the written cases actually carry, read off the exporter's own file names so
+    // a new modality is named by whatever the exporter calls it rather than by a list kept here
+    // (finding 287). Only for the suites that declare them: `RCAEVAL_LOGS_COLUMNS` is RE2 and RE3,
+    // and asking RE1 whether its cases have logs would report a metric-only suite as deficient.
+    //
+    // And only when something was written: `logs in 0 of 0` is a share of nothing, which reads as a
+    // corpus that lost every case rather than as a suite that refused the one it was given.
+    const modalities =
+      Object.hasOwn(core.RCAEVAL_LOGS_COLUMNS, suite) && dirs.size > 0
+        ? ['logs', 'traces'].map((table) => {
+            const carrying = new Set(
+              Object.keys(outcome.files)
+                .filter((path) => path.endsWith(`/${table}.csv`))
+                .map((path) => path.slice(0, path.lastIndexOf('/'))),
+            );
+            return `, ${table} in ${String(carrying.size)} of ${String(dirs.size)}`;
+          })
+        : [];
+    exportLines.push(
+      `${suite} ${String(dirs.size)} case(s) written${modalities.join('')}` +
+        (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
+    );
+  }
+}
+
 if (problems.length > 0) {
   for (const problem of problems) console.error(`check-fault-cases: ${problem}`);
   logDifficultyCoverage();
   logParameterUse();
+  logExportReading();
   logLocalisationReading();
   logCheckpointCounts();
   console.error(
@@ -1284,84 +1350,20 @@ if (index.cases.length < floor) {
 // existed before this round: the coverage report was only ever handed bundles bound for official
 // scoring, and the exporter only ever saw datasets that already had what it needs. Asked of the
 // annotated corpus, they disagree, and the disagreement is the finding (238).
-/**
- * Whether an exported file exists but carries no data.
- *
- * The first version of this counted lines, which called `metrics.json` empty -- it is one line of
- * JSON -- and `inject_time.txt` empty, which is one line *by design*. Emptiness is a property of the
- * content: a CSV with no rows below its header, or a JSON object with no keys.
- */
-function isEmptyDataFile(path, body) {
-  if (path.endsWith('.json')) {
-    try {
-      const parsed = JSON.parse(String(body));
-      if (Array.isArray(parsed)) return parsed.length === 0;
-      return typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length === 0;
-    } catch {
-      return false;
-    }
-  }
-  if (path.endsWith('.csv')) return String(body).trimEnd().split('\n').length <= 1;
-  return false;
-}
-
-const SUITE_TARGETS = [['RE1', 'rcaeval-re1'], ['RE2', 'rcaeval-re2'], ['RE3', 'rcaeval-re3']];
-const exportLines = [];
-
-if (telemetryCases.length > 0 && firstGraph !== null) {
-  const bundle = { irVersion: '1.0.0', graph: firstGraph, cases: telemetryCases, signals: telemetrySignals };
-  const { feasibility } = core.computeCoverage(bundle);
-  const coverageLine = SUITE_TARGETS.map(([, target]) => {
-    const entry = feasibility.find((f) => f.target === target);
-    const missing = entry === undefined || entry.missingSignals.length === 0 ? '' : ` (no ${entry.missingSignals.join(', ')})`;
-    return `${target} ${entry === undefined ? 'absent' : entry.status}${missing}`;
-  });
-  console.log(`check-fault-cases: coverage ${coverageLine.join(' · ')}`);
-
-  for (const [suite] of SUITE_TARGETS) {
-    const outcome = core.exportRcaEval(bundle, suite);
-    // A CSV with a header and no rows is a file that exists and says nothing. Counted rather than
-    // refused, because refusing would change a shared contract the official round trip depends on
-    // (the round trip's own RE2 case carries metrics only) -- so the count is the report.
-    //
-    // And a *breakdown*, because the count on its own was a number no reader could act on: `35
-    // file(s) with no rows` says the corpus is missing something and not which modality, and a
-    // corpus with no logs wants a different repair from one with no spans. The names come from the
-    // exporter's own paths, so a new modality is named by whatever the exporter calls it rather
-    // than by a list kept here (finding 287).
-    const emptyByFile = new Map();
-    let emptyTotal = 0;
-    for (const [path, body] of Object.entries(outcome.files)) {
-      if (!isEmptyDataFile(path, body)) continue;
-      emptyTotal += 1;
-      const name = path.slice(path.lastIndexOf('/') + 1);
-      emptyByFile.set(name, (emptyByFile.get(name) ?? 0) + 1);
-    }
-    const breakdown = [...emptyByFile.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, count]) => `${name} in ${String(count)} case(s)`)
-      .join(', ');
-    // The leaf case directory, `{suite}-{system}/{service}_{fault}/{instance}`, not
-    // the suite-system directory above it: every case of one system shares that
-    // top level, so counting it reported 13 annotated cases as one (finding 267).
-    const dirs = new Set(
-      Object.keys(outcome.files).map((path) => path.slice(0, path.lastIndexOf('/'))),
-    );
-    exportLines.push(
-      `${suite} ${String(dirs.size)} case(s) written, ${String(emptyTotal)} file(s) with no rows` +
-        (breakdown === '' ? '' : ` (${breakdown})`) +
-        (outcome.skipped.length === 0 ? '' : `, ${String(outcome.skipped.length)} skipped`),
-    );
-  }
+/** What each suite's export holds, and which of its cases carry which modality. */
+function logExportReading() {
+  if (coverageLine === null) return;
+  console.log(`check-fault-cases: coverage ${coverageLine}`);
   console.log(`check-fault-cases: export ${exportLines.join(' · ')}`);
-  logLocalisationReading();
-  logCheckpointCounts();
 }
 
 // Outside the export block on purpose: a corpus with no derived telemetry still states levels, and
 // the coverage line vanished from exactly those runs while it lived inside it.
 logDifficultyCoverage();
 logParameterUse();
+logExportReading();
+logLocalisationReading();
+logCheckpointCounts();
 
 console.log(
   `check-fault-cases: OK (${String(index.cases.length)} of ${String(known.size)} sample(s) carry a four-layer ` +

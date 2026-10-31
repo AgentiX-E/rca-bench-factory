@@ -11,7 +11,7 @@ import {
   exportRcaEval,
 } from '../src/index.js';
 import type { ScoreTargetId } from '../src/score/score.js';
-import { validBundle } from './fixtures.js';
+import { validBundle, validCase } from './fixtures.js';
 
 /**
  * One target list, nine entries, no target left behind.
@@ -105,39 +105,72 @@ function exportedFiles(target: ScoreTargetId, bundle: ReturnType<typeof validBun
 
 describe('a requirement describes the dataset, not the exporter output', () => {
   /**
-   * The modality a target needs cannot be read off the bytes it emits.
+   * The score is blind to a modality the target does not declare, and the three
+   * RCAEval suites are not blind to the ones they do.
    *
-   * Measured: strip any single modality from a bundle and re-score, and **all
-   * nine targets score identically** - `cloud-opsbench` included, whose export
-   * is `metadata.json` alone. So the structural score is not the place a
-   * requirement could be derived from, and `['metric']` would have been a
-   * narrowing invented from an artefact that was never the subject of the
-   * question. What the benchmark's own layout carries is the evidence.
+   * Measured: strip any single modality from a bundle and re-score, and all nine
+   * targets scored identically -- `cloud-opsbench` included, whose export is
+   * `metadata.json` alone. Half of that was a real property (six of the nine
+   * structure gates describe their own layout rather than the dataset's modality
+   * set) and half was an artefact: an exporter wrote a file for every declared
+   * modality whether or not the case carried it, and a header-only `logs.csv` is
+   * still a `logs.csv` with the right header, so the RCAEval gate could not see an
+   * empty one either (finding 321).
+   *
+   * The exporter now writes a table only when it has rows. So the two directions
+   * are asserted separately, and each names its own subject: the first is about the
+   * requirement, the second about the gate that grades the export.
    */
-  const withoutKind = (kind: string) => {
-    const base = validBundle();
-    return validBundle({
-      signals: { 'case-001': (base.signals['case-001'] ?? []).filter((s) => s.signal !== kind) },
+  const withoutKind = (kind: string, bundle: ReturnType<typeof validBundle> = validBundle()) =>
+    validBundle({
+      signals: { 'case-001': (bundle.signals['case-001'] ?? []).filter((s) => s.signal !== kind) },
     });
-  };
 
-  it.each(SCORE_TARGET_IDS)('scores %s identically with any modality but the metric table removed', (target) => {
-    // Recorded as a known fact, not as a desired property: this is *why* the
-    // coverage report exists as a separate measurement, and asserting it keeps
-    // a future reader from trying to derive the requirement from the score.
-    //
-    // `metric` is excluded, and the next test is why: the metric table is the one
-    // file every suite's contract requires a `time` column in, so a bundle with no
-    // readings cannot satisfy it. The other four leave a file behind -- an empty
-    // `logs.csv` is still a `logs.csv` with the right header -- which is exactly
-    // how a structural check stays blind to whether a modality is *populated*.
+  it.each(SCORE_TARGET_IDS)('scores %s identically with a modality it does not declare removed', (target) => {
+    // The reason the coverage report exists as a separate measurement, and the
+    // reason the requirement cannot be read off the bytes a target emits: what a
+    // target's own artefacts can express is a property of the layout, and seven of
+    // the nine layouts say nothing about logs or spans at all.
     const bundle = validBundle();
     const base = scoreExport(target, exportedFiles(target, bundle));
+    const declared = TARGET_REQUIREMENTS[target];
     for (const kind of ['log', 'trace', 'event', 'alert']) {
+      if (declared.includes(kind as (typeof declared)[number])) continue;
       const stripped = scoreExport(target, exportedFiles(target, withoutKind(kind)));
-      expect(stripped.score).toBe(base.score);
+      expect(stripped.score, `${target} does not declare ${kind} and must not care about it`).toBe(base.score);
     }
   });
+
+  it.each(['rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3'] as const)(
+    'turns a declared modality into a failing structure check for %s',
+    (target) => {
+      // The three suites whose gate has a `modality-set` check, and the reason the
+      // check now has teeth: with the tables written only when filled, a case that
+      // carries no log line exports no `logs.csv`, and the check that used to be
+      // satisfied by the file's presence reports what the case actually holds.
+      //
+      // RE3 refuses a resource fault outright, so the fixture's case is a code fault
+      // here -- otherwise the base export is empty and there is no score for removing
+      // a modality to lower, which would make the assertions below vacuous rather
+      // than wrong.
+      const bundle = validBundle({
+        cases: [
+          target === 'rcaeval-re3'
+            ? validCase({ fault: { ...validCase().fault, category: 'code' } })
+            : validCase(),
+        ],
+      });
+      const base = scoreExport(target, exportedFiles(target, bundle));
+      expect(base.score, `${target} exported nothing, so nothing is being measured`).toBeGreaterThan(0);
+      for (const kind of TARGET_REQUIREMENTS[target]) {
+        if (kind === 'metric') continue;
+        const stripped = scoreExport(target, exportedFiles(target, withoutKind(kind, bundle)));
+        const failed = stripped.structure.checks.filter((c) => !c.passed).map((c) => c.id);
+        expect(failed, `${target} lost ${kind} but passed its structure contract`).toContain('modality-set');
+        expect(stripped.score, `${target} declares ${kind} and must not score without it`).toBeLessThan(base.score);
+      }
+    },
+  );
 
   // Scoped to the two RCAEval targets this fixture can produce an export for.
   // `data.csv` is their metric table; the other six formats carry the readings in

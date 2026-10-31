@@ -241,6 +241,47 @@ describe('ingestFile - log CSV', () => {
     expect(quarantine).toHaveLength(1);
     expect(quarantine[0]?.reason).toMatch(/severity/i);
   });
+
+  it('reads the spelling a corpus uses for a level the vocabulary already has', () => {
+    // RE2-OB writes `warning` 4 742 times across its 91 log tables, out of
+    // 15 224 545 rows. `LOG_SEVERITIES` is OpenTelemetry's and says `WARN`, so
+    // upper-casing alone turns a good row into a quarantine entry.
+    const src = 'timestamp,cmdb_id,level,message\n2026-09-06T00:00:00Z,order,warning,slow\n';
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout });
+    expect(quarantine).toEqual([]);
+    expect(signals[0]?.payload).toMatchObject({ severityText: 'WARN' });
+  });
+
+  it('reads one severity written in two cases as one severity', () => {
+    // The same archive writes `info` 6 202 823 times and `INFO` 2 138 278 times, in
+    // one column, because two services use two log libraries. Two spellings, one
+    // level: the reduction counts what the corpus means.
+    const src = 'timestamp,cmdb_id,level,message\n2026-09-06T00:00:00Z,a,info,x\n2026-09-06T00:00:00Z,b,INFO,y\n';
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout });
+    expect(quarantine).toEqual([]);
+    expect(signals.map((s) => s.payload.severityText)).toEqual(['INFO', 'INFO']);
+  });
+
+  it('still refuses a level that is in neither the vocabulary nor the table', () => {
+    // The table is a measurement, not a synonym list: `notice` was in no archive
+    // this repository has opened, so it stays visible as a rejection rather than
+    // being folded into `INFO`.
+    const src = 'timestamp,cmdb_id,level,message\n2026-09-06T00:00:00Z,order,notice,hm\n';
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout });
+    expect(signals).toEqual([]);
+    expect(quarantine[0]?.reason).toMatch(/invalid severity 'notice'/);
+  });
+
+  it('treats an empty level as no declaration, not as an invalid one', () => {
+    // 1 768 661 rows of that archive have an empty `level`, and their bodies are as
+    // good as any other row's. `severityText` is optional for exactly this case.
+    const src = 'timestamp,cmdb_id,level,message\n2026-09-06T00:00:00Z,order,,fine\n';
+    const { signals, quarantine } = ingestFile(src, { format: 'csv', signalKind: 'log', layout });
+    expect(quarantine).toEqual([]);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.payload).toMatchObject({ kind: 'log', body: 'fine' });
+    expect('severityText' in (signals[0]!.payload as object)).toBe(false);
+  });
 });
 
 describe('ingestFile - trace CSV', () => {
@@ -696,5 +737,110 @@ describe('ingestFile - the columns RCAEval RE3 asks for', () => {
     });
     expect(stated.quarantine).toEqual([]);
     expect(stated.signals[0]?.timestamp).toBe('2024-11-18T06:22:40.181Z');
+  });
+});
+
+describe('ingestFile - one service written two ways', () => {
+  // RE2-OB calls the front end `frontendservice` in `traces.csv` and `frontend` in
+  // `logs.csv` and in every metric column of the same case. A reader that carries
+  // both spellings makes two entities out of one service, and the attribution that
+  // exists to join a span to the lines it caused then joins nothing.
+
+  const layout: FileLayout = { timestamp: 'timestamp', service: 'serviceName', logBody: 'message' };
+
+  it('renames the spelling the corpus uses for a name the IR already has', () => {
+    const src = 'timestamp,serviceName,message\n2026-09-06T00:00:00Z,frontendservice,hello\n';
+    const { signals, quarantine } = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'log',
+      layout,
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    expect(quarantine).toEqual([]);
+    expect(signals[0]?.resource['service.name']).toBe('frontend');
+  });
+
+  it('carries a name the map does not mention unchanged', () => {
+    // The map is a statement about one corpus, not a rule: `currencyservice` is
+    // spelled the same way in all three tables of that case and must survive.
+    const src = 'timestamp,serviceName,message\n2026-09-06T00:00:00Z,currencyservice,hello\n';
+    const { signals } = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'log',
+      layout,
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    expect(signals[0]?.resource['service.name']).toBe('currencyservice');
+  });
+
+  it('matches exactly, so a differently-cased name is a different name', () => {
+    // Folding case here would make the alias a guess about intent. The corpus's own
+    // spelling is the thing being mapped; a name that is not listed is not mapped.
+    const src = 'timestamp,serviceName,message\n2026-09-06T00:00:00Z,FrontEndService,hello\n';
+    const { signals } = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'log',
+      layout,
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    expect(signals[0]?.resource['service.name']).toBe('FrontEndService');
+  });
+
+  it('maps the fallback service name too, not only the column', () => {
+    // A plan that renamed its spans but left `serviceName` alone would split the
+    // service again from the other side: the file has no service column and every
+    // row takes the fallback.
+    const src = 'timestamp,message\n2026-09-06T00:00:00Z,hello\n';
+    const { signals } = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'log',
+      layout: { timestamp: 'timestamp', logBody: 'message' },
+      serviceName: 'frontendservice',
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    expect(signals[0]?.resource['service.name']).toBe('frontend');
+  });
+
+  it('refuses the row the same way when no map is given', () => {
+    // The rejection above the alias is about a missing name, not a missing map: an
+    // empty service column is still a reason to quarantine the record.
+    const src = 'timestamp,serviceName,message\n2026-09-06T00:00:00Z,,hello\n';
+    const { signals, quarantine } = ingestFile(src, {
+      format: 'csv',
+      signalKind: 'log',
+      layout,
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    expect(signals).toEqual([]);
+    expect(quarantine[0]?.reason).toMatch(/missing service name/);
+  });
+
+  it('puts the two tables of one case on one entity', () => {
+    // The end result the map exists for: the span and the log line describe the
+    // same service, so they must carry the same `service.name`.
+    const spans = ingestFile('startTime,serviceName,traceID,spanID,operationName,duration\n1731910960029548,frontendservice,tr-1,sp-1,GET /x,4330\n', {
+      format: 'csv',
+      signalKind: 'trace',
+      timeLayout: 'unix_us',
+      layout: {
+        timestamp: 'startTime',
+        service: 'serviceName',
+        traceId: 'traceID',
+        spanId: 'spanID',
+        spanName: 'operationName',
+        durationMs: 'duration',
+        durationUnit: 'us',
+      },
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    const lines = ingestFile('timestamp,container_name,message\n1731910960181130857,frontend,hello\n', {
+      format: 'csv',
+      signalKind: 'log',
+      timeLayout: 'unix_ns',
+      layout: { timestamp: 'timestamp', service: 'container_name', logBody: 'message' },
+      serviceAliases: { frontendservice: 'frontend' },
+    });
+    const names = [...spans.signals, ...lines.signals].map((s) => s.resource['service.name']);
+    expect(names).toEqual(['frontend', 'frontend']);
   });
 });

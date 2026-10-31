@@ -424,7 +424,11 @@ describe('run - export', () => {
     // `data.csv` in a three-level path, which is what upstream's loader globs for
     // and splits the answer key out of (finding 267).
     expect(files.some((p) => /RE2-[^/]+\/[^/]+_\w+\/\d+\/data\.csv$/.test(p))).toBe(true);
-    expect(files.some((p) => p.endsWith('/logs.csv'))).toBe(true);
+    // And no modality table, because this bundle carries a metric and nothing else: the
+    // exporter writes a table only when it has rows (finding 321), so a header-only
+    // `logs.csv` is not something a CLI run leaves on disk any more.
+    expect(files.some((p) => p.endsWith('/logs.csv'))).toBe(false);
+    expect(files.some((p) => p.endsWith('/traces.csv'))).toBe(false);
   });
 
   it('exports a bundle to RCA100', async () => {
@@ -1215,7 +1219,7 @@ describe('run - gate', () => {
     ['rcaeval-re1', []],
     ['openrca-1.0', ['case-001.signals.trace']],
     ['openrca-2.0', ['case-001.signals.trace']],
-    ['rcaeval-re2', ['case-001.signals.log']],
+    ['rcaeval-re2', ['case-001.signals.log', 'case-001.signals.trace']],
     ['rcaeval-re3', ['case-001.signals.log', 'case-001.signals.trace']],
     ['cloud-opsbench', ['case-001.signals.log', 'case-001.signals.trace']],
     ['itbench', ['case-001.signals.log', 'case-001.signals.trace']],

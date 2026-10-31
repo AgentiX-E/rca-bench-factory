@@ -500,15 +500,39 @@ const CASE_LABEL = 'inject_time.txt';
  * A schema that is known is stated. Detection stays what it is for: a file nobody
  * has described.
  *
- * ## Why RE2 is not here
+ * ## Why RE2 was not here, and what was measured before it was
  *
  * Its log table is nine columns, four of which the IR has no field for
  * (`req_path`, `error`, `cluster_id`, `log_template`) and one of which -- `level`
- * -- feeds a closed severity vocabulary. Reading it means answering what happens to
- * a `level` this reader has never seen, and no RE2 archive has been measured in
- * this tree. Claiming it from a schema table would be inventing the answer; the
- * omission is recorded as open instead.
+ * -- feeds a closed severity vocabulary. The open question was what happens to a
+ * `level` this reader has never seen, and it was answered by reading all 91
+ * `logs.csv` files of `RE2-OB.zip`: 15 224 545 rows, six distinct values --
+ * `info` 6 202 823, `debug` 5 105 988, `INFO` 2 138 278, empty 1 768 661,
+ * `warning` 4 742, `error` 4 053. So there are two spellings problems in one
+ * column, and both are mechanical: case (`info`/`INFO` in one cluster) and the
+ * vocabulary gap (`warning` where `LOG_SEVERITIES` says `WARN`). Both are handled
+ * in `normaliseLogSeverity`, and the column is compared under `transform:
+ * 'severity'` so the round trip does not read a normalisation as a loss.
+ *
+ * The trace table needed nothing: it is the **same eleven columns** as RE3's,
+ * verified by reading its header and first rows, with the same units.
+ *
+ * One thing RE2 does differently, and it is not a schema difference: it calls the
+ * front end `frontendservice` in `traces.csv` and `frontend` in `logs.csv` and in
+ * every metric column of the same case. That is one service written two ways, so
+ * the plan names the map and the reader applies it -- otherwise the span and the
+ * log line it caused are two entities.
  */
+/**
+ * The one service RE2-OB spells two ways.
+ *
+ * `frontendservice` in `traces.csv`, `frontend` in `logs.csv` and in every metric
+ * column of the same case. One constant and not two literals, because the reading
+ * plan applies it and the comparison expects it to have been applied: two copies
+ * would be two chances to disagree.
+ */
+const RE2_SERVICE_ALIASES = { frontendservice: 'frontend' };
+
 const MODALITY_PLANS = {
   RE3: [
     {
@@ -583,6 +607,87 @@ const MODALITY_PLANS = {
         // `14.0` is in this column 138 times in `emailservice_f1/1`, and 14 is gRPC
         // `UNAVAILABLE`, not an OpenTelemetry status. The exporter writes nothing
         // here, which is why this is `not-carried` rather than compared.
+        { column: 'statusCode', kind: 'not-carried' },
+        { column: 'parentSpanID', kind: 'exact' },
+      ],
+    },
+  ],
+  RE2: [
+    {
+      table: 'logs',
+      file: 'logs.csv',
+      spec: {
+        signalKind: 'log',
+        format: 'csv',
+        timeLayout: 'unix_ns',
+        layout: {
+          timestamp: 'timestamp',
+          service: 'container_name',
+          logBody: 'message',
+          severity: 'level',
+        },
+      },
+      columns: [
+        // The same `HH:MM`-beside-nanoseconds shape as RE3's, so the same decision:
+        // checked against the instant, not against the corpus's rendering of it.
+        { column: 'time', kind: 'derived', from: 'timestamp' },
+        { column: 'timestamp', kind: 'truncated', unit: 'ns' },
+        { column: 'container_name', kind: 'exact' },
+        { column: 'message', kind: 'exact' },
+        // Through `normaliseLogSeverity`, the same lookup the ingest uses. The
+        // export writes `INFO` for a corpus cell of `info` (6 202 823 rows) and
+        // `WARN` for one of `warning` (4 742), and neither is a loss.
+        { column: 'level', kind: 'normalised', transform: 'severity' },
+        // The four columns this table has and the IR does not. RE3's log table has
+        // none of them; this is where `RCAEVAL_UNFILLED_COLUMNS['logs/RE2']` comes
+        // from, and the round trip is what checks the two statements agree.
+        { column: 'req_path', kind: 'not-carried' },
+        { column: 'error', kind: 'not-carried' },
+        { column: 'cluster_id', kind: 'not-carried' },
+        { column: 'log_template', kind: 'not-carried' },
+      ],
+    },
+    {
+      table: 'traces',
+      file: 'traces.csv',
+      // Eleven columns, byte-identical header to RE3's, same microsecond units --
+      // read from the archive rather than assumed, because "the same schema" was a
+      // sentence in the target doc and this is the plan that acts on it.
+      spec: {
+        signalKind: 'trace',
+        format: 'csv',
+        timeLayout: 'unix_us',
+        layout: {
+          timestamp: 'startTime',
+          service: 'serviceName',
+          traceId: 'traceID',
+          spanId: 'spanID',
+          parentSpanId: 'parentSpanID',
+          spanName: 'operationName',
+          durationMs: 'duration',
+          durationUnit: 'us',
+        },
+        serviceAliases: RE2_SERVICE_ALIASES,
+      },
+      columns: [
+        { column: 'time', kind: 'derived', from: 'startTime' },
+        { column: 'traceID', kind: 'exact' },
+        { column: 'spanID', kind: 'exact' },
+        // Normalised, not exact: the corpus says `frontendservice` for a service its
+        // own log table calls `frontend`. The map is the same constant the reader
+        // was given, so the export is expected to hold the mapped name.
+        {
+          column: 'serviceName',
+          kind: 'normalised',
+          transform: 'alias',
+          aliases: RE2_SERVICE_ALIASES,
+        },
+        // Non-empty in RE2 and empty in RE3; the IR has no field either way.
+        { column: 'methodName', kind: 'not-carried' },
+        { column: 'operationName', kind: 'exact' },
+        { column: 'startTimeMillis', kind: 'exact' },
+        { column: 'startTime', kind: 'truncated', unit: 'us' },
+        { column: 'duration', kind: 'exact' },
         { column: 'statusCode', kind: 'not-carried' },
         { column: 'parentSpanID', kind: 'exact' },
       ],

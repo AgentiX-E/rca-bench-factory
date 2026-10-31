@@ -1079,24 +1079,19 @@ describe('check-fault-cases · the corpus through the coverage report and the ex
     );
   });
 
-  it('prints how many exported files exist with no data in them', async () => {
-    // One per case for RE2 now: `logs.csv`, header only. `traces.csv` carries the checkout case's
-    // span since the round that gave the latency cases theirs, and `inject_time.txt` is one line by
-    // design, so neither is counted -- the first version counted lines and reported RE1 as three
-    // empty files when it was writing real data.
+  it('reads which of the written cases carry which modality, not how many files are empty', async () => {
+    // The count this replaces was `1 file(s) with no rows (logs.csv in 1 case(s))` and it existed to
+    // make the exporter's header-only tables visible. They are no longer written (finding 321), so a
+    // count of them would be a constant zero -- and what a reader needs is the share: a case with no
+    // log line is a case the log-based methods cannot be asked about.
     const result = await run(['--cases', corpus({ signals: signals() })]);
-    expect(result.out).toContain('export RE1 1 case(s) written, 0 file(s) with no rows');
-    expect(result.out).toContain('RE2 1 case(s) written, 1 file(s) with no rows');
-    expect(result.out).toContain('RE3 0 case(s) written, 0 file(s) with no rows, 1 skipped');
-  });
-
-  it('names the file each empty export belongs to, not just how many there are', async () => {
-    // A count of empty files is a fact about the exporter's output that no reader can act on: it
-    // does not say which modality the corpus is missing, and a corpus missing logs wants a
-    // different repair from one missing spans. The breakdown is read off the file names, so a new
-    // modality is named by whatever the exporter calls it rather than by a list kept here.
-    const result = await run(['--cases', corpus({ signals: signals() })]);
-    expect(result.out).toContain('1 file(s) with no rows (logs.csv in 1 case(s))');
+    // RE1 declares no modality, so it carries none: asking whether a metric-only suite's cases have
+    // logs would report every RE1 export as deficient.
+    expect(result.out).toContain(
+      'export RE1 1 case(s) written · RE2 1 case(s) written, logs in 0 of 1, traces in 1 of 1',
+    );
+    expect(result.out).toContain('RE3 0 case(s) written, 1 skipped');
+    expect(result.out).not.toContain('file(s) with no rows');
   });
 
   it('says nothing about coverage when no case carries telemetry, rather than reporting zeroes', async () => {
@@ -1143,10 +1138,12 @@ describe('check-fault-cases · a log line, which is the first modality a metric 
     expect(result.status, result.out).toBe(0);
     // One case of four now fills a `logs.csv`, which is why RE2 stops being degraded.
     expect(result.out).toContain('rcaeval-re2 ready');
-    // Every case writes an RE2 case, so the count is the corpus size. The `file(s) with no rows`
-    // half stays a regex rather than a number: it counts files whose modality no case supplies, and
-    // that is a property of the corpus's shape rather than of this assertion.
-    expect(result.out).toMatch(new RegExp(`RE2 ${String(CORPUS_SIZE)} case\\(s\\) written, \\d+ file\\(s\\) with no rows`));
+    // Every case writes an RE2 case, so the count is the corpus size, and the modality shares stay
+    // regexes rather than numbers: which cases carry a log line is a property of the corpus's shape
+    // rather than of this assertion, and it moves every time a case is annotated.
+    expect(result.out).toMatch(
+      new RegExp(`RE2 ${String(CORPUS_SIZE)} case\\(s\\) written, logs in \\d+ of ${String(CORPUS_SIZE)}, traces in \\d+ of ${String(CORPUS_SIZE)}`),
+    );
   });
 
   it('accepts a log line whose quote is in its own case text', async () => {
@@ -1318,10 +1315,10 @@ describe('check-fault-cases · a span, which is the last modality and the only o
   it('accepts a parent that names a span in the same file, and fills traces.csv', async () => {
     const result = await run(['--cases', corpus({ signals: withTraces(() => undefined) })]);
     expect(result.status, result.out).toBe(0);
-    // One data-less file for this case, and it is `logs.csv`: the spans were emitted, so
-    // `traces.csv` has rows. That is the whole point of the modality -- a file that used to be a
-    // header now carries the two spans the incident text states.
-    expect(result.out).toContain('RE2 1 case(s) written, 1 file(s) with no rows');
+    // The span table is written and the log table is not: this case declares two spans and no log
+    // line, and the exporter stopped manufacturing an empty `logs.csv` for the one it has nothing
+    // to put in (finding 321). The reading says which, per case, which the old file count could not.
+    expect(result.out).toContain('RE2 1 case(s) written, logs in 0 of 1, traces in 1 of 1');
   });
 
   it('refuses a span whose quote is not in the incident text', async () => {

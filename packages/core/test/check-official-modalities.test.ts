@@ -168,13 +168,18 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
   });
 
   it('says nothing at all about modalities for a suite whose tables it does not read', () => {
-    // RE2's log table is nine columns, four of which the IR has no field for and one
-    // of which feeds a closed vocabulary; no RE2 archive has been measured here. The
-    // omission is stated in the script and recorded as open, and what this test
-    // holds is that silence is silence -- a zero would read as "read them, found
+    // This test used to be about RE2, whose log table was nine columns with four the
+    // IR had no field for and a `level` that fed a closed vocabulary, and which no
+    // archive in this tree had been measured on. It has been measured since -- 91
+    // `logs.csv` files, 15 224 545 rows -- and both of RE2's tables now round-trip,
+    // so RE2 is no longer the suite that stays silent.
+    //
+    // RE1 is: it ships `metrics.json` and `data.csv` and nothing else, and it is not
+    // in `MODALITY_PLANS`. What this test holds is unchanged and is the reason to
+    // keep it -- silence is silence, and a zero would read as "read them, found
     // nothing", which is the defect this whole section is about.
     const root = freshRoot();
-    const caseId = 'RE2-ob-cpu_1';
+    const caseId = 'RE1-ob-cpu_1';
     const dir = join(root, caseId);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
@@ -187,7 +192,7 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
       cases,
       JSON.stringify({
         schema: 'rca-bench-rcaeval-cases/1',
-        counts: { RE1: 0, RE2: 1, RE3: 0 },
+        counts: { RE1: 1, RE2: 0, RE3: 0 },
         cases: [
           {
             caseId,
@@ -195,7 +200,7 @@ describe('scripts/check-official.mjs · the log and trace tables as input', () =
             faultType: 'cpu',
             injectTime: new Date(1_700_000_000_000).toISOString(),
             pathPrefix: `${caseId}/`,
-            suite: 'RE2',
+            suite: 'RE1',
           },
         ],
       }),

@@ -207,6 +207,31 @@ function writeCase(root: string, caseId: string, samples = 40): void {
     metrics.mem_usage!.push(0.5);
   }
   writeFileSync(join(dir, 'metrics.json'), JSON.stringify(metrics));
+  writeModalities(dir);
+}
+
+/**
+ * The two per-case tables an RE2 case ships, in the corpus's own shape.
+ *
+ * They are here because `MODALITY_PLANS` names RE2 as a suite whose tables the
+ * round trip reads: a case of that suite without them is a case the adapter now
+ * refuses by name, and every fixture in this file would otherwise be refused. The
+ * instants are the real case's (`1705353846065999` us) so `time` is the minute of
+ * the instant and not a value chosen to match a rendering.
+ */
+const RE2_LOG_HEADER = 'time,timestamp,container_name,message,level,req_path,error,cluster_id,log_template';
+const RE2_TRACE_HEADER =
+  'time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID';
+
+function writeModalities(dir: string): void {
+  writeFileSync(
+    join(dir, 'logs.csv'),
+    `${RE2_LOG_HEADER}\n21:24,1705353846067349596,frontend,request started,info,/api,0,c-1,tpl-1\n`,
+  );
+  writeFileSync(
+    join(dir, 'traces.csv'),
+    `${RE2_TRACE_HEADER}\n21:24,tr-1,sp-1,frontendservice,Convert,hipstershop.CurrencyService/Convert,1705353846065,1705353846065999,4133,0.0,\n`,
+  );
 }
 
 /** A descriptor file naming the cases that were actually written. */
@@ -263,6 +288,7 @@ function writeBulkCorpus(
     }
     const body = JSON.stringify(metrics);
     writeFileSync(join(dir, 'metrics.json'), body);
+    writeModalities(dir);
     // Bulk beside the case, exactly as the corpus carries it: files the round
     // trip must step over, not read.
     writeFileSync(join(dir, 'load_0.csv'), dummy);
@@ -475,8 +501,8 @@ describe('scripts/check-official.mjs · the corpus reader', () => {
     const cases = join(scratch, 'counted.json');
     writeCases(cases, ['RE2-ob-cpu_1']);
     const result = await run(['--official-dir', root, '--cases', cases]);
-    // Two files per case: inject_time.txt and metrics.json.
-    expect(result.stdout).toMatch(/found 2 file\(s\)/);
+    // Four files per case: inject_time.txt, metrics.json, logs.csv and traces.csv.
+    expect(result.stdout).toMatch(/found 4 file\(s\)/);
     // One directory: the case itself. The corpus root is not counted, because
     // it is the argument the caller passed rather than something downloaded.
     expect(result.stdout).toMatch(/, 1 directory\(ies\)/);
@@ -593,14 +619,14 @@ describe('scripts/check-official.mjs · memory does not scale with the size of t
     writeCases(casesPath, cases);
     const result = await run(['--official-dir', root, '--cases', casesPath]);
     expect(result.status).toBe(0);
-    // Three payload files per case: inject_time.txt, metrics.json and
-    // load_0.csv. The `.DS_Store` beside each one is not counted, because the
-    // count is of what the corpus carries as telemetry and packaging is not it
-    // -- which is also the rule the body-sniffing walk applied, by a different
-    // route. Nine, then, and seven directories: the case directory and the two
-    // levels above it, three times over, since the walk descends from the root
-    // rather than knowing the layout.
-    expect(result.stdout).toMatch(/found 9 file\(s\)/);
+    // Five payload files per case: inject_time.txt, metrics.json, load_0.csv and the
+    // log and trace tables a real RE2 case ships. The `.DS_Store` beside each one is
+    // not counted, because the count is of what the corpus carries as telemetry and
+    // packaging is not it -- which is also the rule the body-sniffing walk applied,
+    // by a different route. Fifteen, then, and seven directories: the case directory
+    // and the two levels above it, three times over, since the walk descends from the
+    // root rather than knowing the layout.
+    expect(result.stdout).toMatch(/found 15 file\(s\)/);
     expect(result.stdout).toMatch(/, 7 directory\(ies\)/);
   });
 });
@@ -713,9 +739,13 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     // below are separated: this one is genuinely CSV, and the JSON-named-file
     // case follows it.
     const root = freshRoot();
-    writeCsvCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeCsvCase(root, 'RE1-OB/adservice_cpu/1');
     const cases = join(scratch, 'datacsv.json');
-    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+    // RE1, because the fixture is RE1's shape: one delimited metric table and no log
+    // or trace table. Declaring it RE2 asked the adapter for two tables it was never
+    // given, and the refusal that followed was about the suite rather than the name
+    // this test is about.
+    writeCases(cases, ['RE1-OB/adservice_cpu/1'], 'RE1');
 
     const result = await run(['--official-dir', root, '--cases', cases]);
 
@@ -739,13 +769,13 @@ describe('scripts/check-official.mjs · a declared case with no readable payload
     // corpus that names a JSON payload `data.csv` must still read. Asserting both
     // means the fix cannot be "dispatch on the filename" in the other direction.
     const root = freshRoot();
-    writeCsvCase(root, 'RE2-OB/checkoutservice_cpu/1');
+    writeCsvCase(root, 'RE1-OB/adservice_cpu/1');
     writeFileSync(
-      join(root, 'RE2-OB/checkoutservice_cpu/1/data.csv'),
+      join(root, 'RE1-OB/adservice_cpu/1/data.csv'),
       JSON.stringify({ cpu_usage: [0.2, 0.2, 0.95, 0.95], mem_usage: [0.5, 0.5, 0.5, 0.5] }),
     );
     const cases = join(scratch, 'datacsv-json.json');
-    writeCases(cases, ['RE2-OB/checkoutservice_cpu/1']);
+    writeCases(cases, ['RE1-OB/adservice_cpu/1'], 'RE1');
 
     const result = await run(['--official-dir', root, '--cases', cases]);
 
@@ -898,7 +928,13 @@ describe('scripts/check-official.mjs · a delimited payload that must be refused
     const root = freshRoot();
     writeCsvBody(root, 'RE1-OB/adservice_cpu/1', body);
     const cases = join(scratch, `${tag}.json`);
-    writeCases(cases, ['RE1-OB/adservice_cpu/1']);
+    // RE1 and not the default RE2: this helper's cases carry one delimited metric
+    // table and no log or trace table, which is exactly what RE1 ships. The suite
+    // used to be left at the default while the case directory said `RE1-OB`, so the
+    // descriptor and the path disagreed -- harmless until RE2 was declared as a suite
+    // whose log and trace tables are read, at which point every case this helper
+    // built was refused for a table it was never supposed to have.
+    writeCases(cases, ['RE1-OB/adservice_cpu/1'], 'RE1');
     return await run(['--official-dir', root, '--cases', cases]);
   }
 
@@ -1397,6 +1433,11 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'inject_time.txt'), '1700000000\n');
     writeFileSync(join(dir, payload), body);
+    // A real RE2 case ships all three tables. They are here rather than empty
+    // because two empty tables would satisfy the row count and the signature both --
+    // which is finding 315, and a fixture that can pass that way cannot be evidence
+    // about the reader. Their two signals are why the counts below moved.
+    writeModalities(dir);
     return caseId;
   }
 
@@ -1440,10 +1481,11 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('ROUNDTRIP PASS');
-    // 10 rows x 2 columns of the component. The naive reading of the same table is
-    // 40, and 20 is the observation that the other two columns were not attributed
-    // to it -- stated as a count rather than as a promise.
-    expect(result.stdout).toContain('signals=20');
+    // 10 rows x 2 columns of the component, plus the one log line and the one span
+    // the case ships. The naive reading of the metric table is 40, and 20 of the 22
+    // is the observation that the other two columns were not attributed to the
+    // component -- stated as a count rather than as a promise.
+    expect(result.stdout).toContain('signals=22');
     expect(result.stdout).toContain('ROUNDTRIP context 1 case(s)');
     expect(result.stdout).toContain('2 column(s)');
   });
@@ -1484,7 +1526,8 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('signals=10');
+    // 10 metric samples plus the one log line and the one span the case ships.
+    expect(result.stdout).toContain('signals=12');
     expect(result.stdout).toContain('ROUNDTRIP context 1 case(s)');
   });
 
@@ -1536,6 +1579,9 @@ describe('scripts/check-official.mjs · the corpus that names its entities in th
     const result = await run(['--official-dir', root, '--cases', cases]);
 
     expect(result.status, result.stderr).toBe(0);
+    // 10 rows x 2 columns, and no modality signal: this case is RE1, which ships no
+    // log or trace table, so the two the fixture writes are files the reader steps
+    // over rather than reads.
     expect(result.stdout).toContain('signals=20');
     // No context line: nothing was dropped, because nothing else was in the table.
     expect(result.stdout).not.toContain('ROUNDTRIP context');

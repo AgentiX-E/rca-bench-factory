@@ -1864,13 +1864,14 @@ that every row is carried and every column that should agree does.
   were wrong on every row would be reported as a large disagreement rather than as a failure. That is
   deliberate -- the corpus disagrees with itself on one row in 62 000 -- and it is the one column whose
   verdict is a report rather than a gate. `[open: the instant columns carry the proof for it]`
-- **This project's own 30-case corpus still exports empty modality files.** `check-fault-cases`
-  reports `RE2: 44 file(s) with no rows (logs.csv in 19, traces.csv in 25)` over 30 synthetic cases,
-  and RE3's five: the synthetic corpus declares metric telemetry and no log or trace telemetry, so the
-  exporter writes the files its layout requires and nothing in them. The guard counts it, which is why
-  it is a reported gap rather than a silent one -- and it is the same shape as finding 315, one corpus
-  closer to home. `[open: the synthetic cases would each need log and trace declarations, which is a
-  corpus-authoring round rather than a repair]`
+- ~~**This project's own 30-case corpus still exports empty modality files.**~~ Closed by finding 321
+  (v3.22) — and not by the repair this entry predicted. The empty file was the exporter's claim about
+  the case rather than the case's missing annotation: it wrote both tables for every case on the
+  strength of the *suite's* modality set, so 19 of 30 `logs.csv` and 25 of 30 `traces.csv` held a
+  header and nothing else. The exporter now writes a table only when the case has one, and what the
+  guard prints instead is the share — `logs in 11 of 30, traces in 5 of 30` — which is the
+  corpus-authoring fact this entry was reaching for, stated per case instead of per file. Predicted
+  repair still unstarted: the 19 cases with no log line and the 25 with no span.
 - **The round trip's cost is now data-dependent in a way it was not.** Reading 29 MB of traces per case
   adds ~4.5 s and ~1.3 GB, so the 90-case RE3 slice takes minutes rather than seconds. `[open: nothing
   bounds it, and a corpus twice this size would need a heap flag the workflow does not set]`
@@ -1880,3 +1881,111 @@ that every row is carried and every column that should agree does.
 The corpus, the metric tables, the anchors, the backends. The 69 prose parameters, the two five-second
 budgets, `signalRef`'s shape, the two ledger rules and the published success ratios are where v3.20 left
 them and are **not re-signed here**.
+
+## v3.22 — the tables that were written for every case, filled or not
+
+Two of the eight items the convergence plan put in this round: **RE2's two tables** (closed in the same
+commit stream as findings 319 and 320, reported in v3.21's readings) and **the synthetic corpus's empty
+modalities**, which is this section.
+
+### One: the gap was one line of the exporter, and the entry said it was a corpus round
+
+v3.21 left this open:
+
+> the synthetic corpus declares metric telemetry and no log or trace telemetry, so the exporter writes
+> the files its layout requires and nothing in them ... `[open: the synthetic cases would each need log
+> and trace declarations, which is a corpus-authoring round rather than a repair]`
+
+Half of that was right and the sentence it produced was wrong. The corpus does not declare log or trace
+telemetry for most cases -- 11 of 30 declare a log line, 5 a span -- and the exporter wrote both tables
+for all 30 anyway:
+
+```ts
+if (suite === 'RE2' || suite === 'RE3') {
+  files[`${dir}/logs.csv`] = buildLogsCsv(signals, suite);
+  files[`${dir}/traces.csv`] = buildTracesCsv(signals);
+}
+```
+
+So the repair was not a corpus-authoring round at all. It was the condition: a table is written iff the
+case has a signal of its modality. 19 header-only `logs.csv` and 25 header-only `traces.csv` became 11
+and 5, and the guard's count of them -- a number that could never reach zero while the exporter behaved
+this way -- became a share worth reading:
+
+```
+export RE1 30 case(s) written · RE2 30 case(s) written, logs in 11 of 30, traces in 5 of 30 ·
+RE3 5 case(s) written, logs in 2 of 5, traces in 1 of 5, 25 skipped
+```
+
+### Two: what the empty file was holding up
+
+The count was a symptom. The reason it mattered is that the exporter's own output satisfied
+`checkRcaEvalStructure`'s `modality-set` check, which exists to ask *which modalities a case carries* and
+could only ask whether the file was there. So a missing modality was invisible to the score, and this
+repository already had that written down as a measured fact:
+
+> strip any single modality from a bundle and re-score, and **all nine targets scored identically** ...
+> The other four leave a file behind -- an empty `logs.csv` is still a `logs.csv` with the right header --
+> which is exactly how a structural check stays blind to whether a modality is *populated*.
+
+That paragraph was in `target-requirements.test.ts`, as the reason the coverage report exists separately.
+Half of it is a real property of six of the nine layouts; the other half was this defect wearing the
+clothes of an invariant. With the tables written only when filled, the same strip now fails
+`modality-set` and costs the export its score, and the test asserts both directions -- unmoved for a
+modality a target does not declare (nine targets), dropped for one the three RCAEval suites do.
+
+### Three: the second statement of the same modality set
+
+`TARGET_REQUIREMENTS['rcaeval-re2']` said `['metric', 'log']` while `checkRcaEvalStructure` required
+`logs.csv` **and** `traces.csv` for the same suite. Two places, one fact, and the coverage report was the
+lenient one: a dataset with metrics and logs and no spans was reported `ready` for a target whose export
+would then fail its own structure contract. v3.21's measurement settled which was right -- one case of
+`RE2-OB` holds 171 322 log rows and 391 997 span rows -- so the row gained `trace`.
+
+### Four: three fixtures that would have read as the writer losing a cell
+
+Four existing tests built a bundle out of one log signal or one span and asserted on the exported CSV.
+Those bundles have no metric, so the case is now skipped and the file is absent; the assertions would
+have said "the writer lost the level cell" about a bundle that was never a case. Each gained one metric
+reading and a comment saying why, which is also the first place a reader meets the rule: **a case is
+found by its `data.csv`**, and a case that cannot fill one is skipped by name rather than exported as a
+directory upstream never opens.
+
+The empty-file counter and its `isEmptyDataFile` went with them. A count of something the exporter can no
+longer produce is a constant zero in a branch no input reaches -- finding 285's shape, in the same
+script. The invariant moved to `export.test.ts`, which builds four bundles (one modality, the other,
+both, neither) and asserts which files exist for each; the corpus guard keeps only what it can move.
+
+### Readings
+
+| item | value |
+| --- | --- |
+| `core` test suite | **207 files, 5076 tests passed** (as of this commit) |
+| `cli` test suite | **4 files, 187 tests passed** (as of this commit) |
+| repo test suite | **211 files, 5263 tests passed** (as of this commit) |
+| coverage | **99.97 / 99.76 / 100 / 99.97** (cli 100 / 100 / 100 / 100) — unchanged |
+| `export.test.ts` | 71 → **77 tests**, 5 of them the empty-table rule and one the structure verdict |
+| `target-requirements.test.ts` | 21 → **24 tests**, the blindness now asserted in both directions |
+| RE2 export over the annotated corpus | 30 cases: **logs 11, traces 5** (was 30 / 30 with 19 and 25 empty) |
+| RE3 export over the annotated corpus | 5 cases: **logs 2, traces 1** (was 5 with 3 and 4 empty) |
+| `TARGET_REQUIREMENTS['rcaeval-re2']` | `metric, log` → **`metric, log, trace`** |
+| audits | 1–**321**, **318 findings** (absent: 118, 132, 133) |
+| export failure sites | 95 across 50 scripts, annotations carried (6 re-derived) |
+
+### Left open
+
+- **19 of 30 cases still have no log line and 25 no span.** That is now a stated share rather than a
+  hidden empty file, and it is the corpus-authoring round v3.21 predicted -- still unstarted. `[open: the
+  cases that were never given a log line are the ones whose incident text has no line to quote, and
+  writing one would be authoring rather than annotating]`
+- **The coverage report has no per-case share.** `computeCoverage` answers "can this dataset be evaluated
+  at all" with a boolean over the bundle, so `rcaeval-re2 ready` is true while 19 of 30 cases have no log
+  table. The two readings are not in conflict -- floor and amount -- but only the floor is available to
+  the CLI. `[open: a share in the report would change the shape of a published structure the CLI, the
+  site and the docs all read]`
+
+### Unchanged
+
+The corpus, the metric tables, the anchors, the backends, the 69 prose parameters, the two five-second
+budgets, `signalRef`'s shape, the two ledger rules and the published success ratios. v3.22 touched the
+export and the requirement row, and nothing that grades a full run.

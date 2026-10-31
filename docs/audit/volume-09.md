@@ -2292,3 +2292,297 @@ that a later edit would have to retype: a receipt is per tree, so every tree tha
 one full run -- `b2b616b` and `264de30` for the two repaired trees, `bc0ed03` for the commit that records
 the repair, `78f3294` for the correction of this paragraph, and one more for this sentence, which is why
 the mechanism is the thing worth writing down.
+
+## Finding 319 — one service, two tables, two spellings
+
+### The defect
+
+`RE2-OB/checkoutservice_cpu/1` calls its front end two things:
+
+| file | the name it writes |
+| --- | --- |
+| `traces.csv` (`serviceName`) | `frontendservice` |
+| `logs.csv` (`container_name`) | `frontend` |
+| `simple_metrics.csv` (column prefixes) | `frontend` |
+
+Three tables of one case, one service, two spellings. A reader that carries both makes
+two entities out of one, and everything that exists to join a span to the log lines it
+caused then joins nothing: the attribution finds no lines for `frontendservice`, and the
+lines that mention `frontend` belong to an entity no span ever touched.
+
+Measured on that case: **199 519 of 391 997 spans** carry the spelling the other two
+tables do not use.
+
+### Why it survived
+
+Because RE2's two tables were never read. `MODALITY_PLANS` had one entry, for RE3, and the
+reason given for the omission was that RE2's log table needed a measured answer about an
+unseen `level` and no archive had been measured. That was true and it was also the reason
+nobody had looked at the trace table -- which has no such question. Its header is the same
+eleven columns as RE3's, byte for byte:
+
+```
+time,traceID,spanID,serviceName,methodName,operationName,startTimeMillis,startTime,duration,statusCode,parentSpanID
+```
+
+So the suite that was declared unreadable on one file's account had a second file nothing
+was wrong with, and the second file's only defect was invisible for as long as neither was
+read.
+
+### The repair
+
+`FileIngestOptions.serviceAliases`, an exact-match one-way map from a spelling the corpus
+uses to the name the IR holds. The map itself is a fact about one corpus, so it lives in the
+plan that describes that corpus and not in the reader:
+
+```js
+const RE2_SERVICE_ALIASES = { frontendservice: 'frontend' };
+```
+
+One constant, referenced twice: once as the ingest's `serviceAliases` and once as the
+`aliases` of the `serviceName` comparison entry. Two literals would be two chances to
+disagree, and the round trip is where that disagreement would surface.
+
+The comparison needed a fourth column kind to go with it. `exact` was wrong (the cells
+differ), `truncated` was wrong (no digits were dropped), `not-carried` was wrong (the value
+is carried). `normalised` is the fourth: the cell is read through a stated transform and
+compared in that form. It applies to the corpus's side only, exactly as `truncated` does --
+an exporter that wrote the corpus's spelling back would be an exporter that never applied
+its own plan, and normalising both sides would let it pass.
+
+### Acceptance
+
+```
+ROUNDTRIP MODALITY   1/1 RE2-OB/checkoutservice_cpu/1   traces: 391997/391997 row(s);
+  exact 6/11 (traceID, spanID, operationName, startTimeMillis, duration, parentSpanID);
+  derived time from the instant; truncated startTime to the millisecond (354652 of 391997
+  cells had finer digits); normalised serviceName normalised (199519 of 391997 cell(s)
+  spelled differently); not carried methodName (373623 value(s) in the corpus, 0 written),
+  statusCode (373623 value(s) in the corpus, 0 written)
+```
+
+Every row, and the 199 519 renamed cells are counted as a normalisation rather than as a
+loss. Tested four ways: the map applied, the map's absence, a name the map does not
+mention, and an export that kept the corpus's spelling (which must fail).
+
+### What this does not do
+
+It does not make the alias discovery automatic. Detection cannot guess that
+`frontendservice` and `frontend` are one service, and a rule that stripped a `service`
+suffix would be a guess about every corpus at once. What it does is make the statement
+available to the plan, which is where a fact about one corpus belongs -- the same place
+`FileLayout` was put when detection was measured wrong about three of its decisions
+(finding 315).
+
+## Finding 320 — a closed vocabulary rejected a level the corpus spells differently
+
+### The defect
+
+`LOG_SEVERITIES` is OpenTelemetry's: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`. The
+ingest upper-cases a `level` cell and then consults that vocabulary, which is right and is
+what makes `info` and `INFO` one severity. RE2-OB writes one level the vocabulary does not
+have:
+
+| `level` in the corpus | rows | `.toUpperCase()` | in the vocabulary |
+| --- | --- | --- | --- |
+| `info` | 6 202 823 | `INFO` | yes |
+| `debug` | 5 105 988 | `DEBUG` | yes |
+| `INFO` | 2 138 278 | `INFO` | yes |
+| *(empty)* | 1 768 661 | — | not declared |
+| **`warning`** | **4 742** | **`WARNING`** | **no** |
+| `error` | 4 053 | `ERROR` | yes |
+
+15 224 545 rows across **91** `logs.csv` files in `RE2-OB.zip`, and the six values above are
+all of them. So `warning` is 4 742 rows that would be quarantined for saying what they mean
+-- their instant, container and body are as good as the rows beside them.
+
+### Why the first measurement would not have found it
+
+The case measured first was `checkoutservice_cpu/1`, whose own distribution is
+
+```
+{'info': 70921, 'debug': 56731, '': 19699, 'INFO': 23971}
+```
+
+-- four values, no `warning`. A plan written from that case alone would have passed on that
+case and quarantined 4 742 rows elsewhere in the suite, and the round trip would have been
+green because the case it ran on had none. That is finding 315's shape exactly: a gate that
+is green because its sample did not contain the thing.
+
+The full scan is why the number exists. It read all 91 tables through HTTP range requests
+against the archive's central directory, inflating only each `logs.csv` member and keeping a
+counter -- 180 MB transferred instead of the 1.19 GB archive.
+
+### The repair
+
+`LOG_SEVERITY_SPELLINGS` and `normaliseLogSeverity`, in `ir/types.ts`:
+
+```ts
+export const LOG_SEVERITY_SPELLINGS: Readonly<Record<string, LogSeverity>> = { warning: 'WARN' };
+
+export function normaliseLogSeverity(raw: string): LogSeverity | undefined {
+  const upper = raw.toUpperCase();
+  if (isVocabularyMember(LOG_SEVERITIES, upper)) return upper;
+  return LOG_SEVERITY_SPELLINGS[upper.toLowerCase()];
+}
+```
+
+The table is short on purpose and every entry is a count rather than a guess: `warning` is in
+it because 4 742 rows say so, and `err` is not because those 15 224 545 rows contain no such
+value. A spelling in neither the vocabulary nor the table stays a rejection, which is how an
+unseen one remains visible instead of being folded into its nearest neighbour -- `notice` is
+refused by a test that says so.
+
+It is a function rather than a `ColumnTransform` of its own because two readers need the same
+answer: the ingest when it builds a signal, and `score/modalities.ts` when it decides whether
+the exported cell reproduces the corpus's. Two implementations of one normalisation is the
+shape of finding 316, where a unit conversion agreed with itself in two places and with the
+corpus in neither.
+
+### Acceptance
+
+```
+ROUNDTRIP MODALITY   1/1 RE2-OB/checkoutservice_cpu/1   logs: 171322/171322 row(s);
+  exact 2/9 (container_name, message); derived time from the instant; truncated timestamp to
+  the millisecond (171321 of 171322 cells had finer digits); normalised level normalised
+  (127652 of 171322 cell(s) spelled differently); not carried req_path (59301 value(s) in the
+  corpus, 0 written), error (0 value(s) in the corpus, 0 written), cluster_id (171302
+  value(s) in the corpus, 0 written), log_template (171302 value(s) in the corpus, 0 written)
+```
+
+127 652 cells normalised -- the 70 921 `info` and 56 731 `debug` of that case -- and no
+quarantine. Tested five ways: `warning` reaches `WARN`, two cases of one level reduce to one,
+`notice` stays a rejection, an empty cell declares nothing, and the comparison's `severity`
+transform agrees with the ingest by construction because both call the same function.
+
+### What the four unfilled columns cost
+
+`req_path` is non-empty in 59 301 rows and `cluster_id` and `log_template` in 171 302 --
+nearly every row. They are emitted empty and named in `RCAEVAL_UNFILLED_COLUMNS['logs/RE2']`,
+which is the export stating a loss rather than inventing a value. `error` is a different
+case: **zero** rows carry it, so the column exists and says nothing, and the round trip
+reports it as `(0 value(s) in the corpus, 0 written)` rather than as a column nobody checked.
+
+## Finding 321 — the tables that were written for every case, filled or not
+
+### The defect
+
+`exportRcaEval` declared `logs.csv` and `traces.csv` for RE2 and RE3 and then wrote both for
+every case that reached the suite:
+
+```ts
+if (suite === 'RE2' || suite === 'RE3') {
+  files[`${dir}/logs.csv`] = buildLogsCsv(signals, suite);
+  files[`${dir}/traces.csv`] = buildTracesCsv(signals);
+}
+```
+
+`buildLogsCsv` filters for log signals and `buildTracesCsv` for span signals, so a case with
+none produced a header and nothing under it. Measured on this repository's own annotated
+corpus, through `check-fault-cases`' export:
+
+| suite | cases written | `logs.csv` with no rows | `traces.csv` with no rows |
+| --- | --- | --- | --- |
+| RE2 | 30 | **19** | **25** |
+| RE3 | 5 | 3 | 4 |
+
+The corpus's declarations, read from the `.signals.json` files, agree with that and say why:
+11 of the 30 cases declare a log line and 5 declare a span. Nothing was truncated; the
+exporter was writing two files per case on the strength of the *suite's* modality set rather
+than the *case's* content.
+
+A header is not a placeholder. `check-official` reads a modality as present-or-absent and
+refuses a case that is declared and missing, so an empty file here is the exporter
+manufacturing the evidence that rule asks for: the case reads back as "has logs, in zero
+rows", which is indistinguishable from a log table truncated to nothing.
+
+### The half that made it a defect rather than a wart
+
+The exporter's own output was what satisfied the structural contract that exists to ask
+*which modalities a case carries*. `checkRcaEvalStructure` tests `hasLogs && hasTraces` by
+looking for paths ending in `/logs.csv` and `/traces.csv`, and an empty file passes.
+
+So the score of an RCAEval export could not see a missing modality, and that was already
+written down in this repository as a measured fact:
+
+> strip any single modality from a bundle and re-score, and **all nine targets scored
+> identically** ... The other four leave a file behind -- an empty `logs.csv` is still a
+> `logs.csv` with the right header -- which is exactly how a structural check stays blind to
+> whether a modality is *populated*.
+
+That paragraph is in `target-requirements.test.ts`, offered as the reason the coverage report
+exists as a separate measurement. The first clause is true for the six targets whose structure
+gates describe their own layout; the second clause was this defect, described accurately and
+kept as an invariant.
+
+### Why the two halves survived together
+
+Each half was defensible alone. A suite that declares two modalities should export both -- the
+layout is what upstream reads. A structure check should ask for the files the layout names. The
+two together are a loop: the exporter writes what the suite declares, the check confirms the
+files exist, and the only party who knew the case had no log line was `buildLogsCsv`, which
+returns a string either way.
+
+The corpus made it visible because it is the one dataset in this tree that mostly does *not*
+carry the modalities it is exported into. Every other consumer had what the exporter needed, so
+the empty file was a shape that never cost anything.
+
+### The repair
+
+Three statements, each about one thing:
+
+1. **A table is written iff the case has a signal of its modality.** `signals.some(isLogSignal)`
+   and `signals.some(isTraceSignal)`, in `exportRcaEval`.
+2. **A case with no metric signal is skipped by name.** Upstream finds a case by globbing for
+   `data.csv`, so a case it cannot see is a case whose absence has to be stated rather than
+   implied by an empty file. It gets the same treatment a case with no signals at all already
+   had, with its own sentence, because the two absences are two different repairs:
+   `no metric signals attached, and a case is found by its data.csv`.
+3. **The coverage report's RE2 row gains `trace`.** `TARGET_REQUIREMENTS['rcaeval-re2']` said
+   `['metric', 'log']` while `checkRcaEvalStructure` required both files for the same suite --
+   two statements of one modality set, with the coverage report the lenient one. One case of
+   `RE2-OB` holds 171 322 log rows and **391 997 span rows** eleven columns wide, measured in
+   finding 319's round, so the lenient answer was also the wrong one: a dataset with metrics
+   and logs and no spans was reported `ready` for a target whose own export would then fail its
+   structure contract.
+
+And one removal. `check-fault-cases` counted the data-less files and printed the count; with
+the exporter unable to produce one, that count is a constant zero and its branch is a line no
+input reaches -- the shape finding 285 removed from the same script. The invariant moved to
+where it can fail: `export.test.ts` builds four bundles (one modality, the other, both, neither)
+and asserts which files exist for each. What the gate prints instead is the fact a reader can
+act on:
+
+```
+export RE1 30 case(s) written · RE2 30 case(s) written, logs in 11 of 30, traces in 5 of 30 ·
+RE3 5 case(s) written, logs in 2 of 5, traces in 1 of 5, 25 skipped
+```
+
+The share is the number the old count only ever implied, and it is the one the coverage report
+cannot express: `computeCoverage` answers "can this dataset be evaluated at all" with a boolean
+over the bundle, so `rcaeval-re2 ready` is true while 19 of 30 cases have no log table. Those
+two readings are not in conflict -- one is the floor, the other is the amount -- and until this
+round only the floor was printed anywhere.
+
+### Acceptance
+
+| item | before | after |
+| --- | --- | --- |
+| RE2 `logs.csv` written | 30 (19 empty) | **11** |
+| RE2 `traces.csv` written | 30 (25 empty) | **5** |
+| RE3 `logs.csv` / `traces.csv` | 5 / 5 (3 and 4 empty) | **2 / 1** |
+| a metrics-only case's RE2 export | 4 files, 2 with no rows | **2 files, none empty** |
+| `checkRcaEvalStructure` on it | passed | **fails `modality-set`** |
+| `TARGET_REQUIREMENTS['rcaeval-re2']` | `metric, log` | **`metric, log, trace`** |
+| `core` suite | 207 files / 5 069 tests | **207 files / 5 076 tests** |
+| coverage | 99.97 / 99.76 / 100 / 99.97 | **unchanged** |
+
+The structural blindness is now asserted in both directions, because one direction alone would
+have been satisfied by the old arrangement: `target-requirements.test.ts` strips each modality a
+target does **not** declare and requires the score to be unmoved (nine targets), then strips each
+modality the three RCAEval suites **do** declare and requires `modality-set` to fail and the
+score to drop.
+
+RE3's case in that test is a code fault, deliberately: the fixture's fault is a resource one,
+which RE3 refuses outright, so its export is empty and "the score drops" would have been
+`0 < 0` -- an assertion that can never fail wearing the shape of one that can.

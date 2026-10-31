@@ -1,4 +1,5 @@
 import { parseDelimited } from '../ingest/file.js';
+import { normaliseLogSeverity } from '../ir/types.js';
 
 /**
  * Comparing a corpus's log/trace table with the export of that same case.
@@ -62,10 +63,44 @@ export const TRUNCATED_UNITS = ['ns', 'us'] as const;
 
 export type TruncatedUnit = (typeof TRUNCATED_UNITS)[number];
 
+/**
+ * The spelling normalisations a column can go through on its way into the IR.
+ *
+ * The IR's severity vocabulary is upper case (`LOG_SEVERITIES`), and RE2-OB's
+ * `level` column is not: of the 171 322 log rows in `RE2-OB/checkoutservice_cpu/1`,
+ * 70 921 say `info` and 23 971 say `INFO`. That is one severity written two ways by
+ * two log libraries in one cluster, not two severities, so the reader upper-cases
+ * the cell and the closed vocabulary admits both.
+ *
+ * The consequence for the round trip is that the exported cell is `INFO` where the
+ * corpus's cell was `info`. Comparing those two directly would report 70 921
+ * differences per case -- a normalisation read as a loss. So the comparison is made
+ * after the same transform, and the column is neither "exact" (it is not
+ * byte-identical) nor "truncated" (no digits were dropped).
+ */
+export const COLUMN_TRANSFORMS = ['upper-case', 'severity', 'alias'] as const;
+
+export type ColumnTransform = (typeof COLUMN_TRANSFORMS)[number];
+
 /** How one column of the corpus's table relates to the export's. */
 export type ColumnComparison =
   | { readonly column: string; readonly kind: 'exact' }
   | { readonly column: string; readonly kind: 'truncated'; readonly unit: TruncatedUnit }
+  /**
+   * A column whose spelling is normalised on the way into the IR; compared normalised.
+   *
+   * `aliases` belongs to `transform: 'alias'` -- the same table the reading plan gave
+   * the ingest as `serviceAliases`. It is passed rather than looked up because the
+   * mapping is a fact about one corpus (RE2-OB writes `frontendservice` in its spans
+   * and `frontend` in its logs), and a table hard-coded here would be a second copy
+   * of that fact with nothing keeping the two in step.
+   */
+  | {
+      readonly column: string;
+      readonly kind: 'normalised';
+      readonly transform: ColumnTransform;
+      readonly aliases?: Readonly<Record<string, string>>;
+    }
   /**
    * A column the exporter derives from an instant in the same table.
    *
@@ -171,6 +206,29 @@ function addTo(counts: Map<string, number>, key: string): void {
   counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
+/**
+ * A cell in the shape the IR holds it.
+ *
+ * Exhaustive over `ColumnTransform` and ending in nothing: one member today, and a
+ * second would fail to compile here rather than pass through silently -- which is
+ * the mistake `COLUMN_ALIASES` made once, keeping a branch for a transform that no
+ * longer existed while a new one went unhandled.
+ */
+function applyTransform(cell: string, transform: ColumnTransform, aliases?: Readonly<Record<string, string>>): string {
+  switch (transform) {
+    case 'upper-case':
+      return cell.toUpperCase();
+    case 'severity':
+      // Through the same lookup the ingest uses. A cell the IR would have rejected
+      // falls back to its upper-cased form, so it differs from the exported cell
+      // instead of quietly agreeing with a value nothing wrote.
+      return normaliseLogSeverity(cell) ?? cell.toUpperCase();
+    case 'alias':
+      // Exact-match and one-way, exactly as `FileIngestOptions.serviceAliases` is.
+      return aliases?.[cell] ?? cell;
+  }
+}
+
 /** `HH:MM` in UTC of a whole-millisecond instant. */
 function utcMinute(epochMs: number): string {
   const at = new Date(epochMs);
@@ -248,7 +306,13 @@ export function compareModalityTables(args: {
     }
   }
 
-  const compared = args.plan.filter((planned) => planned.kind === 'exact' || planned.kind === 'truncated');
+  // `normalised` columns stay in the signature, under the transform: a severity is
+  // information the row carries, so a row whose level was dropped must not collide
+  // with one whose level was `INFO`. `derived` columns stay out for the opposite
+  // reason -- `time` restates an instant the signature already holds.
+  const compared = args.plan.filter(
+    (planned) => planned.kind === 'exact' || planned.kind === 'truncated' || planned.kind === 'normalised',
+  );
   const rowCount = Math.min(corpus.rows.length, exported.rows.length);
 
   // Row signatures over the compared columns, from one side and the other. The
@@ -270,6 +334,12 @@ export function compareModalityTables(args: {
         } else {
           cells.push(cell);
         }
+      } else if (planned.kind === 'normalised' && side === 'corpus') {
+        // Same one-sided rule as the truncation above: the export must hold the
+        // normalised spelling, so it is compared as written. Normalising both sides
+        // would make an exporter that never upper-cased anything agree with a corpus
+        // it did not reproduce.
+        cells.push(applyTransform(cell, planned.transform, planned.aliases));
       } else {
         cells.push(cell);
       }
@@ -351,6 +421,14 @@ export function compareModalityTables(args: {
         if (truncated === undefined) continue;
         if (!truncated.exact) lossy += 1;
         addTo(theirs, truncated.text);
+      } else if (planned.kind === 'normalised') {
+        // One-sided, like the truncation: the corpus's spelling is what this module
+        // reads, and the export is compared as written. A cell the transform changes
+        // is counted as `lossy` -- the corpus did say `info`, and the exported table
+        // cannot say it back.
+        const normalised = applyTransform(rawTheir, planned.transform, planned.aliases);
+        if (normalised !== rawTheir) lossy += 1;
+        addTo(theirs, normalised);
       } else {
         addTo(theirs, rawTheir);
       }
@@ -398,6 +476,9 @@ export function describeModalityComparison(comparison: ModalityComparison): stri
   const truncated = comparison.columns
     .filter((c) => c.kind === 'truncated')
     .map((c) => `${c.column} to the millisecond (${c.lossy} of ${comparison.corpusRows} cells had finer digits)`);
+  const normalised = comparison.columns
+    .filter((c) => c.kind === 'normalised')
+    .map((c) => `${c.column} normalised (${c.lossy} of ${comparison.corpusRows} cell(s) spelled differently)`);
   const lost = comparison.columns
     .filter((c) => c.kind === 'not-carried')
     .map((c) => `${c.column} (${c.lossy} value(s) in the corpus, ${c.differ} written)`);
@@ -407,6 +488,7 @@ export function describeModalityComparison(comparison: ModalityComparison): stri
     (exact.length > 0 ? ` (${exact.join(', ')})` : '') +
     (derived.length > 0 ? `; derived ${derived.join(', ')}` : '') +
     (truncated.length > 0 ? `; truncated ${truncated.join(', ')}` : '') +
+    (normalised.length > 0 ? `; normalised ${normalised.join(', ')}` : '') +
     (lost.length > 0 ? `; not carried ${lost.join(', ')}` : '')
   );
 }

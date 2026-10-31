@@ -9,6 +9,8 @@
 export {
   IR_VERSION,
   LOG_SEVERITIES,
+  LOG_SEVERITY_SPELLINGS,
+  normaliseLogSeverity,
   METRIC_SEMANTIC_TYPES,
   MISSING_VALUE_TOKENS,
   SPAN_STATUSES,
@@ -504,10 +506,17 @@ export type {
   OpenRcaScoringPoints,
 } from './score/official.js';
 
-export { MODALITY_TABLES, TRUNCATED_UNITS, compareModalityTables, describeModalityComparison } from './score/modalities.js';
+export {
+  COLUMN_TRANSFORMS,
+  MODALITY_TABLES,
+  TRUNCATED_UNITS,
+  compareModalityTables,
+  describeModalityComparison,
+} from './score/modalities.js';
 export type {
   ColumnComparison,
   ColumnReading,
+  ColumnTransform,
   ModalityComparison,
   ModalityTable,
   TruncatedUnit,

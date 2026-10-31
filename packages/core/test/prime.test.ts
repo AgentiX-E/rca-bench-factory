@@ -412,6 +412,42 @@ describe('ingestPrimeDataset · format and layout resolution', () => {
     expect(result.bundle.signals[BASE_CASE.caseId]?.[0]?.payload).toMatchObject({ value: 0.41 });
   });
 
+  it('forwards a service-alias map declared on one file', () => {
+    // Declared per file, not per case: one corpus spells the same service two ways
+    // in two of its tables, and the map belongs to the table that spells it.
+    // The alias maps onto the case's root-cause component, because a case whose
+    // component resolves to no entity is refused before any of this matters.
+    const csv = ['timestamp,serviceName,message', '2025-03-01T00:09:00.000Z,ts-order-frontend,hello'].join('\n') + '\n';
+    const result = ingestPrimeDataset(
+      { 'logs.csv': csv },
+      options({
+        // The spec belongs to the *case* (`PrimeCaseSource.files`), not to the
+        // options. An earlier draft of this test put it one level too high, and the
+        // compiler refuses that outright -- `'files' does not exist in type
+        // 'Partial<PrimeIngestOptions>'` (TS2353) -- so the mistake was only ever
+        // visible as a red assertion, not as a silently ignored option. It is written
+        // down because the first version of this test did ship with the map reaching
+        // no reader, and what caught it was the alias never appearing in the graph.
+        cases: [
+          {
+            ...BASE_CASE,
+            files: [
+              {
+                path: 'logs.csv',
+                signalKind: 'log',
+                format: 'csv',
+                serviceAliases: { 'ts-order-frontend': 'ts-order-service' },
+                layout: { timestamp: 'timestamp', service: 'serviceName', logBody: 'message' },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.bundle.signals[BASE_CASE.caseId]?.[0]?.resource['service.name']).toBe('ts-order-service');
+  });
+
   it('forwards a service-name fallback to the reader', () => {
     const csv = ['timestamp,metric_name,value', '2025-03-01T00:09:00.000Z,cpu_usage,0.41'].join('\n') + '\n';
     const result = ingestPrimeDataset(
